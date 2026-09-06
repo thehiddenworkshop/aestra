@@ -2535,98 +2535,43 @@ fn desired_preview_instances(
     let Some(project) = preview.project.as_deref() else {
         return Vec::new();
     };
-    let mut desired = Vec::new();
-    let mut path = Vec::new();
-    if !timeline.effect_clip_solo_active() {
-        desired.push(DesiredPreviewInstance {
-            path: Vec::new(),
-            effect: project.root.clone(),
+    project
+        .instances_with(
             time,
             seed,
+            aestra_runtime::HostTransformContext {
+                motion: project.root.host_transform_track.clone(),
+                inherited: Arc::default(),
+            },
+            |path, clip| {
+                let mut clip = clip.clone();
+                if path.is_empty() {
+                    if !timeline.effect_clip_is_audible(clip.source_clip) {
+                        return None;
+                    }
+                    if let Some((start, offset, duration)) =
+                        timeline.effect_clip_preview_timing(clip.source_clip)
+                    {
+                        clip.start_time = start;
+                        clip.source_offset = offset;
+                        clip.duration = duration;
+                    }
+                }
+                Some(clip)
+            },
+        )
+        .into_iter()
+        .filter(|instance| !instance.path.is_empty() || !timeline.effect_clip_solo_active())
+        .map(|instance| DesiredPreviewInstance {
+            path: instance.path,
+            effect: instance.effect,
+            time: instance.time,
+            seed: instance.seed,
             transform: Transform::IDENTITY,
-            inherited: Arc::default(),
-            parameter_overrides: Vec::new(),
-        });
-    }
-    collect_effect_clip_instances(
-        project,
-        &project.root,
-        timeline,
-        time,
-        seed,
-        Arc::default(),
-        &mut path,
-        &mut desired,
-    );
-    desired
-}
-
-#[allow(clippy::too_many_arguments)]
-fn collect_effect_clip_instances(
-    project: &CompiledEffectProject,
-    effect: &CompiledEffect,
-    timeline: &TimelineState,
-    parent_time: f32,
-    parent_seed: u64,
-    inherited: Arc<aestra_runtime::InheritedHostTransform>,
-    path: &mut Vec<EffectClipId>,
-    desired: &mut Vec<DesiredPreviewInstance>,
-) {
-    if path.len() >= 64 {
-        return;
-    }
-    let top_level = path.is_empty();
-    for clip in &effect.effect_clips {
-        if top_level && !timeline.effect_clip_is_audible(clip.source_clip) {
-            continue;
-        }
-        let Some(child) = project.effect(clip.source.id) else {
-            continue;
-        };
-        let (start_time, source_offset, duration) = if top_level {
-            timeline
-                .effect_clip_preview_timing(clip.source_clip)
-                .unwrap_or((clip.start_time, clip.source_offset, clip.duration))
-        } else {
-            (clip.start_time, clip.source_offset, clip.duration)
-        };
-        let mut timing = clip.clone();
-        timing.start_time = start_time;
-        timing.source_offset = source_offset;
-        timing.duration = duration;
-        let Some((child_time, parent_offset)) =
-            timing.map_instance_time(parent_time, effect, child)
-        else {
-            continue;
-        };
-        let seed = clip.seed.resolve(parent_seed, clip.source_clip);
-        let child_inherited = Arc::new(inherited.for_child(
-            effect.host_transform_track.clone(),
-            clip.transform,
-            parent_offset,
-        ));
-        path.push(clip.source_clip);
-        desired.push(DesiredPreviewInstance {
-            path: path.clone(),
-            effect: child.clone(),
-            time: child_time,
-            seed,
-            transform: Transform::IDENTITY,
-            inherited: child_inherited.clone(),
-            parameter_overrides: clip.parameter_overrides.clone(),
-        });
-        collect_effect_clip_instances(
-            project,
-            child,
-            timeline,
-            child_time,
-            seed,
-            child_inherited,
-            path,
-            desired,
-        );
-        path.pop();
-    }
+            inherited: instance.inherited,
+            parameter_overrides: instance.parameter_overrides,
+        })
+        .collect()
 }
 
 fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance) {

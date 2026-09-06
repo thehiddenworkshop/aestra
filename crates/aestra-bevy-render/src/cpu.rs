@@ -6,6 +6,7 @@ use aestra_runtime::{
     FlipbookFrameContext, MaterialColorPlan, RendererPlanKind, flipbook_frame_index,
 };
 use bevy::{
+    camera::visibility::RenderLayers,
     ecs::system::SystemParam,
     math::Rect,
     prelude::{
@@ -208,19 +209,38 @@ pub(crate) fn present_cpu_effects(
 
 /// Compose after propagation so nonuniform parent scale retains the full affine
 /// transform rather than a lossy TRS decomposition on each pooled particle.
+#[allow(clippy::type_complexity)]
 pub(crate) fn sync_particle_globals(
-    effects: Query<(&PresentedEffect, &bevy::prelude::GlobalTransform), Without<PresentedParticle>>,
+    mut commands: Commands,
+    effects: Query<
+        (
+            &PresentedEffect,
+            &bevy::prelude::GlobalTransform,
+            Option<&RenderLayers>,
+        ),
+        Without<PresentedParticle>,
+    >,
     mut particles: Query<
         (
+            Entity,
             &bevy::prelude::ChildOf,
             &Transform,
             &mut bevy::prelude::GlobalTransform,
+            Option<&RenderLayers>,
         ),
         bevy::prelude::With<PresentedParticle>,
     >,
 ) {
-    for (parent, local, mut global) in &mut particles {
-        if let Ok((effect, placement)) = effects.get(parent.parent()) {
+    for (entity, parent, local, mut global, layers) in &mut particles {
+        if let Ok((effect, placement, desired_layers)) = effects.get(parent.parent()) {
+            // RenderLayers do not inherit through Bevy's entity hierarchy.
+            if layers != desired_layers {
+                if let Some(layers) = desired_layers {
+                    commands.entity(entity).insert(layers.clone());
+                } else {
+                    commands.entity(entity).remove::<RenderLayers>();
+                }
+            }
             let matrix = bevy::prelude::Mat4::from(placement.affine())
                 * bevy::prelude::Mat4::from_cols_array(
                     &effect
@@ -292,7 +312,10 @@ mod tests {
                 sync_particle_globals.after(bevy::transform::TransformSystems::Propagate),
             );
         let placement = Transform::from_xyz(10.0, 20.0, 30.0);
-        let host = app.world_mut().spawn((player, placement)).id();
+        let host = app
+            .world_mut()
+            .spawn((player, placement, RenderLayers::layer(7)))
+            .id();
         let local = Transform::from_xyz(1.0, 2.0, 3.0);
         let particle = app
             .world_mut()
@@ -318,6 +341,13 @@ mod tests {
                     .affine(),
             );
             assert!(actual.abs_diff_eq(expected, 1e-5));
+            assert_eq!(
+                app.world().get::<RenderLayers>(particle),
+                Some(&RenderLayers::layer(7))
+            );
         }
+        app.world_mut().entity_mut(host).remove::<RenderLayers>();
+        app.update();
+        assert!(app.world().get::<RenderLayers>(particle).is_none());
     }
 }

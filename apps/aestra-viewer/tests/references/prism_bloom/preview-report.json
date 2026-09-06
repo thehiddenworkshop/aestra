@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "status": "succeeded",
+  "errors": [],
+  "effect": {
+    "id": "8f245a4d-4c55-4d8b-a404-09a20cf67a01",
+    "name": "Prism Bloom",
+    "duration_seconds": 2.8,
+    "playback_mode": "LoopContinuous",
+    "seek_mode": "StatelessDirect",
+    "emitter_count": 4,
+    "material_count": 4,
+    "material_program_count": 4,
+    "max_particles": 360
+  },
+  "capture": {
+    "tick_rate": 60,
+    "seed": "0xa3572a115eed0001",
+    "frame_width": 960,
+    "frame_height": 540,
+    "contact_sheet_columns": 3,
+    "contact_sheet_rows": 3,
+    "contact_sheet": "contact-sheet.png",
+    "frames": [
+      {
+        "index": 0,
+        "simulation_frame": 11,
+        "time_seconds": 0.18333333333333332,
+        "image": "frame-000.png"
+      },
+      {
+        "index": 1,
+        "simulation_frame": 32,
+        "time_seconds": 0.5333333333333333,
+        "image": "frame-001.png"
+      },
+      {
+        "index": 2,
+        "simulation_frame": 53,
+        "time_seconds": 0.8833333333333333,
+        "image": "frame-002.png"
+      },
+      {
+        "index": 3,
+        "simulation_frame": 74,
+        "time_seconds": 1.2333333333333334,
+        "image": "frame-003.png"
+      },
+      {
+        "index": 4,
+        "simulation_frame": 95,
+        "time_seconds": 1.5833333333333333,
+        "image": "frame-004.png"
+      },
+      {
+        "index": 5,
+        "simulation_frame": 116,
+        "time_seconds": 1.9333333333333333,
+        "image": "frame-005.png"
+      },
+      {
+        "index": 6,
+        "simulation_frame": 137,
+        "time_seconds": 2.283333333333333,
+        "image": "frame-006.png"
+      },
+      {
+        "index": 7,
+        "simulation_frame": 158,
+        "time_seconds": 2.6333333333333333,
+        "image": "frame-007.png"
+      }
+    ]
+  },
+  "compiler": {
+    "diagnostics": [
+      {
+        "severity": "Warning",
+        "code": "UnreachableExpression",
+        "path": "material_program.expressions[0]",
+        "message": "material expression is unreachable from the outputs"
+      }
+    ],
+    "optimizations": {
+      "material_function_calls_authored": 0,
+      "material_function_calls_eliminated": 0,
+      "material_function_calls_live": 0,
+      "constant_expressions": 59,
+      "runtime_parameter_reads": 1,
+      "eliminated_attributes": 1,
+      "material_common_subexpressions": 0,
+      "material_specialized_parameter_reads": 0,
+      "material_pruned_static_branches": 0,
+      "material_pruned_features": 0,
+      "material_texture_samples_authored": 0,
+      "material_texture_samples_eliminated": 0,
+      "material_texture_samples_live": 0
+    },
+    "material_program_fingerprints": [
+      {
+        "program_id": "07ff4306-4d6f-0282-66c8-ed81a581e2e7",
+        "fingerprint": "3a59d7098c9912be355fbff61a9ee0bee2fd3264d38a4fa001a32c4e11360ff0"
+      },
+      {
+        "program_id": "93cc49bb-3d37-0cd4-3940-f3381b755ee7",
+        "fingerprint": "6cf5914f21afd80ce64962b85eec034160d077ae2a9a80de2cd3fb16102f9941"
+      },
+      {
+        "program_id": "98022544-e449-71ec-10c6-41b5e715a63e",
+        "fingerprint": "11d5a689b18ea0aca685a3c20dd40e78c4622b417aa64ce68ffdb6156647e78d"
+      },
+      {
+        "program_id": "b6dd0530-da42-8433-e861-cdef575ae191",
+        "fingerprint": "daa54a1a200b21c54e2fbb002fcc2f782d093d60995e46d546b95a8e32954ece"
+      },
+      {
+        "program_id": "c33131a9-f838-8c6f-7c32-1bae8c5479f9",
+        "fingerprint": "ec5281d5174e258766f9c9083035af96fb985b94493d687921ed271fa6c7b05e"
+      }
+    ]
+  },
+  "runtime": {
+    "requested_backend": "Gpu",
+    "active_backend": "native GPU",
+    "selection_reason": "compute, vertex storage, and indirect drawing are supported",
+    "compatibility": {
+      "target": "native GPU",
+      "compatible": true,
+      "issues": []
+    },
+    "adapter": {
+      "detected": true,
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "device_type": "DiscreteGpu",
+      "driver": "NVIDIA",
+      "limitations": []
+    },
+    "physical_gpu_particle_capacity": 4194240,
+    "configured_gpu_particle_budget": 262144,
+    "effective_gpu_particle_budget": 262144
+  },
+  "metrics": {
+    "cpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_time_ns": {
+      "source": "unavailable"
+    },
+    "alive_particles": {
+      "source": "unavailable"
+    },
+    "submitted_instances": {
+      "source": "unavailable"
+    },
+    "peak_particles": {
+      "source": "unavailable"
+    },
+    "particle_capacity": {
+      "source": "measured",
+      "value": 360
+    },
+    "emitter_count": {
+      "source": "measured",
+      "value": 4
+    },
+    "draw_calls": {
+      "source": "estimated",
+      "value": 4
+    },
+    "dispatch_count": {
+      "source": "estimated",
+      "value": 2
+    },
+    "estimated_overdraw": {
+      "source": "unavailable"
+    },
+    "texture_sample_count": {
+      "source": "estimated",
+      "value": 0
+    },
+    "buffer_memory_bytes": {
+      "source": "estimated",
+      "value": 23112
+    },
+    "texture_memory_bytes": {
+      "source": "estimated",
+      "value": 0
+    },
+    "collision_time_ns": {
+      "source": "unavailable"
+    },
+    "emitters": [
+      {
+        "id": "19ea9132-e094-4daa-b0a5-3dc435cd9431",
+        "name": "Prism Core",
+        "alive_particles": 0,
+        "peak_particles": 0,
+        "particle_capacity": 96
+      },
+      {
+        "id": "f1747de9-8ba2-4f70-beb0-596ba023b956",
+        "name": "Spectrum Shards",
+        "alive_particles": 0,
+        "peak_particles": 0,
+        "particle_capacity": 96
+      },
+      {
+        "id": "5a8a1c6e-fb49-4486-a0dd-41a2d2257fbb",
+        "name": "Floating Dust",
+        "alive_particles": 0,
+        "peak_particles": 0,
+        "particle_capacity": 120
+      },
+      {
+        "id": "ec65a974-0114-4f0c-a49a-1bc19f35759e",
+        "name": "Bloom Ring",
+        "alive_particles": 0,
+        "peak_particles": 0,
+        "particle_capacity": 48
+      }
+    ],
+    "platform_warnings": []
+  }
+}

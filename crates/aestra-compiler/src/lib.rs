@@ -229,7 +229,16 @@ impl EffectCompiler {
         index: &ProjectAssetIndex,
     ) -> Result<CompiledEffectProject, ProjectCompileError> {
         let resolved = index.resolve_effect_project(root)?;
-        self.validate_project_parameter_overrides(&resolved)?;
+        self.compile_resolved_project(&resolved)
+    }
+
+    /// Compile a project already resolved and dependency-validated by ProjectAssetIndex.
+    /// Hosts may migrate material representations in memory before this step.
+    pub fn compile_resolved_project(
+        &self,
+        resolved: &ResolvedEffectProject,
+    ) -> Result<CompiledEffectProject, ProjectCompileError> {
+        self.validate_project_parameter_overrides(resolved)?;
         let function_library =
             MaterialFunctionLibrary::new(resolved.material_functions.values().cloned());
         let compiled_root = Arc::new(
@@ -258,7 +267,7 @@ impl EffectCompiler {
             root: compiled_root,
             dependencies,
         };
-        populate_project_parameter_overrides(&resolved, &mut project);
+        populate_project_parameter_overrides(resolved, &mut project);
         Ok(project)
     }
 

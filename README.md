@@ -212,6 +212,18 @@ fn main() {
 Each player receives an `EffectProfiler` component. It exposes measured CPU and
 particle statistics alongside compiler-estimated draw, dispatch, and buffer costs;
 unsupported measurements such as GPU time remain explicitly unavailable.
+For reusable child clips, resolve the complete project before spawning:
+
+```rust
+let index = aestra_project::ProjectAssetIndex::scan("assets");
+let project = aestra_bevy::EffectCompiler::default().compile_project(&effect, &index)?;
+commands.spawn(EffectPlayer::from_project(std::sync::Arc::new(project)));
+```
+
+Control the root player normally; the plugin manages active child presentations,
+clip timing, seeds, parameters and inherited motion. The editor and viewer use the
+same scheduler. See [nested motion and playback](docs/host_motion_tracks.md#nested-clips).
+Profile summaries and gameplay choreography notifications currently describe the root player.
 Timed semantic notifications are emitted as `AestraChoreographyEvent` observer events. Their
 typed payloads are intentionally distinct from emitter-to-emitter particle lifecycle links, so
 gameplay, audio, and camera systems can subscribe without polling playback time.

@@ -128,9 +128,13 @@ adapters apply `host_transform_context().matrix_at(time)` when presenting them.
 
 ## Nested clips
 
-Open **Nested Moving Trail Lab** in the editor to try a two-level composition:
+Open **Nested Moving Trail Lab** in the editor or viewer to try a two-level composition:
 the root moves and rotates a carrier, which moves and rotates Moving Trail Lab.
 Nonuniform scale and rotated clip placements exercise the complete affine chain.
+
+```sh
+cargo run -p aestra-viewer -- --backend gpu --semantic-materials --effect assets/effects/nested_moving_trail_lab.aestra.ron
+```
 
 Each presented child composes the ancestor motion, its clip placement, and its
 own motion in that order. Composition stays in matrix form, preserving shear
@@ -148,11 +152,35 @@ time zero. A new parent occurrence or child restart starts a new replay context.
 
 Engine integrations can construct `InheritedHostTransform` with `for_child`,
 using the offset returned by `CompiledEffectClip::map_instance_time`, and attach
-it with `EffectInstance::set_inherited_host_transform`. The editor does this
-automatically; the Bevy adapter forwards the instance context to the shared
-renderer. It does not add automatic project/child entity spawning to EffectPlayer.
+it with `EffectInstance::set_inherited_host_transform`. Most hosts can instead
+consume `CompiledEffectProject::instances`; `instances_with` supplies clip filtering,
+transient timing and root motion overrides. The editor, reference evaluation and
+Bevy adapter share this scheduler.
 Changing any ancestor track, clip placement or clock offset invalidates the
 child's history. Equivalent chains and ordinary seeks retain compatible checkpoints.
+
+### Bevy project playback
+
+Compile dependencies with `EffectCompiler::compile_project(&effect, &index)`,
+then spawn `EffectPlayer::from_project(Arc::new(project))`. Keep controlling the
+root player with the usual pause, speed, seed, seek and restart APIs. The plugin
+creates and reconciles child `PresentedEffect` entities marked `EffectClipInstance`;
+they do not own independent clocks. All are parented directly to the root's stable
+placement, avoiding double application of animated ancestry. They inherit root
+visibility, render layers and render mode, plus their clip's seed/parameter overrides.
+Inactive clips disappear; removing the root player cleans up its managed instances,
+and despawning the root removes the hierarchy. Separate root players remain isolated.
+
+The viewer resolves project effects, material programs and material functions
+before starting. `--semantic-materials` migrates root and dependency materials in
+memory only. Texture/mesh loading uses that project's asset directory. Captures
+detect trails anywhere in the dependency tree and advance the root and children
+together; sequential external hosts may use `EffectPlayer::set_playback_time`,
+while discontinuous jumps should use `seek_simulation_time`.
+
+This slice covers particle presentation and replay. Gameplay choreography event
+notifications and the viewer's numeric profile summary remain root-player scoped;
+child particle lifecycle links still execute normally within each compiled effect.
 
 ## Scope
 

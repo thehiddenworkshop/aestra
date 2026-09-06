@@ -1,4 +1,6 @@
 //! Bevy integration for compiled Aestra effects.
+mod project;
+pub use project::EffectClipInstance;
 
 pub use aestra_bevy_render::material::{MaterialRuntimeBinding, compile_material_program};
 pub use aestra_bevy_render::{
@@ -8,14 +10,14 @@ pub use aestra_bevy_render::{
     EffectRequirements, EffectRuntimeStatus, GpuCapabilities, PresentationMode, PresentedEffect,
     RendererCapability, gpu,
 };
-pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
+pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry, ProjectCompileError};
 pub use aestra_core::*;
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
-    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent, EffectInstance,
-    EffectProfile, EmitterProfile, ParameterError, ParticleSample, PlaybackCheckpoint,
-    PlaybackClock, ProfileValue, ProfileValueSource, RendererPlanKind, RuntimeValue, SeekOrigin,
-    SeekPlan, SimulationSeekMode,
+    CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
+    EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
+    PlaybackCheckpoint, PlaybackClock, ProfileValue, ProfileValueSource, RendererPlanKind,
+    RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -62,6 +64,7 @@ impl Plugin for AestraPlugin {
                 prepare_effect_profiles,
                 update_asset_diagnostics,
                 play_effects,
+                project::sync_project_instances,
                 sync_player_presentations,
             )
                 .chain()
@@ -115,6 +118,7 @@ pub struct EffectPlayer {
     render_mode: EffectRenderMode,
     clock: PlaybackClock,
     choreography_events: Vec<DispatchedChoreographyEvent>,
+    project: Option<Arc<CompiledEffectProject>>,
 }
 
 impl EffectPlayer {
@@ -135,7 +139,19 @@ impl EffectPlayer {
             render_mode: EffectRenderMode::Rendered,
             clock: PlaybackClock::default(),
             choreography_events: Vec::new(),
+            project: None,
         }
+    }
+
+    /// Own one root clock; the plugin reconciles active child presentations.
+    pub fn from_project(project: Arc<CompiledEffectProject>) -> Self {
+        let mut player = Self::from_compiled(project.root.clone());
+        player.project = Some(project);
+        player
+    }
+
+    pub fn project(&self) -> Option<&Arc<CompiledEffectProject>> {
+        self.project.as_ref()
     }
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
@@ -215,6 +231,18 @@ impl EffectPlayer {
         } else {
             self.seek(time);
         }
+    }
+
+    /// Synchronize sequential playback driven by an external clock without
+    /// treating every frame as a seek. Use `seek_simulation_time` for jumps.
+    pub fn set_playback_time(&mut self, time: f32) {
+        let duration = self.effect().duration;
+        if self.effect().playback_mode.is_continuous() {
+            self.clock.seek_elapsed_seconds(time, duration);
+        } else {
+            self.clock.seek_seconds(time, duration);
+        }
+        self.sync_instance_time();
     }
 
     pub fn seek_frame(&mut self, frame: u64) {

@@ -617,6 +617,18 @@ the current sprite-material path until the native-GPU compatibility gate approve
   timing edits invalidate checkpoints, while equivalent contexts preserve them.
   Nested Moving Trail Lab exercises two levels of animated clips; clock, project/editor
   composition, history invalidation and native trail replay tests cover the contract.
+  The engine-neutral project scheduler is now shared by reference evaluation, editor
+  preview and Bevy project playback. `EffectPlayer::from_project` owns one root clock
+  and reconciles clockless child presentations by clip path, preserving seek history,
+  inherited transforms, seed/parameter overrides and root render layers/visibility.
+  Inactive clips and removed roots clean up managed children. The viewer resolves
+  complete projects/materials and captures nested trails; lifecycle, pause/seek/loop,
+  multi-root isolation, dependency edits and viewer preparation tests cover the slice.
+  Native nested 3D viewport smoke now runs in GPU visual validation. Prism Bloom's
+  reference intentionally includes its previously omitted Ember Sigil child; a fresh
+  eight-frame comparison matches the updated reference exactly.
+  Nested gameplay choreography notifications and aggregate project profiling remain
+  separate follow-ups; current notifications/profile summaries are root scoped.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

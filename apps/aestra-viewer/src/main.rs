@@ -21,7 +21,9 @@ use bevy::{
     window::WindowResolution,
 };
 use image::{Rgba, RgbaImage, imageops};
-use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::{env, fs, path::PathBuf, sync::Arc};
 
 use preview_report::{
     CompilerPreviewData, PreviewCaptureData, PreviewRuntimeData, write_preview_failure_report,
@@ -71,6 +73,7 @@ fn main() {
         })
     });
     let log_diagnostics = config.diagnostics;
+    let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
     let gpu_bench_effect = config
         .effect_path
@@ -90,7 +93,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins
                 .set(AssetPlugin {
-                    file_path: "../../assets".into(),
+                    file_path: asset_root,
                     ..default()
                 })
                 .set(WindowPlugin {
@@ -113,9 +116,11 @@ fn main() {
         .add_systems(
             Update,
             (
-                viewer_controls,
+                viewer_controls.before(aestra_bevy::AestraSet::Playback),
                 update_hud,
-                drive_capture.after(update_hud),
+                drive_capture
+                    .after(update_hud)
+                    .before(aestra_bevy::AestraSet::Playback),
                 gpu_bench::drive_gpu_bench,
             ),
         );
@@ -143,6 +148,8 @@ fn main() {
 #[derive(Resource)]
 struct PreparedViewer {
     compiled: Arc<aestra_bevy::CompiledEffect>,
+    project: Arc<aestra_bevy::CompiledEffectProject>,
+    asset_root: PathBuf,
     compiler: CompilerPreviewData,
 }
 
@@ -526,7 +533,7 @@ fn resolve_sample_frames(
 struct ViewerHud;
 
 fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFailure> {
-    let mut effect = config
+    let effect = config
         .effect_path
         .as_ref()
         .map_or_else(
@@ -537,42 +544,63 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             message: format!("could not load viewer effect: {error}"),
             diagnostics: Vec::new(),
         })?;
-    let material_programs = load_viewer_material_programs(&effect, config.effect_path.as_deref())
-        .map_err(|message| PreparationFailure {
-        message,
-        diagnostics: Vec::new(),
-    })?;
-    let material_programs = if config.semantic_materials {
-        migrate_viewer_materials(&mut effect, material_programs).map_err(|error| {
-            PreparationFailure {
+    let asset_root = viewer_asset_root(config.effect_path.as_deref())
+        .canonicalize()
+        .map_err(|error| PreparationFailure {
+            message: format!("could not locate viewer assets: {error}"),
+            diagnostics: vec![],
+        })?;
+    let index = aestra_project::ProjectAssetIndex::scan(&asset_root);
+    let mut resolved =
+        index
+            .resolve_effect_project(&effect)
+            .map_err(|error| PreparationFailure {
+                message: format!("could not resolve viewer project: {error}"),
+                diagnostics: vec![],
+            })?;
+    if config.semantic_materials {
+        for effect in std::iter::once(&mut resolved.root).chain(resolved.dependencies.values_mut())
+        {
+            let programs = migrate_viewer_materials(
+                effect,
+                resolved.material_programs.values().cloned().collect(),
+            )
+            .map_err(|error| PreparationFailure {
                 message: format!("could not migrate viewer materials: {error}"),
-                diagnostics: Vec::new(),
-            }
-        })?
-    } else {
-        material_programs
-    };
-    let mut diagnostics = effect.validation_report().diagnostics;
+                diagnostics: vec![],
+            })?;
+            resolved
+                .material_programs
+                .extend(programs.into_iter().map(|p| (p.id, p)));
+        }
+    }
+    let mut diagnostics = std::iter::once(&resolved.root)
+        .chain(resolved.dependencies.values())
+        .flat_map(|effect| effect.validation_report().diagnostics)
+        .collect::<Vec<_>>();
     diagnostics.extend(
-        material_programs
-            .iter()
+        resolved
+            .material_programs
+            .values()
             .flat_map(|program| program.validation_report().diagnostics),
     );
     diagnostics.sort();
     diagnostics.dedup();
-    let material_programs = material_programs
-        .into_iter()
-        .map(|program| (program.id, program))
-        .collect::<BTreeMap<_, _>>();
-    let compiled = EffectCompiler::default()
-        .compile_with_material_programs(&effect, &material_programs)
+    let project = EffectCompiler::default()
+        .compile_resolved_project(&resolved)
         .map_err(|error| PreparationFailure {
-            message: format!("could not compile viewer effect: {error}"),
-            diagnostics: error.report().diagnostics.clone(),
+            message: format!("could not compile viewer project: {error}"),
+            diagnostics: match &error {
+                aestra_bevy::ProjectCompileError::Effect { source, .. } => {
+                    source.report().diagnostics.clone()
+                }
+                _ => diagnostics.clone(),
+            },
         })?;
-    let material_program_fingerprints = compiled
-        .material_programs
-        .iter()
+    let compiled = project.root.clone();
+    let mut material_program_fingerprints = std::iter::once(&project.root)
+        .chain(project.dependencies.values())
+        .flat_map(|effect| &effect.material_programs)
         .map(|program| {
             aestra_bevy::compile_material_program(program)
                 .map(|compiled| {
@@ -590,9 +618,13 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
                 })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    material_program_fingerprints.sort();
+    material_program_fingerprints.dedup();
     let compiler = CompilerPreviewData::new(&compiled, diagnostics, material_program_fingerprints);
     Ok(PreparedViewer {
-        compiled: Arc::new(compiled),
+        compiled,
+        project: Arc::new(project),
+        asset_root,
         compiler,
     })
 }
@@ -621,7 +653,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
         .as_ref()
         .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
-    let mut player = EffectPlayer::from_compiled(Arc::clone(&prepared.compiled));
+    let mut player = EffectPlayer::from_project(Arc::clone(&prepared.project));
     if config.wireframe {
         player.set_render_mode(aestra_bevy::EffectRenderMode::Wireframe);
     }
@@ -685,13 +717,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
     ));
 }
 
-fn load_viewer_material_programs(
-    effect: &EffectAsset,
-    path: Option<&std::path::Path>,
-) -> Result<Vec<MaterialProgram>, String> {
-    if effect.material_instances.is_empty() {
-        return Ok(Vec::new());
-    }
+fn viewer_asset_root(path: Option<&std::path::Path>) -> PathBuf {
     let default_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let parent = path
         .and_then(std::path::Path::parent)
@@ -701,7 +727,15 @@ fn load_viewer_material_programs(
     } else {
         parent
     };
-    let index = aestra_project::ProjectAssetIndex::scan(root);
+    root.to_path_buf()
+}
+
+#[cfg(test)]
+fn load_viewer_material_programs(
+    effect: &EffectAsset,
+    path: Option<&std::path::Path>,
+) -> Result<Vec<MaterialProgram>, String> {
+    let index = aestra_project::ProjectAssetIndex::scan(viewer_asset_root(path));
     effect
         .material_instances
         .iter()
@@ -868,10 +902,14 @@ fn drive_capture(
     if !capture.positioned {
         for mut player in &mut players {
             let sample_frame = capture.sample_frames[capture.next_frame];
-            let has_trails = player
-                .effect()
-                .emitters
-                .iter()
+            let has_trails = std::iter::once(player.effect())
+                .chain(
+                    player
+                        .project()
+                        .into_iter()
+                        .flat_map(|p| p.dependencies.values()),
+                )
+                .flat_map(|effect| &effect.emitters)
                 .filter(|e| e.enabled)
                 .any(|e| {
                     e.renderers
@@ -890,7 +928,6 @@ fn drive_capture(
                 };
                 if frame < sample_frame {
                     player
-                        .instance
                         .set_playback_time((frame + 1) as f32 / DEFAULT_PLAYBACK_TICK_RATE as f32);
                     player.playing = false;
                     capture.history_frame = Some(frame + 1);
@@ -1243,6 +1280,50 @@ mod tests {
         assert_eq!(parse_seed("42").unwrap(), 42);
         assert_eq!(parse_seed("0x2a").unwrap(), 42);
         assert!(parse_seed("seed").is_err());
+    }
+
+    #[test]
+    fn viewer_prepares_nested_projects_and_reports_missing_children() {
+        let config = |path| ViewerConfig {
+            effect_path: Some(path),
+            semantic_materials: true,
+            wireframe: false,
+            capture_mode: None,
+            capture_sampling: CaptureSampling::EvenlySpaced(8),
+            presentation: PresentationMode::Auto,
+            max_gpu_particles: DEFAULT_GPU_PARTICLE_BUDGET,
+            preview_seed: None,
+            diagnostics: false,
+            gpu_bench: None,
+        };
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/effects/nested_moving_trail_lab.aestra.ron");
+        let prepared = prepare_viewer(&config(path)).unwrap_or_else(|e| panic!("{}", e.message));
+        assert_eq!(prepared.project.dependencies.len(), 2);
+        assert!(Arc::ptr_eq(&prepared.compiled, &prepared.project.root));
+        let scheduled = prepared.project.instances(1.0, 23);
+        let leaf = scheduled.iter().find(|i| i.path.len() == 2).unwrap();
+        assert!(!leaf.effect.material_programs.is_empty());
+        assert!(
+            leaf.effect
+                .emitters
+                .iter()
+                .flat_map(|e| &e.renderers)
+                .any(|r| matches!(r.kind, aestra_bevy::RendererPlanKind::Trail { .. }))
+        );
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("missing.aestra.ron");
+        let mut effect = EffectAsset::new("Missing child", 2.0);
+        effect.effect_clips.push(aestra_bevy::EffectClip::new(
+            aestra_bevy::EffectId::new(),
+            0.0,
+            1.0,
+        ));
+        effect.save_ron(&path).unwrap();
+        let error = prepare_viewer(&config(path))
+            .err()
+            .expect("must not silently render only the root");
+        assert!(error.message.contains("resolve viewer project"));
     }
 
     #[test]

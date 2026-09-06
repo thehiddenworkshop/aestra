@@ -3,7 +3,9 @@
 mod checkpoint;
 mod compatibility;
 mod host_transform;
+mod project;
 mod transform_context;
+pub use project::ScheduledEffectInstance;
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
 pub use host_transform::CompiledHostTransformTrack;
@@ -761,18 +763,33 @@ impl CompiledEffectProject {
     /// Deterministically evaluates the root and every active nested clip.
     pub fn evaluate(&self, time: f32, seed: u64, output: &mut Vec<ProjectParticleSample>) {
         output.clear();
-        let mut path = Vec::new();
-        let parameters = default_parameter_values(&self.root);
-        evaluate_project_effect(
-            self,
-            &self.root,
-            time,
-            seed,
-            &parameters,
-            &mut path,
-            Arc::default(),
-            output,
-        );
+        for scheduled in self.instances(time, seed) {
+            let mut parameters = default_parameter_values(&scheduled.effect);
+            apply_compiled_parameter_overrides(
+                &scheduled.effect,
+                &scheduled.parameter_overrides,
+                &mut parameters,
+            );
+            let mut samples = Vec::new();
+            evaluate_with_parameters(
+                &scheduled.effect,
+                scheduled.time,
+                scheduled.seed,
+                &parameters,
+                &mut samples,
+            );
+            let world_from_effect = HostTransformContext {
+                motion: scheduled.effect.host_transform_track.clone(),
+                inherited: scheduled.inherited,
+            }
+            .matrix_at(scheduled.time);
+            output.extend(samples.into_iter().map(|particle| ProjectParticleSample {
+                effect: scheduled.effect.source,
+                instance_path: scheduled.path.clone(),
+                particle,
+                world_from_effect,
+            }));
+        }
     }
 }
 
@@ -784,74 +801,6 @@ pub struct ProjectParticleSample {
     pub particle: ParticleSample,
     /// Full presentation matrix; `particle` remains in effect-local space.
     pub world_from_effect: [f32; 16],
-}
-
-#[allow(clippy::too_many_arguments)]
-fn evaluate_project_effect(
-    project: &CompiledEffectProject,
-    effect: &CompiledEffect,
-    time: f32,
-    seed: u64,
-    parameters: &[RuntimeValue],
-    path: &mut Vec<EffectClipId>,
-    inherited: Arc<InheritedHostTransform>,
-    output: &mut Vec<ProjectParticleSample>,
-) {
-    // Project compilation rejects dependency cycles. Keep manually assembled runtime projects
-    // bounded as a final defense against malformed external data.
-    if path.len() >= 64 {
-        return;
-    }
-    let effect_time = match effect.playback_mode {
-        EffectPlaybackMode::Once => time.clamp(0.0, effect.duration),
-        EffectPlaybackMode::LoopRestart => time.rem_euclid(effect.duration),
-        EffectPlaybackMode::LoopContinuous => time.max(0.0),
-    };
-    let mut local_samples = Vec::new();
-    let context = HostTransformContext {
-        motion: effect.host_transform_track.clone(),
-        inherited: inherited.clone(),
-    };
-    let world_from_effect = context.matrix_at(effect_time);
-    evaluate_with_parameters(effect, effect_time, seed, parameters, &mut local_samples);
-    output.extend(
-        local_samples
-            .into_iter()
-            .map(|particle| ProjectParticleSample {
-                effect: effect.source,
-                instance_path: path.clone(),
-                particle,
-                world_from_effect,
-            }),
-    );
-
-    for clip in &effect.effect_clips {
-        let Some(child) = project.dependencies.get(&clip.source.id) else {
-            continue;
-        };
-        let Some((child_time, parent_offset)) = clip.map_instance_time(effect_time, effect, child)
-        else {
-            continue;
-        };
-        let mut child_parameters = default_parameter_values(child);
-        apply_compiled_parameter_overrides(child, &clip.parameter_overrides, &mut child_parameters);
-        path.push(clip.source_clip);
-        evaluate_project_effect(
-            project,
-            child,
-            child_time,
-            clip.seed.resolve(seed, clip.source_clip),
-            &child_parameters,
-            path,
-            Arc::new(inherited.for_child(
-                effect.host_transform_track.clone(),
-                clip.transform,
-                parent_offset,
-            )),
-            output,
-        );
-        path.pop();
-    }
 }
 
 impl CompiledEffect {

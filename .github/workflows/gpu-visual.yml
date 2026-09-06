@@ -49,6 +49,15 @@ jobs:
           --visual-test apps/aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom
           --frames 8
 
+      - name: Validate nested project playback in the editor viewport
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --semantic-materials
+          --effect assets/effects/nested_moving_trail_lab.aestra.ron
+          --editor-viewport-smoke target/visual-regression/nested-project
+          --sample-times 1,3,5
+
       - name: Compare Ember Sigil reference
         run: >-
           cargo run --locked -p aestra-viewer --
