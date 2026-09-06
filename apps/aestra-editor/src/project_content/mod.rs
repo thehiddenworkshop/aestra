@@ -1,4 +1,5 @@
 //! Editor adapter for one coherent project snapshot and unsaved shared-source drafts.
+pub(crate) mod io;
 mod refresh;
 use crate::*;
 use aestra_compiler::{
@@ -515,5 +516,19 @@ impl EditorProjectContent {
 
     pub(crate) fn content_revision(&self) -> ProjectContentVersion {
         self.version
+    }
+
+    pub(crate) fn prepare_preview(&mut self, effect: &EffectAsset) -> Result<(), String> {
+        let compiled = self.compile_project(effect);
+        self.prepared = Some(PreparedProject {
+            effect: effect.clone(),
+            drafts: self.material_drafts.clone(),
+            compiled: compiled.clone(),
+        });
+        compiled.map(|_| ())
+    }
+
+    pub(crate) fn snapshot_is_current(&self) -> bool {
+        ProjectTreeStamp::scan(self.root()) == self.snapshot.stamp
     }
 }

@@ -1,4 +1,5 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
+mod background;
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
@@ -28,6 +29,7 @@ pub(crate) enum PersistenceSet {
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DocumentProtectionState>()
+            .init_resource::<crate::project_content::io::ProjectIoTasks>()
             .init_resource::<SourceNavigationState>()
             .add_observer(queue_document_action_activation)
             .add_observer(resolve_document_protection)
@@ -83,7 +85,7 @@ struct SourceNavigationEntry {
     timeline: TimelineNavigationSnapshot,
 }
 
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Debug, Default, Clone)]
 pub(crate) struct SourceNavigationState {
     back: Vec<SourceNavigationEntry>,
     forward: Vec<SourceNavigationEntry>,
@@ -510,16 +512,19 @@ fn execute_document_action(
     mut protection: ResMut<DocumentProtectionState>,
     mut timeline: Option<ResMut<TimelineState>>,
     mut navigation: Option<ResMut<SourceNavigationState>>,
+    io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
 ) {
-    if protection.is_open() {
+    if !crate::project_content::io::idle(io_tasks) || protection.is_open() {
         return;
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
-        save_session(
+        background::queue_save(
+            &mut commands,
             &mut session,
+            &catalog,
             matches!(*action, DocumentAction::SaveAs),
+            None,
             &localizer,
-            &mut catalog,
         );
         return;
     }
@@ -579,147 +584,43 @@ fn execute_protected_document_action(
     recovery: &mut RecoveryPersistence,
     autosave: &mut AutosaveState,
     localizer: &Localizer,
-    mut timeline: Option<&mut TimelineState>,
-    mut navigation: Option<&mut SourceNavigationState>,
+    timeline: Option<&mut TimelineState>,
+    navigation: Option<&mut SourceNavigationState>,
 ) {
+    if background::queue_open(
+        action,
+        commands,
+        session,
+        settings,
+        catalog,
+        localizer,
+        timeline.as_deref(),
+        navigation.as_deref(),
+    ) {
+        return;
+    }
     let drafts = std::mem::take(&mut catalog.material_drafts);
     let generation = session.history_generation();
-    (|| match action {
+    match action {
         DocumentAction::New => {
-            if let Some(navigation) = navigation.as_deref_mut() {
+            if let Some(navigation) = navigation {
                 navigation.clear();
             }
             session.new_effect();
             session.playing = settings.preview.play_on_open;
-            if let Some(timeline) = timeline.as_deref_mut() {
+            if let Some(timeline) = timeline {
                 *timeline = TimelineState::framed(session.playback_duration());
             }
             workspace.clear();
             set_persistence_status(session, localizer, PersistenceStatus::CreatedUntitled);
-        }
-        DocumentAction::Open => {
-            if open_effect_dialog(session, settings, catalog, localizer) {
-                if let Some(navigation) = navigation.as_deref_mut() {
-                    navigation.clear();
-                }
-                if let Some(timeline) = timeline.as_deref_mut() {
-                    *timeline = TimelineState::framed(session.playback_duration());
-                }
-                workspace.clear();
-            }
-        }
-        DocumentAction::OpenProject => {
-            let Some(folder) = FileDialog::new()
-                .set_title(localizer.text("project-open-title"))
-                .set_directory(catalog.root())
-                .pick_folder()
-            else {
-                return;
-            };
-            match crate::project::open_folder(session, catalog, &folder) {
-                Ok(()) => {
-                    session.playing = settings.preview.play_on_open;
-                    if let Some(navigation) = navigation.as_deref_mut() {
-                        navigation.clear();
-                    }
-                    if let Some(timeline) = timeline.as_deref_mut() {
-                        *timeline = TimelineState::framed(session.playback_duration());
-                    }
-                    workspace.clear();
-                    session.status = localizer.text("project-opened");
-                }
-                Err(error) => {
-                    set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
-                }
-            }
-        }
-        DocumentAction::OpenCatalog(id) => {
-            if let Some(path) = catalog.openable_path(id)
-                && open_effect_path(session, path, settings, catalog, localizer)
-            {
-                if let Some(navigation) = navigation.as_deref_mut() {
-                    navigation.clear();
-                }
-                if let Some(timeline) = timeline.as_deref_mut() {
-                    *timeline = TimelineState::framed(session.playback_duration());
-                }
-                workspace.clear();
-            }
-        }
-        DocumentAction::OpenCatalogClip(id, clip) => {
-            if let Some(path) = catalog.openable_path(id)
-                && open_effect_path(session, path, settings, catalog, localizer)
-            {
-                if let Some(navigation) = navigation.as_deref_mut() {
-                    navigation.clear();
-                }
-                if let Some(timeline) = timeline.as_deref_mut() {
-                    *timeline = TimelineState::framed(session.playback_duration());
-                }
-                workspace.clear();
-                session.select_effect_clip(clip);
-            }
-        }
-        DocumentAction::OpenSource(id) => {
-            let (Some(timeline), Some(navigation)) =
-                (timeline.as_deref_mut(), navigation.as_deref_mut())
-            else {
-                return;
-            };
-            open_referenced_source(
-                session, settings, catalog, workspace, timeline, navigation, id, localizer,
-            );
-        }
-        DocumentAction::OpenSourceEmitter(id, emitter) => {
-            let (Some(timeline), Some(navigation)) =
-                (timeline.as_deref_mut(), navigation.as_deref_mut())
-            else {
-                return;
-            };
-            if open_referenced_source(
-                session, settings, catalog, workspace, timeline, navigation, id, localizer,
-            ) {
-                session.select_emitter(emitter);
-                if session.selection.primary == SemanticTarget::Emitter(emitter) {
-                    timeline.reveal_emitter(emitter);
-                }
-            }
-        }
-        DocumentAction::BackToSource => {
-            let (Some(timeline), Some(navigation)) =
-                (timeline.as_deref_mut(), navigation.as_deref_mut())
-            else {
-                return;
-            };
-            return_to_source(
-                session, settings, catalog, workspace, timeline, navigation, localizer,
-            );
-        }
-        DocumentAction::ForwardToSource => {
-            let (Some(timeline), Some(navigation)) =
-                (timeline.as_deref_mut(), navigation.as_deref_mut())
-            else {
-                return;
-            };
-            advance_to_source(
-                session, settings, catalog, workspace, timeline, navigation, localizer,
-            );
-        }
-        DocumentAction::NavigateSourceAncestor(depth) => {
-            let (Some(timeline), Some(navigation)) = (timeline, navigation) else {
-                return;
-            };
-            return_to_source_at(
-                session, settings, catalog, workspace, timeline, navigation, depth, localizer,
-            );
         }
         DocumentAction::Exit => {
             autosave.suspended = true;
             discard_active_recovery(recovery);
             commands.write_message(AppExit::Success);
         }
-        DocumentAction::Save | DocumentAction::SaveAs => {}
-    })();
+        _ => {}
+    }
     if session.history_generation() == generation && action != DocumentAction::Exit {
         catalog.material_drafts = drafts;
     }
@@ -748,6 +649,7 @@ fn resolve_document_protection(
     mut protection: ResMut<DocumentProtectionState>,
     mut timeline: Option<ResMut<TimelineState>>,
     mut navigation: Option<ResMut<SourceNavigationState>>,
+    io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
 ) {
     let Ok(action) = actions.get(activate.entity) else {
         return;
@@ -756,9 +658,18 @@ fn resolve_document_protection(
         protection.pending = None;
         return;
     }
-    if *action == DocumentProtectionAction::Save
-        && !save_session(&mut session, false, &localizer, &mut catalog)
-    {
+    if !crate::project_content::io::idle(io_tasks) {
+        return;
+    }
+    if *action == DocumentProtectionAction::Save {
+        background::queue_save(
+            &mut commands,
+            &mut session,
+            &catalog,
+            false,
+            protection.pending,
+            &localizer,
+        );
         return;
     }
     let Some(pending) = protection.pending.take() else {
@@ -1004,6 +915,7 @@ fn discard_active_recovery(persistence: &mut RecoveryPersistence) {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn open_referenced_source(
     session: &mut EditorSession,
     settings: &EditorSettings,
@@ -1085,6 +997,7 @@ fn current_source_navigation_entry(
         .map(|path| source_navigation_entry(session, timeline, path))
 }
 
+#[cfg(test)]
 fn return_to_source(
     session: &mut EditorSession,
     settings: &EditorSettings,
@@ -1103,6 +1016,7 @@ fn return_to_source(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn return_to_source_at(
     session: &mut EditorSession,
     settings: &EditorSettings,
@@ -1130,6 +1044,7 @@ fn return_to_source_at(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn advance_to_source(
     session: &mut EditorSession,
     settings: &EditorSettings,
@@ -1153,6 +1068,7 @@ fn advance_to_source(
     restore_source_navigation_entry(session, workspace, timeline, entry);
 }
 
+#[cfg(test)]
 fn restore_source_navigation_entry(
     session: &mut EditorSession,
     workspace: &mut CurvesState,
@@ -1165,26 +1081,6 @@ fn restore_source_navigation_entry(
     session.seek_time(entry.playhead_time);
     session.playing = entry.playing;
     workspace.clear();
-}
-
-fn open_effect_dialog(
-    session: &mut EditorSession,
-    settings: &EditorSettings,
-    catalog: &mut ProjectEffectCatalog,
-    localizer: &Localizer,
-) -> bool {
-    let mut dialog =
-        FileDialog::new().add_filter(localizer.text("persistence-file-filter-effect"), &["ron"]);
-    if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
-        dialog = dialog.set_directory(directory);
-    } else {
-        dialog = dialog.set_directory(catalog.effect_root());
-    }
-    let Some(path) = dialog.pick_file() else {
-        set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
-        return false;
-    };
-    open_effect_in_project(session, &path, settings, catalog, localizer)
 }
 
 /// Stage the new catalog and document together; failed opens leave the current project intact.
@@ -1486,9 +1382,15 @@ fn handle_window_close_requests(
     mut commands: Commands,
     localizer: Res<Localizer>,
     mut protection: ResMut<DocumentProtectionState>,
+    io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
 ) {
+    let idle = crate::project_content::io::idle(io_tasks);
     for request in close_requests.read() {
         if request.window == *primary {
+            if !idle {
+                session.status = localizer.text("project-operation-close-pending");
+                continue;
+            }
             if document_action_requires_confirmation(&session, &settings) {
                 protection.pending = Some(DocumentAction::Exit);
             } else {
@@ -1768,6 +1670,7 @@ mod tests {
         app.world_mut()
             .trigger(DocumentAction::OpenCatalog(reference));
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Catalog Effect");
@@ -1818,6 +1721,7 @@ mod tests {
         app.world_mut()
             .trigger(DocumentAction::OpenCatalog(reference));
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Material Graph Lab");
@@ -1860,6 +1764,7 @@ mod tests {
         app.world_mut()
             .trigger(DocumentAction::OpenCatalogClip(owner_reference, clip_id));
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.id, owner.id);
@@ -1911,6 +1816,7 @@ mod tests {
             target_id,
         ));
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.id, source.id);
@@ -2288,11 +2194,13 @@ mod tests {
 
         app.world_mut().trigger(DocumentAction::Save);
         app.update();
+        crate::project_content::io::drain(app.world_mut());
         assert!(!app.world().resource::<EditorSession>().dirty);
 
         app.world_mut()
             .trigger(DocumentAction::OpenCatalog(reference));
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         assert_eq!(app.world().resource::<EditorSession>().effect.id, target.id);
         assert!(!app.world().resource::<DocumentProtectionState>().is_open());
@@ -2495,7 +2403,9 @@ mod tests {
 
         app.world_mut().trigger(Activate { entity: save });
         app.update();
+        crate::project_content::io::drain(app.world_mut());
         app.update();
+        crate::project_content::io::drain(app.world_mut());
 
         assert!(!app.world().resource::<EditorSession>().dirty);
         assert_eq!(

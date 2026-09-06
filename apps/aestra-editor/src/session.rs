@@ -80,6 +80,52 @@ pub(crate) struct EditorSession {
 }
 
 impl EditorSession {
+    /// Detached document state for explicit I/O, without particle buffers/checkpoints.
+    /// Keep command history so successful extraction remains undoable; ordinary save
+    /// completions only merge persistence fields into the live session.
+    pub(crate) fn fork_for_io(&self) -> Self {
+        Self {
+            effect: self.effect.clone(),
+            source_path: self.source_path.clone(),
+            selection: self.selection,
+            selected_emitter_region: self.selected_emitter_region,
+            locks: self.locks.clone(),
+            diagnostics: self.diagnostics.clone(),
+            last_diff: self.last_diff.clone(),
+            pending_change: None,
+            interaction_source: None,
+            clock: self.clock,
+            preview_seed: self.preview_seed,
+            solo_emitter: self.solo_emitter,
+            playing: self.playing,
+            speed: self.speed,
+            dirty: self.dirty,
+            material_drafts: self.material_drafts.clone(),
+            status: self.status.clone(),
+            samples: Vec::new(),
+            preview: None,
+            ui_revision: self.ui_revision,
+            history: self.history.clone(),
+            history_generation: self.history_generation,
+            saved_effect: self.saved_effect.clone(),
+            saved_source_bytes: self.saved_source_bytes.clone(),
+            checkpoints: CheckpointStore::default(),
+            effect_revision: self.effect_revision,
+            last_seek: self.last_seek,
+        }
+    }
+
+    /// A save may finish after more edits: accept only the saved baseline, never the worker's
+    /// authored effect/history/playhead. Newer edits remain dirty and undoable.
+    pub(crate) fn accept_io_save(&mut self, saved: &Self) {
+        self.source_path.clone_from(&saved.source_path);
+        self.saved_effect.clone_from(&saved.saved_effect);
+        self.saved_source_bytes
+            .clone_from(&saved.saved_source_bytes);
+        self.status.clone_from(&saved.status);
+        self.update_dirty_state();
+        self.ui_revision += 1;
+    }
     pub fn from_embedded_sample(source: &str) -> Self {
         let effect = EffectAsset::from_ron(source)
             .expect("the bundled Prism Bloom sample must always be valid");
@@ -645,7 +691,8 @@ impl EditorSession {
             ).into());
         }
         self.effect.save_ron(path)?;
-        self.saved_source_bytes = std::fs::read(path).ok();
+        // Record our own bytes, not a possible external replacement racing the completed write.
+        self.saved_source_bytes = Some(self.effect.to_pretty_ron()?.into_bytes());
         self.source_path = Some(path.to_owned());
         self.saved_effect = Some(self.effect.clone());
         self.update_dirty_state();
@@ -664,10 +711,7 @@ impl EditorSession {
     ) {
         self.effect.name = name.into();
         self.source_path = Some(path.into());
-        self.saved_source_bytes = self
-            .source_path
-            .as_deref()
-            .and_then(|path| std::fs::read(path).ok());
+        self.saved_source_bytes = self.effect.to_pretty_ron().ok().map(String::into_bytes);
         self.saved_effect = Some(self.effect.clone());
         self.update_dirty_state();
         self.ui_revision += 1;

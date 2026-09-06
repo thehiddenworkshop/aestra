@@ -1,4 +1,11 @@
 menu-file = File
+project-operation-running = Project operation in progress…
+project-operation-queued-cancelled = Project operation cancelled: the document changed before it started.
+project-operation-open-stale = Open cancelled: the document changed while loading. Unsaved edits were kept.
+project-operation-save-stale = Save finished for the previous document; the current document was kept.
+project-operation-source-stale = Source operation finished in the previous project; the current project was kept.
+project-operation-extract-stale = Reusable source created. The document changed during the operation, so its selection was not replaced.
+project-operation-close-pending = A project operation is still running. Close the window after it completes.
 menu-edit = Edit
 menu-view = View
 menu-help = Help

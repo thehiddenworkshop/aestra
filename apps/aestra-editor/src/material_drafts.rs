@@ -28,6 +28,95 @@ pub(crate) struct MaterialDrafts {
 }
 
 impl MaterialDrafts {
+    /// Worker-only receipts for sources successfully written by a possibly partial save.
+    pub(crate) fn saved_baselines(before: &Self, remaining: &Self) -> Self {
+        fn receipt<T: Clone>(draft: &Draft<T>, bytes: Option<Vec<u8>>) -> Draft<T> {
+            Draft {
+                path: draft.path.clone(),
+                original: draft.current.clone(),
+                current: draft.current.clone(),
+                bytes,
+            }
+        }
+        Self {
+            root: before.root.clone(),
+            programs: before
+                .programs
+                .iter()
+                .filter(|(id, _)| !remaining.programs.contains_key(id))
+                .map(|(id, draft)| {
+                    (
+                        *id,
+                        receipt(
+                            draft,
+                            draft.current.as_ref().map(|value| {
+                                value
+                                    .to_pretty_ron()
+                                    .expect("saved program serialized")
+                                    .into_bytes()
+                            }),
+                        ),
+                    )
+                })
+                .collect(),
+            functions: before
+                .functions
+                .iter()
+                .filter(|(id, _)| !remaining.functions.contains_key(id))
+                .map(|(id, draft)| {
+                    (
+                        *id,
+                        receipt(
+                            draft,
+                            draft.current.as_ref().map(|value| {
+                                value
+                                    .to_pretty_ron()
+                                    .expect("saved function serialized")
+                                    .into_bytes()
+                            }),
+                        ),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// Preserve edits made during a save but rebase them onto exactly what that save wrote.
+    pub(crate) fn accept_saved_baselines(&mut self, before: &Self, receipts: Self) {
+        fn merge<K: Ord, T: Clone + PartialEq>(
+            live: &mut BTreeMap<K, Draft<T>>,
+            before: &BTreeMap<K, Draft<T>>,
+            receipts: BTreeMap<K, Draft<T>>,
+        ) {
+            for (id, receipt) in receipts {
+                // Undo during a save can remove the draft entirely. Recreate that unsaved
+                // intent against the new disk baseline instead of silently accepting the save.
+                match live.entry(id) {
+                    Entry::Vacant(slot) => {
+                        let mut reverted = receipt;
+                        reverted.current = before[slot.key()].original.clone();
+                        if reverted.current != reverted.original {
+                            slot.insert(reverted);
+                        }
+                    }
+                    Entry::Occupied(mut slot) => {
+                        let draft = slot.get_mut();
+                        draft.original = receipt.original;
+                        draft.bytes = receipt.bytes;
+                        if draft.current == draft.original {
+                            slot.remove();
+                        }
+                    }
+                }
+            }
+        }
+        merge(&mut self.programs, &before.programs, receipts.programs);
+        merge(&mut self.functions, &before.functions, receipts.functions);
+        if !self.is_empty() {
+            self.root.clone_from(&before.root);
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.programs.is_empty() && self.functions.is_empty()
     }
@@ -224,6 +313,129 @@ impl MaterialDrafts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn edited_program(root: &Path) -> (MaterialDrafts, MaterialProgram, MaterialProgram) {
+        let original = MaterialProgram::additive_sprite("Original").normalized();
+        original
+            .save_ron(root.join("program.aestra.material.ron"))
+            .unwrap();
+        let mut edited = original.clone();
+        edited.name = "Saved edit".into();
+        let mut drafts = MaterialDrafts::default();
+        drafts
+            .replace_program(&ProjectAssetIndex::scan(root), &original, &edited)
+            .unwrap();
+        (drafts, original, edited)
+    }
+
+    #[test]
+    fn save_receipt_rebases_newer_edits_and_removes_only_unchanged_drafts() {
+        let directory = tempfile::tempdir().unwrap();
+        let (before, _, edited) = edited_program(directory.path());
+        let mut worker = before.clone();
+        worker.save().unwrap();
+        let receipts = MaterialDrafts::saved_baselines(&before, &worker);
+        let mut live = before.clone();
+        live.programs
+            .get_mut(&edited.id)
+            .unwrap()
+            .current
+            .as_mut()
+            .unwrap()
+            .name = "Newer edit".into();
+        live.accept_saved_baselines(&before, receipts.clone());
+        assert_eq!(live.programs[&edited.id].original.as_ref(), Some(&edited));
+        assert_eq!(
+            live.programs[&edited.id].current.as_ref().unwrap().name,
+            "Newer edit"
+        );
+        live.preflight().unwrap();
+        let mut unchanged = before.clone();
+        unchanged.accept_saved_baselines(&before, receipts);
+        assert!(unchanged.is_empty());
+    }
+
+    #[test]
+    fn undo_during_save_remains_an_unsaved_edit_against_the_new_baseline() {
+        let directory = tempfile::tempdir().unwrap();
+        let (before, original, edited) = edited_program(directory.path());
+        let mut worker = before.clone();
+        worker.save().unwrap();
+        let mut undone = MaterialDrafts::default();
+        undone.accept_saved_baselines(&before, MaterialDrafts::saved_baselines(&before, &worker));
+        assert_eq!(undone.programs[&edited.id].original.as_ref(), Some(&edited));
+        assert_eq!(
+            undone.programs[&edited.id].current.as_ref(),
+            Some(&original)
+        );
+        undone.save().unwrap();
+        assert_eq!(
+            MaterialProgram::load_ron(directory.path().join("program.aestra.material.ron"))
+                .unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn partial_save_receipts_keep_failed_drafts_and_accept_successful_ones() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut first = MaterialProgram::additive_sprite("First");
+        first.id = MaterialProgramId::from_u128(1);
+        let mut second = MaterialProgram::additive_sprite("Second");
+        second.id = MaterialProgramId::from_u128(2);
+        first
+            .save_ron(directory.path().join("first.aestra.material.ron"))
+            .unwrap();
+        let second_path = directory.path().join("second.aestra.material.ron");
+        second.save_ron(&second_path).unwrap();
+        let second_bytes = fs::read(&second_path).unwrap();
+        let index = ProjectAssetIndex::scan(directory.path());
+        let mut before = MaterialDrafts::default();
+        for original in [&first, &second] {
+            let mut edited = original.clone();
+            edited.name.push_str(" edited");
+            before.replace_program(&index, original, &edited).unwrap();
+        }
+        // A structural error in the second draft fails after the first source is written.
+        before
+            .programs
+            .get_mut(&second.id)
+            .unwrap()
+            .current
+            .as_mut()
+            .unwrap()
+            .id = MaterialProgramId::from_u128(0);
+        let mut worker = before.clone();
+        assert!(worker.save().is_err());
+        assert_eq!(worker.count(), 1);
+        let mut live = before.clone();
+        live.accept_saved_baselines(&before, MaterialDrafts::saved_baselines(&before, &worker));
+        assert_eq!(live, worker);
+        assert_eq!(fs::read(second_path).unwrap(), second_bytes);
+        live.preflight().unwrap();
+    }
+
+    #[test]
+    fn receipts_use_our_written_bytes_not_an_external_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let (before, _, edited) = edited_program(directory.path());
+        let mut worker = before.clone();
+        worker.save().unwrap();
+        let path = &before.programs[&edited.id].path;
+        let external = format!("// External comment\n{}", fs::read_to_string(path).unwrap());
+        fs::write(path, external).unwrap();
+        let mut live = before.clone();
+        live.programs
+            .get_mut(&edited.id)
+            .unwrap()
+            .current
+            .as_mut()
+            .unwrap()
+            .name = "New edit".into();
+        live.accept_saved_baselines(&before, MaterialDrafts::saved_baselines(&before, &worker));
+        assert!(live.preflight().unwrap_err().contains("changed outside"));
+    }
+
     #[test]
     fn external_comment_changes_block_the_entire_material_save() {
         let directory = tempfile::tempdir().unwrap();

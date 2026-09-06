@@ -1,4 +1,5 @@
 //! Library workspace, project-effect catalog, and panel-local authoring actions.
+mod background;
 
 use crate::feathers::context_menu::{
     keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
@@ -52,6 +53,7 @@ pub(crate) enum LibrarySet {
 impl Plugin for EditorLibraryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectEffectCatalog>()
+            .init_resource::<crate::project_content::io::ProjectIoTasks>()
             .init_resource::<ProjectEffectWatchState>()
             .init_resource::<LibraryState>()
             .init_resource::<LibraryAssetOperationState>()
@@ -77,7 +79,12 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(open_project_effect_context_menu)
             .add_systems(
                 Update,
-                poll_project_effect_catalog.in_set(LibrarySet::Input),
+                (
+                    crate::project_content::io::poll,
+                    poll_project_effect_catalog.run_if(crate::project_content::io::idle),
+                )
+                    .chain()
+                    .in_set(LibrarySet::Input),
             )
             .add_systems(
                 Update,
@@ -2401,12 +2408,17 @@ fn restore_library_context_menu_focus(
 fn execute_library_action(
     action: On<LibraryAction>,
     mut session: ResMut<EditorSession>,
-    mut catalog: ResMut<ProjectEffectCatalog>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut commands: Commands,
+    io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     mut watch: ResMut<ProjectEffectWatchState>,
     mut operation: ResMut<LibraryAssetOperationState>,
     timeline: Option<Res<TimelineState>>,
     localizer: Res<Localizer>,
 ) {
+    if !crate::project_content::io::idle(io_tasks) {
+        return;
+    }
     match *action {
         LibraryAction::RefreshProject => watch.request_refresh(),
         LibraryAction::AddSpriteMaterial => session.add_sprite_material(),
@@ -2447,23 +2459,17 @@ fn execute_library_action(
             else {
                 return;
             };
-            match catalog.move_effect_source(source, &destination) {
-                Ok(moved) => {
-                    watch.accept_current(&catalog);
-                    if is_current {
-                        session.source_path = Some(moved.path.clone());
-                    }
-                    session.ui_revision += 1;
-                    let mut args = FluentArgs::new();
-                    args.set("path", moved.path.display().to_string());
-                    session.status = localizer.text_with("library-status-effect-moved", &args);
-                }
-                Err(error) => {
-                    let mut args = FluentArgs::new();
-                    args.set("message", error.to_string());
-                    session.status = localizer.text_with("library-status-operation-failed", &args);
-                }
-            }
+            background::queue(
+                &mut commands,
+                background::SourceAction::Move {
+                    source,
+                    destination,
+                    current: is_current,
+                },
+                &catalog,
+                &session,
+                &localizer,
+            );
         }
         LibraryAction::InspectProjectEffect(source) => {
             let Some(entry) = catalog.entry(source) else {
@@ -2501,26 +2507,13 @@ fn execute_library_action(
                 session.status = localizer.text("library-status-switch-before-delete");
                 return;
             }
-            let Some(reference) = entry.reference else {
-                session.status = localizer.text("library-status-source-unresolvable");
-                return;
-            };
-            match catalog.effect_usage_graph(reference) {
-                Ok(graph) => {
-                    operation.close_all();
-                    operation.deletion = Some(LibraryEffectDeletionState {
-                        source,
-                        graph,
-                        error: None,
-                    });
-                    session.ui_revision += 1;
-                }
-                Err(error) => {
-                    let mut args = FluentArgs::new();
-                    args.set("message", error);
-                    session.status = localizer.text_with("library-status-operation-failed", &args);
-                }
-            }
+            background::queue(
+                &mut commands,
+                background::SourceAction::InspectDeletion(source),
+                &catalog,
+                &session,
+                &localizer,
+            );
         }
         LibraryAction::CreateReusableEffectFromSelection => {
             let mut emitters = timeline.as_deref().map_or_else(Vec::new, |timeline| {
@@ -2557,12 +2550,14 @@ fn resolve_library_asset_operation(
     actions: Query<&LibraryAssetOperationAction>,
     mut commands: Commands,
     mut state: ResMut<LibraryAssetOperationState>,
-    mut catalog: ResMut<ProjectEffectCatalog>,
-    mut watch: ResMut<ProjectEffectWatchState>,
-    mut session: ResMut<EditorSession>,
-    mut timeline: Option<ResMut<TimelineState>>,
+    catalog: Res<ProjectEffectCatalog>,
+    io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    session: Res<EditorSession>,
     localizer: Res<Localizer>,
 ) {
+    if !crate::project_content::io::idle(io_tasks) {
+        return;
+    }
     let Ok(action) = actions.get(activate.entity) else {
         return;
     };
@@ -2582,75 +2577,26 @@ fn resolve_library_asset_operation(
             let Some(deletion) = state.deletion.clone() else {
                 return;
             };
-            let Some(reference) = catalog
-                .entry(deletion.source)
-                .and_then(|entry| entry.reference)
-            else {
-                if let Some(deletion) = state.deletion.as_mut() {
-                    deletion.error = Some(localizer.text("library-status-source-missing"));
-                }
-                session.ui_revision += 1;
-                return;
-            };
-            match catalog.effect_usage_graph(reference) {
-                Ok(graph) if graph != deletion.graph => {
-                    if let Some(deletion) = state.deletion.as_mut() {
-                        deletion.graph = graph;
-                        deletion.error = Some(localizer.text("library-delete-usages-changed"));
-                    }
-                    session.ui_revision += 1;
-                    return;
-                }
-                Err(error) => {
-                    if let Some(deletion) = state.deletion.as_mut() {
-                        deletion.error = Some(error);
-                    }
-                    session.ui_revision += 1;
-                    return;
-                }
-                Ok(_) => {}
-            }
-            match catalog.delete_effect_source(deletion.source) {
-                Ok(entry) => {
-                    watch.accept_current(&catalog);
-                    state.close_all();
-                    session.ui_revision += 1;
-                    let mut args = FluentArgs::new();
-                    args.set("name", entry.display_name);
-                    session.status = localizer.text_with("library-status-effect-deleted", &args);
-                }
-                Err(error) => {
-                    if let Some(deletion) = state.deletion.as_mut() {
-                        deletion.error = Some(error.to_string());
-                    }
-                    session.ui_revision += 1;
-                }
-            }
+            background::queue(
+                &mut commands,
+                background::SourceAction::Delete(deletion),
+                &catalog,
+                &session,
+                &localizer,
+            );
             return;
         }
         LibraryAssetOperationAction::ConfirmReusableEffectExtraction => {
             let Some(extraction) = state.extraction.clone() else {
                 return;
             };
-            match create_reusable_effect_from_emitters(
-                &extraction,
-                &mut catalog,
-                &mut session,
+            background::queue(
+                &mut commands,
+                background::SourceAction::Extract(extraction),
+                &catalog,
+                &session,
                 &localizer,
-            ) {
-                Ok(()) => {
-                    watch.accept_current(&catalog);
-                    state.extraction = None;
-                    if let Some(timeline) = timeline.as_deref_mut() {
-                        timeline.clear_emitter_selection();
-                    }
-                }
-                Err(error) => {
-                    if let Some(extraction) = state.extraction.as_mut() {
-                        extraction.error = Some(error);
-                    }
-                }
-            }
+            );
             return;
         }
         LibraryAssetOperationAction::ConfirmRename => {}
@@ -2674,28 +2620,16 @@ fn resolve_library_asset_operation(
         }
         return;
     }
-    match catalog.rename_effect_source(rename.source, &rename.draft) {
-        Ok(renamed) => {
-            watch.accept_current(&catalog);
-            if is_current {
-                session.accept_external_source_rename(
-                    renamed.path.clone(),
-                    renamed.display_name.clone(),
-                );
-            } else {
-                session.ui_revision += 1;
-            }
-            let mut args = FluentArgs::new();
-            args.set("name", renamed.display_name.as_str());
-            session.status = localizer.text_with("library-status-effect-renamed", &args);
-            state.rename = None;
-        }
-        Err(error) => {
-            if let Some(rename) = state.rename.as_mut() {
-                rename.error = Some(error.to_string());
-            }
-        }
-    }
+    background::queue(
+        &mut commands,
+        background::SourceAction::Rename {
+            rename,
+            current: is_current,
+        },
+        &catalog,
+        &session,
+        &localizer,
+    );
 }
 
 #[derive(Debug)]
@@ -4496,6 +4430,9 @@ mod tests {
         app.world_mut().trigger(Activate { entity: confirm });
 
         let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.name, "Editor Test Effect");
+        crate::project_content::io::drain(app.world_mut());
+        let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Renamed Effect");
         assert_eq!(
             session.source_path.as_deref().unwrap().file_name().unwrap(),
@@ -5220,6 +5157,7 @@ mod tests {
 
         app.world_mut()
             .trigger(LibraryAction::DeleteProjectEffect(source));
+        crate::project_content::io::drain(app.world_mut());
         assert_eq!(
             app.world()
                 .resource::<LibraryAssetOperationState>()
@@ -5237,6 +5175,7 @@ mod tests {
             .id();
         app.world_mut().trigger(Activate { entity: confirm });
 
+        crate::project_content::io::drain(app.world_mut());
         assert!(!child_path.exists());
         assert!(
             !app.world()

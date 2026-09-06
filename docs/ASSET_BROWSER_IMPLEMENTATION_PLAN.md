@@ -1,9 +1,9 @@
 # Asset Browser delivery plan
 
-Status: implementation started, 2026-09-06. AB0 contracts/inventory recorded and AB1
+Status: updated 2026-09-07. AB0 contracts/inventory recorded and AB1
 read-only content model implemented. AB2a background refresh/editor adapter and AB2b1
-cached semantic queries implemented; AB2b2 explicit-open/post-write foreground scan removal
-remains before the browser UI. Platform caveats are recorded in
+cached semantic queries implemented. AB2b2 explicit-open/post-write background operations
+implemented; AB3 read-only browser UI is next. Platform caveats are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md). No browser UI yet.
 
 This is the repository-specific delivery plan for
@@ -79,14 +79,14 @@ The first browser will not offer a warning-only “unsafe” bypass.
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
-slice; AB2 is in progress (AB2a/AB2b1 implemented, AB2b2 pending), AB3–AB9 are pending.
+slice; AB2a/AB2b1/AB2b2 are implemented, AB3–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
 | --- | --- | --- | --- |
 | AB0 — Contracts and migration inventory | P0 | — | Contracts, characterization coverage and Library parity inventory recorded in the migration checklist. |
 | AB1 — Project content model | P0 | AB0 | Implemented: source tree joined to the existing semantic index, deterministic tests, no UI replacement. Native link/Unix verification caveats remain. |
-| AB2 — Coherent refresh and editor adapter | P0 | AB1 | AB2a/AB2b1 implemented: background refresh, revision guards, draft protection and cached read-only queries. AB2b2 explicit-open/post-write foreground scan removal pending. |
+| AB2 — Coherent refresh and editor adapter | P0 | AB1 | Implemented: background refresh, cached read-only queries, serialized explicit-open/source-write jobs, guarded publication and exact-byte/partial-save protection. Native-dialog/platform acceptance caveats remain in the checklist. |
 | AB3 — Read-only Asset Browser | P1 | AB2 | Tree/grid/list/navigation/search/inspection and existing effect opening usable through retained Feathers UI. |
 | AB4 — Standalone material programs | P1 | AB3 | Open/edit/undo/save a project material without an effect prerequisite. |
 | AB5 — Standalone material functions | P1 | AB4 | Function inputs/outputs/body editing, validation and guarded persistence. |
@@ -166,17 +166,27 @@ open/write transaction timing, so cached presentation data never becomes mutatio
   Existing source commands, deletion-confirmation usage checks and exact-byte save/edit
   preflight retain current-disk validation. Tests exercise cache reads after source removal,
   all four duplicate kinds, dependency parity, replacement and draft/conflict preservation.
-- **AB2b2 next:** move explicit project-open and post-write discovery off the foreground
-  path. This requires prepared operation results and guarded publication, not simply
-  making existing synchronous refresh calls fire-and-forget: create/rename/move/save
-  callers currently rely on immediate coherent results. Preserve Save/Discard/Cancel,
-  current-disk preflight, partial-save recovery, source navigation and stale-result guards.
-  Complete root-switch/error-recovery acceptance before AB3.
+- **AB2b2 implemented:** a serialized `project_content/io.rs` job runner prepares explicit
+  folder/effect opens, saves and Library rename/move/delete/extraction operations on the
+  I/O pool. File/destination pickers remain on the UI thread; discovery, source preflight,
+  writes and post-write reconciliation run on workers. Completed writes are drained,
+  never abandoned by a second operation or window close. Publication is memory-only and
+  checks project/document identity; opens and owner replacement also check revisions,
+  effect/draft contents, pending proposals and locks. Save completion merges only saved
+  baselines, preserving newer edits, undo and transport. Partial saves retain failed
+  drafts; undo during a save is rebased onto the bytes actually written. Save/Discard/Cancel
+  and source back/forward navigation remain guarded; cancelling pending navigation does
+  not interrupt its save. Deletion rediscovers current owners before checking confirmed
+  usages. Tests cover prepared publication, root switches, failures, concurrent edits,
+  partial saves, source operations and the production completion poller.
 
-The recurring refresh worker and its apply step do no filesystem discovery/parsing on
-the UI thread. This is not yet the broader no-foreground-I/O exit gate below:
-explicit open/write operations still use their existing synchronous paths. Cached UI
-semantic queries are now memory-only, including compilation dependency resolution.
+Interactive project discovery, periodic refresh and explicit-open/post-write scans now
+run off the UI thread. Cached UI semantic queries and operation-result publication are
+memory-only, including compilation dependency resolution. This is not a claim that all
+editor filesystem work is asynchronous: initial startup/recovery bootstrap, settings/
+recovery persistence and narrow first-edit/explode disk validation retain their existing
+paths. Native dialog behavior still needs manual platform acceptance; no browser UI
+acceptance is claimed.
 
 Move pure snapshot/diff/debounce logic out of Library into project-domain code.
 Keep scheduling/task execution in the editor; use bounded polling first. Discover
@@ -197,8 +207,9 @@ playback, rebuild every panel or discard graph drafts.
 
 Exit tests: external add/change/delete/folder move, partial writes settling, permission
 failure/recovery, stale scan on project switch, same-size edits via explicit refresh,
-internal-write watcher echo and dirty material/function/effect preservation. No scan
-or parsing on the UI frame path; unchanged snapshots cause no UI invalidation.
+internal-write watcher echo and dirty material/function/effect preservation. No project
+discovery or read-only semantic parsing on the interactive UI frame path; unchanged
+snapshots cause no UI invalidation. Explicit mutation preflight must still validate disk.
 
 ### AB3 — Read-only browser, inspection and basic routing
 
@@ -372,7 +383,8 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step:** AB2b2 prepared explicit-open/post-write operations and guarded
-background publication. Preserve the native-platform test caveats in the checklist until
-verified on capable hosts. Do not begin by renaming `library.rs`, implementing
-thumbnails, or rewriting material editing; the browser UI starts in AB3.
+**Immediate next step:** AB3 read-only Asset Browser using the published source tree and
+semantic index: bounded folder navigation, grid/list, search/filtering, inspection and
+guarded effect opening in the existing Assets dock slot. Preserve the native-platform
+test caveats in the checklist until verified on capable hosts. Do not begin by merely
+renaming `library.rs`, implementing thumbnails, or rewriting material editing.

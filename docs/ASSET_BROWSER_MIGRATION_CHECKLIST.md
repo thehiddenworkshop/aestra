@@ -68,7 +68,7 @@ passes both command and interaction checks; AB8 is the removal gate.
 | Search/filter/list activation/context menu — `library.rs`, shared Feathers list/focus controls | In-place filtering, live-search, semantic activation and keyboard-context tests | AB3 tree/grid/list parity, scroll isolation and keyboard-only workflow. |
 | Unsaved-change/migration/recovery dialogs — `persistence.rs` | Save/Discard/Cancel routing, failed navigation, external changes, autosave/cleanup and migration backup tests | AB2–AB5 shared document coordinator; keep source navigation and window-close protection. |
 | Docking/settings/localization — `docking.rs`, settings/persistence and locale resources | Persisted `DockPanel::Assets`, compact surfaces and localized Library tests | AB3/AB8 reuse dock identity; preserve closed/floating panels and restart state. |
-| Polling, clean reload, dirty conflicts, texture root — `project_content/`, `library.rs` | Stable-observation debounce, project-switch baseline, internal-save echo and moved dirty source tests | AB2a background generic refresh and AB2b1 cached semantic queries implemented; texture-root sync retained. AB2b2 removes explicit-open/post-write foreground scans. |
+| Polling, clean reload, dirty conflicts, texture root — `project_content/`, `library.rs` | Stable-observation debounce, project-switch baseline, internal-save echo and moved dirty source tests | AB2a background generic refresh, AB2b1 cached queries and AB2b2 explicit-open/post-write workers implemented; texture-root sync retained. |
 
 There is no general project-file Duplicate action in the current Library action enum.
 Do not confuse duplicate-ID diagnostics or emitter duplication with source duplication.
@@ -122,5 +122,21 @@ New tests remove source files after indexing and exercise all cached semantic ki
 dependency/usage resolution and compilation; disk-validating operations still fail.
 Duplicate-ID tests cover all four kinds. Refresh tests verify cache replacement and
 draft overlays, and first-edit preflight rejects a newer external program.
-Explicit open/write transaction timing, foreground post-write scans and manual browser
-acceptance are not covered as completed work; AB2b2 is the next integration slice.
+
+AB2b2 moves explicit project/effect opening and source save/create-extraction/rename/move/
+delete preparation into serialized background jobs. Workers keep existing exact-byte
+preflight, recheck deletion usages against freshly discovered owners, reconcile after
+partial failures and prepare coherent snapshots. Main-thread publication does not read
+disk, replace newer effect/material edits or silently accept undo during a save. Completed
+writes cannot be dropped by another operation or native window close. Save/Discard/Cancel,
+source navigation and failure/root-switch recovery are covered by the asynchronous routes.
+
+AB2b2 local validation (`+1.98.1-x86_64-pc-windows-msvc`): editor suite 518 passes;
+project suite 58 reported passes and compiler suite 102 passes; workspace/all-targets
+Clippy with warnings denied, formatting and diff whitespace checks. Tests pause between
+worker preparation and publication to exercise races deterministically. Native-link
+privilege/Unix caveats above remain. Native file/folder/save and migration dialogs have
+not been manually revalidated with these workers; the folder-preparation path is tested
+without opening a dialog. Startup/recovery bootstrap, settings/recovery writes and narrow
+first-edit/explode disk preflight remain synchronous and outside this scan-removal slice.
+The legacy Library remains visible; AB3 browser UI and its manual acceptance are next.

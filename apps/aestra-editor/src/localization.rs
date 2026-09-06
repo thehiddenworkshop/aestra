@@ -45,6 +45,13 @@ pub(crate) struct LocalizedText(pub(crate) &'static str);
 
 #[cfg(test)]
 const EDITOR_MESSAGE_IDS: &[&str] = &[
+    "project-operation-running",
+    "project-operation-queued-cancelled",
+    "project-operation-open-stale",
+    "project-operation-save-stale",
+    "project-operation-source-stale",
+    "project-operation-extract-stale",
+    "project-operation-close-pending",
     "menu-file",
     "menu-edit",
     "menu-view",
