@@ -19,6 +19,7 @@ pub(super) fn update_project_profiles(
         Option<&gpu::GpuTrailStatistics>,
         Option<&gpu::GpuParticleStatistics>,
         Option<&gpu::GpuSimulationTiming>,
+        Option<&gpu::GpuPreparationTiming>,
     )>,
     children: Query<
         (
@@ -28,6 +29,7 @@ pub(super) fn update_project_profiles(
             Option<&gpu::GpuTrailStatistics>,
             Option<&gpu::GpuParticleStatistics>,
             Option<&gpu::GpuSimulationTiming>,
+            Option<&gpu::GpuPreparationTiming>,
         ),
         Without<EffectPlayer>,
     >,
@@ -38,7 +40,7 @@ pub(super) fn update_project_profiles(
         commands.entity(entity).remove::<ProjectProfiler>();
     }
     let mut by_root: BTreeMap<Entity, Vec<ProjectInstanceProfile>> = BTreeMap::new();
-    for (child, presented, runtime, trails, particles, timing) in &children {
+    for (child, presented, runtime, trails, particles, timing, preparation) in &children {
         let mut profile = runtime.map_or_else(
             || EffectProfile::from_compiled(presented.effect()),
             |runtime| bevy_profile(presented.effect(), &capabilities, runtime),
@@ -58,6 +60,12 @@ pub(super) fn update_project_profiles(
             && let Some((timing, context)) = timing.zip(particles)
         {
             profile.gpu_simulation_time_ns = timing.time_ns(&presented.instance, context);
+        }
+        if runtime
+            .is_some_and(|r| matches!(r.active, ActiveBackend::Gpu | ActiveBackend::GpuReadback))
+            && let Some((preparation, context)) = preparation.zip(particles)
+        {
+            preparation.record_profile(&presented.instance, context, &mut profile);
         }
         if runtime.is_some_and(|runtime| runtime.active == ActiveBackend::Gpu)
             && let Some(particles) = particles
@@ -90,6 +98,7 @@ pub(super) fn update_project_profiles(
         trails,
         particles,
         timing,
+        preparation,
     ) in &mut roots
     {
         record_presented_profile(
@@ -108,6 +117,13 @@ pub(super) fn update_project_profiles(
         ) && let Some((timing, context)) = timing.zip(particles)
         {
             root_profile.0.gpu_simulation_time_ns = timing.time_ns(&presented.instance, context);
+        }
+        if matches!(
+            runtime.active,
+            ActiveBackend::Gpu | ActiveBackend::GpuReadback
+        ) && let Some((preparation, context)) = preparation.zip(particles)
+        {
+            preparation.record_profile(&presented.instance, context, &mut root_profile.0);
         }
         if runtime.active == ActiveBackend::Gpu
             && let Some(particles) = particles

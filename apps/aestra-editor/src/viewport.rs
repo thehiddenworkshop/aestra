@@ -2730,6 +2730,7 @@ fn update_preview(
             Option<&aestra_bevy_render::gpu::GpuParticleStatistics>,
             Option<&aestra_bevy_render::EffectRuntimeStatus>,
             Option<&aestra_bevy_render::gpu::GpuSimulationTiming>,
+            Option<&aestra_bevy_render::gpu::GpuPreparationTiming>,
         ),
         With<PreviewPresentedEffect>,
     >,
@@ -2746,15 +2747,15 @@ fn update_preview(
     preview.live_particle_count = 0;
     for desired in desired {
         let mut profile = aestra_runtime::EffectProfile::from_compiled(&desired.effect);
-        let observed = gpu_stats.iter().find(|(p, _, path, _, _, _)| {
+        let observed = gpu_stats.iter().find(|(p, _, path, _, _, _, _)| {
             path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect)
         });
-        let native_gpu = observed.is_some_and(|(_, _, _, _, runtime, _)| {
+        let native_gpu = observed.is_some_and(|(_, _, _, _, runtime, _, _)| {
             runtime.is_some_and(|runtime| runtime.active == aestra_bevy_render::ActiveBackend::Gpu)
         });
         if !native_gpu {
             // Reuse the renderer's evaluation. Headless previews have no presentation entity.
-            let (samples, elapsed) = if let Some((presented, _, _, _, _, _)) = observed {
+            let (samples, elapsed) = if let Some((presented, _, _, _, _, _, _)) = observed {
                 let elapsed = presented.cpu_evaluation_time();
                 let samples = if elapsed.is_some() {
                     presented.cpu_samples()
@@ -2782,12 +2783,10 @@ fn update_preview(
                 session.samples.extend_from_slice(samples);
             }
         }
-        profile.record_trail_usage(
-            observed.and_then(|(p, stats, _, _, _, _)| {
-                stats.and_then(|stats| stats.usage(&p.instance))
-            }),
-        );
-        if let Some((p, _, _, Some(context), Some(runtime), Some(timing))) = observed
+        profile.record_trail_usage(observed.and_then(|(p, stats, _, _, _, _, _)| {
+            stats.and_then(|stats| stats.usage(&p.instance))
+        }));
+        if let Some((p, _, _, Some(context), Some(runtime), Some(timing), _)) = observed
             && matches!(
                 runtime.active,
                 aestra_bevy_render::ActiveBackend::Gpu
@@ -2796,7 +2795,16 @@ fn update_preview(
         {
             profile.gpu_simulation_time_ns = timing.time_ns(&p.instance, context);
         }
-        if let Some((p, _, _, particles, Some(runtime), _)) = observed
+        if let Some((p, _, _, Some(context), Some(runtime), _, Some(preparation))) = observed
+            && matches!(
+                runtime.active,
+                aestra_bevy_render::ActiveBackend::Gpu
+                    | aestra_bevy_render::ActiveBackend::GpuReadback
+            )
+        {
+            preparation.record_profile(&p.instance, context, &mut profile);
+        }
+        if let Some((p, _, _, particles, Some(runtime), _, _)) = observed
             && runtime.active == aestra_bevy_render::ActiveBackend::Gpu
         {
             // Native metrics come only from GPU telemetry; no reference simulation runs here.
@@ -2812,7 +2820,7 @@ fn update_preview(
             }
             preview.live_particle_count += profile.alive_particles.value().unwrap_or(0) as usize;
         }
-        if let Some((p, _, _, Some(particles), Some(runtime), _)) = observed
+        if let Some((p, _, _, Some(particles), Some(runtime), _, _)) = observed
             && matches!(
                 runtime.active,
                 aestra_bevy_render::ActiveBackend::Gpu

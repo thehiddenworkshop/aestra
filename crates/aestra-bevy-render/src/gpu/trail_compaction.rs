@@ -15,6 +15,7 @@ struct Pipeline {
 }
 
 pub(super) struct Entry {
+    owner: Entity,
     pub output: Buffer,
     pub fallback: Buffer,
     pub render_params: Buffer,
@@ -194,6 +195,7 @@ fn prepare(
         state.entries.insert(
             entity,
             Entry {
+                owner: draw.owner,
                 output,
                 fallback,
                 scratch,
@@ -215,36 +217,50 @@ fn compact(
     cache: Res<PipelineCache>,
     pipeline: Res<Pipeline>,
     mut state: ResMut<TrailCompaction>,
+    timing: super::preparation_timing::TimingContext,
+    mut timer: Local<super::simulation_timing::SimulationTimer>,
 ) {
-    if state.entries.is_empty() {
-        return;
-    }
     let [Some(classify), Some(prefix), Some(scatter)] =
         pipeline.passes.map(|id| cache.get_compute_pipeline(id))
     else {
         return;
     };
-    for (stage, pipeline) in [classify, prefix, scatter].into_iter().enumerate() {
-        // Separate passes provide storage visibility between classification, scan and scatter.
-        let mut pass = context
-            .command_encoder()
-            .begin_compute_pass(&ComputePassDescriptor {
-                label: Some("aestra compact trail segments"),
-                ..default()
-            });
-        pass.set_pipeline(pipeline);
-        for entry in state.entries.values() {
-            pass.set_bind_group(0, &entry.bindings, &[]);
-            pass.dispatch_workgroups(
-                match stage {
-                    0 => entry.owners.div_ceil(64),
-                    1 => 1,
-                    _ => entry.count.div_ceil(64),
-                },
-                1,
-                1,
-            );
+    let mut batch = timing.begin(&mut timer);
+    let mut by_owner: BTreeMap<Entity, Vec<&Entry>> = BTreeMap::new();
+    for entry in state.entries.values() {
+        by_owner.entry(entry.owner).or_default().push(entry);
+    }
+    for (owner, entries) in by_owner {
+        let index = batch.as_mut().and_then(|b| timing.owner(b, owner));
+        for (stage, pipeline) in [classify, prefix, scatter].into_iter().enumerate() {
+            // Separate passes provide storage visibility; each owner has one complete timing window.
+            let mut pass = context
+                .command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("aestra compact trail segments"),
+                    timestamp_writes: index
+                        .and_then(|i| batch.as_ref()?.writes(i, stage == 0, stage == 2)),
+                });
+            pass.set_pipeline(pipeline);
+            for entry in &entries {
+                pass.set_bind_group(0, &entry.bindings, &[]);
+                pass.dispatch_workgroups(
+                    match stage {
+                        0 => entry.owners.div_ceil(64),
+                        1 => 1,
+                        _ => entry.count.div_ceil(64),
+                    },
+                    1,
+                    1,
+                );
+            }
         }
+    }
+    if let Some(batch) = batch {
+        batch.finish(
+            context.command_encoder(),
+            timing.mailboxes.compaction.clone(),
+        );
     }
     state.dispatched = true;
 }

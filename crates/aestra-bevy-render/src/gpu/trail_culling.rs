@@ -30,6 +30,7 @@ struct TrailCullPipeline {
 }
 
 struct Entry {
+    owner: Entity,
     params: Buffer,
     indirect: Buffer,
     bindings: BindGroup,
@@ -206,6 +207,7 @@ fn prepare(
             culling.entries.insert(
                 key,
                 Entry {
+                    owner: draw.owner,
                     params: params_buffer,
                     indirect,
                     bindings,
@@ -225,29 +227,41 @@ fn cull(
     pipeline: Res<TrailCullPipeline>,
     mut culling: ResMut<TrailCulling>,
     compaction: Res<super::trail_compaction::TrailCompaction>,
+    timing: super::preparation_timing::TimingContext,
+    mut timer: Local<super::simulation_timing::SimulationTimer>,
 ) {
     let Some(pipeline) = cache.get_compute_pipeline(pipeline.pipeline) else {
         return;
     };
-    let mut pass = context
-        .command_encoder()
-        .begin_compute_pass(&ComputePassDescriptor {
-            label: Some("aestra trail visibility"),
-            ..default()
-        });
-    pass.set_pipeline(pipeline);
+    let mut batch = timing.begin(&mut timer);
+    let mut by_owner: BTreeMap<Entity, Vec<&Entry>> = BTreeMap::new();
     for entry in culling.entries.values() {
-        pass.set_bind_group(
-            0,
-            if compaction.dispatched {
-                &entry.compact_bindings
-            } else {
-                &entry.bindings
-            },
-            &[],
-        );
-        pass.dispatch_workgroups(1, 1, 1);
+        by_owner.entry(entry.owner).or_default().push(entry);
     }
-    drop(pass);
+    for (owner, entries) in by_owner {
+        let index = batch.as_mut().and_then(|b| timing.owner(b, owner));
+        let mut pass = context
+            .command_encoder()
+            .begin_compute_pass(&ComputePassDescriptor {
+                label: Some("aestra trail visibility"),
+                timestamp_writes: index.and_then(|i| batch.as_ref()?.writes(i, true, true)),
+            });
+        pass.set_pipeline(pipeline);
+        for entry in entries {
+            pass.set_bind_group(
+                0,
+                if compaction.dispatched {
+                    &entry.compact_bindings
+                } else {
+                    &entry.bindings
+                },
+                &[],
+            );
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+    }
+    if let Some(batch) = batch {
+        batch.finish(context.command_encoder(), timing.mailboxes.culling.clone());
+    }
     culling.dispatched = true;
 }

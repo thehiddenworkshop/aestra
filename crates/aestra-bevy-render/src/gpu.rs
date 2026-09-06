@@ -4,6 +4,7 @@ mod bounds;
 mod geometry_statistics;
 mod mesh_inputs;
 mod particle_statistics;
+mod preparation_timing;
 mod render;
 mod ribbon_bounds;
 mod simulation_timing;
@@ -67,6 +68,7 @@ use bevy::{
     },
 };
 pub use particle_statistics::GpuParticleStatistics;
+pub use preparation_timing::GpuPreparationTiming;
 pub use simulation_timing::GpuSimulationTiming;
 use std::{
     collections::BTreeMap,
@@ -271,6 +273,9 @@ struct SimulationPipeline {
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
+    let preparation_mailboxes = preparation_timing::PreparationMailboxes::default();
+    app.insert_resource(preparation_mailboxes.clone())
+        .add_systems(PreUpdate, preparation_timing::receive);
     let geometry_mailbox = geometry_statistics::GeometryMailbox::default();
     app.insert_resource(geometry_mailbox.clone())
         .add_systems(PreUpdate, geometry_statistics::receive);
@@ -292,6 +297,7 @@ pub(crate) fn install(app: &mut App) {
         return;
     };
     render_app
+        .insert_resource(preparation_mailboxes)
         .insert_resource(geometry_mailbox)
         .init_resource::<geometry_statistics::Submissions>()
         .add_systems(
@@ -665,6 +671,7 @@ pub(crate) fn prepare_gpu_effects(
             GpuPresentationPrepared,
             particle_statistics,
             GpuSimulationTiming::default(),
+            GpuPreparationTiming::default(),
         ));
         commands.entity(entity).with_children(|parent| {
             parent

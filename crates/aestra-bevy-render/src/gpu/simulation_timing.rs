@@ -14,7 +14,7 @@ const MAX_IN_FLIGHT: usize = 3;
 /// for this instance in the sampled frame, but never its draw calls or CPU work.
 #[derive(Component, Debug, Default)]
 pub struct GpuSimulationTiming {
-    sample: Option<Sample>,
+    pub(super) sample: Option<Sample>,
 }
 
 impl GpuSimulationTiming {
@@ -36,11 +36,11 @@ impl GpuSimulationTiming {
 }
 
 #[derive(Clone, Debug)]
-struct Sample {
-    owner: Entity,
-    token: u32,
-    time: f32,
-    nanoseconds: u64,
+pub(super) struct Sample {
+    pub owner: Entity,
+    pub token: u32,
+    pub time: f32,
+    pub nanoseconds: u64,
 }
 
 #[derive(Default)]
@@ -54,7 +54,11 @@ struct Mailbox {
 pub(super) struct TimingMailbox(Arc<Mutex<Mailbox>>);
 
 impl TimingMailbox {
-    fn publish(&self, sequence: u64, samples: Vec<Sample>) {
+    pub(super) fn take(&self) -> Option<Vec<Sample>> {
+        self.0.lock().unwrap().pending.take()
+    }
+
+    pub(super) fn publish(&self, sequence: u64, samples: Vec<Sample>) {
         let mut mailbox = self.0.lock().unwrap();
         if sequence > mailbox.sequence {
             mailbox.sequence = sequence;

@@ -150,6 +150,8 @@ enum ProfilerAction {
 enum ProfilerMetric {
     CpuTime,
     GpuTime,
+    GpuTrailCompaction,
+    GpuTrailCulling,
     AliveParticles,
     SubmittedInstances,
     SubmittedVertices,
@@ -371,7 +373,7 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
         .map(|instance| {
             let profile = &instance.profile;
             format!(
-                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} ({})",
+                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} ({})",
                 instance.label(),
                 localizer.text("profiler-metric-live-particles"),
                 format_profile_count(profile.alive_particles).0,
@@ -383,6 +385,10 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
                 format_profile_duration(profile.cpu_time_ns).0,
                 localizer.text("profiler-metric-gpu-time"),
                 format_profile_duration(profile.gpu_simulation_time_ns).0,
+                localizer.text("profiler-metric-gpu-trail-compaction"),
+                format_profile_duration(profile.gpu_trail_compaction_time_ns).0,
+                localizer.text("profiler-metric-gpu-trail-culling"),
+                format_profile_duration(profile.gpu_trail_culling_time_ns).0,
                 localizer.text("profiler-metric-submitted-instances"),
                 format_profile_count(profile.submitted_instances).0,
                 localizer.text("profiler-metric-submitted-vertices"),
@@ -458,6 +464,8 @@ fn spawn_profiler_metric_grid(
             for metric in [
                 ProfilerMetric::CpuTime,
                 ProfilerMetric::GpuTime,
+                ProfilerMetric::GpuTrailCompaction,
+                ProfilerMetric::GpuTrailCulling,
                 ProfilerMetric::AliveParticles,
                 ProfilerMetric::SubmittedInstances,
                 ProfilerMetric::SubmittedVertices,
@@ -659,6 +667,8 @@ fn spawn_profiler_availability(
                 &localizer.text("profiler-estimated-description"),
             );
             if profile.gpu_simulation_time_ns.source() == ProfileValueSource::Unavailable
+                || profile.gpu_trail_compaction_time_ns.source() == ProfileValueSource::Unavailable
+                || profile.gpu_trail_culling_time_ns.source() == ProfileValueSource::Unavailable
                 || profile.submitted_vertices.source() == ProfileValueSource::Unavailable
             {
                 spawn_panel_label_value(
@@ -695,6 +705,8 @@ fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
     match metric {
         ProfilerMetric::CpuTime => "profiler-metric-cpu-update",
         ProfilerMetric::GpuTime => "profiler-metric-gpu-time",
+        ProfilerMetric::GpuTrailCompaction => "profiler-metric-gpu-trail-compaction",
+        ProfilerMetric::GpuTrailCulling => "profiler-metric-gpu-trail-culling",
         ProfilerMetric::AliveParticles => "profiler-metric-live-particles",
         ProfilerMetric::SubmittedInstances => "profiler-metric-submitted-instances",
         ProfilerMetric::SubmittedVertices => "profiler-metric-submitted-vertices",
@@ -720,6 +732,12 @@ fn profiler_metric_display(
     match metric {
         ProfilerMetric::CpuTime => format_profile_duration(profile.cpu_time_ns),
         ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_simulation_time_ns),
+        ProfilerMetric::GpuTrailCompaction => {
+            format_profile_duration(profile.gpu_trail_compaction_time_ns)
+        }
+        ProfilerMetric::GpuTrailCulling => {
+            format_profile_duration(profile.gpu_trail_culling_time_ns)
+        }
         ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
         ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
         ProfilerMetric::SubmittedVertices => format_profile_count(profile.submitted_vertices),
@@ -950,6 +968,8 @@ mod tests {
             let text = project_profile_text(&state, &localizer);
             assert!(text.contains(&localizer.text("profiler-metric-live-particles")));
             assert!(text.contains(&localizer.text("profiler-metric-gpu-time")));
+            assert!(text.contains(&localizer.text("profiler-metric-gpu-trail-compaction")));
+            assert!(text.contains(&localizer.text("profiler-metric-gpu-trail-culling")));
             assert!(text.contains(&state.project.instances[1].path[0].to_string()));
         }
         assert!(state.ingest_project(vec![root]).profile_rebuilt());

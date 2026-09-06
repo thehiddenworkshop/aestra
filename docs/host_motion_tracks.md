@@ -304,6 +304,52 @@ Context tokens, sequence numbers and simulation times reject stale readbacks aft
 restarts, edits or owner replacement. View changes appear asynchronously, not in the same
 frame as a visibility toggle. Totals sum the same frame's valid owner snapshots.
 
+### GPU trail preparation timings
+
+The profiler and viewer report expose `gpu_trail_compaction_time_ns` and
+`gpu_trail_culling_time_ns` separately from simulation. One compaction timestamp window
+encloses classification, prefixing and scattering for all trail renderers owned by an
+instance. A culling window includes that instance's eligible per-view visibility dispatches.
+These are GPU pass-boundary elapsed windows (including inter-pass dependencies), not CPU
+submission times, individual shader instruction costs or draw/rasterization times.
+
+Each stage reuses the non-blocking timestamp infrastructure with its own latest-frame
+mailbox: at most three batches of 256 owner windows (4 KiB readback and 4 KiB resolve storage
+per batch). Unsupported adapters, failed maps and owners omitted by the query budget are
+unavailable. Backpressure skips measurement without blocking rendering or growing storage.
+Pipeline-pending/no-eligible-work owners have no new timed window; completed empty snapshots
+clear previous stage values. Non-trail native-GPU instances and empty choreography carriers
+contribute known zero. CPU-reference execution does not borrow these GPU observations.
+Owner/context tokens reject stale results after seeks, restarts and edits; sequence numbers
+reject out-of-order completions independently for each stage. Project totals sum active paths,
+preserving missing measurements rather than presenting partial totals. Stages arrive
+asynchronously and must not be added together as if they were a synchronized total frame time.
+
+Run the opt-in native preparation benchmark on an otherwise idle GPU:
+
+```powershell
+cargo test -p aestra-bevy-render --test trail_preparation_benchmark --locked -- --ignored --nocapture
+```
+
+The harness requires timestamp queries, warms up eight iterations, then reports median and
+p95 over 64 samples. It uses the production portable compaction/culling shaders, 1,024 owner
+slots, 64 history points and flat caps, with 16 active owners (sparse) or 1,024 (dense), and
+one/four views. It checks the resulting indirect count every iteration. Blocking waits are
+confined to this explicit benchmark, never editor profiling. There is no machine-independent
+performance threshold and no claim of full rendering speedup.
+
+Example on AMD Radeon integrated graphics, Vulkan, driver 26.3.1 (2026-09-06):
+
+| Case | Views | Candidate → compact instances | Compaction median / p95 | Culling median / p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Sparse | 1 | 64,512 → 1,008 | 0.793 / 1.062 ms | 3.20 / 3.48 µs |
+| Sparse | 4 | 64,512 → 1,008 | 0.792 / 1.805 ms | 3.28 / 3.60 µs |
+| Dense | 1 | 64,512 → 64,512 | 1.607 / 4.390 ms | 3.32 / 3.52 µs |
+| Dense | 4 | 64,512 → 64,512 | 1.603 / 4.395 ms | 3.36 / 3.64 µs |
+
+Dense histories can incur compaction cost with no reduction in submitted geometry. These
+results motivate measuring draw cost and any adaptive bypass before claiming a net win.
+
 ## Scope
 
 This is explicit supplied motion, not a recorder of arbitrary live entity motion.

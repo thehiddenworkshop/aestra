@@ -530,6 +530,8 @@ struct PreviewMetrics {
     cpu_time_ns: PreviewMetric<u64>,
     gpu_time_ns: PreviewMetric<u64>,
     gpu_simulation_time_ns: PreviewMetric<u64>,
+    gpu_trail_compaction_time_ns: PreviewMetric<u64>,
+    gpu_trail_culling_time_ns: PreviewMetric<u64>,
     alive_particles: PreviewMetric<u32>,
     submitted_instances: PreviewMetric<u32>,
     submitted_vertices: PreviewMetric<u64>,
@@ -559,6 +561,8 @@ impl From<&EffectProfile> for PreviewMetrics {
             cpu_time_ns: profile.cpu_time_ns.into(),
             gpu_time_ns: profile.gpu_time_ns.into(),
             gpu_simulation_time_ns: profile.gpu_simulation_time_ns.into(),
+            gpu_trail_compaction_time_ns: profile.gpu_trail_compaction_time_ns.into(),
+            gpu_trail_culling_time_ns: profile.gpu_trail_culling_time_ns.into(),
             alive_particles: profile.alive_particles.into(),
             submitted_instances: profile.submitted_instances.into(),
             submitted_vertices: profile.submitted_vertices.into(),
@@ -682,6 +686,8 @@ mod tests {
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let mut profile = EffectProfile::from_compiled(&compiled);
         profile.gpu_simulation_time_ns = ProfileValue::Measured(100);
+        profile.gpu_trail_compaction_time_ns = ProfileValue::Measured(10);
+        profile.gpu_trail_culling_time_ns = ProfileValue::Measured(3);
         profile.submitted_instances = ProfileValue::Measured(5);
         profile.submitted_vertices = ProfileValue::Measured(20);
         profile.submitted_primitives = ProfileValue::Measured(10);
@@ -738,6 +744,15 @@ mod tests {
             "measured"
         );
         assert_eq!(value["metrics"]["gpu_simulation_time_ns"]["value"], 300);
+        assert_eq!(
+            value["metrics"]["gpu_trail_compaction_time_ns"]["value"],
+            20
+        );
+        assert_eq!(value["metrics"]["gpu_trail_culling_time_ns"]["value"], 6);
+        assert_eq!(
+            value["instances"][1]["metrics"]["gpu_trail_compaction_time_ns"]["source"],
+            "measured"
+        );
         assert_eq!(
             value["instances"][1]["metrics"]["gpu_simulation_time_ns"]["value"],
             200

@@ -673,6 +673,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   cap/UV modes, expired/coincident history, repeated rebuilds and per-camera compact counts.
   Nested-trail captures are byte-identical at 1/3/5 seconds; the final draw drops from 4,032
   candidate instances to 189 segments (95.3% fewer submitted instances).
+  GPU render-preparation timing now measures separate per-owner compaction and trail-culling
+  windows using the bounded asynchronous timestamp infrastructure. Compaction covers all three
+  passes across the owner's renderers once; culling includes every eligible view. Editor tiles,
+  active-instance details, Bevy profiles and viewer reports preserve measured/unavailable
+  provenance, context invalidation and empty-carrier zeroes. Independent-stage, owner isolation,
+  late-result, failed/omitted snapshot and project aggregation tests cover the contract.
+  An opt-in native sparse/dense benchmark validates indirect counts and reports median/p95
+  preparation times at one/four views. Nested viewport captures remain byte-identical.
   Rendering timing remains separate work.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.

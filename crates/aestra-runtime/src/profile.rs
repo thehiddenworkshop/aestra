@@ -67,6 +67,10 @@ pub struct EffectProfile {
     pub gpu_time_ns: ProfileValue<u64>,
     /// GPU reset/simulation/ribbon/trail work only; excludes rendering.
     pub gpu_simulation_time_ns: ProfileValue<u64>,
+    /// Stable trail compaction only, shared across views; excludes simulation and drawing.
+    pub gpu_trail_compaction_time_ns: ProfileValue<u64>,
+    /// Trail visibility compute work summed across eligible views; excludes drawing.
+    pub gpu_trail_culling_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
     pub submitted_instances: ProfileValue<u32>,
     /// Submitted vertex/index references, not unique vertices or visible pixels.
@@ -156,6 +160,8 @@ impl EffectProfile {
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
             gpu_simulation_time_ns: ProfileValue::Unavailable,
+            gpu_trail_compaction_time_ns: ProfileValue::Unavailable,
+            gpu_trail_culling_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
             submitted_instances: ProfileValue::Unavailable,
             submitted_vertices: ProfileValue::Unavailable,

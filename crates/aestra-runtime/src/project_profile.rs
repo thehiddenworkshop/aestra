@@ -31,6 +31,8 @@ impl Default for ProjectProfile {
                 cpu_time_ns: M(0),
                 gpu_time_ns: U,
                 gpu_simulation_time_ns: U,
+                gpu_trail_compaction_time_ns: U,
+                gpu_trail_culling_time_ns: U,
                 alive_particles: M(0),
                 submitted_instances: M(0),
                 submitted_vertices: M(0),
@@ -121,6 +123,8 @@ impl ProjectProfile {
                 instance.profile.draw_calls = ProfileValue::Measured(0);
                 // No simulation dispatch exists for an empty choreography carrier.
                 instance.profile.gpu_simulation_time_ns = ProfileValue::Measured(0);
+                instance.profile.gpu_trail_compaction_time_ns = ProfileValue::Measured(0);
+                instance.profile.gpu_trail_culling_time_ns = ProfileValue::Measured(0);
             }
         }
         let mut total = Self::default().total;
@@ -140,6 +144,8 @@ impl ProjectProfile {
             cpu_time_ns,
             gpu_time_ns,
             gpu_simulation_time_ns,
+            gpu_trail_compaction_time_ns,
+            gpu_trail_culling_time_ns,
             alive_particles,
             submitted_instances,
             submitted_vertices,
@@ -280,6 +286,30 @@ mod tests {
         project.update(vec![child, other]);
         assert_eq!(project.total.submitted_vertices, M(u64::MAX));
         assert_eq!(project.total.submitted_primitives, M(u64::MAX));
+    }
+
+    #[test]
+    fn preparation_totals_keep_stage_provenance_and_saturate_per_active_path() {
+        let source = EffectId::new();
+        let mut carrier = entry(vec![], source, 0);
+        carrier.profile.particle_capacity = M(0);
+        let mut child = entry(vec![EffectClipId::new()], source, 1);
+        child.profile.gpu_trail_compaction_time_ns = M(100);
+        child.profile.gpu_trail_culling_time_ns = M(20);
+        let mut other = child.clone();
+        other.path.push(EffectClipId::new());
+        let mut project = ProjectProfile::default();
+        project.update(vec![carrier.clone(), child.clone(), other.clone()]);
+        assert_eq!(project.total.gpu_trail_compaction_time_ns, M(200));
+        assert_eq!(project.total.gpu_trail_culling_time_ns, M(40));
+        assert_eq!(project.total.gpu_time_ns, U);
+        other.profile.gpu_trail_culling_time_ns = U;
+        project.update(vec![carrier, child.clone(), other.clone()]);
+        assert_eq!(project.total.gpu_trail_compaction_time_ns, M(200));
+        assert_eq!(project.total.gpu_trail_culling_time_ns, U);
+        other.profile.gpu_trail_compaction_time_ns = M(u64::MAX);
+        project.update(vec![child, other]);
+        assert_eq!(project.total.gpu_trail_compaction_time_ns, M(u64::MAX));
     }
 
     #[test]
