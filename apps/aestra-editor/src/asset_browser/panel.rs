@@ -15,6 +15,42 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Component)]
 pub(super) struct BrowserItems;
 #[derive(Component)]
+pub(super) struct PendingLocateRow(Entity);
+
+/// Layout must settle before revealing a located item; this also works for wrapped grid rows.
+pub(super) fn scroll_to_located_row(
+    mut commands: Commands,
+    mut lists: Query<(
+        Entity,
+        &PendingLocateRow,
+        &ComputedNode,
+        &UiGlobalTransform,
+        &mut ScrollPosition,
+    )>,
+    rows: Query<(&ComputedNode, &UiGlobalTransform), With<BrowserRow>>,
+) {
+    for (entity, pending, viewport, transform, mut scroll) in &mut lists {
+        let Ok((row, row_transform)) = rows.get(pending.0) else {
+            commands.entity(entity).remove::<PendingLocateRow>();
+            continue;
+        };
+        if viewport.size().y <= 0.0 || row.size().y <= 0.0 {
+            continue;
+        }
+        let top = row_transform.translation.y
+            - row.size().y * 0.5
+            - (transform.translation.y - viewport.size().y * 0.5);
+        let bottom = top + row.size().y;
+        let delta = if top < 0.0 {
+            top
+        } else {
+            (bottom - viewport.size().y).max(0.0)
+        };
+        scroll.y += delta * viewport.inverse_scale_factor();
+        commands.entity(entity).remove::<PendingLocateRow>();
+    }
+}
+#[derive(Component)]
 pub(super) struct BrowserRow(pub(super) ProjectSourceId);
 #[derive(Component)]
 pub(super) struct BrowserSearch;
@@ -75,7 +111,7 @@ pub(super) struct BrowserUi {
     tree_footer: Entity,
     items: Entity,
     footer: Entity,
-    details: Entity,
+    selection_count: Entity,
     rows: BTreeMap<ProjectSourceId, CachedRow>,
     visible: Vec<ProjectSourceId>,
     rendered: Option<AssetBrowserState>,
@@ -139,7 +175,7 @@ fn spawn_browser(
         tree_footer: Entity::PLACEHOLDER,
         items: Entity::PLACEHOLDER,
         footer: Entity::PLACEHOLDER,
-        details: Entity::PLACEHOLDER,
+        selection_count: Entity::PLACEHOLDER,
         rows: BTreeMap::new(),
         visible: Vec::new(),
         rendered: None,
@@ -267,11 +303,10 @@ fn spawn_browser(
                 AccessibleLabel(localizer.text("browser-items")),
             ));
         });
-        ui.footer = root.spawn(row_node()).id();
-        ui.details = root
+        ui.footer = root
             .spawn(Node {
-                display: Display::None,
-                ..default()
+                min_height: Val::Px(22.0),
+                ..row_node()
             })
             .id();
     });
@@ -380,7 +415,7 @@ fn icon(
         .id()
 }
 
-fn tool(
+pub(super) fn tool(
     parent: &mut ChildSpawnerCommands,
     assets: &AssetServer,
     label: String,
@@ -449,11 +484,14 @@ pub(super) fn sync_panel(
     assets: Res<AssetServer>,
     search: Query<&Children, With<BrowserSearch>>,
     mut editable: Query<&mut EditableText, With<FeathersTextInput>>,
+    mut focus: ResMut<bevy::input_focus::InputFocus>,
+    mut last_locate: Local<u64>,
 ) {
     if state.legacy {
         return;
     }
     let content = catalog.content();
+    let locate_requested = *last_locate != state.locate_revision;
     for mut ui in &mut panels {
         if ui.rendered.as_ref() == Some(&*state) && !localizer.is_changed() {
             continue;
@@ -463,6 +501,10 @@ pub(super) fn sync_panel(
         if let Some(previous) = previous {
             layout_only.selected = previous.selected;
             layout_only.sources_width = previous.sources_width;
+            layout_only.inspected = previous.inspected;
+            layout_only.inspection_tab = previous.inspection_tab;
+            layout_only.inspection_page = previous.inspection_page;
+            layout_only.locate_revision = previous.locate_revision;
         }
         let content_changed = previous != Some(&layout_only) || localizer.is_changed();
         let navigation_changed = previous.is_none_or(|old| {
@@ -578,6 +620,17 @@ pub(super) fn sync_panel(
                 let row = &ui.rows[&entry.id];
                 let mut description =
                     format!("{}\n{}", localizer.text(kind.label()), entry.path.display());
+                if let Some(metadata) = &entry.metadata {
+                    description.push_str(&format!(
+                        "\n{} B{}",
+                        metadata.bytes,
+                        if metadata.readonly {
+                            localizer.text("browser-readonly-flag")
+                        } else {
+                            String::new()
+                        }
+                    ));
+                }
                 if let Some(error) = &entry.error {
                     description.push_str(&format!("\n{error}"));
                 }
@@ -654,6 +707,16 @@ pub(super) fn sync_panel(
             clear(&mut commands, ui.footer);
             commands.entity(ui.footer).with_children(|parent| {
                 paging(parent, state.page, entries.len(), false, &localizer);
+                ui.selection_count = parent
+                    .spawn((
+                        Text::new(""),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ))
+                    .id();
                 if let Some(error) = content
                     .source(state.folder_id(content))
                     .and_then(|e| e.error.as_deref())
@@ -663,6 +726,14 @@ pub(super) fn sync_panel(
                     text(parent, localizer.text("browser-empty"));
                 }
             });
+        }
+        if locate_requested && let Some(row) = state.selected.and_then(|id| ui.rows.get(&id)) {
+            commands.entity(ui.items).insert((
+                ActiveDescendant(Some(row.entity)),
+                PendingLocateRow(row.entity),
+            ));
+            focus.set(ui.items, bevy::input_focus::FocusCause::Navigated);
+            *last_locate = state.locate_revision;
         }
         for id in &ui.visible {
             let row = &ui.rows[id];
@@ -681,21 +752,12 @@ pub(super) fn sync_panel(
                 commands.entity(row.entity).remove::<Selected>();
             }
         }
-        if ui
-            .rendered
-            .as_ref()
-            .is_none_or(|old| old.selected != state.selected || old.version != state.version)
-            || localizer.is_changed()
-        {
-            sync_details(
-                &mut commands,
-                ui.details,
-                state.selected,
-                content,
-                &catalog,
-                &localizer,
-            );
-        }
+        let count = usize::from(state.selected.is_some());
+        let mut args = FluentArgs::new();
+        args.set("count", count as i64);
+        commands.entity(ui.selection_count).insert(Text::new(
+            localizer.text_with("browser-selection-count", &args),
+        ));
         ui.rendered = Some(state.clone());
     }
 }
@@ -757,6 +819,12 @@ fn sync_chrome(
                     BrowserAction::Refresh,
                     false,
                 ),
+                (
+                    "browser-locate-current",
+                    "icons/center-focus.svg",
+                    BrowserAction::LocateCurrentEffect,
+                    false,
+                ),
             ] {
                 let button = tool(
                     parent,
@@ -769,27 +837,6 @@ fn sync_chrome(
                 );
                 ui.toolbar_actions.push((button, action));
             }
-            tool(
-                parent,
-                assets,
-                localizer.text("browser-open-project"),
-                "icons/plus.svg",
-                BrowserAction::OpenProject,
-                false,
-                false,
-            );
-            let open = mini_button(
-                parent,
-                &localizer.text("browser-open-selected"),
-                BrowserAction::OpenSelected,
-            );
-            ui.toolbar_actions.push((open, BrowserAction::OpenSelected));
-            parent
-                .commands()
-                .entity(open)
-                .insert(EditorTooltip::description(
-                    localizer.text("browser-open-hint"),
-                ));
         });
     }
     // Keep keyboard focus on toolbar controls when navigating or switching layout.
@@ -1046,7 +1093,7 @@ fn kind_color(kind: Kind) -> Color {
     }
 }
 
-fn sync_details(
+pub(super) fn sync_details(
     commands: &mut Commands,
     entity: Entity,
     selected: Option<ProjectSourceId>,

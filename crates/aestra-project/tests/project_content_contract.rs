@@ -282,6 +282,163 @@ fn classification(content: &ProjectContent, path: &str) -> Class {
     file.classification
 }
 
+#[test]
+fn direct_source_relations_are_cached_typed_and_duplicate_safe() {
+    use aestra_core::{
+        AssetDefinition, EffectClip, MaterialId,
+        material::{
+            MaterialFunctionRef, MaterialInstance, MaterialProgramRef, MaterialRenderState,
+        },
+    };
+    use aestra_project::{ProjectRelationStatus as Status, ProjectRelationTarget as Target};
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let child = EffectAsset::new("Child", 1.0);
+    let mut owner = EffectAsset::new("Owner", 2.0);
+    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
+    owner
+        .assets
+        .push(AssetDefinition::texture("Noise", "textures\\noise.png"));
+    let function = function();
+    let mut material = MaterialProgram::additive_sprite("Material").normalized();
+    let call = MaterialExpressionId::new();
+    material.expressions.push(MaterialExpression {
+        id: call,
+        kind: MaterialExpressionKind::FunctionCall {
+            function: MaterialFunctionRef::Project(function.id),
+            arguments: Default::default(),
+            output: function.outputs[0].id,
+        },
+    });
+    material.outputs.alpha = call;
+    owner.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(material.id),
+        values: Default::default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    child.save_ron(root.join("child.aestra.ron")).unwrap();
+    owner.save_ron(root.join("owner.aestra.ron")).unwrap();
+    material
+        .save_ron(root.join("material.aestra.material.ron"))
+        .unwrap();
+    function
+        .save_ron(root.join("function.aestra.material-function.ron"))
+        .unwrap();
+    fs::create_dir(root.join("textures")).unwrap();
+    fs::write(root.join("textures/noise.png"), []).unwrap();
+    let content = ProjectContent::scan(root);
+    assert!(
+        content.asset_index().diagnostics().is_empty(),
+        "{:?}",
+        content.asset_index().diagnostics()
+    );
+    let owner_id = content
+        .unique_source_for_asset(ProjectAssetId::Effect(owner.id))
+        .unwrap()
+        .id;
+    let material_id = content
+        .unique_source_for_asset(ProjectAssetId::MaterialProgram(material.id))
+        .unwrap()
+        .id;
+    let function_id = content
+        .unique_source_for_asset(ProjectAssetId::MaterialFunction(function.id))
+        .unwrap()
+        .id;
+    let child_id = content
+        .unique_source_for_asset(ProjectAssetId::Effect(child.id))
+        .unwrap()
+        .id;
+    let texture = Target::File("textures/noise.png".into());
+    let report = content.source_relations(owner_id);
+    assert!(report.dependencies_known && report.usages_complete);
+    assert_eq!(report.dependencies.len(), 3);
+    assert_eq!(content.relation_status(&texture), Status::Available);
+    assert_eq!(content.source_relations(child_id).usages[0].owner, owner_id);
+    assert_eq!(
+        content.source_relations(material_id).usages[0].owner,
+        owner_id
+    );
+    assert_eq!(
+        content.source_relations(function_id).usages[0].owner,
+        material_id
+    );
+    let texture_id = content.relation_sources(&texture)[0];
+    assert!(!content.source_relations(texture_id).dependencies_known);
+    assert_eq!(
+        content.source_relations(texture_id).usages[0].owner,
+        owner_id
+    );
+    assert_eq!(
+        content.relation_status(&Target::BuiltIn(ProjectAssetId::MaterialProgram(
+            material.id
+        ))),
+        Status::BuiltIn
+    );
+    assert!(
+        content
+            .relation_sources(&Target::BuiltIn(ProjectAssetId::MaterialProgram(
+                material.id
+            )))
+            .is_empty()
+    );
+    material
+        .save_ron(root.join("duplicate.aestra.material.ron"))
+        .unwrap();
+    fs::remove_file(root.join("textures/noise.png")).unwrap();
+    fs::write(root.join("broken.aestra.ron"), "not a document").unwrap();
+    assert_eq!(content.source_relations(owner_id), report);
+    assert_eq!(content.relation_status(&texture), Status::Available);
+    let refreshed = ProjectContent::scan(root);
+    assert_eq!(refreshed.relation_status(&texture), Status::Missing);
+    let material_target = Target::Asset(ProjectAssetId::MaterialProgram(material.id));
+    assert_eq!(
+        refreshed.relation_status(&material_target),
+        Status::Ambiguous
+    );
+    assert_eq!(refreshed.relation_sources(&material_target).len(), 2);
+    for source in refreshed.relation_sources(&material_target) {
+        let report = refreshed.source_relations(source);
+        assert_eq!(report.usages[0].owner, owner_id);
+        assert!(!report.usages_complete);
+    }
+    let broken = refreshed
+        .source_tree()
+        .at_relative_path("broken.aestra.ron")
+        .unwrap()
+        .id;
+    assert!(!refreshed.source_relations(broken).dependencies_known);
+    let removed_root = root.to_owned();
+    directory.close().unwrap();
+    assert_eq!(content.source_relations(owner_id), report);
+    assert_eq!(content.relation_status(&texture), Status::Available);
+    assert_eq!(
+        ProjectContent::scan(removed_root).relation_status(&texture),
+        Status::Unavailable
+    );
+}
+
+#[test]
+fn cyclic_effect_relations_are_direct_not_recursive() {
+    use aestra_core::EffectClip;
+    let directory = tempfile::tempdir().unwrap();
+    let mut a = EffectAsset::new("A", 1.0);
+    let mut b = EffectAsset::new("B", 1.0);
+    a.effect_clips.push(EffectClip::new(b.id, 0.0, 1.0));
+    b.effect_clips.push(EffectClip::new(a.id, 0.0, 1.0));
+    a.save_ron(directory.path().join("a.aestra.ron")).unwrap();
+    b.save_ron(directory.path().join("b.aestra.ron")).unwrap();
+    let content = ProjectContent::scan(directory.path());
+    for id in [a.id, b.id] {
+        let source = content
+            .unique_source_for_asset(ProjectAssetId::Effect(id))
+            .unwrap();
+        let report = content.source_relations(source.id);
+        assert_eq!(report.dependencies.len(), 1);
+        assert_eq!(report.usages.len(), 1);
+    }
+}
+
 fn write_effect(path: &Path, id: EffectId) {
     let mut effect = EffectAsset::new("Fire", 1.0);
     effect.id = id;

@@ -383,6 +383,7 @@ pub(crate) enum DockPanel {
     #[default]
     Viewport,
     Assets,
+    AssetInspector,
     #[serde(alias = "Inspector")]
     Properties,
     Timeline,
@@ -397,9 +398,10 @@ pub(crate) enum DockPanel {
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Viewport,
         Self::Assets,
+        Self::AssetInspector,
         Self::Properties,
         Self::Timeline,
         Self::Curves,
@@ -415,6 +417,7 @@ impl DockPanel {
         match self {
             Self::Viewport => "panel-viewport",
             Self::Assets => "panel-assets",
+            Self::AssetInspector => "panel-asset-inspector",
             Self::Properties => "panel-properties",
             Self::Timeline => "panel-timeline",
             Self::Curves => "panel-curves",
@@ -826,6 +829,11 @@ impl WorkspaceLayout {
         if self.root.contains(panel) {
             return self.root.activate(panel);
         }
+        if panel == DockPanel::AssetInspector
+            && let Some(target) = self.root.node_containing(DockPanel::Properties)
+        {
+            return self.dock(panel, target, DockDrop::Center);
+        }
         if panel == DockPanel::Settings {
             let Some(target) = self.root.node_containing(DockPanel::Viewport) else {
                 return false;
@@ -1020,7 +1028,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         | DockPanel::MaterialGraph
         | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
-        DockPanel::Assets | DockPanel::Properties => [420.0, 520.0],
+        DockPanel::Assets | DockPanel::Properties | DockPanel::AssetInspector => [420.0, 520.0],
         DockPanel::Settings => [520.0, 620.0],
         DockPanel::Viewport => [760.0, 540.0],
     };
@@ -1079,6 +1087,25 @@ fn workspace_layout_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asset_inspector_is_optional_closable_and_reuses_properties_stack() {
+        let mut layout = WorkspaceLayout::default();
+        assert!(!layout.contains(DockPanel::AssetInspector));
+        let assets = layout.root.node_containing(DockPanel::Assets);
+        let properties = layout.root.node_containing(DockPanel::Properties);
+        assert!(layout.show(DockPanel::AssetInspector));
+        assert_eq!(
+            layout.root.node_containing(DockPanel::AssetInspector),
+            properties
+        );
+        assert_eq!(layout.root.node_containing(DockPanel::Assets), assets);
+        assert!(layout.close(DockPanel::AssetInspector));
+        assert!(layout.contains(DockPanel::Assets));
+        assert!(layout.show(DockPanel::AssetInspector));
+        assert!(layout.float_panel(DockPanel::AssetInspector, [40.0, 40.0], [1000.0, 700.0]));
+        assert!(layout.close(DockPanel::AssetInspector));
+    }
 
     #[test]
     fn docking_actions_own_panel_visibility_and_workspace_reset() {

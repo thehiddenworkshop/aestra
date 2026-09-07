@@ -600,6 +600,7 @@ struct MaterialGraphPreviewToggle {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 enum MaterialGraphToolbarAction {
+    LocateSource(MaterialProgramId),
     AddNode(MaterialProgramId),
     ToggleAllPreviews(MaterialProgramId),
 }
@@ -1086,6 +1087,12 @@ fn handle_material_graph_toolbar_actions(
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
         match *action {
+            MaterialGraphToolbarAction::LocateSource(program) => {
+                commands.trigger(crate::asset_browser::LocateInAssets(
+                    aestra_project::ProjectAssetId::MaterialProgram(program),
+                ));
+                continue;
+            }
             MaterialGraphToolbarAction::AddNode(program) => {
                 let Some((_, viewport, computed)) = viewports
                     .iter()
@@ -3898,6 +3905,13 @@ fn spawn_header(
                         "material-graph-show-all-previews"
                     }),
                     MaterialGraphToolbarAction::ToggleAllPreviews(graph.program),
+                );
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    "icons/folder.svg",
+                    localizer.text("browser-locate"),
+                    MaterialGraphToolbarAction::LocateSource(graph.program),
                 );
                 header.spawn(Node {
                     flex_grow: 1.0,

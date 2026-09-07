@@ -425,6 +425,7 @@ fn spawn_panel_content(
             sources.browser,
             sources.localizer,
         ),
+        DockPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
         DockPanel::Properties => {
             spawn_properties(
                 parent,

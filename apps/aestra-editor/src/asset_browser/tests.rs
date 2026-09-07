@@ -438,11 +438,429 @@ fn all_browser_messages_exist_in_both_locales() {
             "empty",
             "read-only",
             "effect-unavailable",
+            "asset-details",
+            "references",
+            "inspector-empty",
+            "inspected-missing",
+            "details",
+            "dependencies",
+            "usages",
+            "locate",
+            "locate-current",
+            "located",
+            "snapshot-scope",
+            "relations-unknown",
+            "usages-incomplete",
+            "relations-empty",
+            "relation-available",
+            "relation-missing",
+            "relation-ambiguous",
+            "relation-unavailable",
+            "relation-builtin",
+            "relation-context",
         ] {
             let key = format!("browser-{suffix}");
             assert_ne!(localizer.text(&key), key);
         }
     }
+}
+
+#[test]
+fn locate_reveals_filtered_off_page_source_without_changing_document() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("deep/nested")).unwrap();
+    for i in 0..PAGE_SIZE + 10 {
+        std::fs::write(root.path().join(format!("deep/nested/{i:04}.txt")), []).unwrap();
+    }
+    let mut app = browser_app(root.path());
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let target = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("deep/nested/0100.txt")
+        .unwrap()
+        .id;
+    let version = catalog.content_revision();
+    let original = app.world().resource::<EditorSession>().effect.clone();
+    let revision = app.world().resource::<EditorSession>().document_revision();
+    for view in [ViewMode::List, ViewMode::Grid] {
+        {
+            let mut state = app.world_mut().resource_mut::<AssetBrowserState>();
+            state.query = "nothing matches".into();
+            state.kinds.insert(Kind::Material);
+            state.expanded.clear();
+            state.sources_visible = false;
+            state.view = view;
+        }
+        app.world_mut()
+            .trigger(BrowserAction::LocateSource(target, version));
+        app.update();
+        let state = app.world().resource::<AssetBrowserState>();
+        assert_eq!(state.folder, Path::new("deep/nested"));
+        assert_eq!(state.selected, Some(target));
+        assert_eq!(state.page, 1);
+        assert!(state.query.is_empty() && state.kinds.is_empty() && state.sources_visible);
+        assert_eq!(state.expanded.len(), 3);
+        let row = rows(&mut app)[&target];
+        let list = list(&mut app);
+        assert_eq!(
+            app.world().get::<ActiveDescendant>(list).unwrap().0,
+            Some(row)
+        );
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(list));
+        assert_eq!(app.world().resource::<EditorSession>().effect, original);
+        assert_eq!(
+            app.world().resource::<EditorSession>().document_revision(),
+            revision
+        );
+    }
+}
+
+#[test]
+fn inspection_tabs_preserve_browser_rows_and_stale_locate_is_ignored() {
+    let root = tempfile::tempdir().unwrap();
+    let effect = aestra_core::EffectAsset::new("Effect", 1.0);
+    effect
+        .save_ron(root.path().join("effect.aestra.ron"))
+        .unwrap();
+    let mut app = browser_app(root.path());
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let source = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("effect.aestra.ron")
+        .unwrap()
+        .id;
+    let version = catalog.content_revision();
+    app.world_mut()
+        .trigger(BrowserAction::LocateSource(source, version));
+    app.update();
+    let original_rows = rows(&mut app);
+    let revision = app.world().resource::<EditorSession>().ui_revision;
+    for tab in [
+        InspectionTab::Dependencies,
+        InspectionTab::Usages,
+        InspectionTab::Details,
+    ] {
+        app.world_mut().trigger(BrowserAction::InspectionTab(tab));
+        app.update();
+        assert_eq!(rows(&mut app), original_rows);
+        assert_eq!(
+            app.world().resource::<AssetBrowserState>().selected,
+            Some(source)
+        );
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision
+        );
+    }
+    app.world_mut().resource_mut::<AssetBrowserState>().selected = None;
+    app.world_mut().trigger(BrowserAction::LocateSource(
+        source,
+        ProjectContentVersion {
+            revision: version.revision + 1,
+            ..version
+        },
+    ));
+    app.update();
+    assert_eq!(app.world().resource::<AssetBrowserState>().selected, None);
+}
+
+#[test]
+fn semantic_locate_does_not_choose_between_duplicate_sources() {
+    let root = tempfile::tempdir().unwrap();
+    let effect = aestra_core::EffectAsset::new("Duplicate", 1.0);
+    for name in ["a", "b"] {
+        effect
+            .save_ron(root.path().join(format!("{name}.aestra.ron")))
+            .unwrap();
+    }
+    let mut app = browser_app(root.path());
+    app.world_mut().trigger(super::LocateInAssets(
+        aestra_project::ProjectAssetId::Effect(effect.id),
+    ));
+    app.update();
+    assert_eq!(app.world().resource::<AssetBrowserState>().selected, None);
+    assert!(
+        app.world()
+            .resource::<EditorSession>()
+            .status
+            .starts_with("Cannot locate")
+    );
+}
+
+#[test]
+fn context_menu_explicitly_inspects_without_opening_or_following_selection() {
+    let root = tempfile::tempdir().unwrap();
+    let effect = aestra_core::EffectAsset::new("Menu target", 1.0);
+    effect
+        .save_ron(root.path().join("effect.aestra.ron"))
+        .unwrap();
+    std::fs::write(root.path().join("other.png"), []).unwrap();
+    let mut app = browser_app(root.path());
+    app.init_resource::<OpenRequests>().add_observer(
+        |event: On<DocumentAction>, mut requests: ResMut<OpenRequests>| requests.0.push(*event),
+    );
+    let entries = rows(&mut app);
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let source = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("effect.aestra.ron")
+        .unwrap()
+        .id;
+    let other = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("other.png")
+        .unwrap()
+        .id;
+    let version = catalog.content_revision();
+    let revision = app.world().resource::<EditorSession>().document_revision();
+    let content = app.world().get::<Children>(entries[&source]).unwrap()[0];
+    click_button(&mut app, content, 1, PointerButton::Secondary);
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().selected,
+        Some(source)
+    );
+    assert_eq!(app.world().resource::<AssetBrowserState>().inspected, None);
+    let world = app.world_mut();
+    assert_eq!(
+        world
+            .query::<&super::context_menu::BrowserContextMenu>()
+            .iter(world)
+            .count(),
+        1
+    );
+    let action = world
+        .query::<(Entity, &BrowserAction)>()
+        .iter(world)
+        .find(|(_, action)| {
+            matches!(
+                action,
+                BrowserAction::InspectSource(_, _, InspectionTab::Dependencies)
+            )
+        })
+        .unwrap()
+        .0;
+    world.trigger(bevy::ui_widgets::Activate { entity: action });
+    app.update();
+    let world = app.world_mut();
+    assert_eq!(
+        world
+            .query::<&super::context_menu::BrowserContextMenu>()
+            .iter(world)
+            .count(),
+        0
+    );
+    assert_eq!(
+        world.resource::<AssetBrowserState>().inspected,
+        Some(source)
+    );
+    assert_eq!(
+        world.resource::<AssetBrowserState>().inspection_tab,
+        InspectionTab::Dependencies
+    );
+    world.spawn(super::inspection::AssetInspectorUi::default());
+    app.update();
+    click(&mut app, entries[&other], 1);
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().inspected,
+        Some(source)
+    );
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().selected,
+        Some(other)
+    );
+    assert_eq!(
+        app.world().resource::<EditorSession>().document_revision(),
+        revision
+    );
+    assert!(app.world().resource::<OpenRequests>().0.is_empty());
+    app.world_mut().trigger(BrowserAction::InspectSource(
+        other,
+        ProjectContentVersion {
+            revision: version.revision + 1,
+            ..version
+        },
+        InspectionTab::Details,
+    ));
+    app.update();
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().inspected,
+        Some(source)
+    );
+    let world = app.world_mut();
+    assert!(
+        !world
+            .query::<&Text>()
+            .iter(world)
+            .any(|text| text.0.starts_with("Saved snapshot"))
+    );
+}
+
+#[test]
+fn keyboard_context_menu_and_escape_restore_list_focus() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("asset.png"), []).unwrap();
+    let mut app = browser_app(root.path());
+    app.init_resource::<ButtonInput<KeyCode>>();
+    let list = list(&mut app);
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(list, bevy::input_focus::FocusCause::Navigated);
+    key(&mut app, KeyCode::ContextMenu);
+    let world = app.world_mut();
+    assert_eq!(
+        world
+            .query::<&super::context_menu::BrowserContextMenu>()
+            .iter(world)
+            .count(),
+        1
+    );
+    world
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Escape);
+    app.update();
+    let world = app.world_mut();
+    assert_eq!(
+        world
+            .query::<&super::context_menu::BrowserContextMenu>()
+            .iter(world)
+            .count(),
+        0
+    );
+    assert_eq!(world.resource::<InputFocus>().get(), Some(list));
+}
+
+#[test]
+fn rebuilding_browser_after_locate_does_not_steal_focus_back() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("source.png"), []).unwrap();
+    let mut app = browser_app(root.path());
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let source = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("source.png")
+        .unwrap()
+        .id;
+    let version = catalog.content_revision();
+    app.world_mut()
+        .trigger(BrowserAction::LocateSource(source, version));
+    app.update();
+    let world = app.world_mut();
+    let panels = world
+        .query_filtered::<Entity, With<super::panel::BrowserUi>>()
+        .iter(world)
+        .collect::<Vec<_>>();
+    for panel in panels {
+        world.despawn(panel);
+    }
+    let other_control = world.spawn_empty().id();
+    world
+        .resource_mut::<InputFocus>()
+        .set(other_control, bevy::input_focus::FocusCause::Navigated);
+    app.add_systems(
+        Update,
+        spawn_browser_fixture.run_if(bevy::ecs::schedule::common_conditions::run_once),
+    );
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world().resource::<InputFocus>().get(),
+        Some(other_control)
+    );
+}
+
+#[test]
+fn inspector_pages_bound_locate_controls_and_missing_references_are_not_openable() {
+    let root = tempfile::tempdir().unwrap();
+    let mut effect = aestra_core::EffectAsset::new("Resources", 1.0);
+    for i in 0..65 {
+        let path = format!("{i:02}.png");
+        if i != 64 {
+            std::fs::write(root.path().join(&path), []).unwrap();
+        }
+        effect.assets.push(aestra_core::AssetDefinition::texture(
+            format!("Texture {i}"),
+            path,
+        ));
+    }
+    effect
+        .save_ron(root.path().join("effect.aestra.ron"))
+        .unwrap();
+    let mut app = browser_app(root.path());
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let source = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("effect.aestra.ron")
+        .unwrap()
+        .id;
+    let version = catalog.content_revision();
+    app.world_mut()
+        .spawn(super::inspection::AssetInspectorUi::default());
+    app.world_mut().trigger(BrowserAction::InspectSource(
+        source,
+        version,
+        InspectionTab::Dependencies,
+    ));
+    app.update();
+    for expected in [24, 24, 16] {
+        let world = app.world_mut();
+        let count = world
+            .query::<&BrowserAction>()
+            .iter(world)
+            .filter(|action| matches!(action, BrowserAction::LocateSource(..)))
+            .count();
+        assert_eq!(count, expected);
+        app.world_mut().trigger(BrowserAction::InspectionPage(true));
+        app.update();
+    }
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&Text>()
+            .iter(world)
+            .any(|text| text.0 == "Missing")
+    );
+    assert_eq!(world.resource::<AssetBrowserState>().inspection_page, 2);
+    // Browsing another source leaves the explicit inspector target/page unchanged.
+    let catalog = world.resource::<ProjectEffectCatalog>();
+    let texture = catalog
+        .content()
+        .source_tree()
+        .at_relative_path("00.png")
+        .unwrap()
+        .id;
+    world.trigger(BrowserAction::LocateSource(texture, version));
+    app.update();
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().inspection_page,
+        2
+    );
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().inspected,
+        Some(source)
+    );
+    app.world_mut().trigger(BrowserAction::InspectSource(
+        texture,
+        version,
+        InspectionTab::Dependencies,
+    ));
+    app.update();
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().inspection_page,
+        0
+    );
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&Text>()
+            .iter(world)
+            .any(|text| text.0.starts_with("Dependencies unknown"))
+    );
 }
 
 #[test]
@@ -584,6 +1002,10 @@ fn keyboard_navigates_folders_without_replacing_the_effect_selection() {
 struct OpenRequests(Vec<DocumentAction>);
 
 fn click(app: &mut App, target: Entity, count: u8) {
+    click_button(app, target, count, PointerButton::Primary);
+}
+
+fn click_button(app: &mut App, target: Entity, count: u8, button: PointerButton) {
     use bevy::{
         camera::NormalizedRenderTarget,
         picking::{
@@ -601,7 +1023,7 @@ fn click(app: &mut App, target: Entity, count: u8) {
             position: Vec2::ZERO,
         },
         Click {
-            button: PointerButton::Primary,
+            button,
             hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
             duration: std::time::Duration::ZERO,
             count,
@@ -630,6 +1052,14 @@ fn pointer_selects_and_opens_effect_from_row_content() {
         Some(source)
     );
     assert!(app.world().resource::<OpenRequests>().0.is_empty());
+    assert_eq!(app.world().resource::<AssetBrowserState>().inspected, None);
+    assert_eq!(
+        app.world_mut()
+            .query::<&super::inspection::AssetInspectorUi>()
+            .iter(app.world())
+            .count(),
+        0
+    );
     let list = list(&mut app);
     assert_eq!(app.world().resource::<InputFocus>().get(), Some(list));
     assert_eq!(

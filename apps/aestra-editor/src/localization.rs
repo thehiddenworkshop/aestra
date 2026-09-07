@@ -90,6 +90,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "viewport-shape-extent-z",
     "panel-viewport",
     "panel-assets",
+    "panel-asset-inspector",
     "panel-properties",
     "panel-timeline",
     "panel-curves",

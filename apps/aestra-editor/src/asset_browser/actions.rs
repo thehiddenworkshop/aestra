@@ -3,7 +3,7 @@ use super::{
     state::*,
 };
 use crate::*;
-use aestra_project::{ProjectAssetId, ProjectSourceId};
+use aestra_project::{ProjectAssetId, ProjectContentVersion, ProjectSourceId};
 use bevy::{
     input_focus::{FocusedInput, InputFocus},
     ui_widgets::{Activate, ActiveDescendant},
@@ -23,6 +23,10 @@ pub(super) struct BrowserClickState(
 #[derive(Event)]
 pub(super) struct OpenMaterial(pub(super) aestra_core::MaterialProgramId);
 
+/// Shared semantic locate route for graph, property, and source-reference controls.
+#[derive(Component, Event, Clone, Copy)]
+pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
+
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BrowserAction {
     Legacy(bool),
@@ -41,6 +45,11 @@ pub(super) enum BrowserAction {
     OpenProject,
     Refresh,
     OpenSelected,
+    LocateCurrentEffect,
+    LocateSource(ProjectSourceId, ProjectContentVersion),
+    InspectSource(ProjectSourceId, ProjectContentVersion, InspectionTab),
+    InspectionTab(InspectionTab),
+    InspectionPage(bool),
 }
 
 pub(super) fn activate_button(
@@ -60,6 +69,7 @@ pub(super) fn handle_action(
     mut session: ResMut<EditorSession>,
     mut commands: Commands,
     mut clicks: ResMut<BrowserClickState>,
+    mut layout: Option<ResMut<WorkspaceLayout>>,
 ) {
     clicks.0 = None;
     let content = catalog.content();
@@ -119,6 +129,93 @@ pub(super) fn handle_action(
                 open_source(id, &catalog, &mut state, &mut commands);
             }
         }
+        BrowserAction::LocateCurrentEffect => {
+            // A current document has an exact location even when semantic IDs are duplicated.
+            let source = session.source_path.as_deref().and_then(|path| {
+                content
+                    .source_tree()
+                    .entries()
+                    .find(|entry| entry.path == path)
+                    .map(|entry| entry.id)
+            });
+            if let Some(source) = source {
+                state.locate(content, source);
+            } else {
+                commands.trigger(LocateInAssets(ProjectAssetId::Effect(session.effect.id)));
+            }
+        }
+        BrowserAction::LocateSource(source, version) => {
+            if catalog.content_revision() == version && state.locate(content, source) {
+                reveal_browser(&mut state, &mut session, layout.as_deref_mut());
+            }
+        }
+        BrowserAction::InspectSource(source, version, tab) => {
+            if version == catalog.content_revision() && content.source(source).is_some() {
+                state.inspected = Some(source);
+                state.inspection_tab = tab;
+                state.inspection_page = 0;
+                if let Some(layout) = layout.as_deref_mut() {
+                    reveal_dock_panel(layout, &mut session, DockPanel::AssetInspector);
+                }
+            }
+        }
+        BrowserAction::InspectionTab(tab) => {
+            state.inspection_tab = tab;
+            state.inspection_page = 0;
+        }
+        BrowserAction::InspectionPage(next) => {
+            state.inspection_page = if next {
+                state.inspection_page.saturating_add(1)
+            } else {
+                state.inspection_page.saturating_sub(1)
+            };
+        }
+    }
+}
+
+pub(super) fn activate_locate(
+    event: On<Activate>,
+    actions: Query<&LocateInAssets>,
+    mut commands: Commands,
+) {
+    if let Ok(action) = actions.get(event.entity) {
+        commands.trigger(*action);
+    }
+}
+
+pub(super) fn locate_asset(
+    event: On<LocateInAssets>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut state: ResMut<AssetBrowserState>,
+    mut session: ResMut<EditorSession>,
+    mut layout: Option<ResMut<WorkspaceLayout>>,
+    localizer: Res<Localizer>,
+) {
+    match catalog.content().unique_source_for_asset(event.0) {
+        Ok(source) => {
+            state.locate(catalog.content(), source.id);
+            reveal_browser(&mut state, &mut session, layout.as_deref_mut());
+            session.status = localizer.text("browser-located");
+        }
+        Err(error) => {
+            let mut args = FluentArgs::new();
+            args.set("error", error.to_string());
+            session.status = localizer.text_with("browser-locate-failed", &args);
+        }
+    }
+}
+
+fn reveal_browser(
+    state: &mut AssetBrowserState,
+    session: &mut EditorSession,
+    layout: Option<&mut WorkspaceLayout>,
+) {
+    if state.legacy {
+        state.legacy = false;
+        session.ui_revision += 1;
+    }
+    if let Some(layout) = layout {
+        reveal_dock_panel(layout, session, DockPanel::Assets);
     }
 }
 

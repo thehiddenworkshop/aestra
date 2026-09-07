@@ -1,6 +1,6 @@
 # Asset Browser contracts and migration inventory
 
-Recorded for AB0/AB1 and updated through AB3a, 2026-09-07. This is a parity inventory,
+Recorded for AB0/AB1 and updated through AB3b, 2026-09-07. This is a parity inventory,
 **not** a claim that every Library workflow has migrated. Follow
 [the delivery plan](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 
@@ -181,3 +181,32 @@ button route, discard confirmation and visible operation-status updates. Genuine
 concurrent-edit rejection tests remain passing. Local validation: 535 editor tests,
 the architecture test, workspace/all-targets strict Clippy and formatting pass. The
 fixed executable is rebuilt; final native retesting paused because Windows was locked.
+
+AB3b adds independent Details/Dependencies/Used By inspection with snapshot-only direct
+references and bounded, scrollable pages. It distinguishes missing files, duplicate IDs,
+unavailable sources, built-ins and context-dependent texture bindings. Unsupported formats
+have unknown dependencies; incomplete indexing produces an explicit partial-usage warning.
+Locate routes from reference rows, the current effect and the material graph reveal the
+source through filters/pagination without opening it or modifying emitter/document selection.
+Regression coverage includes immutable reports after disk removal, function/material/effect
+inverse references, duplicate candidates, cycles, stale-version rejection, retained browser
+rows, list/grid locate focus and bounded inspector pagination. Native validation remains
+paused by the Computer Use skill because Windows is locked; no visual success is claimed.
+
+AB3b local validation (`+1.98.1-x86_64-pc-windows-msvc`): 540 editor unit tests and
+60 project tests pass. Workspace/all-targets Clippy with warnings denied and formatting
+checks pass. Locate focus is consumed once, so subsequent shell rebuilds do not steal
+focus back from another control. Existing user material and editor-layout edits are preserved.
+
+Ergonomics follow-up: the browser no longer embeds an automatically visible inspector.
+Selection only highlights; double-click and Enter still open. Context-menu Asset Details
+and References explicitly open a closable/dockable inspector, normally in the Properties
+tab stack, without retargeting the active effect/emitter. Later browsing leaves that source
+pinned. The browser footer only shows counts/paging. Metadata lives in delayed hover
+tooltips; the snapshot explanation is an info tooltip. Healthy references use compact rows
+with Locate icons; missing/ambiguous warnings remain visible. The duplicate list/inspection
+icon and redundant Open/project buttons have been removed from the toolbar; asset Open
+and background Open Project/Refresh remain in context menus. File-menu workflows remain.
+Native visual verification of this layout is still required; automated tests are not visual QA.
+The ergonomics follow-up passes 543 editor tests, the runtime-independence architecture
+check, workspace/all-targets strict Clippy, formatting and diff whitespace checks.

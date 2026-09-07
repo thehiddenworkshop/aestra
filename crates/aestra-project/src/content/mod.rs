@@ -2,11 +2,13 @@
 mod classification;
 pub(crate) mod queries;
 mod refresh;
+mod relations;
 mod source_tree;
 
 use crate::{ProjectAssetId, ProjectAssetIndex, ProjectSourceId};
 pub use classification::*;
 pub use refresh::*;
+pub use relations::*;
 pub use source_tree::*;
 use std::{collections::BTreeMap, path::Path};
 
@@ -16,6 +18,7 @@ pub struct ProjectContent {
     asset_index: ProjectAssetIndex,
     documents: BTreeMap<ProjectSourceId, ProjectSourceDocument>,
     sources_by_asset: BTreeMap<ProjectAssetId, Vec<ProjectSourceId>>,
+    relations: relations::RelationIndex,
 }
 
 impl ProjectContent {
@@ -76,11 +79,13 @@ impl ProjectContent {
         for sources in sources_by_asset.values_mut() {
             sources.sort_by_key(|id| source_tree.source(*id).unwrap().relative_path.clone());
         }
+        let relations = relations::RelationIndex::build(&documents);
         Self {
             source_tree,
             asset_index,
             documents,
             sources_by_asset,
+            relations,
         }
     }
 

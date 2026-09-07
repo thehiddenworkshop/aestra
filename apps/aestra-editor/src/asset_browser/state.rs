@@ -23,6 +23,14 @@ pub(super) enum Sort {
     Type,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum InspectionTab {
+    #[default]
+    Details,
+    Dependencies,
+    Usages,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Kind {
     Folder,
@@ -111,6 +119,10 @@ pub(crate) struct AssetBrowserState {
     pub(super) recursive: bool,
     pub(super) kinds: BTreeSet<Kind>,
     pub(super) selected: Option<ProjectSourceId>,
+    pub(super) inspected: Option<ProjectSourceId>,
+    pub(super) inspection_tab: InspectionTab,
+    pub(super) inspection_page: usize,
+    pub(super) locate_revision: u64,
     pub(super) page: usize,
     pub(super) tree_page: usize,
     pub(super) folder: PathBuf,
@@ -133,6 +145,10 @@ impl Default for AssetBrowserState {
             recursive: false,
             kinds: BTreeSet::new(),
             selected: None,
+            inspected: None,
+            inspection_tab: InspectionTab::Details,
+            inspection_page: 0,
+            locate_revision: 0,
             page: 0,
             tree_page: 0,
             folder: PathBuf::new(),
@@ -164,6 +180,8 @@ impl AssetBrowserState {
             self.selected = None;
             self.page = 0;
             self.tree_page = 0;
+            self.inspection_page = 0;
+            self.inspected = None;
         }
         self.root = content.source_tree().root_path().to_owned();
         self.version = Some(version);
@@ -221,6 +239,39 @@ impl AssetBrowserState {
             }
             self.set_folder(content, path);
         }
+    }
+
+    /// Reveal a source independently from the active effect/emitter document.
+    pub(super) fn locate(&mut self, content: &ProjectContent, id: ProjectSourceId) -> bool {
+        let Some(entry) = content.source(id) else {
+            return false;
+        };
+        let folder = entry.parent.unwrap_or(content.source_tree().root());
+        self.navigate(content, folder);
+        self.query.clear();
+        self.kinds.clear();
+        self.recursive = false;
+        self.sources_visible = true;
+        let mut ancestor = content.source(folder);
+        while let Some(entry) = ancestor {
+            self.expanded.insert(entry.id);
+            ancestor = entry.parent.and_then(|id| content.source(id));
+        }
+        self.page = self
+            .filtered(content)
+            .iter()
+            .position(|entry| entry.id == id)
+            .unwrap_or(0)
+            / PAGE_SIZE;
+        self.tree_page = self
+            .folders(content)
+            .iter()
+            .position(|(id, _)| *id == folder)
+            .unwrap_or(0)
+            / PAGE_SIZE;
+        self.selected = (id != content.source_tree().root()).then_some(id);
+        self.locate_revision = self.locate_revision.wrapping_add(1);
+        true
     }
 
     fn set_folder(&mut self, content: &ProjectContent, path: PathBuf) {
