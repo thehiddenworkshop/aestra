@@ -827,6 +827,31 @@ fn context_menu_explicitly_inspects_without_opening_or_following_selection() {
     );
     world.spawn(super::inspection::AssetInspectorUi::default());
     app.update();
+    {
+        let world = app.world_mut();
+        let scope = world.resource::<Localizer>().text("browser-snapshot-scope");
+        let info = world
+            .query::<(&AccessibleLabel, &Children)>()
+            .iter(world)
+            .find(|(label, _)| label.0 == scope)
+            .expect("snapshot scope hover target");
+        let icon = info
+            .1
+            .iter()
+            .find(|child| world.get::<bevy_resvg::prelude::UiSvg>(*child).is_some())
+            .expect("info is an SVG, not a font-dependent glyph");
+        let svg = world.get::<bevy_resvg::prelude::UiSvg>(icon).unwrap();
+        assert_eq!(
+            svg.0.path().unwrap().path().to_str(),
+            Some("icons/info.svg")
+        );
+        assert_eq!(
+            world.get::<bevy_resvg::prelude::SvgColor>(icon).unwrap().0,
+            theme::TEXT
+        );
+        assert_eq!(world.get::<Node>(icon).unwrap().width, Val::Px(16.0));
+        assert!(world.get::<Text>(icon).is_none());
+    }
     click(&mut app, entries[&other], 1);
     assert_eq!(
         app.world().resource::<AssetBrowserState>().inspected,

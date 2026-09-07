@@ -274,6 +274,10 @@ Delivery slices:
   Layout/drag regression checks cover 320/640/1440-pixel panels and 100/150/200% target
   scaling using an explicit secondary-window camera. Resizing starts at the rendered
   pane width, avoiding a dead zone when the saved width exceeds the panel's 55% cap.
+  Tooltip text falls back to character wrapping for long paths/identifiers, with
+  narrow-width layout regressions at 100/150/200% UI scale. The inspector scope hint
+  uses a white SVG instead of a font-dependent info glyph. Native visual confirmation
+  of these polish fixes is still outstanding.
   Native wide browsing and restart restoration have been observed; native divider
   dragging remains inconclusive, and narrow/high-DPI/floating-window visual/input
   acceptance remains open. Headless target/layout tests are not native-window passes.

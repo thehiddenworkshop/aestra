@@ -254,15 +254,29 @@ pub(super) fn sync(
                         );
                     }
                     tabs.spawn((
-                        Text::new("ⓘ"),
-                        TextColor(theme::TEXT_MUTED),
                         EditorTooltip::description(localizer.text("browser-snapshot-scope")),
                         AccessibleLabel(localizer.text("browser-snapshot-scope")),
                         Node {
+                            width: Val::Px(24.0),
+                            height: Val::Px(24.0),
+                            flex_shrink: 0.0,
                             margin: UiRect::left(Val::Auto),
                             padding: UiRect::all(Val::Px(4.0)),
                             ..default()
                         },
+                    ))
+                    .with_child((
+                        Node {
+                            width: Val::Px(16.0),
+                            height: Val::Px(16.0),
+                            ..default()
+                        },
+                        bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+                            assets,
+                            "icons/info.svg",
+                        )),
+                        bevy_resvg::prelude::SvgColor(theme::TEXT),
+                        Pickable::IGNORE,
                     ));
                 });
             inspector

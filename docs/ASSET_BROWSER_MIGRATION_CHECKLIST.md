@@ -247,3 +247,22 @@ preferences, returned to the Effects folder before closing the QA editor.
 Local validation for this acceptance slice: 551 editor unit tests pass (the opt-in
 benchmark is ignored by the normal suite and passed separately); workspace/all-targets
 Clippy with warnings denied passes on `+1.98.1-x86_64-pc-windows-msvc`.
+
+AB3c polish follow-up: shared tooltip text now uses word wrapping with a character
+fallback and a zero flex minimum width, so long unbroken paths/identifiers cannot
+force text beyond the popup. Layout tests preserve the full text and verify measured
+bounds/multiple lines at 180/280-pixel widths and 100/150/200% UI scales. The inspector
+scope hint uses `icons/info.svg` with explicit light tint and a fixed 16-pixel image,
+not a missing font glyph; its hover description and accessible name are unchanged.
+
+The updated native editor built and reopened with the Effects folder/grid preference
+restored and no selected asset. Divider automation still selected an asset rather than
+reliably hitting the thin handle; subsequent native attempts encountered screenshot-ID
+and concurrent-user-input errors. A manual divider check was requested. Narrow/high-DPI,
+floating-window, tooltip/icon visual confirmation and docking restart acceptance are
+still unverified. Do not mark AB3 complete or move these caveats to the passed list.
+
+Polish validation: 552 editor tests pass (one opt-in benchmark ignored), the editor
+build and workspace/all-targets strict Clippy pass, and formatting/whitespace checks
+pass. Existing user material edits and local browser/docking preferences are excluded
+from this code change.

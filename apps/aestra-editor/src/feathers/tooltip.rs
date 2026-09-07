@@ -263,6 +263,14 @@ fn tooltip_text(text: impl Into<String>, size: f32, color: Color) -> impl Bundle
             ..default()
         },
         TextColor(color),
+        // Asset paths/identifiers often have no word boundaries. Do not let a
+        // single long token set the flex item's minimum width beyond the popup.
+        TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+        Node {
+            min_width: Val::Px(0.0),
+            max_width: Val::Percent(100.0),
+            ..default()
+        },
         Pickable::IGNORE,
     )
 }
@@ -282,6 +290,115 @@ fn clear_tooltip(commands: &mut Commands, state: &mut TooltipState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_unbroken_tooltip_paths_wrap_inside_the_panel_at_each_scale() {
+        use bevy::{
+            app::{HierarchyPropagatePlugin, PropagateSet},
+            camera::{ComputedCameraValues, RenderTargetInfo},
+            text::{TextLayoutInfo, TextPlugin},
+            ui::{
+                ComputedUiRenderTargetInfo, ComputedUiTargetCamera, ui_layout_system,
+                ui_surface::UiSurface,
+                update::propagate_ui_target_cameras,
+                widget::{measure_text_system, text_system},
+            },
+        };
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            TextPlugin,
+            HierarchyPropagatePlugin::<ComputedUiTargetCamera>::new(PostUpdate),
+            HierarchyPropagatePlugin::<ComputedUiRenderTargetInfo>::new(PostUpdate),
+        ))
+        .init_asset::<Image>()
+        .init_resource::<UiScale>()
+        .init_resource::<UiSurface>()
+        .add_systems(
+            PostUpdate,
+            (
+                propagate_ui_target_cameras,
+                measure_text_system,
+                ui_layout_system,
+                text_system,
+            )
+                .chain()
+                .after(bevy::text::load_font_assets_into_font_collection),
+        )
+        .configure_sets(
+            PostUpdate,
+            PropagateSet::<ComputedUiTargetCamera>::default()
+                .after(propagate_ui_target_cameras)
+                .before(measure_text_system),
+        )
+        .configure_sets(
+            PostUpdate,
+            PropagateSet::<ComputedUiRenderTargetInfo>::default()
+                .after(propagate_ui_target_cameras)
+                .before(measure_text_system),
+        );
+        let camera = app
+            .world_mut()
+            .spawn((
+                Camera2d,
+                Camera {
+                    computed: ComputedCameraValues {
+                        target_info: Some(RenderTargetInfo {
+                            physical_size: UVec2::new(800, 1000),
+                            scale_factor: 1.0,
+                        }),
+                        ..default()
+                    },
+                    ..default()
+                },
+            ))
+            .id();
+        let panel = app
+            .world_mut()
+            .spawn((
+                UiTargetCamera(camera),
+                Node {
+                    width: Val::Px(180.0),
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(10.0)),
+                    ..default()
+                },
+            ))
+            .id();
+        let value = format!(
+            "C:\\projects\\{}\\texture.png",
+            "long_asset_name_".repeat(12)
+        );
+        let label = app
+            .world_mut()
+            .spawn(tooltip_text(&value, 11.0, theme::TEXT))
+            .id();
+        app.world_mut().entity_mut(panel).add_child(label);
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [180.0, 280.0] {
+                app.world_mut().resource_mut::<UiScale>().0 = scale;
+                app.world_mut().get_mut::<Node>(panel).unwrap().width = Val::Px(width);
+                for _ in 0..4 {
+                    app.update();
+                }
+                let node = app.world().get::<ComputedNode>(label).unwrap();
+                let layout = app.world().get::<TextLayoutInfo>(label).unwrap();
+                assert_eq!(app.world().get::<Text>(label).unwrap().0, value);
+                assert!(node.size().x <= (width - 20.0) * scale + 1.0);
+                assert!(
+                    layout.size.x <= node.size().x + 1.0,
+                    "path overflows at {width}px/{scale}x: {:?} vs {:?}",
+                    layout.size,
+                    node.size()
+                );
+                assert!(
+                    layout.size.y > 22.0 * scale,
+                    "expected multiple visible lines"
+                );
+            }
+        }
+    }
 
     #[test]
     fn tooltip_defaults_to_delayed_description() {
