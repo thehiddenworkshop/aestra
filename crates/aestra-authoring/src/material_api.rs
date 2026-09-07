@@ -169,7 +169,8 @@ fn command_error(error: MaterialCommandError) -> (MaterialApiErrorCode, Validati
         MaterialCommandError::NotFound { .. } => {
             (MaterialApiErrorCode::NotFound, ValidationReport::default())
         }
-        MaterialCommandError::IndexOutOfBounds { .. }
+        MaterialCommandError::EffectContextRequired
+        | MaterialCommandError::IndexOutOfBounds { .. }
         | MaterialCommandError::IdentityChanged { .. }
         | MaterialCommandError::InvalidExpressionInput { .. } => (
             MaterialApiErrorCode::InvalidRequest,

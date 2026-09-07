@@ -82,15 +82,15 @@ pub enum LegacyMaterialMigrationError {
 pub fn plan_legacy_sprite_material_migration(
     document: &MaterialAuthoringDocument,
 ) -> Result<LegacyMaterialMigrationPlan, LegacyMaterialMigrationError> {
-    let legacy = document
-        .effect
+    let effect = document.require_effect()?;
+    let legacy = effect
         .materials
         .iter()
         .map(|material| (material.id, material))
         .collect::<BTreeMap<_, _>>();
     let mut groups = BTreeMap::<MigrationKey, MigrationGroup>::new();
 
-    for emitter in &document.effect.emitters {
+    for emitter in &effect.emitters {
         for renderer in &emitter.renderers {
             let Some(material) = legacy.get(&renderer.material).copied() else {
                 continue;
@@ -98,8 +98,7 @@ pub fn plan_legacy_sprite_material_migration(
             let (texture, apply_legacy_uv) = match renderer.properties {
                 RendererProperties::Sprite => (sprite_texture(material), true),
                 RendererProperties::Flipbook { flipbook, .. } => {
-                    let texture = document
-                        .effect
+                    let texture = effect
                         .flipbooks
                         .iter()
                         .find(|candidate| candidate.id == flipbook)
@@ -131,22 +130,21 @@ pub fn plan_legacy_sprite_material_migration(
     let mut commands = Vec::new();
     let mut mappings = Vec::new();
     let program_index = document.programs.len();
-    let instance_index = document.effect.material_instances.len();
+    let instance_index = effect.material_instances.len();
     let mut reserved_programs = document
         .programs
         .iter()
         .map(|program| program.id)
         .collect::<BTreeSet<_>>();
-    let mut reserved_instances = document
-        .effect
+    let mut reserved_instances = effect
         .material_instances
         .iter()
         .map(|instance| instance.id)
-        .chain(document.effect.materials.iter().map(|material| material.id))
+        .chain(effect.materials.iter().map(|material| material.id))
         .collect::<BTreeSet<_>>();
 
     for (offset, (key, group)) in groups.into_iter().enumerate() {
-        let seed = migration_seed(document.effect.id, key);
+        let seed = migration_seed(effect.id, key);
         let program_id = MaterialProgramId::from_u128(derive_id(seed, PROGRAM_SALT));
         let instance_id = MaterialId::from_u128(derive_id(seed, INSTANCE_SALT));
         if !reserved_programs.insert(program_id) {
@@ -162,14 +160,8 @@ pub fn plan_legacy_sprite_material_migration(
             });
         }
 
-        let (program, instance) = migrate_group(
-            &document.effect,
-            key,
-            group.material,
-            program_id,
-            instance_id,
-            seed,
-        )?;
+        let (program, instance) =
+            migrate_group(effect, key, group.material, program_id, instance_id, seed)?;
         commands.push(MaterialCommand::AddMaterialProgram {
             program,
             index: program_index + offset,
@@ -612,11 +604,17 @@ mod tests {
 
         let mut document = original.clone();
         let (plan, outcome) = migrate_legacy_sprite_materials(&mut document).unwrap();
-        assert_eq!(document.effect.materials, original.effect.materials);
-        assert_eq!(document.programs.len(), 1);
-        assert_eq!(document.effect.material_instances.len(), 1);
         assert_eq!(
-            document.effect.emitters[0].renderers[0].material,
+            document.require_effect().unwrap().materials,
+            original.require_effect().unwrap().materials
+        );
+        assert_eq!(document.programs.len(), 1);
+        assert_eq!(
+            document.require_effect().unwrap().material_instances.len(),
+            1
+        );
+        assert_eq!(
+            document.require_effect().unwrap().emitters[0].renderers[0].material,
             plan.mappings[0].semantic_instance
         );
         assert!(document.validate().is_ok());
@@ -682,7 +680,7 @@ mod tests {
         let mut document = MaterialAuthoringDocument::new(effect, Vec::new());
 
         migrate_legacy_sprite_materials(&mut document).unwrap();
-        let instance = &document.effect.material_instances[0];
+        let instance = &document.require_effect().unwrap().material_instances[0];
         assert!(
             instance
                 .values
@@ -725,7 +723,7 @@ mod tests {
 
         migrate_legacy_sprite_materials(&mut document).unwrap();
         assert!(
-            document.effect.material_instances[0]
+            document.require_effect().unwrap().material_instances[0]
                 .values
                 .values()
                 .any(|value| {

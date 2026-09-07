@@ -93,20 +93,22 @@ impl MaterialInspector {
                 (find_program_index(document, program)?, None)
             }
             MaterialInspectionTarget::Instance(instance) => {
-                let instance_index = document
+                let effect = document
                     .effect
+                    .as_ref()
+                    .ok_or(MaterialInspectionError::InstanceNotFound(instance))?;
+                let instance_index = effect
                     .material_instances
                     .iter()
                     .position(|candidate| candidate.id == instance)
                     .ok_or(MaterialInspectionError::InstanceNotFound(instance))?;
-                let program = document.effect.material_instances[instance_index]
-                    .program
-                    .id();
+                let program = effect.material_instances[instance_index].program.id();
                 (find_program_index(document, program)?, Some(instance_index))
             }
         };
         let program = &document.programs[program_index];
-        let instance = instance_index.map(|index| &document.effect.material_instances[index]);
+        let instance = instance_index
+            .and_then(|index| document.effect.as_ref()?.material_instances.get(index));
         let diagnostics = target_diagnostics(document, program_index, instance_index);
         let compiler = MaterialCompiler;
         let functions = document.material_function_library();

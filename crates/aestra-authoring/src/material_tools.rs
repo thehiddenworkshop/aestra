@@ -363,8 +363,8 @@ impl MaterialToolPlanner {
         parameter_id: MaterialParameterId,
         binding: MaterialParameterBinding,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
-        let instance = document
-            .effect
+        let effect = document.require_effect()?;
+        let instance = effect
             .material_instances
             .iter()
             .find(|instance| instance.id == instance_id)
@@ -382,8 +382,7 @@ impl MaterialToolPlanner {
             });
         }
         if let Some(binding_parameter) = binding.referenced_parameter() {
-            let parameter = document
-                .effect
+            let parameter = effect
                 .parameters
                 .iter()
                 .find(|parameter| parameter.id == binding_parameter)

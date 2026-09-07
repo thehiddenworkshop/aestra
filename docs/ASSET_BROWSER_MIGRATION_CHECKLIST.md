@@ -239,8 +239,8 @@ Native observations across the persistence and acceptance slices:
   The earlier locked-desktop interruption is historical, not the current blocker.
   Tooltip path overflow and the inspector's info glyph also need visual follow-up.
 
-AB3 remains in acceptance, not complete. Keep the legacy Library and do not treat
-headless layout or benchmark results as substitutes for the outstanding native gates.
+At this point AB3 remained in acceptance, not complete (superseded by the user
+acceptance below). Headless layout/benchmark results were not native verification.
 Existing material edits were preserved; native browsing only changed local browser
 preferences, returned to the Effects folder before closing the QA editor.
 
@@ -260,9 +260,39 @@ restored and no selected asset. Divider automation still selected an asset rathe
 reliably hitting the thin handle; subsequent native attempts encountered screenshot-ID
 and concurrent-user-input errors. A manual divider check was requested. Narrow/high-DPI,
 floating-window, tooltip/icon visual confirmation and docking restart acceptance are
-still unverified. Do not mark AB3 complete or move these caveats to the passed list.
+were unverified by the agent at that point. They remain historical verification limits,
+not automated or agent-observed native passes; see the subsequent user acceptance below.
 
 Polish validation: 552 editor tests pass (one opt-in benchmark ignored), the editor
 build and workspace/all-targets strict Clippy pass, and formatting/whitespace checks
 pass. Existing user material edits and local browser/docking preferences are excluded
 from this code change.
+
+### AB3c user acceptance and AB4a foundation — 2026-09-07
+
+The user explicitly confirmed "AB3c is good do AB4". AB3c is now accepted on that
+basis. The native automation limitations above are retained as provenance, not as a
+current blocker or as newly verified platform tests. The transitional Library remains.
+
+AB4a adds a standalone material authoring document without an effect. Program/function
+commands, graph planning, validation, inspection, compilation and command history share
+the existing machinery. Effect-local operations fail with `EffectContextRequired` and
+leave the document/history unchanged. Compilation reports now include the document's
+function library; a regression reproduced the previously missing-function report after
+successful extraction before the fix. Existing effect-context serialized snapshots retain
+their original representation; standalone snapshots omit the effect. Semantic source
+formats are unchanged; Rust consumers account for the optional effect context.
+
+Six standalone contract tests cover edits/undo/redo, validation failure and retained redo,
+all effect-only command families, binding API errors, migration/instance inspection,
+duplicate IDs, function extraction and missing functions, legacy snapshot compatibility
+and standalone/source serialization. This is a foundation slice, not an editor UI pass:
+AB4b explicit target/open/edit/history routing and AB4c save/reload/recovery/conflict
+handling plus native acceptance remain pending.
+
+AB4a local validation on `+1.98.1-x86_64-pc-windows-msvc`: the full authoring suite
+passes, including all six new standalone contracts; 552 editor unit tests pass (one
+opt-in benchmark ignored), and both portable-GPU legacy-material migration contracts
+pass. The editor/runtime-independence architecture test, workspace/all-targets Clippy
+with warnings denied, formatting and diff-whitespace checks pass. User-authored material
+changes and local `.aestra` preferences are preserved and are not part of this slice.

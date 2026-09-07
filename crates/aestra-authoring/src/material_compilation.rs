@@ -43,7 +43,9 @@ impl MaterialCompilationReporter {
         let instance = inspection.instance.as_ref().map(|instance| instance.id);
         let mut diagnostics = inspection.diagnostics;
         let ir = if diagnostics.is_valid() {
-            match MaterialCompiler.compile(&inspection.program) {
+            match MaterialCompiler
+                .compile_with_functions(&inspection.program, &document.material_function_library())
+            {
                 Ok(ir) => Some(ir),
                 Err(error) => {
                     diagnostics = error.report().clone();

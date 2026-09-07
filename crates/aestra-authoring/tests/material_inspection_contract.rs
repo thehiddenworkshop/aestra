@@ -211,10 +211,12 @@ fn invalid_material_inspection_returns_diagnostics_without_misleading_projection
 fn invalid_instance_inspection_keeps_valid_program_capabilities_and_reports_the_instance() {
     let (mut document, _, instance) = inspection_document();
     let unknown = MaterialParameterId::from_u128(0x72ff);
-    document.effect.material_instances[0].values.insert(
-        unknown,
-        MaterialParameterValue::Constant(MaterialValue::Float(1.0)),
-    );
+    document.effect.as_mut().unwrap().material_instances[0]
+        .values
+        .insert(
+            unknown,
+            MaterialParameterValue::Constant(MaterialValue::Float(1.0)),
+        );
 
     let report =
         MaterialInspector::inspect(&document, MaterialInspectionTarget::Instance(instance))
@@ -300,10 +302,12 @@ fn invalid_material_compilation_returns_diagnostics_without_ir() {
 
     let (mut invalid_instance, _, instance) = inspection_document();
     let unknown = MaterialParameterId::from_u128(0x74ff);
-    invalid_instance.effect.material_instances[0].values.insert(
-        unknown,
-        MaterialParameterValue::Constant(MaterialValue::Float(1.0)),
-    );
+    invalid_instance.effect.as_mut().unwrap().material_instances[0]
+        .values
+        .insert(
+            unknown,
+            MaterialParameterValue::Constant(MaterialValue::Float(1.0)),
+        );
     let instance_report = MaterialCompilationReporter::compile(
         &invalid_instance,
         MaterialInspectionTarget::Instance(instance),

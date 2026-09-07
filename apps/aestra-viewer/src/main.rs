@@ -769,7 +769,9 @@ fn migrate_viewer_materials(
 ) -> Result<Vec<MaterialProgram>, String> {
     let mut document = MaterialAuthoringDocument::new(effect.clone(), programs);
     migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
-    *effect = document.effect;
+    *effect = document
+        .effect
+        .expect("migration retains its effect context");
     Ok(document.programs)
 }
 

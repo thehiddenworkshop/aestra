@@ -45,7 +45,10 @@ fn showcase_materials_migrate_through_commands_and_compile_for_portable_gpu() {
 
         let (plan, _) = migrate_legacy_sprite_materials(&mut document).unwrap();
         assert!(!plan.is_empty(), "{name} should contain legacy materials");
-        assert_eq!(document.effect.materials, legacy_materials);
+        assert_eq!(
+            document.effect.as_ref().unwrap().materials,
+            legacy_materials
+        );
         assert_eq!(
             plan.mappings
                 .iter()
@@ -61,7 +64,7 @@ fn showcase_materials_migrate_through_commands_and_compile_for_portable_gpu() {
             .map(|program| (program.id, program))
             .collect::<BTreeMap<_, _>>();
         EffectCompiler::default()
-            .compile_with_material_programs(&document.effect, &programs)
+            .compile_with_material_programs(document.require_effect().unwrap(), &programs)
             .unwrap_or_else(|error| panic!("{name} migrated effect failed compilation: {error}"));
 
         for program in &document.programs {
@@ -141,7 +144,7 @@ fn migrated_flipbook_material_samples_renderer_resolved_uv0() {
         .collect::<BTreeMap<_, _>>();
     let compiled = Arc::new(
         EffectCompiler::default()
-            .compile_with_material_programs(&document.effect, &programs)
+            .compile_with_material_programs(document.require_effect().unwrap(), &programs)
             .unwrap(),
     );
     let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();

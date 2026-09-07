@@ -16,22 +16,70 @@ use thiserror::Error;
 const DEFAULT_MATERIAL_HISTORY_LIMIT: usize = 256;
 
 /// One transactional authoring boundary for project material programs and the
-/// effect-local instances that consume them.
+/// optional effect-local instances that consume them. Standalone shared-source
+/// editing has no authored effect; instance operations require that context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MaterialAuthoringDocument {
-    pub effect: EffectAsset,
+    // Preserve the original snapshot's raw `effect: (...)` representation.
+    // Standalone snapshots omit the field instead of serializing a fake effect.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_effect_context",
+        deserialize_with = "deserialize_effect_context"
+    )]
+    pub effect: Option<EffectAsset>,
     pub programs: Vec<MaterialProgram>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub material_functions: Vec<MaterialFunction>,
 }
 
+fn serialize_effect_context<S: serde::Serializer>(
+    effect: &Option<EffectAsset>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match effect {
+        Some(effect) => effect.serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_effect_context<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<EffectAsset>, D::Error> {
+    EffectAsset::deserialize(deserializer).map(Some)
+}
+
 impl MaterialAuthoringDocument {
     pub fn new(effect: EffectAsset, programs: Vec<MaterialProgram>) -> Self {
         Self {
-            effect,
+            effect: Some(effect),
             programs,
             material_functions: Vec::new(),
         }
+    }
+
+    /// A shared-source document with no authored effect or instance context.
+    /// Program/function commands, inspection and compilation use the same APIs;
+    /// effect-local commands fail explicitly instead of inventing an effect.
+    pub fn standalone(programs: Vec<MaterialProgram>) -> Self {
+        Self {
+            effect: None,
+            programs,
+            material_functions: Vec::new(),
+        }
+    }
+
+    pub fn require_effect(&self) -> Result<&EffectAsset, MaterialCommandError> {
+        self.effect
+            .as_ref()
+            .ok_or(MaterialCommandError::EffectContextRequired)
+    }
+
+    fn require_effect_mut(&mut self) -> Result<&mut EffectAsset, MaterialCommandError> {
+        self.effect
+            .as_mut()
+            .ok_or(MaterialCommandError::EffectContextRequired)
     }
 
     pub fn with_material_functions(
@@ -47,7 +95,11 @@ impl MaterialAuthoringDocument {
     }
 
     pub fn validation_report(&self) -> ValidationReport {
-        let mut report = self.effect.validation_report();
+        let mut report = self
+            .effect
+            .as_ref()
+            .map(EffectAsset::validation_report)
+            .unwrap_or_default();
         report.diagnostics.retain(|diagnostic| {
             !matches!(
                 diagnostic.code,
@@ -79,34 +131,40 @@ impl MaterialAuthoringDocument {
             }
         }
 
-        for (index, instance) in self.effect.material_instances.iter().enumerate() {
-            let path = format!("effect.material_instances[{index}]");
-            match self
-                .programs
-                .iter()
-                .find(|program| program.id == instance.program.id())
-            {
-                Some(program) => {
-                    append_prefixed_report(&mut report, &path, instance.validate_against(program));
-                    validate_effect_parameter_bindings(
-                        &mut report,
-                        &self.effect,
-                        instance,
-                        program,
-                        &path,
-                    );
+        if let Some(effect) = &self.effect {
+            for (index, instance) in effect.material_instances.iter().enumerate() {
+                let path = format!("effect.material_instances[{index}]");
+                match self
+                    .programs
+                    .iter()
+                    .find(|program| program.id == instance.program.id())
+                {
+                    Some(program) => {
+                        append_prefixed_report(
+                            &mut report,
+                            &path,
+                            instance.validate_against(program),
+                        );
+                        validate_effect_parameter_bindings(
+                            &mut report,
+                            effect,
+                            instance,
+                            program,
+                            &path,
+                        );
+                    }
+                    None if matches!(instance.program, MaterialProgramRef::Project(_)) => {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            format!("{path}.program"),
+                            format!(
+                                "material instance references missing project program {}",
+                                instance.program.id()
+                            ),
+                        ));
+                    }
+                    None => {}
                 }
-                None if matches!(instance.program, MaterialProgramRef::Project(_)) => {
-                    report.push(Diagnostic::error(
-                        DiagnosticCode::InvalidReference,
-                        format!("{path}.program"),
-                        format!(
-                            "material instance references missing project program {}",
-                            instance.program.id()
-                        ),
-                    ));
-                }
-                None => {}
             }
         }
         report.diagnostics.sort();
@@ -314,10 +372,18 @@ impl MaterialDiff {
         diff_programs(&mut changes, &before.programs, &after.programs);
         diff_instances(
             &mut changes,
-            &before.effect.material_instances,
-            &after.effect.material_instances,
+            before
+                .effect
+                .as_ref()
+                .map_or(&[], |effect| effect.material_instances.as_slice()),
+            after
+                .effect
+                .as_ref()
+                .map_or(&[], |effect| effect.material_instances.as_slice()),
         );
-        diff_renderer_assignments(&mut changes, &before.effect, &after.effect);
+        if let (Some(before), Some(after)) = (&before.effect, &after.effect) {
+            diff_renderer_assignments(&mut changes, before, after);
+        }
         Self { changes }
     }
 
@@ -328,6 +394,8 @@ impl MaterialDiff {
 
 #[derive(Debug, Error)]
 pub enum MaterialCommandError {
+    #[error("this material operation requires an effect-instance context")]
+    EffectContextRequired,
     #[error("{kind} '{id}' was not found")]
     NotFound { kind: &'static str, id: String },
     #[error("index {index} is outside {collection} with length {len}")]
@@ -538,7 +606,7 @@ fn apply_command(
         }
         MaterialCommand::AddMaterialInstance { instance, index } => {
             checked_insert(
-                &mut document.effect.material_instances,
+                &mut document.require_effect_mut()?.material_instances,
                 *index,
                 instance.clone(),
                 "material instances",
@@ -547,7 +615,10 @@ fn apply_command(
         }
         MaterialCommand::RemoveMaterialInstance { id } => {
             let index = instance_index(document, *id)?;
-            let instance = document.effect.material_instances.remove(index);
+            let instance = document
+                .require_effect_mut()?
+                .material_instances
+                .remove(index);
             vec![MaterialCommand::AddMaterialInstance { instance, index }]
         }
         MaterialCommand::ReplaceMaterialInstance { id, instance } => {
@@ -591,7 +662,7 @@ fn apply_command(
             renderer,
             material,
         } => {
-            let renderer = renderer_mut(&mut document.effect, *emitter, *renderer)?;
+            let renderer = renderer_mut(document.require_effect_mut()?, *emitter, *renderer)?;
             let previous = std::mem::replace(&mut renderer.material, *material);
             vec![MaterialCommand::AssignRendererMaterial {
                 emitter: *emitter,
@@ -1398,7 +1469,7 @@ fn instance_index(
     id: MaterialId,
 ) -> Result<usize, MaterialCommandError> {
     document
-        .effect
+        .require_effect()?
         .material_instances
         .iter()
         .position(|instance| instance.id == id)
@@ -1410,7 +1481,7 @@ fn instance_mut(
     id: MaterialId,
 ) -> Result<&mut MaterialInstance, MaterialCommandError> {
     let index = instance_index(document, id)?;
-    Ok(&mut document.effect.material_instances[index])
+    Ok(&mut document.require_effect_mut()?.material_instances[index])
 }
 
 fn expression_index(

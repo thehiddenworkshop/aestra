@@ -6,7 +6,9 @@ cached semantic queries implemented. AB2b2 explicit-open/post-write background o
 implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
 Assets dock, with a transitional Library switch. AB3b snapshot inspection and locate-source
 routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
-native acceptance is still in progress. Platform caveats are recorded in
+AB3c was accepted by the user on 2026-09-07. AB4 is in progress: AB4a standalone
+authoring foundation is implemented; editor document routing/lifecycle remains pending.
+Historical platform-verification limits are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
 This is the repository-specific delivery plan for
@@ -82,8 +84,8 @@ The first browser will not offer a warning-only “unsafe” bypass.
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
-slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c acceptance is in progress;
-AB4–AB9 are pending.
+slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
+AB4a is implemented, AB4b/AB4c and AB5–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -262,8 +264,8 @@ Delivery slices:
   Version-guarded Locate actions reveal sources, reset obstructing filters, expand ancestors,
   choose the correct page and focus/scroll the selected row without opening it or changing
   emitter selection. Entry points include references, the current effect and material graph.
-  Native inspection/locate acceptance remains part of AB3c.
-- **AB3c — Persistence implemented; acceptance in progress (P1):** versioned preferences
+  Inspection/locate acceptance is included in the user's AB3c acceptance.
+- **AB3c — User-accepted 2026-09-07 (P1):** versioned preferences
   in each root's `.aestra/asset-browser.ron` restore folder/expanded paths, search/filter,
   sort, grid/list and source-pane visibility/width. Selection, inspection and authored
   state are not persisted there. Writes are debounced and atomic; malformed/future
@@ -276,12 +278,12 @@ Delivery slices:
   pane width, avoiding a dead zone when the saved width exceeds the panel's 55% cap.
   Tooltip text falls back to character wrapping for long paths/identifiers, with
   narrow-width layout regressions at 100/150/200% UI scale. The inspector scope hint
-  uses a white SVG instead of a font-dependent info glyph. Native visual confirmation
-  of these polish fixes is still outstanding.
+  uses a white SVG instead of a font-dependent info glyph.
   Native wide browsing and restart restoration have been observed; native divider
   dragging remains inconclusive, and narrow/high-DPI/floating-window visual/input
-  acceptance remains open. Headless target/layout tests are not native-window passes.
-  Full AB3 is not complete until these gates pass.
+  coverage was not completed by the agent. The user subsequently accepted AB3c and
+  requested AB4. That acceptance closes this milestone; it does not turn the historical
+  headless checks or inconclusive native checks into verified platform passes.
 
 Build `asset_browser/{state,panel,source_tree,asset_view,filtering,actions}.rs` as needed
 using shared Feathers buttons, search fields, breadcrumbs, list rows, scrollbars,
@@ -314,6 +316,29 @@ Baseline a synthetic 10,000-source project and record timings/entity counts; no
 per-frame I/O or asset parsing during selection/search.
 
 ### AB4 — Standalone material-program documents
+
+Delivery slices (P1):
+
+- **AB4a — Standalone authoring foundation implemented:** `MaterialAuthoringDocument`
+  supports an absent effect context. Program/function transactions, graph planning,
+  inspection, validation and undo/redo do not require a synthetic effect. Instance,
+  binding, renderer-assignment and legacy-migration commands reject missing context
+  explicitly and atomically. Compilation reports use the document's function library.
+  Existing effect-context snapshot encoding is preserved; standalone snapshots omit
+  the effect field. Rust callers now handle `Option<EffectAsset>` or `require_effect()`;
+  semantic material/effect source formats are unchanged. Regression tests cover graph
+  edits/history, invalid-edit rollback with retained redo, effect-only command rejection,
+  duplicate IDs, function extraction/missing functions, and snapshot/source round-trips.
+- **AB4b — Editor document routing and editing pending:** explicit Program versus
+  Effect Instance target; guarded opening of unused project materials from Assets;
+  graph/Properties/preview and layout routing; isolated focus-aware undo/redo; preserve
+  the active effect and its selection/history. Built-ins remain read-only.
+- **AB4c — Persistence and acceptance pending:** material-only save/reload, dirty-target
+  Save/Discard/Cancel, recovery, external-write conflicts, same-ID reopen and moved/missing
+  sources. Finish native graph/preview acceptance and effect-context regressions.
+
+AB4a does not yet enable standalone opening in the editor. Full AB4 remains incomplete
+until the end-to-end exit gate below passes.
 
 Introduce an explicit graph editing target/session: project Program, project Function
 (enabled in AB5), and Effect Instance context. Keep one active graph document initially;
@@ -453,7 +478,7 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** finish AB3c native divider, narrow/high-DPI and detached-window
-acceptance, retaining precise caveats in the checklist. Then begin AB4 standalone material
-documents. Do not mark AB3 complete from headless checks alone, remove the transitional
-Library, or introduce thumbnails/file mutations ahead of their milestones.
+**Immediate next step (P1):** AB4b — connect the standalone authoring boundary to guarded
+Assets opening, an explicit graph target and isolated editing/history. Follow with AB4c
+material-only persistence/recovery and end-to-end acceptance. Keep the transitional
+Library and do not introduce thumbnails/file mutations ahead of their milestones.

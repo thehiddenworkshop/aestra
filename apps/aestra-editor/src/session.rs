@@ -785,6 +785,7 @@ impl EditorSession {
         }
         let Some(replacement) = document
             .effect
+            .expect("instance edits retain their effect context")
             .material_instances
             .into_iter()
             .find(|candidate| candidate.id == instance)
@@ -824,6 +825,7 @@ impl EditorSession {
         }
         let Some(replacement) = document
             .effect
+            .expect("instance edits retain their effect context")
             .material_instances
             .into_iter()
             .find(|candidate| candidate.id == instance)

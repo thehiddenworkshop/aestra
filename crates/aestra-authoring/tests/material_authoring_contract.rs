@@ -1631,9 +1631,9 @@ fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     program.render_state_policy.allowed.push(alpha_state);
     document.programs.push(program);
     let instance_id = MaterialId::from_u128(0x2001);
-    let emitter = document.effect.emitters[0].id;
-    let renderer = document.effect.emitters[0].renderers[0].id;
-    let legacy_material = document.effect.emitters[0].renderers[0].material;
+    let emitter = document.effect.as_ref().unwrap().emitters[0].id;
+    let renderer = document.effect.as_ref().unwrap().emitters[0].renderers[0].id;
+    let legacy_material = document.effect.as_ref().unwrap().emitters[0].renderers[0].material;
     let instance = MaterialInstance {
         id: instance_id,
         program: MaterialProgramRef::Project(program_id),
@@ -1683,11 +1683,11 @@ fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
             && change.kind == MaterialChangeKind::Modified
     }));
     assert_eq!(
-        document.effect.material_instances[0].values[&parameter],
+        document.effect.as_ref().unwrap().material_instances[0].values[&parameter],
         MaterialParameterValue::Constant(MaterialValue::Float(2.0))
     );
 
-    let mut replacement = document.effect.material_instances[0].clone();
+    let mut replacement = document.effect.as_ref().unwrap().material_instances[0].clone();
     replacement.values.clear();
     history
         .execute(
@@ -1718,12 +1718,22 @@ fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
             ),
         )
         .unwrap();
-    assert!(document.effect.material_instances.is_empty());
+    assert!(
+        document
+            .effect
+            .as_ref()
+            .unwrap()
+            .material_instances
+            .is_empty()
+    );
 
     history.undo(&mut document).unwrap().unwrap();
-    assert_eq!(document.effect.material_instances[0].id, instance_id);
     assert_eq!(
-        document.effect.emitters[0].renderers[0].material,
+        document.effect.as_ref().unwrap().material_instances[0].id,
+        instance_id
+    );
+    assert_eq!(
+        document.effect.as_ref().unwrap().emitters[0].renderers[0].material,
         instance_id
     );
 }
@@ -1785,8 +1795,8 @@ fn replacement_commands_preserve_stable_identity() {
 fn renderer_lookup_is_scoped_to_the_authored_emitter() {
     let mut document = authoring_document();
     let renderer = RendererId::from_u128(0x5000);
-    let emitter = document.effect.emitters[0].id;
-    let material = document.effect.materials[0].id;
+    let emitter = document.effect.as_ref().unwrap().emitters[0].id;
+    let material = document.effect.as_ref().unwrap().materials[0].id;
     let before = document.clone();
 
     let error = MaterialCommandExecutor::execute(
@@ -1813,19 +1823,29 @@ fn material_binding_tool_plans_a_stable_effect_binding_and_exact_undo() {
     let (program, material_parameter) = parameterized_program(program_id);
     document.programs.push(program);
     let instance_id = MaterialId::from_u128(0x5801);
-    document.effect.material_instances.push(MaterialInstance {
-        id: instance_id,
-        program: MaterialProgramRef::Project(program_id),
-        values: BTreeMap::new(),
-        render_state: MaterialRenderState::additive_sprite(),
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .material_instances
+        .push(MaterialInstance {
+            id: instance_id,
+            program: MaterialProgramRef::Project(program_id),
+            values: BTreeMap::new(),
+            render_state: MaterialRenderState::additive_sprite(),
+        });
     let effect_parameter = ParameterId::from_u128(0x5802);
-    document.effect.parameters.push(EffectParameter {
-        id: effect_parameter,
-        name: "Effect intensity".into(),
-        default: Value::Scalar(0.75),
-        exposed: true,
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .parameters
+        .push(EffectParameter {
+            id: effect_parameter,
+            name: "Effect intensity".into(),
+            default: Value::Scalar(0.75),
+            exposed: true,
+        });
     let before = document.clone();
     let command = MaterialToolCommand::BindMaterialParameter {
         instance: instance_id,
@@ -1871,7 +1891,7 @@ fn material_binding_tool_plans_a_stable_effect_binding_and_exact_undo() {
     let mut history = MaterialCommandHistory::default();
     history.execute(&mut document, plan.transaction).unwrap();
     assert_eq!(
-        document.effect.material_instances[0].values[&material_parameter],
+        document.effect.as_ref().unwrap().material_instances[0].values[&material_parameter],
         MaterialParameterValue::EffectParameter(effect_parameter)
     );
     history.undo(&mut document).unwrap().unwrap();
@@ -1885,12 +1905,17 @@ fn material_binding_tool_uses_an_explicit_program_default_source() {
     let (program, material_parameter) = parameterized_program(program_id);
     document.programs.push(program);
     let instance_id = MaterialId::from_u128(0x5901);
-    document.effect.material_instances.push(MaterialInstance {
-        id: instance_id,
-        program: MaterialProgramRef::Project(program_id),
-        values: BTreeMap::new(),
-        render_state: MaterialRenderState::additive_sprite(),
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .material_instances
+        .push(MaterialInstance {
+            id: instance_id,
+            program: MaterialProgramRef::Project(program_id),
+            values: BTreeMap::new(),
+            render_state: MaterialRenderState::additive_sprite(),
+        });
     let before = document.clone();
     let random_binding = MaterialParameterBinding::RandomRange {
         min: MaterialValue::Float(0.25),
@@ -1911,7 +1936,7 @@ fn material_binding_tool_uses_an_explicit_program_default_source() {
         .execute(&mut document, random_plan.transaction)
         .unwrap();
     assert!(matches!(
-        document.effect.material_instances[0]
+        document.effect.as_ref().unwrap().material_instances[0]
             .values
             .get(&material_parameter),
         Some(MaterialParameterValue::RandomRange { min, max, domain })
@@ -1949,7 +1974,7 @@ fn material_binding_tool_uses_an_explicit_program_default_source() {
 
     history.execute(&mut document, plan.transaction).unwrap();
     assert!(
-        !document.effect.material_instances[0]
+        !document.effect.as_ref().unwrap().material_instances[0]
             .values
             .contains_key(&material_parameter)
     );
@@ -1966,33 +1991,53 @@ fn material_binding_tool_rejects_stale_and_incompatible_bindings_atomically() {
     let (program, material_parameter) = parameterized_program(program_id);
     document.programs.push(program);
     let instance_id = MaterialId::from_u128(0x5a01);
-    document.effect.material_instances.push(MaterialInstance {
-        id: instance_id,
-        program: MaterialProgramRef::Project(program_id),
-        values: BTreeMap::new(),
-        render_state: MaterialRenderState::additive_sprite(),
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .material_instances
+        .push(MaterialInstance {
+            id: instance_id,
+            program: MaterialProgramRef::Project(program_id),
+            values: BTreeMap::new(),
+            render_state: MaterialRenderState::additive_sprite(),
+        });
     let vector_parameter = ParameterId::from_u128(0x5a02);
-    document.effect.parameters.push(EffectParameter {
-        id: vector_parameter,
-        name: "Wrong type".into(),
-        default: Value::Vec2([1.0, 2.0]),
-        exposed: true,
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .parameters
+        .push(EffectParameter {
+            id: vector_parameter,
+            name: "Wrong type".into(),
+            default: Value::Vec2([1.0, 2.0]),
+            exposed: true,
+        });
     let scalar_parameter = ParameterId::from_u128(0x5a04);
-    document.effect.parameters.push(EffectParameter {
-        id: scalar_parameter,
-        name: "Wrong source domain".into(),
-        default: Value::Scalar(1.0),
-        exposed: true,
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .parameters
+        .push(EffectParameter {
+            id: scalar_parameter,
+            name: "Wrong source domain".into(),
+            default: Value::Scalar(1.0),
+            exposed: true,
+        });
     let hidden_parameter = ParameterId::from_u128(0x5a03);
-    document.effect.parameters.push(EffectParameter {
-        id: hidden_parameter,
-        name: "Internal scalar".into(),
-        default: Value::Scalar(1.0),
-        exposed: false,
-    });
+    document
+        .effect
+        .as_mut()
+        .unwrap()
+        .parameters
+        .push(EffectParameter {
+            id: hidden_parameter,
+            name: "Internal scalar".into(),
+            default: Value::Scalar(1.0),
+            exposed: false,
+        });
     let before = document.clone();
     let missing_instance = MaterialId::from_u128(0x5aff);
     let missing_material_parameter = MaterialParameterId::from_u128(0x5afe);
