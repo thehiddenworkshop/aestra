@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["vendor/bevy_input_focus"]
 members = [
     "apps/aestra-bench",
     "apps/aestra-editor",
@@ -47,3 +48,7 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+# Bevy 0.19.1 dispatches keyboard events with end-of-frame modifiers; see vendor README.
+bevy_input_focus = { path = "vendor/bevy_input_focus" }

@@ -225,6 +225,7 @@ fn main() {
         )
         .add_plugins(SvgPlugin)
         .add_plugins(AestraFeathersPlugin)
+        .add_plugins(input::EditorKeyboardPlugin)
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorLibraryPlugin)

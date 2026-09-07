@@ -685,7 +685,7 @@ fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Lo
 
 fn choreography_keyboard_input(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::input::ShortcutKeys,
     palette: Res<ModulePaletteState>,
     session: Res<EditorSession>,
     state: Res<TimelineState>,
@@ -710,57 +710,59 @@ fn choreography_keyboard_input(
     {
         return;
     }
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    if host_motion::keyboard_input(&session, &state, &keys, &mut commands) {
-        return;
-    }
-    if control && keys.just_pressed(KeyCode::Enter) {
-        commands.trigger(ChoreographyAction::AddEmitter);
-    }
-    if control && keys.just_pressed(KeyCode::KeyD) {
-        commands.trigger(if state.selected_emitter_regions.is_empty() {
-            ChoreographyAction::DuplicateEmitter(None)
-        } else {
-            ChoreographyAction::DuplicateSelectedEmitterRegions
-        });
-    }
-    if keys.just_pressed(KeyCode::Insert) {
-        let action = automation_graphs.iter().find_map(|(graph, cursor)| {
-            cursor
-                .normalized
-                .filter(|_| cursor.cursor_over())
-                .and_then(|position| {
-                    add_automation_key_at_pointer_action(&session.effect, &graph.0, position)
-                })
-        });
-        if let Some(action) = action {
-            commands.trigger(action);
-            return;
+    for keys in input.iter() {
+        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        if host_motion::keyboard_input(&session, &state, keys, &mut commands) {
+            continue;
         }
-    }
-    if keys.just_pressed(KeyCode::Delete) {
-        if let Some(selection) = state.selected_automation_key.clone() {
-            commands.trigger(ChoreographyAction::DeleteAutomationKey(selection));
-            return;
+        if control && keys.just_pressed(KeyCode::Enter) {
+            commands.trigger(ChoreographyAction::AddEmitter);
         }
-        if !state.selected_emitter_regions.is_empty() {
-            commands.trigger(ChoreographyAction::DeleteSelectedEmitterRegions);
-            return;
+        if control && keys.just_pressed(KeyCode::KeyD) {
+            commands.trigger(if state.selected_emitter_regions.is_empty() {
+                ChoreographyAction::DuplicateEmitter(None)
+            } else {
+                ChoreographyAction::DuplicateSelectedEmitterRegions
+            });
         }
-        match session.selection.primary {
-            SemanticTarget::Marker(marker) => {
-                commands.trigger(TimelineAction::DeleteMarker(marker));
+        if keys.just_pressed(KeyCode::Insert) {
+            let action = automation_graphs.iter().find_map(|(graph, cursor)| {
+                cursor
+                    .normalized
+                    .filter(|_| cursor.cursor_over())
+                    .and_then(|position| {
+                        add_automation_key_at_pointer_action(&session.effect, &graph.0, position)
+                    })
+            });
+            if let Some(action) = action {
+                commands.trigger(action);
+                continue;
             }
-            SemanticTarget::ChoreographyEvent(event) => {
-                commands.trigger(TimelineAction::DeleteChoreographyEvent(event));
+        }
+        if keys.just_pressed(KeyCode::Delete) {
+            if let Some(selection) = state.selected_automation_key.clone() {
+                commands.trigger(ChoreographyAction::DeleteAutomationKey(selection));
+                continue;
             }
-            SemanticTarget::EffectClip(clip) if state.inspected_child.is_none() => {
-                commands.trigger(ChoreographyAction::DeleteEffectClip(clip));
+            if !state.selected_emitter_regions.is_empty() {
+                commands.trigger(ChoreographyAction::DeleteSelectedEmitterRegions);
+                continue;
             }
-            _ if state.inspected_child.is_none() => {
-                commands.trigger(ChoreographyAction::DeleteEmitter(None));
+            match session.selection.primary {
+                SemanticTarget::Marker(marker) => {
+                    commands.trigger(TimelineAction::DeleteMarker(marker));
+                }
+                SemanticTarget::ChoreographyEvent(event) => {
+                    commands.trigger(TimelineAction::DeleteChoreographyEvent(event));
+                }
+                SemanticTarget::EffectClip(clip) if state.inspected_child.is_none() => {
+                    commands.trigger(ChoreographyAction::DeleteEffectClip(clip));
+                }
+                _ if state.inspected_child.is_none() => {
+                    commands.trigger(ChoreographyAction::DeleteEmitter(None));
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }

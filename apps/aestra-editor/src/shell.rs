@@ -797,7 +797,7 @@ pub(crate) fn localized_action_button(
 
 fn keyboard_shortcuts(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::input::ShortcutKeys,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
@@ -806,37 +806,39 @@ fn keyboard_shortcuts(
     if palette.open {
         return;
     }
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    for keys in input.iter() {
+        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+        let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
 
-    if keys.just_pressed(KeyCode::Escape) {
-        let context_was_open = menu.tab_context.take().is_some();
-        menu.open = None;
-        menu.panels_open = false;
-        menu.show_about = false;
-        if context_was_open {
-            session.ui_revision += 1;
+        if keys.just_pressed(KeyCode::Escape) {
+            let context_was_open = menu.tab_context.take().is_some();
+            menu.open = None;
+            menu.panels_open = false;
+            menu.show_about = false;
+            if context_was_open {
+                session.ui_revision += 1;
+            }
         }
-    }
-    if control && keys.just_pressed(KeyCode::KeyN) {
-        commands.trigger(DocumentAction::New);
-    }
-    if control && keys.just_pressed(KeyCode::KeyO) {
-        commands.trigger(DocumentAction::Open);
-    }
-    if control && keys.just_pressed(KeyCode::KeyS) {
-        commands.trigger(if shift {
-            DocumentAction::SaveAs
-        } else {
-            DocumentAction::Save
-        });
-    }
-    if alt && keys.just_pressed(KeyCode::ArrowLeft) && navigation.can_go_back() {
-        commands.trigger(DocumentAction::BackToSource);
-    }
-    if alt && keys.just_pressed(KeyCode::ArrowRight) && navigation.can_go_forward() {
-        commands.trigger(DocumentAction::ForwardToSource);
+        if control && keys.just_pressed(KeyCode::KeyN) {
+            commands.trigger(DocumentAction::New);
+        }
+        if control && keys.just_pressed(KeyCode::KeyO) {
+            commands.trigger(DocumentAction::Open);
+        }
+        if control && keys.just_pressed(KeyCode::KeyS) {
+            commands.trigger(if shift {
+                DocumentAction::SaveAs
+            } else {
+                DocumentAction::Save
+            });
+        }
+        if alt && keys.just_pressed(KeyCode::ArrowLeft) && navigation.can_go_back() {
+            commands.trigger(DocumentAction::BackToSource);
+        }
+        if alt && keys.just_pressed(KeyCode::ArrowRight) && navigation.can_go_forward() {
+            commands.trigger(DocumentAction::ForwardToSource);
+        }
     }
 }
 
@@ -1025,6 +1027,61 @@ mod tests {
     use super::*;
     use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin};
+
+    #[test]
+    fn fast_save_chords_distinguish_save_and_save_as_without_opening_dialogs() {
+        use crate::input::tests::{key, keyboard_app, tap};
+        use bevy::input::{ButtonState, keyboard::Key};
+        #[derive(Resource, Default)]
+        struct Actions(Vec<DocumentAction>);
+        let (mut app, window, _) = keyboard_app();
+        app.insert_resource(test_support::session_with_timing_slack())
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<SourceNavigationState>()
+            .init_resource::<Actions>()
+            .add_observer(|event: On<DocumentAction>, mut actions: ResMut<Actions>| {
+                actions.0.push(*event.event())
+            })
+            .add_systems(Update, keyboard_shortcuts);
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlLeft,
+            Key::Control,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::KeyS, Key::Character("s".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ShiftLeft,
+            Key::Shift,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::KeyS, Key::Character("s".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ShiftLeft,
+            Key::Shift,
+            ButtonState::Released,
+        );
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlLeft,
+            Key::Control,
+            ButtonState::Released,
+        );
+        tap(&mut app, window, KeyCode::KeyS, Key::Character("s".into()));
+        app.world_mut().run_schedule(PreUpdate);
+        app.world_mut().run_schedule(Update);
+        assert_eq!(
+            app.world().resource::<Actions>().0,
+            [DocumentAction::Save, DocumentAction::SaveAs]
+        );
+    }
 
     #[test]
     fn document_operation_status_updates_without_rebuilding_the_footer() {

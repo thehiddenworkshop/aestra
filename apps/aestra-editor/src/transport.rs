@@ -156,17 +156,33 @@ fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<Edi
 fn transport_keyboard_input(
     mut commands: Commands,
     mut keyboard_events: MessageReader<KeyboardInput>,
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::input::ShortcutKeys,
     palette: Res<ModulePaletteState>,
     focus: Option<Res<InputFocus>>,
     menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
     shortcuts: crate::input::ShortcutContext,
 ) {
-    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-    let repeated_steps = keyboard_events
-        .read()
-        .filter_map(|event| repeated_frame_step(event, alt))
-        .collect::<Vec<_>>();
+    let repeated_steps = if let Some(events) = input.repeats() {
+        keyboard_events.clear();
+        events
+            .iter()
+            .filter_map(|event| {
+                repeated_frame_step(
+                    &event.input,
+                    event.key_codes.pressed(KeyCode::AltLeft)
+                        || event.key_codes.pressed(KeyCode::AltRight),
+                )
+            })
+            .collect::<Vec<_>>()
+    } else {
+        let alt = input
+            .iter()
+            .any(|keys| keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight));
+        keyboard_events
+            .read()
+            .filter_map(|event| repeated_frame_step(event, alt))
+            .collect::<Vec<_>>()
+    };
     let menu_item_focused = focus
         .as_deref()
         .and_then(InputFocus::get)
@@ -174,17 +190,20 @@ fn transport_keyboard_input(
     if palette.open || menu_item_focused || shortcuts.blocked() {
         return;
     }
-    if keys.just_pressed(KeyCode::Space) {
-        commands.trigger(TransportAction::TogglePlayback);
-    }
-    if keys.just_pressed(KeyCode::KeyR) {
-        commands.trigger(TransportAction::Restart);
-    }
-    if !alt && keys.just_pressed(KeyCode::ArrowLeft) {
-        commands.trigger(TransportAction::StepFrame(-1));
-    }
-    if !alt && keys.just_pressed(KeyCode::ArrowRight) {
-        commands.trigger(TransportAction::StepFrame(1));
+    for keys in input.iter() {
+        let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+        if keys.just_pressed(KeyCode::Space) {
+            commands.trigger(TransportAction::TogglePlayback);
+        }
+        if keys.just_pressed(KeyCode::KeyR) {
+            commands.trigger(TransportAction::Restart);
+        }
+        if !alt && keys.just_pressed(KeyCode::ArrowLeft) {
+            commands.trigger(TransportAction::StepFrame(-1));
+        }
+        if !alt && keys.just_pressed(KeyCode::ArrowRight) {
+            commands.trigger(TransportAction::StepFrame(1));
+        }
     }
     for direction in repeated_steps {
         commands.trigger(TransportAction::StepFrame(direction));
@@ -684,6 +703,66 @@ mod tests {
         let mut ordinary = repeat;
         ordinary.repeat = false;
         assert_eq!(repeated_frame_step(&ordinary, false), None);
+    }
+
+    #[test]
+    fn fast_alt_navigation_does_not_step_transport_and_plain_repeats_still_do() {
+        use crate::input::tests::{key, keyboard_app, tap};
+        use bevy::input::keyboard::Key;
+        #[derive(Resource, Default)]
+        struct Actions(Vec<TransportAction>);
+        let (mut app, window, _) = keyboard_app();
+        app.world_mut().resource_mut::<InputFocus>().clear();
+        app.init_resource::<ModulePaletteState>()
+            .init_resource::<Actions>()
+            .add_observer(|event: On<TransportAction>, mut actions: ResMut<Actions>| {
+                actions.0.push(*event.event())
+            })
+            .add_systems(Update, transport_keyboard_input);
+        key(
+            &mut app,
+            window,
+            KeyCode::AltLeft,
+            Key::Alt,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::ArrowLeft, Key::ArrowLeft);
+        app.world_mut().write_message(KeyboardInput {
+            key_code: KeyCode::ArrowLeft,
+            logical_key: Key::ArrowLeft,
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: true,
+            window,
+        });
+        key(
+            &mut app,
+            window,
+            KeyCode::AltLeft,
+            Key::Alt,
+            ButtonState::Released,
+        );
+        key(
+            &mut app,
+            window,
+            KeyCode::ArrowRight,
+            Key::ArrowRight,
+            ButtonState::Pressed,
+        );
+        app.world_mut().write_message(KeyboardInput {
+            key_code: KeyCode::ArrowRight,
+            logical_key: Key::ArrowRight,
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: true,
+            window,
+        });
+        app.world_mut().run_schedule(PreUpdate);
+        app.world_mut().run_schedule(Update);
+        assert_eq!(
+            app.world().resource::<Actions>().0,
+            [TransportAction::StepFrame(1), TransportAction::StepFrame(1)]
+        );
     }
 
     #[test]

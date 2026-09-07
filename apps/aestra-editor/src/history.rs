@@ -722,24 +722,26 @@ fn execute_history_action(
 
 fn history_keyboard_input(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::input::ShortcutKeys,
     palette: Res<ModulePaletteState>,
     shortcuts: crate::input::ShortcutContext,
 ) {
     if palette.open || shortcuts.blocked() {
         return;
     }
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    if control && keys.just_pressed(KeyCode::KeyZ) {
-        commands.trigger(if shift {
-            HistoryAction::Redo
-        } else {
-            HistoryAction::Undo
-        });
-    }
-    if control && keys.just_pressed(KeyCode::KeyY) {
-        commands.trigger(HistoryAction::Redo);
+    for keys in input.iter() {
+        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+        if control && keys.just_pressed(KeyCode::KeyZ) {
+            commands.trigger(if shift {
+                HistoryAction::Redo
+            } else {
+                HistoryAction::Undo
+            });
+        }
+        if control && keys.just_pressed(KeyCode::KeyY) {
+            commands.trigger(HistoryAction::Redo);
+        }
     }
 }
 
@@ -1087,6 +1089,93 @@ mod tests {
             app.world().resource::<EditorSession>().effect.duration,
             changed_duration
         );
+    }
+
+    #[test]
+    fn fast_history_chords_keep_order_and_respect_text_focus() {
+        use crate::input::tests::{key, keyboard_app, tap};
+        use bevy::input::{ButtonState, keyboard::Key};
+        use bevy::{input_focus::InputFocus, text::EditableText};
+        #[derive(Resource, Default)]
+        struct Actions(Vec<HistoryAction>);
+        let (mut app, window, text) = keyboard_app();
+        app.init_resource::<ModulePaletteState>()
+            .init_resource::<Actions>()
+            .add_observer(|event: On<HistoryAction>, mut actions: ResMut<Actions>| {
+                actions.0.push(*event.event())
+            })
+            .add_systems(Update, history_keyboard_input);
+        // Editable focus must not leak into document history.
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlLeft,
+            Key::Control,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlLeft,
+            Key::Control,
+            ButtonState::Released,
+        );
+        app.world_mut().run_schedule(PreUpdate);
+        app.world_mut().run_schedule(Update);
+        assert!(app.world().resource::<Actions>().0.is_empty());
+        assert!(
+            app.world()
+                .get::<EditableText>(text)
+                .unwrap()
+                .pending_edits
+                .is_empty()
+        );
+        app.world_mut().resource_mut::<InputFocus>().clear();
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlRight,
+            Key::Control,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ShiftRight,
+            Key::Shift,
+            ButtonState::Pressed,
+        );
+        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ShiftRight,
+            Key::Shift,
+            ButtonState::Released,
+        );
+        tap(&mut app, window, KeyCode::KeyY, Key::Character("y".into()));
+        key(
+            &mut app,
+            window,
+            KeyCode::ControlRight,
+            Key::Control,
+            ButtonState::Released,
+        );
+        app.world_mut().run_schedule(PreUpdate);
+        app.world_mut().run_schedule(Update);
+        assert_eq!(
+            app.world().resource::<Actions>().0,
+            [
+                HistoryAction::Undo,
+                HistoryAction::Redo,
+                HistoryAction::Redo
+            ]
+        );
+        app.world_mut().run_schedule(PreUpdate);
+        app.world_mut().run_schedule(Update);
+        assert_eq!(app.world().resource::<Actions>().0.len(), 3);
     }
 
     #[test]

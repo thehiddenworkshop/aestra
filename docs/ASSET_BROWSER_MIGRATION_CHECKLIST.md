@@ -468,3 +468,32 @@ gizmo no longer drew over the popup, and closing the application with recovery s
 pending again preserved the snapshot hash. Final validation: 587 editor tests passed
 (two opt-in tests ignored), architecture isolation passed, strict workspace Clippy and
 formatting/diff checks passed.
+
+### AB4c2 keyboard modifiers and OS clipboard — 2026-09-07
+
+The earlier modifier hypothesis is now reproduced: stock Bevy 0.19.1 dispatch of
+Ctrl-down/A-down/A-up/V-down/V-up/Ctrl-up in one frame queued literal `a` and `v` in
+Feather's editable text. The same regression now queues SelectAll and Paste.
+
+- A pinned, licensed `vendor/bevy_input_focus` compatibility patch captures pre-frame
+  key state, supplies per-event state during focused dispatch, and restores frame state
+  afterward. Other focused widget behavior remains upstream. Its scope and removal
+  criteria are documented in `vendor/bevy_input_focus/AESTRA_PATCH.md`.
+- History, document, material graph, timeline, viewport and transport shortcuts use
+  ordered physical keypress snapshots instead of end-of-frame modifier state. Repeats
+  are excluded from discrete actions and retained for deliberate frame stepping.
+- Regressions cover plain text around a chord, held/left/right modifiers, selection,
+  focus loss, repeats, text-focus history suppression, ordered Undo/Redo, Save/Save As,
+  and Alt+arrow navigation not leaking into transport stepping.
+- Native testing found the second paste failure: Bevy's `system_clipboard` feature was
+  not enabled. Enabled it for aestra-editor, preserving upstream clipboard behavior.
+  Before this change, Ctrl+A selected text correctly but OS paste inserted nothing.
+  Afterward, pasting `prism` replaced selected text and filtered the Asset Browser to
+  Prism Bloom. The temporary search filter was cleared; no material source was edited.
+
+Validation: 595 editor tests passed, two opt-in tests ignored; architecture isolation
+passed; 33 vendored input-focus tests passed. Strict workspace and vendored-dependency
+Clippy, plus formatting checks, passed. Eight new editor regressions supplement the
+native text-entry check. Native shared-material keyboard Undo/Redo and lifecycle
+acceptance are not claimed by this focused search-field pass. Overflowing diagnostics
+and the remaining AB4 exit checks still precede AB5.

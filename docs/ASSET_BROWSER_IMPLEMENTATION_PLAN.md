@@ -380,6 +380,12 @@ Delivery slices (P1):
   snapshot. Autosave and editing/navigation are gated while pending, including the
   viewport transform gizmo. Failed restore/discard stays open for retry. The former OS
   recovery alert is removed; other native file/confirmation dialogs are unchanged.
+  Fast modifier chords now have an automated failing-before/passing-after regression:
+  a pinned Bevy input-focus compatibility patch dispatches event-time modifier state,
+  and discrete editor shortcuts consume ordered keypress snapshots. OS clipboard
+  support is enabled for the editor. Native Ctrl+A and OS paste into Asset Browser
+  search pass; complete keyboard-only shared-material lifecycle acceptance is still
+  a separate exit gate.
 
 Standalone opening/editing is enabled in the editor. Full AB4 remains incomplete until
 the persistence/lifecycle and end-to-end exit gate below passes.
@@ -524,7 +530,8 @@ particular engine UI; each delivered feature needs a tested performance/correctn
 
 **Immediate next step (P1):** finish AB4c2 acceptance. The partial native pass verified
 initial restoration, material Save/Reload, previews, menu history and conflict safety.
-Investigate fast modifier-chord handling, bound overflowing source diagnostics, then
+Fast modifier-chord handling and OS clipboard support are fixed and regression-tested.
+Bound overflowing source diagnostics, then
 finish interrupted-session restore, keyboard focus and effect-context return/reopen checks
 (see the migration checklist). Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

@@ -14,7 +14,7 @@ aestra-compiler = { path = "../../crates/aestra-compiler" }
 aestra-core = { path = "../../crates/aestra-core" }
 aestra-project = { path = "../../crates/aestra-project" }
 aestra-runtime = { path = "../../crates/aestra-runtime" }
-bevy.workspace = true
+bevy = { workspace = true, features = ["system_clipboard"] }
 bevy_resvg.workspace = true
 bevy_winit = "0.19.1"
 fluent-bundle.workspace = true

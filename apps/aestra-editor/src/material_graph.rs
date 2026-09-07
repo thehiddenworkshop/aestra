@@ -1637,7 +1637,8 @@ fn handle_material_graph_context_actions(
 }
 
 fn material_graph_keyboard_input(
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::input::ShortcutKeys,
+    shortcuts: crate::input::ShortcutContext,
     viewports: Query<(&MaterialGraphViewport, &RelativeCursorPosition)>,
     graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
     focus: Option<Res<InputFocus>>,
@@ -1655,7 +1656,8 @@ fn material_graph_keyboard_input(
         .as_ref()
         .and_then(|focus| focus.get())
         .is_some_and(|entity| editable_text.contains(entity));
-    if editing_text || palette.open.is_some() || palette.node_menu.is_some() {
+    if editing_text || shortcuts.blocked() || palette.open.is_some() || palette.node_menu.is_some()
+    {
         return;
     }
     let Some(program) = viewports
@@ -1667,43 +1669,45 @@ fn material_graph_keyboard_input(
     if selection.program != Some(program) {
         return;
     }
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let edit = if control
-        && shift
-        && keys.just_pressed(KeyCode::KeyE)
-        && !selection.expressions.is_empty()
-    {
-        Some(MaterialGraphSelectionEdit::ExtractFunction)
-    } else if control && keys.just_pressed(KeyCode::KeyD) && !selection.expressions.is_empty() {
-        Some(MaterialGraphSelectionEdit::Duplicate)
-    } else if keys.just_pressed(KeyCode::Delete) {
-        if !selection.expressions.is_empty() {
-            Some(MaterialGraphSelectionEdit::Delete)
-        } else if selection.connection.is_some() {
-            Some(MaterialGraphSelectionEdit::Disconnect)
+    for keys in input.iter() {
+        let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+        let edit = if control
+            && shift
+            && keys.just_pressed(KeyCode::KeyE)
+            && !selection.expressions.is_empty()
+        {
+            Some(MaterialGraphSelectionEdit::ExtractFunction)
+        } else if control && keys.just_pressed(KeyCode::KeyD) && !selection.expressions.is_empty() {
+            Some(MaterialGraphSelectionEdit::Duplicate)
+        } else if keys.just_pressed(KeyCode::Delete) {
+            if !selection.expressions.is_empty() {
+                Some(MaterialGraphSelectionEdit::Delete)
+            } else if selection.connection.is_some() {
+                Some(MaterialGraphSelectionEdit::Disconnect)
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
-    };
-    let Some(edit) = edit else {
-        return;
-    };
-    apply_material_graph_selection_edit(
-        edit,
-        program,
-        &graph_nodes,
-        &mut session,
-        &mut catalog,
-        &mut material_history,
-        &mut history_ledger,
-        &mut graph_memory,
-        &mut inspector,
-        &mut selection,
-    );
-    session.ui_revision += 1;
+        };
+        let Some(edit) = edit else {
+            continue;
+        };
+        apply_material_graph_selection_edit(
+            edit,
+            program,
+            &graph_nodes,
+            &mut session,
+            &mut catalog,
+            &mut material_history,
+            &mut history_ledger,
+            &mut graph_memory,
+            &mut inspector,
+            &mut selection,
+        );
+        session.ui_revision += 1;
+    }
 }
 
 fn focus_material_graph_number_input(
