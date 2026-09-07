@@ -752,6 +752,8 @@ changes-target-preview-only = The changed object only exists in the transaction 
 changes-selected-target = Selected changed { $target }.
 
 diagnostics-validation = VALIDATION
+diagnostics-details = Details
+diagnostics-back = Back to validation
 diagnostics-filter-all = ALL
 diagnostics-errors = ERRORS
 diagnostics-warnings = WARNINGS

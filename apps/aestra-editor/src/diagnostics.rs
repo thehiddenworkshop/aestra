@@ -5,6 +5,8 @@ use crate::*;
 use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
 use bevy::ui_widgets::Activate;
 
+pub(crate) mod details;
+
 pub(crate) struct EditorDiagnosticsPlugin;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +18,11 @@ pub(crate) enum DiagnosticsSet {
 impl Plugin for EditorDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DiagnosticsPanelState>()
+            .add_observer(details::activate_details)
+            .add_systems(
+                Update,
+                details::sync_status_details.in_set(DiagnosticsSet::Sync),
+            )
             .add_observer(queue_diagnostics_action_activation)
             .add_systems(
                 Update,
@@ -40,6 +47,7 @@ enum DiagnosticsAction {
 #[derive(Resource, Default)]
 pub(crate) struct DiagnosticsPanelState {
     filter: DiagnosticsFilter,
+    details: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -139,6 +147,9 @@ fn handle_diagnostics_actions(
                 }
                 match *action {
                     DiagnosticsAction::OpenPanel => {
+                        if state.details.take().is_some() {
+                            session.ui_revision += 1;
+                        }
                         reveal_dock_panel(&mut layout, &mut session, DockPanel::Diagnostics);
                     }
                     DiagnosticsAction::SetFilter(filter) => {
@@ -167,6 +178,10 @@ pub(crate) fn spawn_diagnostics_workspace(
     state: &DiagnosticsPanelState,
     localizer: &Localizer,
 ) {
+    if let Some(message) = &state.details {
+        details::spawn_workspace(parent, message, localizer);
+        return;
+    }
     let current = &session.diagnostics.diagnostics;
     let project_report = catalog.dependency_validation_report(&session.effect);
     let project = &project_report.diagnostics;
@@ -491,6 +506,8 @@ fn spawn_diagnostic_row(
                 ));
                 content.spawn((
                     Text::new(&diagnostic.message),
+                    TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+                    details::wrapped_text_node(),
                     TextFont {
                         font_size: FontSize::Px(11.0),
                         ..default()
@@ -500,6 +517,8 @@ fn spawn_diagnostic_row(
                 ));
                 content.spawn((
                     Text::new(&diagnostic.path),
+                    TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+                    details::wrapped_text_node(),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()

@@ -752,6 +752,8 @@ changes-target-preview-only = L’objet modifié existe uniquement dans l’aper
 changes-selected-target = Cible modifiée sélectionnée : { $target }.
 
 diagnostics-validation = VALIDATION
+diagnostics-details = Détails
+diagnostics-back = Retour à la validation
 diagnostics-filter-all = TOUS
 diagnostics-errors = ERREURS
 diagnostics-warnings = AVERTISSEMENTS

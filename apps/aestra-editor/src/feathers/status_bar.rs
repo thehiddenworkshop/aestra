@@ -12,6 +12,8 @@ pub(crate) fn status_bar() -> impl Bundle {
         Node {
             grid_row: GridPlacement::start(4),
             width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            overflow: Overflow::clip(),
             height: Val::Px(24.0),
             align_items: AlignItems::Center,
             padding: UiRect::horizontal(Val::Px(12.0)),

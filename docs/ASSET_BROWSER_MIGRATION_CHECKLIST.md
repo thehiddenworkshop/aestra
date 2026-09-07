@@ -497,3 +497,27 @@ Clippy, plus formatting checks, passed. Eight new editor regressions supplement 
 native text-entry check. Native shared-material keyboard Undo/Redo and lifecycle
 acceptance are not claimed by this focused search-field pass. Overflowing diagnostics
 and the remaining AB4 exit checks still precede AB5.
+
+### AB4c2 bounded diagnostic presentation — 2026-09-07
+
+- The footer presents a single-line, bounded operation summary and a Feather Details
+  action. Full status text is retained; long paths no longer determine footer width.
+- Standalone material source errors and validation messages use wrapped, bounded
+  summaries with Details actions. The Properties scrollbar is beside its viewport,
+  not below it. Inline effect diagnostics and validation paths also wrap long tokens.
+- Details opens the Diagnostics dock with the complete original message in a wrapped,
+  vertically scrollable view. It snapshots the selected message, so later operations
+  do not silently replace the error being inspected. Back to validation preserves the
+  existing severity filter; the compile-status action returns to validation as well.
+- English/French actions are localized. This changes presentation only, not source
+  loading, recovery, material drafts or effect history.
+
+Native diagnostic presentation and the remaining AB4 lifecycle checks are still
+pending; this implementation does not advance AB5 or claim native acceptance.
+
+Validation: 600 editor tests passed (two opt-in tests ignored), plus architecture
+isolation. Five new regressions cover Unicode/unbroken-path summaries, retained
+status-action visibility, lossless snapshots/back navigation and real text layout at
+160/240/400-pixel widths and 1×/2× target scale. The existing retained-footer test now
+also checks long messages without a UI rebuild. Strict workspace Clippy and formatting
+checks passed.

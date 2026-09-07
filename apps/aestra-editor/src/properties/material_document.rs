@@ -66,86 +66,105 @@ pub(super) fn spawn(
         })
         .with_children(|panel| {
             panel_heading(panel, &localizer.text("material-document-shared"), "");
-            spawn_vertical_scroll_area(
-                panel,
-                ScrollMemoryKey::Properties,
-                Node {
+            panel
+                .spawn(Node {
                     flex_grow: 1.0,
                     min_width: Val::Px(0.0),
                     min_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
                     ..default()
-                },
-                |body| {
-                    let document = match result {
-                        Ok(document) => document,
-                        Err(error) => {
-                            body.spawn((Text::new(error), TextColor(theme::TEXT)));
-                            return;
-                        }
-                    };
-                    let program = &document.programs[0];
-                    crate::feathers::field_row::spawn_field_row(
-                        body,
-                        crate::feathers::field_row::FieldRowProps::new(
-                            localizer.text("properties-name"),
-                        ),
-                        EditorTooltip::description(localizer.text("material-document-description")),
-                        |input| {
-                            spawn_text_input(
-                                input,
-                                &program.name,
-                                &localizer.text("properties-name"),
-                                MaterialProgramName(id),
-                            );
-                        },
-                    );
-                    spawn_properties_read_only_control(
-                        body,
-                        &localizer.text("material-document-domain"),
-                        &format!("{:?}", program.domain),
-                    );
-                    spawn_properties_read_only_control(
-                        body,
-                        &localizer.text("material-document-state"),
-                        &localizer.text(if catalog.material_drafts.programs.contains_key(&id) {
-                            "save-state-unsaved"
-                        } else {
-                            "save-state-saved"
-                        }),
-                    );
-                    body.spawn((
-                        Text::new(localizer.text("material-document-description")),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_MUTED),
+                })
+                .with_children(|scroll_body| {
+                    spawn_vertical_scroll_area(
+                        scroll_body,
+                        ScrollMemoryKey::Properties,
                         Node {
-                            margin: UiRect::vertical(Val::Px(12.0)),
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(10.0)),
                             ..default()
                         },
-                    ));
-                    for parameter in &program.parameters {
-                        spawn_properties_read_only_control(
-                            body,
-                            &parameter.name,
-                            &default_summary(parameter.default.as_ref(), localizer),
-                        );
-                    }
-                    for diagnostic in document.validation_report().diagnostics {
-                        body.spawn((
-                            Text::new(diagnostic.message),
-                            TextColor(theme::TEXT),
-                            TextFont {
-                                font_size: FontSize::Px(12.0),
-                                ..default()
-                            },
-                        ));
-                    }
-                },
-            );
+                        |body| {
+                            let document = match result {
+                                Ok(document) => document,
+                                Err(error) => {
+                                    crate::diagnostics::details::spawn_summary(
+                                        body, &error, localizer,
+                                    );
+                                    return;
+                                }
+                            };
+                            let program = &document.programs[0];
+                            crate::feathers::field_row::spawn_field_row(
+                                body,
+                                crate::feathers::field_row::FieldRowProps::new(
+                                    localizer.text("properties-name"),
+                                ),
+                                EditorTooltip::description(
+                                    localizer.text("material-document-description"),
+                                ),
+                                |input| {
+                                    spawn_text_input(
+                                        input,
+                                        &program.name,
+                                        &localizer.text("properties-name"),
+                                        MaterialProgramName(id),
+                                    );
+                                },
+                            );
+                            spawn_properties_read_only_control(
+                                body,
+                                &localizer.text("material-document-domain"),
+                                &format!("{:?}", program.domain),
+                            );
+                            spawn_properties_read_only_control(
+                                body,
+                                &localizer.text("material-document-state"),
+                                &localizer.text(
+                                    if catalog.material_drafts.programs.contains_key(&id) {
+                                        "save-state-unsaved"
+                                    } else {
+                                        "save-state-saved"
+                                    },
+                                ),
+                            );
+                            body.spawn((
+                                Text::new(localizer.text("material-document-description")),
+                                TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+                                TextFont {
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(theme::TEXT_MUTED),
+                                Node {
+                                    margin: UiRect::vertical(Val::Px(12.0)),
+                                    ..crate::diagnostics::details::wrapped_text_node()
+                                },
+                            ));
+                            for parameter in &program.parameters {
+                                spawn_properties_read_only_control(
+                                    body,
+                                    &parameter.name,
+                                    &default_summary(parameter.default.as_ref(), localizer),
+                                );
+                            }
+                            for diagnostic in document.validation_report().diagnostics {
+                                crate::diagnostics::details::spawn_summary(
+                                    body,
+                                    &format!(
+                                        "{:?} · {:?}\n{}\n{}",
+                                        diagnostic.severity,
+                                        diagnostic.code,
+                                        diagnostic.message,
+                                        diagnostic.path
+                                    ),
+                                    localizer,
+                                );
+                            }
+                        },
+                    );
+                });
         });
     true
 }

@@ -8187,6 +8187,8 @@ fn spawn_inline_diagnostics(
         };
         parent.spawn((
             Text::new(format!("{:?}: {}", diagnostic.code, diagnostic.message)),
+            TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+            crate::diagnostics::details::wrapped_text_node(),
             TextFont {
                 font_size: FontSize::Px(8.0),
                 ..default()
@@ -8252,6 +8254,7 @@ fn spawn_stage_diagnostics(
     {
         parent.spawn((
             Text::new(format!("⚠ {}", diagnostic.message)),
+            TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
             TextFont {
                 font_size: FontSize::Px(8.0),
                 ..default()
@@ -8259,6 +8262,9 @@ fn spawn_stage_diagnostics(
             TextColor(Color::srgb(1.0, 0.38, 0.32)),
             Node {
                 margin: UiRect::horizontal(Val::Px(10.0)),
+                min_width: Val::Px(0.0),
+                max_width: Val::Percent(100.0),
+                flex_shrink: 0.0,
                 ..default()
             },
         ));

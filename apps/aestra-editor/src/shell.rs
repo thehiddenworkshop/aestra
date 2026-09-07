@@ -660,6 +660,7 @@ fn spawn_status_bar(
             spawn_compile_status(bar, session, localizer);
             bar.spawn((
                 Text::new(document_save_status(session, localizer)),
+                TextLayout::no_wrap(),
                 DocumentSaveStatus,
                 TextFont {
                     font_size: FontSize::Px(11.0),
@@ -668,11 +669,14 @@ fn spawn_status_bar(
                 TextColor(theme::TEXT),
                 Node {
                     margin: UiRect::left(Val::Px(16.0)),
+                    min_width: Val::Px(0.0),
+                    overflow: Overflow::clip(),
                     ..default()
                 },
             ));
             bar.spawn((
-                Text::new(&session.status),
+                Text::new(crate::diagnostics::details::summary(&session.status, 96)),
+                TextLayout::no_wrap(),
                 DocumentOperationStatus,
                 TextFont {
                     font_size: FontSize::Px(11.0),
@@ -683,10 +687,16 @@ fn spawn_status_bar(
                     margin: UiRect::left(Val::Px(16.0)),
                     min_width: Val::Px(0.0),
                     flex_grow: 1.0,
+                    flex_basis: Val::Px(0.0),
                     overflow: Overflow::clip(),
                     ..default()
                 },
             ));
+            crate::diagnostics::details::spawn_button(
+                bar,
+                crate::diagnostics::details::DetailsAction::LatestStatus,
+                localizer,
+            );
         });
 }
 
@@ -723,7 +733,7 @@ fn sync_document_save_status(
         text.0 = document_save_status(&session, &localizer);
     }
     for mut text in &mut operations {
-        text.0.clone_from(&session.status);
+        text.0 = crate::diagnostics::details::summary(&session.status, 96);
     }
 }
 
@@ -1100,6 +1110,19 @@ mod tests {
         assert_eq!(
             app.world().get::<Text>(status).unwrap().0,
             "Open failed: source missing"
+        );
+        let revision = app.world().resource::<EditorSession>().ui_revision;
+        let full = format!("Source conflict:\nC:/{}", "é界/material/".repeat(200));
+        app.world_mut().resource_mut::<EditorSession>().status = full.clone();
+        app.update();
+        let displayed = &app.world().get::<Text>(status).unwrap().0;
+        assert_eq!(displayed.chars().count(), 96);
+        assert!(!displayed.contains('\n'));
+        assert!(displayed.ends_with('…'));
+        assert_eq!(app.world().resource::<EditorSession>().status, full);
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision
         );
     }
 

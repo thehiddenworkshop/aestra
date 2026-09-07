@@ -480,6 +480,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "changes-target-preview-only",
     "changes-selected-target",
     "diagnostics-validation",
+    "diagnostics-details",
+    "diagnostics-back",
     "diagnostics-filter-all",
     "diagnostics-errors",
     "diagnostics-warnings",
