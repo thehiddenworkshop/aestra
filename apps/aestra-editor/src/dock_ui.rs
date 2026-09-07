@@ -24,6 +24,7 @@ struct PanelSources<'a> {
     navigation: Option<&'a SourceNavigationState>,
     catalog: &'a ProjectEffectCatalog,
     library: &'a LibraryState,
+    browser: &'a asset_browser::AssetBrowserState,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
     repair: &'a EffectClipRepairState,
@@ -45,6 +46,7 @@ pub(crate) struct DockUiResources<'w> {
     asset_server: Res<'w, AssetServer>,
     catalog: Res<'w, ProjectEffectCatalog>,
     library: Res<'w, LibraryState>,
+    browser: Res<'w, asset_browser::AssetBrowserState>,
     layout: Res<'w, WorkspaceLayout>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
@@ -74,6 +76,7 @@ impl<'w> DockUiResources<'w> {
             navigation: self.navigation.as_deref(),
             catalog: &self.catalog,
             library: &self.library,
+            browser: &self.browser,
             registry: &self.registry,
             palette: &self.palette,
             repair: &self.repair,
@@ -414,11 +417,12 @@ fn spawn_panel_content(
         DockPanel::Viewport => {
             viewport::spawn_preview(parent, sources.localizer, sources.asset_server)
         }
-        DockPanel::Assets => spawn_library(
+        DockPanel::Assets => asset_browser::spawn_assets_panel(
             parent,
             sources.session,
             sources.catalog,
             sources.library,
+            sources.browser,
             sources.localizer,
         ),
         DockPanel::Properties => {

@@ -518,6 +518,11 @@ impl EditorProjectContent {
         self.version
     }
 
+    /// Published discovery and semantic index; browsing must never scan the filesystem.
+    pub(crate) fn content(&self) -> &aestra_project::ProjectContent {
+        &self.snapshot.content
+    }
+
     pub(crate) fn prepare_preview(&mut self, effect: &EffectAsset) -> Result<(), String> {
         let compiled = self.compile_project(effect);
         self.prepared = Some(PreparedProject {

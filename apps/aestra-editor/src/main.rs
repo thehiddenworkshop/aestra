@@ -2,6 +2,7 @@
 // dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod asset_browser;
 mod changes;
 mod compiler_inspector;
 mod curves;
@@ -226,6 +227,7 @@ fn main() {
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorLibraryPlugin)
+        .add_plugins(asset_browser::EditorAssetBrowserPlugin)
         .add_plugins(EditorMaterialGraphPlugin)
         .add_plugins(EditorChangesPlugin)
         .add_plugins(EditorCompilerInspectorPlugin)

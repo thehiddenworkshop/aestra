@@ -3,8 +3,10 @@
 Status: updated 2026-09-07. AB0 contracts/inventory recorded and AB1
 read-only content model implemented. AB2a background refresh/editor adapter and AB2b1
 cached semantic queries implemented. AB2b2 explicit-open/post-write background operations
-implemented; AB3 read-only browser UI is next. Platform caveats are recorded in
-[the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md). No browser UI yet.
+implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
+Assets dock, with a transitional Library switch. AB3b inspection and AB3c persistence/
+acceptance are next. Platform caveats are recorded in
+[the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
 This is the repository-specific delivery plan for
 [`aestra_asset_browser_plan.md`](aestra_asset_browser_plan.md). That proposal remains
@@ -79,7 +81,7 @@ The first browser will not offer a warning-only “unsafe” bypass.
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
-slice; AB2a/AB2b1/AB2b2 are implemented, AB3–AB9 are pending.
+slice; AB2a/AB2b1/AB2b2 and AB3a are implemented. AB3b/AB3c and AB4–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -212,6 +214,42 @@ discovery or read-only semantic parsing on the interactive UI frame path; unchan
 snapshots cause no UI invalidation. Explicit mutation preflight must still validate disk.
 
 ### AB3 — Read-only browser, inspection and basic routing
+
+Delivery slices:
+
+- **AB3a — Navigation and browsing (implemented):** `asset_browser/{state,panel,actions}.rs`
+  reads the published `EditorProjectContent` snapshot. The existing Assets dock now has
+  Browser/Library tabs within its content, preserving presets, current-document tools and
+  legacy operations without another catalog or permanent panel. Includes expandable,
+  resizable/collapsible folders; back/forward/up and compact breadcrumbs; clearable search,
+  recursive scope, multiple type filters and name/type sorting; shared grid/list projection;
+  independent single selection and double-click/Enter guarded effect activation. Unknown
+  files and links are never executed. White type/view icons and English/French strings are
+  included. Both result and expanded-folder lists are paged at 96 entries; file rows have a
+  192-entry retained cache, with hidden rows removed from keyboard navigation. Selection,
+  filtering and view changes do not invalidate the editor shell; toolbar entities retain
+  keyboard focus across navigation/view changes. Scroll/pan starts are blocked behind the
+  browser. Tests cover cached browsing with deleted disk sources, root-generation and
+  deleted-folder fallback, filtering/layout parity, bounded entities, retained rows/controls,
+  keyboard folders and effect activation, duplicate rejection and preview input isolation.
+- **AB3a follow-up:** compact navigation/breadcrumb chrome, content-local search/filters,
+  folder icons, denser list rows and larger grid type tiles. Selection shows cached path,
+  type, size/read-only metadata and source diagnostics; full dependency/usage inspection
+  remains AB3b. Pointer activation is keyed by source row rather than descendant hit entity,
+  explicitly focuses the list, and has an Open-button fallback. Material activation reveals
+  the existing graph when a renderer in the current effect uses that program; unused
+  programs explain the standalone-editing limitation, without fabricating an effect.
+  Effect-open regression coverage includes the real background loader and viewport
+  synchronization: requesting an open must not mark the catalog changed, reinstall the
+  current preview, and falsely cancel publication as a concurrent edit. The footer now
+  shows operation results/errors as well as save state; genuine concurrent edits remain
+  protected.
+- **AB3b — Inspection and locate-source routing (next, P1):** source identity, metadata,
+   diagnostics, dependency/usage inspection and independent editor selection routing.
+- **AB3c — Persistence and acceptance (pending, P1):** versioned, root-scoped navigation/
+  layout settings, restart tests, 10,000-source benchmark and manual narrow/wide/high-DPI/
+  floating-panel acceptance. AB3a navigation currently survives shell rebuilds within the
+  session, not editor restarts. Full AB3 is not complete until these gates pass.
 
 Build `asset_browser/{state,panel,source_tree,asset_view,filtering,actions}.rs` as needed
 using shared Feathers buttons, search fields, breadcrumbs, list rows, scrollbars,

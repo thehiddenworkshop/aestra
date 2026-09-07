@@ -62,6 +62,8 @@ pub(crate) enum EditorAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ScrollMemoryKey {
     Library,
+    AssetBrowserSources,
+    AssetBrowserItems,
     LibraryRelations,
     LibraryDeletion,
     Properties,
@@ -668,11 +670,30 @@ fn spawn_status_bar(
                     ..default()
                 },
             ));
+            bar.spawn((
+                Text::new(&session.status),
+                DocumentOperationStatus,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::left(Val::Px(16.0)),
+                    min_width: Val::Px(0.0),
+                    flex_grow: 1.0,
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+            ));
         });
 }
 
 #[derive(Component)]
 struct DocumentSaveStatus;
+
+#[derive(Component)]
+struct DocumentOperationStatus;
 
 fn document_save_status(session: &EditorSession, localizer: &Localizer) -> String {
     let mut args = fluent_bundle::FluentArgs::new();
@@ -691,13 +712,17 @@ fn document_save_status(session: &EditorSession, localizer: &Localizer) -> Strin
 fn sync_document_save_status(
     session: Res<EditorSession>,
     localizer: Res<Localizer>,
-    mut labels: Query<&mut Text, With<DocumentSaveStatus>>,
+    mut labels: Query<&mut Text, (With<DocumentSaveStatus>, Without<DocumentOperationStatus>)>,
+    mut operations: Query<&mut Text, With<DocumentOperationStatus>>,
 ) {
     if !session.is_changed() && !localizer.is_changed() {
         return;
     }
     for mut text in &mut labels {
         text.0 = document_save_status(&session, &localizer);
+    }
+    for mut text in &mut operations {
+        text.0.clone_from(&session.status);
     }
 }
 
@@ -999,6 +1024,26 @@ mod tests {
     use super::*;
     use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin};
+
+    #[test]
+    fn document_operation_status_updates_without_rebuilding_the_footer() {
+        let mut app = App::new();
+        app.insert_resource(test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, sync_document_save_status);
+        let status = app
+            .world_mut()
+            .spawn((Text::default(), DocumentOperationStatus))
+            .id();
+        app.update();
+        app.world_mut().resource_mut::<EditorSession>().status =
+            "Open failed: source missing".into();
+        app.update();
+        assert_eq!(
+            app.world().get::<Text>(status).unwrap().0,
+            "Open failed: source missing"
+        );
+    }
 
     #[test]
     fn empty_effect_labels_update_without_an_emitter() {

@@ -1,15 +1,16 @@
 # Asset Browser contracts and migration inventory
 
-Recorded for AB0/AB1 and updated for AB2a, 2026-09-06. This is a parity inventory, **not** a claim that
-the Library UI has migrated. Follow [the delivery plan](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
+Recorded for AB0/AB1 and updated through AB3a, 2026-09-07. This is a parity inventory,
+**not** a claim that every Library workflow has migrated. Follow
+[the delivery plan](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 
 ## Implemented discovery contract
 
 `aestra-project::ProjectContent::scan(root)` builds a read-only source tree and the
 existing semantic index from one directory discovery. It does not choose a project
 root, mutate files, create metadata, load textures, watch changes or publish UI events.
-The editor's AB2a adapter now schedules recurring discovery on an I/O worker. Explicit
-root-open/post-write scans and legacy read-through query helpers remain for AB2b.
+The editor's adapter schedules recurring discovery and explicit root-open/post-write
+preparation on I/O workers. Read-only queries use the published snapshot.
 
 - `ProjectSourceTree` retains the root, nested/empty folders, ordinary files, native
   paths/names, metadata and discovery errors. Children are folders-first then native
@@ -49,7 +50,8 @@ mutation containment/preflight remains a separate AB6 requirement.
 
 ## Library parity inventory
 
-UI destinations below are pending; the polling/catalog service has moved in AB2a.
+The polling/catalog service moved in AB2a; AB3a now supplies source browsing and guarded
+effect activation, with a Library switch for all remaining legacy workflows.
 Retain each existing workflow until its replacement
 passes both command and interaction checks; AB8 is the removal gate.
 
@@ -139,4 +141,43 @@ privilege/Unix caveats above remain. Native file/folder/save and migration dialo
 not been manually revalidated with these workers; the folder-preparation path is tested
 without opening a dialog. Startup/recovery bootstrap, settings/recovery writes and narrow
 first-edit/explode disk preflight remain synchronous and outside this scan-removal slice.
-The legacy Library remains visible; AB3 browser UI and its manual acceptance are next.
+The legacy Library remains available through AB3a's transitional implementation switch.
+
+AB3a adds folder navigation, grid/list browsing, recursive search, multi-type filters,
+deterministic sorting and independent source selection in `DockPanel::Assets`. Both
+folder and result entities are bounded by pages; file rows survive selection/filter/view
+changes within a bounded cache. No new filesystem scan, semantic catalog or runtime-adapter
+dependency was added. Explicit effect activation keeps the existing dirty-document guard;
+invalid/duplicate effects cannot open an arbitrary same-ID file. Standalone material/function
+editing, source relations, root-scoped restart persistence and thumbnails are not included.
+
+AB3a automated checks cover snapshot-only browsing after disk removal, navigation/root
+fallback, filtering/layout parity, row/control identity, bounded rows, keyboard folders and
+guarded effect routing, duplicate rejection, locale coverage and preview scroll/pan isolation.
+Native narrow/wide/high-DPI/floating-panel checks and the 10,000-source benchmark are still
+pending AB3c acceptance; automated entity/observer tests do not substitute for visual QA.
+
+AB3a local validation (`+1.98.1-x86_64-pc-windows-msvc`): 529 editor tests plus the
+runtime-independence architecture test pass; workspace/all-targets Clippy with warnings
+denied, formatting and diff whitespace checks pass. Popup-isolation coverage includes
+removing hidden-menu blockers even when their relative cursor data is stale.
+
+AB3a follow-up adds compact browser chrome, folder icons, denser list rows and larger
+grid type tiles (not rendered thumbnails). Single-click selection shows cached source
+metadata/diagnostics. Row-based double-clicks survive a change of descendant hit target,
+focus the list for Enter, and have an explicit Open button. Materials used by the current
+effect open through its existing renderer graph; unused programs explain that standalone
+editing remains AB4. Duplicate material IDs remain rejected and browsing does not alter
+the effect. Automated coverage now includes real Bevy text measurement/layout at multiple
+pane widths/UI scales and pointer/material activation. Native visual QA remains pending.
+
+Effect-open follow-up: reproduced inert double-click/Enter/Open in the native editor.
+The shared open dispatcher marked the catalog changed merely by taking a mutable
+reference; viewport synchronization reinstalled the current preview and invalidated
+the background loader's revision guard. Normal and discard-confirmed opens now queue
+using an immutable catalog reference. The regression includes real background loading
+and viewport synchronization (failed before the fix, passes after it), plus the Open
+button route, discard confirmation and visible operation-status updates. Genuine
+concurrent-edit rejection tests remain passing. Local validation: 535 editor tests,
+the architecture test, workspace/all-targets strict Clippy and formatting pass. The
+fixed executable is rebuilt; final native retesting paused because Windows was locked.

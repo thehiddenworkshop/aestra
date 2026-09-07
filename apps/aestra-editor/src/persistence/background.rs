@@ -129,6 +129,7 @@ fn queue_plan(
                 return;
             }
             if !opened {
+                warn!("Document open failed: {}", prepared_session.status);
                 world.resource_mut::<EditorSession>().status = prepared_session.status;
                 return;
             }

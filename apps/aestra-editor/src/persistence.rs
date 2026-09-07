@@ -74,6 +74,20 @@ pub(crate) enum DocumentAction {
     Exit,
 }
 
+#[cfg(test)]
+pub(crate) fn install_document_open_test_runtime(app: &mut App, recovery_path: PathBuf) {
+    let autosave = AutosaveState::new(app.world().resource::<EditorSession>(), true);
+    app.insert_resource(EditorSettings::default())
+        .init_resource::<CurvesState>()
+        .insert_resource(RecoveryPersistence::for_test(recovery_path, None))
+        .insert_resource(autosave)
+        .init_resource::<DocumentProtectionState>()
+        .init_resource::<crate::project_content::io::ProjectIoTasks>()
+        .add_observer(execute_document_action)
+        .add_systems(Update, crate::project_content::io::poll);
+    crate::viewport::install_project_preview_test_runtime(app);
+}
+
 #[derive(Clone, Debug)]
 struct SourceNavigationEntry {
     path: PathBuf,
@@ -532,6 +546,20 @@ fn execute_document_action(
         protection.pending = Some(*action);
         return;
     }
+    // Queuing an open only reads the catalog. A mutable dereference would notify the
+    // viewport, reinstall the current preview, and invalidate the pending I/O guard.
+    if background::queue_open(
+        *action,
+        &mut commands,
+        &mut session,
+        &settings,
+        &catalog,
+        &localizer,
+        timeline.as_deref(),
+        navigation.as_deref(),
+    ) {
+        return;
+    }
     execute_protected_document_action(
         *action,
         &mut commands,
@@ -675,6 +703,19 @@ fn resolve_document_protection(
     let Some(pending) = protection.pending.take() else {
         return;
     };
+    // Discard authorizes the switch; the catalog itself changes only on publication.
+    if background::queue_open(
+        pending,
+        &mut commands,
+        &mut session,
+        &settings,
+        &catalog,
+        &localizer,
+        timeline.as_deref(),
+        navigation.as_deref(),
+    ) {
+        return;
+    }
     execute_protected_document_action(
         pending,
         &mut commands,

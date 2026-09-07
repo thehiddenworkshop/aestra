@@ -239,6 +239,30 @@ fn prepared_open_is_atomic_and_publication_never_reopens_the_disk() {
 }
 
 #[test]
+fn discard_then_open_survives_viewport_sync_without_false_catalog_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = target(directory.path(), "target");
+    let mut app = app(directory.path());
+    crate::viewport::install_project_preview_test_runtime(&mut app);
+    app.update();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .adjust_effect_duration(0.5);
+    app.update();
+    app.world_mut()
+        .trigger(DocumentAction::OpenCatalog(target.id.into()));
+    assert!(app.world().resource::<DocumentProtectionState>().is_open());
+    confirm(&mut app, DocumentProtectionAction::Discard);
+    let mut completion = io::prepared_completion(app.world_mut());
+    // Production updates the viewport while the background worker is running.
+    app.update();
+    completion.apply(app.world_mut());
+    let session = app.world().resource::<EditorSession>();
+    assert_eq!(session.effect, target, "{}", session.status);
+    assert!(!session.dirty);
+}
+
+#[test]
 fn prepared_open_rejects_newer_edits_and_preserves_preview_and_navigation() {
     let directory = tempfile::tempdir().unwrap();
     let target = target(directory.path(), "target");

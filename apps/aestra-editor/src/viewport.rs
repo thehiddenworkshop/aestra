@@ -661,12 +661,14 @@ fn navigate_preview_camera(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
+    browser: Query<&RelativeCursorPosition, With<crate::asset_browser::BrowserSurface>>,
     player: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     mut navigation: ResMut<PreviewNavigationState>,
     mut controller: ResMut<PreviewCameraController>,
     mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
 ) {
-    let cursor_over = canvas.cursor_over();
+    let cursor_over =
+        canvas.cursor_over() && !browser.iter().any(RelativeCursorPosition::cursor_over);
     let pointer_delta = motion
         .read()
         .fold(Vec2::ZERO, |sum, event| sum + event.delta);
@@ -2486,6 +2488,14 @@ fn selected_shape_module(session: &EditorSession) -> Option<SelectedShapeModule>
     }
 }
 
+#[cfg(test)]
+pub(crate) fn install_project_preview_test_runtime(app: &mut App) {
+    app.init_resource::<EditorPreviewProject>().add_systems(
+        Update,
+        sync_project_preview.before(crate::project_content::io::poll),
+    );
+}
+
 fn sync_project_preview(
     mut session: ResMut<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
@@ -2844,6 +2854,67 @@ fn update_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asset_browser_blocks_preview_scroll_and_pan_start() {
+        let mut app = App::new();
+        app.init_resource::<PreviewCameraController>()
+            .init_resource::<PreviewNavigationState>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_message::<MouseWheel>()
+            .add_message::<MouseMotion>()
+            .add_systems(Update, navigate_preview_camera);
+        app.world_mut().spawn((
+            PreviewCanvas,
+            RelativeCursorPosition {
+                cursor_over: true,
+                normalized: Some(Vec2::splat(0.5)),
+            },
+        ));
+        let browser = app
+            .world_mut()
+            .spawn((
+                crate::asset_browser::BrowserSurface,
+                RelativeCursorPosition {
+                    cursor_over: true,
+                    normalized: Some(Vec2::splat(0.5)),
+                },
+            ))
+            .id();
+        app.world_mut()
+            .spawn((PreviewRenderCamera, Transform::default()));
+        let distance = app.world().resource::<PreviewCameraController>().distance;
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Middle);
+        app.world_mut().write_message(MouseWheel {
+            unit: MouseScrollUnit::Line,
+            x: 0.0,
+            y: 3.0,
+            window: Entity::PLACEHOLDER,
+            phase: bevy::input::touch::TouchPhase::Moved,
+        });
+        app.update();
+        assert_eq!(
+            app.world().resource::<PreviewCameraController>().distance,
+            distance
+        );
+        assert!(!app.world().resource::<PreviewNavigationState>().dragging);
+        app.world_mut()
+            .get_mut::<RelativeCursorPosition>(browser)
+            .unwrap()
+            .cursor_over = false;
+        app.world_mut().write_message(MouseWheel {
+            unit: MouseScrollUnit::Line,
+            x: 0.0,
+            y: 3.0,
+            window: Entity::PLACEHOLDER,
+            phase: bevy::input::touch::TouchPhase::Moved,
+        });
+        app.update();
+        assert!(app.world().resource::<PreviewCameraController>().distance < distance);
+    }
     use crate::test_support;
     use aestra_core::EffectPlaybackMode;
 
