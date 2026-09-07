@@ -1,11 +1,13 @@
 # Benchmark data and runners
 
-This directory contains benchmark scenarios and captured baselines, not Rust test harnesses.
+This directory contains benchmark scenarios, focused runners and captured baselines.
 
 - `baselines/`: CPU benchmark reports from `apps/aestra-bench`.
 - `gpu-baselines/`: native GPU reports from `aestra-viewer --gpu-bench` and the
   opt-in GPU experiments in `apps/aestra-bench/src/gpu_trails/`.
 - `sweep-scenarios/`: effects used by GPU workload sweeps.
+- `asset-browser/`: opt-in 10,000-source editor browsing benchmark. Its harness is
+  included in the editor test binary to exercise the real private UI implementation.
 
 ## Headless trail experiments
 

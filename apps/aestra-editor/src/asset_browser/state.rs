@@ -4,19 +4,20 @@ use aestra_project::{
     ProjectSourceId, ProjectSourceKind,
 };
 use bevy::prelude::Resource;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 
 pub(super) const PAGE_SIZE: usize = 96;
 pub(super) const HISTORY_LIMIT: usize = 64;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum ViewMode {
     #[default]
     List,
     Grid,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Sort {
     #[default]
     Name,
@@ -31,7 +32,7 @@ pub(super) enum InspectionTab {
     Usages,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub(super) enum Kind {
     Folder,
     Effect,

@@ -1,8 +1,12 @@
 //! Read-only project browser in the existing Assets dock slot.
 mod actions;
+#[cfg(test)]
+#[path = "../../../../benchmarks/asset-browser/harness.rs"]
+mod benchmark;
 mod context_menu;
 mod inspection;
 mod panel;
+mod persistence;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -19,6 +23,7 @@ pub(crate) struct EditorAssetBrowserPlugin;
 impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AssetBrowserState>()
+            .init_resource::<persistence::BrowserPersistence>()
             .init_resource::<actions::BrowserClickState>()
             .add_observer(actions::activate_button)
             .add_observer(actions::handle_action)
@@ -33,6 +38,7 @@ impl Plugin for EditorAssetBrowserPlugin {
             .add_observer(context_menu::pointer_menu)
             .add_observer(context_menu::keyboard_menu)
             .add_observer(context_menu::close_after_action)
+            .add_systems(Last, persistence::persist_preferences)
             .add_systems(
                 PostUpdate,
                 panel::scroll_to_located_row.after(bevy::ui::UiSystems::Layout),
@@ -62,7 +68,13 @@ fn reconcile_snapshot(
     catalog: Res<ProjectEffectCatalog>,
     mut state: ResMut<AssetBrowserState>,
     mut clicks: ResMut<actions::BrowserClickState>,
+    mut persistence: Option<ResMut<persistence::BrowserPersistence>>,
 ) {
+    if let Some(persistence) = persistence.as_deref_mut()
+        && persistence.needs_restore(catalog.content(), &state, catalog.content_revision())
+    {
+        persistence.restore_root(&mut state, catalog.content(), catalog.content_revision());
+    }
     // Watcher publication deliberately need not mark the entire catalog changed.
     if state.version != Some(catalog.content_revision()) {
         *clicks = default();
