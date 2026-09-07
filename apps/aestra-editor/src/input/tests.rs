@@ -96,6 +96,48 @@ fn plain_typing_before_and_after_a_chord_is_not_modified() {
 }
 
 #[test]
+fn shortcuts_follow_logical_letters_on_azerty_and_qwertz_without_changing_modifiers() {
+    for (physical, logical, expected) in [
+        (KeyCode::KeyW, "z", Some(KeyCode::KeyZ)),
+        (KeyCode::KeyZ, "w", Some(KeyCode::KeyW)),
+        (KeyCode::KeyQ, "a", Some(KeyCode::KeyA)),
+        (KeyCode::KeyY, "Z", Some(KeyCode::KeyZ)),
+        (KeyCode::KeyM, ";", None),
+        (KeyCode::Digit2, "é", Some(KeyCode::Digit2)),
+        (KeyCode::Digit1, "1", Some(KeyCode::Digit1)),
+        (KeyCode::Numpad1, "1", Some(KeyCode::Numpad1)),
+    ] {
+        let mut physical_keys = ButtonInput::default();
+        physical_keys.press(KeyCode::ControlRight);
+        physical_keys.press(KeyCode::ShiftLeft);
+        physical_keys.clear();
+        physical_keys.press(physical);
+        let snapshot = bevy::input_focus::KeyboardInputSnapshot {
+            input: KeyboardInput {
+                key_code: physical,
+                logical_key: Key::Character(logical.into()),
+                state: ButtonState::Pressed,
+                text: None,
+                repeat: false,
+                window: Entity::PLACEHOLDER,
+            },
+            key_codes: physical_keys.clone(),
+        };
+        let mapped = shortcut_key_state(&snapshot);
+        assert!(mapped.pressed(KeyCode::ControlRight));
+        assert!(mapped.pressed(KeyCode::ShiftLeft));
+        assert_eq!(
+            mapped.get_just_pressed().copied().collect::<Vec<_>>(),
+            expected.into_iter().collect::<Vec<_>>()
+        );
+        assert!(
+            snapshot.key_codes.just_pressed(physical),
+            "raw widget input stays unchanged"
+        );
+    }
+}
+
+#[test]
 fn held_modifiers_survive_frames_and_releasing_only_one_side() {
     let (mut app, window, input) = keyboard_app();
     key(

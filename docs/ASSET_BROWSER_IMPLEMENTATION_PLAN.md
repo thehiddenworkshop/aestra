@@ -531,8 +531,10 @@ particular engine UI; each delivered feature needs a tested performance/correctn
 **Immediate next step (P1):** finish AB4c2 acceptance. The partial native pass verified
 initial restoration, material Save/Reload, previews, menu history and conflict safety.
 Fast modifier-chord handling and OS clipboard support are fixed and regression-tested.
-Source diagnostics now use bounded summaries and a scrollable Details view;
-native verification of that presentation remains part of acceptance. Next,
-finish interrupted-session restore, keyboard focus and effect-context return/reopen checks
-(see the migration checklist). Keep the transitional
+Source diagnostics now use bounded summaries and a scrollable Details view; native
+missing-source presentation and interrupted-session restoration of a UI-authored edit
+passed. Native testing also found and fixed missing normal Tab navigation and physical
+QWERTY letter shortcuts on AZERTY; material keyboard Undo/Redo and Save passed afterward.
+Next, finish effect-context return/reopen, remaining reload confirmation branches and
+built-in read-only native acceptance (see the migration checklist). Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

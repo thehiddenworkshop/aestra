@@ -8,12 +8,14 @@ use bevy::{
         NumberFormat,
     },
     feathers::theme::ThemeToken,
+    input_focus::tab_navigation::TabGroup,
     prelude::*,
     ui_widgets::ControlOrientation,
 };
 
 pub(crate) fn editor_root() -> impl Scene {
     bsn! {
+        TabGroup::new(0)
         Node {
             width: percent(100),
             height: percent(100),

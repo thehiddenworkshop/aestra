@@ -1092,7 +1092,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_history_chords_keep_order_and_respect_text_focus() {
+    fn fast_azerty_history_chords_keep_order_and_respect_text_focus() {
         use crate::input::tests::{key, keyboard_app, tap};
         use bevy::input::{ButtonState, keyboard::Key};
         use bevy::{input_focus::InputFocus, text::EditableText};
@@ -1113,7 +1113,7 @@ mod tests {
             Key::Control,
             ButtonState::Pressed,
         );
-        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        tap(&mut app, window, KeyCode::KeyW, Key::Character("z".into()));
         key(
             &mut app,
             window,
@@ -1139,7 +1139,7 @@ mod tests {
             Key::Control,
             ButtonState::Pressed,
         );
-        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        tap(&mut app, window, KeyCode::KeyW, Key::Character("z".into()));
         key(
             &mut app,
             window,
@@ -1147,7 +1147,7 @@ mod tests {
             Key::Shift,
             ButtonState::Pressed,
         );
-        tap(&mut app, window, KeyCode::KeyZ, Key::Character("z".into()));
+        tap(&mut app, window, KeyCode::KeyW, Key::Character("Z".into()));
         key(
             &mut app,
             window,

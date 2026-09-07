@@ -521,3 +521,39 @@ status-action visibility, lossless snapshots/back navigation and real text layou
 160/240/400-pixel widths and 1×/2× target scale. The existing retained-footer test now
 also checks long messages without a UI rebuild. Strict workspace Clippy and formatting
 checks passed.
+
+### AB4c2 native keyboard and interrupted-session follow-up — 2026-09-08
+
+Used a generated, isolated project/configuration under `target/material-recovery-smoke-*`;
+the user's material source edits were not changed.
+
+- Restored the in-app recovery candidate, renamed its standalone material through the
+  Feather name field, and confirmed that the UI-authored name reached autosave. After
+  terminating only that isolated editor process and restarting, the popup offered the
+  new name and Restore recovered the same draft and selected material target.
+- Native Tab exposed a missing normal `TabGroup` on the editor root. Added that group
+  and excluded retained hidden/disabled controls from tab order, restoring their original
+  indices when they become eligible again. Tab now leaves the name field for a visible
+  control without the former "No focusable entities found" warning.
+- Native Ctrl+Z failed on AZERTY while Ctrl+W reached Undo: editor shortcuts were using
+  physical QWERTY letter positions. Discrete letter shortcuts now follow logical OS
+  letters while retaining per-event modifiers. Physical number-row/numpad shortcuts
+  remain intact. Raw focused-widget input is unchanged.
+- After a fresh name edit, Ctrl+Z restored the previous name and Ctrl+Shift+Z reapplied
+  it. Ctrl+S saved the selected standalone material; disk contents matched the UI name,
+  the material became Saved, and the effect remained Unsaved. The moved source was
+  resolved by its unique semantic identity instead of recreating its old path.
+- Removing the isolated source from indexing preserved its draft and showed readable
+  bounded Properties/footer diagnostics. Details displayed the complete missing-source
+  path/message with wrapping. This pass does not claim a native extreme-length scrolling
+  or detached/high-DPI check.
+
+Further computer control was paused when concurrent desktop input was detected.
+Effect-context return/reopen, remaining reload confirmation branches and built-in
+read-only native acceptance are still pending. AB4c2 is not marked complete and AB5
+has not started. Regression coverage includes the actual editor root/tab eligibility,
+AZERTY/QWERTZ logical shortcuts and ordered AZERTY Undo/Redo with text-focus suppression.
+
+Validation: 602 editor tests passed (two opt-in tests ignored), including the final
+number-row/numpad compatibility cases. Strict workspace Clippy, formatting and diff
+checks passed. Architecture isolation also passed during this acceptance run.
