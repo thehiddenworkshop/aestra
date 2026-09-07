@@ -204,9 +204,21 @@ dock-relation-after = after
 persistence-file-filter-effect = Aestra effect
 persistence-dialog-unsaved-title = Unsaved changes
 persistence-dialog-unsaved-description = Save writes the effect and pending shared material changes. Discard abandons all unsaved changes. Changes already saved to shared assets are kept.
-persistence-dialog-recovery-title = Recover unsaved effect
-persistence-dialog-recovery-description = A newer recovery snapshot was found for {$source}. Restore it to continue the unsaved work? Declining discards the snapshot.
-persistence-dialog-recovery-unsaved-source = an unsaved effect
+persistence-dialog-recovery-title = Recover your work
+persistence-recovery-restore = Restore
+persistence-recovery-discard = Discard Recovery
+persistence-recovery-later = Decide Later
+persistence-recovery-effect = Effect: {$effect}
+persistence-recovery-material = Material: {$material}
+    Effect: {$effect}
+persistence-recovery-details = Snapshot: {$age}
+    Unsaved shared material drafts: {$count}
+
+    Restore resumes this session. Discard Recovery deletes only this snapshot, not source files. Decide Later or closing this dialog keeps it for the next start.
+persistence-recovery-age-now = just saved
+persistence-recovery-age-minutes = {$count} min ago
+persistence-recovery-age-hours = {$count} h ago
+persistence-recovery-age-days = {$count} days ago
 persistence-dialog-migration-title = Migrate older effect
 persistence-dialog-migration-description = {$path} uses effect format {$from}. Migrate it to format {$to}? A backup of the original file will be kept beside it.
 persistence-status-created-untitled = Created an untitled effect

@@ -401,3 +401,70 @@ gate passes. Normal quit/discard cleanup is unchanged: this is interrupted-sessi
 recovery, not automatic workspace reopening after clean exit, and undo stacks are not
 serialized. Browser opening remains snapshot-backed; explicit Reload reads fresh disk
 state. User material sources and local `.aestra` preferences are untouched.
+
+### AB4c2 native verification pass — 2026-09-07 (partial; exit gate still open)
+
+Ran the ignored fixture generator successfully, then launched the actual editor with
+`AESTRA_CONFIG_DIR` pointing at isolated `target/material-recovery-smoke-*` settings.
+All source mutations below were confined to synthetic test assets, not bundled/user
+materials. Observed in the native UI:
+
+- Startup restored `Recovered edit` as the active unsaved shared material, revealed
+  Material Graph, and continued rendering the separate `Editor Test Effect`.
+- Editing the material name and File > Save Material wrote the material file, reported
+  zero unsaved shared materials, and left the effect untitled/unsaved. No effect source
+  was created in the synthetic project.
+- Moving the source within the project and changing its name on disk retained the
+  semantic target. File > Reload Material completed and displayed the disk name.
+- Show All Previews produced square constant/output previews. Menu Undo and Redo
+  reversed/reapplied a shared-material rename without changing the effect identity.
+- An external edit while a draft was active produced a conflict. File > Save Material
+  failed; the external disk name and the unsaved draft were both retained. Reload showed
+  material-specific Save/Discard/Cancel text; Cancel retained the draft.
+- Duplicate semantic IDs and missing sources displayed diagnostics and rejected Save.
+  The shared-draft count remained one; no arbitrary source was selected or recreated.
+- A subsequent UI rename appeared in the autosave snapshot alongside `material_target:
+  Program`. Stopping only the isolated editor and restarting it produced a recovery
+  prompt. Acceptance of that second prompt awaits confirmation; restoration of this
+  second UI-authored edit is not yet counted as passed.
+
+Findings blocking full acceptance:
+
+1. Injected Ctrl+A inserted `a`, and the automation paste operation inserted `v` in the
+   Feather name field. Enter and menu Undo/Redo worked. Code inspection shows both
+   Feather's text-input observer and editor shortcuts consult frame-level
+   `ButtonInput::pressed` modifier state after input collection; press/release in one
+   frame can therefore lose the modifier. This is a plausible mechanism, not yet an
+   instrumented reproduction of the native event stream. Keyboard-only history/focus
+   acceptance remains pending; do not count the menu checks as keyboard validation.
+2. Long duplicate/missing/conflict diagnostics overflow the narrow Properties/status
+   areas. The data-safety behavior works, but the presentation needs bounded wrapping
+   and a readable diagnostic detail surface.
+
+Effect-context return/reopen, built-in read-only native acceptance, and the remaining
+reload confirmation branches still need verification. Do not advance to AB5 on the
+basis of this partial native pass.
+
+### In-app recovery popup — 2026-09-07
+
+Replaced the startup OS recovery alert with a retained Feather modal once the editor
+UI is available. It shows effect/material identity, relative snapshot age and shared
+draft count in English/French. Restore, Discard Recovery and Decide Later are explicit;
+Escape/X preserve the candidate for a later startup. Only Discard Recovery deletes it.
+Restore/discard failures retain the dialog and pause autosave for retry. Closing the
+application while recovery is pending also preserves the snapshot. Modal protection
+blocks editing/shortcuts, viewport navigation and the transform gizmo.
+
+Six automated regressions cover deferred dismissal, explicit discard, restoration,
+failure/retry retention, autosave/window-close protection and retained/localized modal
+focus. Native inspection with a fresh isolated material recovery fixture confirmed
+readable details/buttons and Escape dismissal back to the existing effect. The snapshot
+SHA-256 was unchanged after dismissal and clean application exit. Restore/discard are
+automatically tested; this popup pass does not claim new native acceptance of those
+branches or the outstanding AB4 lifecycle/keyboard checks above.
+
+A second native launch confirmed the same candidate was offered again, the transform
+gizmo no longer drew over the popup, and closing the application with recovery still
+pending again preserved the snapshot hash. Final validation: 587 editor tests passed
+(two opt-in tests ignored), architecture isolation passed, strict workspace Clippy and
+formatting/diff checks passed.

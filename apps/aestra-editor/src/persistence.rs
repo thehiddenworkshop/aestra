@@ -1,6 +1,7 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
 mod background;
 mod material;
+pub(crate) mod recovery_dialog;
 mod recovery_target;
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
@@ -31,11 +32,13 @@ pub(crate) enum PersistenceSet {
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DocumentProtectionState>()
+            .init_resource::<recovery_dialog::RecoveryDialogState>()
             .init_resource::<crate::project_content::io::ProjectIoTasks>()
             .init_resource::<SourceNavigationState>()
             .add_observer(queue_document_action_activation)
             .add_observer(resolve_document_protection)
             .add_observer(execute_document_action)
+            .add_observer(recovery_dialog::activate)
             .add_systems(
                 Startup,
                 initialize_document_persistence.in_set(PersistenceSet::Startup),
@@ -43,9 +46,11 @@ impl Plugin for EditorPersistencePlugin {
             .add_systems(
                 Update,
                 (
+                    recovery_dialog::escape,
                     dismiss_document_protection_with_escape,
                     handle_document_action_buttons,
                     sync_document_protection_overlay,
+                    recovery_dialog::sync,
                 )
                     .chain()
                     .in_set(PersistenceSet::Actions),
@@ -141,6 +146,7 @@ impl SourceNavigationState {
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DocumentProtectionState {
+    recovery_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
 }
@@ -160,7 +166,7 @@ struct DocumentProtectionDescription;
 
 impl DocumentProtectionState {
     pub(crate) fn is_open(&self) -> bool {
-        self.pending.is_some()
+        self.pending.is_some() || self.recovery_open
     }
 }
 
@@ -178,7 +184,7 @@ pub(crate) fn spawn_document_protection_overlay(
                 is_hoverable: true,
             },
             Node {
-                display: if state.is_open() {
+                display: if state.pending.is_some() {
                     Display::Flex
                 } else {
                     Display::None
@@ -414,45 +420,14 @@ fn initialize_document_persistence(
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
     settings_persistence: Res<SettingsPersistence>,
-    mut catalog: ResMut<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
-    mut layout: ResMut<WorkspaceLayout>,
+    mut protection: ResMut<DocumentProtectionState>,
+    mut dialog: ResMut<recovery_dialog::RecoveryDialogState>,
 ) {
-    let (mut recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
-    if let Some(candidate) = candidate {
-        recover_startup_session(
-            &mut session,
-            &mut recovery,
-            candidate,
-            &localizer,
-            &mut catalog,
-        );
-        if let Some(path) = session.source_path.as_deref()
-            && session.standalone_material().is_none()
-            && session.material_drafts.is_empty()
-            && !crate::project::contains_source(&catalog, path)
-        {
-            let project = crate::project::folder_for_source(path)
-                .and_then(|folder| crate::project::catalog_for_folder(&folder))
-                .and_then(|catalog| {
-                    catalog
-                        .compile_project(&session.effect)
-                        .map(|compiled| (catalog, compiled.root))
-                });
-            match project {
-                Ok((project, compiled)) => {
-                    if session.install_compiled_project_root(compiled).is_ok() {
-                        *catalog = project;
-                    }
-                }
-                Err(error) => set_persistence_status(
-                    &mut session,
-                    &localizer,
-                    PersistenceStatus::RecoveryDiagnostic(error),
-                ),
-            }
-        }
-    } else if let Some(diagnostic) = recovery_diagnostic {
+    let (recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
+    protection.recovery_open = candidate.is_some();
+    dialog.candidate = candidate;
+    if let Some(diagnostic) = recovery_diagnostic {
         set_persistence_status(
             &mut session,
             &localizer,
@@ -460,9 +435,6 @@ fn initialize_document_persistence(
         );
     }
     session.playing = settings.preview.play_on_open;
-    if session.standalone_material().is_some() {
-        reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
-    }
     if let Some(diagnostic) = settings_persistence.diagnostic() {
         set_persistence_status(
             &mut session,
@@ -470,7 +442,8 @@ fn initialize_document_persistence(
             PersistenceStatus::SettingsDiagnostic(diagnostic.into()),
         );
     }
-    let autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
+    let mut autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
+    autosave.suspended = protection.recovery_open;
     commands.insert_resource(recovery);
     commands.insert_resource(autosave);
 }
@@ -623,7 +596,7 @@ fn dismiss_document_protection_with_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut protection: ResMut<DocumentProtectionState>,
 ) {
-    if protection.is_open() && keys.just_pressed(KeyCode::Escape) {
+    if protection.pending.is_some() && keys.just_pressed(KeyCode::Escape) {
         protection.pending = None;
         protection.reload_target = None;
     }
@@ -638,7 +611,7 @@ fn sync_document_protection_overlay(
     if !protection.is_changed() {
         return;
     }
-    let display = if protection.is_open() {
+    let display = if protection.pending.is_some() {
         Display::Flex
     } else {
         Display::None
@@ -801,60 +774,6 @@ fn resolve_document_protection(
         timeline.as_deref_mut(),
         navigation.as_deref_mut(),
     );
-}
-
-fn recover_startup_session(
-    session: &mut EditorSession,
-    persistence: &mut RecoveryPersistence,
-    candidate: RecoveryCandidate,
-    localizer: &Localizer,
-    catalog: &mut ProjectEffectCatalog,
-) {
-    let source = candidate.source_path().map_or_else(
-        || localizer.text("persistence-dialog-recovery-unsaved-source"),
-        |path| path.display().to_string(),
-    );
-    let mut args = FluentArgs::new();
-    args.set("source", source);
-    let restore = matches!(
-        MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title(localizer.text("persistence-dialog-recovery-title"))
-            .set_description(localizer.text_with("persistence-dialog-recovery-description", &args),)
-            .set_buttons(MessageButtons::YesNo)
-            .show(),
-        MessageDialogResult::Yes
-    );
-    if restore {
-        match recovery_target::restore_candidate(session, persistence, &candidate, catalog) {
-            Ok(warnings) if warnings.is_empty() => set_persistence_status(
-                session,
-                localizer,
-                PersistenceStatus::RecoveryRestored(session.effect.name.clone()),
-            ),
-            Ok(warnings) => set_persistence_status(
-                session,
-                localizer,
-                PersistenceStatus::RecoveryDiagnostic(warnings.join("; ")),
-            ),
-            Err(error) => set_persistence_status(
-                session,
-                localizer,
-                PersistenceStatus::RecoveryDiagnostic(error),
-            ),
-        }
-    } else {
-        match persistence.discard_candidate(&candidate) {
-            Ok(()) => {
-                set_persistence_status(session, localizer, PersistenceStatus::RecoveryDiscarded)
-            }
-            Err(error) => set_persistence_status(
-                session,
-                localizer,
-                PersistenceStatus::RecoveryDiscardFailed(error.to_string()),
-            ),
-        }
-    }
 }
 
 fn recovery_document_key(session: &EditorSession) -> String {
@@ -1487,6 +1406,13 @@ fn handle_window_close_requests(
     let idle = crate::project_content::io::idle(io_tasks);
     for request in close_requests.read() {
         if request.window == *primary {
+            // No recovery has been accepted yet. Closing the app must leave its snapshot
+            // available next time, not activate or discard it behind the modal.
+            if protection.recovery_open {
+                autosave.suspended = true;
+                commands.write_message(AppExit::Success);
+                continue;
+            }
             if !idle {
                 session.status = localizer.text("project-operation-close-pending");
                 continue;

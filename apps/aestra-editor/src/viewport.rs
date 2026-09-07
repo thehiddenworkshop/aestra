@@ -656,6 +656,7 @@ fn set_preview_cameras_active(
 }
 
 fn navigate_preview_camera(
+    protection: Option<Res<crate::persistence::DocumentProtectionState>>,
     mut motion: MessageReader<MouseMotion>,
     mut wheel: MessageReader<MouseWheel>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -667,6 +668,12 @@ fn navigate_preview_camera(
     mut controller: ResMut<PreviewCameraController>,
     mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
 ) {
+    if protection.as_ref().is_some_and(|state| state.is_open()) {
+        motion.clear();
+        wheel.clear();
+        navigation.dragging = false;
+        return;
+    }
     let cursor_over =
         canvas.cursor_over() && !browser.iter().any(RelativeCursorPosition::cursor_over);
     let pointer_delta = motion
@@ -841,6 +848,7 @@ fn update_transform_gizmo_controls(
 
 fn sync_transform_gizmo_focus(
     mut commands: Commands,
+    protection: Option<Res<crate::persistence::DocumentProtectionState>>,
     session: Res<EditorSession>,
     shape_gizmo: Res<ShapeGizmoState>,
     timeline: Option<Res<TimelineState>>,
@@ -850,6 +858,7 @@ fn sync_transform_gizmo_focus(
 ) {
     let target = selected_gizmo_transform(&session, timeline.as_deref());
     let allowed = target.is_some()
+        && !protection.as_ref().is_some_and(|state| state.is_open())
         && !interaction.cancelled
         && motion
             .as_ref()

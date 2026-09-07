@@ -374,6 +374,12 @@ Delivery slices (P1):
   pass. Native restart, graph/preview, fresh-source lifecycle and effect-context acceptance
   remain the exit gate. This is crash recovery, not workspace reopening after a normal
   quit/discard; undo stacks are not serialized.
+  Startup recovery now uses a retained, localized in-app modal after the editor loads,
+  showing the effect/material, snapshot age and shared-draft count. Restore, Discard
+  Recovery and Decide Later are explicit actions; Escape/X defer without deleting the
+  snapshot. Autosave and editing/navigation are gated while pending, including the
+  viewport transform gizmo. Failed restore/discard stays open for retry. The former OS
+  recovery alert is removed; other native file/confirmation dialogs are unchanged.
 
 Standalone opening/editing is enabled in the editor. Full AB4 remains incomplete until
 the persistence/lifecycle and end-to-end exit gate below passes.
@@ -516,6 +522,9 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** finish AB4c2 native restart and end-to-end fresh-source
-lifecycle/conflict acceptance, including graph/preview and keyboard focus checks. Keep the transitional
+**Immediate next step (P1):** finish AB4c2 acceptance. The partial native pass verified
+initial restoration, material Save/Reload, previews, menu history and conflict safety.
+Investigate fast modifier-chord handling, bound overflowing source diagnostics, then
+finish interrupted-session restore, keyboard focus and effect-context return/reopen checks
+(see the migration checklist). Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

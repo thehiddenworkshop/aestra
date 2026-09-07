@@ -231,6 +231,7 @@ fn spawn_editor_ui(
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
             spawn_document_protection_overlay(root, protection, localizer);
+            crate::persistence::recovery_dialog::spawn(root, protection, localizer);
             spawn_library_asset_operation_overlay(
                 root,
                 library_asset_operation,

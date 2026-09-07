@@ -204,9 +204,21 @@ dock-relation-after = après
 persistence-file-filter-effect = Effet Aestra
 persistence-dialog-unsaved-title = Modifications non enregistrées
 persistence-dialog-unsaved-description = Enregistrer conserve l’effet et les modifications des matériaux partagés. Abandonner annule toutes les modifications non enregistrées. Les ressources partagées déjà enregistrées sont conservées.
-persistence-dialog-recovery-title = Récupérer l’effet non enregistré
-persistence-dialog-recovery-description = Un instantané de récupération plus récent a été trouvé pour {$source}. Le restaurer pour reprendre le travail non enregistré ? Refuser supprime l’instantané.
-persistence-dialog-recovery-unsaved-source = un effet non enregistré
+persistence-dialog-recovery-title = Récupérer votre travail
+persistence-recovery-restore = Restaurer
+persistence-recovery-discard = Supprimer la récupération
+persistence-recovery-later = Décider plus tard
+persistence-recovery-effect = Effet : {$effect}
+persistence-recovery-material = Matériau : {$material}
+    Effet : {$effect}
+persistence-recovery-details = Instantané : {$age}
+    Brouillons de matériaux partagés non enregistrés : {$count}
+
+    Restaurer reprend cette session. Supprimer la récupération efface uniquement cet instantané, pas les fichiers sources. Décider plus tard ou fermer ce dialogue le conserve pour le prochain démarrage.
+persistence-recovery-age-now = à l’instant
+persistence-recovery-age-minutes = il y a {$count} min
+persistence-recovery-age-hours = il y a {$count} h
+persistence-recovery-age-days = il y a {$count} jours
 persistence-dialog-migration-title = Migrer l’ancien effet
 persistence-dialog-migration-description = {$path} utilise le format d’effet {$from}. Le migrer vers le format {$to} ? Une copie de sauvegarde du fichier d’origine sera conservée à côté.
 persistence-status-created-untitled = Nouvel effet sans titre créé

@@ -34,6 +34,9 @@ pub(crate) struct RecoveryCandidate {
 }
 
 impl RecoveryCandidate {
+    pub(crate) fn saved_at_unix_millis(&self) -> u64 {
+        self.snapshot.saved_at_unix_millis
+    }
     pub(crate) fn material_target(&self) -> &crate::material_document::MaterialEditingTarget {
         &self.snapshot.material_target
     }
