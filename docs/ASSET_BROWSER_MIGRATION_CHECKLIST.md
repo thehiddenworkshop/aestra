@@ -333,3 +333,39 @@ not a fresh-disk reload. Existing first-edit baseline checks, shared-draft recov
 combined effect/shared-draft save remain in place. Material-only save/reload, active
 target recovery, fresh-source lifecycle and end-to-end conflict/reopen acceptance are
 the next slice. User-authored material files and local `.aestra` settings are untouched.
+
+### AB4c1 material-only Save and guarded Reload — 2026-09-07
+
+Standalone File > Save Material / Ctrl+S now writes only the selected shared program
+and its transitive edited function dependencies. It does not request an effect filename,
+save a dirty named effect or commit unrelated drafts. Source identity is refreshed on
+the serialized I/O worker before writing; exact-byte preflight and scoped partial-save
+receipts reuse the existing conflict/atomic-file-write machinery. Receipts preserve
+concurrent edits, target switches and undo intent. Material Save As is intentionally
+unavailable until the safe duplication milestone; its shortcut cannot launch an effect
+Save As dialog while a standalone target is active. Effect-context and destructive-
+navigation saves retain the existing combined effect/shared-draft behavior.
+
+File > Reload Material resolves the selected semantic ID from a fresh snapshot. A dirty
+program requires Save/Discard/Cancel, with material-specific confirmation text. Discard
+removes only that program's draft after successful loading, not unrelated function or
+program drafts. Missing/malformed/ambiguous sources, changed targets and stale results
+retain unsaved work. Save followed by Reload rechecks for concurrent edits and prompts
+again. Successful reload clears that program's standalone history and transient graph
+selection/gestures without replacing the effect, its selection, playback or history.
+
+Eleven new regressions cover untitled and dirty named effect isolation, Save As routing,
+unrelated drafts, transitive function saves, exact-byte conflicts, duplicate identities,
+save receipts during target changes, Save/Discard/Cancel, concurrent save/reload edits,
+moved/missing/malformed sources, stale completion/confirmation and undo after Save.
+The retained dialog regression also checks switching between effect and material
+confirmation descriptions without rebuilding the overlay. Local validation on
+`+1.98.1-x86_64-pc-windows-msvc`: 571 editor tests pass (one opt-in benchmark ignored).
+The editor/runtime-independence architecture test, workspace/all-targets strict Clippy,
+formatting and diff-whitespace checks pass. User material files and `.aestra` preferences
+are preserved outside this implementation.
+
+AB4c2 remains pending: active-target recovery, fresh-source open/reopen and recovery
+conflicts end to end, native UI acceptance and keyboard-only focus routing. Browser
+opening still selects a snapshot-backed target; explicit Reload performs fresh disk I/O.
+No native acceptance or restart recovery of the active material is claimed here.

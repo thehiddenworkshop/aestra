@@ -118,6 +118,13 @@ pub(crate) struct MaterialProgramEditHistory {
 }
 
 impl MaterialProgramEditHistory {
+    pub(crate) fn clear_program(
+        &mut self,
+        root: &std::path::Path,
+        id: aestra_core::MaterialProgramId,
+    ) {
+        self.standalone.remove(&(root.to_owned(), id));
+    }
     fn for_target_mut(&mut self, session: &EditorSession) -> &mut Self {
         if !session.material_history_active {
             return self;

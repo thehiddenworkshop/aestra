@@ -1,5 +1,6 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
 mod background;
+mod material;
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
@@ -71,6 +72,7 @@ pub(crate) enum DocumentAction {
     NavigateSourceAncestor(usize),
     Save,
     SaveAs,
+    ReloadMaterial,
     Exit,
 }
 
@@ -136,9 +138,10 @@ impl SourceNavigationState {
     }
 }
 
-#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DocumentProtectionState {
     pending: Option<DocumentAction>,
+    reload_target: Option<crate::material_document::MaterialEditingTarget>,
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +153,9 @@ pub(crate) enum DocumentProtectionAction {
 
 #[derive(Component)]
 struct DocumentProtectionOverlay;
+
+#[derive(Component)]
+struct DocumentProtectionDescription;
 
 impl DocumentProtectionState {
     pub(crate) fn is_open(&self) -> bool {
@@ -214,7 +220,14 @@ pub(crate) fn spawn_document_protection_overlay(
                         Pickable::IGNORE,
                     ));
                     dialog.spawn((
-                        Text::new(localizer.text("persistence-dialog-unsaved-description")),
+                        DocumentProtectionDescription,
+                        Text::new(localizer.text(
+                            if state.pending == Some(DocumentAction::ReloadMaterial) {
+                                "material-reload-confirm"
+                            } else {
+                                "persistence-dialog-unsaved-description"
+                            },
+                        )),
                         TextFont {
                             font_size: FontSize::Px(11.0),
                             ..default()
@@ -532,6 +545,14 @@ fn execute_document_action(
         return;
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
+        if session.standalone_material().is_some() {
+            if *action == DocumentAction::SaveAs {
+                session.status = localizer.text("material-save-as-unavailable");
+            } else {
+                material::queue_save(&mut commands, &session, &catalog, false);
+            }
+            return;
+        }
         background::queue_save(
             &mut commands,
             &mut session,
@@ -540,6 +561,18 @@ fn execute_document_action(
             None,
             &localizer,
         );
+        return;
+    }
+    if *action == DocumentAction::ReloadMaterial {
+        let Some(id) = session.standalone_material() else {
+            return;
+        };
+        if catalog.material_drafts.programs.contains_key(&id) {
+            protection.pending = Some(*action);
+            protection.reload_target = Some(session.material_target.clone());
+        } else {
+            material::queue_reload(&mut commands, &session, &catalog);
+        }
         return;
     }
     if document_action_requires_confirmation(&session, &settings) {
@@ -581,12 +614,15 @@ fn dismiss_document_protection_with_escape(
 ) {
     if protection.is_open() && keys.just_pressed(KeyCode::Escape) {
         protection.pending = None;
+        protection.reload_target = None;
     }
 }
 
 fn sync_document_protection_overlay(
     protection: Res<DocumentProtectionState>,
+    localizer: Res<Localizer>,
     mut overlays: Query<&mut Node, With<DocumentProtectionOverlay>>,
+    mut descriptions: Query<&mut Text, With<DocumentProtectionDescription>>,
 ) {
     if !protection.is_changed() {
         return;
@@ -598,6 +634,15 @@ fn sync_document_protection_overlay(
     };
     for mut node in &mut overlays {
         node.display = display;
+    }
+    for mut text in &mut descriptions {
+        text.0 = localizer.text(
+            if protection.pending == Some(DocumentAction::ReloadMaterial) {
+                "material-reload-confirm"
+            } else {
+                "persistence-dialog-unsaved-description"
+            },
+        );
     }
 }
 
@@ -684,9 +729,25 @@ fn resolve_document_protection(
     };
     if *action == DocumentProtectionAction::Cancel {
         protection.pending = None;
+        protection.reload_target = None;
         return;
     }
     if !crate::project_content::io::idle(io_tasks) {
+        return;
+    }
+    if protection.pending == Some(DocumentAction::ReloadMaterial) {
+        if protection.reload_target.as_ref() != Some(&session.material_target) {
+            protection.pending = None;
+            protection.reload_target = None;
+            session.status = localizer.text("project-operation-open-stale");
+            return;
+        }
+        if *action == DocumentProtectionAction::Save {
+            material::queue_save(&mut commands, &session, &catalog, true);
+        } else {
+            protection.pending = None;
+            material::queue_reload(&mut commands, &session, &catalog);
+        }
         return;
     }
     if *action == DocumentProtectionAction::Save {
@@ -1658,7 +1719,12 @@ mod tests {
     fn document_protection_overlay_visibility_syncs_without_rebuilding_the_editor() {
         let mut app = App::new();
         app.init_resource::<DocumentProtectionState>()
+            .insert_resource(Localizer::new("en-US").unwrap())
             .add_systems(Update, sync_document_protection_overlay);
+        let description = app
+            .world_mut()
+            .spawn((DocumentProtectionDescription, Text::default()))
+            .id();
         let overlay = app
             .world_mut()
             .spawn((DocumentProtectionOverlay, Node::default()))
@@ -1671,6 +1737,24 @@ mod tests {
         assert_eq!(
             app.world().get::<Node>(overlay).unwrap().display,
             Display::Flex
+        );
+        assert!(
+            app.world()
+                .get::<Text>(description)
+                .unwrap()
+                .0
+                .contains("all unsaved changes")
+        );
+        app.world_mut()
+            .resource_mut::<DocumentProtectionState>()
+            .pending = Some(DocumentAction::ReloadMaterial);
+        app.update();
+        assert!(
+            app.world()
+                .get::<Text>(description)
+                .unwrap()
+                .0
+                .contains("only this material")
         );
 
         app.world_mut()

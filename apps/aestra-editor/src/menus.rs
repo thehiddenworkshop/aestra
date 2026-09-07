@@ -225,7 +225,7 @@ pub(crate) fn spawn_menu_bar(
             ThemeBorderColor(tokens::PANE_HEADER_BORDER),
         ))
         .with_children(|bar| {
-            spawn_file_menu(bar, localizer);
+            spawn_file_menu(bar, session.standalone_material().is_some(), localizer);
             spawn_edit_menu(bar, localizer);
             spawn_view_menu(bar, layout, menu.show_grid, localizer);
             spawn_standard_menu(
@@ -262,7 +262,7 @@ pub(crate) fn spawn_menu_bar(
         });
 }
 
-fn spawn_file_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localizer: &Localizer) {
     parent
         .spawn_empty()
         .apply_scene(ui_shell::feathers_menu())
@@ -283,7 +283,18 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
                         ("file-open-project", "", DocumentAction::OpenProject),
                         ("file-save", "Ctrl+S", DocumentAction::Save),
                         ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
+                        ("file-reload-material", "", DocumentAction::ReloadMaterial),
                     ] {
+                        if action == DocumentAction::ReloadMaterial && !standalone
+                            || action == DocumentAction::SaveAs && standalone
+                        {
+                            continue;
+                        }
+                        let message_id = if action == DocumentAction::Save && standalone {
+                            "file-save-material"
+                        } else {
+                            message_id
+                        };
                         spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
                     }
                     dropdown

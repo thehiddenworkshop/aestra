@@ -7,8 +7,8 @@ implemented. AB3a folder navigation and grid/list browsing are implemented in th
 Assets dock, with a transitional Library switch. AB3b snapshot inspection and locate-source
 routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
 AB3c was accepted by the user on 2026-09-07. AB4 is in progress: AB4a standalone
-authoring and AB4b editor target/editing are implemented; AB4c persistence/lifecycle
-and native acceptance remain pending.
+authoring, AB4b editor target/editing and AB4c1 material-only Save/guarded Reload are
+implemented. AB4c2 target recovery/lifecycle acceptance remains pending.
 Historical platform-verification limits are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
@@ -86,7 +86,7 @@ The first browser will not offer a warning-only “unsafe” bypass.
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
-AB4a/AB4b are implemented; AB4c and AB5–AB9 are pending.
+AB4a/AB4b/AB4c1 are implemented; AB4c2 and AB5–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -344,12 +344,26 @@ Delivery slices (P1):
   checks reject stale inverses without losing history. Built-ins have no mutable route.
   Same-target opening does not rebuild the graph; target switches clear transient
   gestures/selection while retaining existing graph layout/view memory.
-- **AB4c — Persistence and acceptance pending:** material-only save/reload, dirty-target
-  Save/Discard/Cancel, recovery of the active target, external-write conflicts, fresh-disk
-  same-ID reopen and moved/missing sources. Finish native graph/preview acceptance and
-  effect-context regressions. AB4b opening is a non-destructive snapshot-backed view
-  switch, not a fresh-disk reload. First edits retain existing disk-baseline checks;
-  the existing combined effect/shared-draft save workflow remains unchanged until AB4c.
+- **AB4c1 — Material-only Save and guarded Reload implemented:** File > Save Material /
+  Ctrl+S writes the standalone program and its transitive edited function dependencies,
+  not the effect or unrelated drafts. Untitled effects do not need a destination. Fresh
+  identity resolution and exact-byte preflight reject duplicate, missing and externally
+  changed sources; scoped partial-save receipts retain concurrent edits and undo intent.
+  File > Reload Material reads a fresh snapshot by semantic ID, including moved sources.
+  Dirty programs require Save/Discard/Cancel; Discard removes only the selected program
+  draft after successful resolution. Failed/stale reloads preserve drafts. Confirmation
+  is tied to the material target and newer edits during Save require confirmation again.
+  Reload clears that program's standalone history and transient graph gestures, retaining
+  effect state and other drafts. Source reads/writes run on the serialized I/O worker.
+  Material Save As is unavailable (no accidental effect-save dialog); source duplication
+  remains AB6. Effect-context Save and destructive-navigation Save retain the combined
+  effect/shared-draft workflow. Browser opening remains a non-destructive snapshot-backed
+  target switch; explicit Reload performs the fresh-disk operation.
+- **AB4c2 — Recovery and lifecycle acceptance pending:** restore the active target with
+  shared drafts after restart; verify fresh-source open/reopen and recovery conflicts,
+  same-ID and moved/missing sources end to end. Finish native graph/preview, keyboard-only
+  focus routing and effect-context acceptance. Existing shared-draft recovery remains;
+  the standalone target itself is not yet persisted.
 
 Standalone opening/editing is enabled in the editor. Full AB4 remains incomplete until
 the persistence/lifecycle and end-to-end exit gate below passes.
@@ -492,6 +506,6 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** AB4c — material-only save/reload, guarded fresh-source
-lifecycle, active-target recovery, conflict handling and end-to-end acceptance. Keep the transitional
+**Immediate next step (P1):** AB4c2 — active-target recovery and end-to-end fresh-source
+lifecycle/conflict acceptance, including native graph/preview and keyboard focus checks. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

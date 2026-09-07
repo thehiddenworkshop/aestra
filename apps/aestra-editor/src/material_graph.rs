@@ -68,6 +68,18 @@ const MATERIAL_GRAPH_OUTPUT_NODE_KEY: &str = "output";
 
 pub(crate) struct EditorMaterialGraphPlugin;
 
+pub(crate) fn clear_document_transients(world: &mut World) {
+    if let Some(mut palette) = world.get_resource_mut::<MaterialGraphPaletteState>() {
+        *palette = default();
+    }
+    if let Some(mut selection) = world.get_resource_mut::<MaterialGraphSelectionState>() {
+        *selection = default();
+    }
+    if let Some(mut gesture) = world.get_resource_mut::<MaterialGraphGesture>() {
+        *gesture = default();
+    }
+}
+
 fn reset_graph_document_transients(
     session: Res<EditorSession>,
     mut observed: Local<Option<(crate::material_document::MaterialEditingTarget, u64)>>,
