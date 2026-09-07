@@ -188,6 +188,24 @@ impl EditorProjectContent {
         Ok(programs)
     }
 
+    /// Published shared source with its working draft, without an effect prerequisite.
+    pub(crate) fn material_program(
+        &self,
+        id: aestra_core::MaterialProgramId,
+    ) -> Result<MaterialProgram, String> {
+        let saved = self
+            .content()
+            .cached_material_program(aestra_core::material::MaterialProgramRef::Project(id))
+            .map_err(|error| error.to_string())?;
+        match self.material_drafts.programs.get(&id) {
+            Some(draft) => draft
+                .current
+                .clone()
+                .ok_or_else(|| format!("Material program {id} is deleted")),
+            None => Ok(saved),
+        }
+    }
+
     pub(crate) fn material_functions(&self) -> Result<Vec<MaterialFunction>, String> {
         let mut functions = self
             .snapshot

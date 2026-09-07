@@ -296,3 +296,40 @@ opt-in benchmark ignored), and both portable-GPU legacy-material migration contr
 pass. The editor/runtime-independence architecture test, workspace/all-targets Clippy
 with warnings denied, formatting and diff-whitespace checks pass. User-authored material
 changes and local `.aestra` preferences are preserved and are not part of this slice.
+
+### AB4b standalone editor target and editing — 2026-09-07
+
+Assets double-click/Enter now opens an unused project material in an explicit
+root-scoped graph target without changing the active effect, emitter selection,
+playback or effect history. Opening resolves unique identity from the published
+snapshot and overlays retained shared drafts; pending I/O/protection dialogs block
+opening. Switching targets invalidates stale queued navigation while allowing saves
+to merge baselines for the same effect document. Duplicate, missing and cross-root
+stale identities fail explicitly. Reopening the same target avoids a graph rebuild.
+
+Graph actions and shared-source Properties (name, domain, draft state, parameter
+default summaries and diagnostics) no longer require a renderer. Node previews use
+default context and invalidate when the source changes independently of effect
+revision. The existing toolbar includes a back-to-effect action. Graph view/layout
+memory is retained; target changes clear selection and pending gestures.
+
+Per-root/per-program undo stacks retain effect redo. Pointer interaction with graph
+or shared Properties selects material history; viewport/timeline/curves select effect
+history. Menus and Assets retain the last editing scope, including floating panels.
+Conflicting newer drafts reject stale undo without consuming its entry. Keyboard-only
+focus transitions and native interaction acceptance still need AB4c verification.
+
+Eight new headless regression tests cover unused-source opening, target/root/duplicate
+guards and draft retention, isolated histories and stale inverses, graph add/delete,
+preview source invalidation, and shared Properties rename/stale-event handling. The
+existing browser activation test now covers double-click, explicit Open and Enter.
+Local validation on `+1.98.1-x86_64-pc-windows-msvc`: 560 editor unit tests pass (one
+opt-in benchmark ignored), the editor/runtime-independence architecture test passes,
+and workspace/all-targets strict Clippy passes. Formatting and diff-whitespace checks
+pass. No native UI acceptance is claimed.
+
+AB4c remains pending: opening here is a non-destructive snapshot-backed target switch,
+not a fresh-disk reload. Existing first-edit baseline checks, shared-draft recovery and
+combined effect/shared-draft save remain in place. Material-only save/reload, active
+target recovery, fresh-source lifecycle and end-to-end conflict/reopen acceptance are
+the next slice. User-authored material files and local `.aestra` settings are untouched.

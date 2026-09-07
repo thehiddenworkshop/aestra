@@ -14,6 +14,7 @@ mod history;
 mod input;
 mod library;
 mod localization;
+mod material_document;
 mod material_drafts;
 mod material_graph;
 mod menus;

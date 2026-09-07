@@ -68,6 +68,26 @@ const MATERIAL_GRAPH_OUTPUT_NODE_KEY: &str = "output";
 
 pub(crate) struct EditorMaterialGraphPlugin;
 
+fn reset_graph_document_transients(
+    session: Res<EditorSession>,
+    mut observed: Local<Option<(crate::material_document::MaterialEditingTarget, u64)>>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
+    mut gesture: ResMut<MaterialGraphGesture>,
+) {
+    let current = (
+        session.material_target.clone(),
+        session.history_generation(),
+    );
+    if observed.as_ref() == Some(&current) {
+        return;
+    }
+    *observed = Some(current);
+    *palette = default();
+    *selection = default();
+    *gesture = default();
+}
+
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MaterialGraphGesture>()
@@ -76,6 +96,10 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphPreviewState>()
             .init_resource::<MaterialPresetPreviewState>()
             .init_resource::<MaterialGraphLayoutPersistence>()
+            .add_systems(
+                Update,
+                reset_graph_document_transients.before(EditorSet::UiRebuild),
+            )
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
@@ -436,7 +460,7 @@ fn persist_material_graph_layout(
     previews: Res<MaterialGraphPreviewState>,
     mut persistence: ResMut<MaterialGraphLayoutPersistence>,
 ) {
-    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+    let Ok(programs) = session.graph_material_programs(&catalog) else {
         return;
     };
     update_material_graph_layout_document(
@@ -587,7 +611,8 @@ fn update_material_graph_layout_document(
 
 #[derive(Debug, Clone)]
 struct MaterialGraphPreviewCache {
-    instance: MaterialId,
+    program: MaterialProgram,
+    instance: Option<MaterialId>,
     document_revision: u64,
     image: Handle<Image>,
 }
@@ -600,6 +625,7 @@ struct MaterialGraphPreviewToggle {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 enum MaterialGraphToolbarAction {
+    EffectContext,
     LocateSource(MaterialProgramId),
     AddNode(MaterialProgramId),
     ToggleAllPreviews(MaterialProgramId),
@@ -608,7 +634,7 @@ enum MaterialGraphToolbarAction {
 #[derive(Component, Debug, Clone, Copy)]
 struct MaterialGraphPreviewRaster {
     program: MaterialProgramId,
-    instance: MaterialId,
+    instance: Option<MaterialId>,
     target: MaterialGraphPreviewTarget,
     value_type: Option<MaterialValueType>,
 }
@@ -1087,6 +1113,12 @@ fn handle_material_graph_toolbar_actions(
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
         match *action {
+            MaterialGraphToolbarAction::EffectContext => {
+                session.return_to_effect_material();
+                palette.open = None;
+                palette.node_menu = None;
+                continue;
+            }
             MaterialGraphToolbarAction::LocateSource(program) => {
                 commands.trigger(crate::asset_browser::LocateInAssets(
                     aestra_project::ProjectAssetId::MaterialProgram(program),
@@ -1453,7 +1485,7 @@ fn current_material_connection_source(
     program: MaterialProgramId,
     target: MaterialConnectionTarget,
 ) -> Option<MaterialExpressionId> {
-    let programs = catalog.material_programs_for_effect(&session.effect).ok()?;
+    let programs = session.graph_material_programs(catalog).ok()?;
     let program = programs.iter().find(|candidate| candidate.id == program)?;
     let functions = catalog.material_function_library().ok()?;
     MaterialCompiler
@@ -1716,8 +1748,8 @@ fn apply_material_graph_selection_edit(
     }
     let expressions = selection.expressions.iter().copied().collect::<Vec<_>>();
     let connection = selection.connection;
-    let ordered = catalog
-        .material_programs_for_effect(&session.effect)
+    let ordered = session
+        .graph_material_programs(catalog)
         .ok()
         .and_then(|programs| {
             programs
@@ -1897,15 +1929,19 @@ fn apply_material_tool_command(
     label: &str,
     command: MaterialToolCommand,
 ) -> Result<MaterialToolPlan, String> {
-    let programs = catalog.material_programs_for_effect(&session.effect)?;
+    if let Some(active) = session.standalone_material() {
+        if active != program {
+            return Err("The material editing target changed".into());
+        }
+        session.material_history_active = true;
+    }
+    let programs = session.graph_material_programs(catalog)?;
     let current = programs
         .iter()
         .find(|candidate| candidate.id == program)
         .cloned()
         .ok_or_else(|| format!("Material program {program} is unavailable"))?;
-    let functions = catalog.material_functions()?;
-    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
-        .with_material_functions(functions);
+    let document = session.graph_authoring_document(catalog)?;
     let plan = MaterialToolPlanner::plan(&document, command).map_err(|error| error.to_string())?;
     let mut preview = document;
     MaterialCommandExecutor::execute(&mut preview, &plan.transaction)
@@ -2057,15 +2093,7 @@ fn update_material_graph_wires(
         return;
     };
 
-    let document = catalog
-        .material_programs_for_effect(&session.effect)
-        .ok()
-        .and_then(|programs| {
-            catalog.material_functions().ok().map(|functions| {
-                MaterialAuthoringDocument::new(session.effect.clone(), programs)
-                    .with_material_functions(functions)
-            })
-        });
+    let document = session.graph_authoring_document(&catalog).ok();
     let mut nearest: Option<(f32, MaterialGraphSocketKind, Vec2)> = None;
     for socket in &socket_positions {
         if socket.program != *program {
@@ -2249,12 +2277,19 @@ fn rasterize_material_graph_previews(
     if requests.is_empty() {
         return;
     }
-    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+    let Ok(programs) = session.graph_material_programs(&catalog) else {
         return;
     };
     for (entity, request) in &requests {
         let key = (request.program, request.target);
+        let Some(program) = programs
+            .iter()
+            .find(|program| program.id == request.program)
+        else {
+            continue;
+        };
         if let Some(cached) = previews.cache.get(&key)
+            && cached.program == *program
             && cached.instance == request.instance
             && cached.document_revision == session.document_revision()
         {
@@ -2263,17 +2298,11 @@ fn rasterize_material_graph_previews(
                 .insert(ImageNode::new(cached.image.clone()).with_mode(NodeImageMode::Stretch));
             continue;
         }
-        let Some(program) = programs
-            .iter()
-            .find(|program| program.id == request.program)
-        else {
-            continue;
-        };
         let instance = session
             .effect
             .material_instances
             .iter()
-            .find(|instance| instance.id == request.instance);
+            .find(|instance| Some(instance.id) == request.instance);
         let image = images.add(render_material_graph_preview(
             program,
             instance,
@@ -2283,6 +2312,7 @@ fn rasterize_material_graph_previews(
         previews.cache.insert(
             key,
             MaterialGraphPreviewCache {
+                program: program.clone(),
                 instance: request.instance,
                 document_revision: session.document_revision(),
                 image: image.clone(),
@@ -3364,6 +3394,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     .ok()
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
                 previews,
+                session.standalone_material().is_some(),
                 localizer,
                 asset_server,
             );
@@ -3371,13 +3402,15 @@ pub(crate) fn spawn_material_graph_workspace(
                 spawn_panel_empty_state(
                     panel,
                     &localizer.text("material-graph-empty"),
-                    &localizer.text("material-graph-empty-description"),
+                    &projection
+                        .err()
+                        .unwrap_or_else(|| localizer.text("material-graph-empty-description")),
                     theme::ACCENT,
                 );
                 return;
             };
             if session.effect.material_instances.iter().any(|material| {
-                material.id == instance
+                Some(material.id) == instance
                     && matches!(
                         material.program,
                         aestra_core::material::MaterialProgramRef::Project(_)
@@ -3510,7 +3543,7 @@ fn material_graph_palette_options(
     projection: &MaterialGraphProjection,
     connection: Option<MaterialGraphPaletteConnection>,
 ) -> Vec<MaterialGraphPaletteOption> {
-    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+    let Ok(programs) = session.graph_material_programs(catalog) else {
         return Vec::new();
     };
     let Some(program_definition) = programs.iter().find(|candidate| candidate.id == program) else {
@@ -3522,8 +3555,9 @@ fn material_graph_palette_options(
     let function_library = aestra_compiler::MaterialFunctionLibrary::new(functions.clone());
     let descriptors =
         MaterialCompiler.graph_node_catalog_with_functions(program_definition, &function_library);
-    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
-        .with_material_functions(functions);
+    let Ok(document) = session.graph_authoring_document(catalog) else {
+        return Vec::new();
+    };
     select_palette_operations(&document, program, projection, &descriptors, connection)
 }
 
@@ -3797,7 +3831,28 @@ fn spawn_material_graph_node_menu(
 fn selected_projection(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
-) -> Result<(String, MaterialGraphProjection, MaterialId, MaterialProgram), String> {
+) -> Result<
+    (
+        String,
+        MaterialGraphProjection,
+        Option<MaterialId>,
+        MaterialProgram,
+    ),
+    String,
+> {
+    if session.standalone_material().is_some() {
+        let document = session.graph_authoring_document(catalog)?;
+        let program = &document.programs[0];
+        let functions = document.material_function_library();
+        let compiler = MaterialCompiler;
+        let ir = compiler.compile_with_functions(program, &functions).ok();
+        return Ok((
+            program.name.clone(),
+            compiler.project_graph_with_functions(program, ir.as_ref(), &functions),
+            None,
+            program.clone(),
+        ));
+    }
     let selected_renderer = match session.selection.primary {
         SemanticTarget::Renderer(id) => session
             .effect
@@ -3830,7 +3885,7 @@ fn selected_projection(
         .iter()
         .find(|instance| instance.id == selected_renderer.material)
         .ok_or_else(|| "selected renderer does not use a semantic material".to_owned())?;
-    let programs = catalog.material_programs_for_effect(&session.effect)?;
+    let programs = session.graph_material_programs(catalog)?;
     let program = programs
         .iter()
         .find(|program| program.id == instance.program.id())
@@ -3841,7 +3896,7 @@ fn selected_projection(
     Ok((
         program.name.clone(),
         compiler.project_graph_with_functions(program, ir.as_ref(), &functions),
-        instance.id,
+        Some(instance.id),
         program.clone(),
     ))
 }
@@ -3850,6 +3905,7 @@ fn spawn_header(
     parent: &mut ChildSpawnerCommands,
     projection: Option<(&str, &MaterialGraphProjection)>,
     previews: &MaterialGraphPreviewState,
+    standalone: bool,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -3866,6 +3922,15 @@ fn spawn_header(
             BackgroundColor(theme::PANEL_LIGHT),
         ))
         .with_children(|header| {
+            if standalone {
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    "icons/chevron-left.svg",
+                    localizer.text("material-document-back"),
+                    MaterialGraphToolbarAction::EffectContext,
+                );
+            }
             if let Some((name, graph)) = projection {
                 let key = material_graph_view_key(graph.program);
                 spawn_material_graph_toolbar_button(
@@ -3919,7 +3984,12 @@ fn spawn_header(
                 });
                 header.spawn((
                     Text::new(format!(
-                        "{name}  ·  {} NODES  ·  {} LINKS",
+                        "{}{name}  ·  {} NODES  ·  {} LINKS",
+                        if standalone {
+                            format!("{} · ", localizer.text("material-document-shared"))
+                        } else {
+                            String::new()
+                        },
                         graph.nodes.len(),
                         graph.edges.len()
                     )),
@@ -4444,7 +4514,7 @@ fn spawn_expression_node(
     position: Vec2,
     selection: &MaterialGraphSelectionState,
     previews: &MaterialGraphPreviewState,
-    instance: MaterialId,
+    instance: Option<MaterialId>,
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
@@ -4618,7 +4688,7 @@ fn spawn_output_node(
     program: MaterialProgramId,
     outputs: &[MaterialGraphOutput],
     previews: &MaterialGraphPreviewState,
-    instance: MaterialId,
+    instance: Option<MaterialId>,
     position: Vec2,
     localizer: &Localizer,
     asset_server: &AssetServer,
@@ -5808,6 +5878,116 @@ mod tests {
     }
 
     #[test]
+    fn standalone_graph_actions_and_projection_do_not_require_an_effect_renderer() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Unused graph").normalized();
+        program
+            .save_ron(root.path().join("unused.aestra.material.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = test_support::session_with_timing_slack();
+        let effect = session.effect.clone();
+        let selection = session.selection;
+        session.open_material_program(&catalog, program.id).unwrap();
+        let (_, graph, instance, source) = selected_projection(&session, &catalog).unwrap();
+        assert!(instance.is_none());
+        assert_eq!(source, program);
+        assert!(
+            !material_graph_palette_options(&session, &catalog, program.id, &graph, None)
+                .is_empty()
+        );
+        let mut history = MaterialProgramEditHistory::default();
+        let added = apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Add standalone constant",
+            MaterialToolCommand::CreateMaterialGraphNode {
+                program: program.id,
+                kind: MaterialGraphCreateKind::Constant(MaterialValueType::Float),
+                source: None,
+                target: None,
+            },
+        )
+        .unwrap();
+        let created = added.created_expressions[0];
+        let (_, graph, instance, _) = selected_projection(&session, &catalog).unwrap();
+        assert!(instance.is_none());
+        assert!(graph.nodes.iter().any(|node| node.expression == created));
+        apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Delete standalone constant",
+            MaterialToolCommand::DeleteMaterialExpressions {
+                program: program.id,
+                expressions: vec![created],
+            },
+        )
+        .unwrap();
+        assert_eq!(catalog.material_program(program.id).unwrap(), program);
+        assert_eq!(session.effect, effect);
+        assert_eq!(session.selection, selection);
+        assert_eq!(session.effect_undo_len(), 0);
+    }
+
+    #[test]
+    fn standalone_preview_cache_tracks_source_edits_without_an_effect_revision() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Preview").normalized();
+        program
+            .save_ron(root.path().join("preview.aestra.material.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = test_support::session_with_timing_slack();
+        session.open_material_program(&catalog, program.id).unwrap();
+        let revision = session.document_revision();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog.clone())
+            .init_resource::<MaterialGraphPreviewState>()
+            .init_resource::<Assets<Image>>()
+            .add_systems(Update, rasterize_material_graph_previews);
+        let request = MaterialGraphPreviewRaster {
+            program: program.id,
+            instance: None,
+            target: MaterialGraphPreviewTarget::Output,
+            value_type: None,
+        };
+        let first = app.world_mut().spawn(request).id();
+        app.update();
+        let first_image = app.world().get::<ImageNode>(first).unwrap().image.clone();
+        let mut session = app.world_mut().remove_resource::<EditorSession>().unwrap();
+        let mut history = MaterialProgramEditHistory::default();
+        apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Change alpha",
+            MaterialToolCommand::ReplaceMaterialExpression {
+                program: program.id,
+                expression: program.outputs.alpha,
+                replacement: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+            },
+        )
+        .unwrap();
+        assert_eq!(session.document_revision(), revision);
+        app.insert_resource(session).insert_resource(catalog);
+        let second = app.world_mut().spawn(request).id();
+        app.update();
+        let second_image = app.world().get::<ImageNode>(second).unwrap().image.clone();
+        assert_ne!(first_image, second_image);
+        let images = app.world().resource::<Assets<Image>>();
+        assert_ne!(
+            images.get(&first_image).unwrap().data,
+            images.get(&second_image).unwrap().data
+        );
+    }
+
+    #[test]
     fn graph_extraction_stages_a_function_and_recompiles_the_call() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("extract.aestra.material.ron");
@@ -5849,8 +6029,8 @@ mod tests {
                 .any(|candidate| candidate.id == function)
         );
         assert_eq!(MaterialProgram::load_ron(&path).unwrap(), program);
-        let replacement = catalog
-            .material_programs_for_effect(&session.effect)
+        let replacement = session
+            .graph_material_programs(&catalog)
             .unwrap()
             .into_iter()
             .find(|candidate| candidate.id == program.id)

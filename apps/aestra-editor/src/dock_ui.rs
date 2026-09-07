@@ -382,6 +382,10 @@ fn spawn_dock_stack(
     parent
         .spawn((
             DockPane(node),
+            crate::history::HistoryScope::for_panel(
+                stack.active,
+                sources.session.standalone_material().is_some(),
+            ),
             RelativeCursorPosition::default(),
             Pickable {
                 should_block_lower: false,
@@ -509,6 +513,10 @@ fn spawn_native_floating_ui(
 ) {
     let mut root = commands.spawn((
         NativeFloatingUi { panel, revision },
+        crate::history::HistoryScope::for_panel(
+            Some(panel),
+            sources.session.standalone_material().is_some(),
+        ),
         UiTargetCamera(camera),
         Node {
             width: Val::Percent(100.0),

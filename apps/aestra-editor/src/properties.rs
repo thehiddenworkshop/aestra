@@ -35,6 +35,7 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
+mod material_document;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
@@ -98,6 +99,7 @@ impl Plugin for PropertiesPlugin {
             .init_resource::<BoundedSliderState>()
             .add_observer(queue_properties_action_activation)
             .add_observer(handle_document_text_change)
+            .add_observer(material_document::rename)
             .add_observer(handle_document_toggle_change)
             .add_observer(handle_emitter_capacity_change)
             .add_observer(handle_properties_toggle_change)
@@ -5790,6 +5792,9 @@ pub(crate) fn spawn_properties(
     navigation: Option<&SourceNavigationState>,
     asset_server: &AssetServer,
 ) {
+    if material_document::spawn(parent, session, catalog, localizer) {
+        return;
+    }
     if let Some(navigation) = navigation.filter(|navigation| navigation.can_go_back()) {
         let depth = navigation.depth();
         let mut breadcrumbs = navigation

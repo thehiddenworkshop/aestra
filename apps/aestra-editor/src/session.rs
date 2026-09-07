@@ -50,6 +50,8 @@ pub(crate) enum EventLinkError {
 
 #[derive(Resource)]
 pub(crate) struct EditorSession {
+    pub(crate) material_target: crate::material_document::MaterialEditingTarget,
+    pub(crate) material_history_active: bool,
     pub effect: EffectAsset,
     pub source_path: Option<PathBuf>,
     pub selection: Selection,
@@ -85,6 +87,8 @@ impl EditorSession {
     /// completions only merge persistence fields into the live session.
     pub(crate) fn fork_for_io(&self) -> Self {
         Self {
+            material_target: self.material_target.clone(),
+            material_history_active: self.material_history_active,
             effect: self.effect.clone(),
             source_path: self.source_path.clone(),
             selection: self.selection,
@@ -143,6 +147,8 @@ impl EditorSession {
         let preview = compile_preview(&effect, preview_seed).expect("the effect must compile");
         let saved_effect = effect.clone();
         Self {
+            material_target: Default::default(),
+            material_history_active: false,
             effect,
             source_path,
             selection,
@@ -507,6 +513,7 @@ impl EditorSession {
         );
         self.source_path = None;
         self.selection = Selection::for_effect(&self.effect);
+        self.material_target = Default::default();
         self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
@@ -612,6 +619,7 @@ impl EditorSession {
         self.preview = Some(preview);
         self.source_path = Some(path.to_owned());
         self.selection = Selection::for_effect(&self.effect);
+        self.material_target = Default::default();
         self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
@@ -641,6 +649,7 @@ impl EditorSession {
         self.preview = preview;
         self.source_path = source_path;
         self.selection = Selection::for_effect(&self.effect);
+        self.material_target = Default::default();
         self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();

@@ -7,7 +7,8 @@ implemented. AB3a folder navigation and grid/list browsing are implemented in th
 Assets dock, with a transitional Library switch. AB3b snapshot inspection and locate-source
 routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
 AB3c was accepted by the user on 2026-09-07. AB4 is in progress: AB4a standalone
-authoring foundation is implemented; editor document routing/lifecycle remains pending.
+authoring and AB4b editor target/editing are implemented; AB4c persistence/lifecycle
+and native acceptance remain pending.
 Historical platform-verification limits are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
@@ -85,7 +86,7 @@ The first browser will not offer a warning-only “unsafe” bypass.
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
-AB4a is implemented, AB4b/AB4c and AB5–AB9 are pending.
+AB4a/AB4b are implemented; AB4c and AB5–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -329,16 +330,29 @@ Delivery slices (P1):
   semantic material/effect source formats are unchanged. Regression tests cover graph
   edits/history, invalid-edit rollback with retained redo, effect-only command rejection,
   duplicate IDs, function extraction/missing functions, and snapshot/source round-trips.
-- **AB4b — Editor document routing and editing pending:** explicit Program versus
-  Effect Instance target; guarded opening of unused project materials from Assets;
-  graph/Properties/preview and layout routing; isolated focus-aware undo/redo; preserve
-  the active effect and its selection/history. Built-ins remain read-only.
+- **AB4b — Editor target routing and editing implemented:** explicit root-scoped
+  Program versus Effect Instance target. Assets double-click/Enter opens an unused
+  project material from the published snapshot, overlaying retained shared drafts.
+  Duplicate/missing identities and cross-root stale targets are rejected; opening is
+  blocked during pending I/O/protection dialogs. Target switches invalidate stale
+  queued navigation but do not discard drafts or change the active effect, selection,
+  playback or effect history. The graph, shared-source Properties/name editor and
+  default-context node previews no longer require a renderer. Preview caches track
+  source edits independently of effect revision. The toolbar returns to effect context.
+  Pointer-scoped editing focus routes undo/redo to per-root/per-program history or the
+  existing effect history; menus/Assets retain the last editing scope. Exact draft
+  checks reject stale inverses without losing history. Built-ins have no mutable route.
+  Same-target opening does not rebuild the graph; target switches clear transient
+  gestures/selection while retaining existing graph layout/view memory.
 - **AB4c — Persistence and acceptance pending:** material-only save/reload, dirty-target
-  Save/Discard/Cancel, recovery, external-write conflicts, same-ID reopen and moved/missing
-  sources. Finish native graph/preview acceptance and effect-context regressions.
+  Save/Discard/Cancel, recovery of the active target, external-write conflicts, fresh-disk
+  same-ID reopen and moved/missing sources. Finish native graph/preview acceptance and
+  effect-context regressions. AB4b opening is a non-destructive snapshot-backed view
+  switch, not a fresh-disk reload. First edits retain existing disk-baseline checks;
+  the existing combined effect/shared-draft save workflow remains unchanged until AB4c.
 
-AB4a does not yet enable standalone opening in the editor. Full AB4 remains incomplete
-until the end-to-end exit gate below passes.
+Standalone opening/editing is enabled in the editor. Full AB4 remains incomplete until
+the persistence/lifecycle and end-to-end exit gate below passes.
 
 Introduce an explicit graph editing target/session: project Program, project Function
 (enabled in AB5), and Effect Instance context. Keep one active graph document initially;
@@ -478,7 +492,6 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** AB4b — connect the standalone authoring boundary to guarded
-Assets opening, an explicit graph target and isolated editing/history. Follow with AB4c
-material-only persistence/recovery and end-to-end acceptance. Keep the transitional
+**Immediate next step (P1):** AB4c — material-only save/reload, guarded fresh-source
+lifecycle, active-target recovery, conflict handling and end-to-end acceptance. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

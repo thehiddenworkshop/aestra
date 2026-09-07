@@ -14,8 +14,8 @@ architecture vision; this file is the shorter delivery plan.
   guarded completion are implemented. AB3a folder navigation/grid-list browsing is implemented;
   AB3b snapshot inspection and locate-source routing are implemented. AB3c root-scoped
   persistence and the 10,000-source benchmark are implemented; the user accepted AB3c
-  on 2026-09-07. AB4a standalone material authoring is implemented; AB4b editor routing
-  and AB4c persistence/acceptance remain pending.
+  on 2026-09-07. AB4a standalone material authoring and AB4b editor target/editing are
+  implemented; AB4c persistence/lifecycle and native acceptance remain pending.
   Milestones and platform-verification caveats are in
   [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
@@ -776,8 +776,11 @@ cover capped widths and secondary-camera DPI/layout scaling. The user accepted A
 on 2026-09-07; historical native verification limits remain recorded, not claimed as passes.
 AB4a removes mandatory effect context from material authoring, validation, inspection,
 compilation and command history, retaining effect-only command guards and snapshot
-compatibility. AB4b editor routing/editing and AB4c persistence/acceptance are next;
-AB5–AB9 remain pending. Standalone material opening is not yet enabled in the editor.
+compatibility. AB4b enables snapshot-backed standalone material opening, graph/source
+Properties editing, default previews and pointer-scoped per-source undo without
+replacing the active effect. Drafts survive target switches; save remains the existing
+combined workflow. AB4c material-only persistence, fresh-source lifecycle, target recovery
+and native acceptance are next; AB5–AB9 remain pending.
 Native-dialog/platform verification caveats remain in the checklist.
 The editor must remain independent of the `bevy/aestra-bevy` runtime integration.
 

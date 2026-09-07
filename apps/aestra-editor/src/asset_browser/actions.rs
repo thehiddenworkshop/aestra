@@ -346,27 +346,22 @@ pub(super) fn open_material(
     mut session: ResMut<EditorSession>,
     mut layout: ResMut<WorkspaceLayout>,
     localizer: Res<Localizer>,
+    catalog: Res<ProjectEffectCatalog>,
+    io: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    protection: Option<Res<crate::persistence::DocumentProtectionState>>,
 ) {
-    let renderer = session
-        .effect
-        .emitters
-        .iter()
-        .flat_map(|emitter| &emitter.renderers)
-        .find(|renderer| {
-            session.effect.material_instances.iter().any(|instance| {
-                instance.id == renderer.material && instance.program.id() == event.0
-            })
-        })
-        .map(|renderer| renderer.id);
-    if let Some(renderer) = renderer {
-        session.selection.primary = SemanticTarget::Renderer(renderer);
-        session.selected_emitter_region = None;
-        session.ui_revision += 1;
+    if !crate::project_content::io::idle(io)
+        || protection.is_some_and(|protection| protection.is_open())
+    {
+        return;
+    }
+    // This is a non-destructive target switch: retain all drafts and effect state.
+    // Destructive effect/project navigation still uses the document coordinator.
+    if let Err(error) = session.open_material_program(&catalog, event.0) {
+        session.status = format!("Cannot open material: {error}");
+    } else {
         session.status = localizer.text("browser-material-opened");
         reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
-    } else {
-        session.status = localizer.text("browser-material-context");
-        session.ui_revision += 1;
     }
 }
 

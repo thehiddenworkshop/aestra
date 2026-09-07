@@ -7,19 +7,71 @@ use crate::{
     session::EditorSession,
     theme,
 };
-use aestra_authoring::{
-    MaterialAuthoringDocument, MaterialCommand, MaterialCommandExecutor, MaterialTransaction,
-};
+use aestra_authoring::{MaterialCommand, MaterialCommandExecutor, MaterialTransaction};
 use aestra_core::{
     EffectId,
     material::{MaterialFunction, MaterialProgram},
 };
 use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
-use std::collections::VecDeque;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    path::PathBuf,
+};
 
 const MATERIAL_HISTORY_LIMIT: usize = 256;
 
 pub(crate) struct EditorHistoryPlugin;
+
+/// Neutral panels (menus, Assets, diagnostics) preserve the last editing context.
+#[derive(Component, Clone, Copy)]
+pub(crate) enum HistoryScope {
+    Effect,
+    Material,
+    Neutral,
+}
+
+impl HistoryScope {
+    pub(crate) fn for_panel(panel: Option<crate::docking::DockPanel>, standalone: bool) -> Self {
+        use crate::docking::DockPanel;
+        match panel {
+            Some(DockPanel::MaterialGraph) => Self::Material,
+            Some(DockPanel::Properties) if standalone => Self::Material,
+            Some(
+                DockPanel::Properties
+                | DockPanel::Timeline
+                | DockPanel::Curves
+                | DockPanel::Viewport,
+            ) => Self::Effect,
+            _ => Self::Neutral,
+        }
+    }
+}
+
+fn capture_history_focus(
+    event: On<Pointer<Press>>,
+    scopes: Query<&HistoryScope>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+) {
+    if event.entity != event.original_event_target() {
+        return;
+    }
+    let mut entity = Some(event.entity);
+    while let Some(current) = entity {
+        if let Ok(scope) = scopes.get(current) {
+            let active = match scope {
+                HistoryScope::Effect => false,
+                HistoryScope::Material => session.standalone_material().is_some(),
+                HistoryScope::Neutral => return,
+            };
+            if session.material_history_active != active {
+                session.material_history_active = active;
+            }
+            return;
+        }
+        entity = parents.get(current).ok().map(ChildOf::parent);
+    }
+}
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HistorySet {
@@ -34,6 +86,7 @@ impl Plugin for EditorHistoryPlugin {
             .init_resource::<EditorHistoryLedger>()
             .add_observer(queue_history_action_activation)
             .add_observer(execute_history_action)
+            .add_observer(capture_history_focus)
             .add_systems(
                 Update,
                 (
@@ -61,9 +114,33 @@ struct MaterialProgramHistoryEntry {
 pub(crate) struct MaterialProgramEditHistory {
     undo: VecDeque<MaterialProgramHistoryEntry>,
     redo: Vec<MaterialProgramHistoryEntry>,
+    standalone: BTreeMap<(PathBuf, aestra_core::MaterialProgramId), MaterialProgramEditHistory>,
 }
 
 impl MaterialProgramEditHistory {
+    fn for_target_mut(&mut self, session: &EditorSession) -> &mut Self {
+        if !session.material_history_active {
+            return self;
+        }
+        match &session.material_target {
+            crate::material_document::MaterialEditingTarget::EffectInstance => self,
+            crate::material_document::MaterialEditingTarget::Program { root, id } => {
+                self.standalone.entry((root.clone(), *id)).or_default()
+            }
+        }
+    }
+
+    fn for_target(&self, session: &EditorSession) -> Option<&Self> {
+        if !session.material_history_active {
+            return Some(self);
+        }
+        match &session.material_target {
+            crate::material_document::MaterialEditingTarget::EffectInstance => Some(self),
+            crate::material_document::MaterialEditingTarget::Program { root, id } => {
+                self.standalone.get(&(root.clone(), *id))
+            }
+        }
+    }
     pub(crate) fn execute_replacement(
         &mut self,
         session: &mut EditorSession,
@@ -75,16 +152,17 @@ impl MaterialProgramEditHistory {
         let label = label.into();
         apply_material_program_replacement(session, catalog, &label, &before, &after)?;
         session.set_material_drafts(catalog.material_drafts.clone());
-        self.undo.push_back(MaterialProgramHistoryEntry {
+        let history = self.for_target_mut(session);
+        history.undo.push_back(MaterialProgramHistoryEntry {
             label,
             before,
             after,
             created_function: None,
         });
-        while self.undo.len() > MATERIAL_HISTORY_LIMIT {
-            self.undo.pop_front();
+        while history.undo.len() > MATERIAL_HISTORY_LIMIT {
+            history.undo.pop_front();
         }
-        self.redo.clear();
+        history.redo.clear();
         Ok(())
     }
 
@@ -100,16 +178,17 @@ impl MaterialProgramEditHistory {
         let label = label.into();
         apply_material_function_extraction(session, catalog, &label, &before, &after, &function)?;
         session.set_material_drafts(catalog.material_drafts.clone());
-        self.undo.push_back(MaterialProgramHistoryEntry {
+        let history = self.for_target_mut(session);
+        history.undo.push_back(MaterialProgramHistoryEntry {
             label,
             before,
             after,
             created_function: Some(function),
         });
-        while self.undo.len() > MATERIAL_HISTORY_LIMIT {
-            self.undo.pop_front();
+        while history.undo.len() > MATERIAL_HISTORY_LIMIT {
+            history.undo.pop_front();
         }
-        self.redo.clear();
+        history.redo.clear();
         Ok(())
     }
 
@@ -189,6 +268,7 @@ impl MaterialProgramEditHistory {
     fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
+        self.standalone.clear();
     }
 
     fn clear_redo(&mut self) {
@@ -256,10 +336,16 @@ fn apply_material_program_replacement(
     expected: &MaterialProgram,
     replacement: &MaterialProgram,
 ) -> Result<(), String> {
-    let programs = catalog.material_programs_for_effect(&session.effect)?;
-    let functions = catalog.material_functions()?;
-    let mut document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
-        .with_material_functions(functions);
+    let standalone = session.standalone_material().is_some() && session.material_history_active;
+    let mut document = if standalone {
+        session.graph_authoring_document(catalog)?
+    } else {
+        aestra_authoring::MaterialAuthoringDocument::new(
+            session.effect.clone(),
+            catalog.material_programs_for_effect(&session.effect)?,
+        )
+        .with_material_functions(catalog.material_functions()?)
+    };
     MaterialCommandExecutor::execute(
         &mut document,
         &MaterialTransaction::single(
@@ -277,6 +363,11 @@ fn apply_material_program_replacement(
         .find(|program| program.id == expected.id)
         .ok_or_else(|| format!("material program {} disappeared", expected.id))?;
     catalog.replace_material_program(expected, &replacement)?;
+    if standalone {
+        // Source validation is independent of the active effect. The viewport's normal
+        // catalog synchronization refreshes any consumers without editing their source/history.
+        return Ok(());
+    }
     let compiled = match catalog.compile_project(&session.effect) {
         Ok(project) => project.root,
         Err(error) => {
@@ -381,6 +472,9 @@ impl EditorHistoryLedger {
     }
 
     pub(crate) fn record_material_edit(&mut self, session: &mut EditorSession) {
+        if session.standalone_material().is_some() && session.material_history_active {
+            return;
+        }
         self.capture_effect_changes(session);
         session.clear_effect_redo();
         self.observe_effect_history(session);
@@ -506,6 +600,27 @@ fn execute_history_action(
         EffectHistoryChange::Edited => material_history.clear_redo(),
         EffectHistoryChange::None => {}
     }
+    if session.standalone_material().is_some() && session.material_history_active {
+        let history = material_history.for_target_mut(&session);
+        let result = match *action {
+            HistoryAction::Undo => history.undo(&mut session, &mut catalog),
+            HistoryAction::Redo => history.redo(&mut session, &mut catalog),
+        };
+        session.status = match result {
+            Ok(Some(label)) => format!(
+                "{} {label}",
+                if *action == HistoryAction::Undo {
+                    "Undid"
+                } else {
+                    "Redid"
+                }
+            ),
+            Ok(None) => "No material history in this direction".into(),
+            Err(error) => format!("Material history failed: {error}"),
+        };
+        session.ui_revision += 1;
+        return;
+    }
     let domain = match *action {
         HistoryAction::Undo => ledger.undo.pop(),
         HistoryAction::Redo => ledger.redo.pop(),
@@ -599,18 +714,28 @@ fn history_keyboard_input(
 fn update_history_availability(
     session: Res<EditorSession>,
     ledger: Res<EditorHistoryLedger>,
+    material_history: Res<MaterialProgramEditHistory>,
     mut commands: Commands,
     items: Query<
         (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
         Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
     >,
 ) {
-    if !session.is_changed() && !ledger.is_changed() {
+    if !session.is_changed() && !ledger.is_changed() && !material_history.is_changed() {
         return;
     }
     for (entity, undo, redo) in &items {
-        let enabled = (undo && (ledger.can_undo() || session.can_undo()))
-            || (redo && (ledger.can_redo() || session.can_redo()));
+        let enabled = if session.standalone_material().is_some() && session.material_history_active
+        {
+            material_history
+                .for_target(&session)
+                .is_some_and(|history| {
+                    (undo && !history.undo.is_empty()) || (redo && !history.redo.is_empty())
+                })
+        } else {
+            (undo && (ledger.can_undo() || session.can_undo()))
+                || (redo && (ledger.can_redo() || session.can_redo()))
+        };
         if enabled {
             commands.entity(entity).remove::<InteractionDisabled>();
         } else {
@@ -664,6 +789,189 @@ mod tests {
         app.init_resource::<ProjectEffectCatalog>()
             .init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>();
+    }
+
+    fn edit_shared(app: &mut App, before: &MaterialProgram, name: &str) {
+        let mut session = app.world_mut().remove_resource::<EditorSession>().unwrap();
+        let mut catalog = app
+            .world_mut()
+            .remove_resource::<ProjectEffectCatalog>()
+            .unwrap();
+        session.open_material_program(&catalog, before.id).unwrap();
+        let mut after = before.clone();
+        after.name = name.into();
+        app.world_mut()
+            .resource_mut::<MaterialProgramEditHistory>()
+            .execute_replacement(
+                &mut session,
+                &mut catalog,
+                "Rename material",
+                before.clone(),
+                after,
+            )
+            .unwrap();
+        app.world_mut()
+            .resource_mut::<EditorHistoryLedger>()
+            .record_material_edit(&mut session);
+        app.insert_resource(session).insert_resource(catalog);
+    }
+
+    fn press_history_scope(app: &mut App, scope: HistoryScope) {
+        use bevy::{
+            camera::NormalizedRenderTarget,
+            picking::{
+                backend::HitData,
+                pointer::{Location, PointerId},
+            },
+        };
+        let parent = app.world_mut().spawn(scope).id();
+        let target = app.world_mut().spawn(ChildOf(parent)).id();
+        app.world_mut().trigger(Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::ZERO,
+            },
+            Press {
+                button: PointerButton::Primary,
+                count: 1,
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+            },
+            target,
+        ));
+    }
+
+    #[test]
+    fn standalone_history_is_per_program_and_pointer_focus_preserves_effect_redo() {
+        let root = tempfile::tempdir().unwrap();
+        let first = MaterialProgram::additive_sprite("First").normalized();
+        let second = MaterialProgram::additive_sprite("Second").normalized();
+        first
+            .save_ron(root.path().join("first.aestra.material.ron"))
+            .unwrap();
+        second
+            .save_ron(root.path().join("second.aestra.material.ron"))
+            .unwrap();
+        let session = edited_session();
+        let edited_duration = session.effect.duration;
+        let mut app = App::new();
+        app.insert_resource(session);
+        add_history_resources(&mut app);
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()));
+        app.add_observer(execute_history_action)
+            .add_observer(capture_history_focus);
+        app.world_mut().trigger(HistoryAction::Undo);
+        let effect = app.world().resource::<EditorSession>().effect.clone();
+        let selection = app.world().resource::<EditorSession>().selection;
+        assert_eq!(app.world().resource::<EditorSession>().effect_redo_len(), 1);
+        edit_shared(&mut app, &first, "First edit");
+        edit_shared(&mut app, &second, "Second edit");
+        assert_eq!(app.world().resource::<EditorSession>().effect_redo_len(), 1);
+        app.world_mut().trigger(HistoryAction::Undo);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(catalog.material_program(second.id).unwrap(), second);
+        assert_eq!(
+            catalog.material_program(first.id).unwrap().name,
+            "First edit"
+        );
+        assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+        assert_eq!(app.world().resource::<EditorSession>().selection, selection);
+
+        // Clicking the viewport/timeline changes history focus, not the open graph.
+        press_history_scope(&mut app, HistoryScope::Effect);
+        assert!(
+            !app.world()
+                .resource::<EditorSession>()
+                .material_history_active
+        );
+        app.world_mut().trigger(HistoryAction::Redo);
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            edited_duration
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .standalone_material(),
+            Some(second.id)
+        );
+        press_history_scope(&mut app, HistoryScope::Material);
+        press_history_scope(&mut app, HistoryScope::Neutral);
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .material_history_active
+        );
+        app.world_mut().trigger(HistoryAction::Redo);
+        assert_eq!(
+            app.world()
+                .resource::<ProjectEffectCatalog>()
+                .material_program(second.id)
+                .unwrap()
+                .name,
+            "Second edit"
+        );
+        let mut session = app.world_mut().remove_resource::<EditorSession>().unwrap();
+        session
+            .open_material_program(app.world().resource::<ProjectEffectCatalog>(), first.id)
+            .unwrap();
+        app.insert_resource(session);
+        app.world_mut().trigger(HistoryAction::Undo);
+        assert_eq!(
+            app.world()
+                .resource::<ProjectEffectCatalog>()
+                .material_program(first.id)
+                .unwrap(),
+            first
+        );
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            edited_duration
+        );
+    }
+
+    #[test]
+    fn failed_standalone_history_does_not_pop_entries_or_touch_effect() {
+        let root = tempfile::tempdir().unwrap();
+        let before = MaterialProgram::additive_sprite("Before").normalized();
+        let path = root.path().join("source.aestra.material.ron");
+        before.save_ron(&path).unwrap();
+        let mut app = App::new();
+        app.insert_resource(test_support::session_with_timing_slack());
+        add_history_resources(&mut app);
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()));
+        app.add_observer(execute_history_action);
+        edit_shared(&mut app, &before, "Draft");
+        // A conflicting newer draft must never be overwritten by an old inverse command.
+        let mut catalog = app.world_mut().resource_mut::<ProjectEffectCatalog>();
+        let current = catalog.material_program(before.id).unwrap();
+        let mut conflicting = current.clone();
+        conflicting.name = "Newer".into();
+        catalog
+            .replace_material_program(&current, &conflicting)
+            .unwrap();
+        let effect = app.world().resource::<EditorSession>().effect.clone();
+        app.world_mut().trigger(HistoryAction::Undo);
+        assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+        assert_eq!(
+            app.world()
+                .resource::<ProjectEffectCatalog>()
+                .material_program(before.id)
+                .unwrap(),
+            conflicting
+        );
+        let session = app.world().resource::<EditorSession>();
+        let history = app
+            .world()
+            .resource::<MaterialProgramEditHistory>()
+            .for_target(session)
+            .unwrap();
+        assert_eq!(history.undo.len(), 1);
+        assert!(history.redo.is_empty());
+        assert_eq!(MaterialProgram::load_ron(path).unwrap(), before);
     }
 
     #[test]

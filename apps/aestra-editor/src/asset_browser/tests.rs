@@ -1265,7 +1265,7 @@ fn pointer_selects_and_opens_effect_from_row_content() {
 }
 
 #[test]
-fn material_selection_inspects_and_activation_opens_current_effect_graph() {
+fn material_activation_opens_shared_source_without_retargeting_the_effect() {
     use aestra_core::material::{
         MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
     };
@@ -1292,30 +1292,50 @@ fn material_selection_inspects_and_activation_opens_current_effect_graph() {
     let expected = app
         .world()
         .resource::<Localizer>()
-        .text("browser-material-context");
+        .text("browser-material-opened");
     click(&mut app, row, 2);
     assert_eq!(app.world().resource::<EditorSession>().status, expected);
+    assert_eq!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_material(),
+        Some(program.id)
+    );
     assert_eq!(
         app.world().resource::<EditorSession>().selection,
         original_selection
     );
-    let (renderer, before) = {
+    let before = {
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         let renderer = &session.effect.emitters[0].renderers[0];
-        let (renderer_id, material) = (renderer.id, renderer.material);
+        let material = renderer.material;
         session.effect.material_instances.push(MaterialInstance {
             id: material,
             program: MaterialProgramRef::Project(program.id),
             values: BTreeMap::new(),
             render_state: MaterialRenderState::additive_sprite(),
         });
-        (renderer_id, session.effect.clone())
+        session.effect.clone()
     };
     app.world_mut().trigger(BrowserAction::OpenSelected);
     app.update();
     assert_eq!(
-        app.world().resource::<EditorSession>().selection.primary,
-        SemanticTarget::Renderer(renderer)
+        app.world().resource::<EditorSession>().selection,
+        original_selection
+    );
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .return_to_effect_material();
+    let focused_list = list(&mut app);
+    app.insert_resource(InputFocus::from_entity(focused_list));
+    app.update();
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_material(),
+        Some(program.id)
     );
     assert_eq!(app.world().resource::<EditorSession>().effect, before);
     program

@@ -17,6 +17,7 @@ pub(crate) fn idle(tasks: Option<Res<ProjectIoTasks>>) -> bool {
 
 #[derive(Clone)]
 pub(crate) struct IoGuard {
+    material_target: crate::material_document::MaterialEditingTarget,
     version: ProjectContentVersion,
     generation: u64,
     revision: u64,
@@ -33,6 +34,7 @@ impl IoGuard {
     }
     pub(crate) fn capture(catalog: &EditorProjectContent, session: &EditorSession) -> Self {
         Self {
+            material_target: session.material_target.clone(),
             version: catalog.version,
             generation: session.history_generation(),
             revision: session.document_revision(),
@@ -58,6 +60,7 @@ impl IoGuard {
     }
     pub(crate) fn matches(&self, catalog: &EditorProjectContent, session: &EditorSession) -> bool {
         self.same_document(catalog, session)
+            && self.material_target == session.material_target
             && self.version == catalog.version
             && self.revision == session.document_revision()
             && self.effect == session.effect
