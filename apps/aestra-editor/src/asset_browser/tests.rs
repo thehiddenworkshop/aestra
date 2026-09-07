@@ -175,8 +175,7 @@ pub(super) fn rows(app: &mut App) -> BTreeMap<aestra_project::ProjectSourceId, E
         .collect()
 }
 
-#[test]
-fn folder_labels_have_visible_layout_inside_their_buttons() {
+fn browser_layout_app(root: &Path, size: UVec2, scale_factor: f32) -> App {
     use bevy::{
         app::{HierarchyPropagatePlugin, PropagateSet},
         camera::{ComputedCameraValues, RenderTargetInfo, Viewport},
@@ -187,10 +186,18 @@ fn folder_labels_have_visible_layout_inside_their_buttons() {
             widget::{measure_text_system, text_system},
         },
     };
-    let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir(root.path().join("effects")).unwrap();
-    std::fs::write(root.path().join("effects/texture.png"), []).unwrap();
-    let mut app = browser_app(root.path());
+    let mut app = browser_app(root);
+    // The same panel is laid out against an explicit secondary-window camera, as
+    // it is when detached. This does not substitute for native window/input QA.
+    let window = app.world_mut().spawn(Window::default()).id();
+    let panel = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, (With<Node>, Without<ChildOf>)>()
+            .single(world)
+            .unwrap()
+    };
+    app.world_mut().get_mut::<Node>(panel).unwrap().width = Val::Px(size.x as f32 / scale_factor);
     app.add_plugins((
         HierarchyPropagatePlugin::<ComputedUiTargetCamera>::new(PostUpdate),
         HierarchyPropagatePlugin::<ComputedUiRenderTargetInfo>::new(PostUpdate),
@@ -220,23 +227,39 @@ fn folder_labels_have_visible_layout_inside_their_buttons() {
             .after(propagate_ui_target_cameras)
             .before(measure_text_system),
     );
-    app.world_mut().spawn((
-        Camera2d,
-        Camera {
-            computed: ComputedCameraValues {
-                target_info: Some(RenderTargetInfo {
-                    physical_size: UVec2::new(420, 520),
-                    scale_factor: 1.0,
+    let camera = app
+        .world_mut()
+        .spawn((
+            Camera2d,
+            bevy::camera::RenderTarget::Window(bevy::window::WindowRef::Entity(window)),
+            Camera {
+                computed: ComputedCameraValues {
+                    target_info: Some(RenderTargetInfo {
+                        physical_size: size,
+                        scale_factor,
+                    }),
+                    ..default()
+                },
+                viewport: Some(Viewport {
+                    physical_size: size,
+                    ..default()
                 }),
                 ..default()
             },
-            viewport: Some(Viewport {
-                physical_size: UVec2::new(420, 520),
-                ..default()
-            }),
-            ..default()
-        },
-    ));
+        ))
+        .id();
+    app.world_mut()
+        .entity_mut(panel)
+        .insert(UiTargetCamera(camera));
+    app
+}
+
+#[test]
+fn folder_labels_have_visible_layout_inside_their_buttons() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("effects")).unwrap();
+    std::fs::write(root.path().join("effects/texture.png"), []).unwrap();
+    let mut app = browser_layout_app(root.path(), UVec2::new(420, 520), 1.0);
     for scale in [1.0, 1.5, 2.0] {
         for width in [90.0, 140.0, 240.0] {
             app.world_mut().resource_mut::<UiScale>().0 = scale;
@@ -320,6 +343,147 @@ fn list(app: &mut App) -> Entity {
         .query_filtered::<Entity, With<BrowserItems>>()
         .single(world)
         .unwrap()
+}
+
+#[test]
+fn sources_divider_has_a_full_height_hit_area_and_scales_drag_on_secondary_targets() {
+    use bevy::{
+        camera::NormalizedRenderTarget,
+        picking::pointer::{Location, PointerId},
+    };
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("effects")).unwrap();
+    for logical_width in [320, 640, 1440] {
+        for scale in [1.0, 1.5, 2.0] {
+            let size = UVec2::new(
+                (logical_width as f32 * scale) as u32,
+                (520.0 * scale) as u32,
+            );
+            let mut app = browser_layout_app(root.path(), size, scale);
+            app.world_mut()
+                .resource_mut::<AssetBrowserState>()
+                .sources_width = 140.0;
+            for _ in 0..4 {
+                app.update();
+            }
+            let (splitter, before, inverse_scale) = {
+                let world = app.world_mut();
+                let (entity, node, transform) = world
+                    .query_filtered::<(Entity, &ComputedNode, &UiGlobalTransform), With<super::panel::SourcesSplitter>>()
+                    .single(world).unwrap();
+                assert!((node.size().x - 5.0 * scale).abs() < 1.1);
+                assert!(
+                    node.size().y > 150.0 * scale,
+                    "collapsed divider at {logical_width}px/{scale}x"
+                );
+                assert!((node.inverse_scale_factor() - scale.recip()).abs() < 0.001);
+                (entity, transform.translation.x, node.inverse_scale_factor())
+            };
+            let selected = app.world().resource::<AssetBrowserState>().selected;
+            begin_sources_drag(&mut app, splitter, size);
+            app.world_mut().trigger(Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: NormalizedRenderTarget::None {
+                        width: size.x,
+                        height: size.y,
+                    },
+                    position: Vec2::ZERO,
+                },
+                Drag {
+                    button: PointerButton::Primary,
+                    distance: Vec2::X * 20.0 * scale,
+                    delta: Vec2::X * 20.0 * scale,
+                },
+                splitter,
+            ));
+            for _ in 0..4 {
+                app.update();
+            }
+            let state = app.world().resource::<AssetBrowserState>();
+            assert!((state.sources_width - 160.0).abs() < 0.01);
+            assert_eq!(state.selected, selected, "resizing must not select assets");
+            let after = app
+                .world()
+                .get::<UiGlobalTransform>(splitter)
+                .unwrap()
+                .translation
+                .x;
+            assert!(
+                ((after - before) * inverse_scale - 20.0).abs() < 1.1,
+                "divider did not track drag at {logical_width}px/{scale}x: {before} -> {after}"
+            );
+            // Saved widths can exceed the pane's 55% layout cap. Starting a new
+            // drag must use the visible edge, not that larger preference value.
+            app.world_mut()
+                .resource_mut::<AssetBrowserState>()
+                .sources_width = 360.0;
+            for _ in 0..4 {
+                app.update();
+            }
+            let before = app
+                .world()
+                .get::<UiGlobalTransform>(splitter)
+                .unwrap()
+                .translation
+                .x;
+            begin_sources_drag(&mut app, splitter, size);
+            app.world_mut().trigger(Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: NormalizedRenderTarget::None {
+                        width: size.x,
+                        height: size.y,
+                    },
+                    position: Vec2::ZERO,
+                },
+                Drag {
+                    button: PointerButton::Primary,
+                    distance: -Vec2::X * 20.0 * scale,
+                    delta: -Vec2::X * 20.0 * scale,
+                },
+                splitter,
+            ));
+            for _ in 0..4 {
+                app.update();
+            }
+            let after = app
+                .world()
+                .get::<UiGlobalTransform>(splitter)
+                .unwrap()
+                .translation
+                .x;
+            assert!(
+                ((after - before) * inverse_scale + 20.0).abs() < 1.1,
+                "clamped divider sticks at {logical_width}px/{scale}x: {before} -> {after}"
+            );
+        }
+    }
+}
+
+fn begin_sources_drag(app: &mut App, splitter: Entity, size: UVec2) {
+    use bevy::{
+        camera::NormalizedRenderTarget,
+        picking::{
+            backend::HitData,
+            pointer::{Location, PointerId},
+        },
+    };
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        Location {
+            target: NormalizedRenderTarget::None {
+                width: size.x,
+                height: size.y,
+            },
+            position: Vec2::ZERO,
+        },
+        DragStart {
+            button: PointerButton::Primary,
+            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        },
+        splitter,
+    ));
 }
 
 #[test]

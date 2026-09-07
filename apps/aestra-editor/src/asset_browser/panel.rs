@@ -55,7 +55,11 @@ pub(super) struct BrowserRow(pub(super) ProjectSourceId);
 #[derive(Component)]
 pub(super) struct BrowserSearch;
 #[derive(Component)]
-pub(super) struct SourcesSplitter;
+pub(super) struct SourcesPane;
+#[derive(Component, Default)]
+pub(super) struct SourcesSplitter {
+    pub(super) drag_start_width: Option<f32>,
+}
 #[derive(Component)]
 pub(super) struct BrowserFolderButton;
 #[derive(Component)]
@@ -206,14 +210,17 @@ fn spawn_browser(
         })
         .with_children(|body| {
             ui.sources = body
-                .spawn(Node {
-                    width: Val::Px(state.sources_width),
-                    max_width: Val::Percent(55.0),
-                    min_width: Val::Px(0.0),
-                    flex_shrink: 0.0,
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                })
+                .spawn((
+                    SourcesPane,
+                    Node {
+                        width: Val::Px(state.sources_width),
+                        max_width: Val::Percent(55.0),
+                        min_width: Val::Px(0.0),
+                        flex_shrink: 0.0,
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                ))
                 .with_children(|source| {
                     source
                         .spawn(row_node())
@@ -238,7 +245,7 @@ fn spawn_browser(
                 .id();
             ui.splitter = body
                 .spawn((
-                    SourcesSplitter,
+                    SourcesSplitter::default(),
                     EditorNativeControl,
                     EntityCursor::System(SystemCursorIcon::ColResize),
                     AccessibleLabel(localizer.text("browser-resize-sources")),

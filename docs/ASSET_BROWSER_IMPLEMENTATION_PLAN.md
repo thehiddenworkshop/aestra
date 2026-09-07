@@ -5,7 +5,8 @@ read-only content model implemented. AB2a background refresh/editor adapter and 
 cached semantic queries implemented. AB2b2 explicit-open/post-write background operations
 implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
 Assets dock, with a transitional Library switch. AB3b snapshot inspection and locate-source
-routing are implemented. AB3c persistence/acceptance is next. Platform caveats are recorded in
+routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
+native acceptance is still in progress. Platform caveats are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
 This is the repository-specific delivery plan for
@@ -81,7 +82,8 @@ The first browser will not offer a warning-only “unsafe” bypass.
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
-slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c and AB4–AB9 are pending.
+slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c acceptance is in progress;
+AB4–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -261,10 +263,21 @@ Delivery slices:
   choose the correct page and focus/scroll the selected row without opening it or changing
   emitter selection. Entry points include references, the current effect and material graph.
   Native inspection/locate acceptance remains part of AB3c.
-- **AB3c — Persistence and acceptance (pending, P1):** versioned, root-scoped navigation/
-  layout settings, restart tests, 10,000-source benchmark and manual narrow/wide/high-DPI/
-  floating-panel acceptance. AB3a navigation currently survives shell rebuilds within the
-  session, not editor restarts. Full AB3 is not complete until these gates pass.
+- **AB3c — Persistence implemented; acceptance in progress (P1):** versioned preferences
+  in each root's `.aestra/asset-browser.ron` restore folder/expanded paths, search/filter,
+  sort, grid/list and source-pane visibility/width. Selection, inspection and authored
+  state are not persisted there. Writes are debounced and atomic; malformed/future
+  settings are preserved, and stale folders fall back to a surviving parent. Regression
+  tests cover root changes, same-root generation changes, restart and unsafe paths.
+  The 10,000-source harness and recorded baseline live in
+  [`benchmarks/asset-browser`](../benchmarks/asset-browser/README.md).
+  Layout/drag regression checks cover 320/640/1440-pixel panels and 100/150/200% target
+  scaling using an explicit secondary-window camera. Resizing starts at the rendered
+  pane width, avoiding a dead zone when the saved width exceeds the panel's 55% cap.
+  Native wide browsing and restart restoration have been observed; native divider
+  dragging remains inconclusive, and narrow/high-DPI/floating-window visual/input
+  acceptance remains open. Headless target/layout tests are not native-window passes.
+  Full AB3 is not complete until these gates pass.
 
 Build `asset_browser/{state,panel,source_tree,asset_view,filtering,actions}.rs` as needed
 using shared Feathers buttons, search fields, breadcrumbs, list rows, scrollbars,
@@ -436,8 +449,7 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step:** AB3 read-only Asset Browser using the published source tree and
-semantic index: bounded folder navigation, grid/list, search/filtering, inspection and
-guarded effect opening in the existing Assets dock slot. Preserve the native-platform
-test caveats in the checklist until verified on capable hosts. Do not begin by merely
-renaming `library.rs`, implementing thumbnails, or rewriting material editing.
+**Immediate next step (P1):** finish AB3c native divider, narrow/high-DPI and detached-window
+acceptance, retaining precise caveats in the checklist. Then begin AB4 standalone material
+documents. Do not mark AB3 complete from headless checks alone, remove the transitional
+Library, or introduce thumbnails/file mutations ahead of their milestones.

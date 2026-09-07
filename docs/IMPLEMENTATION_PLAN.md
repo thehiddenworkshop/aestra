@@ -12,7 +12,8 @@ architecture vision; this file is the shorter delivery plan.
   and semantic join implemented. AB2a background refresh/editor adapter and AB2b1 cached
   semantic reads implemented. AB2b2 explicit-open/post-write background operations and
   guarded completion are implemented. AB3a folder navigation/grid-list browsing is implemented;
-  AB3b snapshot inspection and locate-source routing are implemented; AB3c persistence/acceptance is next.
+  AB3b snapshot inspection and locate-source routing are implemented. AB3c root-scoped
+  persistence and the 10,000-source benchmark are implemented; native acceptance is in progress.
   Milestones and platform-verification caveats are in
   [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
@@ -768,8 +769,10 @@ snapshot-backed folders, grid/list, search/filtering, bounded retained rows and 
 effect activation in the existing Assets dock. Its Browser/Library switch retains legacy
 workflows; the catalog name temporarily aliases the new adapter. AB3b adds independent
 snapshot inspection, bounded dependency/usage reports and duplicate-safe Locate actions.
-AB3c persistence/manual acceptance and AB4–AB9 remain pending. Native-dialog/platform
-verification caveats remain in the checklist.
+AB3c adds root-scoped restart preferences and the 10,000-source benchmark. Divider tests
+cover capped widths and secondary-camera DPI/layout scaling; native divider and
+narrow/high-DPI/floating-panel acceptance remain open. AB4–AB9 remain pending.
+Native-dialog/platform verification caveats remain in the checklist.
 The editor must remain independent of the `bevy/aestra-bevy` runtime integration.
 
 ## Stability-hardening milestone

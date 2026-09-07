@@ -1,5 +1,5 @@
 use super::{
-    panel::{BrowserItems, BrowserRow, BrowserSearch, SourcesSplitter},
+    panel::{BrowserItems, BrowserRow, BrowserSearch, SourcesPane, SourcesSplitter},
     state::*,
 };
 use crate::*;
@@ -399,16 +399,47 @@ pub(super) fn keyboard(
     event.propagate(false);
 }
 
+pub(super) fn begin_resize_sources(
+    mut event: On<Pointer<DragStart>>,
+    mut splitters: Query<(&ChildOf, &mut SourcesSplitter)>,
+    sources: Query<(&ChildOf, &ComputedNode), With<SourcesPane>>,
+) {
+    if event.button == PointerButton::Primary
+        && let Ok((parent, mut splitter)) = splitters.get_mut(event.entity)
+        && let Some((_, node)) = sources
+            .iter()
+            .find(|(source_parent, _)| *source_parent == parent)
+    {
+        event.propagate(false);
+        // Preferences may be wider than the current panel's percentage cap.
+        // Anchor at the rendered edge so reversing direction reacts immediately.
+        splitter.drag_start_width = Some(node.size().x * node.inverse_scale_factor());
+    }
+}
+
 pub(super) fn resize_sources(
     mut event: On<Pointer<Drag>>,
-    splitters: Query<&ComputedNode, With<SourcesSplitter>>,
+    splitters: Query<(&ComputedNode, &SourcesSplitter)>,
     mut state: ResMut<AssetBrowserState>,
 ) {
     if event.button == PointerButton::Primary
-        && let Ok(node) = splitters.get(event.entity)
+        && let Ok((node, splitter)) = splitters.get(event.entity)
+        && let Some(start_width) = splitter.drag_start_width
     {
         event.propagate(false);
         state.sources_width =
-            (state.sources_width + event.delta.x * node.inverse_scale_factor()).clamp(90.0, 360.0);
+            (start_width + event.distance.x * node.inverse_scale_factor()).clamp(90.0, 360.0);
+    }
+}
+
+pub(super) fn end_resize_sources(
+    mut event: On<Pointer<DragEnd>>,
+    mut splitters: Query<&mut SourcesSplitter>,
+) {
+    if event.button == PointerButton::Primary
+        && let Ok(mut splitter) = splitters.get_mut(event.entity)
+    {
+        event.propagate(false);
+        splitter.drag_start_width = None;
     }
 }

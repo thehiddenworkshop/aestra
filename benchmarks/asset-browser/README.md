@@ -22,3 +22,23 @@ layout/raster time or detached-window behavior. Timings are observations, not
 flaky CI thresholds; structural bounds remain assertions. Record the toolchain,
 profile, host and code revision with each baseline. Native narrow/wide/high-DPI
 and floating-panel acceptance remains a separate manual gate.
+
+## Recorded baseline — 2026-09-07
+
+Revision: `1f34200` plus the AB3c divider/acceptance worktree changes. Windows x86_64,
+MSVC Rust 1.98.1, `test` profile (optimized + debuginfo); CPU identifier reported by
+the host: AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD. The editor was closed
+during measurement. This is a local observation, not a cross-hardware budget.
+
+| Measurement | Median (ms) | p95 (ms) |
+| --- | ---: | ---: |
+| Snapshot filter/sort (64 samples) | 7.090 | 7.538 |
+| Headless page update (64 samples) | 14.486 | 15.065 |
+| Headless selection update (64 samples) | 0.186 | 0.261 |
+| Headless idle update (64 samples) | 0.091 | 0.168 |
+
+Single-run discovery: **421.820 ms** for 10,101 entries. Headless browser startup,
+including a second discovery: **846.626 ms**. Peak live entities: **2,744**;
+retained asset rows: at most **192**, with **96** rows per page. All structural and
+authored-state assertions passed. These figures exclude rendering and native input;
+in particular, page-update time must not be described as end-to-end frame latency.

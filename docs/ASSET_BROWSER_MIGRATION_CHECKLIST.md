@@ -1,6 +1,6 @@
 # Asset Browser contracts and migration inventory
 
-Recorded for AB0/AB1 and updated through AB3b, 2026-09-07. This is a parity inventory,
+Recorded for AB0/AB1 and updated through AB3c acceptance work, 2026-09-07. This is a parity inventory,
 **not** a claim that every Library workflow has migrated. Follow
 [the delivery plan](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 
@@ -210,3 +210,40 @@ and background Open Project/Refresh remain in context menus. File-menu workflows
 Native visual verification of this layout is still required; automated tests are not visual QA.
 The ergonomics follow-up passes 543 editor tests, the runtime-independence architecture
 check, workspace/all-targets strict Clippy, formatting and diff whitespace checks.
+
+### AB3c persistence and acceptance — 2026-09-07
+
+Per-root preferences now persist under `.aestra/asset-browser.ron`, independently of
+semantic assets and editor docking layout. Automated coverage includes round-trip,
+fallback from missing folders, root switches, same-root generation refresh, corrupt/
+future formats, path escapes, debounce and exit flush. Selection and inspection do
+not cause preference writes or authored edits. The 10,000-source measurement and its
+host/profile/revision are recorded in [the benchmark](../benchmarks/asset-browser/README.md).
+
+Divider investigation reproduced a real capped-width dead zone: at a 320-pixel panel
+width, a saved 360-pixel source pane is displayed at 176 pixels; dragging left 20
+pixels previously left the divider unchanged. The drag now anchors to the rendered
+width and uses cumulative distance. Layout/observer regression coverage spans
+320/640/1440 logical pixels at 100/150/200% target scaling, with a secondary-window
+camera. Folder captions retain their earlier UI-scale/layout checks. These tests
+do not run OS pointer delivery, native picking or detached-window presentation.
+
+Native observations across the persistence and acceptance slices:
+
+- Wide docked folder navigation and grid browsing work without changing the active
+  effect. Folder/grid preferences were restored on editor restart; selection was not.
+- Explicit References opens the separate inspector while browsing stays independent.
+- Divider drags through Computer Use landed on folder rows rather than reliably
+  exercising the handle. This is inconclusive, not a native pass for the resize fix.
+- Native narrow/high-DPI and detached-window visual/input gates remain outstanding.
+  The earlier locked-desktop interruption is historical, not the current blocker.
+  Tooltip path overflow and the inspector's info glyph also need visual follow-up.
+
+AB3 remains in acceptance, not complete. Keep the legacy Library and do not treat
+headless layout or benchmark results as substitutes for the outstanding native gates.
+Existing material edits were preserved; native browsing only changed local browser
+preferences, returned to the Effects folder before closing the QA editor.
+
+Local validation for this acceptance slice: 551 editor unit tests pass (the opt-in
+benchmark is ignored by the normal suite and passed separately); workspace/all-targets
+Clippy with warnings denied passes on `+1.98.1-x86_64-pc-windows-msvc`.
