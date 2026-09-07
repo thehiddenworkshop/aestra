@@ -28,6 +28,95 @@ pub(crate) struct MaterialDrafts {
 }
 
 impl MaterialDrafts {
+    /// Resolve moved sources by unique identity without changing the recovered byte baseline.
+    /// Missing/ambiguous sources remain drafts; they are never rebound arbitrarily.
+    pub(crate) fn recover_paths(
+        &mut self,
+        index: &ProjectAssetIndex,
+    ) -> Result<Vec<String>, String> {
+        let root = index
+            .root()
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let stored_root = self
+            .root
+            .as_deref()
+            .ok_or("Recovery has no material project root")?;
+        if stored_root
+            .canonicalize()
+            .map_err(|error| error.to_string())?
+            != root
+        {
+            return Err("Recovery drafts belong to a different project".into());
+        }
+        let mut warnings = Vec::new();
+        let validate = |path: &Path| -> Result<(), String> {
+            if !path.is_absolute()
+                || path
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::ParentDir))
+                || !(path.starts_with(stored_root) || path.starts_with(&root))
+                || !path
+                    .ancestors()
+                    .find_map(|ancestor| ancestor.canonicalize().ok())
+                    .is_some_and(|ancestor| ancestor.starts_with(&root))
+            {
+                return Err("Recovery material paths are outside their project".into());
+            }
+            Ok(())
+        };
+        for (id, draft) in &mut self.programs {
+            validate(&draft.path)?;
+            if draft
+                .original
+                .as_ref()
+                .is_some_and(|program| program.id != *id)
+                || draft
+                    .current
+                    .as_ref()
+                    .is_some_and(|program| program.id != *id)
+            {
+                return Err("Recovered material identity does not match its draft".into());
+            }
+            match index.resolve_material_program(MaterialProgramRef::Project(*id)) {
+                Ok(entry) => {
+                    validate(&entry.path)?;
+                    draft.path.clone_from(&entry.path);
+                }
+                Err(error) => warnings.push(error.to_string()),
+            }
+        }
+        for (id, draft) in &mut self.functions {
+            validate(&draft.path)?;
+            if draft
+                .original
+                .as_ref()
+                .is_some_and(|function| function.id != *id)
+                || draft
+                    .current
+                    .as_ref()
+                    .is_some_and(|function| function.id != *id)
+            {
+                return Err("Recovered function identity does not match its draft".into());
+            }
+            // A newly extracted, not-yet-saved function has no source to resolve.
+            if draft.original.is_none() {
+                continue;
+            }
+            match index.resolve_material_function(MaterialFunctionRef::Project(*id)) {
+                Ok(entry) => {
+                    validate(&entry.path)?;
+                    draft.path.clone_from(&entry.path);
+                }
+                Err(error) => warnings.push(error.to_string()),
+            }
+        }
+        self.root = Some(root);
+        if let Err(error) = self.preflight() {
+            warnings.push(error);
+        }
+        Ok(warnings)
+    }
     /// Worker-only receipts for sources successfully written by a possibly partial save.
     pub(crate) fn saved_baselines(before: &Self, remaining: &Self) -> Self {
         fn receipt<T: Clone>(draft: &Draft<T>, bytes: Option<Vec<u8>>) -> Draft<T> {

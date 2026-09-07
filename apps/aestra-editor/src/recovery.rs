@@ -11,7 +11,7 @@ use tempfile::NamedTempFile;
 
 use crate::settings::config_dir;
 
-const RECOVERY_FORMAT_VERSION: u32 = 2;
+const RECOVERY_FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +22,8 @@ struct RecoverySnapshot {
     effect: EffectAsset,
     #[serde(default)]
     material_drafts: crate::material_drafts::MaterialDrafts,
+    #[serde(default)]
+    material_target: crate::material_document::MaterialEditingTarget,
 }
 
 #[derive(Debug)]
@@ -32,6 +34,9 @@ pub(crate) struct RecoveryCandidate {
 }
 
 impl RecoveryCandidate {
+    pub(crate) fn material_target(&self) -> &crate::material_document::MaterialEditingTarget {
+        &self.snapshot.material_target
+    }
     pub(crate) fn material_drafts(&self) -> &crate::material_drafts::MaterialDrafts {
         &self.snapshot.material_drafts
     }
@@ -55,7 +60,9 @@ impl RecoveryPersistence {
         Self::discover_in(config_dir().join("recovery"))
     }
 
-    fn discover_in(directory: PathBuf) -> (Self, Option<RecoveryCandidate>, Option<String>) {
+    pub(crate) fn discover_in(
+        directory: PathBuf,
+    ) -> (Self, Option<RecoveryCandidate>, Option<String>) {
         let mut candidates = Vec::new();
         let mut rejected = 0usize;
         match fs::read_dir(&directory) {
@@ -118,11 +125,22 @@ impl RecoveryPersistence {
         self.persist_with_materials(effect, source_path, &Default::default())
     }
 
+    #[cfg(test)]
     pub(crate) fn persist_with_materials(
         &mut self,
         effect: &EffectAsset,
         source_path: Option<&Path>,
         material_drafts: &crate::material_drafts::MaterialDrafts,
+    ) -> io::Result<PathBuf> {
+        self.persist_document(effect, source_path, material_drafts, &Default::default())
+    }
+
+    pub(crate) fn persist_document(
+        &mut self,
+        effect: &EffectAsset,
+        source_path: Option<&Path>,
+        material_drafts: &crate::material_drafts::MaterialDrafts,
+        material_target: &crate::material_document::MaterialEditingTarget,
     ) -> io::Result<PathBuf> {
         let snapshot = RecoverySnapshot {
             version: RECOVERY_FORMAT_VERSION,
@@ -130,6 +148,7 @@ impl RecoveryPersistence {
             source_path: source_path.map(Path::to_owned),
             effect: effect.clone(),
             material_drafts: material_drafts.clone(),
+            material_target: material_target.clone(),
         };
         let source = ron::ser::to_string_pretty(&snapshot, ron::ser::PrettyConfig::default())
             .map_err(io::Error::other)?;
@@ -165,7 +184,21 @@ impl RecoveryPersistence {
     }
 
     fn path_for(&self, effect: &EffectAsset) -> PathBuf {
-        self.directory.join(format!("{}.recovery.ron", effect.id))
+        if let Some(path) = &self.active_path {
+            return path.clone();
+        }
+        let path = self.directory.join(format!("{}.recovery.ron", effect.id));
+        if path.exists() {
+            // A rejected/unsupported recovery belongs to the user, not this session. Preserve
+            // it even if the newly opened effect happens to have the same semantic identity.
+            self.directory.join(format!(
+                "{}-{}.recovery.ron",
+                effect.id,
+                aestra_core::EffectId::new()
+            ))
+        } else {
+            path
+        }
     }
 
     #[cfg(test)]
@@ -186,7 +219,7 @@ fn is_recovery_path(path: &Path) -> bool {
 fn load_candidate(path: &Path) -> io::Result<RecoveryCandidate> {
     let source = fs::read_to_string(path)?;
     let snapshot: RecoverySnapshot = ron::from_str(&source).map_err(io::Error::other)?;
-    if snapshot.version != 1 && snapshot.version != RECOVERY_FORMAT_VERSION {
+    if !(1..=RECOVERY_FORMAT_VERSION).contains(&snapshot.version) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
@@ -214,7 +247,12 @@ fn load_candidate(path: &Path) -> io::Result<RecoveryCandidate> {
 }
 
 fn candidate_is_newer_than_source(candidate: &RecoveryCandidate) -> bool {
-    if !candidate.material_drafts().is_empty() {
+    if !candidate.material_drafts().is_empty()
+        || matches!(
+            candidate.material_target(),
+            crate::material_document::MaterialEditingTarget::Program { .. }
+        )
+    {
         return true;
     }
     let Some(source_path) = candidate.source_path() else {
@@ -260,6 +298,39 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_snapshots_default_to_effect_context_and_future_snapshots_are_preserved() {
+        let directory = tempfile::tempdir().unwrap();
+        let effect = EffectAsset::new("Legacy", 1.0);
+        let mut persistence = RecoveryPersistence::for_test(directory.path().to_owned(), None);
+        let path = persistence.persist(&effect, None).unwrap();
+        for version in [1, 2] {
+            // Build old RON by omitting the new field, retaining the exact old field schema.
+            let source = format!(
+                "(version:{version},saved_at_unix_millis:0,source_path:None,effect:{},material_drafts:{})",
+                effect.to_pretty_ron().unwrap(),
+                ron::to_string(&crate::material_drafts::MaterialDrafts::default()).unwrap()
+            );
+            fs::write(&path, source).unwrap();
+            assert_eq!(
+                load_candidate(&path).unwrap().material_target(),
+                &Default::default()
+            );
+        }
+        let future = fs::read_to_string(&path)
+            .unwrap()
+            .replacen("version:2", "version:999", 1);
+        fs::write(&path, &future).unwrap();
+        let (_, candidate, diagnostic) =
+            RecoveryPersistence::discover_in(directory.path().to_owned());
+        assert!(candidate.is_none());
+        assert!(diagnostic.is_some());
+        let mut fresh = RecoveryPersistence::for_test(directory.path().to_owned(), None);
+        let fresh_path = fresh.persist(&effect, None).unwrap();
+        assert_ne!(fresh_path, path);
+        assert_eq!(fs::read_to_string(path).unwrap(), future);
+        assert_eq!(fresh.persist(&effect, None).unwrap(), fresh_path);
+    }
     use super::*;
 
     #[test]
@@ -405,6 +476,7 @@ mod tests {
                 source_path: None,
                 effect: EffectAsset::new("Discarded recovery", 1.0),
                 material_drafts: Default::default(),
+                material_target: Default::default(),
             },
             modified: SystemTime::now(),
         };

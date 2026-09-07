@@ -5,7 +5,7 @@ use aestra_authoring::MaterialAuthoringDocument;
 use aestra_core::{MaterialProgramId, material::MaterialProgram};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum MaterialEditingTarget {
     #[default]
     EffectInstance,

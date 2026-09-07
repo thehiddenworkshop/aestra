@@ -369,3 +369,35 @@ AB4c2 remains pending: active-target recovery, fresh-source open/reopen and reco
 conflicts end to end, native UI acceptance and keyboard-only focus routing. Browser
 opening still selects a snapshot-backed target; explicit Reload performs fresh disk I/O.
 No native acceptance or restart recovery of the active material is claimed here.
+
+### AB4c2 active-target recovery and keyboard history — 2026-09-07
+
+Recovery v3 stores the standalone material target (project root and semantic ID) with
+the effect and shared drafts. Legacy v1/v2 snapshots restore effect context. Autosave
+tracks target and draft changes independently of effect revisions, fixing repeated
+material-only edits not reaching the snapshot. A clean standalone target remains
+recoverable; returning to a clean effect clears the tracked snapshot.
+
+Restore prepares the exact recorded project before publishing the session, validates
+draft paths/identities, and rebinds moved sources only through unique semantic IDs.
+Original bytes remain the save-conflict baseline. External edits therefore remain
+conflicts, while missing/duplicate sources retain the explicit target and recovered
+drafts with diagnostics. Unsafe paths and inconsistent roots reject restoration without
+replacing the session. Rejected/unsupported snapshots remain untouched, including when
+a new session autosaves the same effect ID. The restored target reveals Material Graph.
+
+Keyboard focus traverses the same panel history scopes as pointer focus. Neutral menus
+and Assets retain the last editing scope; focus-only changes do not rebuild graph UI.
+Ten new active regressions cover recovery, conflict preservation, legacy versions,
+autosave and keyboard focus. Editor validation: 581 tests pass, two opt-in utilities
+ignored; strict workspace/all-targets Clippy, the editor/runtime-independence architecture
+test, formatting and diff-whitespace checks pass. The new ignored
+`native_material_recovery_fixture` test produces isolated assets and an
+`AESTRA_CONFIG_DIR` for native restart verification without touching user settings.
+
+Native recovery-dialog/graph/preview and lifecycle acceptance have not been completed;
+approval to accept the isolated recovery prompt is pending. AB4 stays open until that
+gate passes. Normal quit/discard cleanup is unchanged: this is interrupted-session
+recovery, not automatic workspace reopening after clean exit, and undo stacks are not
+serialized. Browser opening remains snapshot-backed; explicit Reload reads fresh disk
+state. User material sources and local `.aestra` preferences are untouched.

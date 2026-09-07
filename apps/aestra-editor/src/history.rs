@@ -56,7 +56,30 @@ fn capture_history_focus(
     if event.entity != event.original_event_target() {
         return;
     }
-    let mut entity = Some(event.entity);
+    apply_history_focus(event.entity, &scopes, &parents, &mut session);
+}
+
+fn capture_history_keyboard_focus(
+    focus: Option<Res<bevy::input_focus::InputFocus>>,
+    scopes: Query<&HistoryScope>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+) {
+    if let Some(focus) = focus
+        && focus.is_changed()
+        && let Some(entity) = focus.get()
+    {
+        apply_history_focus(entity, &scopes, &parents, &mut session);
+    }
+}
+
+fn apply_history_focus(
+    target: Entity,
+    scopes: &Query<&HistoryScope>,
+    parents: &Query<&ChildOf>,
+    session: &mut EditorSession,
+) {
+    let mut entity = Some(target);
     while let Some(current) = entity {
         if let Ok(scope) = scopes.get(current) {
             let active = match scope {
@@ -90,7 +113,9 @@ impl Plugin for EditorHistoryPlugin {
             .add_systems(
                 Update,
                 (
-                    history_keyboard_input.in_set(HistorySet::Input),
+                    (capture_history_keyboard_focus, history_keyboard_input)
+                        .chain()
+                        .in_set(HistorySet::Input),
                     (handle_history_buttons, audit_history_controls)
                         .chain()
                         .in_set(HistorySet::Actions),
@@ -784,6 +809,43 @@ fn audit_history_controls(controls: Query<Entity, UnclassifiedHistoryControl>) {
 mod tests {
     use super::*;
     use crate::test_support;
+
+    #[test]
+    fn keyboard_focus_routes_history_and_neutral_panels_keep_the_last_edit_scope() {
+        use bevy::{ecs::system::RunSystemOnce, input_focus::InputFocus};
+        let mut app = App::new();
+        let mut session = test_support::session_with_timing_slack();
+        session.material_target = crate::material_document::MaterialEditingTarget::Program {
+            root: PathBuf::from("project"),
+            id: aestra_core::MaterialProgramId::new(),
+        };
+        let revision = session.ui_revision;
+        app.insert_resource(session);
+        for (scope, expected) in [
+            (HistoryScope::Material, true),
+            (HistoryScope::Neutral, true),
+            (HistoryScope::Effect, false),
+            (HistoryScope::Neutral, false),
+        ] {
+            let parent = app.world_mut().spawn(scope).id();
+            let child = app.world_mut().spawn(ChildOf(parent)).id();
+            app.insert_resource(InputFocus::from_entity(child));
+            app.world_mut()
+                .run_system_once(capture_history_keyboard_focus)
+                .unwrap();
+            assert_eq!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .material_history_active,
+                expected
+            );
+        }
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision,
+            "focus-only navigation must not rebuild graph panels"
+        );
+    }
 
     fn edited_session() -> EditorSession {
         let mut session = test_support::session_with_timing_slack();

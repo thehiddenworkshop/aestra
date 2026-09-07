@@ -1,6 +1,7 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
 mod background;
 mod material;
+mod recovery_target;
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
@@ -380,6 +381,8 @@ fn localize_persistence_status(status: PersistenceStatus, localizer: &Localizer)
 struct AutosaveState {
     document_key: String,
     observed_revision: u64,
+    observed_material_drafts: crate::material_drafts::MaterialDrafts,
+    observed_material_target: crate::material_document::MaterialEditingTarget,
     written_revision: Option<u64>,
     write_after: Instant,
     first_unwritten_edit: Option<Instant>,
@@ -394,6 +397,8 @@ impl AutosaveState {
         Self {
             document_key: recovery_document_key(session),
             observed_revision: session.document_revision(),
+            observed_material_drafts: session.material_drafts.clone(),
+            observed_material_target: session.material_target.clone(),
             written_revision: session.dirty.then_some(session.document_revision()),
             write_after: now,
             first_unwritten_edit: None,
@@ -411,6 +416,7 @@ fn initialize_document_persistence(
     settings_persistence: Res<SettingsPersistence>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
+    mut layout: ResMut<WorkspaceLayout>,
 ) {
     let (mut recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
     if let Some(candidate) = candidate {
@@ -422,6 +428,8 @@ fn initialize_document_persistence(
             &mut catalog,
         );
         if let Some(path) = session.source_path.as_deref()
+            && session.standalone_material().is_none()
+            && session.material_drafts.is_empty()
             && !crate::project::contains_source(&catalog, path)
         {
             let project = crate::project::folder_for_source(path)
@@ -452,6 +460,9 @@ fn initialize_document_persistence(
         );
     }
     session.playing = settings.preview.play_on_open;
+    if session.standalone_material().is_some() {
+        reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
+    }
     if let Some(diagnostic) = settings_persistence.diagnostic() {
         set_persistence_status(
             &mut session,
@@ -815,46 +826,23 @@ fn recover_startup_session(
         MessageDialogResult::Yes
     );
     if restore {
-        let drafts = candidate.material_drafts().clone();
-        if !drafts.is_empty() {
-            let project = drafts
-                .root
-                .as_deref()
-                .ok_or_else(|| "Recovery has no material project root".to_string())
-                .and_then(crate::project::catalog_for_folder)
-                .and_then(|mut project| {
-                    if !drafts.validate_root(project.root()) {
-                        return Err("Recovery material paths are outside their project".into());
-                    }
-                    project.material_drafts = drafts.clone();
-                    Ok(project)
-                });
-            match project {
-                Ok(project) => *catalog = project,
-                Err(error) => {
-                    set_persistence_status(
-                        session,
-                        localizer,
-                        PersistenceStatus::RecoveryDiagnostic(error),
-                    );
-                    return;
-                }
-            }
+        match recovery_target::restore_candidate(session, persistence, &candidate, catalog) {
+            Ok(warnings) if warnings.is_empty() => set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::RecoveryRestored(session.effect.name.clone()),
+            ),
+            Ok(warnings) => set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::RecoveryDiagnostic(warnings.join("; ")),
+            ),
+            Err(error) => set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::RecoveryDiagnostic(error),
+            ),
         }
-        session.restore_recovery(
-            candidate.effect().clone(),
-            candidate.source_path().map(Path::to_owned),
-        );
-        session.set_material_drafts(drafts);
-        if let Ok(project) = catalog.compile_project(&session.effect) {
-            let _ = session.install_compiled_project_root(project.root);
-        }
-        persistence.activate(&candidate);
-        set_persistence_status(
-            session,
-            localizer,
-            PersistenceStatus::RecoveryRestored(session.effect.name.clone()),
-        );
     } else {
         match persistence.discard_candidate(&candidate) {
             Ok(()) => {
@@ -939,15 +927,24 @@ fn autosave_recovery_at(
         state.write_after = now + interval;
     }
 
-    if !session.dirty {
+    if !session.dirty && session.standalone_material().is_none() {
         state.first_unwritten_edit = None;
         try_clear_tracked_recovery(persistence, state, now, "saved effect recovery snapshot");
         return;
     }
 
     let revision = session.document_revision();
-    if revision != state.observed_revision {
+    if revision != state.observed_revision
+        || state.observed_material_drafts != session.material_drafts
+        || state.observed_material_target != session.material_target
+    {
         state.observed_revision = revision;
+        state
+            .observed_material_drafts
+            .clone_from(&session.material_drafts);
+        state
+            .observed_material_target
+            .clone_from(&session.material_target);
         state.written_revision = None;
         state.write_after = now + interval;
         state.first_unwritten_edit.get_or_insert(now);
@@ -959,10 +956,11 @@ fn autosave_recovery_at(
         return;
     }
 
-    match persistence.persist_with_materials(
+    match persistence.persist_document(
         &session.effect,
         session.source_path.as_deref(),
         &session.material_drafts,
+        &session.material_target,
     ) {
         Ok(_) => {
             state.written_revision = Some(revision);

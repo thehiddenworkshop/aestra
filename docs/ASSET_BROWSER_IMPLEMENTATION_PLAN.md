@@ -8,7 +8,8 @@ Assets dock, with a transitional Library switch. AB3b snapshot inspection and lo
 routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
 AB3c was accepted by the user on 2026-09-07. AB4 is in progress: AB4a standalone
 authoring, AB4b editor target/editing and AB4c1 material-only Save/guarded Reload are
-implemented. AB4c2 target recovery/lifecycle acceptance remains pending.
+implemented. AB4c2 target recovery and keyboard history routing are implemented;
+native lifecycle acceptance remains pending.
 Historical platform-verification limits are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
@@ -86,7 +87,8 @@ The first browser will not offer a warning-only “unsafe” bypass.
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
-AB4a/AB4b/AB4c1 are implemented; AB4c2 and AB5–AB9 are pending.
+AB4a/AB4b/AB4c1 are implemented; AB4c2 recovery is implemented with native acceptance
+pending. AB5–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -359,11 +361,19 @@ Delivery slices (P1):
   remains AB6. Effect-context Save and destructive-navigation Save retain the combined
   effect/shared-draft workflow. Browser opening remains a non-destructive snapshot-backed
   target switch; explicit Reload performs the fresh-disk operation.
-- **AB4c2 — Recovery and lifecycle acceptance pending:** restore the active target with
-  shared drafts after restart; verify fresh-source open/reopen and recovery conflicts,
-  same-ID and moved/missing sources end to end. Finish native graph/preview, keyboard-only
-  focus routing and effect-context acceptance. Existing shared-draft recovery remains;
-  the standalone target itself is not yet persisted.
+- **AB4c2 — Recovery implemented; native lifecycle acceptance pending:** recovery v3
+  records the standalone program identity/root alongside shared drafts; v1/v2 snapshots
+  default to effect context. Autosave tracks material edits and target changes even when
+  the effect revision is unchanged, including a clean standalone target. Interrupted-session
+  restore reveals Material Graph and resolves moved sources by unique ID while retaining
+  original conflict baselines. Missing/duplicate sources retain the explicit target and
+  drafts with diagnostics; unsafe paths or mismatched roots reject restore without
+  publishing partial state. Rejected/newer snapshots are never overwritten by a new session.
+  Keyboard focus now routes history through the same material/effect/neutral panel scopes
+  as pointer focus without rebuilding the graph. Automated recovery/conflict/focus tests
+  pass. Native restart, graph/preview, fresh-source lifecycle and effect-context acceptance
+  remain the exit gate. This is crash recovery, not workspace reopening after a normal
+  quit/discard; undo stacks are not serialized.
 
 Standalone opening/editing is enabled in the editor. Full AB4 remains incomplete until
 the persistence/lifecycle and end-to-end exit gate below passes.
@@ -506,6 +516,6 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** AB4c2 — active-target recovery and end-to-end fresh-source
-lifecycle/conflict acceptance, including native graph/preview and keyboard focus checks. Keep the transitional
+**Immediate next step (P1):** finish AB4c2 native restart and end-to-end fresh-source
+lifecycle/conflict acceptance, including graph/preview and keyboard focus checks. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

@@ -15,8 +15,8 @@ architecture vision; this file is the shorter delivery plan.
   AB3b snapshot inspection and locate-source routing are implemented. AB3c root-scoped
   persistence and the 10,000-source benchmark are implemented; the user accepted AB3c
   on 2026-09-07. AB4a standalone material authoring and AB4b editor target/editing are
-  implemented. AB4c1 material-only Save/guarded Reload is implemented; AB4c2 target
-  recovery and native lifecycle acceptance remain pending.
+  implemented. AB4c1 material-only Save/guarded Reload and AB4c2 target recovery/keyboard
+  history routing are implemented; native lifecycle acceptance remains pending.
   Milestones and platform-verification caveats are in
   [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
@@ -782,8 +782,10 @@ Properties editing, default previews and pointer-scoped per-source undo without
 replacing the active effect. Drafts survive target switches. AB4c1 adds material-only
 Save (including referenced function drafts) and fresh-disk Reload with target-scoped
 Save/Discard/Cancel, exact-byte conflict guards and race-safe completion. Effect-context
-and destructive-navigation saves keep the combined workflow. AB4c2 target recovery,
-fresh-source lifecycle and native acceptance are next; AB5–AB9 remain pending.
+and destructive-navigation saves keep the combined workflow. AB4c2 adds target-aware
+recovery, material-edit autosave and keyboard history routing, preserving original disk
+baselines across unique-ID source moves. Native restart/fresh-source lifecycle acceptance
+is next; AB5–AB9 remain pending.
 Native-dialog/platform verification caveats remain in the checklist.
 The editor must remain independent of the `bevy/aestra-bevy` runtime integration.
 
