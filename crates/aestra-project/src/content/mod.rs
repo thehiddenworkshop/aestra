@@ -1,5 +1,6 @@
 //! Read-only project content. Paths locate sources; typed asset IDs identify semantic assets.
 mod classification;
+pub mod operations;
 pub(crate) mod queries;
 mod refresh;
 mod relations;

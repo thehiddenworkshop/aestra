@@ -811,3 +811,20 @@ Regression coverage exercises the dialog restore action, clean-target autosave,
 function drafts alongside unrelated material drafts, moved/missing/duplicate sources,
 and external-file conflict preservation. Native restart → Restore → Save/Reload
 acceptance remains pending; this does not claim the full AB5c exit gate is complete.
+
+### AB5c manual acceptance / AB6a operation foundation — 2026-09-08
+
+The user confirms the manual workflow works and authorizes AB6a. AB5c is accepted.
+
+Initial AB6a backend slice adds `content::operations` typed requests, opaque plans,
+results and explicit blocked-operation errors. Folder creation validates portable
+names, parent/root membership, link provenance, read-only destinations and case-folded
+collisions, then rechecks before exclusive directory creation. It never recursively
+creates parents or overwrites destinations and does not claim document Undo support.
+Filename Rename is explicitly separate from authored Display Name. Rename, move and
+duplicate requests remain blocked until draft-aware reference preflight is implemented;
+the legacy mutation APIs are not newly exposed through this layer.
+
+Project tests pass, including destination races, case collisions, unsafe names and
+missing parents. Browser operation controls, reference inventory/preflight and semantic
+operations remain pending. This is a backend foundation, not completion of AB6a.
