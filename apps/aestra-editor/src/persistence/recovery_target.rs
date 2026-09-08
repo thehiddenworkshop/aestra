@@ -72,8 +72,16 @@ pub(super) fn restore_candidate(
             ));
         }
     }
-    if let MaterialEditingTarget::Function { root, .. } = &mut target {
+    if let MaterialEditingTarget::Function { root, id } = &mut target {
         *root = prepared.root().to_owned();
+        if let Err(error) = prepared
+            .content()
+            .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(*id))
+        {
+            warnings.push(format!(
+                "Function target unavailable; recovered drafts were kept: {error}"
+            ));
+        }
     }
     session.restore_recovery(
         candidate.effect().clone(),

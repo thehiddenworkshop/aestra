@@ -871,7 +871,10 @@ fn autosave_recovery_at(
         state.write_after = now + interval;
     }
 
-    if !session.dirty && session.standalone_material().is_none() {
+    if !session.dirty
+        && session.standalone_material().is_none()
+        && session.standalone_function().is_none()
+    {
         state.first_unwritten_edit = None;
         try_clear_tracked_recovery(persistence, state, now, "saved effect recovery snapshot");
         return;

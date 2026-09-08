@@ -796,3 +796,18 @@ All 17 focused persistence tests pass, including function Cancel/Save/Discard,
 missing/moved source handling, history reset and concurrent-edit protection.
 Native dialog acceptance has not been exercised in this slice. Function-target
 recovery routing and acceptance remain next; AB5c is not complete.
+
+### AB5c function recovery routing — 2026-09-08
+
+Recovery retains clean function targets as well as dirty function drafts, restores
+their recorded project and reveals the graph panel through the existing in-app
+dialog. Function targets do not enter the legacy effect-only project fallback.
+The localized dialog identifies a function by its recovered draft name when available.
+Missing/ambiguous identities warn without dropping drafts or choosing another asset.
+Moved sources retain their exact original byte baseline, so external edits still
+conflict rather than being overwritten.
+
+Regression coverage exercises the dialog restore action, clean-target autosave,
+function drafts alongside unrelated material drafts, moved/missing/duplicate sources,
+and external-file conflict preservation. Native restart → Restore → Save/Reload
+acceptance remains pending; this does not claim the full AB5c exit gate is complete.

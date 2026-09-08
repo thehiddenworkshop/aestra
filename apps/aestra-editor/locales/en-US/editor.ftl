@@ -216,6 +216,8 @@ persistence-recovery-later = Decide Later
 persistence-recovery-effect = Effect: {$effect}
 persistence-recovery-material = Material: {$material}
     Effect: {$effect}
+persistence-recovery-function = Function: {$function}
+    Effect: {$effect}
 persistence-recovery-details = Snapshot: {$age}
     Unsaved shared material drafts: {$count}
 

@@ -2,6 +2,112 @@ use super::*;
 use aestra_core::material::MaterialProgram;
 
 #[test]
+fn function_recovery_preserves_identity_drafts_and_conflict_baselines() {
+    use aestra_core::material::MaterialFunction;
+    for scenario in ["normal", "moved", "missing", "duplicate", "external"] {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut session, mut catalog, program) = fixture(&directory.path().join("project"));
+        edit(&mut session, &mut catalog, &program);
+        let function = MaterialFunction::from_ron(include_str!(
+            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        ))
+        .unwrap();
+        let path = catalog.root().join("function.aestra.material-function.ron");
+        function.save_ron(&path).unwrap();
+        catalog.refresh();
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        let mut changed = function.clone();
+        changed.name = "Recovered function".into();
+        catalog
+            .replace_material_function(&function, &changed)
+            .unwrap();
+        session.set_material_drafts(catalog.material_drafts.clone());
+        let effect = session.effect.clone();
+        let (mut persistence, candidate) = snapshot(&directory.path().join("recovery"), &session);
+        let moved = catalog.root().join("moved.aestra.material-function.ron");
+        match scenario {
+            "moved" => fs::rename(&path, &moved).unwrap(),
+            "missing" => fs::remove_file(&path).unwrap(),
+            "duplicate" => function.save_ron(&moved).unwrap(),
+            "external" => fs::write(
+                &path,
+                format!("// external\n{}", function.to_pretty_ron().unwrap()),
+            )
+            .unwrap(),
+            _ => {}
+        }
+        let warnings =
+            restore_candidate(&mut session, &mut persistence, &candidate, &mut catalog).unwrap();
+        assert_eq!(session.standalone_function(), Some(function.id));
+        assert_eq!(session.effect, effect);
+        assert_eq!(session.material_drafts.programs.len(), 1);
+        assert_eq!(
+            session.material_drafts.functions[&function.id]
+                .current
+                .as_ref(),
+            Some(&changed)
+        );
+        assert_eq!(warnings.is_empty(), matches!(scenario, "normal" | "moved"));
+        if matches!(scenario, "missing" | "duplicate") {
+            assert!(session.graph_function(&catalog).is_err());
+        } else {
+            assert_eq!(session.graph_function(&catalog).unwrap(), changed);
+        }
+        if scenario == "external" {
+            let bytes = fs::read(&path).unwrap();
+            assert!(session.material_drafts.save().is_err());
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+        if scenario == "moved" {
+            assert_eq!(session.material_drafts.functions[&function.id].path, moved);
+            session.material_drafts.preflight().unwrap();
+        }
+    }
+}
+
+#[test]
+fn autosave_retains_clean_function_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut session, mut catalog, _) = fixture(&directory.path().join("project"));
+    let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
+        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(catalog.root().join("function.aestra.material-function.ron"))
+        .unwrap();
+    catalog.refresh();
+    session
+        .save_as(catalog.root().join("effect.aestra.ron"))
+        .unwrap();
+    session
+        .open_material_function(&catalog, function.id)
+        .unwrap();
+    assert!(!session.dirty);
+    let mut state = AutosaveState::new(&session, true);
+    let mut persistence = RecoveryPersistence::for_test(directory.path().join("recovery"), None);
+    let settings = EditorSettings::default();
+    let localizer = Localizer::new("en-US").unwrap();
+    let now = Instant::now()
+        + Duration::from_secs(u64::from(settings.general.autosave_interval_seconds) + 1);
+    autosave_recovery_at(
+        &mut session,
+        &settings,
+        &mut persistence,
+        &mut state,
+        now,
+        &localizer,
+    );
+    let (_, candidate, _) = RecoveryPersistence::discover_in(directory.path().join("recovery"));
+    assert_eq!(
+        candidate.unwrap().material_target(),
+        &session.material_target
+    );
+}
+
+#[test]
 #[ignore = "creates an isolated native-recovery smoke fixture under target; run with --nocapture"]
 fn native_material_recovery_fixture() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))

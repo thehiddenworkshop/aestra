@@ -64,6 +64,56 @@ fn choose(app: &mut App, choice: Choice) {
 }
 
 #[test]
+fn restore_function_through_dialog_keeps_target_and_draft() {
+    let (directory, mut app, _) = fixture();
+    let root = directory.path().join("project");
+    let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
+        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(root.join("function.aestra.material-function.ron"))
+        .unwrap();
+    let mut catalog = ProjectEffectCatalog::scan(&root);
+    let mut recovered = crate::test_support::session_with_timing_slack();
+    recovered
+        .open_material_function(&catalog, function.id)
+        .unwrap();
+    let mut changed = function.clone();
+    changed.name = "Recovered function draft".into();
+    catalog
+        .replace_material_function(&function, &changed)
+        .unwrap();
+    recovered.set_material_drafts(catalog.material_drafts.clone());
+    let recovery_root = directory.path().join("function-recovery");
+    let mut persistence = RecoveryPersistence::for_test(recovery_root.clone(), None);
+    persistence
+        .persist_document(
+            &recovered.effect,
+            None,
+            &recovered.material_drafts,
+            &recovered.material_target,
+        )
+        .unwrap();
+    let (persistence, candidate, _) = RecoveryPersistence::discover_in(recovery_root);
+    app.insert_resource(persistence);
+    app.world_mut()
+        .resource_mut::<RecoveryDialogState>()
+        .candidate = candidate;
+    choose(&mut app, Choice::Restore);
+    let session = app.world().resource::<EditorSession>();
+    assert_eq!(session.standalone_function(), Some(function.id));
+    assert_eq!(
+        session
+            .graph_function(app.world().resource::<ProjectEffectCatalog>())
+            .unwrap(),
+        changed
+    );
+    assert!(!app.world().resource::<DocumentProtectionState>().is_open());
+    assert!(app.world().resource::<RecoveryPersistence>().has_active());
+}
+
+#[test]
 fn later_close_and_escape_keep_snapshot_and_current_session() {
     // Header close and Decide Later share the same action; Escape uses the same finish path.
     for escape_key in [false, true] {

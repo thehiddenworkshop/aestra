@@ -182,7 +182,14 @@ fn description(candidate: &RecoveryCandidate, localizer: &Localizer, now: System
     args.set("count", candidate.material_drafts().count().to_string());
     let context = match candidate.material_target() {
         crate::material_document::MaterialEditingTarget::Function { id, .. } => {
-            format!("Function: {id}")
+            let name = candidate
+                .material_drafts()
+                .functions
+                .get(id)
+                .and_then(|draft| draft.current.as_ref())
+                .map_or_else(|| id.to_string(), |function| function.name.clone());
+            args.set("function", name);
+            localizer.text_with("persistence-recovery-function", &args)
         }
         crate::material_document::MaterialEditingTarget::EffectInstance => {
             localizer.text_with("persistence-recovery-effect", &args)
@@ -344,6 +351,7 @@ pub(super) fn activate(
             // Legacy effect-only snapshots can belong to a different project than startup.
             if let Some(path) = session.source_path.as_deref()
                 && session.standalone_material().is_none()
+                && session.standalone_function().is_none()
                 && session.material_drafts.is_empty()
                 && !crate::project::contains_source(&catalog, path)
             {
@@ -364,7 +372,7 @@ pub(super) fn activate(
                 }
             }
             session.playing = settings.preview.play_on_open;
-            if session.standalone_material().is_some() {
+            if session.standalone_material().is_some() || session.standalone_function().is_some() {
                 reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
             }
             let status = if warnings.is_empty() {

@@ -216,6 +216,8 @@ persistence-recovery-later = Décider plus tard
 persistence-recovery-effect = Effet : {$effect}
 persistence-recovery-material = Matériau : {$material}
     Effet : {$effect}
+persistence-recovery-function = Fonction : {$function}
+    Effet : {$effect}
 persistence-recovery-details = Instantané : {$age}
     Brouillons de matériaux partagés non enregistrés : {$count}
 
