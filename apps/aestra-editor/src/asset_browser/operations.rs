@@ -57,20 +57,22 @@ fn sync_controls(
         !complete || drafts.iter().any(|(owner, _)| *owner == source)
     });
     for (mut text, mut node) in &mut errors {
-        node.display = if collision || draft_block {
+        node.display = if collision || draft_block || prompt.failure.is_some() {
             Display::Flex
         } else {
             Display::None
         };
         if let Some(localizer) = &localizer {
-            text.0 = localizer.text(if draft_block {
-                if prompt.rename {
-                    "browser-rename-save-first"
+            text.0 = prompt.failure.clone().unwrap_or_else(|| {
+                localizer.text(if draft_block {
+                    if prompt.rename {
+                        "browser-rename-save-first"
+                    } else {
+                        "browser-duplicate-save-first"
+                    }
                 } else {
-                    "browser-duplicate-save-first"
-                }
-            } else {
-                "browser-folder-exists"
+                    "browser-folder-exists"
+                })
             });
         }
     }
@@ -78,7 +80,7 @@ fn sync_controls(
         if !matches!(choice, Choice::Create) {
             continue;
         }
-        let empty = prompt.name.trim().is_empty() || collision || draft_block;
+        let empty = prompt.name.trim().is_empty() || collision || draft_block || prompt.pending;
         if empty && !disabled {
             commands.entity(entity).insert(InteractionDisabled);
         }
@@ -122,6 +124,8 @@ struct Prompt {
     duplicate: Option<ProjectSourceId>,
     suffix: String,
     rename: bool,
+    pending: bool,
+    failure: Option<String>,
 }
 
 pub(super) fn register(app: &mut App) {
@@ -144,6 +148,8 @@ fn open(
         return;
     }
     prompt.duplicate = None;
+    prompt.pending = false;
+    prompt.failure = None;
     prompt.rename = event.1;
     prompt.suffix.clear();
     prompt.target = Some((
@@ -294,6 +300,7 @@ fn change(
 ) {
     if fields.contains(event.source) {
         prompt.name.clone_from(&event.value);
+        prompt.failure = None;
     }
 }
 fn close(commands: &mut Commands, prompt: &mut Prompt) {
@@ -339,6 +346,10 @@ fn choose(
     };
     if version != catalog.content_revision() {
         session.status = "Project changed; reopen the operation prompt".into();
+        if prompt.rename {
+            prompt.failure = Some(session.status.clone());
+            return;
+        }
         close(&mut commands, &mut prompt);
         return;
     }
@@ -350,22 +361,37 @@ fn choose(
                 name: prompt.name.clone(),
             };
             let guard = IoGuard::capture(&catalog, &session);
+            let submitted_target = prompt.target;
+            let submitted_name = prompt.name.clone();
+            prompt.pending = true;
+            prompt.failure = None;
             let mut prepared = catalog.clone();
             io::enqueue(&mut commands, guard.clone(), move || {
                 let plan = prepared
                     .content()
                     .plan_material_rename(request, &drafts, complete);
                 io::completion(move |world| {
+                    let current = world.resource::<Prompt>();
+                    if current.target != submitted_target || current.name != submitted_name {
+                        world.resource_mut::<Prompt>().pending = false;
+                        return;
+                    }
                     // A destructive path change must not commit against drafts edited during planning.
                     if !guard.matches_material_reload(
                         world.resource::<ProjectEffectCatalog>(),
                         world.resource::<EditorSession>(),
                     ) {
                         io::set_status(world, "project-operation-queued-cancelled");
+                        let message = world.resource::<EditorSession>().status.clone();
+                        let mut prompt = world.resource_mut::<Prompt>();
+                        prompt.pending = false;
+                        prompt.failure = Some(message);
                         return;
                     }
                     let result = plan.and_then(|plan| plan.apply());
-                    prepared.refresh();
+                    if result.is_ok() {
+                        prepared.refresh();
+                    }
                     let status = match &result {
                         Ok(result) => format!("Renamed file: {}", result.destination.display()),
                         Err(error) => format!("Rename failed: {error}"),
@@ -377,11 +403,25 @@ fn choose(
                         state.reconcile(prepared.content(), prepared.content_revision());
                         state.locate(prepared.content(), entry.id);
                     }
-                    io::publish_catalog(world, prepared);
+                    if result.is_ok() {
+                        io::publish_catalog(world, prepared);
+                        let overlay = {
+                            let mut prompt = world.resource_mut::<Prompt>();
+                            prompt.pending = false;
+                            prompt.target = None;
+                            prompt.overlay.take()
+                        };
+                        if let Some(overlay) = overlay {
+                            world.despawn(overlay);
+                        }
+                    } else {
+                        let mut prompt = world.resource_mut::<Prompt>();
+                        prompt.pending = false;
+                        prompt.failure = Some(status.clone());
+                    }
                     world.resource_mut::<EditorSession>().status = status;
                 })
             });
-            close(&mut commands, &mut prompt);
             return;
         }
         let request = OperationRequest::Duplicate {
@@ -454,6 +494,73 @@ fn choose(
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn rename_failure_stays_visible_in_prompt_and_can_retry() {
+        use aestra_core::material::MaterialProgram;
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Original");
+        let original = root.path().join("original.aestra.material.ron");
+        program.save_ron(&original).unwrap();
+        let unknown = root.path().join("unknown.wgsl");
+        std::fs::write(&unknown, "// unknown includes").unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let source = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::MaterialProgram(program.id))
+            .unwrap()
+            .id;
+        let prompt = Prompt {
+            target: Some((
+                catalog.content().source_tree().root(),
+                catalog.content_revision(),
+            )),
+            duplicate: Some(source),
+            rename: true,
+            name: "renamed".into(),
+            suffix: ".aestra.material.ron".into(),
+            ..default()
+        };
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(prompt)
+            .insert_resource(crate::test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(choose);
+        let button = app.world_mut().spawn(Choice::Create).id();
+        let error = app
+            .world_mut()
+            .spawn((NameError, Text::default(), Node::default()))
+            .id();
+        app.world_mut().trigger(Activate { entity: button });
+        io::drain(app.world_mut());
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(
+            app.world()
+                .get::<Text>(error)
+                .unwrap()
+                .0
+                .contains("unknown.wgsl")
+        );
+        assert_eq!(
+            app.world().get::<Node>(error).unwrap().display,
+            Display::Flex
+        );
+        assert!(app.world().resource::<Prompt>().target.is_some());
+        assert!(!app.world().resource::<Prompt>().pending);
+        assert!(original.exists());
+        std::fs::remove_file(unknown).unwrap();
+        let target = app.world().resource::<Prompt>().target;
+        app.world_mut().trigger(Activate { entity: button });
+        let mut cancelled = io::prepared_completion(app.world_mut());
+        app.world_mut().resource_mut::<Prompt>().target = None;
+        cancelled.apply(app.world_mut());
+        assert!(original.exists());
+        app.world_mut().resource_mut::<Prompt>().target = target;
+        app.world_mut().trigger(Activate { entity: button });
+        io::drain(app.world_mut());
+        assert!(app.world().resource::<Prompt>().target.is_none());
+        assert!(root.path().join("renamed.aestra.material.ron").exists());
+    }
     #[test]
     fn rename_selects_same_asset_and_cancels_if_drafts_change_during_preflight() {
         use aestra_core::material::MaterialProgram;

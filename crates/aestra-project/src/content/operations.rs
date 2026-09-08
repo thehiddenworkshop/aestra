@@ -33,6 +33,16 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         all_drafts_known: bool,
     ) -> ReferencePreflight {
+        self.reference_preflight_inner(source, drafts, all_drafts_known, false)
+    }
+
+    fn reference_preflight_inner(
+        &self,
+        source: ProjectSourceId,
+        drafts: &[(ProjectSourceId, DraftDocument)],
+        all_drafts_known: bool,
+        rename_only: bool,
+    ) -> ReferencePreflight {
         let mut report = ReferencePreflight::default();
         let Some(target) = self.source(source) else {
             report.incomplete.push("Source is no longer indexed".into());
@@ -84,6 +94,9 @@ impl ProjectContent {
             if entry.kind == ProjectSourceKind::Directory && entry.error.is_none() {
                 continue;
             }
+            if rename_only && entry.error.is_none() && rename::non_referencing_asset(&entry.path) {
+                continue;
+            }
             if entry.error.is_some() || !projected.documents.contains_key(&entry.id) {
                 report.incomplete.push(format!(
                     "References not fully known for {}",
@@ -117,6 +130,28 @@ impl ProjectContent {
                 ));
             }
             for dependency in projected.source_relations(entry.id).dependencies {
+                if rename_only {
+                    if let super::ProjectRelationTarget::File(path) = &dependency.target {
+                        match rename::path_targets(
+                            self.source_tree().root_path(),
+                            &target.path,
+                            path,
+                        ) {
+                            Ok(false) => {}
+                            Ok(true) => report.incomplete.push(format!(
+                                "{} references this filename ({}) and requires a path rewrite",
+                                entry.relative_path.display(),
+                                path.display()
+                            )),
+                            Err(reason) => report.incomplete.push(format!(
+                                "Cannot resolve path in {}: {reason}",
+                                entry.relative_path.display()
+                            )),
+                        }
+                    }
+                    // Typed IDs, including contextual texture IDs, do not change on rename.
+                    continue;
+                }
                 if !matches!(
                     projected.relation_status(&dependency.target),
                     ProjectRelationStatus::Available | ProjectRelationStatus::BuiltIn

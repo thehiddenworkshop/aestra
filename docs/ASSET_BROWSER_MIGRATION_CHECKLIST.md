@@ -924,3 +924,22 @@ Tests cover preserved effect resolution/signatures, original bytes/display names
 collision refusal, incomplete/stale analysis and draft changes during preparation.
 Windows automated verification is provided; Linux and native F2/menu acceptance remain
 pending.
+
+### AB6a target-specific Rename analysis and inline blockers — 2026-09-08
+
+Rename now uses an operation-specific reference policy rather than the broad inventory
+report's global completeness rules. Raster textures and a parsed drawing-only SVG
+subset cannot reference semantic material filenames and no longer block this operation.
+SVG scripts/styles/external links/unknown constructs, mesh formats and unknown shader
+include behavior remain conservative blockers. Typed semantic/contextual IDs are unchanged
+by filename-only rename. Effect path references from saved documents and current draft
+overlays are compared against the target using canonical paths where available and
+normalized root-relative aliases otherwise; outside-root/unresolvable paths stay blocked.
+The generic read-only Preflight report retains its broader conservative policy.
+
+Rename keeps its modal open on failure, displays the backend reason inline, clears it
+when the name changes, and permits retry. Confirmation is disabled during preparation;
+closing the dialog or changing the submitted name cancels pending publication. Source,
+draft and project-byte revalidation and exclusive no-overwrite publication remain intact.
+Tests cover unrelated image/icon assets, alias and draft-only filename references,
+unsafe SVG constructs, rename/reopen/save with effect resolution, and inline error/retry.

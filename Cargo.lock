@@ -233,6 +233,7 @@ version = "0.1.0"
 dependencies = [
  "aestra-core",
  "ron",
+ "roxmltree 0.21.1",
  "rustix 1.1.4",
  "serde",
  "tempfile",
