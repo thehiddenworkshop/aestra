@@ -67,6 +67,22 @@ fn preflight(
     session: &EditorSession,
     source: ProjectSourceId,
 ) -> aestra_project::content::operations::ReferencePreflight {
+    let (drafts, complete) = draft_inventory(catalog, session);
+    catalog
+        .content()
+        .reference_preflight(source, &drafts, complete)
+}
+
+pub(super) fn draft_inventory(
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> (
+    Vec<(
+        ProjectSourceId,
+        aestra_project::content::operations::DraftDocument,
+    )>,
+    bool,
+) {
     use aestra_project::content::operations::DraftDocument;
     let content = catalog.content();
     let mut drafts = Vec::new();
@@ -108,7 +124,7 @@ fn preflight(
     {
         complete = false;
     }
-    content.reference_preflight(source, &drafts, complete)
+    (drafts, complete)
 }
 
 pub(crate) fn spawn_asset_inspector(parent: &mut ChildSpawnerCommands) {

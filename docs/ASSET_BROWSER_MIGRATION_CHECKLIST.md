@@ -880,6 +880,22 @@ Publication stages and syncs a temporary file, rechecks source bytes, parent/lin
 provenance and case-folded collisions, then uses exclusive no-overwrite persistence.
 Regression tests cover identity/wiring preservation, dirty/stale/deleted sources,
 invalid destinations, ambiguity, custom WESL and collision preservation/cleanup.
-This is not a multi-file journal or document Undo. The host must serialize its draft
-inventory through submission/completion. Browser Duplicate UI integration is next;
+This is not a multi-file journal or document Undo. The host supplies its draft
+inventory at submission and preserves later edits on completion. Browser Duplicate UI integration is next;
 generic operation dispatch still blocks duplication, and rename/move remain unavailable.
+
+### AB6a browser saved-asset Duplicate — 2026-09-08
+
+Material and function context menus now open the shared in-app name prompt in Duplicate
+mode. The prompt describes saved-copy semantics, accepts a filename stem, validates
+case-folded full-filename collisions, and disables confirmation for empty names or
+blocked drafts with an explanation. Cancel/Escape reuse the folder prompt behavior.
+The project queue checks the submitted snapshot, invokes the guarded duplicate planner,
+refreshes discovery and locates/selects the created asset without opening another
+document. Later draft edits survive catalog publication and are not included in the copy.
+Backend failures (including unsupported custom WESL) are reported in the status bar.
+
+Regression coverage exercises the queued duplicate, selection, independent copy edits,
+preservation of the original/active effect and concurrent original drafts, and collision/
+dirty-source controls. Native right-click → Duplicate → open/edit acceptance remains
+pending. This slice does not enable effect duplication, rename or move.

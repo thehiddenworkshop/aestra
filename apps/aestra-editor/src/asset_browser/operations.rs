@@ -1,4 +1,4 @@
-//! Folder creation goes through the project operation planner and serialized project I/O.
+//! Folder creation and saved duplication use the project planner and serialized project I/O.
 use super::AssetBrowserState;
 use crate::project_content::io::{self, IoGuard};
 use crate::*;
@@ -10,7 +10,7 @@ use bevy::input_focus::{FocusCause, FocusedInput, InputFocus};
 use bevy::ui_widgets::{Activate, ValueChange};
 
 #[derive(Event)]
-pub(super) struct OpenFolderPrompt;
+pub(super) struct OpenFolderPrompt(pub Option<(ProjectSourceId, ProjectContentVersion)>);
 #[derive(Component)]
 struct NameField;
 #[derive(Component)]
@@ -22,7 +22,7 @@ fn name_collision(prompt: &Prompt, catalog: &ProjectEffectCatalog) -> bool {
     let Some((parent, _)) = prompt.target else {
         return false;
     };
-    let name = prompt.name.to_lowercase();
+    let name = format!("{}{}", prompt.name, prompt.suffix).to_lowercase();
     catalog
         .content()
         .source_tree()
@@ -30,6 +30,7 @@ fn name_collision(prompt: &Prompt, catalog: &ProjectEffectCatalog) -> bool {
         .any(|entry| entry.name.to_string_lossy().to_lowercase() == name)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sync_controls(
     prompt: Res<Prompt>,
     buttons: Query<(Entity, &Choice, Has<InteractionDisabled>)>,
@@ -40,25 +41,37 @@ fn sync_controls(
     catalog: Option<Res<ProjectEffectCatalog>>,
     localizer: Option<Res<Localizer>>,
     mut errors: Query<(&mut Text, &mut Node), With<NameError>>,
+    session: Option<Res<EditorSession>>,
 ) {
     let collision = catalog
         .as_ref()
         .is_some_and(|catalog| name_collision(&prompt, catalog));
+    let draft_block = prompt.duplicate.is_some_and(|source| {
+        let (Some(catalog), Some(session)) = (&catalog, &session) else {
+            return true;
+        };
+        let (drafts, complete) = super::inspection::draft_inventory(catalog, session);
+        !complete || drafts.iter().any(|(owner, _)| *owner == source)
+    });
     for (mut text, mut node) in &mut errors {
-        node.display = if collision {
+        node.display = if collision || draft_block {
             Display::Flex
         } else {
             Display::None
         };
         if let Some(localizer) = &localizer {
-            text.0 = localizer.text("browser-folder-exists");
+            text.0 = localizer.text(if draft_block {
+                "browser-duplicate-save-first"
+            } else {
+                "browser-folder-exists"
+            });
         }
     }
     for (entity, choice, disabled) in &buttons {
         if !matches!(choice, Choice::Create) {
             continue;
         }
-        let empty = prompt.name.trim().is_empty() || collision;
+        let empty = prompt.name.trim().is_empty() || collision || draft_block;
         if empty && !disabled {
             commands.entity(entity).insert(InteractionDisabled);
         }
@@ -99,6 +112,8 @@ struct Prompt {
     target: Option<(ProjectSourceId, ProjectContentVersion)>,
     overlay: Option<Entity>,
     name: String,
+    duplicate: Option<ProjectSourceId>,
+    suffix: String,
 }
 
 pub(super) fn register(app: &mut App) {
@@ -110,7 +125,7 @@ pub(super) fn register(app: &mut App) {
         .add_systems(Update, (escape, sync_controls));
 }
 fn open(
-    _: On<OpenFolderPrompt>,
+    event: On<OpenFolderPrompt>,
     mut commands: Commands,
     mut prompt: ResMut<Prompt>,
     state: Res<AssetBrowserState>,
@@ -120,11 +135,46 @@ fn open(
     if prompt.overlay.is_some() {
         return;
     }
+    prompt.duplicate = None;
+    prompt.suffix.clear();
     prompt.target = Some((
         state.folder_id(catalog.content()),
         catalog.content_revision(),
     ));
     prompt.name.clear();
+    if let Some((source, version)) = event.0 {
+        if version != catalog.content_revision() {
+            return;
+        }
+        let Some(entry) = catalog.content().source(source) else {
+            return;
+        };
+        let suffix = match catalog.content().asset_for_source(source) {
+            Some(aestra_project::ProjectAssetId::MaterialProgram(_)) => ".aestra.material.ron",
+            Some(aestra_project::ProjectAssetId::MaterialFunction(_)) => {
+                ".aestra.material-function.ron"
+            }
+            _ => return,
+        };
+        prompt.target = Some((
+            entry
+                .parent
+                .unwrap_or(catalog.content().source_tree().root()),
+            version,
+        ));
+        prompt.duplicate = Some(source);
+        prompt.suffix = suffix.into();
+    }
+    let title = if prompt.duplicate.is_some() {
+        "browser-duplicate"
+    } else {
+        "browser-new-folder"
+    };
+    let label = if prompt.duplicate.is_some() {
+        "browser-duplicate-name"
+    } else {
+        "browser-folder-name"
+    };
     let overlay = commands
         .spawn((
             TabGroup::modal(),
@@ -158,7 +208,7 @@ fn open(
                 ))
                 .with_children(|panel| {
                     panel.spawn((
-                        Text::new(localizer.text("browser-new-folder")),
+                        Text::new(localizer.text(title)),
                         TextColor(theme::TEXT),
                         TextFont {
                             font_size: 16.0.into(),
@@ -166,7 +216,7 @@ fn open(
                         },
                     ));
                     panel.spawn((
-                        Text::new(localizer.text("browser-folder-name")),
+                        Text::new(localizer.text(label)),
                         TextColor(theme::TEXT),
                         TextFont {
                             font_size: 13.0.into(),
@@ -176,7 +226,7 @@ fn open(
                     let field = crate::feathers::text_input::spawn_text_input(
                         panel,
                         "",
-                        &localizer.text("browser-folder-name"),
+                        &localizer.text(label),
                         NameField,
                     );
                     panel.commands().entity(field).insert(PendingFocus);
@@ -195,7 +245,11 @@ fn open(
                     ));
                     crate::feathers::button::spawn_action_button(
                         panel,
-                        &localizer.text("browser-folder-create"),
+                        &localizer.text(if prompt.duplicate.is_some() {
+                            "browser-duplicate"
+                        } else {
+                            "browser-folder-create"
+                        }),
                         Choice::Create,
                         false,
                     );
@@ -224,6 +278,7 @@ fn close(commands: &mut Commands, prompt: &mut Prompt) {
         commands.entity(entity).try_despawn();
     }
     prompt.target = None;
+    prompt.duplicate = None;
 }
 fn escape(
     keys: Option<Res<ButtonInput<KeyCode>>>,
@@ -260,7 +315,47 @@ fn choose(
         return;
     };
     if version != catalog.content_revision() {
-        session.status = "Project changed; reopen New Folder".into();
+        session.status = "Project changed; reopen the operation prompt".into();
+        close(&mut commands, &mut prompt);
+        return;
+    }
+    if let Some(source) = prompt.duplicate {
+        let (drafts, complete) = super::inspection::draft_inventory(&catalog, &session);
+        let request = OperationRequest::Duplicate {
+            source,
+            parent,
+            name: prompt.name.clone(),
+        };
+        let guard = IoGuard::capture(&catalog, &session);
+        let mut prepared = catalog.clone();
+        io::enqueue(&mut commands, guard.clone(), move || {
+            let result = prepared
+                .content()
+                .plan_saved_material_duplicate(request, &drafts, complete)
+                .and_then(|plan| plan.apply());
+            prepared.refresh();
+            io::completion(move |world| {
+                if !guard.same_project(world.resource::<ProjectEffectCatalog>()) {
+                    return;
+                }
+                let status = match &result {
+                    Ok(result) => format!(
+                        "Duplicated saved asset: {}",
+                        result.created_source.display()
+                    ),
+                    Err(error) => format!("Duplicate failed: {error}"),
+                };
+                if let Ok(result) = &result
+                    && let Ok(entry) = prepared.content().unique_source_for_asset(result.asset)
+                    && let Some(mut state) = world.get_resource_mut::<AssetBrowserState>()
+                {
+                    state.reconcile(prepared.content(), prepared.content_revision());
+                    state.locate(prepared.content(), entry.id);
+                }
+                io::publish_catalog(world, prepared);
+                world.resource_mut::<EditorSession>().status = status;
+            })
+        });
         close(&mut commands, &mut prompt);
         return;
     }
@@ -296,6 +391,135 @@ fn choose(
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn duplicate_selects_independent_copy_and_preserves_active_document() {
+        use aestra_core::material::MaterialProgram;
+        let directory = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Original");
+        let original_path = directory.path().join("original.aestra.material.ron");
+        program.save_ron(&original_path).unwrap();
+        let original_bytes = std::fs::read(&original_path).unwrap();
+        let catalog = ProjectEffectCatalog::scan(directory.path());
+        let source = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::MaterialProgram(program.id))
+            .unwrap()
+            .id;
+        let mut state = AssetBrowserState::default();
+        state.reconcile(catalog.content(), catalog.content_revision());
+        let prompt = Prompt {
+            target: Some((
+                catalog.content().source_tree().root(),
+                catalog.content_revision(),
+            )),
+            duplicate: Some(source),
+            suffix: ".aestra.material.ron".into(),
+            name: "copy".into(),
+            ..default()
+        };
+        let session = crate::test_support::session_with_timing_slack();
+        let effect = session.effect.clone();
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(session)
+            .insert_resource(state)
+            .insert_resource(prompt)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(choose);
+        let button = app.world_mut().spawn(Choice::Create).id();
+        app.world_mut().trigger(Activate { entity: button });
+        // Edits made while saved-copy I/O finishes must survive publication.
+        let mut completion = io::prepared_completion(app.world_mut());
+        let mut original_draft = program.clone();
+        original_draft.name = "Later original edit".into();
+        app.world_mut()
+            .resource_mut::<ProjectEffectCatalog>()
+            .replace_material_program(&program, &original_draft)
+            .unwrap();
+        completion.apply(app.world_mut());
+        let copy =
+            MaterialProgram::load_ron(directory.path().join("copy.aestra.material.ron")).unwrap();
+        assert_ne!(copy.id, program.id);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        let copy_source = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::MaterialProgram(copy.id))
+            .unwrap()
+            .id;
+        assert_eq!(
+            app.world().resource::<AssetBrowserState>().selected,
+            Some(copy_source)
+        );
+        assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+        let mut changed = copy.clone();
+        changed.name = "Edited copy".into();
+        app.world_mut()
+            .resource_mut::<ProjectEffectCatalog>()
+            .replace_material_program(&copy, &changed)
+            .unwrap();
+        assert_eq!(std::fs::read(&original_path).unwrap(), original_bytes);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(
+            catalog.material_drafts.programs[&program.id]
+                .current
+                .as_ref(),
+            Some(&original_draft.normalized())
+        );
+        assert!(catalog.material_drafts.programs.contains_key(&copy.id));
+    }
+
+    #[test]
+    fn duplicate_collision_and_unsaved_source_disable_confirmation() {
+        use aestra_core::material::MaterialProgram;
+        let directory = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Original");
+        program
+            .save_ron(directory.path().join("original.aestra.material.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(directory.path());
+        let source = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::MaterialProgram(program.id))
+            .unwrap()
+            .id;
+        let prompt = Prompt {
+            target: Some((
+                catalog.content().source_tree().root(),
+                catalog.content_revision(),
+            )),
+            duplicate: Some(source),
+            suffix: ".aestra.material.ron".into(),
+            name: "ORIGINAL".into(),
+            ..default()
+        };
+        assert!(name_collision(&prompt, &catalog));
+        let mut changed = program.clone();
+        changed.name = "Unsaved".into();
+        catalog
+            .replace_material_program(&program, &changed)
+            .unwrap();
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(prompt)
+            .insert_resource(crate::test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap());
+        app.world_mut().resource_mut::<Prompt>().name = "unused".into();
+        let button = app.world_mut().spawn(Choice::Create).id();
+        let error = app
+            .world_mut()
+            .spawn((NameError, Text::default(), Node::default()))
+            .id();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_some());
+        assert!(
+            app.world()
+                .get::<Text>(error)
+                .unwrap()
+                .0
+                .contains("Save the source")
+        );
+        assert!(!directory.path().join("unused.aestra.material.ron").exists());
+    }
     #[test]
     fn blank_name_disables_create_and_escape_closes_overlay() {
         let mut app = App::new();
@@ -370,6 +594,7 @@ mod tests {
                     target: Some((parent, version)),
                     overlay: None,
                     name: "Textures".into(),
+                    ..default()
                 })
                 .add_observer(choose);
             let action = app

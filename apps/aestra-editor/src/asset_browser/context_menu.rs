@@ -52,6 +52,19 @@ fn spawn_menu(
                             BrowserAction::OpenSelected,
                         );
                     }
+                    if matches!(
+                        catalog.content().asset_for_source(source),
+                        Some(
+                            aestra_project::ProjectAssetId::MaterialProgram(_)
+                                | aestra_project::ProjectAssetId::MaterialFunction(_)
+                        )
+                    ) {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-duplicate"),
+                            BrowserAction::Duplicate(source, catalog.content_revision()),
+                        );
+                    }
                     for (key, tab) in [
                         ("browser-asset-details", InspectionTab::Details),
                         ("browser-references", InspectionTab::Dependencies),

@@ -48,6 +48,7 @@ pub(super) enum BrowserAction {
     OpenProject,
     Refresh,
     NewFolder,
+    Duplicate(ProjectSourceId, ProjectContentVersion),
     OpenSelected,
     LocateCurrentEffect,
     LocateSource(ProjectSourceId, ProjectContentVersion),
@@ -128,7 +129,12 @@ pub(super) fn handle_action(
         }
         BrowserAction::OpenProject => commands.trigger(DocumentAction::OpenProject),
         BrowserAction::Refresh => commands.trigger(crate::library::LibraryAction::RefreshProject),
-        BrowserAction::NewFolder => commands.trigger(super::operations::OpenFolderPrompt),
+        BrowserAction::NewFolder => commands.trigger(super::operations::OpenFolderPrompt(None)),
+        BrowserAction::Duplicate(source, version) => {
+            if version == catalog.content_revision() {
+                commands.trigger(super::operations::OpenFolderPrompt(Some((source, version))));
+            }
+        }
         BrowserAction::OpenSelected => {
             if let Some(id) = state.selected {
                 open_source(id, &catalog, &mut state, &mut commands);

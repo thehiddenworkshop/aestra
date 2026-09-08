@@ -34,9 +34,10 @@ fn read_source(root: &Path, source: &Path) -> Result<String, OperationError> {
 
 impl ProjectContent {
     /// Prepare a saved material/program copy. `name` is a filename stem, not a display name.
-    /// The host must provide every current draft and keep its inventory stable through apply
-    /// (e.g. serialize submission and completion on its operation queue). Dirty target sources
-    /// must be saved first. Other drafts/reverse references do not block this additive operation:
+    /// The host must provide every current draft at submission and explicitly present this as
+    /// a saved-copy operation: later edits are not included and must not be discarded when
+    /// publishing the result. Dirty target sources must be saved first. Other drafts/reverse
+    /// references do not block this additive operation:
     /// no existing identity, path or dependency is rewritten. This is not rename/move preflight.
     pub fn plan_saved_material_duplicate(
         &self,
