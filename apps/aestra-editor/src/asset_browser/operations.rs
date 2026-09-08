@@ -6,12 +6,89 @@ use aestra_project::{
     ProjectContentVersion, ProjectSourceId, content::operations::OperationRequest,
 };
 use bevy::input_focus::tab_navigation::TabGroup;
+use bevy::input_focus::{FocusCause, FocusedInput, InputFocus};
 use bevy::ui_widgets::{Activate, ValueChange};
 
 #[derive(Event)]
 pub(super) struct OpenFolderPrompt;
 #[derive(Component)]
 struct NameField;
+#[derive(Component)]
+struct PendingFocus;
+#[derive(Component)]
+struct NameError;
+
+fn name_collision(prompt: &Prompt, catalog: &ProjectEffectCatalog) -> bool {
+    let Some((parent, _)) = prompt.target else {
+        return false;
+    };
+    let name = prompt.name.to_lowercase();
+    catalog
+        .content()
+        .source_tree()
+        .children(parent)
+        .any(|entry| entry.name.to_string_lossy().to_lowercase() == name)
+}
+
+fn sync_controls(
+    prompt: Res<Prompt>,
+    buttons: Query<(Entity, &Choice, Has<InteractionDisabled>)>,
+    pending: Query<(Entity, &Children), With<PendingFocus>>,
+    inputs: Query<(), With<bevy::feathers::controls::FeathersTextInput>>,
+    mut focus: Option<ResMut<InputFocus>>,
+    mut commands: Commands,
+    catalog: Option<Res<ProjectEffectCatalog>>,
+    localizer: Option<Res<Localizer>>,
+    mut errors: Query<(&mut Text, &mut Node), With<NameError>>,
+) {
+    let collision = catalog
+        .as_ref()
+        .is_some_and(|catalog| name_collision(&prompt, catalog));
+    for (mut text, mut node) in &mut errors {
+        node.display = if collision {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if let Some(localizer) = &localizer {
+            text.0 = localizer.text("browser-folder-exists");
+        }
+    }
+    for (entity, choice, disabled) in &buttons {
+        if !matches!(choice, Choice::Create) {
+            continue;
+        }
+        let empty = prompt.name.trim().is_empty() || collision;
+        if empty && !disabled {
+            commands.entity(entity).insert(InteractionDisabled);
+        }
+        if !empty && disabled {
+            commands.entity(entity).remove::<InteractionDisabled>();
+        }
+    }
+    for (entity, children) in &pending {
+        if let Some(input) = children.iter().find(|child| inputs.contains(*child)) {
+            if let Some(focus) = focus.as_deref_mut() {
+                focus.set(input, FocusCause::Navigated);
+            }
+            commands.entity(entity).remove::<PendingFocus>();
+        }
+    }
+}
+
+fn keyboard(
+    mut event: On<FocusedInput<KeyboardInput>>,
+    mut prompt: ResMut<Prompt>,
+    mut commands: Commands,
+) {
+    if prompt.overlay.is_some()
+        && event.input.key_code == KeyCode::Escape
+        && event.input.state == ButtonState::Pressed
+    {
+        event.propagate(false);
+        close(&mut commands, &mut prompt);
+    }
+}
 #[derive(Component, Clone, Copy)]
 enum Choice {
     Create,
@@ -29,7 +106,8 @@ pub(super) fn register(app: &mut App) {
         .add_observer(open)
         .add_observer(change)
         .add_observer(choose)
-        .add_systems(Update, escape);
+        .add_observer(keyboard)
+        .add_systems(Update, (escape, sync_controls));
 }
 fn open(
     _: On<OpenFolderPrompt>,
@@ -50,6 +128,7 @@ fn open(
     let overlay = commands
         .spawn((
             TabGroup::modal(),
+            theme::feathers_theme(),
             super::panel::BrowserSurface,
             crate::feathers::node_graph::FeathersGraphNavigationBlocker,
             RelativeCursorPosition::default(),
@@ -86,12 +165,34 @@ fn open(
                             ..default()
                         },
                     ));
-                    crate::feathers::text_input::spawn_text_input(
+                    panel.spawn((
+                        Text::new(localizer.text("browser-folder-name")),
+                        TextColor(theme::TEXT),
+                        TextFont {
+                            font_size: 13.0.into(),
+                            ..default()
+                        },
+                    ));
+                    let field = crate::feathers::text_input::spawn_text_input(
                         panel,
                         "",
                         &localizer.text("browser-folder-name"),
                         NameField,
                     );
+                    panel.commands().entity(field).insert(PendingFocus);
+                    panel.spawn((
+                        NameError,
+                        Text::new(localizer.text("browser-folder-exists")),
+                        TextColor(theme::TEXT),
+                        TextFont {
+                            font_size: 13.0.into(),
+                            ..default()
+                        },
+                        Node {
+                            display: Display::None,
+                            ..default()
+                        },
+                    ));
                     crate::feathers::button::spawn_action_button(
                         panel,
                         &localizer.text("browser-folder-create"),
@@ -152,6 +253,9 @@ fn choose(
     if !io::idle(tasks) {
         return;
     }
+    if prompt.name.trim().is_empty() || name_collision(&prompt, &catalog) {
+        return;
+    }
     let Some((parent, version)) = prompt.target else {
         return;
     };
@@ -191,6 +295,64 @@ fn choose(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn blank_name_disables_create_and_escape_closes_overlay() {
+        let mut app = App::new();
+        app.init_resource::<Prompt>()
+            .init_resource::<ButtonInput<KeyCode>>();
+        let button = app.world_mut().spawn(Choice::Create).id();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_some());
+        app.world_mut().resource_mut::<Prompt>().name = "Folder".into();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_none());
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("Folder")).unwrap();
+        let catalog = ProjectEffectCatalog::scan(directory.path());
+        app.world_mut().resource_mut::<Prompt>().target = Some((
+            catalog.content().source_tree().root(),
+            catalog.content_revision(),
+        ));
+        app.insert_resource(catalog)
+            .insert_resource(Localizer::new("en-US").unwrap());
+        let error = app
+            .world_mut()
+            .spawn((NameError, Text::default(), Node::default()))
+            .id();
+        app.world_mut().resource_mut::<Prompt>().name = "folder".into();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_some());
+        assert!(
+            app.world()
+                .get::<Text>(error)
+                .unwrap()
+                .0
+                .contains("already exists")
+        );
+        assert_eq!(
+            app.world().get::<Node>(error).unwrap().display,
+            Display::Flex
+        );
+        app.world_mut().resource_mut::<Prompt>().name = "Different".into();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_none());
+        assert_eq!(
+            app.world().get::<Node>(error).unwrap().display,
+            Display::None
+        );
+        app.world_mut().resource_mut::<Prompt>().name = "  ".into();
+        app.world_mut().run_system_once(sync_controls).unwrap();
+        assert!(app.world().get::<InteractionDisabled>(button).is_some());
+        let overlay = app.world_mut().spawn_empty().id();
+        app.world_mut().resource_mut::<Prompt>().overlay = Some(overlay);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Escape);
+        app.world_mut().run_system_once(escape).unwrap();
+        assert!(app.world().resource::<Prompt>().overlay.is_none());
+        assert!(app.world().get_entity(overlay).is_err());
+    }
     #[test]
     fn create_and_cancel_use_scoped_project_io() {
         for cancel in [false, true] {

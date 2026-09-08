@@ -116,6 +116,7 @@ browser-up = Dossier parent (Retour arrière)
 browser-refresh = Actualiser le projet
 browser-new-folder = Nouveau dossier
 browser-folder-name = Nom du dossier
+browser-folder-exists = Un fichier ou dossier porte déjà ce nom. Choisissez un autre nom.
 browser-folder-create = Créer
 browser-folder-cancel = Annuler
 browser-open-project = Ouvrir un dossier de projet

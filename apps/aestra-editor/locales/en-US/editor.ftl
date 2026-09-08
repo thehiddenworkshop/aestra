@@ -116,6 +116,7 @@ browser-up = Parent folder (Backspace)
 browser-refresh = Refresh project
 browser-new-folder = New Folder
 browser-folder-name = Folder name
+browser-folder-exists = A file or folder with this name already exists. Choose another name.
 browser-folder-create = Create
 browser-folder-cancel = Cancel
 browser-open-project = Open project folder
