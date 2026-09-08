@@ -578,3 +578,21 @@ checks passed. Architecture isolation also passed during this acceptance run.
 
 Validation: 604 editor tests passed (two opt-in tests ignored), including all 12 material
 lifecycle cases. Strict workspace Clippy passed.
+
+### AB4 user acceptance / AB5 authoring start — 2026-09-08
+
+The user accepted AB4 and explicitly requested AB5. The pending native Discard and
+built-in checks above remain unexecuted; acceptance does not turn them into test evidence.
+
+AB5 begins at the shared authoring boundary: `ReplaceMaterialFunction` preserves asset
+identity and uses existing atomic validation/history. `plan_function_edit` inspects a
+candidate without mutation, reports direct program/function call sites in the supplied
+document, and retains validation diagnostics for incompatible signatures and cycles.
+This is not yet a complete project usage inventory or editor function UI. No fake
+effect/program is needed. Tests cover standalone signature/body edits and undo/redo,
+identity rejection, caller preservation, recursive-body diagnostics, and exact custom-WESL
+source preservation during metadata edits. Function-native projection/defaults, editor
+target integration and guarded persistence remain subsequent AB5 work.
+
+Validation: the complete `aestra-authoring` test suite passed, including five new
+function-document contracts. Strict workspace Clippy, formatting and diff checks passed.

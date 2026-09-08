@@ -243,6 +243,12 @@ pub enum MaterialCommand {
     RemoveMaterialFunction {
         id: MaterialFunctionId,
     },
+    /// Edit a shared function in place. Port and expression IDs are supplied by the
+    /// authoring client, never regenerated; callers are validated transactionally.
+    ReplaceMaterialFunction {
+        id: MaterialFunctionId,
+        function: MaterialFunction,
+    },
     AddMaterialProgram {
         program: MaterialProgram,
         index: usize,
@@ -562,7 +568,7 @@ impl MaterialCommandHistory {
     }
 }
 
-fn apply_command(
+pub(crate) fn apply_command(
     document: &mut MaterialAuthoringDocument,
     command: &MaterialCommand,
 ) -> Result<Vec<MaterialCommand>, MaterialCommandError> {
@@ -580,6 +586,16 @@ fn apply_command(
             let index = function_index(document, *id)?;
             let function = document.material_functions.remove(index);
             vec![MaterialCommand::AddMaterialFunction { function, index }]
+        }
+        MaterialCommand::ReplaceMaterialFunction { id, function } => {
+            ensure_identity("material function", *id, function.id)?;
+            let index = function_index(document, *id)?;
+            let previous =
+                std::mem::replace(&mut document.material_functions[index], function.clone());
+            vec![MaterialCommand::ReplaceMaterialFunction {
+                id: *id,
+                function: previous,
+            }]
         }
         MaterialCommand::AddMaterialProgram { program, index } => {
             checked_insert(

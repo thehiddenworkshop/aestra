@@ -6,10 +6,11 @@ cached semantic queries implemented. AB2b2 explicit-open/post-write background o
 implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
 Assets dock, with a transitional Library switch. AB3b snapshot inspection and locate-source
 routing are implemented. AB3c persistence and the 10,000-source benchmark are implemented;
-AB3c was accepted by the user on 2026-09-07. AB4 is in progress: AB4a standalone
+AB3c was accepted by the user on 2026-09-07. AB4 was accepted by the user on 2026-09-08: AB4a standalone
 authoring, AB4b editor target/editing and AB4c1 material-only Save/guarded Reload are
 implemented. AB4c2 target recovery and keyboard history routing are implemented;
-native lifecycle acceptance remains pending.
+AB5 has started with function replacement/history and non-mutating edit preflight.
+Remaining historical native verification gaps are not claimed as executed.
 Historical platform-verification limits are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md).
 
@@ -87,8 +88,7 @@ The first browser will not offer a warning-only “unsafe” bypass.
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
-AB4a/AB4b/AB4c1 are implemented; AB4c2 recovery is implemented with native acceptance
-pending. AB5–AB9 are pending.
+AB4 is user-accepted. AB5 is in progress; AB6–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -413,6 +413,20 @@ routing and existing effect-context graph operations without link/selection flic
 
 ### AB5 — Standalone function documents
 
+Delivery slices:
+
+- **AB5a — Authoring contracts (in progress):** identity-preserving function replacement,
+  transactional undo/redo and non-mutating preflight are implemented. Preflight reports
+  direct call sites in the supplied document and candidate diagnostics, including cycles;
+  invalid edits never silently repair/drop arguments. Standalone tests require neither
+  effect nor program. Remaining: function-native graph projection/commands and a typed
+  default-value contract (the current function input schema has no defaults field).
+- **AB5b — Editor target and UI:** source-identity open routing, typed signature/body
+  controls, call-site diagnostics, scoped history and dependent preview invalidation.
+  Custom WESL gets signature/diagnostics/read-only source inspection, no fabricated graph.
+- **AB5c — Persistence and acceptance:** function-only Save/guarded Reload, conflicts,
+  target recovery, moved/missing sources and the full exit gate below.
+
 Add a function authoring target with typed input/output signature editing, stable
 port IDs, defaults and body graph projection/commands. Reuse extraction/inlining,
 function library and type/cycle diagnostics; invalidate dependent material previews
@@ -528,7 +542,7 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step (P1):** finish AB4c2 acceptance. The partial native pass verified
+**AB4 acceptance history:** the partial native pass verified
 initial restoration, material Save/Reload, previews, menu history and conflict safety.
 Fast modifier-chord handling and OS clipboard support are fixed and regression-tested.
 Source diagnostics now use bounded summaries and a scrollable Details view; native
@@ -536,6 +550,9 @@ missing-source presentation and interrupted-session restoration of a UI-authored
 passed. Native testing also found and fixed missing normal Tab navigation and physical
 QWERTY letter shortcuts on AZERTY; material keyboard Undo/Redo and Save passed afterward.
 Effect-context return/reopen and Reload Cancel/Save now pass natively after fixing stale
-File menu actions and preview-only invalidation cancelling Reload. Next, finish Reload
-Discard and built-in read-only native acceptance (see the migration checklist). Keep the transitional
+File menu actions and preview-only invalidation cancelling Reload. Reload
+Discard and built-in read-only checks were not run in that pass. The user subsequently
+accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
+marked tested. **Immediate next step (P1):** continue AB5a function-native projection and
+default-value contracts, then AB5b editor integration. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.
