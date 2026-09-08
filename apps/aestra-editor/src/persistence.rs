@@ -230,7 +230,11 @@ pub(crate) fn spawn_document_protection_overlay(
                         DocumentProtectionDescription,
                         Text::new(localizer.text(
                             if state.pending == Some(DocumentAction::ReloadMaterial) {
-                                "material-reload-confirm"
+                                if matches!(state.reload_target, Some(crate::material_document::MaterialEditingTarget::Function { .. })) {
+                                    "function-reload-confirm"
+                                } else {
+                                    "material-reload-confirm"
+                                }
                             } else {
                                 "persistence-dialog-unsaved-description"
                             },
@@ -556,10 +560,16 @@ fn execute_document_action(
         return;
     }
     if *action == DocumentAction::ReloadMaterial {
-        let Some(id) = session.standalone_material() else {
-            return;
+        let dirty = match &session.material_target {
+            crate::material_document::MaterialEditingTarget::Program { id, .. } => {
+                catalog.material_drafts.programs.contains_key(id)
+            }
+            crate::material_document::MaterialEditingTarget::Function { id, .. } => {
+                catalog.material_drafts.functions.contains_key(id)
+            }
+            _ => return,
         };
-        if catalog.material_drafts.programs.contains_key(&id) {
+        if dirty {
             protection.pending = Some(*action);
             protection.reload_target = Some(session.material_target.clone());
         } else {
@@ -630,7 +640,14 @@ fn sync_document_protection_overlay(
     for mut text in &mut descriptions {
         text.0 = localizer.text(
             if protection.pending == Some(DocumentAction::ReloadMaterial) {
-                "material-reload-confirm"
+                if matches!(
+                    protection.reload_target,
+                    Some(crate::material_document::MaterialEditingTarget::Function { .. })
+                ) {
+                    "function-reload-confirm"
+                } else {
+                    "material-reload-confirm"
+                }
             } else {
                 "persistence-dialog-unsaved-description"
             },

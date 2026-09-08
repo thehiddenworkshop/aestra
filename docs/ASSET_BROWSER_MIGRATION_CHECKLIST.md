@@ -781,3 +781,18 @@ of external disk changes and unsaved drafts on conflict.
 
 Function-target guarded Reload, history reset, recovery routing and their native
 acceptance remain the next AB5c work; this slice does not close AB5c.
+
+### AB5c guarded function Reload — 2026-09-08
+
+File Reload Function now uses the existing in-app Save/Discard/Cancel guard.
+Save persists the scoped function dependency set before re-requesting Reload, so
+concurrent edits require fresh confirmation. Discard resolves the selected function
+from a fresh project snapshot before removing its draft. Missing or ambiguous sources
+and stale completions retain the draft. A moved source is resolved by stable identity.
+Only the successfully reloaded function's history/report is cleared; other drafts
+and the active effect are preserved. English and French labels explain the scope.
+
+All 17 focused persistence tests pass, including function Cancel/Save/Discard,
+missing/moved source handling, history reset and concurrent-edit protection.
+Native dialog acceptance has not been exercised in this slice. Function-target
+recovery routing and acceptance remain next; AB5c is not complete.

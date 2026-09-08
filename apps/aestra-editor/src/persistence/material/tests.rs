@@ -1,6 +1,142 @@
 use super::*;
 use aestra_core::MaterialProgramId;
 
+fn function_fixture(root: &Path) -> (App, MaterialFunction, PathBuf) {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let path = root.join("function.aestra.material-function.ron");
+    function.save_ron(&path).unwrap();
+    let (mut app, program, _) = setup(root);
+    edit(&mut app, &program, "Unrelated draft");
+    let catalog = app.world().resource::<ProjectEffectCatalog>().clone();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .open_material_function(&catalog, function.id)
+        .unwrap();
+    app.init_resource::<crate::material_function_editor::FunctionEditor>();
+    (app, function, path)
+}
+
+fn edit_function(app: &mut App, function: &MaterialFunction, name: &str) {
+    let mut changed = function.clone();
+    changed.name = name.into();
+    app.world_mut().resource_scope(
+        |world, mut editor: Mut<crate::material_function_editor::FunctionEditor>| {
+            world.resource_scope(|world, mut session: Mut<EditorSession>| {
+                editor
+                    .edit(
+                        &mut session,
+                        &mut world.resource_mut::<ProjectEffectCatalog>(),
+                        changed,
+                    )
+                    .unwrap();
+            });
+        },
+    );
+}
+
+#[test]
+fn function_reload_cancel_discard_and_save_are_scoped() {
+    for action in [
+        DocumentProtectionAction::Cancel,
+        DocumentProtectionAction::Discard,
+        DocumentProtectionAction::Save,
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut app, function, path) = function_fixture(directory.path());
+        let effect = app.world().resource::<EditorSession>().effect.clone();
+        edit_function(&mut app, &function, "Draft");
+        app.world_mut().trigger(DocumentAction::ReloadMaterial);
+        assert!(app.world().resource::<DocumentProtectionState>().is_open());
+        respond(&mut app, action);
+        io::drain(app.world_mut());
+        let session = app.world().resource::<EditorSession>();
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(session.effect, effect);
+        assert_eq!(catalog.material_drafts.programs.len(), 1);
+        let cancelled = action == DocumentProtectionAction::Cancel;
+        assert_eq!(
+            catalog.material_drafts.functions.contains_key(&function.id),
+            cancelled
+        );
+        assert_eq!(
+            app.world()
+                .resource::<crate::material_function_editor::FunctionEditor>()
+                .available(session, true),
+            cancelled
+        );
+        let disk = MaterialFunction::from_ron(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(
+            disk.name,
+            if action == DocumentProtectionAction::Save {
+                "Draft"
+            } else {
+                &function.name
+            }
+        );
+    }
+}
+
+#[test]
+fn function_reload_keeps_missing_draft_then_resolves_moved_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, function, path) = function_fixture(directory.path());
+    edit_function(&mut app, &function, "Keep me");
+    fs::remove_file(&path).unwrap();
+    app.world_mut().trigger(DocumentAction::ReloadMaterial);
+    respond(&mut app, DocumentProtectionAction::Discard);
+    io::drain(app.world_mut());
+    assert!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .functions
+            .contains_key(&function.id)
+    );
+    assert!(
+        app.world()
+            .resource::<crate::material_function_editor::FunctionEditor>()
+            .available(app.world().resource::<EditorSession>(), true)
+    );
+    function
+        .save_ron(directory.path().join("moved.aestra.material-function.ron"))
+        .unwrap();
+    app.world_mut().trigger(DocumentAction::ReloadMaterial);
+    respond(&mut app, DocumentProtectionAction::Discard);
+    io::drain(app.world_mut());
+    assert!(
+        !app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .functions
+            .contains_key(&function.id)
+    );
+}
+
+#[test]
+fn function_reload_rejects_concurrent_edits() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, function, _) = function_fixture(directory.path());
+    app.world_mut().trigger(DocumentAction::ReloadMaterial);
+    let mut completion = io::prepared_completion(app.world_mut());
+    edit_function(&mut app, &function, "Newer draft");
+    completion.apply(app.world_mut());
+    assert!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .functions
+            .contains_key(&function.id)
+    );
+    assert!(
+        app.world()
+            .resource::<crate::material_function_editor::FunctionEditor>()
+            .available(app.world().resource::<EditorSession>(), true)
+    );
+}
+
 #[test]
 fn function_inspection_save_does_not_save_the_effect() {
     let directory = tempfile::tempdir().unwrap();

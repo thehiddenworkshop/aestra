@@ -166,25 +166,36 @@ pub(super) fn queue_reload(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
 ) {
-    let Some(id) = session.standalone_material() else {
+    if session.standalone_material().is_none() && session.standalone_function().is_none() {
         return;
-    };
+    }
     let guard = IoGuard::capture(catalog, session);
     let target = session.material_target.clone();
     let mut prepared = catalog.clone();
     io::enqueue(commands, guard.clone(), move || {
-        prepared.material_drafts.programs.remove(&id);
+        match &target {
+            MaterialEditingTarget::Program { id, .. } => {
+                prepared.material_drafts.programs.remove(id);
+            }
+            MaterialEditingTarget::Function { id, .. } => {
+                prepared.material_drafts.functions.remove(id);
+            }
+            _ => unreachable!(),
+        }
         prepared.refresh();
         let result: Result<(), String> = (|| {
-            if target
-                != (crate::material_document::MaterialEditingTarget::Program {
-                    root: prepared.root().to_owned(),
-                    id,
-                })
-            {
-                return Err("The material belongs to another project".into());
+            match &target {
+                MaterialEditingTarget::Program { root, id } if root == prepared.root() => {
+                    prepared.material_program(*id)?;
+                }
+                MaterialEditingTarget::Function { root, id } if root == prepared.root() => {
+                    prepared
+                        .content()
+                        .cached_material_function(MaterialFunctionRef::Project(*id))
+                        .map_err(|error| error.to_string())?;
+                }
+                _ => return Err("The material belongs to another project".into()),
             }
-            prepared.material_program(id)?;
             if !prepared.snapshot_is_current() {
                 return Err("Project sources changed while reloading; retry".into());
             }
@@ -201,31 +212,57 @@ pub(super) fn queue_reload(
             if let Err(error) = result {
                 let mut args = FluentArgs::new();
                 args.set("error", error);
-                let status = world
-                    .resource::<Localizer>()
-                    .text_with("material-reload-failed", &args);
+                let status = world.resource::<Localizer>().text_with(
+                    if matches!(target, MaterialEditingTarget::Function { .. }) {
+                        "function-reload-failed"
+                    } else {
+                        "material-reload-failed"
+                    },
+                    &args,
+                );
                 world.resource_mut::<EditorSession>().status = status;
                 return;
             }
             // Discard only after successful fresh-source resolution; errors retain the draft.
-            world
-                .resource_mut::<ProjectEffectCatalog>()
-                .material_drafts
-                .programs
-                .remove(&id);
-            if let Some(mut history) =
-                world.get_resource_mut::<crate::history::MaterialProgramEditHistory>()
-            {
-                history.clear_program(prepared.root(), id);
+            match &target {
+                MaterialEditingTarget::Program { id, .. } => {
+                    world
+                        .resource_mut::<ProjectEffectCatalog>()
+                        .material_drafts
+                        .programs
+                        .remove(id);
+                    if let Some(mut history) =
+                        world.get_resource_mut::<crate::history::MaterialProgramEditHistory>()
+                    {
+                        history.clear_program(prepared.root(), *id);
+                    }
+                }
+                MaterialEditingTarget::Function { id, .. } => {
+                    world
+                        .resource_mut::<ProjectEffectCatalog>()
+                        .material_drafts
+                        .functions
+                        .remove(id);
+                    if let Some(mut history) =
+                        world.get_resource_mut::<crate::material_function_editor::FunctionEditor>()
+                    {
+                        history.clear_function(prepared.root(), *id);
+                    }
+                }
+                _ => unreachable!(),
             }
             io::publish_catalog(world, prepared);
             let drafts = world
                 .resource::<ProjectEffectCatalog>()
                 .material_drafts
                 .clone();
-            let status = world
-                .resource::<Localizer>()
-                .text("material-reload-complete");
+            let status = world.resource::<Localizer>().text(
+                if matches!(target, MaterialEditingTarget::Function { .. }) {
+                    "function-reload-complete"
+                } else {
+                    "material-reload-complete"
+                },
+            );
             crate::material_graph::clear_document_transients(world);
             let mut session = world.resource_mut::<EditorSession>();
             session.set_material_drafts(drafts);

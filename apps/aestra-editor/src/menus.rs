@@ -352,14 +352,10 @@ fn update_file_menu_target(
     >,
     mut labels: Query<(&mut LocalizedText, &mut Text)>,
 ) {
-    let standalone = session.standalone_material().is_some();
+    let standalone =
+        session.standalone_material().is_some() || session.standalone_function().is_some();
     for (entity, action, mut node, accessible, children) in &mut items {
-        let inspection_action = session.standalone_function().is_some()
-            && matches!(
-                *action,
-                DocumentAction::SaveAs | DocumentAction::ReloadMaterial
-            );
-        let display = if !inspection_action && file_action_visible(*action, standalone) {
+        let display = if file_action_visible(*action, standalone) {
             Display::Flex
         } else {
             Display::None
@@ -367,10 +363,19 @@ fn update_file_menu_target(
         if node.display != display {
             node.display = display;
         }
-        if *action != DocumentAction::Save {
+        if !matches!(
+            *action,
+            DocumentAction::Save | DocumentAction::ReloadMaterial
+        ) {
             continue;
         }
-        let message = if session.standalone_function().is_some() {
+        let message = if *action == DocumentAction::ReloadMaterial {
+            if session.standalone_function().is_some() {
+                "file-reload-function"
+            } else {
+                "file-reload-material"
+            }
+        } else if session.standalone_function().is_some() {
             "file-save-function"
         } else if standalone {
             "file-save-material"

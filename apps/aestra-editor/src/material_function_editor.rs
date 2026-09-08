@@ -42,6 +42,11 @@ fn key(session: &EditorSession) -> Result<Key, String> {
 }
 
 impl FunctionEditor {
+    pub(crate) fn clear_function(&mut self, root: &std::path::Path, id: MaterialFunctionId) {
+        let key = (root.to_owned(), id);
+        self.histories.remove(&key);
+        self.reports.remove(&key);
+    }
     pub(crate) fn edit_body(
         &mut self,
         session: &mut EditorSession,
