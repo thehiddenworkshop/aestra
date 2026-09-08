@@ -159,6 +159,7 @@ impl DuplicatePlan {
     /// Stage in the destination directory and publish without replacing any existing file.
     /// Recheck source bytes and destination immediately before publication. No document Undo.
     pub fn apply(self) -> Result<DuplicateResult, OperationError> {
+        super::transaction::ensure_idle(&self.destination.root)?;
         let plan = &self.destination;
         checked_parent(&plan.root, &plan.parent)?;
         vacant(&plan.parent, &plan.destination)?;

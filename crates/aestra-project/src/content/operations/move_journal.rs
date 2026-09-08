@@ -141,6 +141,7 @@ impl ProjectContent {
     /// Reconcile interrupted single-file moves without modifying asset files.
     /// Ambiguous/externally edited outcomes stay blocked, with their backup retained.
     pub fn recover_asset_moves(&self) -> Result<usize, OperationError> {
+        super::transaction::ensure_idle(self.source_tree().root_path())?;
         recover(self.source_tree().root_path())
     }
 }

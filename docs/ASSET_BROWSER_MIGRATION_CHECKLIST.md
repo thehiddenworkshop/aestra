@@ -1070,3 +1070,47 @@ release/Escape cleanup. Native visual acceptance remains pending.
 
 Verification: 644 editor unit tests plus the architecture test pass (two opt-in tests
 ignored); strict editor all-target Clippy and formatting checks pass.
+
+### AB6b semantic-file batch transaction foundation — 2026-09-08
+
+The user accepted the single-asset folder drop and floating drag-preview workflow.
+This slice adds a bounded backend batch-move API, not folder mutations or multi-select UI.
+`plan_asset_moves` composes the shared semantic relocation preflight; all source identities,
+drafts, references, bytes and destinations must pass before publication. Duplicate owners,
+overlapping paths, same-name destinations, case-only collisions and unsupported paths
+are rejected. Results return each stable identity and its before/after source location.
+
+Before the first file moves, a staged, synced, no-clobber journal is published to
+`.aestra/asset-transactions/active.pending`. It holds root-relative paths, canonical root,
+typed identities and exact byte backups (128 files / 64 MiB serialized journal limit).
+Each publication is an exclusive same-filesystem rename with inventory revalidation.
+Only a completed batch archives the journal as committed. Normal failures restore known
+completed moves in reverse order; failures/conflicts during rollback retain the pending
+journal and every recoverable file. Completed/rolled-back backup journals are retained.
+
+Restart inspection (`pending_asset_move_batch`) does not mutate asset files. Explicit
+rollback validates the complete journal and every before/after file state before moving
+anything, requires a complete draft-free host inventory, and rechecks each reverse step.
+It can resume after an interruption during rollback without relying on a saved step
+counter. External edits, missing files, occupied paths, links, read-only paths, root moves,
+unknown versions, altered journals and identity mismatches fail closed. New browser
+rename/move/copy/folder-create operations cannot apply over a pending transaction.
+Startup reports the condition in-app but does not automatically replay it.
+
+Existing single-file Move Here retains its accepted atomic-move journal. Batch publication
+is not wired to a new user action yet. Next: typed path-rewrite planning and staged content
+replacement, folder plans, and guarded in-app recovery actions with document-path
+reconciliation. Folder rename/move/delete remain disabled until their full gates pass.
+No semantic Ctrl+Z, cross-project moves, power-loss guarantee or backup-cleanup policy is
+introduced by this slice. Failure tests use temporary projects, not the user's assets.
+
+Coverage includes failure after journal preparation and each file publication, commit
+archive collision, restart after every publication boundary, interrupted reverse steps,
+external edit/collision preservation, stale plans, dirty/incomplete drafts, competing
+destinations, malformed/relocated/traversing journals and read-only startup reporting.
+
+Verification: all 95 project tests and 645 editor unit tests plus the architecture test
+pass (two opt-in editor tests ignored). Strict all-target project/editor Clippy, formatting
+and diff checks pass. Platform-specific Windows/Linux publication code is shared with
+the existing exclusive-rename primitive; this run does not claim Linux execution or
+native fault/power-loss testing. User-authored assets remain untouched.

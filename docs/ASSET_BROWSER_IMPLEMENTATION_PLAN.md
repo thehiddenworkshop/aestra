@@ -90,9 +90,11 @@ Priorities are within this track: **P0** correctness/data-safety prerequisites,
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
 AB4 and AB5 are user-accepted. AB6a is implemented for folder creation and supported
 single-asset operations (effects, materials and graph functions); the user confirmed
-these work on 2026-09-08. AB6b has started with single semantic-file folder drops and
-journaled atomic moves; native drag/drop acceptance and the broader folder/rewrite/delete
-transaction gates remain pending. AB7–AB9 remain pending.
+these work on 2026-09-08. AB6b single semantic-file drops, journaled atomic moves and
+drag previews were also accepted by the user on 2026-09-08. The bounded semantic-file
+batch transaction/explicit restart-rollback foundation is implemented; path rewrites,
+folder plans and the broader folder/delete transaction gates remain pending. AB7–AB9
+remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -496,6 +498,14 @@ source bytes/root membership/destinations immediately before apply; prevent coll
 case-only rename errors, link escapes and folder self-descendants. No cross-root move
 or silent replacement in this milestone.
 
+Implemented foundation: `plan_asset_moves` composes the existing semantic relocation
+preflight for up to 128 files. It stages an exact-byte journal, exclusively publishes
+each file, and rolls back known steps on failure. Pending-batch inspection is read-only;
+explicit restart rollback validates all paths and rejects edits/collisions before
+restoration. The editor detects pending batches and blocks further browser mutations.
+This is not yet a folder or content-rewrite planner, a multi-selection UI, or an in-app
+recovery-action dialog. Existing single-file moves retain their accepted atomic journal.
+
 Use staged writes, backups and an operation journal with explicit rollback/recovery;
 multi-file changes are not inherently filesystem-atomic. Deletes move to a project
 recovery area with restore metadata, outside content indexing. Known live references
@@ -587,7 +597,9 @@ Discard and built-in read-only checks were not run in that pass. The user subseq
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
-user. **Immediate next step (P0):** native acceptance of single-asset Move Here / Copy
-Here folder drops, then AB6b multi-file transactions and recovery. Folder rename/move and deletion stay disabled
+user, followed by single-asset drops and drag-preview acceptance. **Immediate next step
+(P0):** typed path-reference rewrite plans and staged document replacements on top of
+the batch transaction foundation, followed by folder plans and in-app recovery actions.
+Folder rename/move and deletion stay disabled
 until the staged-write, rollback and restart-recovery gates pass. Keep the transitional
 Library until its remaining capabilities have tested replacements.

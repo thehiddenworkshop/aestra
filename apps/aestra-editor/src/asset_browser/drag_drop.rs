@@ -67,12 +67,9 @@ fn recover_on_project_open(
         return;
     }
     *checked = Some(generation);
-    if !catalog
-        .content()
-        .source_tree()
-        .root_path()
-        .join(".aestra/asset-moves")
-        .exists()
+    let root = catalog.content().source_tree().root_path();
+    if !root.join(".aestra/asset-moves").exists()
+        && !root.join(".aestra/asset-transactions").exists()
     {
         return;
     }
@@ -556,6 +553,37 @@ mod tests {
             },
             position: Vec2::ZERO,
         }
+    }
+
+    #[test]
+    fn project_open_reports_pending_batch_without_replaying_it() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join(".aestra/asset-transactions");
+        std::fs::create_dir_all(&directory).unwrap();
+        let journal = directory.join("active.pending");
+        std::fs::write(&journal, b"unrecognized journal; never replay").unwrap();
+        let original = root.path().join("effect.aestra.ron");
+        EffectAsset::new("Effect", 1.0).save_ron(&original).unwrap();
+        let bytes = std::fs::read(&original).unwrap();
+        let mut app = App::new();
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()))
+            .insert_resource(crate::test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, recover_on_project_open);
+        app.update();
+        io::drain(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .status
+                .contains("explicit recovery")
+        );
+        assert_eq!(std::fs::read(original).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(journal).unwrap(),
+            b"unrecognized journal; never replay"
+        );
+        assert!(!root.path().join(".aestra/asset-moves").exists());
     }
 
     #[test]

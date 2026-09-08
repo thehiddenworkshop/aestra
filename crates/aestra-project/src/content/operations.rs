@@ -2,11 +2,13 @@
 mod duplicate;
 mod move_journal;
 mod rename;
+mod transaction;
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
 use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};
 use crate::ProjectSourceId;
 pub use duplicate::{DuplicatePlan, DuplicateResult};
 pub use rename::{RenamePlan, RenameResult};
+pub use transaction::{AssetMoveBatchPlan, AssetMoveBatchResult, PendingAssetMoveBatch};
 
 /// Host-supplied current documents, replacing saved references rather than adding stale ones.
 #[derive(Debug, Clone)]
@@ -339,6 +341,7 @@ impl ProjectContent {
             ));
         }
         let root = self.source_tree().root_path();
+        transaction::ensure_idle(root)?;
         checked_parent(root, &entry.path)?;
         let canonical_root = root.canonicalize()?;
         let canonical_parent = entry.path.canonicalize()?;
@@ -358,6 +361,7 @@ impl ProjectContent {
 impl OperationPlan {
     /// Revalidate immediately before mutation. No overwrite, recursive creation, or Ctrl+Z claim.
     pub fn apply(self) -> Result<OperationResult, OperationError> {
+        transaction::ensure_idle(&self.root)?;
         checked_parent(&self.root, &self.parent)?;
         vacant(&self.parent, &self.destination)?;
         fs::create_dir(&self.destination)?;

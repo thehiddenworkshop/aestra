@@ -214,10 +214,10 @@ pub(super) fn path_targets(root: &Path, target: &Path, reference: &Path) -> Resu
 
 #[derive(Debug)]
 pub struct RenamePlan {
-    destination: OperationPlan,
-    source: PathBuf,
-    inventory: BTreeMap<PathBuf, Vec<u8>>,
-    asset: ProjectAssetId,
+    pub(super) destination: OperationPlan,
+    pub(super) source: PathBuf,
+    pub(super) inventory: BTreeMap<PathBuf, Vec<u8>>,
+    pub(super) asset: ProjectAssetId,
     journaled: bool,
 }
 
@@ -228,7 +228,7 @@ pub struct RenameResult {
     pub asset: ProjectAssetId,
 }
 
-fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, OperationError> {
+pub(super) fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, OperationError> {
     let tree = ProjectSourceTree::scan(root);
     let mut result = BTreeMap::new();
     for entry in tree.entries() {
@@ -307,6 +307,7 @@ impl ProjectContent {
             .unique_source_for_asset(asset)
             .map_err(|_| blocked("Source identity is ambiguous"))?;
         let root = self.source_tree().root_path();
+        super::transaction::ensure_idle(root)?;
         if journaled {
             super::move_journal::recover(root)?;
         }
@@ -352,6 +353,7 @@ impl ProjectContent {
 impl RenamePlan {
     pub fn apply(self) -> Result<RenameResult, OperationError> {
         let plan = self.destination;
+        super::transaction::ensure_idle(&plan.root)?;
         checked_parent(&plan.root, &plan.parent)?;
         if inventory(&plan.root)? != self.inventory {
             return Err(blocked("Project files changed; rename cancelled"));
