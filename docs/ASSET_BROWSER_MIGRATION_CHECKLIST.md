@@ -1114,3 +1114,47 @@ pass (two opt-in editor tests ignored). Strict all-target project/editor Clippy,
 and diff checks pass. Platform-specific Windows/Linux publication code is shared with
 the existing exclusive-rename primitive; this run does not claim Linux execution or
 native fault/power-loss testing. User-authored assets remain untouched.
+
+### AB6b typed path rewrites and staged document replacements — 2026-09-09
+
+`plan_asset_moves` now prepares supported path-reference edits with its semantic-file
+moves. A shared relocation preflight permits known path usages only inside the batch
+planner; the public single-file rename/move API still blocks them. Full saved-source
+inventory, identities, destination checks and unknown-reference gates remain in force.
+All drafts must be saved/discarded and the host must recheck its session guard at apply.
+
+The current loader stores file paths in effect resource declarations
+(`EffectAsset.assets[].path`). Material/function texture defaults and constants use
+resource IDs and are not rewritten. Resolution validates root-relative aliases against
+actual indexed files; missing/escaping/linked paths, unknown formats/include semantics,
+read-only owners, case collisions and stale inventories block publication. Both stationary
+and moved reference owners are supported, including multiple bindings to one source.
+
+RON path tokens are located by borrowed typed deserialization and edited in place;
+comments, whitespace, raw-string surroundings, names, unknown fields and unrelated
+strings are preserved. The rewritten document is reloaded and compared to the intended
+typed result. Journal validation recomputes these edits, rejecting unrelated changes.
+Both plan and result expose rewritten owner paths for future host reload reconciliation.
+
+Version-2 journals store exact before/after bytes. Every replacement is staged and synced
+before journal publication. Publication exclusively moves the original into a retained
+backup, then publishes the staged file without overwriting an occupied path. This is
+recoverable multi-step publication, not a claim of filesystem-wide atomicity. Recovery
+validates every touched path against a complete sequence prefix, then reverses the same
+steps. It handles a missing owner between detach/publication and interrupted rollback;
+unknown edits, missing backups or occupied destinations retain the pending journal and
+block the entire recovery. Version-1 move-only journals remain supported. Staging files
+orphaned before journal publication and archived backups are retained; cleanup is separate.
+
+This backend slice does not yet enable folder/resource-file moves, multi-select UI,
+reference-rewriting Move Here, or new recovery buttons. Folder plans, host reconciliation
+and guarded in-app recovery actions remain the next gates. No native UX, Linux execution
+or power-loss verification is claimed; tests modify temporary fixtures only.
+
+Verification: 104 project tests and 645 editor unit tests plus the architecture test
+pass (two opt-in editor tests ignored). Strict all-target project/editor Clippy,
+formatting and diff checks pass. Regressions exercise all eight forward interruption
+boundaries for three moves and two replacements, interrupted reverse recovery, external
+edits to every owner/backup/staging file, dirty and read-only owners, stale bytes,
+unresolved/escaping references, malformed rewrite journals, lossless RON token edits
+and version-1 restart recovery. User-authored asset files remain untouched.

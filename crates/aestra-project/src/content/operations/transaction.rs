@@ -1,4 +1,4 @@
-//! Journaled batches of already-authorized semantic file moves. No folder or
+//! Journaled semantic file moves and typed resource-path edits. No folder or
 //! arbitrary-path API: callers use source IDs and the shared relocation preflight.
 //! Pending batches are inspected read-only; restart rollback is an explicit action.
 use super::*;
@@ -6,6 +6,9 @@ use crate::ProjectAssetId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
+mod references;
+mod steps;
+use references::Replacement;
 
 const MAX_FILES: usize = 128;
 const MAX_JOURNAL_BYTES: u64 = 64 * 1024 * 1024;
@@ -26,6 +29,8 @@ struct Record {
     root: PathBuf,
     archive: String,
     moves: Vec<Move>,
+    #[serde(default)]
+    replacements: Vec<Replacement>,
 }
 
 #[derive(Debug)]
@@ -33,6 +38,7 @@ pub struct AssetMoveBatchPlan {
     root: PathBuf,
     moves: Vec<Move>,
     inventory: BTreeMap<PathBuf, Vec<u8>>,
+    replacements: Vec<Replacement>,
 }
 
 #[derive(Debug)]
@@ -40,6 +46,9 @@ pub struct AssetMoveBatchResult {
     pub moves: Vec<RenameResult>,
     /// Retained journal includes exact original bytes. Not semantic Ctrl+Z history.
     pub journal: PathBuf,
+    /// Final paths of saved effects whose resource paths were rewritten. Hosts must
+    /// reload these documents and refresh their source guards after publication.
+    pub rewritten_sources: Vec<PathBuf>,
 }
 
 /// Opaque read-only inspection. The host must gather fresh drafts and recheck its
@@ -54,8 +63,9 @@ pub struct PendingAssetMoveBatch {
 
 impl ProjectContent {
     /// Plans a bounded batch of saved semantic files using the single-asset planner.
-    /// Destinations must already exist. Renames, folder moves and path rewrites are
-    /// intentionally not accepted yet. No asset files are changed by planning.
+    /// Destinations must already exist. Known effect resource paths are rewritten
+    /// in the same transaction. Folder moves and arbitrary source types are not
+    /// accepted yet. Hosts must recheck draft/session guards immediately before apply.
     pub fn plan_asset_moves(
         &self,
         requests: Vec<OperationRequest>,
@@ -65,12 +75,17 @@ impl ProjectContent {
         if requests.is_empty() || requests.len() > MAX_FILES {
             return Err(blocked("A move batch must contain 1 to 128 assets"));
         }
+        if !complete || !drafts.is_empty() {
+            return Err(blocked(
+                "Save or discard all drafts before a reference-safe move batch",
+            ));
+        }
         let root = self.source_tree().root_path().to_owned();
         ensure_idle(&root)?;
         let baseline = rename::inventory(&root)?;
         let mut moves = Vec::new();
         for request in requests {
-            let plan = self.plan_asset_move(request, drafts, complete)?;
+            let plan = self.plan_asset_relocation(request, drafts, complete, true, true)?;
             if plan.inventory != baseline {
                 return Err(blocked("Project changed during batch preflight"));
             }
@@ -94,10 +109,18 @@ impl ProjectContent {
             });
         }
         validate_moves(&moves)?;
+        let fresh = ProjectContent::scan(&root);
+        let replacements = references::plan(&fresh, &baseline, &moves)?;
+        if rename::inventory(&root)? != baseline {
+            return Err(blocked(
+                "Project changed during reference rewrite preflight",
+            ));
+        }
         Ok(AssetMoveBatchPlan {
             root,
             moves,
             inventory: baseline,
+            replacements,
         })
     }
 
@@ -114,10 +137,7 @@ impl ProjectContent {
             Ok(_) => {}
         }
         let record = read_record(&root, &journal)?;
-        let moved_files = states(&root, &record)?
-            .into_iter()
-            .filter(|moved| *moved)
-            .count();
+        let moved_files = steps::progress(&root, &record)?.min(record.moves.len());
         Ok(Some(PendingAssetMoveBatch {
             root,
             record,
@@ -128,6 +148,14 @@ impl ProjectContent {
 }
 
 impl AssetMoveBatchPlan {
+    /// Saved documents affected by typed path edits, at their final locations.
+    pub fn rewritten_sources(&self) -> Vec<PathBuf> {
+        self.replacements
+            .iter()
+            .map(|item| self.root.join(steps::final_path(&item.source, &self.moves)))
+            .collect()
+    }
+
     pub fn apply(self) -> Result<AssetMoveBatchResult, OperationError> {
         self.apply_with(|_| Ok(()))
     }
@@ -141,26 +169,30 @@ impl AssetMoveBatchPlan {
             return Err(blocked("Project changed; batch cancelled"));
         }
         validate_moves(&self.moves)?;
-        for item in &self.moves {
-            if state(&self.root, item)? {
-                return Err(blocked("Source already moved; refresh first"));
-            }
-        }
-        let (journal, record) = prepare(&self.root, self.moves)?;
+        references::validate(&self.replacements, &self.moves)?;
+        let rewritten_sources = self.rewritten_sources();
+        let (journal, record) = prepare(&self.root, self.moves, self.replacements)?;
         let mut expected = self.inventory;
         let result = (|| {
             checkpoint(0)?;
-            for (index, item) in record.moves.iter().enumerate() {
+            for (index, step) in steps::list(&record).iter().enumerate() {
                 if rename::inventory(&self.root)? != expected {
                     return Err(blocked("Project changed during batch"));
                 }
-                move_one(&self.root, item, false)?;
-                expected.remove(&self.root.join(&item.source));
-                expected.insert(self.root.join(&item.destination), item.bytes.clone());
+                steps::advance(&self.root, &record, index, false)?;
+                if !steps::internal(&step.source) {
+                    expected.remove(&self.root.join(&step.source));
+                }
+                if !steps::internal(&step.destination) {
+                    expected.insert(self.root.join(&step.destination), step.bytes.clone());
+                }
                 checkpoint(index + 1)?;
             }
             if rename::inventory(&self.root)? != expected {
                 return Err(blocked("Project changed before batch commit"));
+            }
+            if steps::progress(&self.root, &record)? != steps::list(&record).len() {
+                return Err(blocked("Incomplete transaction publication"));
             }
             finish(&self.root, &journal, &record, "complete")
         })();
@@ -176,6 +208,7 @@ impl AssetMoveBatchPlan {
                     })
                     .collect(),
                 journal,
+                rewritten_sources,
             }),
             Err(error) => match rollback(&self.root, &journal, &record, |_| Ok(())) {
                 Ok(_) => Err(blocked(&format!(
@@ -220,19 +253,7 @@ fn validate_moves(moves: &[Move]) -> Result<(), OperationError> {
             return Err(blocked("An asset occurs more than once in this batch"));
         }
         for path in [&item.source, &item.destination] {
-            if path.as_os_str().is_empty() {
-                return Err(blocked("Empty transaction path"));
-            }
-            for component in path.components() {
-                let std::path::Component::Normal(name) = component else {
-                    return Err(blocked(
-                        "Transaction paths must stay relative to the asset root",
-                    ));
-                };
-                if !name.to_str().is_some_and(valid_name) {
-                    return Err(blocked("Unsupported transaction path component"));
-                }
-            }
+            validate_path(path)?;
             if !paths.insert(path.to_string_lossy().replace('\\', "/").to_lowercase()) {
                 return Err(blocked(
                     "Overlapping sources/destinations or case-only collision",
@@ -260,6 +281,23 @@ fn validate_moves(moves: &[Move]) -> Result<(), OperationError> {
         .map_err(|error| blocked(&format!("Invalid transaction backup: {error}")))?;
         if actual != item.asset {
             return Err(blocked("Transaction backup identity mismatch"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_path(path: &Path) -> Result<(), OperationError> {
+    if path.as_os_str().is_empty() {
+        return Err(blocked("Empty transaction path"));
+    }
+    for component in path.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(blocked(
+                "Transaction paths must stay relative to the asset root",
+            ));
+        };
+        if !name.to_str().is_some_and(valid_name) {
+            return Err(blocked("Unsupported transaction path component"));
         }
     }
     Ok(())
@@ -300,7 +338,11 @@ pub(super) fn ensure_idle(root: &Path) -> Result<(), OperationError> {
     }
 }
 
-fn prepare(root: &Path, moves: Vec<Move>) -> Result<(PathBuf, Record), OperationError> {
+fn prepare(
+    root: &Path,
+    moves: Vec<Move>,
+    replacements: Vec<Replacement>,
+) -> Result<(PathBuf, Record), OperationError> {
     let directory = directory(root, true)?;
     let mut staging = tempfile::NamedTempFile::new_in(&directory)?;
     let archive = format!(
@@ -313,10 +355,11 @@ fn prepare(root: &Path, moves: Vec<Move>) -> Result<(PathBuf, Record), Operation
             .trim_start_matches('.')
     );
     let record = Record {
-        version: 1,
+        version: 2,
         root: root.canonicalize()?,
         archive,
         moves,
+        replacements,
     };
     let bytes = serde_json::to_vec(&record).map_err(|e| OperationError::Io(e.to_string()))?;
     if bytes.len() as u64 > MAX_JOURNAL_BYTES {
@@ -324,6 +367,9 @@ fn prepare(root: &Path, moves: Vec<Move>) -> Result<(PathBuf, Record), Operation
     }
     staging.write_all(&bytes)?;
     staging.as_file().sync_all()?;
+    // Stage and sync every rewritten document before the journal authorizes any
+    // source mutation. Abandoned pre-journal staging files are harmless retained data.
+    steps::stage(root, &record)?;
     let journal = directory.join("active.pending");
     staging
         .persist_noclobber(&journal)
@@ -344,7 +390,8 @@ fn read_record(root: &Path, journal: &Path) -> Result<Record, OperationError> {
     }
     let record: Record = serde_json::from_slice(&fs::read(journal)?)
         .map_err(|error| blocked(&format!("Unreadable transaction journal: {error}")))?;
-    if record.version != 1
+    if !matches!(record.version, 1 | 2)
+        || (record.version == 1 && !record.replacements.is_empty())
         || record.root != root.canonicalize()?
         || !record.archive.starts_with("transaction-")
         || !valid_name(&record.archive)
@@ -352,6 +399,7 @@ fn read_record(root: &Path, journal: &Path) -> Result<Record, OperationError> {
         return Err(blocked("Unsupported or relocated transaction journal"));
     }
     validate_moves(&record.moves)?;
+    references::validate(&record.replacements, &record.moves)?;
     Ok(record)
 }
 
@@ -379,37 +427,6 @@ fn read_file(root: &Path, relative: &Path) -> Result<Option<Vec<u8>>, OperationE
         }
         Err(e) => Err(e.into()),
     }
-}
-
-fn state(root: &Path, item: &Move) -> Result<bool, OperationError> {
-    match (
-        read_file(root, &item.source)?,
-        read_file(root, &item.destination)?,
-    ) {
-        (Some(bytes), None) if bytes == item.bytes => Ok(false),
-        (None, Some(bytes)) if bytes == item.bytes => Ok(true),
-        _ => Err(blocked(&format!(
-            "Transaction path changed or is ambiguous: {} → {}. No unknown file will be overwritten",
-            item.source.display(),
-            item.destination.display()
-        ))),
-    }
-}
-
-fn states(root: &Path, record: &Record) -> Result<Vec<bool>, OperationError> {
-    record.moves.iter().map(|item| state(root, item)).collect()
-}
-
-fn move_one(root: &Path, item: &Move, restore: bool) -> Result<(), OperationError> {
-    if state(root, item)? != restore {
-        return Err(blocked("Transaction state changed before rename"));
-    }
-    let (source, destination) = if restore {
-        (&item.destination, &item.source)
-    } else {
-        (&item.source, &item.destination)
-    };
-    rename::rename_exclusive(&root.join(source), &root.join(destination))
 }
 
 fn finish(
@@ -440,18 +457,18 @@ fn rollback(
     }
     // Validate every path before restoring even the first file. Never overwrite an
     // external edit to make the transaction look successful.
-    let before = states(root, record)?;
-    for (index, (item, moved)) in record.moves.iter().zip(before).enumerate().rev() {
-        if moved {
-            move_one(root, item, true)?;
-            checkpoint(index)?;
-        }
+    let before = steps::progress(root, record)?;
+    for index in (0..before).rev() {
+        steps::advance(root, record, index, true)?;
+        checkpoint(index)?;
     }
-    if states(root, record)?.into_iter().any(|moved| moved) {
+    if steps::progress(root, record)? != 0 {
         return Err(blocked("Incomplete rollback"));
     }
     finish(root, journal, record, "rolled-back")
 }
 
+#[cfg(all(test, any(windows, target_os = "linux")))]
+mod rewrite_tests;
 #[cfg(all(test, any(windows, target_os = "linux")))]
 mod tests;

@@ -59,7 +59,7 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         all_drafts_known: bool,
     ) -> ReferencePreflight {
-        self.reference_preflight_inner(source, drafts, all_drafts_known, false)
+        self.reference_preflight_inner(source, drafts, all_drafts_known, false, false)
     }
 
     fn reference_preflight_inner(
@@ -68,6 +68,7 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         all_drafts_known: bool,
         rename_only: bool,
+        rewrite_paths: bool,
     ) -> ReferencePreflight {
         let mut report = ReferencePreflight::default();
         let Some(target) = self.source(source) else {
@@ -170,6 +171,7 @@ impl ProjectContent {
                             path,
                         ) {
                             Ok(false) => {}
+                            Ok(true) if rewrite_paths => {}
                             Ok(true) => report.incomplete.push(format!(
                                 "{} references this filename ({}) and requires a path rewrite",
                                 entry.relative_path.display(),

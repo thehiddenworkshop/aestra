@@ -263,7 +263,7 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<RenamePlan, OperationError> {
-        self.plan_asset_relocation(request, drafts, complete, false)
+        self.plan_asset_relocation(request, drafts, complete, false, false)
     }
 
     /// Single-file, same-project move. Identity and bytes stay unchanged. Sources
@@ -274,15 +274,16 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<RenamePlan, OperationError> {
-        self.plan_asset_relocation(request, drafts, complete, true)
+        self.plan_asset_relocation(request, drafts, complete, true, false)
     }
 
-    fn plan_asset_relocation(
+    pub(super) fn plan_asset_relocation(
         &self,
         request: OperationRequest,
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
         journaled: bool,
+        rewrite_paths: bool,
     ) -> Result<RenamePlan, OperationError> {
         let (source, rename, parent) = match request {
             OperationRequest::Rename { source, name } if !journaled => (source, Some(name), None),
@@ -321,7 +322,7 @@ impl ProjectContent {
         if fresh_entry.id != source || !same {
             return Err(blocked("Source changed; refresh first"));
         }
-        let report = fresh.reference_preflight_inner(source, drafts, complete, true);
+        let report = fresh.reference_preflight_inner(source, drafts, complete, true, rewrite_paths);
         if let Some(reason) = report.incomplete.first() {
             return Err(blocked(&format!("Relocation blocked: {reason}")));
         }

@@ -92,8 +92,8 @@ AB4 and AB5 are user-accepted. AB6a is implemented for folder creation and suppo
 single-asset operations (effects, materials and graph functions); the user confirmed
 these work on 2026-09-08. AB6b single semantic-file drops, journaled atomic moves and
 drag previews were also accepted by the user on 2026-09-08. The bounded semantic-file
-batch transaction/explicit restart-rollback foundation is implemented; path rewrites,
-folder plans and the broader folder/delete transaction gates remain pending. AB7–AB9
+batch transaction/explicit restart-rollback foundation and typed resource-path edits
+are implemented; folder plans and the broader folder/delete transaction gates remain pending. AB7–AB9
 remain pending.
 Do not count unavailable platform tests as verified.
 
@@ -503,8 +503,17 @@ preflight for up to 128 files. It stages an exact-byte journal, exclusively publ
 each file, and rolls back known steps on failure. Pending-batch inspection is read-only;
 explicit restart rollback validates all paths and rejects edits/collisions before
 restoration. The editor detects pending batches and blocks further browser mutations.
-This is not yet a folder or content-rewrite planner, a multi-selection UI, or an in-app
-recovery-action dialog. Existing single-file moves retain their accepted atomic journal.
+The batch planner now includes typed rewrites of saved `EffectAsset.assets[].path`
+references to moved sources. Material/function texture defaults are resource IDs, not
+filenames, and remain unchanged. Only the path tokens are patched: names, comments,
+formatting and unknown fields remain intact. Complete, draft-free preflight is required;
+unresolved resource paths and unknown include semantics remain blockers. Replacements
+are staged/synced before journal publication, originals are retained, and interruption
+between backup and replacement is an explicit recoverable state. Version-1 move-only
+journals remain recoverable. Results identify rewritten owners for host reload guards.
+This remains a backend semantic-file batch API, not a folder/resource-file move planner,
+multi-selection UI or in-app recovery-action dialog. Existing single-file moves retain
+their accepted atomic journal and continue blocking references requiring a rewrite.
 
 Use staged writes, backups and an operation journal with explicit rollback/recovery;
 multi-file changes are not inherently filesystem-atomic. Deletes move to a project
@@ -598,8 +607,8 @@ accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not re
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
 user, followed by single-asset drops and drag-preview acceptance. **Immediate next step
-(P0):** typed path-reference rewrite plans and staged document replacements on top of
-the batch transaction foundation, followed by folder plans and in-app recovery actions.
+(P0):** audited folder/resource-file move plans using the transaction and typed rewrite
+foundation, followed by guarded in-app recovery actions and document-path reconciliation.
 Folder rename/move and deletion stay disabled
 until the staged-write, rollback and restart-recovery gates pass. Keep the transitional
 Library until its remaining capabilities have tested replacements.

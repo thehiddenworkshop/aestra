@@ -4,7 +4,7 @@ use aestra_core::{
     material::{MaterialFunction, MaterialProgram},
 };
 
-fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequest>) {
+pub(super) fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequest>) {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("destination")).unwrap();
     let effect = EffectAsset::new("Effect", 1.0);
@@ -103,9 +103,9 @@ fn failure_at_every_publication_boundary_rolls_back_all_files() {
 // Stop with the real durable journal and exactly N exclusive moves published,
 // without running apply's in-process error handler (simulated process termination).
 fn interrupt(plan: AssetMoveBatchPlan, count: usize) -> (PathBuf, Record) {
-    let (journal, record) = prepare(&plan.root, plan.moves).unwrap();
-    for item in record.moves.iter().take(count) {
-        move_one(&plan.root, item, false).unwrap();
+    let (journal, record) = prepare(&plan.root, plan.moves, plan.replacements).unwrap();
+    for index in 0..count {
+        steps::advance(&plan.root, &record, index, false).unwrap();
     }
     (journal, record)
 }
