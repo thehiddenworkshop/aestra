@@ -360,7 +360,8 @@ pub(super) fn open_function(
     match session.open_material_function(&catalog, event.0) {
         Ok(()) => {
             session.status =
-                "Function opened for inspection; editing controls are not yet available".into();
+                "Function opened; graph signatures are editable, custom WESL remains read-only"
+                    .into();
             reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
         }
         Err(error) => {

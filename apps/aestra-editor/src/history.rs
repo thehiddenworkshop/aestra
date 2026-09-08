@@ -105,6 +105,7 @@ pub(crate) enum HistorySet {
 
 impl Plugin for EditorHistoryPlugin {
     fn build(&self, app: &mut App) {
+        crate::material_function_editor::register(app);
         app.init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>()
             .add_observer(queue_history_action_activation)
@@ -628,10 +629,14 @@ fn execute_history_action(
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
     mut ledger: ResMut<EditorHistoryLedger>,
+    mut functions: ResMut<crate::material_function_editor::FunctionEditor>,
 ) {
     if session.standalone_function().is_some() {
         session.status =
-            "Function inspection is read-only; return to the effect to use its history".into();
+            match functions.step(&mut session, &mut catalog, *action == HistoryAction::Undo) {
+                Ok(()) => "Function history applied".into(),
+                Err(error) => error,
+            };
         session.ui_revision += 1;
         return;
     }
@@ -757,18 +762,24 @@ fn update_history_availability(
     session: Res<EditorSession>,
     ledger: Res<EditorHistoryLedger>,
     material_history: Res<MaterialProgramEditHistory>,
+    functions: Res<crate::material_function_editor::FunctionEditor>,
     mut commands: Commands,
     items: Query<
         (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
         Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
     >,
 ) {
-    if !session.is_changed() && !ledger.is_changed() && !material_history.is_changed() {
+    if !session.is_changed()
+        && !ledger.is_changed()
+        && !material_history.is_changed()
+        && !functions.is_changed()
+    {
         return;
     }
     for (entity, undo, redo) in &items {
         let enabled = if session.standalone_function().is_some() {
-            false
+            (undo && functions.available(&session, true))
+                || (redo && functions.available(&session, false))
         } else if session.standalone_material().is_some() && session.material_history_active {
             material_history
                 .for_target(&session)
@@ -867,6 +878,7 @@ mod tests {
 
     fn add_history_resources(app: &mut App) {
         app.init_resource::<ProjectEffectCatalog>()
+            .init_resource::<crate::material_function_editor::FunctionEditor>()
             .init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>();
     }
@@ -1286,6 +1298,7 @@ mod tests {
             .insert_resource(catalog)
             .insert_resource(material_history)
             .insert_resource(ledger)
+            .init_resource::<crate::material_function_editor::FunctionEditor>()
             .add_observer(execute_history_action);
 
         app.world_mut().trigger(HistoryAction::Undo);

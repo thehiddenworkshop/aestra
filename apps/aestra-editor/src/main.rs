@@ -16,6 +16,7 @@ mod library;
 mod localization;
 mod material_document;
 mod material_drafts;
+mod material_function_editor;
 mod material_graph;
 mod menus;
 mod persistence;

@@ -236,6 +236,18 @@ impl EditorProjectContent {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn replace_material_function(
+        &mut self,
+        expected: &MaterialFunction,
+        replacement: &MaterialFunction,
+    ) -> Result<(), String> {
+        self.material_drafts.replace_function(
+            self.snapshot.content.asset_index(),
+            expected,
+            replacement,
+        )
+    }
+
     pub(crate) fn create_material_function(
         &mut self,
         function: &MaterialFunction,

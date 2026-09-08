@@ -531,7 +531,7 @@ fn execute_document_action(
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
         if session.standalone_function().is_some() {
             session.status =
-                "Function inspection is read-only; function saving is not yet available".into();
+                "Function-only saving is not yet available; signature edits remain in shared drafts".into();
             session.ui_revision += 1;
             return;
         }

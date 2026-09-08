@@ -648,5 +648,28 @@ signature/body controls, function-scoped history and dependent previews remain A
 Validation: editor suite passed (607 passed, 2 ignored); strict workspace/all-targets
 Clippy, formatting and `git diff --check` passed. Native UI inspection remains pending.
 
+### AB5b graph-function signature drafts and history — 2026-09-08
+
+The function inspector now offers Feather name fields, type menus, add/remove controls,
+and typed defaults. Blank defaults retain required-input semantics; scalar defaults use
+the shared draggable number behavior. Vector/color defaults use comma-separated fields.
+New outputs initially return zero; body rewiring and output-expression selection are not
+part of this slice. Custom WESL remains read-only, including its signature.
+
+Edits preflight indexed material programs and functions, report direct callers and
+validation errors, and retain existing state/history when rejected. Stable port IDs survive
+rename/type/default edits. Draft replacement uses exact disk baselines and optimistic
+current-value checks. Undo/Redo uses separate project-root/function-ID stacks and does not
+edit the active effect. Dedicated function Save/Reload remains AB5c; existing shared-draft
+protection and Save All continue to cover these drafts.
+
+Automated coverage includes final Feather text/activation events, signature creation,
+typed defaults, invalid references/default rejection, stale Undo protection, custom-WESL
+read-only handling, caller preflight/dependent recompilation, and per-function Undo/Redo
+with unchanged effect selection and source bytes. Native UI acceptance remains pending.
+
+Validation: editor suite passed (613 passed, 2 ignored); strict workspace/all-targets
+Clippy, formatting and whitespace checks passed.
+
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.

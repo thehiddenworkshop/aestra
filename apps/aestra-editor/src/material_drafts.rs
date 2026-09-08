@@ -251,6 +251,44 @@ impl MaterialDrafts {
         Ok(())
     }
 
+    pub fn replace_function(
+        &mut self,
+        index: &ProjectAssetIndex,
+        expected: &MaterialFunction,
+        replacement: &MaterialFunction,
+    ) -> Result<(), String> {
+        if expected.id != replacement.id {
+            return Err("Function identity cannot change".into());
+        }
+        if let Entry::Vacant(slot) = self.functions.entry(expected.id) {
+            let entry = index
+                .resolve_material_function(MaterialFunctionRef::Project(expected.id))
+                .map_err(|error| error.to_string())?;
+            let bytes = fs::read(&entry.path).map_err(|error| error.to_string())?;
+            let original = MaterialFunction::from_ron(&String::from_utf8_lossy(&bytes))
+                .map_err(|error| error.to_string())?;
+            if original != expected.normalized() {
+                return Err("Function changed outside the editor; reopen it before editing".into());
+            }
+            slot.insert(Draft {
+                path: entry.path.clone(),
+                original: Some(original.clone()),
+                current: Some(original),
+                bytes: Some(bytes),
+            });
+        }
+        let draft = self.functions.get_mut(&expected.id).unwrap();
+        if draft.current.as_ref().map(MaterialFunction::normalized) != Some(expected.normalized()) {
+            return Err("Function draft changed since this edit was prepared".into());
+        }
+        draft.current = Some(replacement.normalized());
+        if draft.current == draft.original {
+            self.functions.remove(&expected.id);
+        }
+        self.root = Some(index.root().to_owned());
+        Ok(())
+    }
+
     pub fn create_function(
         &mut self,
         index: &ProjectAssetIndex,

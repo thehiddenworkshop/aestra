@@ -31,7 +31,11 @@ fn function_inspection_save_does_not_save_the_effect() {
         assert_eq!(session.effect, effect);
         assert!(session.effect_is_dirty());
         assert!(session.source_path.is_none());
-        assert!(session.status.contains("Function inspection is read-only"));
+        assert!(
+            session
+                .status
+                .contains("Function-only saving is not yet available")
+        );
     }
 }
 

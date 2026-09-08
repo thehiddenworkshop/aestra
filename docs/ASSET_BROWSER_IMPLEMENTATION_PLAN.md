@@ -437,6 +437,13 @@ Delivery slices:
   against acting on the effect. Interactive signature/body controls, scoped function
   history and dependent draft-preview invalidation remain pending; this is not the
   complete AB5b gate.
+  Signature slice implemented: graph functions expose name, input/output add/rename/remove,
+  type choices and typed input defaults (blank means required). Port IDs are preserved;
+  new outputs initially return a zero constant. Changes preflight all indexed program and
+  function callers and reject invalid candidates without dropping connections. Draft
+  Undo/Redo is scoped by project root and function ID, independent of effect history.
+  Catalog draft changes invalidate dependent previews. Custom-WESL signatures/source
+  remain read-only. Function-body canvas editing and output remapping remain pending.
 - **AB5c — Persistence and acceptance:** function-only Save/guarded Reload, conflicts,
   target recovery, moved/missing sources and the full exit gate below.
 
@@ -566,7 +573,6 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** AB5b interactive signature/body controls,
-function-scoped history and dependent preview invalidation, building on the read-only
-function target/inspector. Keep the transitional
+marked tested. **Immediate next step (P1):** AB5b function-body canvas editing and output
+mapping, building on signature controls and function-scoped draft history. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.
