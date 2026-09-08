@@ -5,6 +5,7 @@ mod actions;
 mod benchmark;
 mod context_menu;
 mod inspection;
+mod operations;
 mod panel;
 mod persistence;
 mod state;
@@ -22,6 +23,7 @@ pub(crate) struct EditorAssetBrowserPlugin;
 
 impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
+        operations::register(app);
         app.init_resource::<AssetBrowserState>()
             .init_resource::<persistence::BrowserPersistence>()
             .init_resource::<actions::BrowserClickState>()

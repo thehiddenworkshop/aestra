@@ -803,6 +803,12 @@ fn sync_chrome(
             }
             for (key, path, action, selected) in [
                 (
+                    "browser-new-folder",
+                    "icons/folder.svg",
+                    BrowserAction::NewFolder,
+                    false,
+                ),
+                (
                     "browser-sources",
                     "icons/folder.svg",
                     BrowserAction::Sources,

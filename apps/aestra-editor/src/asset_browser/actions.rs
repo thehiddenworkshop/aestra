@@ -47,6 +47,7 @@ pub(super) enum BrowserAction {
     TreePage(bool),
     OpenProject,
     Refresh,
+    NewFolder,
     OpenSelected,
     LocateCurrentEffect,
     LocateSource(ProjectSourceId, ProjectContentVersion),
@@ -127,6 +128,7 @@ pub(super) fn handle_action(
         }
         BrowserAction::OpenProject => commands.trigger(DocumentAction::OpenProject),
         BrowserAction::Refresh => commands.trigger(crate::library::LibraryAction::RefreshProject),
+        BrowserAction::NewFolder => commands.trigger(super::operations::OpenFolderPrompt),
         BrowserAction::OpenSelected => {
             if let Some(id) = state.selected {
                 open_source(id, &catalog, &mut state, &mut commands);

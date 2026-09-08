@@ -828,3 +828,16 @@ the legacy mutation APIs are not newly exposed through this layer.
 Project tests pass, including destination races, case collisions, unsafe names and
 missing parents. Browser operation controls, reference inventory/preflight and semantic
 operations remain pending. This is a backend foundation, not completion of AB6a.
+
+### AB6a browser folder creation — 2026-09-08
+
+The browser toolbar now opens an in-app New Folder name prompt, with Create,
+Cancel and Escape. The prompt captures the current folder and project version;
+changed snapshots reject stale submissions. Filesystem work runs through the typed
+project planner on serialized background I/O, never directly in a widget. Completion
+refreshes the catalog while preserving shared drafts and reports errors in the status
+bar. Names/collisions/link checks remain owned by the project operation layer.
+
+Automated action coverage exercises Create and Cancel without changing the effect.
+Native prompt acceptance remains pending. Draft-aware reference preflight and semantic
+rename/move/duplicate remain open; this does not complete AB6a.
