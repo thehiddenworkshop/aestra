@@ -986,3 +986,36 @@ by these tests. Native inline-rename acceptance remains pending.
 
 Verification: all 78 project tests and 637 editor unit tests plus the architecture test
 pass (two opt-in editor tests ignored); strict all-target Clippy and formatting checks pass.
+
+### AB6a shared semantic asset operations and effects — 2026-09-08
+
+Effects, material programs and graph functions now use the same browser menu/F2 routes,
+inline Rename controls, saved-copy dialog, project queue and guarded filesystem planners:
+`plan_asset_rename` and `plan_saved_asset_duplicate`. A single backend capability/suffix
+query replaces repeated UI type lists. Rename's stale-document comparison is shared too;
+there is no effect-specific rename implementation in the Browser. The transitional
+Library's authored-name rename remains separate until AB8 (it changes both display name
+and filename, unlike filename-only Rename).
+
+`ProjectAssetId` remains the common stable identity abstraction. Filename-only Rename
+preserves it and exact source bytes. Duplication allocates a fresh project-level ID;
+effect-owned emitter, resource, event, curve and choreography IDs retain their local
+wiring, just as graph-owned expression/signature IDs do. Referenced project effects,
+materials and functions remain shared. This is not a global ID/sidecar migration for
+textures, meshes or arbitrary files, nor support for duplicating custom-WESL functions.
+
+The only new effect-session hook retargets Save after successfully renaming the currently
+open clean effect. It preserves the display name, exact saved-byte conflict baseline,
+history, playback state and selection rather than reopening or resetting the document.
+Dirty sources block submission; edits during rename preflight cancel publication. Saved
+Duplicate never replaces the active document and preserves later original edits.
+
+Tests cover the same list/grid menus and inline Rename for all three types, parent-effect
+reference resolution, canonical/legacy effect suffixes, duplicate identity/local wiring,
+source changes and collisions, open-effect Save after Rename, history/playback retention,
+dirty-before/dirty-during rejection and later draft edits during Duplicate. Native effect
+Rename/Duplicate acceptance remains pending; AB6b folder/move/recovery work is not enabled.
+
+Verification: 81 project tests and 640 editor unit tests plus the architecture test pass
+(two opt-in editor tests ignored). Strict all-target project/editor Clippy, formatting
+and diff checks pass. User-authored asset files remain untouched.

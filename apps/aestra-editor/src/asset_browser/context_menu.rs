@@ -52,13 +52,7 @@ fn spawn_menu(
                             BrowserAction::OpenSelected,
                         );
                     }
-                    if matches!(
-                        catalog.content().asset_for_source(source),
-                        Some(
-                            aestra_project::ProjectAssetId::MaterialProgram(_)
-                                | aestra_project::ProjectAssetId::MaterialFunction(_)
-                        )
-                    ) {
+                    if catalog.content().asset_operation_suffix(source).is_some() {
                         spawn_pointer_context_menu_item(
                             menu,
                             &localizer.text("browser-duplicate"),

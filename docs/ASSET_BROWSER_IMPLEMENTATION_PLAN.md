@@ -88,7 +88,9 @@ The first browser will not offer a warning-only “unsafe” bypass.
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
-AB4 is user-accepted. AB5 is in progress; AB6–AB9 are pending.
+AB4 and AB5 are user-accepted. AB6a is implemented for folder creation and supported
+single-asset operations (effects, materials and graph functions), with native effect
+operation acceptance pending. AB6b–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -581,7 +583,9 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** AB5b canvas parity and native acceptance:
-complete the creation catalog/typed inspectors and connection-gesture feedback, and verify
-pan/zoom, wiring, node movement and history in the app. Keep the transitional
-Library and do not introduce thumbnails/file mutations ahead of their milestones.
+marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
+records its later slices and AB6a implementation. **Immediate next step (P0):** native
+acceptance of shared effect/material/function filename Rename and saved Duplicate, then
+AB6b journaled operations and recovery. Folder rename/move and deletion stay disabled
+until the staged-write, rollback and restart-recovery gates pass. Keep the transitional
+Library until its remaining capabilities have tested replacements.

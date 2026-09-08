@@ -238,12 +238,8 @@ fn open(
         let Some(entry) = catalog.content().source(source) else {
             return;
         };
-        let suffix = match catalog.content().asset_for_source(source) {
-            Some(aestra_project::ProjectAssetId::MaterialProgram(_)) => ".aestra.material.ron",
-            Some(aestra_project::ProjectAssetId::MaterialFunction(_)) => {
-                ".aestra.material-function.ron"
-            }
-            _ => return,
+        let Some(suffix) = catalog.content().asset_operation_suffix(source) else {
+            return;
         };
         prompt.target = Some((
             entry
@@ -656,6 +652,22 @@ fn choose(
                 source,
                 name: prompt.name.clone(),
             };
+            // Resolve the open document before moving the file; canonical paths no
+            // longer resolve at the old location afterwards. Other assets share
+            // the workflow but need no effect-session path adjustment.
+            let renames_open_effect = catalog.content().asset_for_source(source)
+                == Some(aestra_project::ProjectAssetId::Effect(session.effect.id))
+                && session
+                    .source_path
+                    .as_ref()
+                    .and_then(|path| path.canonicalize().ok())
+                    .zip(
+                        catalog
+                            .content()
+                            .source(source)
+                            .and_then(|entry| entry.path.canonicalize().ok()),
+                    )
+                    .is_some_and(|(open, source)| open == source);
             let guard = IoGuard::capture(&catalog, &session);
             let submitted_target = prompt.target;
             let submitted_name = prompt.name.clone();
@@ -666,7 +678,7 @@ fn choose(
             io::enqueue(&mut commands, guard.clone(), move || {
                 let plan = prepared
                     .content()
-                    .plan_material_rename(request, &drafts, complete);
+                    .plan_asset_rename(request, &drafts, complete);
                 io::completion(move |world| {
                     let current = world.resource::<Prompt>();
                     if current.generation != submitted_generation {
@@ -704,6 +716,11 @@ fn choose(
                         state.locate(prepared.content(), entry.id);
                     }
                     if result.is_ok() {
+                        if renames_open_effect && let Ok(result) = &result {
+                            world
+                                .resource_mut::<EditorSession>()
+                                .accept_external_source_path(result.destination.clone());
+                        }
                         io::publish_catalog(world, prepared);
                         world.resource_scope(|world, mut prompt: Mut<Prompt>| {
                             prompt.pending = false;
@@ -729,7 +746,7 @@ fn choose(
         io::enqueue(&mut commands, guard.clone(), move || {
             let result = prepared
                 .content()
-                .plan_saved_material_duplicate(request, &drafts, complete)
+                .plan_saved_asset_duplicate(request, &drafts, complete)
                 .and_then(|plan| plan.apply());
             prepared.refresh();
             io::completion(move |world| {
@@ -789,6 +806,163 @@ fn choose(
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn effect_rename_retargets_save_without_resetting_document_and_guards_edits() {
+        for edit_phase in 0..3 {
+            let root = tempfile::tempdir().unwrap();
+            let old = root.path().join("original.aestra.ron");
+            let new = root.path().join("renamed.aestra.ron");
+            let effect = EffectAsset::new("Authored name", 2.0);
+            // Preserve noncanonical source bytes as well as semantic identity.
+            let bytes = format!("// authored comment\n{}\n", effect.to_pretty_ron().unwrap());
+            std::fs::write(&old, &bytes).unwrap();
+            let mut session = crate::test_support::session_with_timing_slack();
+            session.open(&old).unwrap();
+            session.execute(
+                "Name",
+                aestra_authoring::EffectCommand::SetEffectName {
+                    name: "Temporary".into(),
+                },
+                false,
+            );
+            session.undo();
+            assert!(session.can_redo());
+            session.seek_time(0.5);
+            session.playing = false;
+            let clock = session.clock;
+            let generation = session.history_generation();
+            if edit_phase == 1 {
+                session.execute(
+                    "Name",
+                    aestra_authoring::EffectCommand::SetEffectName {
+                        name: "Dirty before".into(),
+                    },
+                    false,
+                );
+            }
+            let catalog = ProjectEffectCatalog::scan(root.path());
+            let source = catalog
+                .content()
+                .unique_source_for_asset(aestra_project::ProjectAssetId::Effect(effect.id))
+                .unwrap()
+                .id;
+            let prompt = Prompt {
+                target: Some((
+                    catalog.content().source_tree().root(),
+                    catalog.content_revision(),
+                )),
+                duplicate: Some(source),
+                rename: true,
+                name: "renamed".into(),
+                suffix: ".aestra.ron".into(),
+                ..default()
+            };
+            let mut app = App::new();
+            app.insert_resource(catalog)
+                .insert_resource(session)
+                .insert_resource(prompt)
+                .insert_resource(AssetBrowserState::default())
+                .insert_resource(Localizer::new("en-US").unwrap())
+                .add_observer(choose);
+            let button = app.world_mut().spawn(Choice::Create).id();
+            app.world_mut().trigger(Activate { entity: button });
+            let mut completion = io::prepared_completion(app.world_mut());
+            if edit_phase == 2 {
+                app.world_mut().resource_mut::<EditorSession>().execute(
+                    "Name",
+                    aestra_authoring::EffectCommand::SetEffectName {
+                        name: "Dirty during".into(),
+                    },
+                    false,
+                );
+            }
+            completion.apply(app.world_mut());
+            let mut session = app.world_mut().resource_mut::<EditorSession>();
+            assert_eq!(old.exists(), edit_phase != 0);
+            assert_eq!(new.exists(), edit_phase == 0);
+            if edit_phase == 0 {
+                assert_eq!(session.effect, effect);
+                assert_eq!(session.source_path.as_ref(), Some(&new));
+                assert_eq!(session.history_generation(), generation);
+                assert_eq!(session.clock, clock);
+                assert!(!session.playing);
+                assert!(session.can_redo());
+                assert!(!session.effect_is_dirty());
+                assert_eq!(std::fs::read(&new).unwrap(), bytes.as_bytes());
+                // Save must use the new path and retain the exact source conflict baseline.
+                session.save().unwrap();
+                assert!(!old.exists());
+            } else {
+                assert_eq!(session.source_path.as_ref(), Some(&old));
+                assert!(session.effect_is_dirty());
+            }
+        }
+    }
+
+    #[test]
+    fn effect_duplicate_selects_copy_and_keeps_later_edits_in_open_original() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("original.aestra.ron");
+        let effect = EffectAsset::new("Original", 2.0);
+        effect.save_ron(&old).unwrap();
+        let mut session = crate::test_support::session_with_timing_slack();
+        session.open(&old).unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let source = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::Effect(effect.id))
+            .unwrap()
+            .id;
+        let prompt = Prompt {
+            target: Some((
+                catalog.content().source_tree().root(),
+                catalog.content_revision(),
+            )),
+            duplicate: Some(source),
+            name: "copy".into(),
+            suffix: ".aestra.ron".into(),
+            ..default()
+        };
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(session)
+            .insert_resource(prompt)
+            .insert_resource(AssetBrowserState::default())
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(choose);
+        let button = app.world_mut().spawn(Choice::Create).id();
+        app.world_mut().trigger(Activate { entity: button });
+        let mut completion = io::prepared_completion(app.world_mut());
+        app.world_mut().resource_mut::<EditorSession>().execute(
+            "Name",
+            aestra_authoring::EffectCommand::SetEffectName {
+                name: "Later edit".into(),
+            },
+            false,
+        );
+        completion.apply(app.world_mut());
+        let copy = EffectAsset::load_ron(root.path().join("copy.aestra.ron")).unwrap();
+        assert_ne!(copy.id, effect.id);
+        assert_eq!(copy.name, effect.name);
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.id, effect.id);
+        assert_eq!(session.effect.name, "Later edit");
+        assert_eq!(session.source_path.as_ref(), Some(&old));
+        assert!(session.effect_is_dirty());
+        assert!(session.can_undo());
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        let selected = catalog
+            .content()
+            .unique_source_for_asset(aestra_project::ProjectAssetId::Effect(copy.id))
+            .unwrap()
+            .id;
+        assert_eq!(
+            app.world().resource::<AssetBrowserState>().selected,
+            Some(selected)
+        );
+        assert_eq!(EffectAsset::load_ron(&old).unwrap(), effect);
+    }
+
     #[test]
     fn rename_failure_stays_visible_in_prompt_and_can_retry() {
         use aestra_core::material::MaterialProgram;

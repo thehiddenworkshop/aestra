@@ -979,6 +979,87 @@ fn keyboard_context_menu_and_escape_restore_list_focus() {
 }
 
 #[test]
+fn semantic_assets_share_menu_capabilities_and_inline_rename() {
+    for kind in 0..3 {
+        for view in [ViewMode::List, ViewMode::Grid] {
+            let root = tempfile::tempdir().unwrap();
+            let suffix = match kind {
+                0 => ".aestra.ron",
+                1 => ".aestra.material.ron",
+                _ => ".aestra.material-function.ron",
+            };
+            let path = root.path().join(format!("original{suffix}"));
+            match kind {
+                0 => EffectAsset::new("Authored name", 2.0)
+                    .save_ron(&path)
+                    .unwrap(),
+                1 => aestra_core::material::MaterialProgram::additive_sprite("Authored name")
+                    .save_ron(&path)
+                    .unwrap(),
+                _ => aestra_core::material::MaterialFunction::from_ron(include_str!(
+                    "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+                ))
+                .unwrap()
+                .save_ron(&path)
+                .unwrap(),
+            }
+            let bytes = std::fs::read(&path).unwrap();
+            let mut app = browser_app(root.path());
+            app.world_mut().resource_mut::<AssetBrowserState>().view = view;
+            app.update();
+            let list = list(&mut app);
+            app.world_mut()
+                .resource_mut::<InputFocus>()
+                .set(list, bevy::input_focus::FocusCause::Navigated);
+            key(&mut app, KeyCode::ContextMenu);
+            let world = app.world_mut();
+            let actions = world
+                .query::<&BrowserAction>()
+                .iter(world)
+                .collect::<Vec<_>>();
+            assert!(
+                actions
+                    .iter()
+                    .any(|action| matches!(action, BrowserAction::Rename(_, _)))
+            );
+            assert!(
+                actions
+                    .iter()
+                    .any(|action| matches!(action, BrowserAction::Duplicate(_, _)))
+            );
+            app.init_resource::<ButtonInput<KeyCode>>();
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::Escape);
+            app.update();
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .reset_all();
+            key(&mut app, KeyCode::F2);
+            let input = app.world().resource::<InputFocus>().get().unwrap();
+            let mut text = app
+                .world_mut()
+                .get_mut::<bevy::text::EditableText>(input)
+                .expect("shared inline editor");
+            assert_eq!(text.value(), "original");
+            text.editor_mut().set_text("renamed");
+            key(&mut app, KeyCode::Enter);
+            crate::project_content::io::drain(app.world_mut());
+            app.update();
+            assert!(
+                !path.exists(),
+                "kind={kind}: {}",
+                app.world().resource::<EditorSession>().status
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(format!("renamed{suffix}"))).unwrap(),
+                bytes
+            );
+        }
+    }
+}
+
+#[test]
 fn f2_edits_label_inline_and_escape_restores_it_in_both_views() {
     for view in [ViewMode::List, ViewMode::Grid] {
         let root = tempfile::tempdir().unwrap();

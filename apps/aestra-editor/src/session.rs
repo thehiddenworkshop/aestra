@@ -710,6 +710,13 @@ impl EditorSession {
     }
 
     /// Accepts a successful external rename of the clean source currently open in the editor.
+    /// Filename-only operations preserve the authored name, history and exact saved bytes.
+    pub(crate) fn accept_external_source_path(&mut self, path: PathBuf) {
+        self.source_path = Some(path);
+        self.ui_revision += 1;
+    }
+
+    /// Legacy Library rename changes both the filename and authored display name.
     ///
     /// Library asset operations save the renamed source atomically before updating the session,
     /// so this only realigns the in-memory document identity and clean baseline.

@@ -256,7 +256,7 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, OperationError> 
 impl ProjectContent {
     /// Host must recheck its draft/session guard immediately before apply. No path rewrites
     /// are supported: unknown references and known filename references block this operation.
-    pub fn plan_material_rename(
+    pub fn plan_asset_rename(
         &self,
         request: OperationRequest,
         drafts: &[(ProjectSourceId, DraftDocument)],
@@ -273,15 +273,9 @@ impl ProjectContent {
         let asset = self
             .asset_for_source(source)
             .ok_or_else(|| blocked("Unsupported source"))?;
-        let suffix = match asset {
-            ProjectAssetId::MaterialProgram(_) => ".aestra.material.ron",
-            ProjectAssetId::MaterialFunction(_) => ".aestra.material-function.ron",
-            _ => {
-                return Err(blocked(
-                    "Only materials and graph functions support filename Rename",
-                ));
-            }
-        };
+        let suffix = self
+            .asset_operation_suffix(source)
+            .ok_or_else(|| blocked("This asset does not support filename Rename"))?;
         if !valid_name(&name) {
             return Err(blocked("Use a portable filename stem"));
         }
@@ -295,17 +289,7 @@ impl ProjectContent {
         let fresh_entry = fresh
             .unique_source_for_asset(asset)
             .map_err(|_| blocked("Source changed; refresh first"))?;
-        let same = match (fresh.documents.get(&source), self.documents.get(&source)) {
-            (
-                Some(ProjectSourceDocument::MaterialProgram(a)),
-                Some(ProjectSourceDocument::MaterialProgram(b)),
-            ) => a == b,
-            (
-                Some(ProjectSourceDocument::MaterialFunction(a)),
-                Some(ProjectSourceDocument::MaterialFunction(b)),
-            ) => a == b,
-            _ => false,
-        };
+        let same = fresh.documents.get(&source) == self.documents.get(&source);
         if fresh_entry.id != source || !same {
             return Err(blocked("Source changed; refresh first"));
         }
@@ -438,7 +422,7 @@ mod tests {
             .unwrap();
         let content = ProjectContent::scan(root.path());
         let result = content
-            .plan_material_rename(
+            .plan_asset_rename(
                 request(
                     &content,
                     ProjectAssetId::MaterialProgram(program.id),
@@ -510,7 +494,7 @@ mod tests {
             "./original.aestra.material.ron",
         ));
         let error = content
-            .plan_material_rename(
+            .plan_asset_rename(
                 request(
                     &content,
                     ProjectAssetId::MaterialProgram(program.id),
@@ -622,7 +606,7 @@ mod tests {
         let asset = ProjectAssetId::MaterialProgram(program.id);
         assert!(
             content
-                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
                 .is_ok()
         );
         let owner = content
@@ -637,7 +621,7 @@ mod tests {
             .insert_str(0, "import package::external;\n");
         assert!(
             content
-                .plan_material_rename(
+                .plan_asset_rename(
                     request(&content, asset, "renamed"),
                     &[(owner, DraftDocument::Function(Box::new(function.clone())))],
                     true
@@ -648,13 +632,13 @@ mod tests {
         let content = ProjectContent::scan(root.path());
         assert!(
             content
-                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
                 .is_err()
         );
     }
 
     #[test]
-    fn bundled_project_supports_material_and_function_filename_rename() {
+    fn bundled_project_supports_shared_asset_filename_rename() {
         // Exercise the complete shipping project, not an empty synthetic folder:
         // icons, mesh, shader and custom-function sources must all be accounted for.
         // All publication happens in the temporary copy, never in the workspace.
@@ -671,11 +655,12 @@ mod tests {
             }
         }
         for filename in [
-            "dissolve_edge.aestra.material-function.ron",
-            "material_graph_lab.aestra.material.ron",
+            "materials/dissolve_edge.aestra.material-function.ron",
+            "materials/material_graph_lab.aestra.material.ron",
+            "effects/prism_bloom.aestra.ron",
         ] {
             let content = ProjectContent::scan(root.path());
-            let path = root.path().join("materials").join(filename);
+            let path = root.path().join(filename);
             let entry = content
                 .source_tree()
                 .entries()
@@ -684,7 +669,7 @@ mod tests {
             let asset = content.asset_for_source(entry.id).unwrap();
             let bytes = fs::read(&path).unwrap();
             let result = content
-                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
                 .unwrap()
                 .apply()
                 .unwrap();
@@ -694,6 +679,50 @@ mod tests {
             assert_eq!(
                 fresh.unique_source_for_asset(asset).unwrap().path,
                 result.destination
+            );
+        }
+    }
+
+    #[test]
+    fn effect_filename_rename_preserves_nested_references_and_rejects_dirty_sources() {
+        for filename in ["original.aestra.ron", "original.ron"] {
+            let root = tempfile::tempdir().unwrap();
+            let effect = EffectAsset::new("Authored name", 2.0);
+            let original = root.path().join(filename);
+            effect.save_ron(&original).unwrap();
+            let mut owner = EffectAsset::new("Parent", 2.0);
+            owner
+                .effect_clips
+                .push(aestra_core::EffectClip::new(effect.id, 0.0, 2.0));
+            owner
+                .save_ron(root.path().join("owner.aestra.ron"))
+                .unwrap();
+            let content = ProjectContent::scan(root.path());
+            let asset = ProjectAssetId::Effect(effect.id);
+            let source = content.unique_source_for_asset(asset).unwrap().id;
+            assert!(
+                content
+                    .plan_asset_rename(
+                        request(&content, asset, "renamed"),
+                        &[(source, DraftDocument::Effect(Box::new(effect.clone())))],
+                        true
+                    )
+                    .is_err()
+            );
+            let before = fs::read(&original).unwrap();
+            let result = content
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
+                .unwrap()
+                .apply()
+                .unwrap();
+            assert_eq!(fs::read(&result.destination).unwrap(), before);
+            assert_eq!(EffectAsset::load_ron(&result.destination).unwrap(), effect);
+            let fresh = ProjectContent::scan(root.path());
+            assert!(fresh.asset_index().resolve_effect_project(&owner).is_ok());
+            assert_eq!(result.destination.extension().unwrap(), "ron");
+            assert_eq!(
+                result.destination.file_name().unwrap(),
+                filename.replace("original", "renamed").as_str()
             );
         }
     }
@@ -710,7 +739,7 @@ mod tests {
             .unwrap();
         let content = ProjectContent::scan(root.path());
         let result = content
-            .plan_material_rename(
+            .plan_asset_rename(
                 request(
                     &content,
                     ProjectAssetId::MaterialFunction(function.id),
@@ -740,18 +769,18 @@ mod tests {
         for name in ["original", "ORIGINAL", "../escape", "NUL", ""] {
             assert!(
                 content
-                    .plan_material_rename(request(&content, asset, name), &[], true)
+                    .plan_asset_rename(request(&content, asset, name), &[], true)
                     .is_err()
             );
         }
         assert!(
             content
-                .plan_material_rename(request(&content, asset, "renamed"), &[], false)
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], false)
                 .is_err()
         );
         assert!(
             content
-                .plan_material_rename(
+                .plan_asset_rename(
                     request(&content, asset, "renamed"),
                     &[(source, DraftDocument::Program(Box::new(program)))],
                     true
@@ -759,13 +788,13 @@ mod tests {
                 .is_err()
         );
         let plan = content
-            .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+            .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
             .unwrap();
         fs::write(root.path().join("unknown.wgsl"), "unknown includes").unwrap();
         assert!(plan.apply().is_err());
         assert!(
             content
-                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .plan_asset_rename(request(&content, asset, "renamed"), &[], true)
                 .is_err()
         );
         assert!(original.exists());

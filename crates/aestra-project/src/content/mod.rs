@@ -138,7 +138,7 @@ impl ProjectContent {
 
 /// Documents are retained by source, not a second semantic registry. All identity/ambiguity
 /// decisions go through the single index built from these exact parses.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ProjectSourceDocument {
     Effect(Box<aestra_core::EffectAsset>),
     MaterialProgram(Box<aestra_core::material::MaterialProgram>),

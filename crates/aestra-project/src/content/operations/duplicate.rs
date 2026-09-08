@@ -1,6 +1,6 @@
 //! Single saved-asset duplication. This never rewrites a source or its users.
 use super::*;
-use aestra_core::{MaterialFunctionId, MaterialProgramId, material::*};
+use aestra_core::{EffectAsset, EffectId, MaterialFunctionId, MaterialProgramId, material::*};
 use std::io::Write;
 
 #[derive(Debug)]
@@ -33,13 +33,13 @@ fn read_source(root: &Path, source: &Path) -> Result<String, OperationError> {
 }
 
 impl ProjectContent {
-    /// Prepare a saved material/program copy. `name` is a filename stem, not a display name.
+    /// Prepare a saved semantic asset copy. `name` is a filename stem, not a display name.
     /// The host must provide every current draft at submission and explicitly present this as
     /// a saved-copy operation: later edits are not included and must not be discarded when
     /// publishing the result. Dirty target sources must be saved first. Other drafts/reverse
     /// references do not block this additive operation:
     /// no existing identity, path or dependency is rewritten. This is not rename/move preflight.
-    pub fn plan_saved_material_duplicate(
+    pub fn plan_saved_asset_duplicate(
         &self,
         request: OperationRequest,
         drafts: &[(ProjectSourceId, DraftDocument)],
@@ -76,7 +76,25 @@ impl ProjectContent {
             return Err(blocked("Source identity is ambiguous"));
         }
         let baseline = read_source(self.source_tree().root_path(), &entry.path)?;
-        let (serialized, asset, suffix) = match self.documents.get(&source) {
+        let suffix = self
+            .asset_operation_suffix(source)
+            .ok_or_else(|| blocked("This asset does not support saved duplication"))?;
+        let (serialized, asset) = match self.documents.get(&source) {
+            Some(ProjectSourceDocument::Effect(saved)) => {
+                let mut copy =
+                    EffectAsset::from_ron(&baseline).map_err(|e| blocked(&e.to_string()))?;
+                if &copy != saved.as_ref() {
+                    return Err(blocked("Source changed; refresh before duplicating"));
+                }
+                // The document owns its emitters, regions, events and resources. Preserve
+                // these local IDs and their wiring; project effect/material links stay shared.
+                // Only the project-level identity changes when copying the entire owner.
+                copy.id = EffectId::new();
+                (
+                    copy.to_pretty_ron().map_err(|e| blocked(&e.to_string()))?,
+                    crate::ProjectAssetId::Effect(copy.id),
+                )
+            }
             Some(ProjectSourceDocument::MaterialProgram(saved)) => {
                 let mut copy =
                     MaterialProgram::from_ron(&baseline).map_err(|e| blocked(&e.to_string()))?;
@@ -94,7 +112,6 @@ impl ProjectContent {
                 (
                     copy.to_pretty_ron().map_err(|e| blocked(&e.to_string()))?,
                     crate::ProjectAssetId::MaterialProgram(copy.id),
-                    ".aestra.material.ron",
                 )
             }
             Some(ProjectSourceDocument::MaterialFunction(saved)) => {
@@ -115,13 +132,10 @@ impl ProjectContent {
                 (
                     copy.to_pretty_ron().map_err(|e| blocked(&e.to_string()))?,
                     crate::ProjectAssetId::MaterialFunction(copy.id),
-                    ".aestra.material-function.ron",
                 )
             }
             _ => {
-                return Err(blocked(
-                    "Only saved materials and graph functions can be duplicated",
-                ));
+                return Err(blocked("This asset does not support saved duplication"));
             }
         };
         // Expression, parameter and signature IDs are owner-local. Keeping them preserves all
@@ -181,6 +195,82 @@ mod tests {
     }
 
     #[test]
+    fn effect_copy_has_a_new_owner_but_preserves_all_local_wiring_and_shared_links() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original.aestra.ron");
+        let effect = EffectAsset::from_ron(include_str!(
+            "../../../../../assets/effects/prism_bloom.aestra.ron"
+        ))
+        .unwrap();
+        effect.save_ron(&original).unwrap();
+        let bytes = fs::read(&original).unwrap();
+        let content = ProjectContent::scan(root.path());
+        let source = content
+            .unique_source_for_asset(crate::ProjectAssetId::Effect(effect.id))
+            .unwrap()
+            .id;
+        assert!(
+            content
+                .plan_saved_asset_duplicate(
+                    request(&content, source, "copy"),
+                    &[(source, DraftDocument::Effect(Box::new(effect.clone())))],
+                    true
+                )
+                .is_err()
+        );
+        let result = content
+            .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
+            .unwrap()
+            .apply()
+            .unwrap();
+        let mut copy = EffectAsset::load_ron(&result.created_source).unwrap();
+        let new_id = copy.id;
+        assert_ne!(new_id, effect.id);
+        assert_eq!(result.asset, crate::ProjectAssetId::Effect(new_id));
+        copy.id = effect.id;
+        assert_eq!(copy, effect); // Includes resources, events, clips, curves and renderer wiring.
+        copy.id = new_id;
+        copy.name = "Independent copy".into();
+        copy.save_ron(&result.created_source).unwrap();
+        assert_eq!(fs::read(original).unwrap(), bytes);
+        let fresh = ProjectContent::scan(root.path());
+        assert!(
+            fresh
+                .unique_source_for_asset(crate::ProjectAssetId::Effect(effect.id))
+                .is_ok()
+        );
+        assert!(fresh.unique_source_for_asset(result.asset).is_ok());
+    }
+
+    #[test]
+    fn effect_duplicate_revalidates_source_and_never_overwrites() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original.aestra.ron");
+        let mut effect = EffectAsset::new("Original", 2.0);
+        effect.save_ron(&original).unwrap();
+        let content = ProjectContent::scan(root.path());
+        let source = content
+            .unique_source_for_asset(crate::ProjectAssetId::Effect(effect.id))
+            .unwrap()
+            .id;
+        let plan = content
+            .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
+            .unwrap();
+        effect.name = "External edit".into();
+        effect.save_ron(&original).unwrap();
+        assert!(plan.apply().is_err());
+        assert!(!root.path().join("copy.aestra.ron").exists());
+        let content = ProjectContent::scan(root.path());
+        let plan = content
+            .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
+            .unwrap();
+        let destination = root.path().join("copy.aestra.ron");
+        fs::write(&destination, "existing bytes").unwrap();
+        assert!(plan.apply().is_err());
+        assert_eq!(fs::read_to_string(destination).unwrap(), "existing bytes");
+    }
+
+    #[test]
     fn copies_have_fresh_identity_but_keep_wiring_names_and_shared_references() {
         let root = tempfile::tempdir().unwrap();
         let function = MaterialFunction::from_ron(include_str!(
@@ -213,7 +303,7 @@ mod tests {
             let source = content.unique_source_for_asset(asset).unwrap().id;
             let before = fs::read(&path).unwrap();
             let result = content
-                .plan_saved_material_duplicate(request(&content, source, "copy"), &[], true)
+                .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
                 .unwrap()
                 .apply()
                 .unwrap();
@@ -250,15 +340,15 @@ mod tests {
             .unwrap()
             .id;
         let plan =
-            || content.plan_saved_material_duplicate(request(&content, source, "copy"), &[], true);
+            || content.plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true);
         assert!(
             content
-                .plan_saved_material_duplicate(request(&content, source, "copy"), &[], false)
+                .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], false)
                 .is_err()
         );
         assert!(
             content
-                .plan_saved_material_duplicate(
+                .plan_saved_asset_duplicate(
                     request(&content, source, "copy"),
                     &[(source, DraftDocument::Program(Box::new(program.clone())))],
                     true
@@ -296,7 +386,7 @@ mod tests {
             .unwrap()
             .id;
         let plan = content
-            .plan_saved_material_duplicate(request(&content, source, "copy"), &[], true)
+            .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
             .unwrap();
         fs::remove_file(&path).unwrap();
         assert!(plan.apply().is_err());
@@ -316,7 +406,7 @@ mod tests {
             .id;
         assert!(
             content
-                .plan_saved_material_duplicate(request(&content, source, "copy"), &[], true)
+                .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
                 .is_err()
         );
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
@@ -337,13 +427,13 @@ mod tests {
         for name in ["", "../outside", "CON", "with/slash", " trailing "] {
             assert!(
                 content
-                    .plan_saved_material_duplicate(request(&content, source, name), &[], true)
+                    .plan_saved_asset_duplicate(request(&content, source, name), &[], true)
                     .is_err()
             );
         }
         assert!(
             content
-                .plan_saved_material_duplicate(
+                .plan_saved_asset_duplicate(
                     request(&content, content.source_tree().root(), "copy"),
                     &[],
                     true
@@ -352,7 +442,7 @@ mod tests {
         );
         assert!(
             content
-                .plan_saved_material_duplicate(
+                .plan_saved_asset_duplicate(
                     OperationRequest::Duplicate {
                         source,
                         parent: source,
@@ -369,7 +459,7 @@ mod tests {
         let content = ProjectContent::scan(root.path());
         assert!(
             content
-                .plan_saved_material_duplicate(request(&content, source, "copy"), &[], true)
+                .plan_saved_asset_duplicate(request(&content, source, "copy"), &[], true)
                 .is_err()
         );
     }

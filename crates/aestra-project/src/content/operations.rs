@@ -24,6 +24,29 @@ pub struct ReferencePreflight {
 }
 
 impl ProjectContent {
+    /// One capability/format boundary for filename operations. UI code should not
+    /// duplicate the supported-type list. A suffix is not authorization: planners
+    /// still check identity, drafts, references and the current filesystem.
+    pub fn asset_operation_suffix(&self, source: ProjectSourceId) -> Option<&'static str> {
+        match self.documents.get(&source)? {
+            ProjectSourceDocument::Effect(_) => {
+                if self
+                    .source(source)?
+                    .name
+                    .to_string_lossy()
+                    .ends_with(".aestra.ron")
+                {
+                    Some(".aestra.ron")
+                } else {
+                    Some(".ron")
+                }
+            }
+            ProjectSourceDocument::MaterialProgram(_) => Some(".aestra.material.ron"),
+            ProjectSourceDocument::MaterialFunction(_) => Some(".aestra.material-function.ron"),
+            ProjectSourceDocument::MaterialPreset(_) => None,
+        }
+    }
+
     /// Read-only inventory over this snapshot and explicit host drafts. The host must include
     /// every open/unsaved document and report false when its draft inventory is incomplete.
     /// Fresh disk/source-byte revalidation is still required by the eventual operation planner.
