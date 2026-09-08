@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn function_inspection_save_does_not_save_the_effect() {
+    let directory = tempfile::tempdir().unwrap();
+    let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
+        "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(
+            directory
+                .path()
+                .join("function.aestra.material-function.ron"),
+        )
+        .unwrap();
+    let (mut app, _, _) = setup(directory.path());
+    let catalog = app.world().resource::<ProjectEffectCatalog>().clone();
+    let effect = {
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        session.adjust_effect_duration(0.25);
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        session.effect.clone()
+    };
+    for action in [DocumentAction::Save, DocumentAction::SaveAs] {
+        app.world_mut().trigger(action);
+        app.world_mut().flush();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect, effect);
+        assert!(session.effect_is_dirty());
+        assert!(session.source_path.is_none());
+        assert!(session.status.contains("Function inspection is read-only"));
+    }
+}
+
+#[test]
 fn material_save_does_not_write_a_dirty_named_effect_or_launch_save_as() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, first, _) = setup(directory.path());

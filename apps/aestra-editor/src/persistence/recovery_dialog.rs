@@ -181,6 +181,9 @@ fn description(candidate: &RecoveryCandidate, localizer: &Localizer, now: System
     args.set("age", age);
     args.set("count", candidate.material_drafts().count().to_string());
     let context = match candidate.material_target() {
+        crate::material_document::MaterialEditingTarget::Function { id, .. } => {
+            format!("Function: {id}")
+        }
         crate::material_document::MaterialEditingTarget::EffectInstance => {
             localizer.text_with("persistence-recovery-effect", &args)
         }

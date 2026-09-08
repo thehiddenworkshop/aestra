@@ -431,6 +431,12 @@ Delivery slices:
 - **AB5b — Editor target and UI:** source-identity open routing, typed signature/body
   controls, call-site diagnostics, scoped history and dependent preview invalidation.
   Custom WESL gets signature/diagnostics/read-only source inspection, no fabricated graph.
+  First slice implemented: Enter/double-click opens a root-scoped function target without
+  replacing the effect. A read-only inspector shows signatures/defaults, structural graph
+  data or custom-WESL source, and projection diagnostics. Save and history are guarded
+  against acting on the effect. Interactive signature/body controls, scoped function
+  history and dependent draft-preview invalidation remain pending; this is not the
+  complete AB5b gate.
 - **AB5c — Persistence and acceptance:** function-only Save/guarded Reload, conflicts,
   target recovery, moved/missing sources and the full exit gate below.
 
@@ -560,6 +566,7 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** AB5b function-target open routing and
-editor integration using the function-native authoring contracts. Keep the transitional
+marked tested. **Immediate next step (P1):** AB5b interactive signature/body controls,
+function-scoped history and dependent preview invalidation, building on the read-only
+function target/inspector. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

@@ -529,6 +529,12 @@ fn execute_document_action(
         return;
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
+        if session.standalone_function().is_some() {
+            session.status =
+                "Function inspection is read-only; function saving is not yet available".into();
+            session.ui_revision += 1;
+            return;
+        }
         if session.standalone_material().is_some() {
             if *action == DocumentAction::SaveAs {
                 session.status = localizer.text("material-save-as-unavailable");

@@ -156,6 +156,7 @@ impl MaterialProgramEditHistory {
         }
         match &session.material_target {
             crate::material_document::MaterialEditingTarget::EffectInstance => self,
+            crate::material_document::MaterialEditingTarget::Function { .. } => self,
             crate::material_document::MaterialEditingTarget::Program { root, id } => {
                 self.standalone.entry((root.clone(), *id)).or_default()
             }
@@ -168,6 +169,7 @@ impl MaterialProgramEditHistory {
         }
         match &session.material_target {
             crate::material_document::MaterialEditingTarget::EffectInstance => Some(self),
+            crate::material_document::MaterialEditingTarget::Function { .. } => None,
             crate::material_document::MaterialEditingTarget::Program { root, id } => {
                 self.standalone.get(&(root.clone(), *id))
             }
@@ -627,6 +629,12 @@ fn execute_history_action(
     mut material_history: ResMut<MaterialProgramEditHistory>,
     mut ledger: ResMut<EditorHistoryLedger>,
 ) {
+    if session.standalone_function().is_some() {
+        session.status =
+            "Function inspection is read-only; return to the effect to use its history".into();
+        session.ui_revision += 1;
+        return;
+    }
     match ledger.capture_effect_changes(&session) {
         EffectHistoryChange::Reset => material_history.clear(),
         EffectHistoryChange::Edited => material_history.clear_redo(),
@@ -759,8 +767,9 @@ fn update_history_availability(
         return;
     }
     for (entity, undo, redo) in &items {
-        let enabled = if session.standalone_material().is_some() && session.material_history_active
-        {
+        let enabled = if session.standalone_function().is_some() {
+            false
+        } else if session.standalone_material().is_some() && session.material_history_active {
             material_history
                 .for_target(&session)
                 .is_some_and(|history| {

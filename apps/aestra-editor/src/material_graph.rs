@@ -3392,6 +3392,47 @@ pub(crate) fn spawn_material_graph_workspace(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
+    if session.standalone_function().is_some() {
+        parent
+            .spawn(Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            })
+            .with_children(|panel| {
+                spawn_header(panel, None, previews, true, localizer, asset_server);
+                let text = function_inspection_text(session, catalog);
+                spawn_vertical_scroll_area(
+                    panel,
+                    ScrollMemoryKey::MaterialFunctionInspector,
+                    Node {
+                        flex_grow: 1.0,
+                        min_height: Val::Px(0.0),
+                        min_width: Val::Px(0.0),
+                        padding: UiRect::all(Val::Px(12.0)),
+                        ..default()
+                    },
+                    |body| {
+                        body.spawn((
+                            Text::new(text),
+                            TextFont {
+                                font_size: 13.0.into(),
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_width: Val::Px(0.0),
+                                ..default()
+                            },
+                        ));
+                    },
+                );
+            });
+        return;
+    }
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -3550,6 +3591,48 @@ pub(crate) fn spawn_material_graph_workspace(
                 });
             }
         });
+}
+
+fn function_inspection_text(session: &EditorSession, catalog: &ProjectEffectCatalog) -> String {
+    let function = match session.graph_function(catalog) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let library = match catalog.material_functions() {
+        Ok(values) => aestra_compiler::MaterialFunctionLibrary::new(values),
+        Err(error) => return error,
+    };
+    let projection = MaterialCompiler.project_function_graph(&function, &library);
+    let mut text = format!(
+        "{} — Function inspection (read-only)\n\nInputs\n",
+        projection.name
+    );
+    for input in &projection.inputs {
+        text.push_str(&format!(
+            "{} [{:?}] — {:?}\n",
+            input.name, input.value_type, input.default
+        ));
+    }
+    text.push_str("\nOutputs\n");
+    for output in &projection.outputs {
+        text.push_str(&format!("{} [{:?}]\n", output.name, output.value_type));
+    }
+    match projection.body {
+        aestra_compiler::MaterialFunctionBodyProjection::Graph { nodes, edges } => {
+            text.push_str(&format!("\nGraph body — {} nodes, {} connections\nEditing controls are not yet available.\n", nodes.len(), edges.len()));
+            for node in nodes {
+                text.push_str(&format!("\n{}: {:?}\n", node.id, node.kind));
+            }
+        }
+        aestra_compiler::MaterialFunctionBodyProjection::CustomWesl(source) => {
+            text.push_str("\nCustom WESL source (read-only)\n\n");
+            text.push_str(&source.source);
+        }
+    }
+    if !projection.diagnostics.is_valid() {
+        text.push_str(&format!("\n\nDiagnostics\n{}", projection.diagnostics));
+    }
+    text
 }
 
 fn material_graph_palette_options(
@@ -3856,6 +3939,9 @@ fn selected_projection(
     ),
     String,
 > {
+    if session.standalone_function().is_some() {
+        return Err("Function inspection is active".into());
+    }
     if session.standalone_material().is_some() {
         let document = session.graph_authoring_document(catalog)?;
         let program = &document.programs[0];

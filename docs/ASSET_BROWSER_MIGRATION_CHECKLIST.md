@@ -630,5 +630,23 @@ indices, duplicate expressions, cyclic edits, redo preservation after rejected e
 default restoration and read-only custom WESL. AB5a authoring contracts are implemented;
 AB5b editor opening/controls and AB5c persistence/native acceptance remain pending.
 
+### AB5b function opening and inspection — 2026-09-08
+
+Function assets now open via Enter/double-click into an explicit root-scoped target,
+including unused functions. The active effect and emitter selection are preserved.
+The read-only inspector shows typed signatures/defaults, graph structure or custom-WESL
+source, and projection diagnostics; it does not yet provide an editable node canvas.
+Save/Save As and Undo/Redo cannot accidentally modify the effect from this target.
+Source ambiguity and wrong-root resolution fail explicitly. Existing recovery target
+serialization recognizes functions, but full function persistence/recovery acceptance
+remains AB5c. Native visual acceptance has not been performed for this slice.
+
+Automated coverage added for browser activation/reopening, preserved effect selection,
+source/root validation, target serialization and guarded Save/Save As. Interactive
+signature/body controls, function-scoped history and dependent previews remain AB5b work.
+
+Validation: editor suite passed (607 passed, 2 ignored); strict workspace/all-targets
+Clippy, formatting and `git diff --check` passed. Native UI inspection remains pending.
+
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.

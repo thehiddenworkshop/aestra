@@ -13,14 +13,69 @@ pub(crate) enum MaterialEditingTarget {
         root: PathBuf,
         id: MaterialProgramId,
     },
+    Function {
+        root: PathBuf,
+        id: aestra_core::MaterialFunctionId,
+    },
 }
 
 impl EditorSession {
     pub(crate) fn standalone_material(&self) -> Option<MaterialProgramId> {
         match &self.material_target {
+            MaterialEditingTarget::Function { .. } => None,
             MaterialEditingTarget::EffectInstance => None,
             MaterialEditingTarget::Program { id, .. } => Some(*id),
         }
+    }
+
+    pub(crate) fn standalone_function(&self) -> Option<aestra_core::MaterialFunctionId> {
+        match self.material_target {
+            MaterialEditingTarget::Function { id, .. } => Some(id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn open_material_function(
+        &mut self,
+        catalog: &ProjectEffectCatalog,
+        id: aestra_core::MaterialFunctionId,
+    ) -> Result<(), String> {
+        catalog
+            .content()
+            .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(id))
+            .map_err(|error| error.to_string())?;
+        let target = MaterialEditingTarget::Function {
+            root: catalog.root().to_owned(),
+            id,
+        };
+        if self.material_target != target {
+            self.material_target = target;
+            self.ui_revision += 1;
+        }
+        self.material_history_active = true;
+        Ok(())
+    }
+
+    pub(crate) fn graph_function(
+        &self,
+        catalog: &ProjectEffectCatalog,
+    ) -> Result<aestra_core::material::MaterialFunction, String> {
+        let MaterialEditingTarget::Function { root, id } = &self.material_target else {
+            return Err("No function selected".into());
+        };
+        if root != catalog.root() {
+            return Err("Function belongs to another project; reopen it from Assets".into());
+        }
+        // Resolve current source identity before consulting drafts.
+        catalog
+            .content()
+            .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(*id))
+            .map_err(|error| error.to_string())?;
+        catalog
+            .material_functions()?
+            .into_iter()
+            .find(|function| function.id == *id)
+            .ok_or_else(|| "Function unavailable".into())
     }
 
     pub(crate) fn open_material_program(
@@ -56,6 +111,7 @@ impl EditorSession {
         catalog: &ProjectEffectCatalog,
     ) -> Result<Vec<MaterialProgram>, String> {
         match &self.material_target {
+            MaterialEditingTarget::Function { .. } => Ok(Vec::new()),
             MaterialEditingTarget::EffectInstance => {
                 catalog.material_programs_for_effect(&self.effect)
             }
@@ -74,12 +130,16 @@ impl EditorSession {
         &self,
         catalog: &ProjectEffectCatalog,
     ) -> Result<MaterialAuthoringDocument, String> {
+        if self.standalone_function().is_some() {
+            self.graph_function(catalog)?;
+        }
         let programs = self.graph_material_programs(catalog)?;
-        let document = if self.standalone_material().is_some() {
-            MaterialAuthoringDocument::standalone(programs)
-        } else {
-            MaterialAuthoringDocument::new(self.effect.clone(), programs)
-        };
+        let document =
+            if self.standalone_material().is_some() || self.standalone_function().is_some() {
+                MaterialAuthoringDocument::standalone(programs)
+            } else {
+                MaterialAuthoringDocument::new(self.effect.clone(), programs)
+            };
         Ok(document.with_material_functions(catalog.material_functions()?))
     }
 }
@@ -88,6 +148,70 @@ impl EditorSession {
 mod tests {
     use super::*;
     use crate::test_support;
+
+    #[test]
+    fn function_target_rejects_ambiguous_and_wrong_root_sources() {
+        let root = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
+            "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        ))
+        .unwrap();
+        function
+            .save_ron(root.path().join("function.aestra.material-function.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = test_support::session_with_timing_slack();
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        let revision = session.ui_revision;
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        assert_eq!(session.ui_revision, revision);
+        assert!(
+            session
+                .graph_authoring_document(&catalog)
+                .unwrap()
+                .effect
+                .is_none()
+        );
+        assert!(
+            session
+                .graph_authoring_document(&catalog)
+                .unwrap()
+                .programs
+                .is_empty()
+        );
+        let encoded = ron::to_string(&session.material_target).unwrap();
+        assert_eq!(
+            ron::from_str::<MaterialEditingTarget>(&encoded).unwrap(),
+            session.material_target
+        );
+        assert!(
+            session
+                .graph_function(&ProjectEffectCatalog::scan(other.path()))
+                .is_err()
+        );
+        function
+            .save_ron(root.path().join("duplicate.aestra.material-function.ron"))
+            .unwrap();
+        catalog.refresh();
+        let target = session.material_target.clone();
+        assert!(
+            session
+                .open_material_function(&catalog, function.id)
+                .is_err()
+        );
+        assert!(session.graph_function(&catalog).is_err());
+        assert_eq!(session.material_target, target);
+        session.return_to_effect_material();
+        assert_eq!(
+            session.material_target,
+            MaterialEditingTarget::EffectInstance
+        );
+    }
 
     #[test]
     fn opening_unused_source_preserves_effect_and_uses_only_its_own_authoring_context() {

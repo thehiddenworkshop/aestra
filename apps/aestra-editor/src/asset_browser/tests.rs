@@ -20,6 +20,62 @@ const VERSION: ProjectContentVersion = ProjectContentVersion {
 };
 
 #[test]
+fn function_browser_activation_preserves_effect_and_reopens_same_target() {
+    let root = tempfile::tempdir().unwrap();
+    let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
+        "../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(root.path().join("unused.aestra.material-function.ron"))
+        .unwrap();
+    let mut app = browser_app(root.path());
+    app.init_resource::<WorkspaceLayout>();
+    let effect = app.world().resource::<EditorSession>().effect.clone();
+    let selection = app.world().resource::<EditorSession>().selection;
+    let source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("unused.aestra.material-function.ron"))
+        .unwrap()
+        .id;
+    let row = rows(&mut app)[&source];
+    click(&mut app, row, 1);
+    assert!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_function()
+            .is_none()
+    );
+    key(&mut app, KeyCode::Enter);
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_function(),
+        Some(function.id)
+    );
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .return_to_effect_material();
+    click(&mut app, row, 1);
+    click(&mut app, row, 2);
+    app.update();
+    let session = app.world().resource::<EditorSession>();
+    assert_eq!(session.standalone_function(), Some(function.id));
+    assert_eq!(session.effect, effect);
+    assert_eq!(session.selection, selection);
+    assert_eq!(
+        session
+            .graph_function(app.world().resource::<ProjectEffectCatalog>())
+            .unwrap(),
+        function
+    );
+}
+
+#[test]
 fn browser_reads_published_snapshot_even_when_sources_are_gone() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("textures")).unwrap();

@@ -354,7 +354,12 @@ fn update_file_menu_target(
 ) {
     let standalone = session.standalone_material().is_some();
     for (entity, action, mut node, accessible, children) in &mut items {
-        let display = if file_action_visible(*action, standalone) {
+        let inspection_action = session.standalone_function().is_some()
+            && matches!(
+                *action,
+                DocumentAction::Save | DocumentAction::SaveAs | DocumentAction::ReloadMaterial
+            );
+        let display = if !inspection_action && file_action_visible(*action, standalone) {
             Display::Flex
         } else {
             Display::None

@@ -254,6 +254,7 @@ fn candidate_is_newer_than_source(candidate: &RecoveryCandidate) -> bool {
         || matches!(
             candidate.material_target(),
             crate::material_document::MaterialEditingTarget::Program { .. }
+                | crate::material_document::MaterialEditingTarget::Function { .. }
         )
     {
         return true;

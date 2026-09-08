@@ -51,6 +51,10 @@ pub(super) fn spawn(
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
 ) -> bool {
+    if session.standalone_function().is_some() {
+        panel_heading(parent, "SHARED FUNCTION", "READ ONLY");
+        return true;
+    }
     let Some(id) = session.standalone_material() else {
         return false;
     };

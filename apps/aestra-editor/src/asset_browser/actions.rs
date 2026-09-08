@@ -23,6 +23,9 @@ pub(super) struct BrowserClickState(
 #[derive(Event)]
 pub(super) struct OpenMaterial(pub(super) aestra_core::MaterialProgramId);
 
+#[derive(Event)]
+pub(super) struct OpenFunction(pub(super) aestra_core::MaterialFunctionId);
+
 /// Shared semantic locate route for graph, property, and source-reference controls.
 #[derive(Component, Event, Clone, Copy)]
 pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
@@ -338,6 +341,32 @@ pub(super) fn open_source(
             .is_ok()
     {
         commands.trigger(OpenMaterial(program));
+    } else if let Some(ProjectAssetId::MaterialFunction(function)) = content.asset_for_source(id) {
+        commands.trigger(OpenFunction(function));
+    }
+}
+
+pub(super) fn open_function(
+    event: On<OpenFunction>,
+    mut session: ResMut<EditorSession>,
+    mut layout: ResMut<WorkspaceLayout>,
+    catalog: Res<ProjectEffectCatalog>,
+    io: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    protection: Option<Res<crate::persistence::DocumentProtectionState>>,
+) {
+    if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
+        return;
+    }
+    match session.open_material_function(&catalog, event.0) {
+        Ok(()) => {
+            session.status =
+                "Function opened for inspection; editing controls are not yet available".into();
+            reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
+        }
+        Err(error) => {
+            session.status = format!("Cannot open function: {error}");
+            session.ui_revision += 1;
+        }
     }
 }
 

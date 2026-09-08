@@ -12,6 +12,12 @@ pub(super) fn restore_candidate(
     let mut target = candidate.material_target().clone();
     let target_root = match &target {
         MaterialEditingTarget::EffectInstance => None,
+        MaterialEditingTarget::Function { root, id } => {
+            if id.is_nil() {
+                return Err("Recovered function has an invalid identity".into());
+            }
+            Some(root.as_path())
+        }
         MaterialEditingTarget::Program { root, id } => {
             if id.is_nil() {
                 return Err("Recovered material has an invalid identity".into());
@@ -66,12 +72,18 @@ pub(super) fn restore_candidate(
             ));
         }
     }
+    if let MaterialEditingTarget::Function { root, .. } = &mut target {
+        *root = prepared.root().to_owned();
+    }
     session.restore_recovery(
         candidate.effect().clone(),
         candidate.source_path().map(Path::to_owned),
     );
     session.set_material_drafts(drafts);
-    session.material_history_active = matches!(target, MaterialEditingTarget::Program { .. });
+    session.material_history_active = matches!(
+        target,
+        MaterialEditingTarget::Program { .. } | MaterialEditingTarget::Function { .. }
+    );
     session.material_target = target;
     if let Ok(project) = prepared.compile_project(&session.effect) {
         let _ = session.install_compiled_project_root(project.root);
