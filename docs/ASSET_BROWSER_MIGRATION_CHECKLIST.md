@@ -1019,3 +1019,54 @@ Rename/Duplicate acceptance remains pending; AB6b folder/move/recovery work is n
 Verification: 81 project tests and 640 editor unit tests plus the architecture test pass
 (two opt-in editor tests ignored). Strict all-target project/editor Clippy, formatting
 and diff checks pass. User-authored asset files remain untouched.
+
+### AB6b first slice: folder drops and atomic single-asset moves — 2026-09-08
+
+The user confirmed AB6a works and requested UE-style folder drag/drop. Browser assets
+can now be dropped onto tree folders or folder entries in list/grid views. A highlighted
+target and status explain basic destination eligibility; releasing opens the shared
+Feathers pointer menu with Move Here / Copy Here. Escape/outside-click cancels the menu;
+Escape also cancels a drag. Release clicks do not accidentally open the dragged asset.
+No filesystem mutation happens on drop alone.
+
+Effects, material programs and functions share the relocation planner used by Rename.
+Moves retain exact bytes and stable identity; copies use saved Duplicate with a new
+owner identity. Full preflight runs after choosing an action and rechecks current drafts,
+catalog/session guards, source bytes, project inventory, references, destination collisions,
+root containment and links before publication. A moved open effect retargets Save without
+resetting its authored data or playback. The catalog and browser locate the new source.
+
+Each move writes a byte-backup journal under `.aestra/asset-moves` before one exclusive,
+same-filesystem rename. This slice has only two atomic outcomes, not a multi-file rollback:
+source retained or destination published. On project open (and before another move),
+recovery verifies either exact-byte outcome and acknowledges the journal without changing
+asset files. Ambiguous/edited outcomes block further moves, preserve all files/backups,
+and report the journal location in the app status. Completed backup journals are retained;
+there is no destructive journal replay, automatic backup cleanup, or Ctrl+Z promise.
+
+Scope remains one supported semantic file within the same project/filesystem. Folder
+moves, arbitrary file moves, path-reference rewriting, multi-selection, recoverable delete,
+interactive ambiguous-recovery resolution and full multi-file rollback are not enabled.
+Native tree/grid/list drag/drop acceptance remains pending. Tests use temporary projects,
+including interrupted publication on both sides of the atomic rename, ambiguity/traversal
+rejection, unchanged byte/ID checks, menu cancellation and queued-edit guards.
+
+Verification: 85 project tests and 643 editor unit tests plus the architecture test pass
+(two opt-in editor tests ignored). Strict project/editor all-target Clippy, formatting
+and diff checks pass. No native interaction verification is claimed for this slice.
+
+### Asset drag visual feedback — 2026-09-08
+
+Dragging now displays a floating copy with the browser's asset icon, filename and type.
+It follows pointer events directly in the originating window's logical coordinates,
+outside the browser scroll clip. Every preview element ignores picking so it cannot
+obscure folder drop targets. The original row/tile keeps its position and dimensions;
+release, Escape, stale content or removal of the source row removes the copy before
+UI rendering. A drop still only opens Move Here / Copy Here; it does not mutate files.
+
+Layout regressions cover list/grid views at 1x, 1.5x and 2x display scale, immediate
+pointer tracking, non-intercepting descendants, unchanged source layout/bytes and
+release/Escape cleanup. Native visual acceptance remains pending.
+
+Verification: 644 editor unit tests plus the architecture test pass (two opt-in tests
+ignored); strict editor all-target Clippy and formatting checks pass.

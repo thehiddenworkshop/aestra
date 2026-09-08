@@ -1,6 +1,6 @@
 # Asset Browser delivery plan
 
-Status: updated 2026-09-07. AB0 contracts/inventory recorded and AB1
+Status: updated 2026-09-08. AB0 contracts/inventory recorded and AB1
 read-only content model implemented. AB2a background refresh/editor adapter and AB2b1
 cached semantic queries implemented. AB2b2 explicit-open/post-write background operations
 implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
@@ -89,8 +89,10 @@ Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
 slice; AB2a/AB2b1/AB2b2 and AB3a/AB3b are implemented. AB3c is user-accepted;
 AB4 and AB5 are user-accepted. AB6a is implemented for folder creation and supported
-single-asset operations (effects, materials and graph functions), with native effect
-operation acceptance pending. AB6b–AB9 remain pending.
+single-asset operations (effects, materials and graph functions); the user confirmed
+these work on 2026-09-08. AB6b has started with single semantic-file folder drops and
+journaled atomic moves; native drag/drop acceptance and the broader folder/rewrite/delete
+transaction gates remain pending. AB7–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -584,8 +586,8 @@ File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
-records its later slices and AB6a implementation. **Immediate next step (P0):** native
-acceptance of shared effect/material/function filename Rename and saved Duplicate, then
-AB6b journaled operations and recovery. Folder rename/move and deletion stay disabled
+records its later slices and AB6a implementation. AB6a was subsequently accepted by the
+user. **Immediate next step (P0):** native acceptance of single-asset Move Here / Copy
+Here folder drops, then AB6b multi-file transactions and recovery. Folder rename/move and deletion stay disabled
 until the staged-write, rollback and restart-recovery gates pass. Keep the transitional
 Library until its remaining capabilities have tested replacements.

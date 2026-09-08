@@ -231,7 +231,7 @@ pub(super) fn rows(app: &mut App) -> BTreeMap<aestra_project::ProjectSourceId, E
         .collect()
 }
 
-fn browser_layout_app(root: &Path, size: UVec2, scale_factor: f32) -> App {
+pub(super) fn browser_layout_app(root: &Path, size: UVec2, scale_factor: f32) -> App {
     use bevy::{
         app::{HierarchyPropagatePlugin, PropagateSet},
         camera::{ComputedCameraValues, RenderTargetInfo, Viewport},

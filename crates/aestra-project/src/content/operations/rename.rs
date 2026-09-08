@@ -1,4 +1,4 @@
-//! Filename-only, same-directory rename for fully understood semantic projects.
+//! Shared filename relocation for fully understood semantic projects.
 use super::*;
 use crate::ProjectAssetId;
 use std::collections::BTreeMap;
@@ -218,6 +218,7 @@ pub struct RenamePlan {
     source: PathBuf,
     inventory: BTreeMap<PathBuf, Vec<u8>>,
     asset: ProjectAssetId,
+    journaled: bool,
 }
 
 #[derive(Debug)]
@@ -262,12 +263,35 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<RenamePlan, OperationError> {
-        let OperationRequest::Rename { source, name } = request else {
-            return Err(blocked("Expected a rename request"));
+        self.plan_asset_relocation(request, drafts, complete, false)
+    }
+
+    /// Single-file, same-project move. Identity and bytes stay unchanged. Sources
+    /// requiring path-reference rewrites remain blocked, just as for rename.
+    pub fn plan_asset_move(
+        &self,
+        request: OperationRequest,
+        drafts: &[(ProjectSourceId, DraftDocument)],
+        complete: bool,
+    ) -> Result<RenamePlan, OperationError> {
+        self.plan_asset_relocation(request, drafts, complete, true)
+    }
+
+    fn plan_asset_relocation(
+        &self,
+        request: OperationRequest,
+        drafts: &[(ProjectSourceId, DraftDocument)],
+        complete: bool,
+        journaled: bool,
+    ) -> Result<RenamePlan, OperationError> {
+        let (source, rename, parent) = match request {
+            OperationRequest::Rename { source, name } if !journaled => (source, Some(name), None),
+            OperationRequest::Move { source, parent } if journaled => (source, None, Some(parent)),
+            _ => return Err(blocked("Expected a matching rename or move request")),
         };
         if !complete || drafts.iter().any(|(owner, _)| *owner == source) {
             return Err(blocked(
-                "Save the source and resolve pending drafts before renaming",
+                "Save the source and resolve pending drafts before renaming or moving",
             ));
         }
         let asset = self
@@ -275,14 +299,17 @@ impl ProjectContent {
             .ok_or_else(|| blocked("Unsupported source"))?;
         let suffix = self
             .asset_operation_suffix(source)
-            .ok_or_else(|| blocked("This asset does not support filename Rename"))?;
-        if !valid_name(&name) {
+            .ok_or_else(|| blocked("This asset does not support filename relocation"))?;
+        if rename.as_ref().is_some_and(|name| !valid_name(name)) {
             return Err(blocked("Use a portable filename stem"));
         }
         let entry = self
             .unique_source_for_asset(asset)
             .map_err(|_| blocked("Source identity is ambiguous"))?;
         let root = self.source_tree().root_path();
+        if journaled {
+            super::move_journal::recover(root)?;
+        }
         let baseline = inventory(root)?;
         let fresh = ProjectContent::scan(root);
         // Reject stale selected documents instead of silently renaming their replacements.
@@ -295,16 +322,19 @@ impl ProjectContent {
         }
         let report = fresh.reference_preflight_inner(source, drafts, complete, true);
         if let Some(reason) = report.incomplete.first() {
-            return Err(blocked(&format!("Rename blocked: {reason}")));
+            return Err(blocked(&format!("Relocation blocked: {reason}")));
         }
         if fs::metadata(&entry.path)?.permissions().readonly() {
             return Err(blocked("Source is read-only"));
         }
         let destination = fresh.plan_operation(OperationRequest::CreateFolder {
-            parent: entry
-                .parent
+            parent: parent
+                .or(entry.parent)
                 .ok_or_else(|| blocked("Missing source parent"))?,
-            name: format!("{name}{suffix}"),
+            name: rename.map_or_else(
+                || entry.name.to_string_lossy().into_owned(),
+                |name| format!("{name}{suffix}"),
+            ),
         })?;
         if inventory(root)? != baseline {
             return Err(blocked("Project changed during preflight"));
@@ -314,6 +344,7 @@ impl ProjectContent {
             source: entry.path.clone(),
             inventory: baseline,
             asset,
+            journaled,
         })
     }
 }
@@ -329,7 +360,26 @@ impl RenamePlan {
             return Err(blocked("Source is read-only"));
         }
         vacant(&plan.parent, &plan.destination)?;
+        let journal = if self.journaled {
+            Some(super::move_journal::prepare(
+                &plan.root,
+                &self.source,
+                &plan.destination,
+            )?)
+        } else {
+            None
+        };
+        // Creating the journal must not hide a concurrent project change.
+        if inventory(&plan.root)? != self.inventory {
+            return Err(blocked("Project files changed; relocation cancelled"));
+        }
         rename_exclusive(&self.source, &plan.destination)?;
+        if let Some(journal) = journal {
+            // Publication already succeeded. Never report a failed move and leave
+            // the editor saving to the old path just because acknowledgement fails.
+            // The next recovery pass reconciles this exact-byte atomic outcome.
+            let _ = super::move_journal::finish(&journal);
+        }
         Ok(RenameResult {
             source: self.source,
             destination: plan.destination,
@@ -339,7 +389,7 @@ impl RenamePlan {
 }
 
 #[cfg(windows)]
-fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationError> {
+pub(super) fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationError> {
     use std::os::windows::ffi::OsStrExt;
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
     let destination: Vec<u16> = destination
@@ -348,7 +398,7 @@ fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationEr
         .chain(Some(0))
         .collect();
     // SAFETY: both pointers reference live NUL-terminated UTF-16 buffers. Zero flags means
-    // no replacement and no copy fallback; same-directory publication is a single rename.
+    // no replacement and no copy fallback; same-filesystem publication is a single rename.
     if unsafe {
         windows_sys::Win32::Storage::FileSystem::MoveFileExW(
             source.as_ptr(),
@@ -363,7 +413,7 @@ fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationEr
 }
 
 #[cfg(target_os = "linux")]
-fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationError> {
+pub(super) fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationError> {
     rustix::fs::renameat_with(
         rustix::fs::CWD,
         source,
@@ -375,7 +425,7 @@ fn rename_exclusive(source: &Path, destination: &Path) -> Result<(), OperationEr
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn rename_exclusive(_: &Path, _: &Path) -> Result<(), OperationError> {
+pub(super) fn rename_exclusive(_: &Path, _: &Path) -> Result<(), OperationError> {
     Err(blocked(
         "Exclusive rename is not implemented on this platform",
     ))
@@ -385,6 +435,82 @@ fn rename_exclusive(_: &Path, _: &Path) -> Result<(), OperationError> {
 mod tests {
     use super::*;
     use aestra_core::{EffectAsset, MaterialId, material::*};
+
+    #[test]
+    fn semantic_asset_moves_share_identity_bytes_and_destination_guards() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("destination")).unwrap();
+        let effect = EffectAsset::new("Effect", 1.0);
+        let program = MaterialProgram::additive_sprite("Material");
+        let function = MaterialFunction::from_ron(include_str!(
+            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        ))
+        .unwrap();
+        effect
+            .save_ron(root.path().join("effect.aestra.ron"))
+            .unwrap();
+        program
+            .save_ron(root.path().join("material.aestra.material.ron"))
+            .unwrap();
+        function
+            .save_ron(root.path().join("function.aestra.material-function.ron"))
+            .unwrap();
+        for asset in [
+            ProjectAssetId::Effect(effect.id),
+            ProjectAssetId::MaterialProgram(program.id),
+            ProjectAssetId::MaterialFunction(function.id),
+        ] {
+            let content = ProjectContent::scan(root.path());
+            let source = content.unique_source_for_asset(asset).unwrap();
+            let original = source.path.clone();
+            let bytes = fs::read(&original).unwrap();
+            let parent = content
+                .source_tree()
+                .at_relative_path(Path::new("destination"))
+                .unwrap()
+                .id;
+            let request = OperationRequest::Move {
+                source: source.id,
+                parent,
+            };
+            let plan = content.plan_asset_move(request.clone(), &[], true).unwrap();
+            // Replacing any project bytes after planning must cancel publication.
+            fs::write(&original, b"concurrent edit").unwrap();
+            assert!(plan.apply().is_err());
+            fs::write(&original, &bytes).unwrap();
+            let result = content
+                .plan_asset_move(request, &[], true)
+                .unwrap()
+                .apply()
+                .unwrap();
+            assert!(!original.exists());
+            assert_eq!(fs::read(&result.destination).unwrap(), bytes);
+            assert_eq!(result.asset, asset);
+            let fresh = ProjectContent::scan(root.path());
+            assert_eq!(
+                fresh.unique_source_for_asset(asset).unwrap().path,
+                result.destination
+            );
+            assert!(
+                fresh
+                    .plan_asset_move(
+                        OperationRequest::Move {
+                            source: fresh.unique_source_for_asset(asset).unwrap().id,
+                            parent
+                        },
+                        &[],
+                        true
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            ProjectContent::scan(root.path())
+                .recover_asset_moves()
+                .unwrap(),
+            0
+        );
+    }
 
     fn request(content: &ProjectContent, asset: ProjectAssetId, name: &str) -> OperationRequest {
         OperationRequest::Rename {

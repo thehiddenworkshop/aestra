@@ -400,7 +400,7 @@ fn item_node(view: ViewMode) -> Node {
     }
 }
 
-fn icon(
+pub(super) fn icon(
     parent: &mut ChildSpawnerCommands,
     assets: &AssetServer,
     path: &'static str,
@@ -1081,7 +1081,7 @@ fn sync_chrome(
     }
 }
 
-fn display_name(entry: &aestra_project::ProjectSourceEntry) -> String {
+pub(super) fn display_name(entry: &aestra_project::ProjectSourceEntry) -> String {
     let filename = entry.name.to_string_lossy();
     for suffix in [
         ".aestra.material-function.ron",
@@ -1096,7 +1096,7 @@ fn display_name(entry: &aestra_project::ProjectSourceEntry) -> String {
     filename.into_owned()
 }
 
-fn kind_color(kind: Kind) -> Color {
+pub(super) fn kind_color(kind: Kind) -> Color {
     match kind {
         Kind::Folder => Color::srgb(0.82, 0.66, 0.35),
         Kind::Effect => Color::srgb(0.66, 0.48, 1.0),

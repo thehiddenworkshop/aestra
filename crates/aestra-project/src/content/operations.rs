@@ -1,5 +1,6 @@
 //! Explicit mutation preflight. Document edits and filesystem operations are separate histories.
 mod duplicate;
+mod move_journal;
 mod rename;
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
 use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};

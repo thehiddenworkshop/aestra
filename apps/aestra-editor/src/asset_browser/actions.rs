@@ -289,8 +289,14 @@ pub(super) fn click_row(
     mut clicks: ResMut<BrowserClickState>,
     mut commands: Commands,
     editors: Query<(), With<super::operations::InlineRenameEditor>>,
+    drag: Res<super::drag_drop::AssetDrag>,
 ) {
     if event.button != PointerButton::Primary {
+        return;
+    }
+    if drag.suppress_click {
+        clicks.0 = None;
+        event.propagate(false);
         return;
     }
     // Resolve the row immediately, before another widget consumes the descendant click.
