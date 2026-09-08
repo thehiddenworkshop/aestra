@@ -340,6 +340,12 @@ fn reload_cancel_discard_and_save_are_scoped_to_selected_material() {
     assert!(!app.world().resource::<DocumentProtectionState>().is_open());
     assert_eq!(current(&app, first.id), saved);
     assert_eq!(draft_count(&app), 1);
+    assert_eq!(
+        app.world().resource::<EditorSession>().status,
+        app.world()
+            .resource::<Localizer>()
+            .text("material-reload-complete")
+    );
     assert!(
         app.world()
             .resource::<EditorSession>()
@@ -372,6 +378,29 @@ fn reload_resolves_moved_source_and_retains_draft_on_missing_or_malformed_source
     io::drain(app.world_mut());
     assert_eq!(draft_count(&app), 0);
     assert_eq!(current(&app, first.id), first);
+}
+
+#[test]
+fn reload_survives_preview_recompilation_without_authored_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, _, _) = setup(directory.path());
+    app.world_mut().trigger(DocumentAction::ReloadMaterial);
+    let mut completion = io::prepared_completion(app.world_mut());
+    let effect = app.world().resource::<EditorSession>().effect.clone();
+    let compiled = aestra_compiler::EffectCompiler::default()
+        .compile(&effect)
+        .unwrap();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .install_compiled_project_root(std::sync::Arc::new(compiled))
+        .unwrap();
+    completion.apply(app.world_mut());
+    assert_eq!(
+        app.world().resource::<EditorSession>().status,
+        app.world()
+            .resource::<Localizer>()
+            .text("material-reload-complete")
+    );
 }
 
 #[test]

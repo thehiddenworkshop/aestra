@@ -168,7 +168,7 @@ pub(super) fn queue_reload(
             Ok(())
         })();
         io::completion(move |world| {
-            if !guard.matches(
+            if !guard.matches_material_reload(
                 world.resource::<ProjectEffectCatalog>(),
                 world.resource::<EditorSession>(),
             ) {

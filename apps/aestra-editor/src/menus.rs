@@ -45,6 +45,7 @@ impl Plugin for EditorMenusPlugin {
             Update,
             (
                 update_menu_visibility,
+                update_file_menu_target,
                 update_grid_menu_check,
                 update_panel_visibility_labels,
             )
@@ -137,6 +138,9 @@ struct MenuDropdown(MenuKind);
 
 #[derive(Component)]
 struct MenuButton;
+
+#[derive(Component)]
+struct FileTargetItem;
 
 #[derive(Component)]
 struct GridMenuCheck;
@@ -285,17 +289,19 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                         ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
                         ("file-reload-material", "", DocumentAction::ReloadMaterial),
                     ] {
-                        if action == DocumentAction::ReloadMaterial && !standalone
-                            || action == DocumentAction::SaveAs && standalone
-                        {
-                            continue;
-                        }
                         let message_id = if action == DocumentAction::Save && standalone {
                             "file-save-material"
                         } else {
                             message_id
                         };
-                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
+                        let mut item = spawn_feathers_menu_item(
+                            dropdown, message_id, shortcut, action, localizer,
+                        );
+                        item.insert(FileTargetItem);
+                        if !file_action_visible(action, standalone) {
+                            item.entry::<Node>()
+                                .and_modify(|mut node| node.display = Display::None);
+                        }
                     }
                     dropdown
                         .spawn_empty()
@@ -319,6 +325,68 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                     );
                 });
         });
+}
+
+fn file_action_visible(action: DocumentAction, standalone: bool) -> bool {
+    match action {
+        DocumentAction::ReloadMaterial => standalone,
+        DocumentAction::SaveAs => !standalone,
+        _ => true,
+    }
+}
+
+/// Chrome is retained across graph target changes; update it without rebuilding menus.
+fn update_file_menu_target(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    localizer: Res<Localizer>,
+    mut items: Query<
+        (
+            Entity,
+            &DocumentAction,
+            &mut Node,
+            &AccessibleLabel,
+            &Children,
+        ),
+        With<FileTargetItem>,
+    >,
+    mut labels: Query<(&mut LocalizedText, &mut Text)>,
+) {
+    let standalone = session.standalone_material().is_some();
+    for (entity, action, mut node, accessible, children) in &mut items {
+        let display = if file_action_visible(*action, standalone) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != display {
+            node.display = display;
+        }
+        if *action != DocumentAction::Save {
+            continue;
+        }
+        let message = if standalone {
+            "file-save-material"
+        } else {
+            "file-save"
+        };
+        let label = localizer.text(message);
+        if accessible.0 != label {
+            commands
+                .entity(entity)
+                .insert(AccessibleLabel(label.clone()));
+        }
+        for child in children {
+            if let Ok((mut localized, mut text)) = labels.get_mut(*child) {
+                if localized.0 != message {
+                    localized.0 = message;
+                }
+                if text.0 != label {
+                    text.0 = label.clone();
+                }
+            }
+        }
+    }
 }
 
 fn spawn_standard_menu(
@@ -985,6 +1053,75 @@ fn update_panel_visibility_labels(
 mod tests {
     use super::*;
     use crate::test_support;
+
+    #[test]
+    fn retained_file_menu_tracks_material_target_in_both_directions() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+        ));
+        app.init_asset::<Font>();
+        app.insert_resource(test_support::session_with_timing_slack());
+        app.insert_resource(Localizer::new("en-US").unwrap());
+        app.add_systems(Update, update_file_menu_target);
+        let localizer = Localizer::new("en-US").unwrap();
+        app.world_mut()
+            .commands()
+            .spawn_empty()
+            .with_children(|parent| {
+                spawn_file_menu(parent, false, &localizer);
+            });
+        app.world_mut().flush();
+        let items = app
+            .world_mut()
+            .query_filtered::<(Entity, &DocumentAction), With<FileTargetItem>>()
+            .iter(app.world())
+            .map(|(entity, action)| (*action, entity))
+            .collect::<Vec<_>>();
+        assert_eq!(items.len(), 6, "all target-specific items must be retained");
+        for standalone in [false, true, false, true] {
+            app.world_mut()
+                .resource_mut::<EditorSession>()
+                .material_target = if standalone {
+                crate::material_document::MaterialEditingTarget::Program {
+                    root: std::path::PathBuf::from("fixture"),
+                    id: aestra_core::MaterialProgramId::new(),
+                }
+            } else {
+                crate::material_document::MaterialEditingTarget::EffectInstance
+            };
+            app.update();
+            for (action, entity) in &items {
+                assert_eq!(
+                    app.world().get::<Node>(*entity).unwrap().display != Display::None,
+                    file_action_visible(*action, standalone)
+                );
+                if *action == DocumentAction::Save {
+                    let message = if standalone {
+                        "file-save-material"
+                    } else {
+                        "file-save"
+                    };
+                    assert_eq!(
+                        app.world().get::<AccessibleLabel>(*entity).unwrap().0,
+                        localizer.text(message)
+                    );
+                    let children = app.world().get::<Children>(*entity).unwrap();
+                    let label = children
+                        .iter()
+                        .find(|child| app.world().get::<LocalizedText>(*child).is_some())
+                        .unwrap();
+                    assert_eq!(app.world().get::<LocalizedText>(label).unwrap().0, message);
+                    assert_eq!(
+                        app.world().get::<Text>(label).unwrap().0,
+                        localizer.text(message)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn menu_plugin_owns_initial_state_and_runs_without_spawned_chrome() {

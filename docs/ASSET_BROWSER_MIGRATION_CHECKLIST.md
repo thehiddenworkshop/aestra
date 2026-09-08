@@ -557,3 +557,24 @@ AZERTY/QWERTZ logical shortcuts and ordered AZERTY Undo/Redo with text-focus sup
 Validation: 602 editor tests passed (two opt-in tests ignored), including the final
 number-row/numpad compatibility cases. Strict workspace Clippy, formatting and diff
 checks passed. Architecture isolation also passed during this acceptance run.
+
+### AB4c2 native material lifecycle follow-up — 2026-09-08
+
+- Returning to the effect and reopening the same standalone material retained the
+  draft and effect context in the isolated acceptance project.
+- Fixed retained File menu entries failing to follow the active material/effect target.
+  The menu now exposes Save Material/Reload Material and hides effect-only Save As
+  without rebuilding its controls; bidirectional target-switch regression coverage added.
+- Reload Cancel retained the draft. Save initially wrote the source but falsely
+  cancelled the following Reload: preview recompilation advances the checkpoint revision.
+  A deterministic regression reproduced the exact native error. Material Reload now
+  checks authored content, target, catalog, drafts, locks, proposal and document identity
+  without rejecting preview-only invalidation. Other I/O retains revision checks.
+- Native Save-and-Reload then passed: the footer confirmed Reload, the name matched disk,
+  the material became Saved, and the effect stayed Unsaved.
+- Reload Discard and built-in read-only native acceptance remain pending. No AB5 work
+  started; AB4c2 is not complete. All native edits were confined to a generated fixture
+  under `target/material-recovery-smoke-*`, not the user's material files.
+
+Validation: 604 editor tests passed (two opt-in tests ignored), including all 12 material
+lifecycle cases. Strict workspace Clippy passed.

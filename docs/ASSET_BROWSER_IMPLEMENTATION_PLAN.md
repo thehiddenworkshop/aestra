@@ -535,6 +535,7 @@ Source diagnostics now use bounded summaries and a scrollable Details view; nati
 missing-source presentation and interrupted-session restoration of a UI-authored edit
 passed. Native testing also found and fixed missing normal Tab navigation and physical
 QWERTY letter shortcuts on AZERTY; material keyboard Undo/Redo and Save passed afterward.
-Next, finish effect-context return/reopen, remaining reload confirmation branches and
-built-in read-only native acceptance (see the migration checklist). Keep the transitional
+Effect-context return/reopen and Reload Cancel/Save now pass natively after fixing stale
+File menu actions and preview-only invalidation cancelling Reload. Next, finish Reload
+Discard and built-in read-only native acceptance (see the migration checklist). Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

@@ -59,10 +59,21 @@ impl IoGuard {
             && self.path == session.source_path
     }
     pub(crate) fn matches(&self, catalog: &EditorProjectContent, session: &EditorSession) -> bool {
+        self.revision == session.document_revision()
+            && self.matches_material_reload(catalog, session)
+    }
+
+    /// Material reload may overlap preview recompilation after Save publishes its catalog.
+    /// That invalidates simulation checkpoints, but does not change authored content.
+    /// Still reject changes to the document, target, catalog, drafts, locks or proposal.
+    pub(crate) fn matches_material_reload(
+        &self,
+        catalog: &EditorProjectContent,
+        session: &EditorSession,
+    ) -> bool {
         self.same_document(catalog, session)
             && self.material_target == session.material_target
             && self.version == catalog.version
-            && self.revision == session.document_revision()
             && self.effect == session.effect
             && self.locks == session.locks
             && self.pending.as_ref()
