@@ -596,3 +596,20 @@ target integration and guarded persistence remain subsequent AB5 work.
 
 Validation: the complete `aestra-authoring` test suite passed, including five new
 function-document contracts. Strict workspace Clippy, formatting and diff checks passed.
+
+### AB5a function projection and input defaults — 2026-09-08
+
+Added a function-native projection with stable signature IDs, authored expression nodes
+and input/output edges. Invalid sources are retained for repair; custom WESL returns its
+unaltered source/entry-point representation rather than a fake editable graph. This is
+structural projection, not per-node inferred-type/preview analysis or editor UI integration.
+
+Function inputs now carry an optional typed default. Existing files deserialize as required
+inputs and serialize without new fields when unset. Validation rejects mismatched/non-finite
+defaults; compiler expansion uses defaults only for omitted arguments (including custom WESL),
+while explicit arguments retain precedence. Node creation uses declared defaults before its
+existing type fallback. Existing Rust constructors explicitly retain required-input behavior.
+
+Core/compiler/authoring suites passed, followed by all 15 function compiler contracts;
+workspace all-target checking and strict Clippy passed. Granular function-body commands,
+editor target/UI and function persistence remain pending; no native function UI is claimed.

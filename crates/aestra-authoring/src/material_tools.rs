@@ -875,6 +875,7 @@ impl MaterialToolPlanner {
             let input_name = unique_signature_name(base, &mut used_names);
             function_inputs.push(MaterialFunctionInput {
                 id: input_id,
+                default: None,
                 name: input_name,
                 value_type,
             });

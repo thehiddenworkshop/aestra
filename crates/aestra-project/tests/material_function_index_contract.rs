@@ -19,6 +19,7 @@ fn identity_function(id: MaterialFunctionId) -> MaterialFunction {
         name: "Identity Float".into(),
         inputs: vec![MaterialFunctionInput {
             id: input,
+            default: None,
             name: "Value".into(),
             value_type: MaterialValueType::Float,
         }],

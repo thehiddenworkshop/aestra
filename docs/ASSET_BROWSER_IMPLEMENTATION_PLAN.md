@@ -419,8 +419,12 @@ Delivery slices:
   transactional undo/redo and non-mutating preflight are implemented. Preflight reports
   direct call sites in the supplied document and candidate diagnostics, including cycles;
   invalid edits never silently repair/drop arguments. Standalone tests require neither
-  effect nor program. Remaining: function-native graph projection/commands and a typed
-  default-value contract (the current function input schema has no defaults field).
+  effect nor program. Function-native projection now preserves typed signature IDs,
+  raw body nodes, named edges and broken references without synthesizing a program.
+  Custom WESL remains a separate read-only source representation. Optional typed defaults
+  now round-trip compatibly: omitted arguments use defaults, explicit arguments win,
+  and missing required inputs remain errors. Graph-call creation uses declared defaults.
+  Remaining: granular function-body graph commands and editor integration.
 - **AB5b — Editor target and UI:** source-identity open routing, typed signature/body
   controls, call-site diagnostics, scoped history and dependent preview invalidation.
   Custom WESL gets signature/diagnostics/read-only source inspection, no fabricated graph.
@@ -553,6 +557,6 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** continue AB5a function-native projection and
-default-value contracts, then AB5b editor integration. Keep the transitional
+marked tested. **Immediate next step (P1):** continue AB5a granular function-body graph
+commands, then AB5b editor integration. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

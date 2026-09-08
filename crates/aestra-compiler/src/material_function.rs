@@ -140,16 +140,19 @@ pub fn built_in_material_functions() -> Vec<MaterialFunction> {
         inputs: vec![
             MaterialFunctionInput {
                 id: normal_input,
+                default: None,
                 name: "Normal".to_owned(),
                 value_type: MaterialValueType::Vec3,
             },
             MaterialFunctionInput {
                 id: view_input,
+                default: None,
                 name: "View direction".to_owned(),
                 value_type: MaterialValueType::Vec3,
             },
             MaterialFunctionInput {
                 id: power_input,
+                default: None,
                 name: "Power".to_owned(),
                 value_type: MaterialValueType::Float,
             },
@@ -490,7 +493,24 @@ impl FunctionExpander<'_> {
         let mut bindings = BTreeMap::new();
         let mut ordered_arguments = Vec::new();
         for input in &function.inputs {
-            let Some(argument) = arguments.get(&input.id) else {
+            let expanded = if let Some(argument) = arguments.get(&input.id) {
+                match scope {
+                    Some((owner, owner_namespace, owner_bindings)) => {
+                        self.expand_function(owner, *argument, owner_namespace, owner_bindings)
+                    }
+                    None => self.expand_program(*argument),
+                }?
+            } else if let Some(default) = &input.default {
+                let id = derived_expression_id(
+                    namespace,
+                    MaterialExpressionId::from_u128(input.id.as_uuid().as_u128()),
+                );
+                self.output.push(MaterialExpression {
+                    id,
+                    kind: MaterialExpressionKind::Constant(default.clone()),
+                });
+                id
+            } else {
                 push_error(
                     &mut self.report,
                     DiagnosticCode::InvalidReference,
@@ -499,12 +519,6 @@ impl FunctionExpander<'_> {
                 );
                 continue;
             };
-            let expanded = match scope {
-                Some((owner, owner_namespace, owner_bindings)) => {
-                    self.expand_function(owner, *argument, owner_namespace, owner_bindings)
-                }
-                None => self.expand_program(*argument),
-            }?;
             bindings.insert(input.id, expanded);
             ordered_arguments.push(MaterialCustomWeslArgument {
                 expression: expanded,
@@ -785,6 +799,13 @@ fn validate_call_signature(
         .collect::<BTreeSet<_>>();
     let supplied = arguments.keys().copied().collect::<BTreeSet<_>>();
     for missing in declared.difference(&supplied) {
+        if function
+            .inputs
+            .iter()
+            .any(|input| input.id == *missing && input.default.is_some())
+        {
+            continue;
+        }
         push_error(
             report,
             DiagnosticCode::InvalidReference,

@@ -1355,6 +1355,7 @@ mod tests {
             name: "Extracted Function".into(),
             inputs: vec![MaterialFunctionInput {
                 id: input,
+                default: None,
                 name: "Value".into(),
                 value_type: MaterialValueType::Float,
             }],

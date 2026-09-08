@@ -1,6 +1,7 @@
 //! Module discovery, compiler validation, optimization, and typed lowering.
 
 mod material_function;
+mod material_function_graph;
 mod material_graph;
 mod material_ir;
 mod material_reflection;
@@ -9,6 +10,7 @@ mod normal_map;
 pub use normal_map::evaluate_normal_map;
 
 pub use material_function::*;
+pub use material_function_graph::*;
 pub use material_graph::*;
 pub use material_ir::*;
 pub use material_reflection::*;

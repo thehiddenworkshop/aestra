@@ -1486,11 +1486,14 @@ pub struct MaterialExpression {
     pub kind: MaterialExpressionKind,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MaterialFunctionInput {
     pub id: MaterialFunctionInputId,
     pub name: String,
     pub value_type: MaterialValueType,
+    /// Used only when a call omits this input. None keeps the input required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<MaterialValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1624,6 +1627,16 @@ impl MaterialFunction {
                 );
             }
             let name = input.name.trim().to_lowercase();
+            if let Some(default) = &input.default
+                && (!default.is_valid() || !input.value_type.accepts(default))
+            {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.default"),
+                    "function input default must be valid and match its declared type",
+                );
+            }
             if name.is_empty() {
                 error(
                     &mut report,

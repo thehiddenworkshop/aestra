@@ -28,11 +28,13 @@ fn scale_function() -> MaterialFunction {
         inputs: vec![
             MaterialFunctionInput {
                 id: value,
+                default: None,
                 name: "Value".into(),
                 value_type: MaterialValueType::Float,
             },
             MaterialFunctionInput {
                 id: scale,
+                default: None,
                 name: "Scale".into(),
                 value_type: MaterialValueType::Float,
             },
@@ -59,6 +61,125 @@ fn scale_function() -> MaterialFunction {
         ],
         custom_wesl: None,
     }
+}
+
+#[test]
+fn optional_arguments_use_defaults_but_explicit_arguments_win() {
+    let mut function = scale_function();
+    function.inputs[1].default = Some(MaterialValue::Float(0.25));
+    let library = MaterialFunctionLibrary::new([function.clone()]);
+    let mut program = calling_program(MaterialValue::Float(0.8));
+    let explicit = MaterialCompiler
+        .compile_with_functions(&program, &library)
+        .unwrap();
+    let MaterialExpressionKind::FunctionCall { arguments, .. } = &mut program.expressions[3].kind
+    else {
+        panic!()
+    };
+    arguments.remove(&function.inputs[1].id);
+    let defaulted = MaterialCompiler
+        .compile_with_functions(&program, &library)
+        .unwrap();
+    assert_ne!(explicit, defaulted);
+    assert_eq!(
+        defaulted,
+        MaterialCompiler
+            .compile_with_functions(&program, &library)
+            .unwrap()
+    );
+    // Supplying the same value explicitly must have the same constant-folded alpha.
+    let MaterialExpressionKind::FunctionCall { arguments, .. } = &mut program.expressions[3].kind
+    else {
+        panic!()
+    };
+    arguments.insert(
+        function.inputs[1].id,
+        MaterialExpressionId::from_u128(0xF103),
+    );
+    program.expressions[2].kind = MaterialExpressionKind::Constant(MaterialValue::Float(0.25));
+    let supplied = MaterialCompiler
+        .compile_with_functions(&program, &library)
+        .unwrap();
+    assert_eq!(
+        supplied.value(supplied.outputs.alpha).unwrap().instruction,
+        defaulted
+            .value(defaulted.outputs.alpha)
+            .unwrap()
+            .instruction
+    );
+}
+
+#[test]
+fn function_projection_keeps_signature_edges_and_invalid_sources() {
+    use aestra_compiler::{MaterialFunctionBodyProjection, MaterialFunctionGraphTarget};
+    let mut function = scale_function();
+    let missing = MaterialExpressionId::from_u128(0xdead);
+    function.outputs[0].expression = missing;
+    let projection =
+        MaterialCompiler.project_function_graph(&function, &MaterialFunctionLibrary::default());
+    assert_eq!(projection.inputs, function.inputs);
+    assert_eq!(projection.outputs, function.outputs);
+    assert!(projection.diagnostics.into_result().is_err());
+    let MaterialFunctionBodyProjection::Graph { nodes, edges } = projection.body else {
+        panic!()
+    };
+    assert_eq!(nodes, function.expressions);
+    assert!(edges.iter().any(|edge| edge.source == missing
+        && edge.target == MaterialFunctionGraphTarget::Output(function.outputs[0].id)));
+}
+
+#[test]
+fn custom_source_projection_is_not_an_editable_graph() {
+    use aestra_compiler::MaterialFunctionBodyProjection;
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let projection =
+        MaterialCompiler.project_function_graph(&function, &MaterialFunctionLibrary::default());
+    let MaterialFunctionBodyProjection::CustomWesl(source) = projection.body else {
+        panic!()
+    };
+    assert_eq!(Some(source), function.custom_wesl);
+}
+
+#[test]
+fn custom_wesl_omitted_arguments_lower_to_typed_defaults() {
+    let mut function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    for input in &mut function.inputs {
+        input.default = Some(MaterialValue::Float(0.3));
+    }
+    let mut program = custom_wesl_calling_program(&function);
+    for expression in &mut program.expressions {
+        if let MaterialExpressionKind::FunctionCall { arguments, .. } = &mut expression.kind {
+            arguments.clear();
+        }
+    }
+    let library = MaterialFunctionLibrary::new([function]);
+    assert!(
+        MaterialCompiler
+            .compile_with_functions(&program, &library)
+            .is_ok()
+    );
+}
+
+#[test]
+fn missing_required_input_is_still_an_error() {
+    let function = scale_function();
+    let mut program = calling_program(MaterialValue::Float(0.8));
+    let MaterialExpressionKind::FunctionCall { arguments, .. } = &mut program.expressions[3].kind
+    else {
+        panic!()
+    };
+    arguments.remove(&function.inputs[0].id);
+    assert!(
+        MaterialCompiler
+            .compile_with_functions(&program, &MaterialFunctionLibrary::new([function]))
+            .is_err()
+    );
 }
 
 fn calling_program(argument: MaterialValue) -> MaterialProgram {

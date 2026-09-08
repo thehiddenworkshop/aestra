@@ -735,11 +735,15 @@ fn append_graph_function_call(
         let expression = if Some(input.id) == source_input {
             source.expect("a selected function input requires a source")
         } else {
-            let value = default_value(input.value_type, false).ok_or_else(|| {
-                MaterialGraphNodeCreationError::FunctionInputDefaultUnavailable {
-                    input: input.name.clone(),
-                }
-            })?;
+            let value = input
+                .default
+                .clone()
+                .or_else(|| default_value(input.value_type, false))
+                .ok_or_else(
+                    || MaterialGraphNodeCreationError::FunctionInputDefaultUnavailable {
+                        input: input.name.clone(),
+                    },
+                )?;
             append_graph_constant(program, value)
         };
         arguments.insert(input.id, expression);
@@ -1264,7 +1268,9 @@ fn expression_ports(
         .collect()
 }
 
-fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, MaterialExpressionId)> {
+pub(crate) fn expression_inputs(
+    kind: &MaterialExpressionKind,
+) -> Vec<(&'static str, MaterialExpressionId)> {
     use MaterialExpressionKind as E;
     match kind {
         E::Constant(_) | E::Input(_) | E::Parameter(_) | E::FunctionInput(_) => Vec::new(),
