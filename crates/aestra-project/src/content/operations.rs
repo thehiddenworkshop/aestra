@@ -1,7 +1,9 @@
 //! Explicit mutation preflight. Document edits and filesystem operations are separate histories.
+mod duplicate;
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
 use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};
 use crate::ProjectSourceId;
+pub use duplicate::{DuplicatePlan, DuplicateResult};
 
 /// Host-supplied current documents, replacing saved references rather than adding stale ones.
 #[derive(Debug, Clone)]

@@ -865,3 +865,21 @@ Untitled/unresolved drafts, pending proposals, deletions and mismatched draft ro
 prevent a complete report. Authored draft changes invalidate the inspector's report;
 playback alone does not rebuild it. The report explicitly does not authorize mutation.
 Rename/move/duplicate remain blocked pending guarded semantic operation implementation.
+
+### AB6a saved material duplication backend — 2026-09-08
+
+An explicit draft-aware planner now supports a single saved material program or graph
+function duplicate. The filename stem is separate from the authored display name.
+The copy receives a fresh asset identity; owner-local expression/parameter/signature
+IDs, internal wiring and shared asset references remain unchanged. Dirty targets,
+incomplete host draft inventories, ambiguous identities, stale source documents,
+unsupported asset kinds and custom WESL are rejected. No existing users are rewritten,
+so unknown reverse references in unrelated assets do not block this additive operation.
+
+Publication stages and syncs a temporary file, rechecks source bytes, parent/link
+provenance and case-folded collisions, then uses exclusive no-overwrite persistence.
+Regression tests cover identity/wiring preservation, dirty/stale/deleted sources,
+invalid destinations, ambiguity, custom WESL and collision preservation/cleanup.
+This is not a multi-file journal or document Undo. The host must serialize its draft
+inventory through submission/completion. Browser Duplicate UI integration is next;
+generic operation dispatch still blocks duplication, and rename/move remain unavailable.

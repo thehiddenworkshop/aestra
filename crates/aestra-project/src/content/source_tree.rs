@@ -242,7 +242,7 @@ fn excluded(name: &std::ffi::OsStr) -> bool {
     })
 }
 
-fn is_link(metadata: &fs::Metadata) -> bool {
+pub(super) fn is_link(metadata: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
