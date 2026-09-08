@@ -49,6 +49,7 @@ pub(super) enum BrowserAction {
     Refresh,
     NewFolder,
     Duplicate(ProjectSourceId, ProjectContentVersion),
+    Rename(ProjectSourceId, ProjectContentVersion),
     OpenSelected,
     LocateCurrentEffect,
     LocateSource(ProjectSourceId, ProjectContentVersion),
@@ -129,10 +130,23 @@ pub(super) fn handle_action(
         }
         BrowserAction::OpenProject => commands.trigger(DocumentAction::OpenProject),
         BrowserAction::Refresh => commands.trigger(crate::library::LibraryAction::RefreshProject),
-        BrowserAction::NewFolder => commands.trigger(super::operations::OpenFolderPrompt(None)),
+        BrowserAction::NewFolder => {
+            commands.trigger(super::operations::OpenFolderPrompt(None, false))
+        }
         BrowserAction::Duplicate(source, version) => {
             if version == catalog.content_revision() {
-                commands.trigger(super::operations::OpenFolderPrompt(Some((source, version))));
+                commands.trigger(super::operations::OpenFolderPrompt(
+                    Some((source, version)),
+                    false,
+                ));
+            }
+        }
+        BrowserAction::Rename(source, version) => {
+            if version == catalog.content_revision() {
+                commands.trigger(super::operations::OpenFolderPrompt(
+                    Some((source, version)),
+                    true,
+                ));
             }
         }
         BrowserAction::OpenSelected => {
@@ -424,6 +438,11 @@ pub(super) fn keyboard(
         return;
     }
     match event.input.key_code {
+        KeyCode::F2 => {
+            if let Some(row) = active.0.and_then(|id| rows.get(id).ok()) {
+                commands.trigger(BrowserAction::Rename(row.0, catalog.content_revision()));
+            }
+        }
         KeyCode::Enter => {
             if let Some(row) = active.0.and_then(|id| rows.get(id).ok()) {
                 open_source(row.0, &catalog, &mut state, &mut commands);

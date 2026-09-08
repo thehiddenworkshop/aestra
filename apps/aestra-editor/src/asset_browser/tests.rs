@@ -979,6 +979,30 @@ fn keyboard_context_menu_and_escape_restore_list_focus() {
 }
 
 #[test]
+fn f2_opens_rename_prompt_without_renaming_or_opening_document() {
+    let root = tempfile::tempdir().unwrap();
+    let program = aestra_core::material::MaterialProgram::additive_sprite("Display name");
+    let path = root.path().join("original.aestra.material.ron");
+    program.save_ron(&path).unwrap();
+    let mut app = browser_app(root.path());
+    let effect = app.world().resource::<EditorSession>().effect.clone();
+    let list = list(&mut app);
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(list, bevy::input_focus::FocusCause::Navigated);
+    key(&mut app, KeyCode::F2);
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&Text>()
+            .iter(world)
+            .any(|text| text.0 == "Rename")
+    );
+    assert_eq!(world.resource::<EditorSession>().effect, effect);
+    assert!(path.exists());
+}
+
+#[test]
 fn rebuilding_browser_after_locate_does_not_steal_focus_back() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("source.png"), []).unwrap();

@@ -899,3 +899,28 @@ Regression coverage exercises the queued duplicate, selection, independent copy 
 preservation of the original/active effect and concurrent original drafts, and collision/
 dirty-source controls. Native right-click → Duplicate → open/edit acceptance remains
 pending. This slice does not enable effect duplication, rename or move.
+
+### AB6a conservative single-material filename Rename — 2026-09-08
+
+Material/function context menus and the focused asset-list F2 shortcut open Rename.
+The shared modal starts with the current filename stem; same-name/case-only collisions
+and empty names disable confirmation. Escape cancels. Display names, semantic IDs,
+graph signatures and source bytes are unchanged. Successful publication refreshes and
+selects the new source without replacing the active effect or material identity.
+
+The project planner accepts only same-directory material/program function renames in
+fully understood projects. Unknown formats/includes, contextual/unresolved references,
+path-backed effect assets (including potential path aliases), dirty target drafts,
+incomplete draft inventory and ambiguous identities block the operation with a reason.
+This is intentionally conservative: projects containing such assets need AB6b analysis
+before Rename can proceed. There is no warning-only bypass or legacy rename fallback.
+
+Background planning inventories project bytes; completion rechecks the editor guard
+before synchronous final backend revalidation/publication. New/deleted/edited files,
+read-only sources, links and destination collisions cancel. Windows uses MoveFileExW
+without replacement; Linux uses RENAME_NOREPLACE. Other platforms explicitly reject
+apply. No multi-file rewriting, folder rename, move, or Ctrl+Z support is claimed.
+Tests cover preserved effect resolution/signatures, original bytes/display names,
+collision refusal, incomplete/stale analysis and draft changes during preparation.
+Windows automated verification is provided; Linux and native F2/menu acceptance remain
+pending.

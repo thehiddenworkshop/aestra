@@ -10,7 +10,10 @@ use bevy::input_focus::{FocusCause, FocusedInput, InputFocus};
 use bevy::ui_widgets::{Activate, ValueChange};
 
 #[derive(Event)]
-pub(super) struct OpenFolderPrompt(pub Option<(ProjectSourceId, ProjectContentVersion)>);
+pub(super) struct OpenFolderPrompt(
+    pub Option<(ProjectSourceId, ProjectContentVersion)>,
+    pub bool,
+);
 #[derive(Component)]
 struct NameField;
 #[derive(Component)]
@@ -61,7 +64,11 @@ fn sync_controls(
         };
         if let Some(localizer) = &localizer {
             text.0 = localizer.text(if draft_block {
-                "browser-duplicate-save-first"
+                if prompt.rename {
+                    "browser-rename-save-first"
+                } else {
+                    "browser-duplicate-save-first"
+                }
             } else {
                 "browser-folder-exists"
             });
@@ -114,6 +121,7 @@ struct Prompt {
     name: String,
     duplicate: Option<ProjectSourceId>,
     suffix: String,
+    rename: bool,
 }
 
 pub(super) fn register(app: &mut App) {
@@ -136,6 +144,7 @@ fn open(
         return;
     }
     prompt.duplicate = None;
+    prompt.rename = event.1;
     prompt.suffix.clear();
     prompt.target = Some((
         state.folder_id(catalog.content()),
@@ -164,13 +173,25 @@ fn open(
         ));
         prompt.duplicate = Some(source);
         prompt.suffix = suffix.into();
+        if prompt.rename {
+            prompt.name = entry
+                .name
+                .to_string_lossy()
+                .strip_suffix(suffix)
+                .unwrap_or_default()
+                .into();
+        }
     }
-    let title = if prompt.duplicate.is_some() {
+    let title = if prompt.rename {
+        "browser-rename"
+    } else if prompt.duplicate.is_some() {
         "browser-duplicate"
     } else {
         "browser-new-folder"
     };
-    let label = if prompt.duplicate.is_some() {
+    let label = if prompt.rename {
+        "browser-rename-name"
+    } else if prompt.duplicate.is_some() {
         "browser-duplicate-name"
     } else {
         "browser-folder-name"
@@ -225,7 +246,7 @@ fn open(
                     ));
                     let field = crate::feathers::text_input::spawn_text_input(
                         panel,
-                        "",
+                        &prompt.name,
                         &localizer.text(label),
                         NameField,
                     );
@@ -245,7 +266,9 @@ fn open(
                     ));
                     crate::feathers::button::spawn_action_button(
                         panel,
-                        &localizer.text(if prompt.duplicate.is_some() {
+                        &localizer.text(if prompt.rename {
+                            "browser-rename"
+                        } else if prompt.duplicate.is_some() {
                             "browser-duplicate"
                         } else {
                             "browser-folder-create"
@@ -321,6 +344,46 @@ fn choose(
     }
     if let Some(source) = prompt.duplicate {
         let (drafts, complete) = super::inspection::draft_inventory(&catalog, &session);
+        if prompt.rename {
+            let request = OperationRequest::Rename {
+                source,
+                name: prompt.name.clone(),
+            };
+            let guard = IoGuard::capture(&catalog, &session);
+            let mut prepared = catalog.clone();
+            io::enqueue(&mut commands, guard.clone(), move || {
+                let plan = prepared
+                    .content()
+                    .plan_material_rename(request, &drafts, complete);
+                io::completion(move |world| {
+                    // A destructive path change must not commit against drafts edited during planning.
+                    if !guard.matches_material_reload(
+                        world.resource::<ProjectEffectCatalog>(),
+                        world.resource::<EditorSession>(),
+                    ) {
+                        io::set_status(world, "project-operation-queued-cancelled");
+                        return;
+                    }
+                    let result = plan.and_then(|plan| plan.apply());
+                    prepared.refresh();
+                    let status = match &result {
+                        Ok(result) => format!("Renamed file: {}", result.destination.display()),
+                        Err(error) => format!("Rename failed: {error}"),
+                    };
+                    if let Ok(result) = &result
+                        && let Ok(entry) = prepared.content().unique_source_for_asset(result.asset)
+                        && let Some(mut state) = world.get_resource_mut::<AssetBrowserState>()
+                    {
+                        state.reconcile(prepared.content(), prepared.content_revision());
+                        state.locate(prepared.content(), entry.id);
+                    }
+                    io::publish_catalog(world, prepared);
+                    world.resource_mut::<EditorSession>().status = status;
+                })
+            });
+            close(&mut commands, &mut prompt);
+            return;
+        }
         let request = OperationRequest::Duplicate {
             source,
             parent,
@@ -391,6 +454,67 @@ fn choose(
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn rename_selects_same_asset_and_cancels_if_drafts_change_during_preflight() {
+        use aestra_core::material::MaterialProgram;
+        for edit_during_preflight in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let program = MaterialProgram::additive_sprite("Display name");
+            let old = directory.path().join("original.aestra.material.ron");
+            let new = directory.path().join("renamed.aestra.material.ron");
+            program.save_ron(&old).unwrap();
+            let catalog = ProjectEffectCatalog::scan(directory.path());
+            let asset = aestra_project::ProjectAssetId::MaterialProgram(program.id);
+            let source = catalog.content().unique_source_for_asset(asset).unwrap().id;
+            let prompt = Prompt {
+                target: Some((
+                    catalog.content().source_tree().root(),
+                    catalog.content_revision(),
+                )),
+                duplicate: Some(source),
+                rename: true,
+                name: "renamed".into(),
+                suffix: ".aestra.material.ron".into(),
+                ..default()
+            };
+            let session = crate::test_support::session_with_timing_slack();
+            let effect = session.effect.clone();
+            let mut app = App::new();
+            app.insert_resource(catalog)
+                .insert_resource(prompt)
+                .insert_resource(session)
+                .insert_resource(AssetBrowserState::default())
+                .insert_resource(Localizer::new("en-US").unwrap())
+                .add_observer(choose);
+            let button = app.world_mut().spawn(Choice::Create).id();
+            app.world_mut().trigger(Activate { entity: button });
+            let mut completion = io::prepared_completion(app.world_mut());
+            if edit_during_preflight {
+                let mut draft = program.clone();
+                draft.name = "New draft".into();
+                app.world_mut()
+                    .resource_mut::<ProjectEffectCatalog>()
+                    .replace_material_program(&program, &draft)
+                    .unwrap();
+            }
+            completion.apply(app.world_mut());
+            assert_eq!(old.exists(), edit_during_preflight);
+            assert_eq!(new.exists(), !edit_during_preflight);
+            assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+            if !edit_during_preflight {
+                let catalog = app.world().resource::<ProjectEffectCatalog>();
+                let selected = catalog.content().unique_source_for_asset(asset).unwrap().id;
+                assert_eq!(
+                    app.world().resource::<AssetBrowserState>().selected,
+                    Some(selected)
+                );
+                assert_eq!(
+                    MaterialProgram::load_ron(&new).unwrap().name,
+                    "Display name"
+                );
+            }
+        }
+    }
     #[test]
     fn duplicate_selects_independent_copy_and_preserves_active_document() {
         use aestra_core::material::MaterialProgram;

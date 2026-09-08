@@ -1,9 +1,11 @@
 //! Explicit mutation preflight. Document edits and filesystem operations are separate histories.
 mod duplicate;
+mod rename;
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
 use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};
 use crate::ProjectSourceId;
 pub use duplicate::{DuplicatePlan, DuplicateResult};
+pub use rename::{RenamePlan, RenameResult};
 
 /// Host-supplied current documents, replacing saved references rather than adding stale ones.
 #[derive(Debug, Clone)]
@@ -93,6 +95,24 @@ impl ProjectContent {
             {
                 report.incomplete.push(format!(
                     "Custom WESL include semantics are unknown for {}",
+                    entry.relative_path.display()
+                ));
+            }
+            let expressions = match projected.documents.get(&entry.id) {
+                Some(ProjectSourceDocument::MaterialProgram(value)) => value.expressions.as_slice(),
+                Some(ProjectSourceDocument::MaterialFunction(value)) => {
+                    value.expressions.as_slice()
+                }
+                _ => &[],
+            };
+            if expressions.iter().any(|expression| {
+                matches!(
+                    expression.kind,
+                    aestra_core::material::MaterialExpressionKind::CustomWeslCall { .. }
+                )
+            }) {
+                report.incomplete.push(format!(
+                    "Custom WESL call semantics are unknown for {}",
                     entry.relative_path.display()
                 ));
             }
