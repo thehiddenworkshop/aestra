@@ -19,7 +19,6 @@ use crate::{
         },
         number_input::ScrubbableNumber,
         panel::spawn_panel_empty_state,
-        scenes,
     },
     *,
 };
@@ -52,7 +51,6 @@ use bevy::{
     ui_render::ui_material::MaterialNode,
     ui_widgets::Activate,
 };
-use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -3402,7 +3400,6 @@ pub(crate) fn spawn_material_graph_workspace(
                 ..default()
             })
             .with_children(|panel| {
-                spawn_header(panel, None, previews, true, localizer, asset_server);
                 if session
                     .graph_function(catalog)
                     .is_ok_and(|function| function.custom_wesl.is_none())
@@ -3416,6 +3413,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     );
                     return;
                 }
+                spawn_header(panel, None, previews, true, localizer, asset_server);
                 let text = function_inspection_text(session, catalog);
                 spawn_vertical_scroll_area(
                     panel,
@@ -3639,8 +3637,13 @@ fn function_inspection_text(session: &EditorSession, catalog: &ProjectEffectCata
     };
     let projection = MaterialCompiler.project_function_graph(&function, &library);
     let mut text = format!(
-        "{} — Function body inspection (read-only)\n\nInputs\n",
-        projection.name
+        "{} — {}\n\nInputs\n",
+        projection.name,
+        if function.custom_wesl.is_some() {
+            "Code function · Custom WESL (read-only)\nThis function is implemented in source code, not an editable node graph."
+        } else {
+            "Graph function"
+        }
     );
     for input in &projection.inputs {
         text.push_str(&format!(
@@ -4047,17 +4050,7 @@ fn spawn_header(
     asset_server: &AssetServer,
 ) {
     parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(38.0),
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(8.0)),
-                column_gap: Val::Px(4.0),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_LIGHT),
-        ))
+        .spawn(crate::feathers::node_graph::graph_toolbar_bundle())
         .with_children(|header| {
             if standalone {
                 spawn_material_graph_toolbar_button(
@@ -4147,36 +4140,13 @@ fn spawn_material_graph_toolbar_button(
     label: String,
     action: MaterialGraphToolbarAction,
 ) -> Entity {
-    let mut button = parent.spawn_empty();
-    button.apply_scene(scenes::feathers_tool_button());
-    let entity = button.id();
-    button
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.clone()),
-            EditorTooltip::description(label),
-            Node {
-                width: Val::Px(28.0),
-                height: Val::Px(24.0),
-                flex_shrink: 0.0,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-        ))
-        .with_child((
-            Node {
-                width: Val::Px(15.0),
-                height: Val::Px(15.0),
-                ..default()
-            },
-            UiSvg(load_svg_icon(asset_server, icon_path)),
-            SvgColor(Color::WHITE),
-            Pickable::IGNORE,
-        ));
-    entity
+    crate::feathers::node_graph::spawn_graph_tool_button(
+        parent,
+        asset_server,
+        icon_path,
+        label,
+        action,
+    )
 }
 
 fn graph_preview_targets(
@@ -5015,7 +4985,7 @@ fn material_graph_node_row_count(node: &MaterialGraphNode) -> usize {
     }
 }
 
-fn expression_depth(
+pub(crate) fn expression_depth(
     expression: MaterialExpressionId,
     inputs: &BTreeMap<MaterialExpressionId, Vec<MaterialExpressionId>>,
     memo: &mut BTreeMap<MaterialExpressionId, usize>,
@@ -5123,12 +5093,12 @@ fn edge_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialConnectionTar
     }
 }
 
-struct MaterialInputPortPresentation {
-    label: String,
-    description: String,
+pub(crate) struct MaterialInputPortPresentation {
+    pub(crate) label: String,
+    pub(crate) description: String,
 }
 
-fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
+pub(crate) fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
     let (label, description) = match name {
         "left" => ("A", "First value used by this operation."),
         "right" => ("B", "Second value used by this operation."),

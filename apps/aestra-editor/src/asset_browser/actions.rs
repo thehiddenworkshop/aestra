@@ -359,9 +359,14 @@ pub(super) fn open_function(
     }
     match session.open_material_function(&catalog, event.0) {
         Ok(()) => {
-            session.status =
-                "Function opened; graph signatures are editable, custom WESL remains read-only"
-                    .into();
+            session.status = if session
+                .graph_function(&catalog)
+                .is_ok_and(|function| function.custom_wesl.is_some())
+            {
+                "Code function opened: custom WESL source is read-only".into()
+            } else {
+                "Graph function opened; edit its signature in Properties".into()
+            };
             reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
         }
         Err(error) => {

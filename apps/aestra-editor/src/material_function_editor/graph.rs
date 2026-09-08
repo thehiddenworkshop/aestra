@@ -1,6 +1,10 @@
 //! Function-native canvas: no surrogate material program or effect is created.
 use super::*;
-use crate::feathers::{icon::load_svg_icon, node_graph::*};
+use crate::feathers::{
+    combo_box::{spawn_compact_action_menu, spawn_icon_action_menu},
+    icon::load_svg_icon,
+    node_graph::*,
+};
 use aestra_authoring::{
     MaterialConnectionTarget, MaterialExpressionInput, MaterialFunctionBodyCommand as Edit,
 };
@@ -41,6 +45,8 @@ struct BodyAction {
 }
 #[derive(Clone, Copy)]
 enum BodyActionKind {
+    Back,
+    Locate,
     Float,
     Input(MaterialFunctionInputId),
     Add,
@@ -148,7 +154,7 @@ fn create_edits(function: &MaterialFunction, action: BodyActionKind) -> Vec<Edit
             edge_max: constant(1.0),
             value: constant(0.5),
         },
-        BodyActionKind::Remove(_) => unreachable!(),
+        BodyActionKind::Remove(_) | BodyActionKind::Back | BodyActionKind::Locate => unreachable!(),
     };
     expressions.push(MaterialExpression {
         id: MaterialExpressionId::new(),
@@ -170,11 +176,22 @@ fn action(
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
+    mut commands: Commands,
 ) {
     let Ok(action) = actions.get(event.entity) else {
         return;
     };
     if session.standalone_function() != Some(action.owner) {
+        return;
+    }
+    if matches!(action.kind, BodyActionKind::Back) {
+        session.return_to_effect_material();
+        return;
+    }
+    if matches!(action.kind, BodyActionKind::Locate) {
+        commands.trigger(crate::asset_browser::LocateInAssets(
+            aestra_project::ProjectAssetId::MaterialFunction(action.owner),
+        ));
         return;
     }
     let result = session.graph_function(&catalog).and_then(|function| {
@@ -291,35 +308,51 @@ pub(crate) fn spawn(
         return;
     };
     let graph_key = format!("function:{}:{}", catalog.root().display(), function.id);
-    let saved_bottom = nodes
+    let mut inputs = nodes
         .iter()
-        .filter_map(|node| memory.node_position(&graph_key, &node.id.to_string()))
-        .map(|position| position.y + 240.0)
-        .reduce(f32::max);
-    let mut new_index = 0;
+        .map(|node| (node.id, Vec::new()))
+        .collect::<BTreeMap<_, _>>();
+    for edge in &edges {
+        if let Some(Target::Input(expression, _)) = target(&edge.target) {
+            inputs.entry(expression).or_default().push(edge.source);
+        }
+    }
+    let mut depths = BTreeMap::new();
+    for node in &nodes {
+        crate::material_graph::expression_depth(
+            node.id,
+            &inputs,
+            &mut depths,
+            &mut Default::default(),
+        );
+    }
+    let mut columns = BTreeMap::<usize, f32>::new();
     let positions = nodes
         .iter()
         .map(|expression| {
+            let depth = depths[&expression.id];
+            let y = columns.entry(depth).or_insert(68.0);
+            let initial = Vec2::new(34.0 + depth as f32 * 282.0, *y);
+            *y += 62.0 + inputs[&expression.id].len().max(1) as f32 * PORT_ROW_HEIGHT;
             let position = memory
                 .node_position(&graph_key, &expression.id.to_string())
-                .unwrap_or_else(|| {
-                    let position = Vec2::new(
-                        30.0 + (new_index % 3) as f32 * 290.0,
-                        saved_bottom.unwrap_or(30.0) + (new_index / 3) as f32 * 240.0,
-                    );
-                    new_index += 1;
-                    position
-                });
+                .unwrap_or(initial);
             (expression.id, position)
         })
         .collect::<BTreeMap<_, _>>();
     parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(8.0),
-            ..default()
-        })
+        .spawn(graph_toolbar_bundle())
         .with_children(|toolbar| {
+            spawn_graph_tool_button(
+                toolbar,
+                assets,
+                "icons/chevron-left.svg",
+                "Return to effect".into(),
+                BodyAction {
+                    owner: function.id,
+                    kind: BodyActionKind::Back,
+                },
+            );
             let mut options = vec![
                 ("Float", BodyActionKind::Float),
                 ("Add", BodyActionKind::Add),
@@ -344,7 +377,14 @@ pub(crate) fn spawn(
                     kind: BodyActionKind::Input(input.id),
                 },
             }));
-            spawn_combo_control(toolbar, "+ Add node", "Add function node", &options, 144.0);
+            spawn_icon_action_menu(
+                toolbar,
+                assets,
+                "icons/plus.svg",
+                "Add node",
+                "Add a function node",
+                &options,
+            );
             spawn_graph_frame_button(
                 toolbar,
                 assets,
@@ -352,12 +392,34 @@ pub(crate) fn spawn(
                 "Frame all".into(),
                 GraphFrameAction::new(&graph_key, GraphFrameTarget::All),
             );
-            label(
+            spawn_graph_tool_button(
                 toolbar,
-                "Drag between sockets to connect · Edit signature in Properties",
+                assets,
+                "icons/folder.svg",
+                "Locate in Assets".into(),
+                BodyAction {
+                    owner: function.id,
+                    kind: BodyActionKind::Locate,
+                },
+            );
+            spawn_graph_toolbar_summary(
+                toolbar,
+                format!(
+                    "FUNCTION · {}  ·  {} NODES  ·  {} LINKS",
+                    function.name,
+                    nodes.len(),
+                    edges.len()
+                ),
             );
         });
-    let extent = Vec2::new(1180.0, (nodes.len().div_ceil(3) as f32 * 240.0).max(320.0));
+    let output_position = Vec2::new(
+        34.0 + (depths.values().copied().max().unwrap_or_default() + 1) as f32 * 282.0,
+        122.0,
+    );
+    let extent = Vec2::new(
+        (output_position.x + NODE_WIDTH + 34.0).max(720.0),
+        (columns.values().copied().reduce(f32::max).unwrap_or(0.0) + 34.0).max(420.0),
+    );
     let viewport = spawn_graph_viewport(
         parent,
         GraphViewportProps {
@@ -443,7 +505,7 @@ pub(crate) fn spawn(
                         if let Some(target) = target(&edge.target) {
                             let name = match &edge.target {
                                 MaterialFunctionGraphTarget::Input { port, .. } => {
-                                    port.replace('_', " ")
+                                    crate::material_graph::input_port_presentation(port).label
                                 }
                                 MaterialFunctionGraphTarget::Argument { input, .. } => {
                                     format!("Argument {input}")
@@ -486,7 +548,7 @@ pub(crate) fn spawn(
                                 ),
                             );
                         });
-                    } else {
+                    } else if inputs[&expression.id].is_empty() {
                         body.spawn((
                             Node {
                                 min_height: Val::Px(26.0),
@@ -495,15 +557,28 @@ pub(crate) fn spawn(
                             Pickable::IGNORE,
                         ));
                     }
-                    spawn_action_button(
-                        body,
-                        "Delete node",
-                        BodyAction {
-                            owner: function.id,
-                            kind: BodyActionKind::Remove(expression.id),
-                        },
-                        false,
-                    );
+                    body.commands().entity(node).with_children(|node| {
+                        node.spawn(Node {
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(28.0),
+                            top: Val::Px(2.0),
+                            ..default()
+                        })
+                        .with_children(|header| {
+                            spawn_compact_action_menu(
+                                header,
+                                "Node actions",
+                                &[ComboOption {
+                                    label: "Delete node".into(),
+                                    selected: false,
+                                    action: BodyAction {
+                                        owner: function.id,
+                                        kind: BodyActionKind::Remove(expression.id),
+                                    },
+                                }],
+                            )
+                        });
+                    });
                 });
             }
             spawn_graph_node(
@@ -512,7 +587,7 @@ pub(crate) fn spawn(
                     &graph_key,
                     "outputs",
                     "Function outputs".into(),
-                    Vec2::new(910.0, 30.0),
+                    output_position,
                     assets,
                 ),
                 (),
@@ -523,7 +598,7 @@ pub(crate) fn spawn(
                             function.id,
                             node,
                             SocketKind::Target(Target::Output(output.id)),
-                            Some(format!("{} [{:?}]", output.name, output.value_type)),
+                            Some(output.name.clone()),
                         );
                     }
                 },

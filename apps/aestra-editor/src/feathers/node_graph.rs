@@ -54,6 +54,76 @@ type GraphNodeControlFilter = Or<(
 
 pub(crate) struct FeathersNodeGraphPlugin;
 
+/// Shared toolbar chrome for material programs and function bodies.
+pub(crate) fn graph_toolbar_bundle() -> impl Bundle {
+    (
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(38.0),
+            min_height: Val::Px(38.0),
+            flex_shrink: 0.0,
+            align_items: AlignItems::Center,
+            padding: UiRect::horizontal(Val::Px(8.0)),
+            column_gap: Val::Px(4.0),
+            ..default()
+        },
+        BackgroundColor(theme::PANEL_LIGHT),
+    )
+}
+
+pub(crate) fn spawn_graph_toolbar_summary(parent: &mut ChildSpawnerCommands, text: String) {
+    parent.spawn(Node {
+        flex_grow: 1.0,
+        ..default()
+    });
+    parent.spawn((
+        Text::new(text),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+    ));
+}
+
+pub(crate) fn spawn_graph_tool_button<A: Component>(
+    parent: &mut ChildSpawnerCommands,
+    assets: &AssetServer,
+    icon_path: &'static str,
+    label: String,
+    action: A,
+) -> Entity {
+    parent
+        .spawn_empty()
+        .apply_scene(scenes::feathers_tool_button())
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label),
+            Node {
+                width: Val::Px(28.0),
+                height: Val::Px(24.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(15.0),
+                height: Val::Px(15.0),
+                ..default()
+            },
+            UiSvg(load_svg_icon(assets, icon_path)),
+            SvgColor(Color::WHITE),
+            Pickable::IGNORE,
+        ))
+        .id()
+}
+
 impl Plugin for FeathersNodeGraphPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "shaders/node_graph_wire.wgsl");
@@ -1490,6 +1560,20 @@ fn update_socket_visuals(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_graph_toolbar_has_fixed_compact_chrome() {
+        let mut world = World::new();
+        let entity = world.spawn(graph_toolbar_bundle()).id();
+        let node = world.get::<Node>(entity).unwrap();
+        assert_eq!(node.height, Val::Px(38.0));
+        assert_eq!(node.flex_shrink, 0.0);
+        assert_eq!(node.column_gap, Val::Px(4.0));
+        assert_eq!(
+            world.get::<BackgroundColor>(entity).unwrap().0,
+            theme::PANEL_LIGHT
+        );
+    }
 
     fn assert_vec2_close(actual: Vec2, expected: Vec2) {
         assert!(

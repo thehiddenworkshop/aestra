@@ -693,5 +693,19 @@ function-only persistence remains AB5c.
 Validation: editor suite passed (616 passed, 2 ignored); strict workspace/all-targets
 Clippy and formatting passed. Native interaction testing remains pending.
 
+### Material/function graph presentation alignment — 2026-09-08
+
+Both graph adapters now share toolbar chrome and white icon buttons in addition to the
+existing common viewport, node, socket and wire widgets. Function graphs use one toolbar
+with Back/Add/Frame/Locate, compact header node actions instead of full-width Delete
+buttons, the material graph's input labels and dependency-depth layout. Capability gaps
+(preview controls, full catalog and gesture feedback) remain tracked in AB5b; they are not
+represented by non-functional toolbar buttons.
+
+Dissolve Edge is node-authored. Pulse Wave is a custom-WESL source function with no stored
+expression graph. Its read-only view now explicitly identifies a code function and explains
+why source is displayed. Neither asset representation nor source contents were converted.
+Native visual acceptance of the updated presentation is still pending.
+
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.
