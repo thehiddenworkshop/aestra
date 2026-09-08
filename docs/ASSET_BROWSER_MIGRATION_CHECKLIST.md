@@ -707,5 +707,21 @@ expression graph. Its read-only view now explicitly identifies a code function a
 why source is displayed. Neither asset representation nor source contents were converted.
 Native visual acceptance of the updated presentation is still pending.
 
+### AB5b typed constants and connection feedback — 2026-09-08
+
+The function canvas now offers vector/color/Boolean literal creation, component-wise
+Feather numeric controls and a Boolean selector. Component edits preserve the literal
+type and untouched channels and continue through function-scoped draft/history validation.
+Default layout accounts for multi-component constant rows. The creation popup uses a
+reusable bounded searchable Feather action menu with scrolling/navigation isolation.
+Socket drags display a transient wire in either direction; release or removal of the
+origin clears its feedback without changing the document.
+
+This is an incremental AB5b slice, not full parity: the function menu still has its
+limited native creation catalog rather than the material compiler's full catalog.
+Sharing that catalog/creation API without a surrogate MaterialProgram, category groups,
+connection snapping/compatibility feedback, and native visual acceptance remain open.
+Function-only Save/Reload/recovery remains AB5c. User asset files are not changed.
+
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.

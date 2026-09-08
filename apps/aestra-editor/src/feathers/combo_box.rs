@@ -147,6 +147,136 @@ pub(crate) fn spawn_icon_action_menu<A: Component + Copy>(
     tooltip: &str,
     options: &[ComboOption<A>],
 ) {
+    spawn_icon_menu(
+        parent,
+        asset_server,
+        icon_path,
+        accessible_label,
+        tooltip,
+        options,
+        false,
+    );
+}
+
+/// A bounded, searchable action menu for graph node catalogs.
+pub(crate) fn spawn_searchable_icon_action_menu<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    accessible_label: &str,
+    tooltip: &str,
+    options: &[ComboOption<A>],
+) {
+    spawn_icon_menu(
+        parent,
+        asset_server,
+        icon_path,
+        accessible_label,
+        tooltip,
+        options,
+        true,
+    );
+}
+
+#[derive(Component)]
+struct SearchableAction {
+    input: Entity,
+    text: String,
+}
+
+#[cfg(test)]
+mod searchable_tests {
+    use super::*;
+
+    #[test]
+    fn search_filters_only_its_own_menu_case_insensitively() {
+        let mut app = App::new();
+        let input = app.world_mut().spawn_empty().observe(filter_actions).id();
+        let other = app.world_mut().spawn_empty().id();
+        let matching = app
+            .world_mut()
+            .spawn((
+                SearchableAction {
+                    input,
+                    text: "vector 3".into(),
+                },
+                Node::default(),
+            ))
+            .id();
+        let hidden = app
+            .world_mut()
+            .spawn((
+                SearchableAction {
+                    input,
+                    text: "float".into(),
+                },
+                Node::default(),
+            ))
+            .id();
+        let untouched = app
+            .world_mut()
+            .spawn((
+                SearchableAction {
+                    input: other,
+                    text: "float".into(),
+                },
+                Node::default(),
+            ))
+            .id();
+        app.world_mut().trigger(bevy::ui_widgets::ValueChange {
+            source: input,
+            value: " VECTOR ".to_owned(),
+            is_final: false,
+        });
+        assert_eq!(
+            app.world().get::<Node>(matching).unwrap().display,
+            Display::Flex
+        );
+        assert_eq!(
+            app.world().get::<Node>(hidden).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(untouched).unwrap().display,
+            Display::Flex
+        );
+        app.world_mut().trigger(bevy::ui_widgets::ValueChange {
+            source: input,
+            value: String::new(),
+            is_final: false,
+        });
+        assert_eq!(
+            app.world().get::<Node>(hidden).unwrap().display,
+            Display::Flex
+        );
+    }
+}
+
+fn filter_actions(
+    change: On<bevy::ui_widgets::ValueChange<String>>,
+    mut rows: Query<(&SearchableAction, &mut Node)>,
+) {
+    let query = change.value.trim().to_lowercase();
+    for (row, mut node) in &mut rows {
+        if row.input == change.source {
+            node.display = if row.text.contains(&query) {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
+}
+
+fn spawn_icon_menu<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    accessible_label: &str,
+    tooltip: &str,
+    options: &[ComboOption<A>],
+    searchable: bool,
+) {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu())
@@ -201,6 +331,48 @@ pub(crate) fn spawn_icon_action_menu<A: Component + Copy>(
                     OverrideClip,
                 ))
                 .with_children(|popup| {
+                    if searchable {
+                        let popup_entity = popup.target_entity();
+                        popup
+                            .commands()
+                            .entity(popup_entity)
+                            .insert(super::node_graph::FeathersGraphNavigationBlocker);
+                        let input = super::search_field::spawn_search_field(
+                            popup,
+                            "",
+                            "Search nodes",
+                            "Clear search",
+                            (),
+                        );
+                        popup.commands().entity(input).observe(filter_actions);
+                        super::scroll::spawn_vertical_scroll_area(
+                            popup,
+                            crate::ScrollMemoryKey::MaterialGraphPalette,
+                            Node {
+                                width: Val::Px(268.0),
+                                height: Val::Px(300.0),
+                                flex_direction: FlexDirection::Column,
+                                ..default()
+                            },
+                            |list| {
+                                for option in options {
+                                    list.spawn((
+                                        SearchableAction {
+                                            input,
+                                            text: option.label.to_lowercase(),
+                                        },
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            flex_direction: FlexDirection::Column,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|row| spawn_combo_option(row, option));
+                                }
+                            },
+                        );
+                        return;
+                    }
                     for option in options {
                         spawn_combo_option(popup, option);
                     }
