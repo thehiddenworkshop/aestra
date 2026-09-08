@@ -502,6 +502,7 @@ fn spawn_action_menu_with_trigger<A: Component + Copy>(
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu())
+        .insert(Pickable::IGNORE)
         .with_children(|menu| {
             menu.spawn_empty()
                 .apply_scene(scenes::feathers_menu_button())

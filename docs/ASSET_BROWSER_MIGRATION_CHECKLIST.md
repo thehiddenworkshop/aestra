@@ -749,3 +749,19 @@ Validation: 620 editor tests passed (2 ignored), compiler and authoring suites p
 and strict workspace/all-targets Clippy passed. Shared catalog recipe parity has a
 compiler regression test. This does not complete all canvas parity work or AB5c
 function-only persistence/recovery.
+
+### AB5b gesture regression follow-up — 2026-09-08
+
+Socket gestures now resolve child hit targets to their semantic socket consistently
+through start, movement, drop and release. The regression covers a near-socket release
+at a 2x UI scale without a DragDrop event or intervening preview frame, and verifies
+that only the function changes. Node action-menu wrappers have bounded header geometry
+and structural menu roots ignore picking.
+
+Validation: 620 editor tests passed (2 ignored), strict workspace/all-targets Clippy
+passed, and diff checks passed. Native node movement and zoom were observed with
+aligned wires; native direct/near-socket drags still did not demonstrate a changed
+connection. The native failure's root cause remains unresolved; these defensive fixes
+do not establish that it is fixed. Compatibility highlighting, reconnection and its
+Undo/Redo, and complete pan/drop acceptance remain pending. No source asset test edits
+were saved. AB5b remains open.

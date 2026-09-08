@@ -80,21 +80,37 @@ pub(super) fn register(app: &mut App) {
         .add_systems(PostUpdate, update_wires.after(bevy::ui::UiSystems::Layout));
 }
 
+// Picking may target a child of the socket hit area (for example its visual dot).
+// Resolve the semantic endpoint consistently for every phase of the gesture.
+fn socket_entity(
+    mut entity: Entity,
+    sockets: &Query<(Entity, &Socket)>,
+    parents: &Query<&ChildOf>,
+) -> Option<Entity> {
+    loop {
+        if sockets.contains(entity) {
+            return Some(entity);
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
 fn start_connection(
     mut event: On<Pointer<DragStart>>,
     sockets: Query<(Entity, &Socket)>,
     mut preview: ResMut<ConnectionPreview>,
     session: Option<Res<EditorSession>>,
     catalog: Option<Res<ProjectEffectCatalog>>,
+    parents: Query<&ChildOf>,
 ) {
     if event.button == bevy::picking::pointer::PointerButton::Primary
-        && sockets.contains(event.entity)
+        && let Some(entity) = socket_entity(event.entity, &sockets, &parents)
     {
-        preview.0 = Some((event.entity, event.pointer_location.position));
+        preview.0 = Some((entity, event.pointer_location.position));
         preview.1.clear();
         preview.2 = None;
         if let (Some(session), Some(catalog), Ok((_, origin))) =
-            (session, catalog, sockets.get(event.entity))
+            (session, catalog, sockets.get(entity))
             && let Ok(document) = session.graph_authoring_document(&catalog)
         {
             for (entity, candidate) in &sockets {
@@ -123,9 +139,14 @@ fn start_connection(
         event.propagate(false);
     }
 }
-fn move_connection(mut event: On<Pointer<Drag>>, mut preview: ResMut<ConnectionPreview>) {
+fn move_connection(
+    mut event: On<Pointer<Drag>>,
+    mut preview: ResMut<ConnectionPreview>,
+    sockets: Query<(Entity, &Socket)>,
+    parents: Query<&ChildOf>,
+) {
     if let Some((entity, cursor)) = &mut preview.0
-        && *entity == event.entity
+        && Some(*entity) == socket_entity(event.entity, &sockets, &parents)
     {
         *cursor = event.pointer_location.position;
         event.propagate(false);
@@ -134,13 +155,16 @@ fn move_connection(mut event: On<Pointer<Drag>>, mut preview: ResMut<ConnectionP
 fn end_connection(
     mut event: On<Pointer<DragEnd>>,
     mut preview: ResMut<ConnectionPreview>,
-    sockets: Query<&Socket>,
+    sockets: Query<(Entity, &Socket)>,
+    parents: Query<&ChildOf>,
     geometry: Query<(Entity, &ComputedNode, &UiGlobalTransform), With<Socket>>,
     editor: Option<ResMut<FunctionEditor>>,
     session: Option<ResMut<EditorSession>>,
     catalog: Option<ResMut<ProjectEffectCatalog>>,
 ) {
-    if preview.0.is_some_and(|(entity, _)| entity == event.entity) {
+    if let Some((entity, _)) = preview.0
+        && Some(entity) == socket_entity(event.entity, &sockets, &parents)
+    {
         // Re-evaluate the release position; a fast last movement may precede PostUpdate.
         let snap = geometry
             .iter()
@@ -154,7 +178,7 @@ fn end_connection(
             .map(|(entity, _)| entity);
         if let (Some(target), Some(mut editor), Some(mut session), Some(mut catalog)) =
             (snap, editor, session, catalog)
-            && let (Ok(from), Ok(to)) = (sockets.get(event.entity), sockets.get(target))
+            && let (Ok((_, from)), Ok((_, to))) = (sockets.get(entity), sockets.get(target))
             && session.standalone_function() == Some(from.owner)
             && let Some((source, target)) = socket_pair(from, to)
         {
@@ -212,7 +236,8 @@ fn connection_edit(source: MaterialExpressionId, target: Target) -> Edit {
 
 fn drop_socket(
     mut event: On<Pointer<DragDrop>>,
-    sockets: Query<&Socket>,
+    sockets: Query<(Entity, &Socket)>,
+    parents: Query<&ChildOf>,
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
@@ -221,7 +246,13 @@ fn drop_socket(
     if event.button != bevy::picking::pointer::PointerButton::Primary {
         return;
     }
-    let (Ok(from), Ok(to)) = (sockets.get(event.dropped), sockets.get(event.entity)) else {
+    let (Some(source), Some(destination)) = (
+        socket_entity(event.dropped, &sockets, &parents),
+        socket_entity(event.entity, &sockets, &parents),
+    ) else {
+        return;
+    };
+    let (Ok((_, from)), Ok((_, to))) = (sockets.get(source), sockets.get(destination)) else {
         return;
     };
     if from.owner != to.owner || session.standalone_function() != Some(from.owner) {
@@ -752,12 +783,17 @@ pub(crate) fn spawn(
                         ));
                     }
                     body.commands().entity(node).with_children(|node| {
-                        node.spawn(Node {
-                            position_type: PositionType::Absolute,
-                            right: Val::Px(28.0),
-                            top: Val::Px(2.0),
-                            ..default()
-                        })
+                        node.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                right: Val::Px(28.0),
+                                top: Val::Px(2.0),
+                                width: Val::Px(28.0),
+                                height: Val::Px(28.0),
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ))
                         .with_children(|header| {
                             spawn_compact_action_menu(
                                 header,
@@ -1213,5 +1249,68 @@ mod tests {
                 .resource::<FunctionEditor>()
                 .available(session, true)
         );
+
+        // Real picking can start on socket descendants. A near-socket release must
+        // resolve the same endpoint, even without a DragDrop or a preview frame.
+        app.world_mut()
+            .resource_scope(|world, mut editor: Mut<FunctionEditor>| {
+                world.resource_scope(|world, mut session: Mut<EditorSession>| {
+                    editor
+                        .step(
+                            &mut session,
+                            &mut world.resource_mut::<ProjectEffectCatalog>(),
+                            true,
+                        )
+                        .unwrap();
+                });
+            });
+        let source_child = app.world_mut().spawn(ChildOf(source)).id();
+        app.world_mut().entity_mut(destination).insert((
+            ComputedNode {
+                inverse_scale_factor: 0.5,
+                ..default()
+            },
+            UiGlobalTransform::from(bevy::math::Affine2::from_translation(Vec2::splat(200.0))),
+        ));
+        let location = Location {
+            target: NormalizedRenderTarget::None {
+                width: 800,
+                height: 600,
+            },
+            position: Vec2::new(110.0, 100.0),
+        };
+        app.world_mut().trigger(Pointer::new(
+            PointerId::Mouse,
+            location.clone(),
+            DragStart {
+                button: PointerButton::Primary,
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+            },
+            source_child,
+        ));
+        assert_eq!(
+            app.world().resource::<ConnectionPreview>().0.unwrap().0,
+            source
+        );
+        app.world_mut().trigger(Pointer::new(
+            PointerId::Mouse,
+            location,
+            DragEnd {
+                button: PointerButton::Primary,
+                distance: Vec2::ZERO,
+            },
+            source_child,
+        ));
+        assert!(app.world().resource::<ConnectionPreview>().0.is_none());
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(
+            session
+                .graph_function(app.world().resource::<ProjectEffectCatalog>())
+                .unwrap()
+                .outputs[0]
+                .expression,
+            second
+        );
+        assert_eq!(session.effect, effect);
     }
 }
