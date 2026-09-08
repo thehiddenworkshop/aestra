@@ -671,5 +671,27 @@ with unchanged effect selection and source bytes. Native UI acceptance remains p
 Validation: editor suite passed (613 passed, 2 ignored); strict workspace/all-targets
 Clippy, formatting and whitespace checks passed.
 
+### AB5b initial function-body canvas — 2026-09-08
+
+Graph functions open into a function-native Feather canvas with movable/collapsible nodes,
+pan/zoom/frame-all, rendered connections and a declared-output node. Dragging between
+input/output sockets routes to function-body rewiring or output mapping, in either direction.
+The initial add menu offers Float, declared inputs, Add, Multiply and Smoothstep. Operations
+and their initial scalar constants are added atomically. Scalar constants use the shared
+draggable numeric input; deletion rejects remaining references. Signature controls moved
+to Properties, while custom WESL retains read-only inspection.
+
+Body edits use the authoring body-command executor, candidate caller preflight and the
+same root/function-scoped history as signature edits. No surrogate material or effect is
+created. Graph view/node positions are session memory, not new persisted source fields.
+Automated coverage includes add-button/socket-drop events, atomic output remapping,
+referenced-node deletion rejection, cyclic rewire rejection, Undo/Redo and untouched effect
+and source bytes. Native visual/interaction verification is pending. Full creation catalog,
+non-scalar editing, connection drag previews and canvas parity remain AB5b follow-up work;
+function-only persistence remains AB5c.
+
+Validation: editor suite passed (616 passed, 2 ignored); strict workspace/all-targets
+Clippy and formatting passed. Native interaction testing remains pending.
+
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.

@@ -14,7 +14,7 @@ use bevy::{
     asset::embedded_asset,
     ecs::query::{QueryData, QueryFilter},
     feathers::{
-        controls::{FeathersCheckbox, FeathersNumberInput},
+        controls::{FeathersCheckbox, FeathersNumberInput, FeathersTextInputContainer},
         cursor::{EntityCursor, OverrideCursor},
     },
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -48,6 +48,8 @@ type GraphNodeControlFilter = Or<(
     With<GraphCollapseAction>,
     With<FeathersNumberInput>,
     With<FeathersCheckbox>,
+    With<FeathersTextInputContainer>,
+    With<FeathersActionButton>,
 )>;
 
 pub(crate) struct FeathersNodeGraphPlugin;

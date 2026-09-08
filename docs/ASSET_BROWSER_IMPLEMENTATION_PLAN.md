@@ -443,7 +443,15 @@ Delivery slices:
   function callers and reject invalid candidates without dropping connections. Draft
   Undo/Redo is scoped by project root and function ID, independent of effect history.
   Catalog draft changes invalidate dependent previews. Custom-WESL signatures/source
-  remain read-only. Function-body canvas editing and output remapping remain pending.
+  remain read-only.
+  Initial body canvas implemented: reuse the Feather graph viewport/node/socket/wire
+  controls, add Float/declared-input/Add/Multiply/Smoothstep nodes, edit scalar constants,
+  drag between sockets to rewire or map declared outputs, and safely delete unreferenced
+  nodes. Edits use function-native body transactions and the existing scoped history.
+  Signature controls live in Properties. Existing expression connections and declared
+  call arguments are exposed. This is not full material-graph feature parity: the complete
+  creation catalog, non-scalar inspectors, connection drag previews and native interaction
+  acceptance remain pending before closing AB5b.
 - **AB5c — Persistence and acceptance:** function-only Save/guarded Reload, conflicts,
   target recovery, moved/missing sources and the full exit gate below.
 
@@ -573,6 +581,7 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** AB5b function-body canvas editing and output
-mapping, building on signature controls and function-scoped draft history. Keep the transitional
+marked tested. **Immediate next step (P1):** AB5b canvas parity and native acceptance:
+complete the creation catalog/typed inspectors and connection-gesture feedback, and verify
+pan/zoom, wiring, node movement and history in the app. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.

@@ -2254,7 +2254,7 @@ fn set_wire_points(material: &mut GraphWireMaterial, start: Vec2, end: Vec2) {
     material.end = end;
 }
 
-fn update_wire_material(
+pub(crate) fn update_wire_material(
     materials: &mut Assets<GraphWireMaterial>,
     handle: &Handle<GraphWireMaterial>,
     start: Vec2,
@@ -3403,6 +3403,19 @@ pub(crate) fn spawn_material_graph_workspace(
             })
             .with_children(|panel| {
                 spawn_header(panel, None, previews, true, localizer, asset_server);
+                if session
+                    .graph_function(catalog)
+                    .is_ok_and(|function| function.custom_wesl.is_none())
+                {
+                    crate::material_function_editor::spawn_graph(
+                        panel,
+                        session,
+                        catalog,
+                        asset_server,
+                        graph_memory,
+                    );
+                    return;
+                }
                 let text = function_inspection_text(session, catalog);
                 spawn_vertical_scroll_area(
                     panel,
@@ -5037,7 +5050,10 @@ fn node_height(input_count: usize, has_state: bool, has_preview: bool) -> f32 {
         }
 }
 
-fn input_target(expression: MaterialExpressionId, name: &str) -> Option<MaterialConnectionTarget> {
+pub(crate) fn input_target(
+    expression: MaterialExpressionId,
+    name: &str,
+) -> Option<MaterialConnectionTarget> {
     let input = match name {
         "left" => MaterialExpressionInput::Left,
         "right" => MaterialExpressionInput::Right,

@@ -19,6 +19,9 @@ use bevy::{
 };
 use std::{collections::BTreeMap, path::PathBuf};
 
+mod graph;
+pub(crate) use graph::spawn as spawn_graph;
+
 type Key = (PathBuf, MaterialFunctionId);
 #[derive(Default)]
 struct History {
@@ -39,6 +42,39 @@ fn key(session: &EditorSession) -> Result<Key, String> {
 }
 
 impl FunctionEditor {
+    pub(crate) fn edit_body(
+        &mut self,
+        session: &mut EditorSession,
+        catalog: &mut ProjectEffectCatalog,
+        edits: Vec<aestra_authoring::MaterialFunctionBodyCommand>,
+    ) -> Result<(), String> {
+        let id = session
+            .standalone_function()
+            .ok_or("No function selected")?;
+        let mut document = session.graph_authoring_document(catalog)?;
+        aestra_authoring::MaterialCommandExecutor::execute(
+            &mut document,
+            &aestra_authoring::MaterialTransaction::new(
+                "Edit function body",
+                edits
+                    .into_iter()
+                    .map(
+                        |edit| aestra_authoring::MaterialCommand::EditMaterialFunctionBody {
+                            function: id,
+                            edit,
+                        },
+                    )
+                    .collect(),
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        let function = document
+            .material_functions
+            .into_iter()
+            .find(|function| function.id == id)
+            .ok_or("Function disappeared")?;
+        self.edit(session, catalog, function)
+    }
     fn apply(
         session: &mut EditorSession,
         catalog: &mut ProjectEffectCatalog,
@@ -94,7 +130,7 @@ impl FunctionEditor {
         }
         match Self::apply(session, catalog, &before, &after) {
             Ok(report) => {
-                session.status = format!("Function signature updated (unsaved draft).\n{report}");
+                session.status = format!("Function updated (unsaved draft).\n{report}");
                 self.reports.insert(key.clone(), report);
                 let history = self.histories.entry(key).or_default();
                 history.undo.push((before, after));
@@ -192,6 +228,7 @@ enum ActionKind {
 }
 
 pub(crate) fn register(app: &mut App) {
+    graph::register(app);
     app.init_resource::<FunctionEditor>()
         .add_observer(text_changed)
         .add_observer(number_changed)
@@ -444,7 +481,7 @@ pub(crate) fn spawn(parent: &mut ChildSpawnerCommands, function: &MaterialFuncti
     }
     label(
         parent,
-        "Function signature · unsaved drafts · body editing follows in the next slice",
+        "Function signature · unsaved drafts · edit the body in Material Graph",
     );
     spawn_text_input(
         parent,
@@ -500,7 +537,7 @@ pub(crate) fn spawn(parent: &mut ChildSpawnerCommands, function: &MaterialFuncti
     );
     label(
         parent,
-        "Outputs · new outputs initially return zero; body mapping remains read-only",
+        "Outputs · new outputs initially return zero; connect them in Material Graph",
     );
     for port in &function.outputs {
         port_controls(
@@ -645,6 +682,119 @@ mod tests {
         assert_eq!(session.effect, effect);
         assert_eq!(session.selection, selection);
         assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn body_edits_output_mapping_and_history_are_atomic() {
+        use aestra_authoring::MaterialFunctionBodyCommand as Edit;
+        let root = tempfile::tempdir().unwrap();
+        let function = fixture();
+        let path = root.path().join("function.aestra.material-function.ron");
+        function.save_ron(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = crate::test_support::session_with_timing_slack();
+        let effect = session.effect.clone();
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        let mut editor = FunctionEditor::default();
+        let expression = MaterialExpression {
+            id: MaterialExpressionId::new(),
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.6)),
+        };
+        editor
+            .edit_body(
+                &mut session,
+                &mut catalog,
+                vec![
+                    Edit::Add {
+                        expression: expression.clone(),
+                        index: function.expressions.len(),
+                    },
+                    Edit::SetOutput {
+                        output: function.outputs[0].id,
+                        source: expression.id,
+                    },
+                ],
+            )
+            .unwrap();
+        let edited = session.graph_function(&catalog).unwrap();
+        assert_eq!(edited.outputs[0].expression, expression.id);
+        assert_eq!(edited.outputs[0].id, function.outputs[0].id);
+        assert!(
+            editor
+                .edit_body(
+                    &mut session,
+                    &mut catalog,
+                    vec![Edit::Remove {
+                        expression: expression.id
+                    }]
+                )
+                .is_err()
+        );
+        assert_eq!(session.graph_function(&catalog).unwrap(), edited);
+        editor.step(&mut session, &mut catalog, true).unwrap();
+        assert_eq!(session.graph_function(&catalog).unwrap(), function);
+        editor.step(&mut session, &mut catalog, false).unwrap();
+        assert_eq!(session.graph_function(&catalog).unwrap(), edited);
+        editor
+            .edit_body(
+                &mut session,
+                &mut catalog,
+                vec![
+                    Edit::SetOutput {
+                        output: function.outputs[0].id,
+                        source: function.outputs[0].expression,
+                    },
+                    Edit::Remove {
+                        expression: expression.id,
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(session.graph_function(&catalog).unwrap(), function);
+        assert_eq!(session.effect, effect);
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn function_body_rewire_rejects_cycles_without_losing_the_previous_graph() {
+        use aestra_authoring::{MaterialExpressionInput, MaterialFunctionBodyCommand as Edit};
+        let root = tempfile::tempdir().unwrap();
+        let mut function = fixture();
+        let operation = MaterialExpressionId::new();
+        let input = function.expressions[0].id;
+        function.expressions.push(MaterialExpression {
+            id: operation,
+            kind: MaterialExpressionKind::Add(input, input),
+        });
+        function.outputs[0].expression = operation;
+        function
+            .save_ron(root.path().join("function.aestra.material-function.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = crate::test_support::session_with_timing_slack();
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        let before = session.graph_function(&catalog).unwrap();
+        let mut editor = FunctionEditor::default();
+        assert!(
+            editor
+                .edit_body(
+                    &mut session,
+                    &mut catalog,
+                    vec![Edit::Rewire {
+                        expression: operation,
+                        input: MaterialExpressionInput::Left,
+                        source: operation
+                    }]
+                )
+                .is_err()
+        );
+        assert_eq!(session.graph_function(&catalog).unwrap(), before);
+        assert!(!editor.available(&session, true));
     }
 
     #[test]

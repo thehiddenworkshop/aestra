@@ -52,7 +52,32 @@ pub(super) fn spawn(
     localizer: &Localizer,
 ) -> bool {
     if session.standalone_function().is_some() {
-        panel_heading(parent, "SHARED FUNCTION", "EDIT IN MATERIAL GRAPH");
+        panel_heading(parent, "SHARED FUNCTION", "SIGNATURE");
+        spawn_vertical_scroll_area(
+            parent,
+            ScrollMemoryKey::Properties,
+            Node {
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            |body| {
+                body.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.0,
+                    row_gap: Val::Px(8.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                })
+                .with_children(|body| {
+                    if let Ok(function) = session.graph_function(catalog) {
+                        crate::material_function_editor::spawn(body, &function);
+                    }
+                    crate::diagnostics::details::spawn_summary(body, &session.status, localizer);
+                });
+            },
+        );
         return true;
     }
     let Some(id) = session.standalone_material() else {
