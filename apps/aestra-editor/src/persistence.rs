@@ -530,9 +530,11 @@ fn execute_document_action(
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
         if session.standalone_function().is_some() {
-            session.status =
-                "Function-only saving is not yet available; signature edits remain in shared drafts".into();
-            session.ui_revision += 1;
+            if *action == DocumentAction::SaveAs {
+                session.status = localizer.text("material-save-as-unavailable");
+            } else {
+                material::queue_save(&mut commands, &session, &catalog, false);
+            }
             return;
         }
         if session.standalone_material().is_some() {

@@ -357,7 +357,7 @@ fn update_file_menu_target(
         let inspection_action = session.standalone_function().is_some()
             && matches!(
                 *action,
-                DocumentAction::Save | DocumentAction::SaveAs | DocumentAction::ReloadMaterial
+                DocumentAction::SaveAs | DocumentAction::ReloadMaterial
             );
         let display = if !inspection_action && file_action_visible(*action, standalone) {
             Display::Flex
@@ -370,7 +370,9 @@ fn update_file_menu_target(
         if *action != DocumentAction::Save {
             continue;
         }
-        let message = if standalone {
+        let message = if session.standalone_function().is_some() {
+            "file-save-function"
+        } else if standalone {
             "file-save-material"
         } else {
             "file-save"

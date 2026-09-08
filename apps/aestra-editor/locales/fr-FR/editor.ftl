@@ -89,6 +89,7 @@ browser-material-opened = Matériau partagé ouvert. L'effet actif est inchangé
 material-document-back = Revenir au contexte matériau de l'effet (conserver les brouillons partagés)
 file-reload-material = Recharger le matériau
 file-save-material = Enregistrer le matériau
+file-save-function = Enregistrer la fonction
 material-save-as-unavailable = Enregistrer le matériau sous n'est pas encore disponible. Enregistrer met à jour la source partagée ; revenez au contexte de l'effet pour enregistrer une copie de l'effet.
 material-save-complete = Matériau partagé et fonctions dépendantes modifiées enregistrés. L'effet n'a pas été enregistré.
 material-save-failed = Échec de l'enregistrement du matériau : { $error }

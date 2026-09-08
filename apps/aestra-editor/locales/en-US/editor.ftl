@@ -89,6 +89,7 @@ browser-material-opened = Opened shared material. The active effect is unchanged
 material-document-back = Return to the effect's material context (keep shared drafts)
 file-reload-material = Reload Material
 file-save-material = Save Material
+file-save-function = Save Function
 material-save-as-unavailable = Material Save As is not available yet. Save updates the shared source; return to effect context to save an effect copy.
 material-save-complete = Saved the shared material and its edited function dependencies. The effect was not saved.
 material-save-failed = Material save failed: { $error }

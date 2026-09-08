@@ -1,15 +1,16 @@
 //! Standalone material persistence. Never writes or replaces the active effect.
 use super::*;
+use crate::material_document::MaterialEditingTarget;
 use crate::material_drafts::MaterialDrafts;
 use crate::project_content::io::{self, IoGuard};
-use aestra_core::{MaterialFunctionId, MaterialProgramId, material::*};
+use aestra_core::{MaterialFunctionId, material::*};
 use std::collections::BTreeSet;
 
-/// Save the selected program and only its transitive function dependencies.
+/// Save the selected program or function and only its transitive function dependencies.
 /// In particular, an unrelated dirty program/function must not be silently committed.
 fn save_scope(
     catalog: &ProjectEffectCatalog,
-    id: MaterialProgramId,
+    target: &MaterialEditingTarget,
 ) -> Result<MaterialDrafts, String> {
     fn calls(expressions: &[MaterialExpression]) -> impl Iterator<Item = MaterialFunctionId> + '_ {
         expressions
@@ -23,9 +24,16 @@ fn save_scope(
                 _ => None,
             })
     }
-    let program = catalog.material_program(id)?;
     let functions = catalog.material_functions()?;
-    let mut pending = calls(&program.expressions).collect::<Vec<_>>();
+    let program = match target {
+        MaterialEditingTarget::Program { id, .. } => Some(catalog.material_program(*id)?),
+        MaterialEditingTarget::Function { .. } => None,
+        _ => return Err("No shared material target selected".into()),
+    };
+    let mut pending = match target {
+        MaterialEditingTarget::Function { id, .. } => vec![*id],
+        _ => calls(&program.as_ref().unwrap().expressions).collect::<Vec<_>>(),
+    };
     let mut dependencies = BTreeSet::new();
     while let Some(id) = pending.pop() {
         if !dependencies.insert(id) {
@@ -37,14 +45,29 @@ fn save_scope(
             .ok_or_else(|| format!("Material function {id} is unavailable"))?;
         pending.extend(calls(&function.expressions));
     }
-    aestra_compiler::MaterialCompiler
-        .compile_with_functions(
-            &program,
-            &aestra_compiler::MaterialFunctionLibrary::new(functions),
-        )
-        .map_err(|error| error.to_string())?;
+    if let Some(program) = &program {
+        aestra_compiler::MaterialCompiler
+            .compile_with_functions(
+                program,
+                &aestra_compiler::MaterialFunctionLibrary::new(functions.clone()),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let report = aestra_compiler::MaterialFunctionLibrary::new(
+        functions
+            .into_iter()
+            .filter(|function| dependencies.contains(&function.id)),
+    )
+    .validation_report();
+    if !report.is_valid() {
+        return Err(report.to_string());
+    }
     let mut scope = catalog.material_drafts.clone();
-    scope.programs.retain(|candidate, _| *candidate == id);
+    scope.programs.retain(|candidate, _| {
+        program
+            .as_ref()
+            .is_some_and(|program| *candidate == program.id)
+    });
     scope
         .functions
         .retain(|candidate, _| dependencies.contains(candidate));
@@ -60,9 +83,9 @@ pub(super) fn queue_save(
     catalog: &ProjectEffectCatalog,
     reload: bool,
 ) {
-    let Some(id) = session.standalone_material() else {
+    if session.standalone_material().is_none() && session.standalone_function().is_none() {
         return;
-    };
+    }
     let guard = IoGuard::capture(catalog, session);
     let target = session.material_target.clone();
     let mut prepared = catalog.clone();
@@ -72,15 +95,15 @@ pub(super) fn queue_save(
         let mut before = MaterialDrafts::default();
         let mut remaining = MaterialDrafts::default();
         let result: Result<(), String> = (|| {
-            if target
-                != (crate::material_document::MaterialEditingTarget::Program {
-                    root: prepared.root().to_owned(),
-                    id,
-                })
-            {
+            let root = match &target {
+                MaterialEditingTarget::Program { root, .. }
+                | MaterialEditingTarget::Function { root, .. } => root,
+                _ => return Err("No shared material target selected".into()),
+            };
+            if root != prepared.root() {
                 return Err("The material belongs to another project".into());
             }
-            before = save_scope(&prepared, id)?;
+            before = save_scope(&prepared, &target)?;
             remaining = before.clone();
             if !prepared.snapshot_is_current() {
                 return Err("Project sources changed while preparing the save; retry".into());

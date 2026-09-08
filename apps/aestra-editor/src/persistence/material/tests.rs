@@ -1,4 +1,5 @@
 use super::*;
+use aestra_core::MaterialProgramId;
 
 #[test]
 fn function_inspection_save_does_not_save_the_effect() {
@@ -26,17 +27,70 @@ fn function_inspection_save_does_not_save_the_effect() {
     };
     for action in [DocumentAction::Save, DocumentAction::SaveAs] {
         app.world_mut().trigger(action);
-        app.world_mut().flush();
+        io::drain(app.world_mut());
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect, effect);
         assert!(session.effect_is_dirty());
         assert!(session.source_path.is_none());
-        assert!(
-            session
-                .status
-                .contains("Function-only saving is not yet available")
-        );
+        if action == DocumentAction::SaveAs {
+            assert!(session.status.contains("not available"));
+        }
     }
+}
+
+#[test]
+fn function_save_is_scoped_and_rejects_external_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let path = directory
+        .path()
+        .join("function.aestra.material-function.ron");
+    function.save_ron(&path).unwrap();
+    let (mut app, program, _) = setup(directory.path());
+    edit(&mut app, &program, "Unrelated dirty program");
+    let catalog = app.world().resource::<ProjectEffectCatalog>().clone();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .open_material_function(&catalog, function.id)
+        .unwrap();
+    let mut changed = function.clone();
+    changed.name = "Saved function".into();
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .replace_material_function(&function, &changed)
+        .unwrap();
+    app.world_mut().trigger(DocumentAction::Save);
+    io::drain(app.world_mut());
+    assert_eq!(
+        MaterialFunction::from_ron(&fs::read_to_string(&path).unwrap()).unwrap(),
+        changed
+    );
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    assert!(!catalog.material_drafts.functions.contains_key(&function.id));
+    assert!(catalog.material_drafts.programs.contains_key(&program.id));
+    let mut newer = changed.clone();
+    newer.name = "Keep draft".into();
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .replace_material_function(&changed, &newer)
+        .unwrap();
+    let mut external = changed.clone();
+    external.name = "External change".into();
+    external.save_ron(&path).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    app.world_mut().trigger(DocumentAction::Save);
+    io::drain(app.world_mut());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .functions
+            .contains_key(&function.id)
+    );
 }
 
 #[test]

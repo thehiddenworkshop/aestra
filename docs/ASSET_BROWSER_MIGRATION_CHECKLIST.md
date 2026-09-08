@@ -765,3 +765,19 @@ connection. The native failure's root cause remains unresolved; these defensive 
 do not establish that it is fixed. Compatibility highlighting, reconnection and its
 Undo/Redo, and complete pan/drop acceptance remain pending. No source asset test edits
 were saved. AB5b remains open.
+
+### Manual gesture acceptance and AB5c scoped Save — 2026-09-08
+
+The user reports that socket dragging works when tested manually and authorizes
+starting the next step. The unsuccessful automated native drag is not considered
+evidence of a remaining interaction defect.
+
+First AB5c slice: File Save / Ctrl+S on a function target saves that function and
+its transitive function dependencies through the existing guarded background I/O
+and exact-byte baseline checks. It does not save the effect or unrelated program
+or function drafts. Save As remains unavailable; custom-WESL inspection does not
+introduce edits. Regression coverage verifies function save isolation and preservation
+of external disk changes and unsaved drafts on conflict.
+
+Function-target guarded Reload, history reset, recovery routing and their native
+acceptance remain the next AB5c work; this slice does not close AB5c.
