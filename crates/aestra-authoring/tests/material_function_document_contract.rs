@@ -50,6 +50,251 @@ fn replacement(function: MaterialFunction) -> MaterialTransaction {
 }
 
 #[test]
+fn body_commands_are_atomic_and_round_trip_through_history() {
+    use aestra_authoring::{MaterialExpressionInput, MaterialFunctionBodyCommand as B};
+    let function = function();
+    let id = function.id;
+    let input = function.expressions[0].id;
+    let output = function.outputs[0].id;
+    let constant = MaterialExpressionId::new();
+    let sum = MaterialExpressionId::new();
+    let command = |edit| MaterialCommand::EditMaterialFunctionBody { function: id, edit };
+    let mut document =
+        MaterialAuthoringDocument::standalone(vec![]).with_material_functions([function]);
+    let before = document.clone();
+    let mut history = MaterialCommandHistory::default();
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Build body",
+                vec![
+                    command(B::Add {
+                        expression: MaterialExpression {
+                            id: constant,
+                            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+                        },
+                        index: 1,
+                    }),
+                    command(B::Add {
+                        expression: MaterialExpression {
+                            id: sum,
+                            kind: MaterialExpressionKind::Add(input, constant),
+                        },
+                        index: 2,
+                    }),
+                    command(B::SetOutput {
+                        output,
+                        source: sum,
+                    }),
+                ],
+            ),
+        )
+        .unwrap();
+    let built = document.clone();
+    // Connected deletion must not erase incoming edges implicitly.
+    assert!(
+        history
+            .execute(
+                &mut document,
+                MaterialTransaction::single(
+                    "Unsafe delete",
+                    command(B::Remove {
+                        expression: constant
+                    })
+                )
+            )
+            .is_err()
+    );
+    assert_eq!(document, built);
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire then remove",
+                vec![
+                    command(B::Rewire {
+                        expression: sum,
+                        input: MaterialExpressionInput::Right,
+                        source: input,
+                    }),
+                    command(B::Remove {
+                        expression: constant,
+                    }),
+                    command(B::Replace {
+                        expression: sum,
+                        replacement: MaterialExpression {
+                            id: sum,
+                            kind: MaterialExpressionKind::Multiply(input, input),
+                        },
+                    }),
+                ],
+            ),
+        )
+        .unwrap();
+    let edited = document.clone();
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, built);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+    history.redo(&mut document).unwrap().unwrap();
+    history.redo(&mut document).unwrap().unwrap();
+    assert_eq!(document, edited);
+}
+
+#[test]
+fn body_argument_disconnect_uses_default_and_undo_restores_connection() {
+    use aestra_authoring::MaterialFunctionBodyCommand as B;
+    let mut dependency = function();
+    dependency.inputs[0].default = Some(MaterialValue::Float(0.25));
+    let mut caller = function();
+    let call = MaterialExpressionId::new();
+    let source = caller.expressions[0].id;
+    caller.expressions.push(MaterialExpression {
+        id: call,
+        kind: MaterialExpressionKind::FunctionCall {
+            function: MaterialFunctionRef::Project(dependency.id),
+            arguments: BTreeMap::from([(dependency.inputs[0].id, source)]),
+            output: dependency.outputs[0].id,
+        },
+    });
+    caller.outputs[0].expression = call;
+    let command = |source| {
+        MaterialTransaction::single(
+            "Argument",
+            MaterialCommand::EditMaterialFunctionBody {
+                function: caller.id,
+                edit: B::SetArgument {
+                    expression: call,
+                    input: dependency.inputs[0].id,
+                    source,
+                },
+            },
+        )
+    };
+    let mut document = MaterialAuthoringDocument::standalone(vec![])
+        .with_material_functions([dependency.clone(), caller.clone()]);
+    let before = document.clone();
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, command(None)).unwrap();
+    let disconnected = document.clone();
+    history
+        .execute(&mut document, command(Some(source)))
+        .unwrap();
+    assert_eq!(document, before);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, disconnected);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+    document.material_functions[0].inputs[0].default = None;
+    let required = document.clone();
+    assert!(history.execute(&mut document, command(None)).is_err());
+    assert_eq!(document, required);
+}
+
+#[test]
+fn graph_body_command_rejects_custom_wesl_without_touching_source() {
+    use aestra_authoring::MaterialFunctionBodyCommand as B;
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let mut document =
+        MaterialAuthoringDocument::standalone(vec![]).with_material_functions([function.clone()]);
+    let before = document.clone();
+    let result = MaterialCommandHistory::default().execute(
+        &mut document,
+        MaterialTransaction::single(
+            "Invalid graph edit",
+            MaterialCommand::EditMaterialFunctionBody {
+                function: function.id,
+                edit: B::SetOutput {
+                    output: function.outputs[0].id,
+                    source: MaterialExpressionId::new(),
+                },
+            },
+        ),
+    );
+    assert!(matches!(
+        result,
+        Err(MaterialCommandError::CustomWeslBodyReadOnly)
+    ));
+    assert_eq!(document, before);
+}
+
+#[test]
+fn invalid_body_edits_preserve_document_and_redo() {
+    use aestra_authoring::{MaterialExpressionInput, MaterialFunctionBodyCommand as B};
+    let original = function();
+    let expression = original.expressions[0].id;
+    let mut document =
+        MaterialAuthoringDocument::standalone(vec![]).with_material_functions([original.clone()]);
+    let mut history = MaterialCommandHistory::default();
+    let mut renamed = original.clone();
+    renamed.name = "Redo survives".into();
+    history
+        .execute(&mut document, replacement(renamed))
+        .unwrap();
+    history.undo(&mut document).unwrap().unwrap();
+    let before = document.clone();
+    let missing = MaterialExpressionId::new();
+    for edit in [
+        B::Add {
+            expression: original.expressions[0].clone(),
+            index: 99,
+        },
+        B::Add {
+            expression: original.expressions[0].clone(),
+            index: 1,
+        },
+        B::Remove {
+            expression: missing,
+        },
+        B::Replace {
+            expression,
+            replacement: MaterialExpression {
+                id: missing,
+                kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+            },
+        },
+        B::SetOutput {
+            output: original.outputs[0].id,
+            source: missing,
+        },
+        B::Rewire {
+            expression,
+            input: MaterialExpressionInput::Left,
+            source: expression,
+        },
+        B::Replace {
+            expression,
+            replacement: MaterialExpression {
+                id: expression,
+                kind: MaterialExpressionKind::Add(expression, expression),
+            },
+        },
+    ] {
+        assert!(
+            history
+                .execute(
+                    &mut document,
+                    MaterialTransaction::single(
+                        "Invalid",
+                        MaterialCommand::EditMaterialFunctionBody {
+                            function: original.id,
+                            edit
+                        }
+                    )
+                )
+                .is_err()
+        );
+        assert_eq!(document, before);
+        assert!(history.can_redo());
+        assert!(!history.can_undo());
+    }
+}
+
+#[test]
 fn unused_function_signature_and_body_edits_preserve_identity_and_undo_without_a_program() {
     let original = function();
     let mut document =

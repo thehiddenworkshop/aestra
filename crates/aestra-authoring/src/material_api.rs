@@ -170,6 +170,7 @@ fn command_error(error: MaterialCommandError) -> (MaterialApiErrorCode, Validati
             (MaterialApiErrorCode::NotFound, ValidationReport::default())
         }
         MaterialCommandError::EffectContextRequired
+        | MaterialCommandError::CustomWeslBodyReadOnly
         | MaterialCommandError::IndexOutOfBounds { .. }
         | MaterialCommandError::IdentityChanged { .. }
         | MaterialCommandError::InvalidExpressionInput { .. } => (

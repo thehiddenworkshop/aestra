@@ -236,6 +236,10 @@ pub enum MaterialExpressionInput {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MaterialCommand {
+    EditMaterialFunctionBody {
+        function: MaterialFunctionId,
+        edit: crate::MaterialFunctionBodyCommand,
+    },
     AddMaterialFunction {
         function: MaterialFunction,
         index: usize,
@@ -402,6 +406,8 @@ impl MaterialDiff {
 pub enum MaterialCommandError {
     #[error("this material operation requires an effect-instance context")]
     EffectContextRequired,
+    #[error("custom WESL function bodies are read-only in graph authoring")]
+    CustomWeslBodyReadOnly,
     #[error("{kind} '{id}' was not found")]
     NotFound { kind: &'static str, id: String },
     #[error("index {index} is outside {collection} with length {len}")]
@@ -573,6 +579,16 @@ pub(crate) fn apply_command(
     command: &MaterialCommand,
 ) -> Result<Vec<MaterialCommand>, MaterialCommandError> {
     let inverse = match command {
+        MaterialCommand::EditMaterialFunctionBody { function, edit } => {
+            let index = function_index(document, *function)?;
+            let current = &mut document.material_functions[index];
+            let previous = current.clone();
+            crate::material_function_body::apply(current, edit)?;
+            vec![MaterialCommand::ReplaceMaterialFunction {
+                id: *function,
+                function: previous,
+            }]
+        }
         MaterialCommand::AddMaterialFunction { function, index } => {
             checked_insert(
                 &mut document.material_functions,

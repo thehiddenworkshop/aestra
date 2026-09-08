@@ -613,3 +613,22 @@ existing type fallback. Existing Rust constructors explicitly retain required-in
 Core/compiler/authoring suites passed, followed by all 15 function compiler contracts;
 workspace all-target checking and strict Clippy passed. Granular function-body commands,
 editor target/UI and function persistence remain pending; no native function UI is claimed.
+
+### AB5a granular function-body commands — 2026-09-08
+
+`EditMaterialFunctionBody` adds a function-native command vocabulary for expression
+add/remove/replace/rewire, output assignment and explicit call-argument connection or
+disconnection. It reuses the existing clone/validate/commit executor and bounded history;
+inverse snapshots preserve expression order, signature IDs, defaults and source metadata.
+Graph commands reject custom-WESL bodies. Transactions may repair links and remove nodes
+together; deleting a connected node alone fails without implicitly removing any link.
+Disconnecting an optional call input restores its default, while disconnecting a required
+input fails validation. No filesystem or active-effect changes are introduced.
+
+Regression cases cover all command kinds, complete undo/redo round trips, invalid IDs,
+indices, duplicate expressions, cyclic edits, redo preservation after rejected edits,
+default restoration and read-only custom WESL. AB5a authoring contracts are implemented;
+AB5b editor opening/controls and AB5c persistence/native acceptance remain pending.
+
+Validation: all 104 authoring tests passed, along with strict workspace Clippy,
+formatting and diff checks.

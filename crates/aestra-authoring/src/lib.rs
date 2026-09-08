@@ -7,6 +7,7 @@ mod history;
 mod material_api;
 mod material_authoring;
 mod material_compilation;
+mod material_function_body;
 mod material_function_edit;
 mod material_inspection;
 mod material_migration;
@@ -27,6 +28,7 @@ pub use material_authoring::{
     MaterialTransaction, MaterialTransactionOutcome,
 };
 pub use material_compilation::{MaterialCompilationReport, MaterialCompilationReporter};
+pub use material_function_body::MaterialFunctionBodyCommand;
 pub use material_function_edit::{
     MaterialFunctionCallOwner, MaterialFunctionCallSite, MaterialFunctionEditPlan,
 };

@@ -415,7 +415,7 @@ routing and existing effect-context graph operations without link/selection flic
 
 Delivery slices:
 
-- **AB5a — Authoring contracts (in progress):** identity-preserving function replacement,
+- **AB5a — Authoring contracts (implemented):** identity-preserving function replacement,
   transactional undo/redo and non-mutating preflight are implemented. Preflight reports
   direct call sites in the supplied document and candidate diagnostics, including cycles;
   invalid edits never silently repair/drop arguments. Standalone tests require neither
@@ -424,7 +424,10 @@ Delivery slices:
   Custom WESL remains a separate read-only source representation. Optional typed defaults
   now round-trip compatibly: omitted arguments use defaults, explicit arguments win,
   and missing required inputs remain errors. Graph-call creation uses declared defaults.
-  Remaining: granular function-body graph commands and editor integration.
+  Function-body commands now add/remove/replace/rewire expressions, assign outputs and
+  connect/disconnect call arguments through transactional validation/history. Connected
+  deletion requires an explicit repair in the same transaction; custom-WESL bodies reject
+  graph commands. Editor integration remains AB5b; source persistence remains AB5c.
 - **AB5b — Editor target and UI:** source-identity open routing, typed signature/body
   controls, call-site diagnostics, scoped history and dependent preview invalidation.
   Custom WESL gets signature/diagnostics/read-only source inspection, no fabricated graph.
@@ -557,6 +560,6 @@ Effect-context return/reopen and Reload Cancel/Save now pass natively after fixi
 File menu actions and preview-only invalidation cancelling Reload. Reload
 Discard and built-in read-only checks were not run in that pass. The user subsequently
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
-marked tested. **Immediate next step (P1):** continue AB5a granular function-body graph
-commands, then AB5b editor integration. Keep the transitional
+marked tested. **Immediate next step (P1):** AB5b function-target open routing and
+editor integration using the function-native authoring contracts. Keep the transitional
 Library and do not introduce thumbnails/file mutations ahead of their milestones.
