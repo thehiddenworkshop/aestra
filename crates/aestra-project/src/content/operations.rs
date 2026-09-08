@@ -1,6 +1,121 @@
 //! Explicit mutation preflight. Document edits and filesystem operations are separate histories.
 use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
+use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};
 use crate::ProjectSourceId;
+
+/// Host-supplied current documents, replacing saved references rather than adding stale ones.
+#[derive(Debug, Clone)]
+pub enum DraftDocument {
+    Effect(Box<aestra_core::EffectAsset>),
+    Program(Box<aestra_core::material::MaterialProgram>),
+    Function(Box<aestra_core::material::MaterialFunction>),
+}
+
+#[derive(Debug, Default)]
+pub struct ReferencePreflight {
+    pub affected_sources: Vec<ProjectSourceId>,
+    pub usages: Vec<ProjectSourceRelation>,
+    /// Any reason here blocks authorization. Empty is not authorization to mutate disk.
+    pub incomplete: Vec<String>,
+}
+
+impl ProjectContent {
+    /// Read-only inventory over this snapshot and explicit host drafts. The host must include
+    /// every open/unsaved document and report false when its draft inventory is incomplete.
+    /// Fresh disk/source-byte revalidation is still required by the eventual operation planner.
+    pub fn reference_preflight(
+        &self,
+        source: ProjectSourceId,
+        drafts: &[(ProjectSourceId, DraftDocument)],
+        all_drafts_known: bool,
+    ) -> ReferencePreflight {
+        let mut report = ReferencePreflight::default();
+        let Some(target) = self.source(source) else {
+            report.incomplete.push("Source is no longer indexed".into());
+            return report;
+        };
+        if !all_drafts_known {
+            report
+                .incomplete
+                .push("Host draft inventory is incomplete".into());
+        }
+        let mut projected = self.clone();
+        let mut seen = std::collections::BTreeSet::new();
+        for (owner, draft) in drafts {
+            let (asset, document) = match draft {
+                DraftDocument::Effect(value) => (
+                    crate::ProjectAssetId::Effect(value.id),
+                    ProjectSourceDocument::Effect(value.clone()),
+                ),
+                DraftDocument::Program(value) => (
+                    crate::ProjectAssetId::MaterialProgram(value.id),
+                    ProjectSourceDocument::MaterialProgram(value.clone()),
+                ),
+                DraftDocument::Function(value) => (
+                    crate::ProjectAssetId::MaterialFunction(value.id),
+                    ProjectSourceDocument::MaterialFunction(value.clone()),
+                ),
+            };
+            if !seen.insert(*owner) || self.asset_for_source(*owner) != Some(asset) {
+                report
+                    .incomplete
+                    .push("Draft source is missing, duplicated or has a different identity".into());
+                continue;
+            }
+            projected.documents.insert(*owner, document);
+        }
+        projected.relations = super::relations::RelationIndex::build(&projected.documents);
+        for entry in self.source_tree().entries() {
+            if entry.id == source
+                || (target.kind == ProjectSourceKind::Directory
+                    && entry.relative_path.starts_with(&target.relative_path))
+            {
+                report.affected_sources.push(entry.id);
+                for usage in projected.source_relations(entry.id).usages {
+                    if !report.usages.contains(&usage) {
+                        report.usages.push(usage);
+                    }
+                }
+            }
+            if entry.kind == ProjectSourceKind::Directory && entry.error.is_none() {
+                continue;
+            }
+            if entry.error.is_some() || !projected.documents.contains_key(&entry.id) {
+                report.incomplete.push(format!(
+                    "References not fully known for {}",
+                    entry.relative_path.display()
+                ));
+                continue;
+            }
+            if matches!(projected.documents.get(&entry.id), Some(ProjectSourceDocument::MaterialFunction(function)) if function.custom_wesl.is_some())
+            {
+                report.incomplete.push(format!(
+                    "Custom WESL include semantics are unknown for {}",
+                    entry.relative_path.display()
+                ));
+            }
+            for dependency in projected.source_relations(entry.id).dependencies {
+                if !matches!(
+                    projected.relation_status(&dependency.target),
+                    ProjectRelationStatus::Available | ProjectRelationStatus::BuiltIn
+                ) {
+                    report.incomplete.push(format!(
+                        "Unresolved or contextual reference in {}",
+                        entry.relative_path.display()
+                    ));
+                }
+            }
+        }
+        if !self.asset_index().diagnostics().is_empty()
+            || !self.source_tree().diagnostics().is_empty()
+        {
+            report
+                .incomplete
+                .push("Project discovery or parsing has diagnostics".into());
+        }
+        report
+    }
+}
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -168,6 +283,62 @@ impl OperationPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn draft_references_replace_saved_references_and_unknown_files_block() {
+        use aestra_core::material::*;
+        let root = tempfile::tempdir().unwrap();
+        let function = MaterialFunction::from_ron(include_str!(
+            "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        ))
+        .unwrap();
+        function
+            .save_ron(root.path().join("function.aestra.material-function.ron"))
+            .unwrap();
+        let mut program = MaterialProgram::additive_sprite("Caller");
+        let content_path = root.path().join("program.aestra.material.ron");
+        program.save_ron(&content_path).unwrap();
+        let content = ProjectContent::scan(root.path());
+        let target = content
+            .unique_source_for_asset(crate::ProjectAssetId::MaterialFunction(function.id))
+            .unwrap()
+            .id;
+        let owner = content
+            .unique_source_for_asset(crate::ProjectAssetId::MaterialProgram(program.id))
+            .unwrap()
+            .id;
+        program.expressions[0].kind = MaterialExpressionKind::FunctionCall {
+            function: MaterialFunctionRef::Project(function.id),
+            output: function.outputs[0].id,
+            arguments: Default::default(),
+        };
+        let drafts = [(owner, DraftDocument::Program(Box::new(program)))];
+        let report = content.reference_preflight(target, &drafts, true);
+        assert_eq!(report.usages.len(), 1);
+        assert_eq!(report.usages[0].owner, owner);
+        assert!(
+            content
+                .reference_preflight(target, &[], true)
+                .usages
+                .is_empty()
+        );
+        assert!(
+            !content
+                .reference_preflight(target, &drafts, false)
+                .incomplete
+                .is_empty()
+        );
+        fs::write(root.path().join("unknown.wgsl"), "// includes not analyzed").unwrap();
+        let content = ProjectContent::scan(root.path());
+        assert!(
+            !content
+                .reference_preflight(target, &drafts, true)
+                .incomplete
+                .is_empty()
+        );
+        let folder = content.reference_preflight(content.source_tree().root(), &drafts, true);
+        assert!(folder.affected_sources.contains(&owner));
+        assert!(folder.affected_sources.contains(&target));
+    }
     #[test]
     fn folder_creation_and_collision_revalidation() {
         let root = tempfile::tempdir().unwrap();

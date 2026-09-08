@@ -841,3 +841,27 @@ bar. Names/collisions/link checks remain owned by the project operation layer.
 Automated action coverage exercises Create and Cancel without changing the effect.
 Native prompt acceptance remains pending. Draft-aware reference preflight and semantic
 rename/move/duplicate remain open; this does not complete AB6a.
+
+### AB6a draft-aware reference inventory — 2026-09-08
+
+The project operation module now exposes read-only reference preflight with typed
+effect/program/function draft overlays and an explicit host-draft completeness flag.
+Draft references replace saved references, source identity is checked, directory
+descendants are included, and unknown formats, discovery diagnostics, custom-WESL
+include semantics and unresolved/contextual references mark analysis incomplete.
+Relation indexing now includes custom-WESL function calls and function texture defaults.
+
+Project tests cover draft-only usages, incomplete host inventories, unknown shader
+files and directory descendants. This is not mutation authorization: rename/move/
+duplicate remain blocked. Editor draft collection, user-facing preflight and guarded
+semantic operations are still pending. No source assets are rewritten by this slice.
+
+### AB6a editor preflight report — 2026-09-08
+
+The Asset Inspector includes a read-only Preflight tab with affected-source/usage
+counts and bounded lists of known owners and incomplete-analysis reasons. Editor
+collection overlays dirty indexed effects and shared program/function drafts.
+Untitled/unresolved drafts, pending proposals, deletions and mismatched draft roots
+prevent a complete report. Authored draft changes invalidate the inspector's report;
+playback alone does not rebuild it. The report explicitly does not authorize mutation.
+Rename/move/duplicate remain blocked pending guarded semantic operation implementation.

@@ -88,7 +88,12 @@ impl RelationIndex {
                     }
                 }
                 ProjectSourceDocument::MaterialFunction(function) => {
-                    expression_targets(&function.expressions, &mut targets)
+                    expression_targets(&function.expressions, &mut targets);
+                    for input in &function.inputs {
+                        if let Some(MaterialValue::Texture2D(id)) = input.default {
+                            targets.insert(ProjectRelationTarget::ContextualResource(id));
+                        }
+                    }
                 }
                 // Portable recipes have no retained links to installation sites. Texture values
                 // still require the destination effect's resource table, just like program defaults.
@@ -135,6 +140,9 @@ fn expression_targets(
 ) {
     for expression in expressions {
         let target = match expression.kind {
+            MaterialExpressionKind::CustomWeslCall { function, .. } => {
+                ProjectRelationTarget::Asset(ProjectAssetId::MaterialFunction(function))
+            }
             MaterialExpressionKind::FunctionCall { function, .. } => match function {
                 MaterialFunctionRef::Project(id) => {
                     ProjectRelationTarget::Asset(ProjectAssetId::MaterialFunction(id))

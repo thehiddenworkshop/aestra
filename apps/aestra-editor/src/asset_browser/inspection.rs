@@ -7,6 +7,44 @@ use aestra_project::{
 
 const RELATION_PAGE_SIZE: usize = 24;
 
+#[cfg(test)]
+#[test]
+fn preflight_includes_unsaved_program_dependencies() {
+    use aestra_core::material::*;
+    let root = tempfile::tempdir().unwrap();
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(root.path().join("function.aestra.material-function.ron"))
+        .unwrap();
+    let program = MaterialProgram::additive_sprite("Caller").normalized();
+    program
+        .save_ron(root.path().join("caller.aestra.material.ron"))
+        .unwrap();
+    let mut catalog = ProjectEffectCatalog::scan(root.path());
+    let session = crate::test_support::session_with_timing_slack();
+    let target = catalog
+        .content()
+        .unique_source_for_asset(ProjectAssetId::MaterialFunction(function.id))
+        .unwrap()
+        .id;
+    assert!(preflight(&catalog, &session, target).usages.is_empty());
+    let mut draft = program.clone();
+    draft.expressions[0].kind = MaterialExpressionKind::FunctionCall {
+        function: MaterialFunctionRef::Project(function.id),
+        output: function.outputs[0].id,
+        arguments: Default::default(),
+    };
+    catalog.replace_material_program(&program, &draft).unwrap();
+    assert_eq!(preflight(&catalog, &session, target).usages.len(), 1);
+    assert_eq!(
+        MaterialProgram::load_ron(root.path().join("caller.aestra.material.ron")).unwrap(),
+        program
+    );
+}
+
 type InspectionKey = (
     Option<ProjectSourceId>,
     Option<aestra_project::ProjectContentVersion>,
@@ -14,7 +52,64 @@ type InspectionKey = (
     usize,
 );
 #[derive(Component, Default)]
-pub(super) struct AssetInspectorUi(Option<InspectionKey>);
+pub(super) struct AssetInspectorUi(
+    Option<InspectionKey>,
+    Option<(
+        aestra_core::EffectAsset,
+        crate::material_drafts::MaterialDrafts,
+        bool,
+        bool,
+    )>,
+);
+
+fn preflight(
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+    source: ProjectSourceId,
+) -> aestra_project::content::operations::ReferencePreflight {
+    use aestra_project::content::operations::DraftDocument;
+    let content = catalog.content();
+    let mut drafts = Vec::new();
+    let mut complete = session.pending_change.is_none();
+    if session.effect_is_dirty() {
+        if let Ok(entry) =
+            content.unique_source_for_asset(ProjectAssetId::Effect(session.effect.id))
+        {
+            drafts.push((
+                entry.id,
+                DraftDocument::Effect(Box::new(session.effect.clone())),
+            ));
+        } else {
+            complete = false;
+        }
+    }
+    for (id, draft) in &catalog.material_drafts.programs {
+        if let (Ok(entry), Some(current)) = (
+            content.unique_source_for_asset(ProjectAssetId::MaterialProgram(*id)),
+            &draft.current,
+        ) {
+            drafts.push((entry.id, DraftDocument::Program(Box::new(current.clone()))));
+        } else {
+            complete = false;
+        }
+    }
+    for (id, draft) in &catalog.material_drafts.functions {
+        if let (Ok(entry), Some(current)) = (
+            content.unique_source_for_asset(ProjectAssetId::MaterialFunction(*id)),
+            &draft.current,
+        ) {
+            drafts.push((entry.id, DraftDocument::Function(Box::new(current.clone()))));
+        } else {
+            complete = false;
+        }
+    }
+    if !catalog.material_drafts.is_empty()
+        && catalog.material_drafts.root.as_deref() != Some(catalog.root())
+    {
+        complete = false;
+    }
+    content.reference_preflight(source, &drafts, complete)
+}
 
 pub(crate) fn spawn_asset_inspector(parent: &mut ChildSpawnerCommands) {
     parent.spawn((
@@ -39,6 +134,7 @@ pub(super) fn sync_panel(
     catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
     assets: Res<AssetServer>,
+    session: Res<EditorSession>,
 ) {
     for (entity, mut ui) in &mut panels {
         let key = (
@@ -47,7 +143,15 @@ pub(super) fn sync_panel(
             state.inspection_tab,
             state.inspection_page,
         );
-        if ui.0 == Some(key) && !localizer.is_changed() {
+        let draft_key = (state.inspection_tab == InspectionTab::Preflight).then(|| {
+            (
+                session.effect.clone(),
+                catalog.material_drafts.clone(),
+                session.pending_change.is_some(),
+                session.effect_is_dirty(),
+            )
+        });
+        if ui.0 == Some(key) && ui.1 == draft_key && !localizer.is_changed() {
             continue;
         }
         if ui.0.is_none_or(|old| old.0 != key.0 || old.1 != key.1) {
@@ -61,7 +165,9 @@ pub(super) fn sync_panel(
             &catalog,
             &localizer,
             &assets,
+            &session,
         );
+        ui.1 = draft_key;
         ui.0 = Some((
             state.inspected,
             state.version,
@@ -181,6 +287,7 @@ fn button(
     entity
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sync(
     commands: &mut Commands,
     entity: Entity,
@@ -189,6 +296,7 @@ pub(super) fn sync(
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
     assets: &AssetServer,
+    session: &EditorSession,
 ) {
     commands.entity(entity).despawn_children();
     let Some(selected) = state.inspected.filter(|id| content.source(*id).is_some()) else {
@@ -213,6 +321,8 @@ pub(super) fn sync(
         return;
     };
     let (rows, known) = relation_rows(content, selected, state.inspection_tab);
+    let preflight = (state.inspection_tab == InspectionTab::Preflight)
+        .then(|| preflight(catalog, session, selected));
     let pages = rows.len().max(1).div_ceil(RELATION_PAGE_SIZE);
     state.inspection_page = state.inspection_page.min(pages - 1);
     let mut details_host = None;
@@ -245,6 +355,7 @@ pub(super) fn sync(
                         (InspectionTab::Details, "browser-details"),
                         (InspectionTab::Dependencies, "browser-dependencies"),
                         (InspectionTab::Usages, "browser-usages"),
+                        (InspectionTab::Preflight, "browser-preflight"),
                     ] {
                         button(
                             tabs,
@@ -313,7 +424,34 @@ pub(super) fn sync(
                                     .display()
                                     .to_string(),
                             );
-                            if state.inspection_tab == InspectionTab::Details {
+                            if let Some(report) = &preflight {
+                                line(scroll, localizer.text("browser-preflight-scope"));
+                                line(
+                                    scroll,
+                                    format!(
+                                        "{} affected sources · {} known usages",
+                                        report.affected_sources.len(),
+                                        report.usages.len()
+                                    ),
+                                );
+                                for reason in report.incomplete.iter().take(24) {
+                                    line(scroll, reason.clone());
+                                }
+                                if report.incomplete.len() > 24 {
+                                    line(
+                                        scroll,
+                                        format!(
+                                            "{} additional incomplete-analysis reasons",
+                                            report.incomplete.len() - 24
+                                        ),
+                                    );
+                                }
+                                for usage in report.usages.iter().take(24) {
+                                    if let Some(owner) = content.source(usage.owner) {
+                                        line(scroll, owner.relative_path.display().to_string());
+                                    }
+                                }
+                            } else if state.inspection_tab == InspectionTab::Details {
                                 if let Some(asset) = content.asset_for_source(selected) {
                                     line(scroll, format!("ID: {}", identity(asset)));
                                 }
@@ -418,7 +556,11 @@ pub(super) fn sync(
                         .id();
                     crate::feathers::scroll::spawn_vertical_scrollbar(body, scroller);
                 });
-            if state.inspection_tab != InspectionTab::Details && pages > 1 {
+            if matches!(
+                state.inspection_tab,
+                InspectionTab::Dependencies | InspectionTab::Usages
+            ) && pages > 1
+            {
                 inspector
                     .spawn(Node {
                         flex_shrink: 0.0,

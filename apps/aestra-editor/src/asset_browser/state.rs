@@ -30,6 +30,7 @@ pub(super) enum InspectionTab {
     Details,
     Dependencies,
     Usages,
+    Preflight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
