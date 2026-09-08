@@ -1,5 +1,6 @@
 //! Backend-neutral, read-only projection of a semantic material program as a graph.
 
+use crate::material_stack::ExpressionSink;
 use crate::{
     MaterialCompileError, MaterialCompiler, MaterialFunctionLibrary, MaterialIrProgram,
     MaterialIrValueId, MaterialStackModifierKind, material_stack::append_default_modifier,
@@ -16,6 +17,60 @@ use aestra_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
+
+trait GraphConstruction: ExpressionSink {
+    fn source_type(
+        &self,
+        source: MaterialExpressionId,
+        functions: &MaterialFunctionLibrary,
+    ) -> Option<MaterialValueType>;
+    fn texture_reference(&self) -> Option<MaterialExpressionKind>;
+}
+impl GraphConstruction for MaterialProgram {
+    fn source_type(
+        &self,
+        source: MaterialExpressionId,
+        functions: &MaterialFunctionLibrary,
+    ) -> Option<MaterialValueType> {
+        if let Ok(analysis) = self.analyze()
+            && let Some(info) = analysis.expressions.get(&source)
+        {
+            return Some(info.value_type);
+        }
+        let ir = MaterialCompiler
+            .compile_with_functions(self, functions)
+            .ok()?;
+        ir.value(*ir.source_map.values.get(&source)?)
+            .map(|value| value.value_type)
+    }
+    fn texture_reference(&self) -> Option<MaterialExpressionKind> {
+        self.parameters
+            .iter()
+            .find(|p| matches!(p.value_type, MaterialValueType::Texture2D(_)))
+            .map(|p| MaterialExpressionKind::Parameter(p.id))
+    }
+}
+struct FunctionConstruction {
+    expressions: Vec<MaterialExpression>,
+    texture: Option<MaterialExpressionKind>,
+}
+impl ExpressionSink for FunctionConstruction {
+    fn expressions_mut(&mut self) -> &mut Vec<MaterialExpression> {
+        &mut self.expressions
+    }
+}
+impl GraphConstruction for FunctionConstruction {
+    fn source_type(
+        &self,
+        _: MaterialExpressionId,
+        _: &MaterialFunctionLibrary,
+    ) -> Option<MaterialValueType> {
+        None
+    }
+    fn texture_reference(&self) -> Option<MaterialExpressionKind> {
+        self.texture.clone()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MaterialGraphNodeKind {
@@ -70,6 +125,8 @@ pub struct MaterialGraphNodeCreationPlan {
 
 #[derive(Debug, Error)]
 pub enum MaterialGraphNodeCreationError {
+    #[error("this node cannot be created in a graph function")]
+    FunctionContextUnsupported,
     #[error(transparent)]
     Compile(#[from] MaterialCompileError),
     #[error("source material expression {expression} is unavailable")]
@@ -249,6 +306,80 @@ impl MaterialCompiler {
         program: &MaterialProgram,
         functions: &MaterialFunctionLibrary,
     ) -> Vec<MaterialGraphNodeDescriptor> {
+        self.graph_catalog(&program.parameters, functions)
+    }
+
+    /// Shared catalog for function bodies. Signature inputs are supplied by the function editor.
+    pub fn function_graph_node_catalog(
+        &self,
+        function: &aestra_core::material::MaterialFunction,
+        functions: &MaterialFunctionLibrary,
+    ) -> Vec<MaterialGraphNodeDescriptor> {
+        if function.custom_wesl.is_some() {
+            return Vec::new();
+        }
+        self.graph_catalog(&[], functions).into_iter().filter(|node| {
+            !matches!(node.kind, MaterialGraphCreateKind::FunctionCall { function: MaterialFunctionRef::Project(id), .. } if id == function.id)
+                && self.function_graph_node_expressions(function, node.kind, functions).is_ok()
+        }).collect()
+    }
+
+    /// Constructs function-native expressions using the same defaults as material nodes.
+    /// The authoring transaction must validate the replacement and its dependent callers.
+    pub fn function_graph_node_expressions(
+        &self,
+        function: &aestra_core::material::MaterialFunction,
+        kind: MaterialGraphCreateKind,
+        functions: &MaterialFunctionLibrary,
+    ) -> Result<Vec<MaterialExpression>, MaterialGraphNodeCreationError> {
+        if function.custom_wesl.is_some() {
+            return Err(MaterialGraphNodeCreationError::FunctionContextUnsupported);
+        }
+        let mut builder = FunctionConstruction {
+            expressions: function.expressions.clone(),
+            texture: function
+                .inputs
+                .iter()
+                .find(|input| matches!(input.value_type, MaterialValueType::Texture2D(_)))
+                .map(|input| MaterialExpressionKind::FunctionInput(input.id)),
+        };
+        let first = builder.expressions.len();
+        match kind {
+            MaterialGraphCreateKind::Constant(ty) => {
+                let value = default_value(ty, false)
+                    .ok_or(MaterialGraphNodeCreationError::TextureConstantUnsupported)?;
+                append_graph_constant(&mut builder, value);
+            }
+            MaterialGraphCreateKind::Input(input) => {
+                append_graph_expression(&mut builder, MaterialExpressionKind::Input(input));
+            }
+            MaterialGraphCreateKind::Function(operation) => {
+                append_graph_function(&mut builder, operation, None)?;
+            }
+            MaterialGraphCreateKind::ExtractComponent(component) => {
+                let value =
+                    append_graph_constant(&mut builder, MaterialValue::Vec4([0.0, 0.0, 0.0, 1.0]));
+                append_graph_expression(
+                    &mut builder,
+                    MaterialExpressionKind::ExtractComponent { value, component },
+                );
+            }
+            MaterialGraphCreateKind::FunctionCall {
+                function: reference,
+                output,
+            } if reference != MaterialFunctionRef::Project(function.id) => {
+                append_graph_function_call(&mut builder, functions, reference, output, None)?;
+            }
+            _ => return Err(MaterialGraphNodeCreationError::FunctionContextUnsupported),
+        }
+        Ok(builder.expressions.split_off(first))
+    }
+
+    fn graph_catalog(
+        &self,
+        parameters: &[aestra_core::material::MaterialParameter],
+        functions: &MaterialFunctionLibrary,
+    ) -> Vec<MaterialGraphNodeDescriptor> {
         let mut nodes = [
             MaterialValueType::Float,
             MaterialValueType::Vec2,
@@ -274,8 +405,7 @@ impl MaterialCompiler {
                 }),
         );
         nodes.extend(
-            program
-                .parameters
+            parameters
                 .iter()
                 .map(|parameter| MaterialGraphNodeDescriptor {
                     kind: MaterialGraphCreateKind::Parameter(parameter.id),
@@ -381,14 +511,7 @@ impl MaterialCompiler {
                 MaterialExpressionKind::Parameter(parameter),
             ),
             MaterialGraphCreateKind::FunctionCall { function, output } => {
-                append_graph_function_call(
-                    self,
-                    &mut replacement,
-                    functions,
-                    function,
-                    output,
-                    source,
-                )?
+                append_graph_function_call(&mut replacement, functions, function, output, source)?
             }
             MaterialGraphCreateKind::Function(function) => {
                 append_graph_function(&mut replacement, function, source)?
@@ -673,8 +796,7 @@ fn constant_label(value_type: MaterialValueType) -> &'static str {
 }
 
 fn append_graph_function_call(
-    compiler: &MaterialCompiler,
-    program: &mut MaterialProgram,
+    program: &mut impl GraphConstruction,
     functions: &MaterialFunctionLibrary,
     reference: MaterialFunctionRef,
     output: MaterialFunctionOutputId,
@@ -697,19 +819,7 @@ fn append_graph_function_call(
         });
     }
     let inputs = function.inputs.clone();
-    let source_type = source.and_then(|source| {
-        compiler
-            .compile_with_functions(program, functions)
-            .ok()
-            .and_then(|ir| {
-                ir.source_map
-                    .values
-                    .get(&source)
-                    .copied()
-                    .map(|id| (ir, id))
-            })
-            .and_then(|(ir, id)| ir.value(id).map(|value| value.value_type))
-    });
+    let source_type = source.and_then(|source| program.source_type(source, functions));
     let source_input = source.and_then(|_| {
         source_type.and_then(|source_type| {
             inputs
@@ -758,19 +868,14 @@ fn append_graph_function_call(
     ))
 }
 
-fn append_graph_function(
-    program: &mut MaterialProgram,
+fn append_graph_function<P: GraphConstruction>(
+    program: &mut P,
     function: MaterialGraphFunction,
     source: Option<MaterialExpressionId>,
 ) -> Result<MaterialExpressionId, MaterialGraphNodeCreationError> {
-    let source_type = source.and_then(|source| {
-        program
-            .analyze()
-            .ok()
-            .and_then(|analysis| analysis.expressions.get(&source).copied())
-            .map(|info| info.value_type)
-    });
-    let numeric_source = |program: &mut MaterialProgram| {
+    let source_type =
+        source.and_then(|source| program.source_type(source, &MaterialFunctionLibrary::default()));
+    let numeric_source = |program: &mut P| {
         source.unwrap_or_else(|| append_graph_constant(program, MaterialValue::Float(0.0)))
     };
     let expression = match function {
@@ -920,13 +1025,10 @@ fn append_graph_function(
             }
         }
         MaterialGraphFunction::SampleTexture => {
-            let parameter = program
-                .parameters
-                .iter()
-                .find(|parameter| matches!(parameter.value_type, MaterialValueType::Texture2D(_)))
-                .map(|parameter| parameter.id)
+            let texture_reference = program
+                .texture_reference()
                 .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
-            let default_texture = || MaterialExpressionKind::Parameter(parameter);
+            let default_texture = || texture_reference.clone();
             let (texture, uv) = match source_type {
                 Some(MaterialValueType::Texture2D(_)) => (
                     source.expect("source type requires a source"),
@@ -948,11 +1050,8 @@ fn append_graph_function(
             MaterialExpressionKind::SampleTexture { texture, uv }
         }
         MaterialGraphFunction::SampleTextureLevel => {
-            let parameter = program
-                .parameters
-                .iter()
-                .find(|parameter| matches!(parameter.value_type, MaterialValueType::Texture2D(_)))
-                .map(|parameter| parameter.id)
+            let texture_reference = program
+                .texture_reference()
                 .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
             let (texture, uv) = match source_type {
                 Some(MaterialValueType::Texture2D(_)) => (
@@ -963,7 +1062,7 @@ fn append_graph_function(
                     ),
                 ),
                 _ => (
-                    append_graph_expression(program, MaterialExpressionKind::Parameter(parameter)),
+                    append_graph_expression(program, texture_reference.clone()),
                     source.unwrap_or_else(|| {
                         append_graph_expression(
                             program,
@@ -976,11 +1075,8 @@ fn append_graph_function(
             MaterialExpressionKind::SampleTextureLevel { texture, uv, level }
         }
         MaterialGraphFunction::SampleTextureGradient => {
-            let parameter = program
-                .parameters
-                .iter()
-                .find(|parameter| matches!(parameter.value_type, MaterialValueType::Texture2D(_)))
-                .map(|parameter| parameter.id)
+            let texture_reference = program
+                .texture_reference()
                 .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
             let (texture, uv) = match source_type {
                 Some(MaterialValueType::Texture2D(_)) => (
@@ -991,7 +1087,7 @@ fn append_graph_function(
                     ),
                 ),
                 Some(MaterialValueType::Vec2) => (
-                    append_graph_expression(program, MaterialExpressionKind::Parameter(parameter)),
+                    append_graph_expression(program, texture_reference.clone()),
                     source.expect("source type requires a source"),
                 ),
                 Some(_) => {
@@ -1001,7 +1097,7 @@ fn append_graph_function(
                     });
                 }
                 None => (
-                    append_graph_expression(program, MaterialExpressionKind::Parameter(parameter)),
+                    append_graph_expression(program, texture_reference.clone()),
                     append_graph_expression(
                         program,
                         MaterialExpressionKind::Input(MaterialInput::Uv0),
@@ -1074,7 +1170,7 @@ fn graph_function_modifier(function: MaterialGraphFunction) -> Option<MaterialSt
 }
 
 fn default_modifier_source(
-    program: &mut MaterialProgram,
+    program: &mut impl ExpressionSink,
     kind: MaterialStackModifierKind,
 ) -> MaterialExpressionId {
     match kind {
@@ -1114,25 +1210,27 @@ fn default_value(value_type: MaterialValueType, one: bool) -> Option<MaterialVal
 }
 
 fn append_graph_constant(
-    program: &mut MaterialProgram,
+    program: &mut impl ExpressionSink,
     value: MaterialValue,
 ) -> MaterialExpressionId {
     append_graph_expression(program, MaterialExpressionKind::Constant(value))
 }
 
 fn append_graph_expression(
-    program: &mut MaterialProgram,
+    program: &mut impl ExpressionSink,
     kind: MaterialExpressionKind,
 ) -> MaterialExpressionId {
     let mut id = MaterialExpressionId::new();
     while program
-        .expressions
+        .expressions_mut()
         .iter()
         .any(|expression| expression.id == id)
     {
         id = MaterialExpressionId::new();
     }
-    program.expressions.push(MaterialExpression { id, kind });
+    program
+        .expressions_mut()
+        .push(MaterialExpression { id, kind });
     id
 }
 

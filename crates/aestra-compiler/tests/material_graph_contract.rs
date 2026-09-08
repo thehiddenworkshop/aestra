@@ -13,6 +13,55 @@ use aestra_core::{
 };
 
 #[test]
+fn function_catalog_uses_material_recipes_without_a_material_document() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let before = function.clone();
+    let library = MaterialFunctionLibrary::default();
+    let program = MaterialProgram::additive_sprite("Recipe comparison");
+    let catalog = MaterialCompiler.function_graph_node_catalog(&function, &library);
+    assert!(catalog.len() > 50);
+    assert!(
+        !catalog
+            .iter()
+            .any(|node| matches!(node.kind, MaterialGraphCreateKind::Parameter(_)))
+    );
+    for descriptor in &catalog {
+        let expressions = MaterialCompiler
+            .function_graph_node_expressions(&function, descriptor.kind, &library)
+            .unwrap();
+        if let Ok(plan) = MaterialCompiler.plan_graph_node_creation_with_functions(
+            &program,
+            descriptor.kind,
+            None,
+            &library,
+        ) {
+            let material_expressions = &plan.replacement.expressions[program.expressions.len()..];
+            // Canonicalize fresh IDs, retaining reference topology as well as literal defaults.
+            let canonical = |expressions: &[MaterialExpression]| {
+                let mut text = format!("{expressions:?}");
+                for (index, expression) in expressions.iter().enumerate() {
+                    text = text.replace(&format!("{:?}", expression.id), &format!("ID{index}"));
+                }
+                text
+            };
+            assert_eq!(
+                canonical(&expressions),
+                canonical(material_expressions),
+                "{}",
+                descriptor.label
+            );
+        }
+    }
+    assert_eq!(function, before);
+    let self_library = MaterialFunctionLibrary::new([function.clone()]);
+    assert!(!MaterialCompiler.function_graph_node_catalog(&function, &self_library).iter().any(|node| matches!(node.kind,
+        MaterialGraphCreateKind::FunctionCall { function: MaterialFunctionRef::Project(id), .. } if id == function.id)));
+}
+
+#[test]
 fn mesh_bitangent_is_constructible_typed_and_reflected_without_a_tangent_node() {
     let mut program = MaterialProgram::additive_sprite("Bitangent graph");
     program.domain = aestra_core::material::MaterialDomain::Mesh;

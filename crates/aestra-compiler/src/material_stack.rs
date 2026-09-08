@@ -1484,12 +1484,28 @@ fn expression_reference_count(
         + usize::from(program.outputs.vertex_offset == Some(expression))
 }
 
-pub(crate) fn append_default_modifier(
-    program: &mut MaterialProgram,
+pub(crate) trait ExpressionSink {
+    fn expressions_mut(&mut self) -> &mut Vec<MaterialExpression>;
+}
+
+impl ExpressionSink for MaterialProgram {
+    fn expressions_mut(&mut self) -> &mut Vec<MaterialExpression> {
+        &mut self.expressions
+    }
+}
+
+impl ExpressionSink for Vec<MaterialExpression> {
+    fn expressions_mut(&mut self) -> &mut Vec<MaterialExpression> {
+        self
+    }
+}
+
+pub(crate) fn append_default_modifier<P: ExpressionSink>(
+    program: &mut P,
     kind: MaterialStackModifierKind,
     source: MaterialExpressionId,
 ) -> Option<MaterialExpressionId> {
-    let constant = |program: &mut MaterialProgram, value: MaterialValue| {
+    let constant = |program: &mut P, value: MaterialValue| {
         append_expression(program, MaterialExpressionKind::Constant(value))
     };
     let operation = match kind {
@@ -1608,18 +1624,20 @@ pub(crate) fn append_default_modifier(
 }
 
 fn append_expression(
-    program: &mut MaterialProgram,
+    program: &mut impl ExpressionSink,
     kind: MaterialExpressionKind,
 ) -> MaterialExpressionId {
     let mut id = MaterialExpressionId::new();
     while program
-        .expressions
+        .expressions_mut()
         .iter()
         .any(|expression| expression.id == id)
     {
         id = MaterialExpressionId::new();
     }
-    program.expressions.push(MaterialExpression { id, kind });
+    program
+        .expressions_mut()
+        .push(MaterialExpression { id, kind });
     id
 }
 

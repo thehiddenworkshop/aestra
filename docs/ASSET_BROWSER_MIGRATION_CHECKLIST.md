@@ -725,3 +725,27 @@ Function-only Save/Reload/recovery remains AB5c. User asset files are not change
 
 Validation: all 104 authoring tests passed, along with strict workspace Clippy,
 formatting and diff checks.
+
+### AB5b shared creation recipes and socket targeting — 2026-09-08
+
+Function graphs now use the compiler-owned material node catalog and construction
+recipes without constructing a surrogate MaterialProgram. Function signature texture
+inputs supply texture recipes; unsupported entries and direct recursive calls are
+excluded. Creation remains an atomic, validated function-draft transaction.
+
+The bounded Feather creation menu groups searchable entries by category. Native
+interaction testing exposed and fixed popup focus/activation timing and a compressed
+scroll area. Mouse opening, searching for Multiply, creating its default expressions,
+and Undo back to a clean draft were verified in Dissolve Edge. Float creation and Undo
+were also verified. No test edits were saved to source assets.
+
+Connection feedback marks validated compatible sockets and snaps within 18 logical
+pixels, recomputing the target at release to avoid stale-frame targeting. Automated
+coverage checks compatible targets and function-only edits. Full native gesture
+acceptance (including near-socket release, pan and zoom) remains pending; a native
+near-socket drag attempt did not establish a changed connection.
+
+Validation: 620 editor tests passed (2 ignored), compiler and authoring suites passed,
+and strict workspace/all-targets Clippy passed. Shared catalog recipe parity has a
+compiler regression test. This does not complete all canvas parity work or AB5c
+function-only persistence/recovery.

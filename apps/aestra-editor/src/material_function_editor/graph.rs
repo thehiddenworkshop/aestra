@@ -33,7 +33,11 @@ struct Socket {
 #[derive(Component, Default)]
 struct Anchor(Option<Vec2>);
 #[derive(Resource, Default)]
-struct ConnectionPreview(Option<(Entity, Vec2)>);
+struct ConnectionPreview(
+    Option<(Entity, Vec2)>,
+    std::collections::BTreeSet<Entity>,
+    Option<Entity>,
+);
 #[derive(Component)]
 struct PreviewWire(MaterialFunctionId);
 #[derive(Component)]
@@ -51,13 +55,9 @@ struct BodyAction {
 enum BodyActionKind {
     Back,
     Locate,
-    Float,
-    Literal(MaterialValueType),
+    Create(aestra_compiler::MaterialGraphCreateKind),
     Boolean(MaterialExpressionId, bool),
     Input(MaterialFunctionInputId),
-    Add,
-    Multiply,
-    Smoothstep,
     Remove(MaterialExpressionId),
 }
 #[derive(Component)]
@@ -82,13 +82,44 @@ pub(super) fn register(app: &mut App) {
 
 fn start_connection(
     mut event: On<Pointer<DragStart>>,
-    sockets: Query<(), With<Socket>>,
+    sockets: Query<(Entity, &Socket)>,
     mut preview: ResMut<ConnectionPreview>,
+    session: Option<Res<EditorSession>>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
 ) {
     if event.button == bevy::picking::pointer::PointerButton::Primary
         && sockets.contains(event.entity)
     {
         preview.0 = Some((event.entity, event.pointer_location.position));
+        preview.1.clear();
+        preview.2 = None;
+        if let (Some(session), Some(catalog), Ok((_, origin))) =
+            (session, catalog, sockets.get(event.entity))
+            && let Ok(document) = session.graph_authoring_document(&catalog)
+        {
+            for (entity, candidate) in &sockets {
+                if let Some((source, target)) = socket_pair(origin, candidate) {
+                    let mut candidate_document = document.clone();
+                    let transaction = aestra_authoring::MaterialTransaction::new(
+                        "Check connection",
+                        vec![
+                            aestra_authoring::MaterialCommand::EditMaterialFunctionBody {
+                                function: origin.owner,
+                                edit: connection_edit(source, target),
+                            },
+                        ],
+                    );
+                    if aestra_authoring::MaterialCommandExecutor::execute(
+                        &mut candidate_document,
+                        &transaction,
+                    )
+                    .is_ok()
+                    {
+                        preview.1.insert(entity);
+                    }
+                }
+            }
+        }
         event.propagate(false);
     }
 }
@@ -100,10 +131,53 @@ fn move_connection(mut event: On<Pointer<Drag>>, mut preview: ResMut<ConnectionP
         event.propagate(false);
     }
 }
-fn end_connection(mut event: On<Pointer<DragEnd>>, mut preview: ResMut<ConnectionPreview>) {
+fn end_connection(
+    mut event: On<Pointer<DragEnd>>,
+    mut preview: ResMut<ConnectionPreview>,
+    sockets: Query<&Socket>,
+    geometry: Query<(Entity, &ComputedNode, &UiGlobalTransform), With<Socket>>,
+    editor: Option<ResMut<FunctionEditor>>,
+    session: Option<ResMut<EditorSession>>,
+    catalog: Option<ResMut<ProjectEffectCatalog>>,
+) {
     if preview.0.is_some_and(|(entity, _)| entity == event.entity) {
-        preview.0 = None;
+        // Re-evaluate the release position; a fast last movement may precede PostUpdate.
+        let snap = geometry
+            .iter()
+            .filter(|(entity, _, _)| preview.1.contains(entity))
+            .filter_map(|(entity, computed, transform)| {
+                let distance = (transform.translation.trunc() * computed.inverse_scale_factor)
+                    .distance(event.pointer_location.position);
+                (distance <= 18.0).then_some((entity, distance))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(entity, _)| entity);
+        if let (Some(target), Some(mut editor), Some(mut session), Some(mut catalog)) =
+            (snap, editor, session, catalog)
+            && let (Ok(from), Ok(to)) = (sockets.get(event.entity), sockets.get(target))
+            && session.standalone_function() == Some(from.owner)
+            && let Some((source, target)) = socket_pair(from, to)
+        {
+            let result = editor.edit_body(
+                &mut session,
+                &mut catalog,
+                vec![connection_edit(source, target)],
+            );
+            finish(&mut session, result);
+        }
+        *preview = ConnectionPreview::default();
         event.propagate(false);
+    }
+}
+
+fn socket_pair(from: &Socket, to: &Socket) -> Option<(MaterialExpressionId, Target)> {
+    if from.owner != to.owner {
+        return None;
+    }
+    match (from.kind, to.kind) {
+        (SocketKind::Source(source), SocketKind::Target(target))
+        | (SocketKind::Target(target), SocketKind::Source(source)) => Some((source, target)),
+        _ => None,
     }
 }
 
@@ -142,6 +216,7 @@ fn drop_socket(
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
+    mut preview: ResMut<ConnectionPreview>,
 ) {
     if event.button != bevy::picking::pointer::PointerButton::Primary {
         return;
@@ -161,6 +236,7 @@ fn drop_socket(
         return;
     };
     event.propagate(false);
+    *preview = ConnectionPreview::default();
     let result = editor.edit_body(
         &mut session,
         &mut catalog,
@@ -169,64 +245,41 @@ fn drop_socket(
     finish(&mut session, result);
 }
 
-fn create_edits(function: &MaterialFunction, action: BodyActionKind) -> Vec<Edit> {
+fn create_edits(
+    function: &MaterialFunction,
+    action: BodyActionKind,
+    library: &aestra_compiler::MaterialFunctionLibrary,
+) -> Result<Vec<Edit>, String> {
     if let BodyActionKind::Remove(expression) = action {
-        return vec![Edit::Remove { expression }];
+        return Ok(vec![Edit::Remove { expression }]);
     }
     if let BodyActionKind::Boolean(expression, value) = action {
-        return vec![Edit::Replace {
+        return Ok(vec![Edit::Replace {
             expression,
             replacement: MaterialExpression {
                 id: expression,
                 kind: MaterialExpressionKind::Constant(MaterialValue::Bool(value)),
             },
-        }];
+        }]);
     }
-    let mut expressions = Vec::new();
-    let mut constant = |value| {
-        let id = MaterialExpressionId::new();
-        expressions.push(MaterialExpression {
-            id,
-            kind: MaterialExpressionKind::Constant(MaterialValue::Float(value)),
-        });
-        id
+    let expressions = match action {
+        BodyActionKind::Create(kind) => MaterialCompiler
+            .function_graph_node_expressions(function, kind, library)
+            .map_err(|error| error.to_string())?,
+        BodyActionKind::Input(id) => vec![MaterialExpression {
+            id: MaterialExpressionId::new(),
+            kind: MaterialExpressionKind::FunctionInput(id),
+        }],
+        _ => return Err("Not a creation action".into()),
     };
-    let kind = match action {
-        BodyActionKind::Float => MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
-        BodyActionKind::Literal(kind) => MaterialExpressionKind::Constant(match kind {
-            MaterialValueType::Float => MaterialValue::Float(0.0),
-            MaterialValueType::Vec2 => MaterialValue::Vec2([0.0; 2]),
-            MaterialValueType::Vec3 => MaterialValue::Vec3([0.0; 3]),
-            MaterialValueType::Vec4 => MaterialValue::Vec4([0.0; 4]),
-            MaterialValueType::Color => MaterialValue::ColorSrgb([1.0; 4]),
-            MaterialValueType::Bool => MaterialValue::Bool(false),
-            MaterialValueType::Texture2D(_) => return Vec::new(),
-        }),
-        BodyActionKind::Input(id) => MaterialExpressionKind::FunctionInput(id),
-        BodyActionKind::Add => MaterialExpressionKind::Add(constant(0.0), constant(0.0)),
-        BodyActionKind::Multiply => MaterialExpressionKind::Multiply(constant(1.0), constant(1.0)),
-        BodyActionKind::Smoothstep => MaterialExpressionKind::Smoothstep {
-            edge_min: constant(0.0),
-            edge_max: constant(1.0),
-            value: constant(0.5),
-        },
-        BodyActionKind::Remove(_)
-        | BodyActionKind::Back
-        | BodyActionKind::Locate
-        | BodyActionKind::Boolean(..) => unreachable!(),
-    };
-    expressions.push(MaterialExpression {
-        id: MaterialExpressionId::new(),
-        kind,
-    });
-    expressions
+    Ok(expressions
         .into_iter()
         .enumerate()
         .map(|(index, expression)| Edit::Add {
             expression,
             index: function.expressions.len() + index,
         })
-        .collect()
+        .collect())
 }
 
 fn action(
@@ -254,11 +307,11 @@ fn action(
         return;
     }
     let result = session.graph_function(&catalog).and_then(|function| {
-        editor.edit_body(
-            &mut session,
-            &mut catalog,
-            create_edits(&function, action.kind),
-        )
+        let library = catalog
+            .material_function_library()
+            .map_err(|error| error.to_string())?;
+        let edits = create_edits(&function, action.kind, &library)?;
+        editor.edit_body(&mut session, &mut catalog, edits)
     });
     finish(&mut session, result);
 }
@@ -454,27 +507,23 @@ pub(crate) fn spawn(
                     kind: BodyActionKind::Back,
                 },
             );
-            let mut options = vec![
-                ("Float", BodyActionKind::Float),
-                ("Vector 2", BodyActionKind::Literal(MaterialValueType::Vec2)),
-                ("Vector 3", BodyActionKind::Literal(MaterialValueType::Vec3)),
-                ("Vector 4", BodyActionKind::Literal(MaterialValueType::Vec4)),
-                ("Color", BodyActionKind::Literal(MaterialValueType::Color)),
-                ("Boolean", BodyActionKind::Literal(MaterialValueType::Bool)),
-                ("Add", BodyActionKind::Add),
-                ("Multiply", BodyActionKind::Multiply),
-                ("Smoothstep", BodyActionKind::Smoothstep),
-            ]
-            .into_iter()
-            .map(|(name, kind)| ComboOption {
-                label: name.into(),
-                selected: false,
-                action: BodyAction {
-                    owner: function.id,
-                    kind,
-                },
-            })
-            .collect::<Vec<_>>();
+            let descriptors = MaterialCompiler.function_graph_node_catalog(&function, &library);
+            let mut categories = descriptors
+                .iter()
+                .map(|descriptor| descriptor.category.clone())
+                .collect::<Vec<_>>();
+            categories.extend(function.inputs.iter().map(|_| "Function inputs".to_owned()));
+            let mut options = descriptors
+                .into_iter()
+                .map(|descriptor| ComboOption {
+                    label: descriptor.label,
+                    selected: false,
+                    action: BodyAction {
+                        owner: function.id,
+                        kind: BodyActionKind::Create(descriptor.kind),
+                    },
+                })
+                .collect::<Vec<_>>();
             options.extend(function.inputs.iter().map(|input| ComboOption {
                 label: format!("Input: {}", input.name),
                 selected: false,
@@ -490,6 +539,7 @@ pub(crate) fn spawn(
                 "Add node",
                 "Add a function node",
                 &options,
+                &categories,
             );
             spawn_graph_frame_button(
                 toolbar,
@@ -826,8 +876,9 @@ fn update_wires(
     viewports: Query<(&View, &FeathersGraphViewport)>,
     previews: Query<(&PreviewWire, &MaterialNode<GraphWireMaterial>)>,
     mut preview: ResMut<ConnectionPreview>,
-    preview_sockets: Query<(&Socket, &UiGlobalTransform)>,
+    preview_sockets: Query<(Entity, &Socket, &UiGlobalTransform)>,
     viewport_geometry: Query<(&View, &ComputedNode, &UiGlobalTransform)>,
+    mut feedback: Query<(Entity, &mut BackgroundColor), With<Socket>>,
 ) {
     let Some(mut materials) = materials else {
         return;
@@ -876,11 +927,41 @@ fn update_wires(
         .0
         .is_some_and(|(entity, _)| !preview_sockets.contains(entity))
     {
-        preview.0 = None;
+        *preview = ConnectionPreview::default();
+    }
+    preview.2 = preview.0.and_then(|(_, cursor)| {
+        preview_sockets
+            .iter()
+            .filter(|(entity, _, _)| preview.1.contains(entity))
+            .filter_map(|(entity, socket, transform)| {
+                let (_, computed, _) = viewport_geometry
+                    .iter()
+                    .find(|(view, _, _)| view.0 == socket.owner)?;
+                let position = transform.translation.trunc() * computed.inverse_scale_factor;
+                let distance = position.distance(cursor);
+                (distance <= 18.0).then_some((entity, distance))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(entity, _)| entity)
+    });
+    for (entity, mut color) in &mut feedback {
+        let next = if preview.0.is_some() && preview.1.contains(&entity) {
+            Color::srgba(
+                0.25,
+                0.9,
+                0.45,
+                if preview.2 == Some(entity) { 0.65 } else { 0.2 },
+            )
+        } else {
+            Color::NONE
+        };
+        if color.0 != next {
+            color.0 = next;
+        }
     }
     for (ghost, handle) in &previews {
         let endpoints = preview.0.and_then(|(entity, cursor)| {
-            let (socket, transform) = preview_sockets.get(entity).ok()?;
+            let (_, socket, transform) = preview_sockets.get(entity).ok()?;
             if socket.owner != ghost.0 {
                 return None;
             }
@@ -894,7 +975,13 @@ fn update_wires(
                 viewport_transform,
             );
             let end = crate::feathers::context_menu::pointer_position_in_node(
-                cursor / computed.inverse_scale_factor,
+                preview
+                    .2
+                    .and_then(|target| preview_sockets.get(target).ok())
+                    .map_or(
+                        cursor / computed.inverse_scale_factor,
+                        |(_, _, transform)| transform.translation.trunc(),
+                    ),
                 computed,
                 viewport_transform,
             );
@@ -1048,7 +1135,9 @@ mod tests {
             .world_mut()
             .spawn(BodyAction {
                 owner: function.id,
-                kind: BodyActionKind::Multiply,
+                kind: BodyActionKind::Create(aestra_compiler::MaterialGraphCreateKind::Function(
+                    aestra_compiler::MaterialGraphFunction::Multiply,
+                )),
             })
             .id();
         app.world_mut().trigger(Activate { entity: button });
@@ -1068,6 +1157,34 @@ mod tests {
                 node: Entity::PLACEHOLDER,
             })
             .id();
+        app.world_mut().trigger(Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::ZERO,
+            },
+            DragStart {
+                button: PointerButton::Primary,
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+            },
+            source,
+        ));
+        assert!(
+            app.world()
+                .resource::<ConnectionPreview>()
+                .1
+                .contains(&destination)
+        );
+        assert!(
+            !app.world()
+                .resource::<ConnectionPreview>()
+                .1
+                .contains(&source)
+        );
+        assert_eq!(app.world().resource::<EditorSession>().effect, effect);
         app.world_mut().trigger(Pointer::new(
             PointerId::Mouse,
             Location {

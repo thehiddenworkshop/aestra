@@ -154,7 +154,7 @@ pub(crate) fn spawn_icon_action_menu<A: Component + Copy>(
         accessible_label,
         tooltip,
         options,
-        false,
+        None,
     );
 }
 
@@ -166,6 +166,7 @@ pub(crate) fn spawn_searchable_icon_action_menu<A: Component + Copy>(
     accessible_label: &str,
     tooltip: &str,
     options: &[ComboOption<A>],
+    categories: &[String],
 ) {
     spawn_icon_menu(
         parent,
@@ -174,7 +175,7 @@ pub(crate) fn spawn_searchable_icon_action_menu<A: Component + Copy>(
         accessible_label,
         tooltip,
         options,
-        true,
+        Some(categories),
     );
 }
 
@@ -275,12 +276,13 @@ fn spawn_icon_menu<A: Component + Copy>(
     accessible_label: &str,
     tooltip: &str,
     options: &[ComboOption<A>],
-    searchable: bool,
+    categories: Option<&[String]>,
 ) {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu())
         .with_children(|menu| {
+            let mut search_button = Entity::PLACEHOLDER;
             menu.spawn_empty()
                 .apply_scene(scenes::feathers_menu_button())
                 .insert((
@@ -304,7 +306,10 @@ fn spawn_icon_menu<A: Component + Copy>(
                     UiSvg(load_svg_icon(asset_server, icon_path)),
                     SvgColor(theme::TEXT),
                     Pickable::IGNORE,
-                ));
+                ))
+                .with_children(|button| {
+                    search_button = button.target_entity();
+                });
             menu.spawn_empty()
                 .apply_scene(scenes::feathers_menu_popup())
                 .insert((
@@ -312,12 +317,20 @@ fn spawn_icon_menu<A: Component + Copy>(
                         positions: vec![
                             PopoverPlacement {
                                 side: PopoverSide::Bottom,
-                                align: PopoverAlign::End,
+                                align: if categories.is_some() {
+                                    PopoverAlign::Start
+                                } else {
+                                    PopoverAlign::End
+                                },
                                 gap: 2.0,
                             },
                             PopoverPlacement {
                                 side: PopoverSide::Top,
-                                align: PopoverAlign::End,
+                                align: if categories.is_some() {
+                                    PopoverAlign::Start
+                                } else {
+                                    PopoverAlign::End
+                                },
                                 gap: 2.0,
                             },
                             PopoverPlacement {
@@ -331,7 +344,7 @@ fn spawn_icon_menu<A: Component + Copy>(
                     OverrideClip,
                 ))
                 .with_children(|popup| {
-                    if searchable {
+                    if let Some(categories) = categories {
                         let popup_entity = popup.target_entity();
                         popup
                             .commands()
@@ -344,33 +357,127 @@ fn spawn_icon_menu<A: Component + Copy>(
                             "Clear search",
                             (),
                         );
+                        // A search popup owns focus itself; ordinary menus assume focusable
+                        // items directly beneath the popup and can immediately close this tree.
+                        popup
+                            .commands()
+                            .entity(search_button)
+                            .remove::<bevy::ui_widgets::MenuButton>()
+                            .remove::<bevy::ui_widgets::ActivateOnPress>()
+                            .observe(
+                                move |_: On<bevy::ui_widgets::Activate>, mut commands: Commands| {
+                                    commands.queue(move |world: &mut World| {
+                                        let visible = world.get::<Visibility>(popup_entity)
+                                            == Some(&Visibility::Visible);
+                                        if let Ok(mut entity) = world.get_entity_mut(popup_entity) {
+                                            entity.insert((
+                                                if visible {
+                                                    Visibility::Hidden
+                                                } else {
+                                                    Visibility::Visible
+                                                },
+                                                if visible {
+                                                    bevy::ui_widgets::MenuFocusState::Closed
+                                                } else {
+                                                    bevy::ui_widgets::MenuFocusState::Open
+                                                },
+                                            ));
+                                        }
+                                        if !visible {
+                                            world
+                                                .resource_mut::<bevy::input_focus::InputFocus>()
+                                                .set(
+                                                    input,
+                                                    bevy::input_focus::FocusCause::Navigated,
+                                                );
+                                        }
+                                    });
+                                },
+                            );
                         popup.commands().entity(input).observe(filter_actions);
-                        super::scroll::spawn_vertical_scroll_area(
-                            popup,
-                            crate::ScrollMemoryKey::MaterialGraphPalette,
-                            Node {
-                                width: Val::Px(268.0),
-                                height: Val::Px(300.0),
-                                flex_direction: FlexDirection::Column,
+                        popup
+                            .spawn(Node {
+                                width: Val::Px(280.0),
+                                height: Val::Px(360.0),
+                                flex_shrink: 0.0,
                                 ..default()
-                            },
-                            |list| {
-                                for option in options {
-                                    list.spawn((
-                                        SearchableAction {
-                                            input,
-                                            text: option.label.to_lowercase(),
-                                        },
-                                        Node {
-                                            width: Val::Percent(100.0),
-                                            flex_direction: FlexDirection::Column,
-                                            ..default()
-                                        },
-                                    ))
-                                    .with_children(|row| spawn_combo_option(row, option));
-                                }
-                            },
-                        );
+                            })
+                            .with_children(|body| {
+                                super::scroll::spawn_vertical_scroll_area(
+                                    body,
+                                    crate::ScrollMemoryKey::MaterialGraphPalette,
+                                    Node {
+                                        flex_grow: 1.0,
+                                        min_width: Val::Px(0.0),
+                                        height: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Column,
+                                        ..default()
+                                    },
+                                    |list| {
+                                        let mut groups = Vec::<(&str, Vec<usize>)>::new();
+                                        for (index, category) in categories.iter().enumerate() {
+                                            if let Some((_, items)) = groups
+                                                .iter_mut()
+                                                .find(|(name, _)| *name == category)
+                                            {
+                                                items.push(index);
+                                            } else {
+                                                groups.push((category, vec![index]));
+                                            }
+                                        }
+                                        for (category, items) in groups {
+                                            list.spawn((
+                                                SearchableAction {
+                                                    input,
+                                                    text: items
+                                                        .iter()
+                                                        .map(|index| {
+                                                            format!(
+                                                                "{} {}",
+                                                                category, options[*index].label
+                                                            )
+                                                            .to_lowercase()
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                        .join(" "),
+                                                },
+                                                Text::new(category.to_uppercase()),
+                                                TextFont {
+                                                    font_size: FontSize::Px(9.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::ACCENT),
+                                                Node {
+                                                    padding: UiRect::all(Val::Px(8.0)),
+                                                    ..default()
+                                                },
+                                                Pickable::IGNORE,
+                                            ));
+                                            for index in items {
+                                                let option = &options[index];
+                                                list.spawn((
+                                                    SearchableAction {
+                                                        input,
+                                                        text: format!(
+                                                            "{} {}",
+                                                            category, option.label
+                                                        )
+                                                        .to_lowercase(),
+                                                    },
+                                                    Node {
+                                                        width: Val::Percent(100.0),
+                                                        flex_direction: FlexDirection::Column,
+                                                        ..default()
+                                                    },
+                                                ))
+                                                .with_children(|row| {
+                                                    spawn_combo_option(row, option)
+                                                });
+                                            }
+                                        }
+                                    },
+                                );
+                            });
                         return;
                     }
                     for option in options {
