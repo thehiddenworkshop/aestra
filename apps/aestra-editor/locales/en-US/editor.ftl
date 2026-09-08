@@ -122,6 +122,7 @@ browser-folder-exists = A file or folder with this name already exists. Choose a
 browser-duplicate = Duplicate
 browser-rename = Rename
 browser-rename-save-first = Save the source and resolve pending drafts before renaming.
+browser-rename-empty = Enter a filename before confirming the rename.
 browser-rename-name = New filename (without extension). Asset identity and display name stay unchanged.
 browser-duplicate-name = New filename (without extension). Copies the saved asset; display name is unchanged.
 browser-duplicate-save-first = Save the source first and resolve any pending or untracked drafts before duplicating.

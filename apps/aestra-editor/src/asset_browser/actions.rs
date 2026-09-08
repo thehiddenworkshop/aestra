@@ -276,6 +276,7 @@ pub(super) fn select_row(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn click_row(
     mut event: On<Pointer<Click>>,
     rows: Query<&BrowserRow, With<ListItem>>,
@@ -287,12 +288,20 @@ pub(super) fn click_row(
     time: Res<Time<Real>>,
     mut clicks: ResMut<BrowserClickState>,
     mut commands: Commands,
+    editors: Query<(), With<super::operations::InlineRenameEditor>>,
 ) {
     if event.button != PointerButton::Primary {
         return;
     }
     // Resolve the row immediately, before another widget consumes the descendant click.
     let target = event.entity;
+    if std::iter::once(target)
+        .chain(parents.iter_ancestors(target))
+        .any(|entity| editors.contains(entity))
+    {
+        event.propagate(false);
+        return;
+    }
     let row_entity = std::iter::once(target)
         .chain(parents.iter_ancestors(target))
         .find(|entity| rows.contains(*entity));

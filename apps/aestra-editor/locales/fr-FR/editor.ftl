@@ -122,6 +122,7 @@ browser-folder-exists = Un fichier ou dossier porte déjà ce nom. Choisissez un
 browser-duplicate = Dupliquer
 browser-rename = Renommer
 browser-rename-save-first = Enregistrez la source et résolvez les modifications en attente avant de renommer.
+browser-rename-empty = Saisissez un nom de fichier avant de confirmer le renommage.
 browser-rename-name = Nouveau nom de fichier (sans extension). L’identité et le nom affiché restent inchangés.
 browser-duplicate-name = Nouveau nom de fichier (sans extension). Copie la version enregistrée ; le nom affiché reste inchangé.
 browser-duplicate-save-first = Enregistrez la source et résolvez les modifications en attente ou non suivies avant de dupliquer.

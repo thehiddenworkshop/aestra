@@ -19,6 +19,10 @@ pub(crate) struct KeyboardNavigableListRow;
 #[derive(Component)]
 pub(crate) struct CompactListRow;
 
+/// Primary caption; callers may temporarily replace it with an inline editor.
+#[derive(Component)]
+pub(crate) struct ListRowPrimaryLabel;
+
 #[derive(Component)]
 pub(crate) struct CompactListSectionHeader;
 
@@ -139,6 +143,7 @@ fn spawn_list_row_content(
         .with_children(|labels| {
             labels.spawn((
                 Text::new(primary),
+                ListRowPrimaryLabel,
                 TextFont {
                     font_size: FontSize::Px(11.0),
                     ..default()

@@ -20,12 +20,17 @@ struct NameField;
 struct PendingFocus;
 #[derive(Component)]
 struct NameError;
+#[derive(Component)]
+pub(super) struct InlineRenameEditor;
 
 fn name_collision(prompt: &Prompt, catalog: &ProjectEffectCatalog) -> bool {
     let Some((parent, _)) = prompt.target else {
         return false;
     };
     let name = format!("{}{}", prompt.name, prompt.suffix).to_lowercase();
+    if prompt.rename && prompt.name == prompt.original_name {
+        return false;
+    }
     catalog
         .content()
         .source_tree()
@@ -35,10 +40,13 @@ fn name_collision(prompt: &Prompt, catalog: &ProjectEffectCatalog) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 fn sync_controls(
-    prompt: Res<Prompt>,
+    mut prompt: ResMut<Prompt>,
     buttons: Query<(Entity, &Choice, Has<InteractionDisabled>)>,
     pending: Query<(Entity, &Children), With<PendingFocus>>,
-    inputs: Query<(), With<bevy::feathers::controls::FeathersTextInput>>,
+    mut inputs: Query<
+        &mut bevy::text::EditableText,
+        With<bevy::feathers::controls::FeathersTextInput>,
+    >,
     mut focus: Option<ResMut<InputFocus>>,
     mut commands: Commands,
     catalog: Option<Res<ProjectEffectCatalog>>,
@@ -57,7 +65,9 @@ fn sync_controls(
         !complete || drafts.iter().any(|(owner, _)| *owner == source)
     });
     for (mut text, mut node) in &mut errors {
-        node.display = if collision || draft_block || prompt.failure.is_some() {
+        node.display = if prompt.inline_label.is_none()
+            && (collision || draft_block || prompt.failure.is_some())
+        {
             Display::Flex
         } else {
             Display::None
@@ -75,6 +85,22 @@ fn sync_controls(
                 })
             });
         }
+        if let Some(wrapper) = prompt.overlay.filter(|_| prompt.inline_label.is_some()) {
+            if collision || draft_block || prompt.failure.is_some() {
+                commands.entity(wrapper).try_insert((
+                    EditorTooltip::description(text.0.clone()),
+                    Outline {
+                        color: Color::srgb(1.0, 0.35, 0.3),
+                        width: Val::Px(1.0),
+                        offset: Val::Px(-1.0),
+                    },
+                ));
+            } else {
+                commands
+                    .entity(wrapper)
+                    .try_remove::<(EditorTooltip, Outline)>();
+            }
+        }
     }
     for (entity, choice, disabled) in &buttons {
         if !matches!(choice, Choice::Create) {
@@ -90,6 +116,12 @@ fn sync_controls(
     }
     for (entity, children) in &pending {
         if let Some(input) = children.iter().find(|child| inputs.contains(*child)) {
+            prompt.input = Some(input);
+            if prompt.inline_label.is_some()
+                && let Ok(mut text) = inputs.get_mut(input)
+            {
+                text.queue_edit(bevy::text::TextEdit::SelectAll);
+            }
             if let Some(focus) = focus.as_deref_mut() {
                 focus.set(input, FocusCause::Navigated);
             }
@@ -102,7 +134,20 @@ fn keyboard(
     mut event: On<FocusedInput<KeyboardInput>>,
     mut prompt: ResMut<Prompt>,
     mut commands: Commands,
+    inputs: Query<&bevy::text::EditableText>,
 ) {
+    if prompt.inline_label.is_some()
+        && event.input.state == ButtonState::Pressed
+        && !event.input.repeat
+        && event.input.key_code == KeyCode::Enter
+        && Some(event.focused_entity) == prompt.input
+        && let Ok(text) = inputs.get(event.focused_entity)
+        && !text.is_composing()
+    {
+        event.propagate(false);
+        prompt.submit_requested = true;
+        return;
+    }
     if prompt.overlay.is_some()
         && event.input.key_code == KeyCode::Escape
         && event.input.state == ButtonState::Pressed
@@ -126,6 +171,15 @@ struct Prompt {
     rename: bool,
     pending: bool,
     failure: Option<String>,
+    inline_label: Option<Entity>,
+    inline_secondary: Option<Entity>,
+    inline_row: Option<Entity>,
+    return_focus: Option<Entity>,
+    original_name: String,
+    generation: u64,
+    input: Option<Entity>,
+    submit_requested: bool,
+    blur_attempted: bool,
 }
 
 pub(super) fn register(app: &mut App) {
@@ -134,8 +188,16 @@ pub(super) fn register(app: &mut App) {
         .add_observer(change)
         .add_observer(choose)
         .add_observer(keyboard)
-        .add_systems(Update, (escape, sync_controls));
+        .add_observer(submit_inline_on_outside_press)
+        .add_systems(Update, (escape, sync_controls, inline_lifecycle).chain())
+        .add_systems(
+            PostUpdate,
+            submit_inline
+                .after(bevy::text::EditableTextSystems)
+                .after(bevy::input_focus::InputFocusSystems::FocusChangeEvents),
+        );
 }
+#[allow(clippy::too_many_arguments)]
 fn open(
     event: On<OpenFolderPrompt>,
     mut commands: Commands,
@@ -143,13 +205,25 @@ fn open(
     state: Res<AssetBrowserState>,
     catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
+    rows: Query<(Entity, &super::panel::BrowserRow)>,
+    labels: Query<(Entity, &ChildOf), With<crate::feathers::list_row::ListRowPrimaryLabel>>,
+    parents: Query<&ChildOf>,
+    lists: Query<(), With<super::panel::BrowserItems>>,
+    texts: Query<(Entity, &ChildOf), With<Text>>,
 ) {
     if prompt.overlay.is_some() {
         return;
     }
+    prompt.generation = prompt.generation.wrapping_add(1);
+    prompt.input = None;
+    prompt.submit_requested = false;
+    prompt.blur_attempted = false;
     prompt.duplicate = None;
     prompt.pending = false;
     prompt.failure = None;
+    prompt.inline_label = None;
+    prompt.inline_row = None;
+    prompt.return_focus = None;
     prompt.rename = event.1;
     prompt.suffix.clear();
     prompt.target = Some((
@@ -202,10 +276,99 @@ fn open(
     } else {
         "browser-folder-name"
     };
+    prompt.original_name = prompt.name.clone();
+    if prompt.rename {
+        let Some((row, _)) = rows.iter().find(|(_, row)| Some(row.0) == prompt.duplicate) else {
+            return;
+        };
+        let Some((caption, parent)) = labels.iter().find(|(label, _)| {
+            parents
+                .iter_ancestors(*label)
+                .any(|ancestor| ancestor == row)
+        }) else {
+            return;
+        };
+        let mut wrapper = Entity::PLACEHOLDER;
+        let secondary = texts
+            .iter()
+            .find(|(entity, owner)| *entity != caption && owner.parent() == parent.parent())
+            .map(|(entity, _)| entity);
+        commands.entity(parent.parent()).with_children(|host| {
+            wrapper = host
+                .spawn((
+                    InlineRenameEditor,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_width: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                ))
+                .with_children(|host| {
+                    let field = crate::feathers::text_input::spawn_text_input(
+                        host,
+                        &prompt.name,
+                        &localizer.text("browser-rename"),
+                        NameField,
+                    );
+                    host.commands().entity(field).insert(PendingFocus);
+                    host.commands()
+                        .entity(field)
+                        .entry::<Node>()
+                        .and_modify(|mut node| {
+                            node.height = Val::Px(22.0);
+                            node.min_width = Val::Px(0.0);
+                            node.width = Val::Percent(100.0);
+                            node.flex_shrink = 0.0;
+                        });
+                    host.spawn((
+                        NameError,
+                        Text::default(),
+                        TextColor(theme::TEXT),
+                        TextFont {
+                            font_size: 10.0.into(),
+                            ..default()
+                        },
+                        TextLayout::no_wrap(),
+                        Node {
+                            display: Display::None,
+                            max_height: Val::Px(16.0),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                    ));
+                    host.spawn((
+                        Choice::Create,
+                        Node {
+                            display: Display::None,
+                            ..default()
+                        },
+                    ));
+                })
+                .id();
+        });
+        commands
+            .entity(caption)
+            .entry::<Node>()
+            .and_modify(|mut node| node.display = Display::None);
+        prompt.inline_label = Some(caption);
+        if let Some(secondary) = secondary {
+            commands
+                .entity(secondary)
+                .entry::<Node>()
+                .and_modify(|mut node| node.display = Display::None);
+        }
+        prompt.inline_secondary = secondary;
+        prompt.inline_row = Some(row);
+        prompt.return_focus = parents
+            .iter_ancestors(row)
+            .find(|entity| lists.contains(*entity));
+        prompt.overlay = Some(wrapper);
+        return;
+    }
     let overlay = commands
         .spawn((
             TabGroup::modal(),
-            theme::feathers_theme(),
             super::panel::BrowserSurface,
             crate::feathers::node_graph::FeathersGraphNavigationBlocker,
             RelativeCursorPosition::default(),
@@ -304,11 +467,144 @@ fn change(
     }
 }
 fn close(commands: &mut Commands, prompt: &mut Prompt) {
+    for label in [prompt.inline_label.take(), prompt.inline_secondary.take()]
+        .into_iter()
+        .flatten()
+    {
+        commands.queue(move |world: &mut World| {
+            if let Some(mut node) = world.get_mut::<Node>(label) {
+                node.display = Display::Flex;
+            }
+        });
+    }
+    if let Some(list) = prompt.return_focus.take() {
+        let row = prompt.inline_row;
+        commands.queue(move |world: &mut World| {
+            if world.get_entity(list).is_ok()
+                && let Some(row) = row.filter(|row| world.get_entity(*row).is_ok())
+            {
+                world
+                    .entity_mut(list)
+                    .insert(bevy::ui_widgets::ActiveDescendant(Some(row)));
+            }
+            if world.get_entity(list).is_ok()
+                && let Some(mut focus) = world.get_resource_mut::<InputFocus>()
+            {
+                focus.set(list, FocusCause::Navigated);
+            }
+        });
+    }
     if let Some(entity) = prompt.overlay.take() {
         commands.entity(entity).try_despawn();
     }
     prompt.target = None;
     prompt.duplicate = None;
+    prompt.inline_row = None;
+}
+
+fn submit_inline_on_outside_press(
+    event: On<Pointer<Press>>,
+    parents: Query<&ChildOf>,
+    mut prompt: ResMut<Prompt>,
+) {
+    let Some(wrapper) = prompt.overlay.filter(|_| prompt.inline_row.is_some()) else {
+        return;
+    };
+    if !std::iter::once(event.entity)
+        .chain(parents.iter_ancestors(event.entity))
+        .any(|entity| entity == wrapper)
+    {
+        prompt.return_focus = None;
+        if !prompt.pending && !prompt.blur_attempted {
+            prompt.submit_requested = true;
+            prompt.blur_attempted = true;
+        }
+    }
+}
+
+fn submit_inline(
+    mut commands: Commands,
+    mut prompt: ResMut<Prompt>,
+    inputs: Query<&bevy::text::EditableText>,
+    choices: Query<(Entity, &Choice)>,
+    localizer: Res<Localizer>,
+) {
+    if prompt.inline_row.is_none() || !prompt.submit_requested {
+        return;
+    }
+    prompt.submit_requested = false;
+    if prompt.pending {
+        return;
+    }
+    let Some(text) = prompt.input.and_then(|input| inputs.get(input).ok()) else {
+        return;
+    };
+    if text.is_composing() {
+        return;
+    }
+    // Native text input queues edits until PostUpdate. Read the committed text,
+    // not the previous frame's value or an earlier ValueChange event.
+    prompt.name = text.value().to_string();
+    if prompt.name.trim().is_empty() {
+        prompt.failure = Some(localizer.text("browser-rename-empty"));
+        return;
+    }
+    if prompt.name == prompt.original_name {
+        close(&mut commands, &mut prompt);
+    } else if let Some((entity, _)) = choices
+        .iter()
+        .find(|(_, choice)| matches!(choice, Choice::Create))
+    {
+        commands.trigger(Activate { entity });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn inline_lifecycle(
+    mut commands: Commands,
+    mut prompt: ResMut<Prompt>,
+    focus: Option<Res<InputFocus>>,
+    parents: Query<&ChildOf>,
+    nodes: Query<&Node>,
+    pending: Query<(), With<PendingFocus>>,
+    state: Option<Res<AssetBrowserState>>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
+) {
+    let (Some(wrapper), Some(row)) = (prompt.overlay, prompt.inline_row) else {
+        return;
+    };
+    if !pending.is_empty() {
+        return;
+    }
+    let focused = focus.as_ref().and_then(|focus| focus.get());
+    let inside = focused.is_some_and(|entity| {
+        entity == wrapper
+            || parents
+                .iter_ancestors(entity)
+                .any(|ancestor| ancestor == wrapper)
+    });
+    let hidden = nodes
+        .get(row)
+        .map_or(true, |node| node.display == Display::None);
+    let changed = state.as_ref().is_some_and(|state| state.legacy)
+        || catalog.as_ref().is_some_and(|catalog| {
+            prompt.target.is_some_and(|(_, version)| {
+                version.generation != catalog.content_revision().generation
+            })
+        });
+    if changed || (hidden && !prompt.submit_requested && !prompt.pending) {
+        // Focus already moved to another control; never steal it back on blur/navigation.
+        prompt.return_focus = None;
+        close(&mut commands, &mut prompt);
+    } else if inside {
+        prompt.blur_attempted = false;
+    } else {
+        prompt.return_focus = None;
+        if !prompt.pending && !prompt.blur_attempted {
+            prompt.blur_attempted = true;
+            prompt.submit_requested = true;
+        }
+    }
 }
 fn escape(
     keys: Option<Res<ButtonInput<KeyCode>>>,
@@ -363,6 +659,7 @@ fn choose(
             let guard = IoGuard::capture(&catalog, &session);
             let submitted_target = prompt.target;
             let submitted_name = prompt.name.clone();
+            let submitted_generation = prompt.generation;
             prompt.pending = true;
             prompt.failure = None;
             let mut prepared = catalog.clone();
@@ -372,6 +669,9 @@ fn choose(
                     .plan_material_rename(request, &drafts, complete);
                 io::completion(move |world| {
                     let current = world.resource::<Prompt>();
+                    if current.generation != submitted_generation {
+                        return;
+                    }
                     if current.target != submitted_target || current.name != submitted_name {
                         world.resource_mut::<Prompt>().pending = false;
                         return;
@@ -405,15 +705,10 @@ fn choose(
                     }
                     if result.is_ok() {
                         io::publish_catalog(world, prepared);
-                        let overlay = {
-                            let mut prompt = world.resource_mut::<Prompt>();
+                        world.resource_scope(|world, mut prompt: Mut<Prompt>| {
                             prompt.pending = false;
-                            prompt.target = None;
-                            prompt.overlay.take()
-                        };
-                        if let Some(overlay) = overlay {
-                            world.despawn(overlay);
-                        }
+                            close(&mut world.commands(), &mut prompt);
+                        });
                     } else {
                         let mut prompt = world.resource_mut::<Prompt>();
                         prompt.pending = false;
@@ -502,7 +797,7 @@ mod tests {
         let original = root.path().join("original.aestra.material.ron");
         program.save_ron(&original).unwrap();
         let unknown = root.path().join("unknown.wgsl");
-        std::fs::write(&unknown, "// unknown includes").unwrap();
+        std::fs::write(&unknown, "#import external::material").unwrap();
         let catalog = ProjectEffectCatalog::scan(root.path());
         let source = catalog
             .content()

@@ -943,3 +943,46 @@ closing the dialog or changing the submitted name cancels pending publication. S
 draft and project-byte revalidation and exclusive no-overwrite publication remain intact.
 Tests cover unrelated image/icon assets, alias and draft-only filename references,
 unsafe SVG constructs, rename/reopen/save with effect resolution, and inline error/retry.
+
+### AB6a inline filename Rename — 2026-09-08
+
+F2 and the browser Rename action now replace the selected asset's caption with a focused,
+selected filename input in both list and thumbnail views, without a modal overlay. Enter
+submits, unchanged Enter exits without writing, and Escape cancels. Focus loss or an
+outside press submits through the same guarded path; invalid names remain editable. The
+extension remains protected. Validation blockers mark the inline field and expose their
+full message on hover; backend failures also remain in the status bar. Existing draft,
+reference, identity and exclusive no-overwrite checks are unchanged. New Folder and
+Duplicate retain their dialogs. Native visual/input acceptance remains pending.
+
+Verification: editor tests pass (637 unit tests plus the architecture test; two opt-in
+tests ignored), and strict all-target editor Clippy passes. Regression coverage includes
+list/grid field layout, Enter/Escape, unchanged names, blank/colliding names and blur.
+
+Inline submission reads EditableText after its queued edits have been applied in
+PostUpdate. Focus changes no longer cancel a pending preflight, and same-project catalog
+refreshes no longer silently discard the field. Tests exercise queued edits plus Enter,
+focus loss, outside press and focus changes while awaiting publication, including the
+new visible filename after success.
+
+### AB6a project-wide Rename reference checks — 2026-09-08
+
+The reference check now recognizes the bundled icons' harmless export structures
+(`defs`, Sketch shape metadata, XML whitespace hints, the standard SVG 1.1 declaration,
+and literal fill/stroke styles). Descendants and attributes are still checked: scripts,
+links, general CSS, custom DTDs/entities and unknown constructs block Rename.
+
+Self-contained core JSON glTF is parsed and accepted only when its buffers/images are
+embedded and it has no extension payloads. WGSL and the WGSL-compatible subset of WESL
+are parsed with Naga to prove there are no imports; this also applies to custom-function
+sources and draft overlays. Custom calls use stable function IDs, so they do not alone
+block filename-only Rename. The general Preflight report remains conservative.
+
+Regression coverage copies the full bundled project to a temporary directory and renames
+both Dissolve Edge and Material Graph Lab there, preserving bytes and asset identity.
+Additional cases retain blockers for external mesh URIs, extensions, shader imports,
+unsafe SVG content and imported custom-function drafts. Workspace assets are not renamed
+by these tests. Native inline-rename acceptance remains pending.
+
+Verification: all 78 project tests and 637 editor unit tests plus the architecture test
+pass (two opt-in editor tests ignored); strict all-target Clippy and formatting checks pass.

@@ -9,9 +9,12 @@ repository.workspace = true
 
 [dependencies]
 aestra-core = { path = "../aestra-core" }
+gltf = { version = "1.4.1", default-features = false }
+naga.workspace = true
 ron.workspace = true
 roxmltree = "0.21.1"
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 

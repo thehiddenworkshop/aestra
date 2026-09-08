@@ -979,27 +979,227 @@ fn keyboard_context_menu_and_escape_restore_list_focus() {
 }
 
 #[test]
-fn f2_opens_rename_prompt_without_renaming_or_opening_document() {
-    let root = tempfile::tempdir().unwrap();
-    let program = aestra_core::material::MaterialProgram::additive_sprite("Display name");
-    let path = root.path().join("original.aestra.material.ron");
-    program.save_ron(&path).unwrap();
-    let mut app = browser_app(root.path());
-    let effect = app.world().resource::<EditorSession>().effect.clone();
-    let list = list(&mut app);
-    app.world_mut()
-        .resource_mut::<InputFocus>()
-        .set(list, bevy::input_focus::FocusCause::Navigated);
-    key(&mut app, KeyCode::F2);
-    let world = app.world_mut();
-    assert!(
-        world
-            .query::<&Text>()
+fn f2_edits_label_inline_and_escape_restores_it_in_both_views() {
+    for view in [ViewMode::List, ViewMode::Grid] {
+        let root = tempfile::tempdir().unwrap();
+        let program = aestra_core::material::MaterialProgram::additive_sprite("Display name");
+        let path = root.path().join("original.aestra.material.ron");
+        program.save_ron(&path).unwrap();
+        let mut app = browser_layout_app(root.path(), UVec2::new(640, 520), 1.0);
+        app.world_mut().resource_mut::<AssetBrowserState>().view = view;
+        app.update();
+        let effect = app.world().resource::<EditorSession>().effect.clone();
+        let list = list(&mut app);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(list, bevy::input_focus::FocusCause::Navigated);
+        key(&mut app, KeyCode::F2);
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<super::operations::InlineRenameEditor>>()
+                .iter(world)
+                .count(),
+            1
+        );
+        assert!(
+            !world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| text.0 == "Rename")
+        );
+        let input = world.resource::<InputFocus>().get().unwrap();
+        assert_eq!(
+            world
+                .get::<bevy::text::EditableText>(input)
+                .unwrap()
+                .value(),
+            "original"
+        );
+        let wrapper = world
+            .query_filtered::<&ComputedNode, With<super::operations::InlineRenameEditor>>()
+            .single(world)
+            .unwrap();
+        assert!(
+            wrapper.size().x > 60.0 && wrapper.size().y >= 21.0,
+            "{:?}",
+            wrapper.size()
+        );
+        let caption = world.query_filtered::<(Entity, &Text), With<crate::feathers::list_row::ListRowPrimaryLabel>>().iter(world).find(|(_, text)| text.0 == "original").unwrap().0;
+        assert_eq!(world.get::<Node>(caption).unwrap().display, Display::None);
+        assert_eq!(world.resource::<EditorSession>().effect, effect);
+        assert!(path.exists());
+        key(&mut app, KeyCode::Escape);
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<super::operations::InlineRenameEditor>>()
+                .iter(world)
+                .count(),
+            0
+        );
+        assert_eq!(world.get::<Node>(caption).unwrap().display, Display::Flex);
+        assert_eq!(world.resource::<InputFocus>().get(), Some(list));
+        assert!(path.exists());
+    }
+}
+
+#[test]
+fn inline_rename_enter_validates_and_invalid_blur_keeps_the_editor() {
+    for name in ["original", "renamed", "", "taken"] {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original.aestra.material.ron");
+        aestra_core::material::MaterialProgram::additive_sprite("Display name")
+            .save_ron(&original)
+            .unwrap();
+        aestra_core::material::MaterialProgram::additive_sprite("Other")
+            .save_ron(root.path().join("taken.aestra.material.ron"))
+            .unwrap();
+        let mut app = browser_app(root.path());
+        let list = list(&mut app);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(list, bevy::input_focus::FocusCause::Navigated);
+        key(&mut app, KeyCode::F2);
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        app.world_mut()
+            .get_mut::<bevy::text::EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text(name);
+        key(&mut app, KeyCode::Enter);
+        crate::project_content::io::drain(app.world_mut());
+        app.update();
+        let world = app.world_mut();
+        let active = world
+            .query_filtered::<Entity, With<super::operations::InlineRenameEditor>>()
             .iter(world)
-            .any(|text| text.0 == "Rename")
-    );
-    assert_eq!(world.resource::<EditorSession>().effect, effect);
-    assert!(path.exists());
+            .count();
+        assert_eq!(
+            active,
+            usize::from(name.is_empty() || name == "taken"),
+            "{name}"
+        );
+        assert_eq!(original.exists(), name != "renamed", "{name}");
+        if name == "renamed" {
+            assert!(root.path().join("renamed.aestra.material.ron").exists());
+        }
+        if active == 1 {
+            world
+                .resource_mut::<InputFocus>()
+                .set(list, bevy::input_focus::FocusCause::Navigated);
+            app.update();
+            let world = app.world_mut();
+            assert_eq!(
+                world
+                    .query_filtered::<Entity, With<super::operations::InlineRenameEditor>>()
+                    .iter(world)
+                    .count(),
+                1
+            );
+            assert!(original.exists());
+            key(&mut app, KeyCode::Escape);
+        }
+    }
+}
+
+#[test]
+fn inline_rename_submits_latest_queued_text_on_enter_blur_and_outside_press() {
+    use bevy::{
+        camera::NormalizedRenderTarget,
+        picking::{
+            backend::HitData,
+            pointer::{Location, PointerId},
+        },
+        text::TextEdit,
+    };
+    for finish in 0..3 {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original.aestra.material.ron");
+        aestra_core::material::MaterialProgram::additive_sprite("Display name")
+            .save_ron(&original)
+            .unwrap();
+        let mut app = browser_app(root.path());
+        app.add_observer(crate::feathers::text_input::emit_text_change)
+            .add_observer(crate::feathers::text_input::submit_text_on_enter)
+            .add_observer(crate::feathers::text_input::submit_text_on_focus_loss);
+        let list = list(&mut app);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(list, bevy::input_focus::FocusCause::Navigated);
+        key(&mut app, KeyCode::F2);
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        {
+            let mut text = app
+                .world_mut()
+                .get_mut::<bevy::text::EditableText>(input)
+                .unwrap();
+            // This fixture has no text layout for Parley's selection commands.
+            // Reset the editor, then leave the replacement queued until the
+            // same frame as confirmation to exercise native edit timing.
+            *text = bevy::text::EditableText::new("");
+            text.queue_edit(TextEdit::Insert("renamed".into()));
+        }
+        match finish {
+            0 => key(&mut app, KeyCode::Enter),
+            1 => {
+                app.world_mut()
+                    .resource_mut::<InputFocus>()
+                    .set(list, bevy::input_focus::FocusCause::Pressed);
+                app.update();
+            }
+            _ => {
+                app.world_mut().trigger(Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                    Press {
+                        button: PointerButton::Primary,
+                        count: 1,
+                        hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+                    },
+                    list,
+                ));
+                app.update();
+            }
+        }
+        // Focus changes must not cancel the asynchronous preflight submitted by Enter.
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(list, bevy::input_focus::FocusCause::Pressed);
+        app.update();
+        crate::project_content::io::drain(app.world_mut());
+        app.update();
+        assert!(
+            !original.exists(),
+            "finish={finish}: {}",
+            app.world().resource::<EditorSession>().status
+        );
+        assert!(
+            root.path().join("renamed.aestra.material.ron").exists(),
+            "finish={finish}: {}",
+            app.world().resource::<EditorSession>().status
+        );
+        let world = app.world_mut();
+        assert!(
+            world
+                .query_filtered::<&Text, With<crate::feathers::list_row::ListRowPrimaryLabel>>()
+                .iter(world)
+                .any(|text| text.0 == "renamed")
+        );
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<super::operations::InlineRenameEditor>>()
+                .iter(world)
+                .count(),
+            0
+        );
+    }
 }
 
 #[test]

@@ -104,7 +104,9 @@ impl ProjectContent {
                 ));
                 continue;
             }
-            if matches!(projected.documents.get(&entry.id), Some(ProjectSourceDocument::MaterialFunction(function)) if function.custom_wesl.is_some())
+            if matches!(projected.documents.get(&entry.id), Some(ProjectSourceDocument::MaterialFunction(function))
+                if function.custom_wesl.as_ref().is_some_and(|wesl|
+                    !rename_only || !rename::non_referencing_shader(&wesl.source)))
             {
                 report.incomplete.push(format!(
                     "Custom WESL include semantics are unknown for {}",
@@ -118,12 +120,16 @@ impl ProjectContent {
                 }
                 _ => &[],
             };
-            if expressions.iter().any(|expression| {
-                matches!(
-                    expression.kind,
-                    aestra_core::material::MaterialExpressionKind::CustomWeslCall { .. }
-                )
-            }) {
+            // Calls use stable function IDs. For filename-only rename the function's
+            // actual source is checked above, including any current draft overlay.
+            if !rename_only
+                && expressions.iter().any(|expression| {
+                    matches!(
+                        expression.kind,
+                        aestra_core::material::MaterialExpressionKind::CustomWeslCall { .. }
+                    )
+                })
+            {
                 report.incomplete.push(format!(
                     "Custom WESL call semantics are unknown for {}",
                     entry.relative_path.display()

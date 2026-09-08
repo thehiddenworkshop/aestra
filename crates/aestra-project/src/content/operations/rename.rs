@@ -3,23 +3,74 @@ use super::*;
 use crate::ProjectAssetId;
 use std::collections::BTreeMap;
 
-/// Raster loaders do not interpret external asset links. SVG is accepted only for a
-/// deliberately small drawing-only subset; scripts, styles, hrefs and unknown tags block.
+/// WGSL has no file imports. Accept WESL only when it parses as this import-free subset,
+/// rather than guessing from strings (which misses comments, escapes and directives).
+pub(super) fn non_referencing_shader(source: &str) -> bool {
+    naga::front::wgsl::parse_str(source).is_ok()
+}
+
+fn plain_svg_paint(value: &str) -> bool {
+    !value.is_empty() && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '#')
+}
+
+/// Only core, self-contained glTF is understood here. Extension payloads may introduce
+/// other dependencies, so even optional extensions remain conservative blockers.
+fn non_referencing_gltf(source: &[u8]) -> bool {
+    fn no_extensions(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(fields) => fields
+                .iter()
+                .all(|(key, value)| key != "extensions" && no_extensions(value)),
+            serde_json::Value::Array(values) => values.iter().all(no_extensions),
+            _ => true,
+        }
+    }
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(source) else {
+        return false;
+    };
+    if !no_extensions(&json) {
+        return false;
+    }
+    let Ok(document) = gltf::Gltf::from_slice(source) else {
+        return false;
+    };
+    document.buffers().all(|buffer| match buffer.source() {
+        gltf::buffer::Source::Bin => false, // This helper accepts JSON glTF, not GLB.
+        gltf::buffer::Source::Uri(uri) => uri.starts_with("data:"),
+    }) && document.images().all(|image| match image.source() {
+        gltf::image::Source::View { .. } => true,
+        gltf::image::Source::Uri { uri, .. } => uri.starts_with("data:"),
+    })
+}
+
+/// Prove an unindexed asset has no external links; unknown formats remain blocked.
+/// SVG is a drawing-only subset: scripts, general CSS, hrefs and unknown tags still block.
 pub(super) fn non_referencing_asset(path: &Path) -> bool {
     if super::super::ProjectFileClassification::for_path(path)
         == super::super::ProjectFileClassification::Texture
     {
         return true;
     }
-    if !path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
-    {
-        return false;
-    }
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
     let Ok(source) = fs::read_to_string(path) else {
         return false;
     };
+    if extension.eq_ignore_ascii_case("gltf") {
+        return non_referencing_gltf(source.as_bytes());
+    }
+    if extension.eq_ignore_ascii_case("wgsl") || extension.eq_ignore_ascii_case("wesl") {
+        return non_referencing_shader(&source);
+    }
+    if !extension.eq_ignore_ascii_case("svg") {
+        return false;
+    }
+    // Ignore only the standard SVG 1.1 declaration used by exported icons. Never
+    // enable DTD loading/entity resolution or accept a custom external declaration.
+    let source = source.replacen(
+        r#"<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">"#,
+        "",
+        1,
+    );
     let Ok(document) = roxmltree::Document::parse(&source) else {
         return false;
     };
@@ -35,6 +86,7 @@ pub(super) fn non_referencing_asset(path: &Path) -> bool {
                 node.tag_name().name(),
                 "svg"
                     | "g"
+                    | "defs"
                     | "path"
                     | "circle"
                     | "ellipse"
@@ -49,14 +101,35 @@ pub(super) fn non_referencing_asset(path: &Path) -> bool {
             return false;
         }
         node.attributes().all(|attribute| {
+            if attribute.namespace() == Some("http://www.w3.org/XML/1998/namespace")
+                && attribute.name() == "space"
+            {
+                return matches!(attribute.value(), "preserve" | "default");
+            }
+            // Sketch's exported shape-kind metadata is not a link. Do not extend
+            // this exemption to arbitrary namespaced attributes such as xlink:href.
+            if attribute.namespace() == Some("http://www.bohemiancoding.com/sketch/ns")
+                && attribute.name() == "type"
+            {
+                return true;
+            }
             if attribute.namespace().is_some() {
                 return false;
             }
             match attribute.name() {
-                "fill" | "stroke" => attribute
+                "fill" | "stroke" => plain_svg_paint(attribute.value()),
+                // This is deliberately not a general CSS parser. Only literal paint
+                // declarations pass; URLs, escapes, comments and all other properties block.
+                "style" => attribute
                     .value()
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '#'),
+                    .split(';')
+                    .filter(|part| !part.trim().is_empty())
+                    .all(|part| {
+                        part.split_once(':').is_some_and(|(name, value)| {
+                            matches!(name.trim(), "fill" | "stroke")
+                                && plain_svg_paint(value.trim())
+                        })
+                    }),
                 "d"
                 | "points"
                 | "viewBox"
@@ -460,6 +533,14 @@ mod tests {
             r#"<style>path {fill: url(other.svg)}</style>"#,
             r#"<path fill="u&#114;l(other.svg)"/>"#,
             "<script/>",
+            "<defs><script/></defs>",
+            r#"<defs><image href="original.aestra.material.ron"/></defs>"#,
+            r#"<defs onload="run()"/>"#,
+            r#"<defs><unknown/></defs>"#,
+            r#"<path style="fill:url(original.aestra.material.ron)"/>"#,
+            r#"<path style="fill:u\72l(original.aestra.material.ron)"/>"#,
+            r#"<path style="fill:#fff;filter:url(other.svg)"/>"#,
+            r#"<path xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="other.svg"/>"#,
         ] {
             fs::write(
                 &icon,
@@ -474,6 +555,147 @@ mod tests {
         )
         .unwrap();
         assert!(non_referencing_asset(&icon));
+        for declaration in [
+            r#"<!DOCTYPE svg SYSTEM "original.aestra.material.ron">"#,
+            r#"<!DOCTYPE svg [<!ENTITY link SYSTEM "original.aestra.material.ron">]>"#,
+        ] {
+            fs::write(
+                &icon,
+                format!(r#"{declaration}<svg xmlns="http://www.w3.org/2000/svg"/>"#),
+            )
+            .unwrap();
+            assert!(!non_referencing_asset(&icon));
+        }
+    }
+
+    #[test]
+    fn bundled_icons_are_proven_drawing_only_including_pause_defs() {
+        let icons = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icons");
+        for entry in fs::read_dir(icons).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "svg") {
+                assert!(non_referencing_asset(&path), "{}", path.display());
+            }
+        }
+    }
+
+    #[test]
+    fn self_contained_meshes_and_shaders_do_not_block_but_external_sources_do() {
+        assert!(non_referencing_gltf(include_bytes!(
+            "../../../../../assets/meshes/lab_cube.gltf"
+        )));
+        for source in [
+            r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"original.aestra.material.ron"}]}"#,
+            r#"{"asset":{"version":"2.0"},"images":[{"uri":"original.aestra.material.ron"}]}"#,
+            r#"{"asset":{"version":"2.0"},"extensions":{"CUSTOM":{"uri":"external"}}}"#,
+            r#"{"asset":{"version":"2.0"},"nodes":[{"extensions":{"CUSTOM":{}}}]}"#,
+            "invalid json",
+        ] {
+            assert!(!non_referencing_gltf(source.as_bytes()), "{source}");
+        }
+        assert!(non_referencing_shader(include_str!(
+            "../../../../../assets/shaders/preview_grid.wesl"
+        )));
+        for source in [
+            "import package::external; fn main() {}",
+            "#include \"original.aestra.material.ron\"",
+            "not a shader",
+        ] {
+            assert!(!non_referencing_shader(source), "{source}");
+        }
+    }
+
+    #[test]
+    fn custom_function_imports_in_saved_sources_and_drafts_block_rename() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Original");
+        program
+            .save_ron(root.path().join("original.aestra.material.ron"))
+            .unwrap();
+        let mut function = MaterialFunction::from_ron(include_str!(
+            "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        ))
+        .unwrap();
+        let path = root.path().join("pulse.aestra.material-function.ron");
+        function.save_ron(&path).unwrap();
+        let content = ProjectContent::scan(root.path());
+        let asset = ProjectAssetId::MaterialProgram(program.id);
+        assert!(
+            content
+                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .is_ok()
+        );
+        let owner = content
+            .unique_source_for_asset(ProjectAssetId::MaterialFunction(function.id))
+            .unwrap()
+            .id;
+        function
+            .custom_wesl
+            .as_mut()
+            .unwrap()
+            .source
+            .insert_str(0, "import package::external;\n");
+        assert!(
+            content
+                .plan_material_rename(
+                    request(&content, asset, "renamed"),
+                    &[(owner, DraftDocument::Function(Box::new(function.clone())))],
+                    true
+                )
+                .is_err()
+        );
+        function.save_ron(&path).unwrap();
+        let content = ProjectContent::scan(root.path());
+        assert!(
+            content
+                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn bundled_project_supports_material_and_function_filename_rename() {
+        // Exercise the complete shipping project, not an empty synthetic folder:
+        // icons, mesh, shader and custom-function sources must all be accounted for.
+        // All publication happens in the temporary copy, never in the workspace.
+        let root = tempfile::tempdir().unwrap();
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let tree = ProjectSourceTree::scan(&assets);
+        for entry in tree.entries() {
+            let destination = root.path().join(&entry.relative_path);
+            if entry.kind == ProjectSourceKind::Directory {
+                fs::create_dir_all(destination).unwrap();
+            } else {
+                fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                fs::copy(&entry.path, destination).unwrap();
+            }
+        }
+        for filename in [
+            "dissolve_edge.aestra.material-function.ron",
+            "material_graph_lab.aestra.material.ron",
+        ] {
+            let content = ProjectContent::scan(root.path());
+            let path = root.path().join("materials").join(filename);
+            let entry = content
+                .source_tree()
+                .entries()
+                .find(|entry| entry.path == path)
+                .unwrap();
+            let asset = content.asset_for_source(entry.id).unwrap();
+            let bytes = fs::read(&path).unwrap();
+            let result = content
+                .plan_material_rename(request(&content, asset, "renamed"), &[], true)
+                .unwrap()
+                .apply()
+                .unwrap();
+            assert!(!path.exists());
+            assert_eq!(fs::read(&result.destination).unwrap(), bytes);
+            let fresh = ProjectContent::scan(root.path());
+            assert_eq!(
+                fresh.unique_source_for_asset(asset).unwrap().path,
+                result.destination
+            );
+        }
     }
 
     #[test]
