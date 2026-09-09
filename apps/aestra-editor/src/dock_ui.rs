@@ -785,6 +785,7 @@ fn spawn_dock_tab(
         .observe(move_dock_tab)
         .observe(reset_dock_tab)
         .observe(reorder_dock_tab)
+        .observe(select_dock_tab)
         .observe(open_dock_tab_context_menu)
         .with_children(|tab| {
             tab.spawn((
@@ -1028,6 +1029,40 @@ pub(crate) fn clear_finished_dock_drag(
     for (entity, mut transform) in &mut tabs {
         transform.translation = Val2::ZERO;
         commands.entity(entity).remove::<GlobalZIndex>();
+    }
+}
+
+/// Activates a dock tab on primary-click release. Selection is intentionally not done on
+/// press (see `handle_docking_actions`) so that a press which turns into a drag keeps the
+/// tab entity alive long enough for the drag gesture to start.
+fn select_dock_tab(
+    mut click: On<Pointer<Click>>,
+    tabs: Query<&DockTab>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(tab) = tabs.get(click.event_target()) else {
+        return;
+    };
+    click.propagate(false);
+    let mut changed = false;
+    menu.open = None;
+    menu.panels_open = false;
+    if menu.tab_context.take().is_some() {
+        changed = true;
+    }
+    if layout.activate(tab.0) {
+        if let Err(error) = layout.save() {
+            warn!("failed to save editor workspace layout: {error}");
+        }
+        changed = true;
+    }
+    if changed {
+        session.ui_revision += 1;
     }
 }
 

@@ -180,6 +180,12 @@ fn handle_docking_actions(
                 } else {
                     background.0 = theme::ACCENT_DIM;
                 }
+                // Dock tabs activate on release (see `select_dock_tab`), not on press: a
+                // press that becomes a drag must not rebuild the tab bar and cancel the
+                // drag gesture before `DragStart` can fire.
+                if matches!(action, DockingAction::Select(_)) {
+                    continue;
+                }
                 if !matches!(action, DockingAction::Toggle(_)) {
                     menu.open = None;
                     menu.panels_open = false;
