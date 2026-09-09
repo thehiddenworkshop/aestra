@@ -781,6 +781,12 @@ fn sync_chrome(
     if ui.toolbar_actions.is_empty() {
         commands.entity(ui.toolbar).with_children(|parent| {
             super::relocation_recovery::spawn_reopen_button(parent, localizer);
+            spawn_feathers_action_button(
+                parent,
+                &localizer.text("browser-deleted-items"),
+                BrowserAction::DeletedItems,
+                false,
+            );
             // Text arrows use the same Feathers button as the icon controls.
             for (label, action, disabled) in [
                 ("←", BrowserAction::Back, state.back.is_empty()),
@@ -1066,7 +1072,21 @@ fn sync_chrome(
                                         .commands()
                                         .entity(folder)
                                         .insert(SvgColor(kind_color(Kind::Folder)));
-                                    text(button, entry.name.to_string_lossy());
+                                    button.spawn((
+                                        crate::feathers::list_row::ListRowPrimaryLabel,
+                                        Text::new(entry.name.to_string_lossy()),
+                                        TextColor(theme::TEXT_MUTED),
+                                        TextFont {
+                                            font_size: FontSize::Px(10.0),
+                                            ..default()
+                                        },
+                                        TextLayout::no_wrap(),
+                                        Pickable::IGNORE,
+                                        Node {
+                                            flex_shrink: 0.0,
+                                            ..default()
+                                        },
+                                    ));
                                 });
                             if entry.relative_path == state.folder {
                                 button.insert(bevy::feathers::controls::ButtonVariant::Primary);

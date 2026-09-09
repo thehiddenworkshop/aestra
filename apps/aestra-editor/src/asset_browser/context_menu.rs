@@ -65,6 +65,11 @@ fn spawn_menu(
                             &localizer.text("browser-rename"),
                             BrowserAction::Rename(source, catalog.content_revision()),
                         );
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-delete"),
+                            BrowserAction::Delete(source, catalog.content_revision()),
+                        );
                     }
                     for (key, tab) in [
                         ("browser-asset-details", InspectionTab::Details),

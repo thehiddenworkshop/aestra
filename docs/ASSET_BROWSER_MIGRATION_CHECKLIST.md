@@ -1296,3 +1296,50 @@ Missing files, foreign roots, escaping paths and invalid labels still block oper
 Regression fixtures include the real self-contained lab cube, unrelated folder Rename
 and Move, labeled mesh file Rename/folder Move, exact-byte recovery and invalid paths.
 The list/grid inline Rename regression now includes an unrelated mesh subasset owner.
+
+### AB6b tree gestures and recoverable deletion — 2026-09-09
+
+Folder-tree rows now originate the same browser drag payload/preview as content rows.
+Navigation waits for click release, so a press does not rebuild the dragged row. Drops
+use shared destination checks and the guarded Move Here flow. F2 and the tree context
+menu use the shared inline editor, with Enter/blur validation and Escape cancellation;
+tree focus follows a navigation-triggered rebuild.
+
+Delete is available from row/tree context menus and the Delete key. A native in-app
+modal prepares a read-only preflight, shows blockers and file/folder counts, and requires
+explicit confirmation. Known outside references, unknown dependency semantics,
+unsupported descendants, active documents/resources, unsaved drafts, pending relocation,
+stale project inventories and unsafe paths block deletion. Selected folders may contain
+internal references because the whole subtree is retained together.
+
+The project backend stages/syncs an exact-byte journal, then exclusively renames the
+source into `.aestra/deleted/entry-*/payload`. This is project-local recovery storage,
+not the OS recycle bin. Empty folders and semantic identities survive restore. The
+Deleted Items toolbar action opens a bounded, scrollable in-app list; Restore validates
+both endpoints, journal and payload before moving anything. Collisions/changed payloads
+stay listed with a blocker. Missing original parents, duplicate identities or missing
+external dependencies also block restoration. Restored records are retained for audit;
+no purge, automatic replay or Ctrl+Z integration is provided. Operations refresh browser
+selection/catalogue without replacing the active effect.
+
+Regression coverage includes tree-origin drops in both views, F2 after tree navigation,
+exact bytes/IDs/empty-folder round trips, reference blockers (including mesh-style
+subasset labels), read-only payloads, stale inventories, interrupted publication/restore,
+collisions, changed journals, duplicate IDs and restore dependency ordering. Editor tests
+exercise preview/cancel/confirm/restore, draft changes before and during queued apply,
+active resources/documents, modal focus, disabled confirmation and long-message scrolling.
+
+Native acceptance checklist (use disposable project copies, not user assets):
+
+- Drag a folder from the tree onto another folder; check preview, Move Here and final tree.
+- F2/right-click Rename in the tree; Enter and click-away commit, Escape cancels.
+- Delete an unused folder containing assets and an empty subfolder; confirm it disappears.
+- Reopen the project, open Deleted Items and restore; verify contents and asset IDs.
+- Check a referenced/active asset and an unsaved draft block deletion; check a conflicting
+  destination blocks restore and preserves the recovery payload.
+
+Implementation is ready for native acceptance; AB6 is not marked user-accepted yet.
+
+Verification: 661 editor unit tests plus the architecture test and all 131 project
+tests pass (two opt-in editor tests remain ignored). Strict all-target project/editor
+Clippy, formatting and diff checks pass on the supported Windows MSVC toolchain.

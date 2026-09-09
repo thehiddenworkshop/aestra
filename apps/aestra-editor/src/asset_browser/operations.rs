@@ -13,6 +13,7 @@ use bevy::ui_widgets::{Activate, ValueChange};
 pub(super) struct OpenFolderPrompt(
     pub Option<(ProjectSourceId, ProjectContentVersion)>,
     pub bool,
+    pub Option<Entity>,
 );
 #[derive(Component)]
 struct NameField;
@@ -287,7 +288,11 @@ fn open(
     };
     prompt.original_name = prompt.name.clone();
     if prompt.rename {
-        let Some((row, _)) = rows.iter().find(|(_, row)| Some(row.0) == prompt.duplicate) else {
+        let Some(row) = event.2.or_else(|| {
+            rows.iter()
+                .find(|(_, row)| Some(row.0) == prompt.duplicate)
+                .map(|(entity, _)| entity)
+        }) else {
             return;
         };
         let Some((caption, parent)) = labels.iter().find(|(label, _)| {
@@ -371,7 +376,8 @@ fn open(
         prompt.inline_row = Some(row);
         prompt.return_focus = parents
             .iter_ancestors(row)
-            .find(|entity| lists.contains(*entity));
+            .find(|entity| lists.contains(*entity))
+            .or(event.2);
         prompt.overlay = Some(wrapper);
         return;
     }

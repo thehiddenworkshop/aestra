@@ -14,7 +14,7 @@ pub(super) struct Replacement {
 /// asset paths use the last `#` as the delimiter; keep the suffix opaque and exact
 /// (including case and slashes). Only the file portion participates in disk checks.
 /// Custom asset sources are still rejected by `key`, not treated as project files.
-fn resource_parts(path: &str) -> Result<(&str, &str), OperationError> {
+pub(super) fn resource_parts(path: &str) -> Result<(&str, &str), OperationError> {
     let Some(index) = path.rfind('#') else {
         return Ok((path, ""));
     };
@@ -27,7 +27,7 @@ fn resource_parts(path: &str) -> Result<(&str, &str), OperationError> {
 
 /// Root-relative lexical key. Accept separators and dot aliases, but never foreign
 /// roots, drive prefixes, metadata paths or escaping parents (including on Linux).
-fn key(path: &str) -> Result<String, OperationError> {
+pub(super) fn key(path: &str) -> Result<String, OperationError> {
     let path = path.replace('\\', "/");
     if path.starts_with('/') || path.contains(':') {
         return Err(blocked("Resource paths must be relative to the asset root"));

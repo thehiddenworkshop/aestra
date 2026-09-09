@@ -96,7 +96,9 @@ batch transaction/explicit restart-rollback foundation and typed resource-path e
 and audited folder/resource relocation plans are implemented. Guarded in-app batch
 recovery and clean-document reconciliation are implemented. Browser inline Rename and
 drag/drop Move now use the shared planner for folders and supported resource files as
-well as semantic assets. Manual acceptance and recoverable deletion remain pending.
+well as semantic assets. Tree-origin folder drag/drop and inline rename, plus guarded
+recoverable deletion and Deleted Items restore, are implemented. Native manual
+acceptance remains pending.
 AB7–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
@@ -554,7 +556,22 @@ dependency knowledge blocking, dirty drafts, naming collisions, case-only rename
 read-only source, missing destination, links/traversal, failure after each staged step,
 restart recovery/restore and watcher reconciliation. Only the audited supported formats
 are enabled; unsafe folders remain blocked rather than proceeding with a warning.
-Native manual acceptance and the separate recoverable-delete gate remain outstanding.
+Tree-origin drags use the same preview, destination validation and Move Here action;
+F2 or the tree context menu edits the folder label inline. Navigation occurs on release
+so pressing a folder does not destroy the drag origin.
+
+Recoverable deletion is implemented through an opaque `DeletePlan` and `DeletedSource`
+restore API. Delete from a content row or tree folder requires an in-app confirmation;
+outside semantic/resource references, incomplete knowledge, unsaved drafts and active
+documents/resources block publication. The journal is synced before a single exclusive
+rename into `.aestra/deleted`, outside content indexing. Empty directories, original
+bytes and semantic IDs are retained. The Deleted Items toolbar opens a paginated,
+scrollable restore panel; collisions, edited payloads, missing parents, duplicate IDs
+and missing external dependencies block restore without overwrite. Interrupted states
+are inspected read-only and restored explicitly. No automatic purge, OS recycle bin,
+cross-project restore or semantic Ctrl+Z is introduced. The same 128-file/128-directory
+and 64 MiB per-operation bounds apply; 256 live recovery entries are supported.
+Native manual acceptance remains outstanding.
 
 ### AB7 — Typed drag/drop, reusable pickers and document resources
 

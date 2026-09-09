@@ -1571,6 +1571,67 @@ fn keyboard_navigates_folders_without_replacing_the_effect_selection() {
     );
 }
 
+#[test]
+fn folder_tree_navigates_on_release_then_renames_its_own_label() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("folder/empty")).unwrap();
+    let mut app = browser_app(root.path());
+    let source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path("folder")
+        .unwrap()
+        .id;
+    let tree_button = |app: &mut App| {
+        let world = app.world_mut();
+        world
+            .query_filtered::<(Entity, &BrowserAction), With<super::panel::BrowserFolderButton>>()
+            .iter(world)
+            .find(|(_, action)| **action == BrowserAction::Navigate(source))
+            .unwrap()
+            .0
+    };
+    let original = tree_button(&mut app);
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: original });
+    app.update();
+    assert!(
+        app.world()
+            .resource::<AssetBrowserState>()
+            .folder
+            .as_os_str()
+            .is_empty(),
+        "Press activation must not replace the drag source"
+    );
+    click(&mut app, original, 1);
+    app.update();
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().folder,
+        Path::new("folder")
+    );
+    let current = tree_button(&mut app);
+    assert_eq!(app.world().resource::<InputFocus>().get(), Some(current));
+    key(&mut app, KeyCode::F2);
+    let input = app.world().resource::<InputFocus>().get().unwrap();
+    let mut text = app
+        .world_mut()
+        .get_mut::<bevy::text::EditableText>(input)
+        .expect("tree label input");
+    assert_eq!(text.value(), "folder");
+    text.editor_mut().set_text("renamed");
+    key(&mut app, KeyCode::Enter);
+    crate::project_content::io::drain(app.world_mut());
+    app.update();
+    assert!(
+        root.path().join("renamed/empty").is_dir(),
+        "{}",
+        app.world().resource::<EditorSession>().status
+    );
+    assert!(!root.path().join("folder").exists());
+}
+
 #[derive(Resource, Default)]
 struct OpenRequests(Vec<DocumentAction>);
 

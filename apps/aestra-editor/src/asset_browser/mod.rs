@@ -4,6 +4,7 @@ mod actions;
 #[path = "../../../../benchmarks/asset-browser/harness.rs"]
 mod benchmark;
 mod context_menu;
+pub(crate) mod deletion;
 mod drag_drop;
 mod drag_preview;
 mod inspection;
@@ -15,6 +16,7 @@ pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]
 mod tests;
+mod tree;
 
 use crate::*;
 pub(crate) use actions::LocateInAssets;
@@ -28,8 +30,10 @@ pub(crate) struct EditorAssetBrowserPlugin;
 impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
         operations::register(app);
+        tree::register(app);
         drag_drop::register(app);
         relocation_recovery::register(app);
+        deletion::register(app);
         app.init_resource::<AssetBrowserState>()
             .init_resource::<persistence::BrowserPersistence>()
             .init_resource::<actions::BrowserClickState>()

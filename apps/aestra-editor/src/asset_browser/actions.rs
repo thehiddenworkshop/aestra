@@ -50,6 +50,8 @@ pub(super) enum BrowserAction {
     NewFolder,
     Duplicate(ProjectSourceId, ProjectContentVersion),
     Rename(ProjectSourceId, ProjectContentVersion),
+    Delete(ProjectSourceId, ProjectContentVersion),
+    DeletedItems,
     OpenSelected,
     LocateCurrentEffect,
     LocateSource(ProjectSourceId, ProjectContentVersion),
@@ -61,9 +63,12 @@ pub(super) enum BrowserAction {
 pub(super) fn activate_button(
     event: On<Activate>,
     actions: Query<&BrowserAction>,
+    folders: Query<(), With<super::panel::BrowserFolderButton>>,
     mut commands: Commands,
 ) {
-    if let Ok(action) = actions.get(event.entity) {
+    if !folders.contains(event.entity)
+        && let Ok(action) = actions.get(event.entity)
+    {
         commands.trigger(*action);
     }
 }
@@ -134,13 +139,14 @@ pub(super) fn handle_action(
             commands.trigger(super::relocation_recovery::CheckRecovery);
         }
         BrowserAction::NewFolder => {
-            commands.trigger(super::operations::OpenFolderPrompt(None, false))
+            commands.trigger(super::operations::OpenFolderPrompt(None, false, None))
         }
         BrowserAction::Duplicate(source, version) => {
             if version == catalog.content_revision() {
                 commands.trigger(super::operations::OpenFolderPrompt(
                     Some((source, version)),
                     false,
+                    None,
                 ));
             }
         }
@@ -149,9 +155,16 @@ pub(super) fn handle_action(
                 commands.trigger(super::operations::OpenFolderPrompt(
                     Some((source, version)),
                     true,
+                    None,
                 ));
             }
         }
+        BrowserAction::Delete(source, version) => {
+            if version == catalog.content_revision() {
+                commands.trigger(super::deletion::Open(Some(source)));
+            }
+        }
+        BrowserAction::DeletedItems => commands.trigger(super::deletion::Open(None)),
         BrowserAction::OpenSelected => {
             if let Some(id) = state.selected {
                 open_source(id, &catalog, &mut state, &mut commands);
@@ -459,6 +472,11 @@ pub(super) fn keyboard(
         KeyCode::F2 => {
             if let Some(row) = active.0.and_then(|id| rows.get(id).ok()) {
                 commands.trigger(BrowserAction::Rename(row.0, catalog.content_revision()));
+            }
+        }
+        KeyCode::Delete => {
+            if let Some(row) = active.0.and_then(|id| rows.get(id).ok()) {
+                commands.trigger(BrowserAction::Delete(row.0, catalog.content_revision()));
             }
         }
         KeyCode::Enter => {

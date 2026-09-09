@@ -148,6 +148,7 @@ impl SourceNavigationState {
 pub(crate) struct DocumentProtectionState {
     recovery_open: bool,
     pub(crate) asset_recovery_open: bool,
+    pub(crate) asset_delete_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
 }
@@ -167,7 +168,10 @@ struct DocumentProtectionDescription;
 
 impl DocumentProtectionState {
     pub(crate) fn is_open(&self) -> bool {
-        self.pending.is_some() || self.recovery_open || self.asset_recovery_open
+        self.pending.is_some()
+            || self.recovery_open
+            || self.asset_recovery_open
+            || self.asset_delete_open
     }
 }
 
@@ -1449,6 +1453,7 @@ fn handle_window_close_requests(
             // Defer asset recovery without touching its journal. An unsaved-document
             // exit prompt must not be hidden behind the asset recovery overlay.
             protection.asset_recovery_open = false;
+            protection.asset_delete_open = false;
             if document_action_requires_confirmation(&session, &settings) {
                 protection.pending = Some(DocumentAction::Exit);
             } else {

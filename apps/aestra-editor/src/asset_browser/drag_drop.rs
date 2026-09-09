@@ -110,6 +110,7 @@ fn recover_on_project_open(
 fn begin(
     event: On<Pointer<DragStart>>,
     rows: Query<&BrowserRow>,
+    folders: Query<&BrowserAction, With<BrowserFolderButton>>,
     editors: Query<(), With<super::operations::InlineRenameEditor>>,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
@@ -129,7 +130,15 @@ fn begin(
     if ancestors.iter().any(|entity| editors.contains(*entity)) {
         return;
     }
-    if let Some(row) = ancestors.iter().find_map(|entity| rows.get(*entity).ok()) {
+    if let Some(source) = ancestors.iter().find_map(|entity| {
+        rows.get(*entity)
+            .ok()
+            .map(|row| row.0)
+            .or_else(|| match folders.get(*entity).ok()? {
+                BrowserAction::Navigate(id) => Some(*id),
+                _ => None,
+            })
+    }) {
         if let Some(preview) = drag.preview.take() {
             commands.entity(preview).try_despawn();
         }
@@ -139,7 +148,7 @@ fn begin(
             .rev()
             .copied()
             .find(|entity| geometry.contains(*entity))
-            && let Some(entry) = catalog.content().source(row.0)
+            && let Some(entry) = catalog.content().source(source)
             && let Ok((node, transform)) = geometry.get(root)
         {
             drag.preview = Some(super::drag_preview::spawn(
@@ -154,7 +163,7 @@ fn begin(
                 &localizer,
             ));
         }
-        drag.source = Some((row.0, catalog.content_revision()));
+        drag.source = Some((source, catalog.content_revision()));
         drag.origin = Some(event.entity);
         drag.ended = false;
         drag.suppress_click = true;
@@ -331,7 +340,12 @@ fn drop_asset(
     };
     if !std::iter::once(event.dropped)
         .chain(parents.iter_ancestors(event.dropped))
-        .any(|entity| rows.get(entity).is_ok_and(|row| row.0 == source))
+        .any(|entity| {
+            rows.get(entity).is_ok_and(|row| row.0 == source)
+                || folders
+                    .get(entity)
+                    .is_ok_and(|action| *action == BrowserAction::Navigate(source))
+        })
     {
         return;
     }
@@ -699,7 +713,17 @@ mod tests {
                         .unwrap()
                         .id;
                     let rows = super::super::tests::rows(&mut app);
-                    let source_row = rows[&source];
+                    let source_row = if kind == 2 && tree {
+                        let world = app.world_mut();
+                        world
+                            .query_filtered::<(Entity, &BrowserAction), With<BrowserFolderButton>>()
+                            .iter(world)
+                            .find(|(_, action)| **action == BrowserAction::Navigate(source))
+                            .unwrap()
+                            .0
+                    } else {
+                        rows[&source]
+                    };
                     let target = if tree {
                         let world = app.world_mut();
                         world
@@ -721,6 +745,11 @@ mod tests {
                         },
                         source_row,
                     ));
+                    assert_eq!(
+                        app.world().resource::<AssetDrag>().source.map(|v| v.0),
+                        Some(source),
+                        "drag origin kind={kind}, tree={tree}"
+                    );
                     app.world_mut().trigger(Pointer::new(
                         PointerId::Mouse,
                         location(),
@@ -737,7 +766,8 @@ mod tests {
                             .query::<&DropHighlight>()
                             .iter(app.world())
                             .count(),
-                        1
+                        1,
+                        "highlight kind={kind}, tree={tree}"
                     );
                     app.world_mut().trigger(Pointer::new(
                         PointerId::Mouse,
