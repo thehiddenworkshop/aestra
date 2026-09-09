@@ -149,6 +149,7 @@ pub(crate) struct DocumentProtectionState {
     recovery_open: bool,
     pub(crate) asset_recovery_open: bool,
     pub(crate) asset_delete_open: bool,
+    pub(crate) asset_create_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
 }
@@ -172,6 +173,7 @@ impl DocumentProtectionState {
             || self.recovery_open
             || self.asset_recovery_open
             || self.asset_delete_open
+            || self.asset_create_open
     }
 }
 

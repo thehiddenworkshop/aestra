@@ -102,7 +102,8 @@ acceptance remains pending.
 The user accepted the open-document deletion P0 check on 2026-09-09.
 AB7a (typed Asset Browser Effect → Timeline drops) is implemented; verification and
 native acceptance are tracked in the migration checklist. AB7b material-program
-assignment is implemented; preset-drop semantics and native acceptance remain pending.
+assignment is manually accepted. Project preset drops create a new named material and
+assign it; native acceptance of that flow remains pending.
 Remaining AB7 drops and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
@@ -614,8 +615,16 @@ material instance when needed and assigns it. Existing default instances are reu
 instances with overrides are not adopted from another renderer. Repeating the current
 assignment is a no-op. Undo/Redo restores both binding and instance identity. Shared
 source programs and their drafts remain unchanged; existing drafts are used for checks.
-Preset drops are not implemented yet: presets are graph recipes, so creating a new
-named material versus changing an existing shared program requires a user decision.
+**AB7b (project presets):** A compatible preset drop opens an in-app name/destination
+dialog. It creates a distinct saved program from a clean base in the renderer domain,
+then uses the same one-step assignment transaction. Empty/invalid names, case-insensitive
+collisions and invalid folders disable creation; Escape/Cancel before submission writes
+nothing. Publication uses a staged no-clobber write with fresh preset/destination and
+compiler checks through serialized project I/O. Existing shared materials and presets
+are untouched. Undo/Redo reverses/reapplies the renderer assignment and its local
+instance; the explicitly created reusable source remains in Assets (explained in the
+dialog). A document change during I/O retains the new source but skips assignment with
+feedback. Built-in virtual sources/pickers remain a later AB7 migration slice.
 
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
@@ -694,7 +703,8 @@ marked tested. AB5 was subsequently accepted by the user; the dated migration ch
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
 user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
-user accepted the deletion P0 check on 2026-09-09. **Current step (P1):** manually
-verify AB7a Effect → Timeline and AB7b Material Program → Renderer drops; resolve
-preset-drop semantics before completing AB7b, then extend typed consumers to functions.
+user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
+drops. **Current step (P1):** manually verify the AB7b preset creation/assignment flow,
+then extend typed consumers to functions. AB7a native acceptance remains recorded
+separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

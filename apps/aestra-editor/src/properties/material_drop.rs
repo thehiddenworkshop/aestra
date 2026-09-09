@@ -1,10 +1,13 @@
 //! Renderer authoring drops. Source recipes/programs are never modified by assignment.
+mod preset_drop;
 #[cfg(test)]
 mod tests;
 
 use super::*;
 use crate::asset_browser::payload::{AssetPayload, AuthoringDropGuard};
-use aestra_core::material::{MaterialDomain, MaterialInstance, MaterialProgramRef};
+use aestra_core::material::{
+    MaterialDomain, MaterialInstance, MaterialProgram, MaterialProgramRef,
+};
 use aestra_project::ProjectAssetId;
 use bevy::picking::events::{DragEnter, DragLeave};
 
@@ -38,15 +41,32 @@ fn plan(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Result<Assignment, String> {
+    match payload.resolve(catalog)? {
+        Some(ProjectAssetId::MaterialProgram(id)) => {
+            plan_program(&catalog.material_program(id)?, target, catalog, session)
+        }
+        Some(ProjectAssetId::MaterialPreset(_)) => {
+            let program = preset_drop::prepare(payload, target, catalog, session)?;
+            let mut assignment = plan_program(&program, target, catalog, session)?;
+            assignment.label = format!("Create material from {}…", program.name);
+            Ok(assignment)
+        }
+        _ => Err("Drop a material or material preset onto this renderer".into()),
+    }
+}
+
+fn plan_program(
+    program: &MaterialProgram,
+    target: RendererDropTarget,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Assignment, String> {
     if target.effect != session.effect.id {
         return Err("The effect changed; drop on its current renderer".into());
     }
     if session.pending_change.is_some() {
         return Err("Resolve the pending change before assigning a material".into());
     }
-    let Some(ProjectAssetId::MaterialProgram(id)) = payload.resolve(catalog)? else {
-        return Err("Drop a material program onto this renderer".into());
-    };
     let (emitter, renderer) = session
         .effect
         .emitters
@@ -61,7 +81,6 @@ fn plan(
         .ok_or("Renderer no longer exists")?;
     let expected = renderer_domain(&renderer.properties)
         .ok_or("This renderer does not support material assignment")?;
-    let program = catalog.material_program(id)?;
     if program.domain != expected {
         return Err(format!(
             "This renderer needs a {expected:?} material, not {:?}",
@@ -70,9 +89,9 @@ fn plan(
     }
     let functions = catalog.material_function_library()?;
     MaterialCompiler
-        .compile_with_functions(&program, &functions)
+        .compile_with_functions(program, &functions)
         .map_err(|e| e.to_string())?;
-    let reference = MaterialProgramRef::Project(id);
+    let reference = MaterialProgramRef::Project(program.id);
     if session
         .effect
         .material_instances
@@ -139,6 +158,7 @@ struct DropFeedback {
 }
 
 pub(super) fn register(app: &mut App) {
+    preset_drop::register(app);
     app.add_observer(hover)
         .add_observer(leave)
         .add_observer(drop_material)
@@ -301,6 +321,13 @@ fn drop_material(
         .and_then(|()| plan(&payload, target, &catalog, &session))
     {
         Ok(plan) => {
+            if matches!(
+                payload.resolve(&catalog),
+                Ok(Some(ProjectAssetId::MaterialPreset(_)))
+            ) {
+                commands.trigger(preset_drop::OpenPresetDrop { payload, target });
+                return;
+            }
             if let Some(transaction) = plan.transaction {
                 if session.execute_transaction(transaction, true) {
                     session.material_history_active = false;

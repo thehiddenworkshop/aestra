@@ -35,9 +35,10 @@ use aestra_compiler::{
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionId, MaterialId, MaterialPresetId, MaterialProgramId,
     material::{
-        MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialInput,
-        MaterialInstance, MaterialOutputs, MaterialParameterValue, MaterialPresetDescriptor,
-        MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
+        MaterialDomain, MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind,
+        MaterialInput, MaterialInstance, MaterialOutputs, MaterialParameterValue,
+        MaterialPresetDescriptor, MaterialProgram, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
     },
 };
 use aestra_project::{MaterialGraphNodeLayout, MaterialGraphViewportLayout, ProjectEditorLayout};
@@ -2446,7 +2447,7 @@ fn build_material_preset_preview(
     catalog: &MaterialPresetCatalog,
     images: &mut Assets<Image>,
 ) -> MaterialPresetPreviewStatus {
-    let program = material_preset_preview_program();
+    let program = material_preset_base("Material preset preview", MaterialDomain::Sprite);
     let Some(target) = MaterialCompiler
         .stack_preset_targets_with_catalog(&program, catalog)
         .ok()
@@ -2477,16 +2478,21 @@ fn build_material_preset_preview(
     MaterialPresetPreviewStatus::Ready(image)
 }
 
-fn material_preset_preview_program() -> MaterialProgram {
-    let color = MaterialExpressionId::from_u128(0xa357_1601);
-    let uv = MaterialExpressionId::from_u128(0xa357_1602);
-    let center = MaterialExpressionId::from_u128(0xa357_1603);
-    let radius = MaterialExpressionId::from_u128(0xa357_1604);
-    let softness = MaterialExpressionId::from_u128(0xa357_1605);
-    let invert = MaterialExpressionId::from_u128(0xa357_1606);
-    let mask = MaterialExpressionId::from_u128(0xa357_1607);
-    let mut program = MaterialProgram::additive_sprite("Material preset preview");
-    program.id = MaterialProgramId::from_u128(0xa357_1600);
+/// Shared seed for preset thumbnails and creating a material from a preset.
+/// Preset insertion needs a primary stack source; constant-only outputs have none.
+pub(crate) fn material_preset_base(
+    name: impl Into<String>,
+    domain: MaterialDomain,
+) -> MaterialProgram {
+    let color = MaterialExpressionId::new();
+    let uv = MaterialExpressionId::new();
+    let center = MaterialExpressionId::new();
+    let radius = MaterialExpressionId::new();
+    let softness = MaterialExpressionId::new();
+    let invert = MaterialExpressionId::new();
+    let mask = MaterialExpressionId::new();
+    let mut program = MaterialProgram::additive_sprite(name);
+    program.domain = domain;
     program.expressions = vec![
         MaterialExpression {
             id: color,

@@ -1501,3 +1501,39 @@ Verification: 686 editor unit tests and the architecture test pass (two opt-in t
 ignored); all aestra-authoring tests pass. Strict Clippy for both packages, formatting
 and diff checks pass. User-authored assets were left untouched. Native manual
 acceptance is not claimed by these automated checks.
+
+### AB7b — Project preset → new material → renderer — 2026-09-09
+
+The user accepted material-program drops and approved the proposed preset flow:
+create a new named material rather than modifying an existing shared program.
+Project presets now use the shared typed payload and renderer-domain planner. Hover
+explains that a material will be created; release opens a modal in-app dialog with
+name and existing project-relative folder fields. It focuses the name, shows the
+resulting path or error, disables invalid/colliding destinations, and supports Enter
+and Escape/Cancel. Submission waits until native text edits have been applied.
+
+Creation builds a distinct program from a clean domain-compatible base and the preset
+recipe. Serialized project I/O rechecks the saved preset, compiles the candidate, and
+uses project-layer portable-name/path/link/read-only/case-collision checks plus staged
+no-clobber publication. Existing presets and shared programs are never rewritten.
+The resulting source is published to the catalog and assigned by the existing single
+effect transaction. Undo/Redo restores the prior/new binding and local instance with
+stable IDs; the named reusable material file remains in Assets, explicitly stated in
+the dialog. Source creation and document assignment retain separate lifetimes, as
+with existing source-creation workflows. Delete/Deleted Items remain available for
+removing the created source explicitly.
+
+Cancel before submission makes no file or authored edit. During publication controls
+are disabled; a failed operation stays in the dialog with an explanation. Changed
+document/project state never receives a late assignment: a successfully created source
+is retained and reported as not assigned. Native acceptance is pending for list/grid
+origin drops, name/folder editing, collision feedback, Enter/Escape, live preview and
+Undo/Redo. Built-in virtual-source migration and reusable picker UI remain pending.
+
+Verification: 691 editor unit tests and the architecture test pass (two opt-in tests
+ignored), together with all 136 project tests. Strict editor/project Clippy, formatting
+and diff checks pass. New tests cover real picking-event propagation into the modal,
+latest native field submission, creation/assignment/Undo/Redo, original preset bytes,
+empty and colliding names, cancellation, stale presets, late collisions, missing folders,
+new locks and a document change during I/O. Tests use temporary project roots; existing
+user asset edits were not included or changed. Native manual acceptance is still pending.

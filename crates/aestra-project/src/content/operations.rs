@@ -1,5 +1,6 @@
 //! Explicit mutation preflight. Document edits and filesystem operations are separate histories.
 mod duplicate;
+mod material_create;
 mod move_journal;
 mod rename;
 mod transaction;
@@ -7,6 +8,7 @@ use super::{ProjectContent, ProjectSourceKind, ProjectSourceTree};
 use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation};
 use crate::ProjectSourceId;
 pub use duplicate::{DuplicatePlan, DuplicateResult};
+pub use material_create::MaterialCreatePlan;
 pub use rename::{RenamePlan, RenameResult};
 pub use transaction::{
     AssetMoveBatchPlan, AssetMoveBatchResult, DeletePlan, DeletedSource, PendingAssetMoveBatch,
