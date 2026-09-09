@@ -1,11 +1,13 @@
-//! Journaled semantic file moves and typed resource-path edits. No folder or
-//! arbitrary-path API: callers use source IDs and the shared relocation preflight.
+//! Journaled source relocations and typed resource-path edits. Callers use source
+//! IDs and shared preflight; no unchecked arbitrary-path mutation API is exposed.
 //! Pending batches are inspected read-only; restart rollback is an explicit action.
 use super::*;
 use crate::ProjectAssetId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
+mod folders;
+mod planning;
 mod references;
 mod steps;
 use references::Replacement;
@@ -18,7 +20,7 @@ const MAX_JOURNAL_BYTES: u64 = 64 * 1024 * 1024;
 struct Move {
     source: PathBuf,
     destination: PathBuf,
-    asset: ProjectAssetId,
+    asset: Option<ProjectAssetId>,
     bytes: Vec<u8>,
 }
 
@@ -31,6 +33,8 @@ struct Record {
     moves: Vec<Move>,
     #[serde(default)]
     replacements: Vec<Replacement>,
+    #[serde(default)]
+    folders: Vec<folders::FolderMove>,
 }
 
 #[derive(Debug)]
@@ -39,11 +43,23 @@ pub struct AssetMoveBatchPlan {
     moves: Vec<Move>,
     inventory: BTreeMap<PathBuf, Vec<u8>>,
     replacements: Vec<Replacement>,
+    folders: Vec<folders::FolderMove>,
+    directories: BTreeSet<PathBuf>,
+}
+
+/// Location changes are shared by semantic assets, resource files and directories.
+/// File-backed resources do not acquire invented semantic identities.
+#[derive(Debug)]
+pub struct SourceRelocation {
+    pub source: PathBuf,
+    pub destination: PathBuf,
+    pub asset: Option<ProjectAssetId>,
 }
 
 #[derive(Debug)]
 pub struct AssetMoveBatchResult {
-    pub moves: Vec<RenameResult>,
+    pub moves: Vec<SourceRelocation>,
+    pub folders: Vec<SourceRelocation>,
     /// Retained journal includes exact original bytes. Not semantic Ctrl+Z history.
     pub journal: PathBuf,
     /// Final paths of saved effects whose resource paths were rewritten. Hosts must
@@ -59,69 +75,31 @@ pub struct PendingAssetMoveBatch {
     record: Record,
     pub journal: PathBuf,
     pub moved_files: usize,
+    pub moved_folders: usize,
 }
 
 impl ProjectContent {
     /// Plans a bounded batch of saved semantic files using the single-asset planner.
     /// Destinations must already exist. Known effect resource paths are rewritten
-    /// in the same transaction. Folder moves and arbitrary source types are not
-    /// accepted yet. Hosts must recheck draft/session guards immediately before apply.
+    /// in the same transaction. For folders/resources/renames use
+    /// `plan_content_relocations`. Hosts must recheck draft/session guards before apply.
     pub fn plan_asset_moves(
         &self,
         requests: Vec<OperationRequest>,
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<AssetMoveBatchPlan, OperationError> {
-        if requests.is_empty() || requests.len() > MAX_FILES {
-            return Err(blocked("A move batch must contain 1 to 128 assets"));
-        }
-        if !complete || !drafts.is_empty() {
-            return Err(blocked(
-                "Save or discard all drafts before a reference-safe move batch",
-            ));
-        }
-        let root = self.source_tree().root_path().to_owned();
-        ensure_idle(&root)?;
-        let baseline = rename::inventory(&root)?;
-        let mut moves = Vec::new();
-        for request in requests {
-            let plan = self.plan_asset_relocation(request, drafts, complete, true, true)?;
-            if plan.inventory != baseline {
-                return Err(blocked("Project changed during batch preflight"));
+        for request in &requests {
+            let OperationRequest::Move { source, .. } = request else {
+                return Err(blocked("Expected a semantic asset move request"));
+            };
+            if self.asset_operation_suffix(*source).is_none()
+                || self.asset_for_source(*source).is_none()
+            {
+                return Err(blocked("Expected a supported semantic source"));
             }
-            moves.push(Move {
-                source: plan
-                    .source
-                    .strip_prefix(&root)
-                    .map_err(|_| blocked("Source escapes root"))?
-                    .into(),
-                destination: plan
-                    .destination
-                    .destination
-                    .strip_prefix(&root)
-                    .map_err(|_| blocked("Destination escapes root"))?
-                    .into(),
-                asset: plan.asset,
-                bytes: baseline
-                    .get(&plan.source)
-                    .ok_or_else(|| blocked("Missing source bytes"))?
-                    .clone(),
-            });
         }
-        validate_moves(&moves)?;
-        let fresh = ProjectContent::scan(&root);
-        let replacements = references::plan(&fresh, &baseline, &moves)?;
-        if rename::inventory(&root)? != baseline {
-            return Err(blocked(
-                "Project changed during reference rewrite preflight",
-            ));
-        }
-        Ok(AssetMoveBatchPlan {
-            root,
-            moves,
-            inventory: baseline,
-            replacements,
-        })
+        self.plan_content_relocations(requests, drafts, complete)
     }
 
     /// Inspect an interrupted batch without moving, replacing or deleting files.
@@ -137,12 +115,15 @@ impl ProjectContent {
             Ok(_) => {}
         }
         let record = read_record(&root, &journal)?;
-        let moved_files = steps::progress(&root, &record)?.min(record.moves.len());
+        let progress = steps::progress(&root, &record)?;
+        let moved_files = steps::moved_files(&record, progress);
+        let moved_folders = progress.min(record.folders.len());
         Ok(Some(PendingAssetMoveBatch {
             root,
             record,
             journal,
             moved_files,
+            moved_folders,
         }))
     }
 }
@@ -168,27 +149,36 @@ impl AssetMoveBatchPlan {
         if rename::inventory(&self.root)? != self.inventory {
             return Err(blocked("Project changed; batch cancelled"));
         }
+        if folders::inventory(&self.root)? != self.directories {
+            return Err(blocked("Project directories changed; batch cancelled"));
+        }
         validate_moves(&self.moves)?;
+        folders::validate(&self.folders, &self.moves)?;
         references::validate(&self.replacements, &self.moves)?;
         let rewritten_sources = self.rewritten_sources();
-        let (journal, record) = prepare(&self.root, self.moves, self.replacements)?;
+        let (journal, record) = prepare(&self.root, self.moves, self.replacements, self.folders)?;
         let mut expected = self.inventory;
+        let mut expected_directories = self.directories;
         let result = (|| {
             checkpoint(0)?;
             for (index, step) in steps::list(&record).iter().enumerate() {
-                if rename::inventory(&self.root)? != expected {
+                if rename::inventory(&self.root)? != expected
+                    || folders::inventory(&self.root)? != expected_directories
+                {
                     return Err(blocked("Project changed during batch"));
                 }
                 steps::advance(&self.root, &record, index, false)?;
-                if !steps::internal(&step.source) {
-                    expected.remove(&self.root.join(&step.source));
-                }
-                if !steps::internal(&step.destination) {
-                    expected.insert(self.root.join(&step.destination), step.bytes.clone());
-                }
+                steps::update_inventory(
+                    &self.root,
+                    step,
+                    &mut expected,
+                    &mut expected_directories,
+                )?;
                 checkpoint(index + 1)?;
             }
-            if rename::inventory(&self.root)? != expected {
+            if rename::inventory(&self.root)? != expected
+                || folders::inventory(&self.root)? != expected_directories
+            {
                 return Err(blocked("Project changed before batch commit"));
             }
             if steps::progress(&self.root, &record)? != steps::list(&record).len() {
@@ -201,10 +191,19 @@ impl AssetMoveBatchPlan {
                 moves: record
                     .moves
                     .into_iter()
-                    .map(|item| RenameResult {
+                    .map(|item| SourceRelocation {
                         source: self.root.join(item.source),
                         destination: self.root.join(item.destination),
                         asset: item.asset,
+                    })
+                    .collect(),
+                folders: record
+                    .folders
+                    .into_iter()
+                    .map(|item| SourceRelocation {
+                        source: self.root.join(item.source),
+                        destination: self.root.join(item.destination),
+                        asset: None,
                     })
                     .collect(),
                 journal,
@@ -243,13 +242,15 @@ impl PendingAssetMoveBatch {
 }
 
 fn validate_moves(moves: &[Move]) -> Result<(), OperationError> {
-    if moves.is_empty() || moves.len() > MAX_FILES {
+    if moves.len() > MAX_FILES {
         return Err(blocked("Invalid batch size"));
     }
     let mut paths = BTreeSet::new();
     let mut assets = BTreeSet::new();
     for item in moves {
-        if !assets.insert(item.asset) {
+        if let Some(asset) = item.asset
+            && !assets.insert(asset)
+        {
             return Err(blocked("An asset occurs more than once in this batch"));
         }
         for path in [&item.source, &item.destination] {
@@ -260,9 +261,20 @@ fn validate_moves(moves: &[Move]) -> Result<(), OperationError> {
                 ));
             }
         }
+        let Some(asset) = item.asset else {
+            if !rename::non_referencing_bytes(&item.source, &item.bytes)
+                || !rename::non_referencing_bytes(&item.destination, &item.bytes)
+                || item.source.extension() != item.destination.extension()
+            {
+                return Err(blocked(
+                    "Unsupported resource backup or changed resource format",
+                ));
+            }
+            continue;
+        };
         let text =
             std::str::from_utf8(&item.bytes).map_err(|_| blocked("Invalid source backup"))?;
-        let actual = match item.asset {
+        let actual = match asset {
             ProjectAssetId::Effect(_) => aestra_core::EffectAsset::from_ron(text)
                 .map(|asset| ProjectAssetId::Effect(asset.id))
                 .map_err(|error| error.to_string()),
@@ -276,10 +288,14 @@ fn validate_moves(moves: &[Move]) -> Result<(), OperationError> {
                     .map(|asset| ProjectAssetId::MaterialFunction(asset.id))
                     .map_err(|error| error.to_string())
             }
-            _ => return Err(blocked("Unsupported transaction asset")),
+            ProjectAssetId::MaterialPreset(_) => {
+                aestra_core::material::MaterialPresetDescriptor::from_ron(text)
+                    .map(|asset| ProjectAssetId::MaterialPreset(asset.id))
+                    .map_err(|error| error.to_string())
+            }
         }
         .map_err(|error| blocked(&format!("Invalid transaction backup: {error}")))?;
-        if actual != item.asset {
+        if actual != asset {
             return Err(blocked("Transaction backup identity mismatch"));
         }
     }
@@ -342,6 +358,7 @@ fn prepare(
     root: &Path,
     moves: Vec<Move>,
     replacements: Vec<Replacement>,
+    folders: Vec<folders::FolderMove>,
 ) -> Result<(PathBuf, Record), OperationError> {
     let directory = directory(root, true)?;
     let mut staging = tempfile::NamedTempFile::new_in(&directory)?;
@@ -355,11 +372,12 @@ fn prepare(
             .trim_start_matches('.')
     );
     let record = Record {
-        version: 2,
+        version: 3,
         root: root.canonicalize()?,
         archive,
         moves,
         replacements,
+        folders,
     };
     let bytes = serde_json::to_vec(&record).map_err(|e| OperationError::Io(e.to_string()))?;
     if bytes.len() as u64 > MAX_JOURNAL_BYTES {
@@ -390,8 +408,10 @@ fn read_record(root: &Path, journal: &Path) -> Result<Record, OperationError> {
     }
     let record: Record = serde_json::from_slice(&fs::read(journal)?)
         .map_err(|error| blocked(&format!("Unreadable transaction journal: {error}")))?;
-    if !matches!(record.version, 1 | 2)
+    if !matches!(record.version, 1..=3)
         || (record.version == 1 && !record.replacements.is_empty())
+        || (record.version < 3
+            && (!record.folders.is_empty() || record.moves.iter().any(|item| item.asset.is_none())))
         || record.root != root.canonicalize()?
         || !record.archive.starts_with("transaction-")
         || !valid_name(&record.archive)
@@ -399,6 +419,7 @@ fn read_record(root: &Path, journal: &Path) -> Result<Record, OperationError> {
         return Err(blocked("Unsupported or relocated transaction journal"));
     }
     validate_moves(&record.moves)?;
+    folders::validate(&record.folders, &record.moves)?;
     references::validate(&record.replacements, &record.moves)?;
     Ok(record)
 }
@@ -468,6 +489,8 @@ fn rollback(
     finish(root, journal, record, "rolled-back")
 }
 
+#[cfg(all(test, any(windows, target_os = "linux")))]
+mod folder_tests;
 #[cfg(all(test, any(windows, target_os = "linux")))]
 mod rewrite_tests;
 #[cfg(all(test, any(windows, target_os = "linux")))]

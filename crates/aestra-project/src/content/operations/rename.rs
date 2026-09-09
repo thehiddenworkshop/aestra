@@ -46,20 +46,25 @@ fn non_referencing_gltf(source: &[u8]) -> bool {
 /// Prove an unindexed asset has no external links; unknown formats remain blocked.
 /// SVG is a drawing-only subset: scripts, general CSS, hrefs and unknown tags still block.
 pub(super) fn non_referencing_asset(path: &Path) -> bool {
+    fs::read(path).is_ok_and(|bytes| non_referencing_bytes(path, &bytes))
+}
+
+/// The journal validates resource backups with the same format boundary as preflight.
+pub(super) fn non_referencing_bytes(path: &Path, bytes: &[u8]) -> bool {
     if super::super::ProjectFileClassification::for_path(path)
         == super::super::ProjectFileClassification::Texture
     {
         return true;
     }
     let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-    let Ok(source) = fs::read_to_string(path) else {
+    let Ok(source) = std::str::from_utf8(bytes) else {
         return false;
     };
     if extension.eq_ignore_ascii_case("gltf") {
         return non_referencing_gltf(source.as_bytes());
     }
     if extension.eq_ignore_ascii_case("wgsl") || extension.eq_ignore_ascii_case("wesl") {
-        return non_referencing_shader(&source);
+        return non_referencing_shader(source);
     }
     if !extension.eq_ignore_ascii_case("svg") {
         return false;

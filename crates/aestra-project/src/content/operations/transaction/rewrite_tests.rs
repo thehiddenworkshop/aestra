@@ -1,7 +1,7 @@
 use super::*;
 use aestra_core::{AssetDefinition, EffectAsset};
 
-fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequest>) {
+pub(super) fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequest>) {
     let (root, _, requests) = tests::fixture();
     let path = root.path().join("effect.aestra.ron");
     let mut moved = EffectAsset::load_ron(&path).unwrap();
@@ -36,7 +36,8 @@ fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequest>) {
 }
 
 fn interrupted(plan: AssetMoveBatchPlan, count: usize) -> (PathBuf, Record) {
-    let (journal, record) = prepare(&plan.root, plan.moves, plan.replacements).unwrap();
+    let (journal, record) =
+        prepare(&plan.root, plan.moves, plan.replacements, plan.folders).unwrap();
     for index in 0..count {
         steps::advance(&plan.root, &record, index, false).unwrap();
     }

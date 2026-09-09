@@ -8,7 +8,9 @@ use super::{ProjectRelationStatus, ProjectSourceDocument, ProjectSourceRelation}
 use crate::ProjectSourceId;
 pub use duplicate::{DuplicatePlan, DuplicateResult};
 pub use rename::{RenamePlan, RenameResult};
-pub use transaction::{AssetMoveBatchPlan, AssetMoveBatchResult, PendingAssetMoveBatch};
+pub use transaction::{
+    AssetMoveBatchPlan, AssetMoveBatchResult, PendingAssetMoveBatch, SourceRelocation,
+};
 
 /// Host-supplied current documents, replacing saved references rather than adding stale ones.
 #[derive(Debug, Clone)]

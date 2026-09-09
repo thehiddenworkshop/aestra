@@ -1158,3 +1158,51 @@ boundaries for three moves and two replacements, interrupted reverse recovery, e
 edits to every owner/backup/staging file, dirty and read-only owners, stale bytes,
 unresolved/escaping references, malformed rewrite journals, lossless RON token edits
 and version-1 restart recovery. User-authored asset files remain untouched.
+
+### AB6b audited folder and resource relocation plans — 2026-09-09
+
+`plan_content_relocations` accepts source-ID-based same-project Move/Rename requests
+for folders, saved effects/programs/functions/presets and supported non-referencing
+resources. `plan_asset_moves` now delegates to that shared planner with its existing
+semantic-only request boundary. Files keep their suffix, typed assets keep their IDs,
+and resource files gain no invented semantic identity. Results expose all file and
+folder location changes plus rewritten owner paths for future host reconciliation.
+
+The folder planner physically inspects every descendant, including directories that
+contain no files. It rejects hidden/excluded descendants rather than silently moving
+content omitted by the normal index. Unknown formats/include semantics, links,
+read-only paths, root moves, self-descendants, ancestor destinations, merges, overlapping
+selections, case collisions, incomplete drafts and stale sources remain blockers.
+The resource format proof is shared between normal reference preflight and journal
+validation: textures, drawing-only SVG, self-contained JSON glTF and import-free WGSL/WESL.
+This proves reference scope, not image decoding or shader rendering correctness.
+
+Each selected folder moves with one exclusive same-filesystem directory rename;
+empty descendants and native directory metadata travel with it. Loose file moves and
+typed reference replacements use the same ordered transaction. Original resource IDs,
+semantic bindings, comments and untouched bytes are preserved. Whole-project file and
+directory inventories are revalidated before apply and every publication boundary.
+The bounded gate permits up to 128 files and 128 directories, with a 64 MiB serialized
+backup journal. No recursive deletion, folder merging or cross-project move is added.
+
+Version-3 journals include full directory inventories and optional semantic identities
+for file moves. Pending inspection reports both moved files and moved folders. Recovery
+validates entire before/after subtrees, including unexpected new files and empty
+directories; it never moves external additions back as if they were original contents.
+The same prefix-state recovery supports directory moves, mixed loose files, missing
+owners during replacement and interrupted reverse publication. Versions 1 and 2 remain
+recoverable. Unknown/tampered states retain the journal and backups without replay.
+
+This remains backend-only. Browser folder/resource rename/drop actions stay gated until
+guarded in-app recovery and document/session path reconciliation are implemented and
+tested. No native browser UX acceptance, Linux execution or power-loss guarantee is
+claimed. Tests use temporary projects; user-authored assets remain untouched.
+
+Verification: all 117 project tests and 645 editor unit tests plus the architecture
+test pass (two opt-in editor tests ignored). Strict project/editor all-target Clippy,
+formatting and diff checks pass. New regressions cover mixed semantic/resource folders,
+inside/outside reference owners, empty folders, directory/resource rename, combined
+folder and loose-file batches, every directory/replacement interruption boundary,
+interrupted reverse recovery, hidden/excluded descendants, external additions, stale
+empty-directory inventories, read-only folders, overlaps/collisions and tampered or
+legacy journals. Existing file-only transaction and reference-edit tests remain green.

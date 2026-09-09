@@ -93,8 +93,8 @@ single-asset operations (effects, materials and graph functions); the user confi
 these work on 2026-09-08. AB6b single semantic-file drops, journaled atomic moves and
 drag previews were also accepted by the user on 2026-09-08. The bounded semantic-file
 batch transaction/explicit restart-rollback foundation and typed resource-path edits
-are implemented; folder plans and the broader folder/delete transaction gates remain pending. AB7–AB9
-remain pending.
+and audited folder/resource relocation plans are implemented. Editor integration,
+guarded recovery actions and the broader delete gates remain pending. AB7–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -498,8 +498,8 @@ source bytes/root membership/destinations immediately before apply; prevent coll
 case-only rename errors, link escapes and folder self-descendants. No cross-root move
 or silent replacement in this milestone.
 
-Implemented foundation: `plan_asset_moves` composes the existing semantic relocation
-preflight for up to 128 files. It stages an exact-byte journal, exclusively publishes
+Implemented foundation: `plan_asset_moves` delegates to the shared source relocation
+planner for up to 128 files. It stages an exact-byte journal, exclusively publishes
 each file, and rolls back known steps on failure. Pending-batch inspection is read-only;
 explicit restart rollback validates all paths and rejects edits/collisions before
 restoration. The editor detects pending batches and blocks further browser mutations.
@@ -511,9 +511,18 @@ unresolved resource paths and unknown include semantics remain blockers. Replace
 are staged/synced before journal publication, originals are retained, and interruption
 between backup and replacement is an explicit recoverable state. Version-1 move-only
 journals remain recoverable. Results identify rewritten owners for host reload guards.
-This remains a backend semantic-file batch API, not a folder/resource-file move planner,
-multi-selection UI or in-app recovery-action dialog. Existing single-file moves retain
-their accepted atomic journal and continue blocking references requiring a rewrite.
+`plan_content_relocations` adds audited folder and supported resource Move/Rename
+requests. It inventories every descendant, including empty directories, and moves
+each selected folder with one exclusive directory rename. Version-3 journals retain
+directory inventories; recovery checks entire subtrees for external additions as well
+as edits. Texture files, drawing-only SVG, self-contained glTF and import-free WGSL/WESL
+share the existing reference-completeness boundary. Effects, programs, functions and
+presets retain typed IDs; resources use location changes without invented semantic IDs.
+Bounds remain 128 files, 128 directories and a 64 MiB serialized journal. Unknown or
+excluded/hidden descendants, links, root/self-descendant moves, merging, overlapping
+selections, stale inventories and collisions block authorization. Version-1/2 journals
+remain recoverable. This is backend-only: existing single-file browser actions retain
+their accepted journal and folder/resource operations remain gated on host integration.
 
 Use staged writes, backups and an operation journal with explicit rollback/recovery;
 multi-file changes are not inherently filesystem-atomic. Deletes move to a project
@@ -607,8 +616,8 @@ accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not re
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
 user, followed by single-asset drops and drag-preview acceptance. **Immediate next step
-(P0):** audited folder/resource-file move plans using the transaction and typed rewrite
-foundation, followed by guarded in-app recovery actions and document-path reconciliation.
-Folder rename/move and deletion stay disabled
-until the staged-write, rollback and restart-recovery gates pass. Keep the transitional
+(P0):** guarded in-app recovery actions and document-path reconciliation, then connect
+browser rename/drop actions to the shared relocation planner, including folders/resources.
+Folder rename/move stays disabled until those host integration gates pass; recoverable
+deletion remains a separate gate. Keep the transitional
 Library until its remaining capabilities have tested replacements.

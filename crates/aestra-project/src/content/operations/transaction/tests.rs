@@ -61,7 +61,10 @@ fn batch_preserves_every_byte_identity_and_returns_relocations() {
         assert!(!item.source.exists());
         assert_eq!(fs::read(&item.destination).unwrap(), before[&item.source]);
         assert_eq!(
-            fresh.unique_source_for_asset(item.asset).unwrap().path,
+            fresh
+                .unique_source_for_asset(item.asset.unwrap())
+                .unwrap()
+                .path,
             item.destination
         );
     }
@@ -103,7 +106,8 @@ fn failure_at_every_publication_boundary_rolls_back_all_files() {
 // Stop with the real durable journal and exactly N exclusive moves published,
 // without running apply's in-process error handler (simulated process termination).
 fn interrupt(plan: AssetMoveBatchPlan, count: usize) -> (PathBuf, Record) {
-    let (journal, record) = prepare(&plan.root, plan.moves, plan.replacements).unwrap();
+    let (journal, record) =
+        prepare(&plan.root, plan.moves, plan.replacements, plan.folders).unwrap();
     for index in 0..count {
         steps::advance(&plan.root, &record, index, false).unwrap();
     }
