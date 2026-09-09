@@ -10,6 +10,21 @@ pub(super) struct Replacement {
     pub after: Vec<u8>,
 }
 
+/// Separate a loader-owned subasset label from the physical project file. Bevy's
+/// asset paths use the last `#` as the delimiter; keep the suffix opaque and exact
+/// (including case and slashes). Only the file portion participates in disk checks.
+/// Custom asset sources are still rejected by `key`, not treated as project files.
+fn resource_parts(path: &str) -> Result<(&str, &str), OperationError> {
+    let Some(index) = path.rfind('#') else {
+        return Ok((path, ""));
+    };
+    let (file, suffix) = path.split_at(index);
+    if suffix.len() == 1 || suffix.contains("://") {
+        return Err(blocked("Invalid resource subasset label"));
+    }
+    Ok((file, suffix))
+}
+
 /// Root-relative lexical key. Accept separators and dot aliases, but never foreign
 /// roots, drive prefixes, metadata paths or escaping parents (including on Linux).
 fn key(path: &str) -> Result<String, OperationError> {
@@ -45,10 +60,14 @@ fn rewrite(
         .map_err(|e| blocked(&format!("Cannot rewrite effect: {e}")))?;
     let mut changed = false;
     for resource in &mut effect.assets {
-        let reference = key(&resource.path)?;
+        let (file, suffix) = resource_parts(&resource.path)?;
+        let reference = key(file)?;
         for item in moves {
             if reference == key(&item.source.to_string_lossy())? {
-                resource.path = item.destination.to_string_lossy().replace('\\', "/");
+                resource.path = format!(
+                    "{}{suffix}",
+                    item.destination.to_string_lossy().replace('\\', "/")
+                );
                 changed = true;
                 break;
             }
@@ -145,9 +164,10 @@ pub(super) fn plan(
         // Unresolved paths are not evidence of no usages. A full inventory excludes
         // linked/unreadable files before this step, and aliases resolve to that inventory.
         for resource in &effect.assets {
-            let resolved = root.join(resource.path.replace('\\', "/")).canonicalize();
+            let (file, _) = resource_parts(&resource.path)?;
+            let resolved = root.join(file.replace('\\', "/")).canonicalize();
             if !known
-                .get(&key(&resource.path)?)
+                .get(&key(file)?)
                 .is_some_and(|path| resolved.as_ref().ok() == Some(path))
             {
                 return Err(blocked(&format!(

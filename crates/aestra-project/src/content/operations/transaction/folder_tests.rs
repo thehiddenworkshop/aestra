@@ -9,6 +9,159 @@ fn source(content: &ProjectContent, path: &str) -> ProjectSourceId {
         .id
 }
 
+fn labeled_mesh_fixture() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("meshes")).unwrap();
+    fs::create_dir_all(root.path().join("test/empty")).unwrap();
+    fs::create_dir(root.path().join("destination")).unwrap();
+    fs::write(
+        root.path().join("meshes/lab_cube.gltf"),
+        include_bytes!("../../../../../../assets/meshes/lab_cube.gltf"),
+    )
+    .unwrap();
+    let mut effect = EffectAsset::new("Mesh effect", 1.0);
+    for label in ["Mesh0/Primitive0", "Mesh0", "Scene0"] {
+        effect.assets.push(AssetDefinition {
+            id: aestra_core::AssetId::new(),
+            name: label.into(),
+            kind: aestra_core::AssetKind::Mesh,
+            path: format!("meshes/lab_cube.gltf#{label}"),
+        });
+    }
+    fs::write(
+        root.path().join("effect.aestra.ron"),
+        format!(
+            "// Keep formatting and labels\n{}",
+            effect.to_pretty_ron().unwrap()
+        ),
+    )
+    .unwrap();
+    root
+}
+
+#[test]
+fn unrelated_folder_rename_and_move_accept_existing_mesh_subasset_references() {
+    for rename in [false, true] {
+        let root = labeled_mesh_fixture();
+        let content = ProjectContent::scan(root.path());
+        let original = fs::read(root.path().join("effect.aestra.ron")).unwrap();
+        let request = if rename {
+            OperationRequest::Rename {
+                source: source(&content, "test"),
+                name: "renamed".into(),
+            }
+        } else {
+            OperationRequest::Move {
+                source: source(&content, "test"),
+                parent: source(&content, "destination"),
+            }
+        };
+        let result = content
+            .plan_content_relocations(vec![request], &[], true)
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert!(result.rewritten_sources.is_empty());
+        assert_eq!(
+            fs::read(root.path().join("effect.aestra.ron")).unwrap(),
+            original
+        );
+        assert!(!root.path().join("test").exists());
+        assert!(
+            root.path()
+                .join(if rename {
+                    "renamed/empty"
+                } else {
+                    "destination/test/empty"
+                })
+                .is_dir()
+        );
+    }
+}
+
+#[test]
+fn mesh_file_and_folder_relocation_preserve_subasset_labels_and_recover_exact_bytes() {
+    for folder in [false, true] {
+        let root = labeled_mesh_fixture();
+        let content = ProjectContent::scan(root.path());
+        let before = rename::inventory(root.path()).unwrap();
+        let request = if folder {
+            OperationRequest::Move {
+                source: source(&content, "meshes"),
+                parent: source(&content, "destination"),
+            }
+        } else {
+            OperationRequest::Rename {
+                source: source(&content, "meshes/lab_cube.gltf"),
+                name: "renamed".into(),
+            }
+        };
+        let result = content
+            .plan_content_relocations(vec![request], &[], true)
+            .unwrap()
+            .apply()
+            .unwrap();
+        let prefix = if folder {
+            "destination/meshes/lab_cube.gltf"
+        } else {
+            "meshes/renamed.gltf"
+        };
+        let original =
+            std::str::from_utf8(&before[&root.path().join("effect.aestra.ron")]).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.path().join("effect.aestra.ron")).unwrap(),
+            original.replace("meshes/lab_cube.gltf#", &format!("{prefix}#"))
+        );
+        // Simulate interruption at the final archival boundary, then restore.
+        fs::rename(
+            &result.journal,
+            result.journal.parent().unwrap().join("active.pending"),
+        )
+        .unwrap();
+        ProjectContent::scan(root.path())
+            .pending_asset_move_batch()
+            .unwrap()
+            .unwrap()
+            .rollback(&[], true)
+            .unwrap();
+        assert_eq!(rename::inventory(root.path()).unwrap(), before);
+    }
+}
+
+#[test]
+fn mesh_labels_do_not_bypass_missing_file_or_root_escape_checks() {
+    for path in [
+        "meshes/missing.gltf#Mesh0/Primitive0",
+        "../outside.gltf#Mesh0",
+        "C:/outside.gltf#Mesh0",
+        "/outside.gltf#Mesh0",
+        "meshes/lab_cube.gltf#",
+        "meshes/lab_cube.gltf#source://Mesh0",
+    ] {
+        let root = labeled_mesh_fixture();
+        let effect_path = root.path().join("effect.aestra.ron");
+        let mut effect = EffectAsset::load_ron(&effect_path).unwrap();
+        effect.assets[0].path = path.into();
+        fs::write(&effect_path, ron::ser::to_string(&effect).unwrap()).unwrap();
+        let content = ProjectContent::scan(root.path());
+        assert!(
+            content
+                .plan_content_relocations(
+                    vec![OperationRequest::Rename {
+                        source: source(&content, "test"),
+                        name: "renamed".into(),
+                    }],
+                    &[],
+                    true
+                )
+                .is_err(),
+            "{path}"
+        );
+        assert!(root.path().join("test/empty").is_dir());
+        assert!(!root.path().join("renamed").exists());
+    }
+}
+
 fn fixture() -> (tempfile::TempDir, ProjectContent, OperationRequest) {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("pack/nested/empty")).unwrap();

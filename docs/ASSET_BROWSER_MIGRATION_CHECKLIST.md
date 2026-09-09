@@ -1282,3 +1282,17 @@ is the next implementation gate after acceptance. User assets are not test fixtu
 Verification: 655 editor unit tests and the architecture test pass (two opt-in tests
 ignored), along with all 118 project tests. Strict all-target project/editor Clippy,
 formatting and diff checks pass on the supported Windows MSVC toolchain.
+
+### AB6b mesh subasset relocation regression — 2026-09-09
+
+Manual folder Rename/Move exposed an overly literal resource check: a valid binding
+such as `meshes/lab_cube.gltf#Mesh0/Primitive0` was treated as a filesystem path,
+blocking even unrelated empty folders during project-wide preflight. The shared typed
+rewriter now separates the physical file from the final `#` label delimiter, validates
+the file against the same canonical project inventory, and preserves the label exactly
+when rewriting a moved file or folder. Journal validation/recovery uses the same logic.
+Missing files, foreign roots, escaping paths and invalid labels still block operations.
+
+Regression fixtures include the real self-contained lab cube, unrelated folder Rename
+and Move, labeled mesh file Rename/folder Move, exact-byte recovery and invalid paths.
+The list/grid inline Rename regression now includes an unrelated mesh subasset owner.

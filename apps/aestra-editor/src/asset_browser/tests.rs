@@ -1008,6 +1008,25 @@ fn supported_sources_share_menu_capabilities_and_inline_rename() {
                 _ => std::fs::create_dir(&path).unwrap(),
             }
             let bytes = std::fs::read(&path).ok();
+            if kind == 4 {
+                // An unrelated mesh subasset in the project must not block folder Rename.
+                std::fs::create_dir(root.path().join("z_meshes")).unwrap();
+                std::fs::write(
+                    root.path().join("z_meshes/lab_cube.gltf"),
+                    include_bytes!("../../../../assets/meshes/lab_cube.gltf"),
+                )
+                .unwrap();
+                let mut effect = EffectAsset::new("Mesh effect", 1.0);
+                effect.assets.push(aestra_core::AssetDefinition {
+                    id: aestra_core::AssetId::new(),
+                    name: "Cube".into(),
+                    kind: aestra_core::AssetKind::Mesh,
+                    path: "z_meshes/lab_cube.gltf#Mesh0/Primitive0".into(),
+                });
+                effect
+                    .save_ron(root.path().join("z_effect.aestra.ron"))
+                    .unwrap();
+            }
             let mut app = browser_app(root.path());
             app.world_mut().resource_mut::<AssetBrowserState>().view = view;
             app.update();
