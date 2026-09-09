@@ -261,6 +261,11 @@ mod tests {
                     }
                     app.update();
                     assert!(app.world().get_entity(preview).is_err());
+                    assert!(
+                        app.world()
+                            .get::<super::super::payload::AssetPayload>(row)
+                            .is_none()
+                    );
                     assert_eq!(
                         app.world()
                             .get::<UiGlobalTransform>(row)

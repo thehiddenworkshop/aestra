@@ -85,7 +85,10 @@ fn apply_history_focus(
         if let Ok(scope) = scopes.get(current) {
             let active = match scope {
                 HistoryScope::Effect => false,
-                HistoryScope::Material => session.standalone_material().is_some(),
+                HistoryScope::Material => {
+                    session.standalone_material().is_some()
+                        || session.standalone_function().is_some()
+                }
                 HistoryScope::Neutral => return,
             };
             if session.material_history_active != active {
@@ -710,7 +713,7 @@ fn execute_document_history(
     ledger: &mut EditorHistoryLedger,
     functions: &mut crate::material_function_editor::FunctionEditor,
 ) -> bool {
-    if session.standalone_function().is_some() {
+    if session.standalone_function().is_some() && session.material_history_active {
         let result = functions.step(session, catalog, action == HistoryAction::Undo);
         let succeeded = result.is_ok();
         session.status = match result {
@@ -865,7 +868,7 @@ fn update_history_availability(
             true
         } else if ordered.is_some() {
             false
-        } else if session.standalone_function().is_some() {
+        } else if session.standalone_function().is_some() && session.material_history_active {
             (undo && functions.available(&session, true))
                 || (redo && functions.available(&session, false))
         } else if session.standalone_material().is_some() && session.material_history_active {

@@ -139,6 +139,11 @@ fn begin(
                 _ => None,
             })
     }) {
+        if let Some(origin) = drag.origin.take() {
+            commands
+                .entity(origin)
+                .try_remove::<super::payload::AssetPayload>();
+        }
         if let Some(preview) = drag.preview.take() {
             commands.entity(preview).try_despawn();
         }
@@ -164,6 +169,9 @@ fn begin(
             ));
         }
         drag.source = Some((source, catalog.content_revision()));
+        commands
+            .entity(event.entity)
+            .insert(super::payload::AssetPayload::capture(&catalog, source));
         drag.origin = Some(event.entity);
         drag.ended = false;
         drag.suppress_click = true;
@@ -403,7 +411,11 @@ fn clear_ended(
             commands.entity(preview).try_despawn();
         }
         drag.source = None;
-        drag.origin = None;
+        if let Some(origin) = drag.origin.take() {
+            commands
+                .entity(origin)
+                .try_remove::<super::payload::AssetPayload>();
+        }
         drag.ended = false;
         for highlight in &highlights {
             commands.entity(highlight).despawn();
@@ -745,10 +757,18 @@ mod tests {
                         },
                         source_row,
                     ));
+                    app.world_mut().flush();
                     assert_eq!(
                         app.world().resource::<AssetDrag>().source.map(|v| v.0),
                         Some(source),
                         "drag origin kind={kind}, tree={tree}"
+                    );
+                    assert!(
+                        app.world()
+                            .get::<super::super::payload::AssetPayload>(source_row)
+                            .unwrap()
+                            .resolve(app.world().resource::<ProjectEffectCatalog>())
+                            .is_ok()
                     );
                     app.world_mut().trigger(Pointer::new(
                         PointerId::Mouse,

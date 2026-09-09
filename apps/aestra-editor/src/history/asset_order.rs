@@ -14,8 +14,8 @@ pub(crate) enum Context {
 }
 impl Context {
     pub(crate) fn current(session: &EditorSession) -> Self {
-        if session.standalone_function().is_some()
-            || session.standalone_material().is_some() && session.material_history_active
+        if (session.standalone_function().is_some() || session.standalone_material().is_some())
+            && session.material_history_active
         {
             Self::Material(session.material_target.clone())
         } else {

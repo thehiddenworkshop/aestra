@@ -1432,3 +1432,35 @@ manual acceptance of this open-document workflow remains pending.
 Verification: 674 editor unit tests, the architecture test and 135 project tests pass;
 two opt-in editor tests remain ignored. Strict Clippy for both packages, formatting
 and diff checks pass. No user assets were deleted during verification.
+
+### AB7a — Typed Asset Browser Effect → Timeline — 2026-09-09
+
+The user accepted the open-document deletion P0 check and requested AB7a. Browser
+drag origins now publish a shared project-root/version/source/semantic-identity payload;
+timeline hover and drop re-resolve it against the published content snapshot. The
+transitional Library and browser feed the same cycle-safe placement command, rather
+than maintaining independent clip insertion logic. Canvas drops place at pointer time,
+track-header drops at playhead time, with existing track insertion and duration bounds.
+One Undo reverses both clip insertion and track order; Redo restores the same clip.
+Successful drops explicitly transfer history focus to the effect while leaving an open
+material/function graph in place. Returning to graph/standalone Properties restores
+graph history focus; merely having a function open no longer intercepts effect Undo.
+
+The existing browser ghost remains non-pickable and does not remove the source item.
+Escape/end/stale-source cleanup removes the payload and timeline preview. Invalid
+types, project switches, changed/missing/ambiguous sources, self/cyclic references,
+protection dialogs and pending proposals reject without editing or discarding work.
+Hover uses the existing timeline preview/rejection feedback. Source files are not
+changed by authoring drops. Texture/mesh/material/function targets and reusable picker
+UI are not part of this slice; Library remains available.
+
+Regression coverage includes native picking events for canvas/header drops, child-label
+targets, secondary-button no-ops, a single transaction's Undo/Redo, hover/cancel cleanup,
+source validation and protected-document rejection. Existing grid/list ghost tests also
+check typed-payload cleanup at multiple UI scales. Native manual acceptance is pending:
+drag an effect from Assets onto timeline space and track headers, inspect insertion
+feedback, Undo/Redo, and check self/invalid drops and Escape leave the document intact.
+
+Verification: 678 editor unit tests and the architecture test pass (two opt-in tests
+ignored). Strict editor Clippy and formatting pass. Tests use temporary assets; no
+user asset files were moved, copied, edited or deleted for this slice.

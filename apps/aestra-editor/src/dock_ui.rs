@@ -384,7 +384,8 @@ fn spawn_dock_stack(
             DockPane(node),
             crate::history::HistoryScope::for_panel(
                 stack.active,
-                sources.session.standalone_material().is_some(),
+                sources.session.standalone_material().is_some()
+                    || sources.session.standalone_function().is_some(),
             ),
             RelativeCursorPosition::default(),
             Pickable {
@@ -515,7 +516,8 @@ fn spawn_native_floating_ui(
         NativeFloatingUi { panel, revision },
         crate::history::HistoryScope::for_panel(
             Some(panel),
-            sources.session.standalone_material().is_some(),
+            sources.session.standalone_material().is_some()
+                || sources.session.standalone_function().is_some(),
         ),
         UiTargetCamera(camera),
         Node {

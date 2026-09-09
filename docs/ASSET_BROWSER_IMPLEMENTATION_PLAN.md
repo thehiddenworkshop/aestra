@@ -99,7 +99,10 @@ drag/drop Move now use the shared planner for folders and supported resource fil
 well as semantic assets. Tree-origin folder drag/drop and inline rename, plus guarded
 recoverable deletion and Deleted Items restore, are implemented. Native manual
 acceptance remains pending.
-AB7–AB9 remain pending.
+The user accepted the open-document deletion P0 check on 2026-09-09.
+AB7a (typed Asset Browser Effect → Timeline drops) is implemented; verification and
+native acceptance are tracked in the migration checklist. Remaining AB7 drops and
+AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -591,6 +594,16 @@ changes during queued I/O cancel publication instead of replacing newer edits.
 
 ### AB7 — Typed drag/drop, reusable pickers and document resources
 
+**AB7a:** Asset Browser drag origins now carry a shared payload containing project
+root, generation/revision, source ID and optional semantic asset identity. Timeline
+hover/drop resolves that payload again and shares the existing Library placement and
+cycle-check path. Canvas drops use pointer time; track-header drops use playhead time
+and the existing insertion gap. One transaction adds the clip and updates track order.
+The existing ghost follows the pointer; cancelled/stale drags clear it and the timeline
+preview. Invalid types, ambiguous/missing/stale sources, self/cyclic references and
+pending document operations produce feedback without authoring changes. No disk asset
+is moved or copied by an authoring drop. Other typed consumers/pickers remain pending.
+
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
 feedback. Compatibility is shared by pickers and drag targets, not inferred by icons.
@@ -666,10 +679,9 @@ Discard and built-in read-only checks were not run in that pass. The user subseq
 accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not retroactively
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
-user, followed by single-asset drops and drag-preview acceptance. **Immediate next step
-(P0):** connect browser rename/drop actions to the shared relocation planner, including
-folders/resources, reusing the implemented recovery and clean-document reconciliation
-rules for successful forward publication. Manually accept the in-app recovery flow.
-Folder rename/move stays disabled until those host integration gates pass; recoverable
-deletion remains a separate gate. Keep the transitional
-Library until its remaining capabilities have tested replacements.
+user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
+tree relocation, recoverable deletion and open-draft Undo are now implemented; the
+user accepted the deletion P0 check on 2026-09-09. **Current step (P1):** verify AB7a
+Asset Browser Effect → Timeline authoring drops, then extend typed consumers to
+materials and functions. Keep the transitional Library until its remaining capabilities
+have tested replacements.

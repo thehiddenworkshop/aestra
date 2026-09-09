@@ -55,6 +55,8 @@ use fluent_bundle::FluentArgs;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod actions;
+mod asset_drop;
+use asset_drop::{EffectDragRows, EffectDragSource};
 mod automation;
 pub(crate) mod host_motion;
 mod referenced_effect;
@@ -158,6 +160,7 @@ impl Plugin for TimelinePlugin {
                     update_automation_key_visuals,
                     update_automation_curve_drag_preview,
                     update_effect_drop_insertion,
+                    asset_drop::clear_cancelled_preview,
                     sync_effect_drop_track_gap,
                     update_effect_drop_preview,
                     reveal_timeline_emitter,
@@ -8167,12 +8170,17 @@ fn timeline_wheel_intent(
 
 fn dragged_project_effect(
     mut entity: Entity,
-    rows: &Query<&ProjectEffectRow>,
+    rows: &EffectDragRows,
     parents: &Query<&ChildOf>,
-) -> Option<ProjectEffectEntryId> {
+) -> Option<EffectDragSource> {
     loop {
-        if let Ok(row) = rows.get(entity) {
-            return Some(row.id());
+        if let Ok((row, payload)) = rows.get(entity) {
+            if let Some(payload) = payload {
+                return Some(EffectDragSource::Asset(payload.clone()));
+            }
+            if let Some(row) = row {
+                return Some(EffectDragSource::Library(row.id()));
+            }
         }
         let Ok(parent) = parents.get(entity) else {
             return None;
@@ -8183,31 +8191,45 @@ fn dragged_project_effect(
 
 fn show_invalid_timeline_drop_feedback(
     mut enter: On<Pointer<DragEnter>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
     catalog: Res<ProjectEffectCatalog>,
     session: Res<EditorSession>,
     mut state: ResMut<TimelineState>,
+    mut commands: Commands,
+    guard: asset_drop::DropGuard,
 ) {
+    if enter.button != PointerButton::Primary {
+        return;
+    }
     let Some(row) = dragged_project_effect(enter.dragged, &rows, &parents) else {
         return;
     };
-    state.effect_drop_preview = project_effect_drop_preview(row, &catalog, &session);
+    state.browser_drop = match &row {
+        EffectDragSource::Asset(payload) => Some(payload.clone()),
+        _ => None,
+    };
+    let result = guard.check().and_then(|()| row.preview(&catalog, &session));
+    state.effect_drop_preview = result.as_ref().ok().cloned();
     for (mut feedback, mut node) in &mut feedback {
         feedback.rejected = false;
         feedback.timer.reset();
         feedback.timer.pause();
         node.display = Display::None;
     }
+    if let Err(reason) = result {
+        commands.trigger(RejectProjectEffectDrop { reason });
+    }
     enter.propagate(false);
 }
 
 fn hide_invalid_timeline_drop_feedback(
     mut leave: On<Pointer<DragLeave>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     mut feedback: Query<(&TimelineInvalidDropFeedback, &mut Node)>,
+    mut state: ResMut<TimelineState>,
 ) {
     if dragged_project_effect(leave.dragged, &rows, &parents).is_none() {
         return;
@@ -8217,27 +8239,34 @@ fn hide_invalid_timeline_drop_feedback(
             node.display = Display::None;
         }
     }
+    if state.browser_drop.take().is_some() {
+        state.effect_drop_preview = None;
+        state.effect_drop_insertion = None;
+    }
     leave.propagate(false);
 }
 
 fn begin_project_effect_drag_preview(
     drag: On<Pointer<DragStart>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     session: Res<EditorSession>,
     mut state: ResMut<TimelineState>,
 ) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
     let Some(row) = dragged_project_effect(drag.entity, &rows, &parents) else {
         return;
     };
-    state.effect_drop_preview = project_effect_drop_preview(row, &catalog, &session);
+    state.effect_drop_preview = row.preview(&catalog, &session).ok();
     state.effect_drop_insertion = None;
 }
 
 fn finish_project_effect_drag_preview(
     drag: On<Pointer<DragEnd>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     mut state: ResMut<TimelineState>,
 ) {
@@ -8246,30 +8275,12 @@ fn finish_project_effect_drag_preview(
     }
     state.effect_drop_preview = None;
     state.effect_drop_insertion = None;
-}
-
-fn project_effect_drop_preview(
-    row: ProjectEffectEntryId,
-    catalog: &ProjectEffectCatalog,
-    session: &EditorSession,
-) -> Option<EffectDropPreview> {
-    catalog.entry(row).and_then(|entry| {
-        let display_name = entry.display_name.clone();
-        entry.reference.and_then(|reference| {
-            catalog
-                .effect_for_placement(&session.effect, reference)
-                .ok()
-                .map(|source| EffectDropPreview {
-                    source_duration: source.duration,
-                    display_name,
-                })
-        })
-    })
+    state.browser_drop = None;
 }
 
 fn drop_project_effect_on_timeline(
     mut drop: On<Pointer<DragDrop>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     canvases: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
     catalog: Res<ProjectEffectCatalog>,
@@ -8278,7 +8289,11 @@ fn drop_project_effect_on_timeline(
     localizer: Res<Localizer>,
     mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
     mut commands: Commands,
+    guard: asset_drop::DropGuard,
 ) {
+    if drop.button != PointerButton::Primary {
+        return;
+    }
     let Some(source_row) = dragged_project_effect(drop.dropped, &rows, &parents) else {
         return;
     };
@@ -8286,29 +8301,31 @@ fn drop_project_effect_on_timeline(
     let insertion = state.effect_drop_insertion.take();
     state.effect_drop_preview = None;
 
-    let result = canvases
-        .single()
-        .ok()
-        .and_then(|cursor| cursor.normalized)
-        .ok_or_else(|| "the drop position is outside the timeline".to_string())
-        .and_then(|cursor| {
-            let pointer_time = state.view.time_at(timeline_cursor_fraction(cursor.x));
-            insert_project_effect_clip(
-                source_row,
-                pointer_time,
-                insertion,
-                &catalog,
-                &mut session,
-                &localizer,
-            )
-        });
+    let result = guard.check().and_then(|()| {
+        canvases
+            .single()
+            .ok()
+            .and_then(|cursor| cursor.normalized)
+            .ok_or_else(|| "the drop position is outside the timeline".to_string())
+            .and_then(|cursor| {
+                let pointer_time = state.view.time_at(timeline_cursor_fraction(cursor.x));
+                insert_project_effect_clip(
+                    source_row,
+                    pointer_time,
+                    insertion,
+                    &catalog,
+                    &mut session,
+                    &localizer,
+                )
+            })
+    });
 
     finish_project_effect_drop(result, &mut feedback, &mut commands);
 }
 
 fn drop_project_effect_on_track_headers(
     mut drop: On<Pointer<DragDrop>>,
-    rows: Query<&ProjectEffectRow>,
+    rows: EffectDragRows,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     mut state: ResMut<TimelineState>,
@@ -8316,7 +8333,11 @@ fn drop_project_effect_on_track_headers(
     localizer: Res<Localizer>,
     mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
     mut commands: Commands,
+    guard: asset_drop::DropGuard,
 ) {
+    if drop.button != PointerButton::Primary {
+        return;
+    }
     let Some(source_row) = dragged_project_effect(drop.dropped, &rows, &parents) else {
         return;
     };
@@ -8325,32 +8346,31 @@ fn drop_project_effect_on_track_headers(
     state.effect_drop_preview = None;
 
     let playhead_time = session.time();
-    let result = insert_project_effect_clip(
-        source_row,
-        playhead_time,
-        insertion,
-        &catalog,
-        &mut session,
-        &localizer,
-    );
+    let result = guard.check().and_then(|()| {
+        insert_project_effect_clip(
+            source_row,
+            playhead_time,
+            insertion,
+            &catalog,
+            &mut session,
+            &localizer,
+        )
+    });
     finish_project_effect_drop(result, &mut feedback, &mut commands);
 }
 
 fn insert_project_effect_clip(
-    source_row: ProjectEffectEntryId,
+    source_row: EffectDragSource,
     pointer_time: f32,
     insertion: Option<(ChoreographyTrackId, bool)>,
     catalog: &ProjectEffectCatalog,
     session: &mut EditorSession,
     localizer: &Localizer,
 ) -> Result<(), String> {
-    let entry = catalog
-        .entry(source_row)
-        .ok_or_else(|| "the Library entry no longer exists".to_string())?;
-    let reference = entry
-        .reference
-        .ok_or_else(|| "the Library entry is not a valid effect asset".to_string())?;
-    let display_name = entry.display_name.clone();
+    if session.pending_change.is_some() {
+        return Err("Resolve the pending change before adding an effect".into());
+    }
+    let (reference, display_name) = source_row.resolve(catalog)?;
     let source = catalog.effect_for_placement(&session.effect, reference)?;
     let (start_time, duration) =
         effect_clip_placement(pointer_time, session.playback_duration(), source.duration)
@@ -8375,6 +8395,9 @@ fn insert_project_effect_clip(
     ) {
         return Err(session.status.clone());
     }
+    // A drop has no Press on the destination to transfer editing focus.
+    // Keep any standalone graph open, but route the next Undo to this edit.
+    session.material_history_active = false;
     session.select_effect_clip(clip_id);
     let mut args = FluentArgs::new();
     args.set("name", display_name);
