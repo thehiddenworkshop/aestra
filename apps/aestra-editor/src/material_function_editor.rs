@@ -42,6 +42,11 @@ fn key(session: &EditorSession) -> Result<Key, String> {
 }
 
 impl FunctionEditor {
+    pub(crate) fn clear_redo(&mut self) {
+        for history in self.histories.values_mut() {
+            history.redo.clear();
+        }
+    }
     pub(crate) fn clear_function(&mut self, root: &std::path::Path, id: MaterialFunctionId) {
         let key = (root.to_owned(), id);
         self.histories.remove(&key);
@@ -143,6 +148,9 @@ impl FunctionEditor {
                     history.undo.remove(0);
                 }
                 history.redo.clear();
+                session
+                    .operation_order
+                    .record(crate::history::asset_order::Context::current(session));
                 Ok(())
             }
             Err(error) => {
@@ -199,6 +207,9 @@ impl FunctionEditor {
             history.redo.pop();
             history.undo.push(entry);
         }
+        session
+            .operation_order
+            .step(crate::history::asset_order::Context::current(session), undo);
         Ok(())
     }
 }

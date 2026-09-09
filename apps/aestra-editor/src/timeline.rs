@@ -702,6 +702,7 @@ fn choreography_keyboard_input(
         .is_some_and(|entity| editable_text.contains(entity));
     if palette.open
         || shortcuts.blocked()
+        || shortcuts.asset_browser_focused()
         || timelines.is_empty()
         || editing_text
         || material_graphs
@@ -4068,6 +4069,71 @@ mod tests {
                     .emitters
                     .len(),
                 initial + expected_delta
+            );
+        }
+    }
+
+    #[test]
+    fn native_delete_in_assets_does_not_also_create_a_timeline_deletion_proposal() {
+        use bevy::input::{
+            InputPlugin,
+            keyboard::{Key, KeyboardInput},
+        };
+        use bevy::input_focus::{FocusedInput, InputDispatchPlugin, InputFocusPlugin};
+        #[derive(Resource, Default)]
+        struct AssetDeletes(usize);
+        for nested in [false, true] {
+            let mut app = choreography_app(test_support::session_with_timing_slack());
+            app.add_plugins((
+                InputPlugin,
+                InputFocusPlugin,
+                InputDispatchPlugin,
+                crate::input::EditorKeyboardPlugin,
+            ))
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<AssetDeletes>()
+            .add_systems(Update, choreography_keyboard_input)
+            .add_observer(
+                |mut event: On<FocusedInput<KeyboardInput>>, mut deletes: ResMut<AssetDeletes>| {
+                    if event.input.key_code == KeyCode::Delete && event.input.state.is_pressed() {
+                        deletes.0 += 1;
+                        event.propagate(false);
+                    }
+                },
+            );
+            let window = app
+                .world_mut()
+                .spawn((Window::default(), bevy::window::PrimaryWindow))
+                .id();
+            let timeline = app.world_mut().spawn(TimelineCanvas).id();
+            let surface = app
+                .world_mut()
+                .spawn(crate::asset_browser::BrowserSurface)
+                .id();
+            let target = if nested {
+                app.world_mut().spawn(ChildOf(surface)).id()
+            } else {
+                surface
+            };
+            app.insert_resource(InputFocus::from_entity(target));
+            crate::input::tests::tap(&mut app, window, KeyCode::Delete, Key::Delete);
+            app.update();
+            assert_eq!(app.world().resource::<AssetDeletes>().0, 1);
+            assert!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .pending_change
+                    .is_none()
+            );
+            // The same shortcut still works after returning focus to the timeline.
+            app.insert_resource(InputFocus::from_entity(timeline));
+            crate::input::tests::tap(&mut app, window, KeyCode::Delete, Key::Delete);
+            app.update();
+            assert!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .pending_change
+                    .is_some()
             );
         }
     }

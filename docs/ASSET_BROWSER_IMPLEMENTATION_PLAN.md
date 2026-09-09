@@ -561,17 +561,33 @@ F2 or the tree context menu edits the folder label inline. Navigation occurs on 
 so pressing a folder does not destroy the drag origin.
 
 Recoverable deletion is implemented through an opaque `DeletePlan` and `DeletedSource`
-restore API. Delete from a content row or tree folder requires an in-app confirmation;
-outside semantic/resource references, incomplete knowledge, unsaved drafts and active
-documents/resources block publication. The journal is synced before a single exclusive
+restore API. Delete from a content row or tree folder runs immediately after preflight;
+outside semantic/resource references and incomplete knowledge block publication; merely
+opening the source does not. The journal is synced before a single exclusive
 rename into `.aestra/deleted`, outside content indexing. Empty directories, original
 bytes and semantic IDs are retained. The Deleted Items toolbar opens a paginated,
 scrollable restore panel; collisions, edited payloads, missing parents, duplicate IDs
 and missing external dependencies block restore without overwrite. Interrupted states
 are inspected read-only and restored explicitly. No automatic purge, OS recycle bin,
-cross-project restore or semantic Ctrl+Z is introduced. The same 128-file/128-directory
+cross-project restore is introduced. Recent deletions participate in ordered editor
+Undo/Redo: Ctrl+Z restores exact contents, while Redo revalidates the restored bytes,
+current references and drafts before creating a new recovery entry. A failed operation
+keeps its history entry for retry and never falls through to an unrelated document edit.
+The 256-entry ordering bridge includes effect, standalone material and function edits;
+opening/reloading another effect or switching projects resets this session-local order.
+Deleted Items remains the explicit recovery path after those boundaries or restart.
+Rename/move are not added to Undo by this slice. The same 128-file/128-directory
 and 64 MiB per-operation bounds apply; 256 live recovery entries are supported.
 Native manual acceptance remains outstanding.
+
+Unrelated drafts do not block Delete, Undo/Redo or Deleted Items restore. Preflight
+checks both saved and draft references; the active effect is checked directly even
+when untitled. Affected material/function drafts and the open graph target are retained
+inside the recovery journal; their views close only after successful deletion. Undo or
+Deleted Items restores those drafts alongside the original disk bytes, including after
+restart. An open effect keeps its in-memory work as Untitled (Save As is required);
+Undo reattaches its restored source. Restore refuses conflicting live drafts, and
+changes during queued I/O cancel publication instead of replacing newer edits.
 
 ### AB7 — Typed drag/drop, reusable pickers and document resources
 

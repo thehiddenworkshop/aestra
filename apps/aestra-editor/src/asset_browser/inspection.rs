@@ -83,11 +83,41 @@ pub(super) fn draft_inventory(
     )>,
     bool,
 ) {
+    collect_drafts(catalog, session, true)
+}
+
+/// Deletion checks the active effect's current references separately, including
+/// untitled effects which have no indexed source to attach a draft to.
+pub(super) fn deletion_draft_inventory(
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> (
+    Vec<(
+        ProjectSourceId,
+        aestra_project::content::operations::DraftDocument,
+    )>,
+    bool,
+) {
+    collect_drafts(catalog, session, false)
+}
+
+fn collect_drafts(
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+    include_effect: bool,
+) -> (
+    Vec<(
+        ProjectSourceId,
+        aestra_project::content::operations::DraftDocument,
+    )>,
+    bool,
+) {
     use aestra_project::content::operations::DraftDocument;
     let content = catalog.content();
     let mut drafts = Vec::new();
-    let mut complete = session.pending_change.is_none();
-    if session.effect_is_dirty() {
+    // The deletion coordinator checks both active and proposed effect references.
+    let mut complete = !include_effect || session.pending_change.is_none();
+    if include_effect && session.effect_is_dirty() {
         if let Ok(entry) =
             content.unique_source_for_asset(ProjectAssetId::Effect(session.effect.id))
         {

@@ -10,8 +10,10 @@ use aestra_project::{
 };
 use bevy::input_focus::{FocusCause, InputFocus, tab_navigation::TabGroup};
 use bevy::ui_widgets::Activate;
+mod documents;
 #[cfg(test)]
 mod tests;
+use documents::ClosedDocuments;
 
 #[derive(Event)]
 pub(super) struct Open(pub Option<ProjectSourceId>);
@@ -22,7 +24,6 @@ struct State {
     generation: u64,
     page: usize,
     source: Option<ProjectSourceId>,
-    plan: Option<DeletePlan>,
     guard: Option<IoGuard>,
     entries: Vec<DeletedSource>,
     message: String,
@@ -30,7 +31,6 @@ struct State {
 #[derive(Component, Clone, Copy)]
 enum Choice {
     Cancel,
-    Confirm,
     Refresh,
     Restore(usize),
     Page(bool),
@@ -42,13 +42,14 @@ struct Body;
 
 pub(super) fn register(app: &mut App) {
     app.init_resource::<State>()
+        .init_resource::<crate::history::asset_order::AssetOrder>()
         .init_resource::<DocumentProtectionState>()
         .add_observer(open)
         .add_observer(choose)
         .add_systems(Update, sync);
 }
 
-/// Active documents are not silently closed or recreated by filesystem deletion.
+/// Opening a source is not a usage; references from a surviving effect still block.
 fn active_block(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
@@ -66,7 +67,7 @@ fn active_block(
         .and_then(|path| path.canonicalize().ok())
         .is_some_and(|path| path.starts_with(&selected_path))
     {
-        return true;
+        return false;
     }
     let ids: Vec<_> = catalog
         .content()
@@ -75,42 +76,38 @@ fn active_block(
         .filter(|e| e.relative_path.starts_with(&entry.relative_path))
         .filter_map(|e| catalog.content().asset_for_source(e.id))
         .collect();
-    if session
-        .standalone_material()
-        .is_some_and(|id| ids.contains(&aestra_project::ProjectAssetId::MaterialProgram(id)))
-        || session
-            .standalone_function()
-            .is_some_and(|id| ids.contains(&aestra_project::ProjectAssetId::MaterialFunction(id)))
-        || session
-            .effect
+    let used_by_effect = |effect: &aestra_core::EffectAsset| {
+        effect
             .effect_clips
             .iter()
             .any(|clip| ids.contains(&clip.source.into()))
-        || session
-            .effect
-            .material_instances
-            .iter()
-            .any(|instance| match instance.program {
-                aestra_core::material::MaterialProgramRef::Project(id) => {
-                    ids.contains(&aestra_project::ProjectAssetId::MaterialProgram(id))
-                }
-                _ => false,
+            || effect
+                .material_instances
+                .iter()
+                .any(|instance| match instance.program {
+                    aestra_core::material::MaterialProgramRef::Project(id) => {
+                        ids.contains(&aestra_project::ProjectAssetId::MaterialProgram(id))
+                    }
+                    _ => false,
+                })
+            || effect.assets.iter().any(|asset| {
+                let file = asset
+                    .path
+                    .rsplit_once('#')
+                    .map_or(asset.path.as_str(), |(file, _)| file);
+                catalog
+                    .root()
+                    .join(file.replace('\\', "/"))
+                    .canonicalize()
+                    .ok()
+                    .is_some_and(|path| path.starts_with(&selected_path))
             })
-    {
-        return true;
-    }
-    session.effect.assets.iter().any(|asset| {
-        let file = asset
-            .path
-            .rsplit_once('#')
-            .map_or(asset.path.as_str(), |(file, _)| file);
-        catalog
-            .root()
-            .join(file.replace('\\', "/"))
-            .canonicalize()
-            .ok()
-            .is_some_and(|path| path.starts_with(&selected_path))
-    })
+    };
+    used_by_effect(&session.effect)
+        || session
+            .pending_change
+            .as_ref()
+            .is_some_and(|pending| used_by_effect(pending.preview.candidate()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -129,30 +126,46 @@ fn open(
     }
     let generation = state.generation.wrapping_add(1);
     *state = State {
-        open: true,
+        open: event.0.is_none(),
         busy: true,
         source: event.0,
         generation,
         message: localizer.text("browser-delete-checking"),
         ..default()
     };
-    protection.asset_delete_open = true;
+    protection.asset_delete_open = state.open;
     let source = event.0;
     let blocked = source.is_some_and(|source| active_block(&catalog, &session, source));
     let active_error = localizer.text("browser-delete-active");
-    let (drafts, complete) = super::inspection::draft_inventory(&catalog, &session);
+    let closed = source.map_or_else(
+        || Ok(ClosedDocuments::default()),
+        |source| ClosedDocuments::capture(&catalog, &session, source),
+    );
+    let for_checks = closed.as_ref().map_or_else(
+        |_| catalog.clone(),
+        |closed| closed.without_drafts(&catalog),
+    );
+    let (drafts, complete) = super::inspection::deletion_draft_inventory(&for_checks, &session);
     let prepared = catalog.clone();
     let guard = IoGuard::capture(&catalog, &session);
     io::enqueue(&mut commands, guard.clone(), move || {
         let result = if let Some(source) = source {
             if blocked {
                 Err(active_error)
+            } else if let Err(error) = &closed {
+                Err(error.clone())
             } else {
                 prepared
                     .content()
                     .plan_delete_source(source, &drafts, complete)
-                    .map(|plan| (Some(plan), Vec::new()))
                     .map_err(|e| e.to_string())
+                    .and_then(|plan| {
+                        closed
+                            .as_ref()
+                            .unwrap()
+                            .encode()
+                            .map(|data| (Some(plan.with_recovery_data(data)), Vec::new()))
+                    })
             }
         } else {
             prepared
@@ -169,20 +182,28 @@ fn open(
                 world.resource::<ProjectEffectCatalog>(),
                 world.resource::<EditorSession>(),
             );
-            let mut state = world.resource_mut::<State>();
-            state.busy = false;
-            state.guard = Some(guard);
             if !valid {
-                state.message = "Project or document changed; check again.".into();
+                show_error(world, "Project or document changed; try again.".into());
                 return;
             }
+            world.resource_mut::<State>().guard = Some(guard);
             match result {
+                Ok((Some(plan), _)) => match plan.apply() {
+                    Ok(item) => {
+                        crate::history::asset_order::record_delete(world, item.clone());
+                        closed.as_ref().unwrap().close(world);
+                        publish_change(world, prepared, &item.original, true);
+                    }
+                    Err(error) => show_error(world, error.to_string()),
+                },
                 Ok((plan, entries)) => {
-                    state.plan = plan;
+                    debug_assert!(plan.is_none());
+                    let mut state = world.resource_mut::<State>();
+                    state.busy = false;
                     state.entries = entries;
                     state.message.clear();
                 }
-                Err(error) => state.message = error,
+                Err(error) => show_error(world, error),
             }
         })
     });
@@ -225,47 +246,39 @@ fn choose(
         }
         _ => {}
     }
-    let (drafts, complete) = super::inspection::draft_inventory(&catalog, &session);
+    let (drafts, complete) = super::inspection::deletion_draft_inventory(&catalog, &session);
     if !complete
-        || !drafts.is_empty()
         || !state
             .guard
             .as_ref()
             .is_some_and(|guard| guard.matches(&catalog, &session))
     {
         state.message = "Project or drafts changed. Save/discard drafts, then check again.".into();
-        state.plan = None;
         return;
     }
-    enum Operation {
-        Delete(DeletePlan),
-        Restore(DeletedSource),
-    }
-    let operation = match *choice {
-        Choice::Confirm => {
-            if state
-                .source
-                .is_none_or(|source| active_block(&catalog, &session, source))
-            {
-                return;
-            }
-            let Some(plan) = state.plan.take() else {
-                return;
-            };
-            Operation::Delete(plan)
-        }
+    let item = match *choice {
         Choice::Restore(index) => {
             let Some(entry) = state.entries.get(index) else {
                 return;
             };
-            Operation::Restore(entry.clone())
+            entry.clone()
         }
         _ => return,
+    };
+    let closed = match ClosedDocuments::read(&item).and_then(|closed| {
+        closed.validate_restore(&catalog, &item.original)?;
+        Ok(closed)
+    }) {
+        Ok(closed) => closed,
+        Err(error) => {
+            state.message = error;
+            return;
+        }
     };
     state.busy = true;
     let generation = state.generation;
     let guard = IoGuard::capture(&catalog, &session);
-    let mut prepared = catalog.clone();
+    let prepared = catalog.clone();
     io::enqueue(&mut commands, guard.clone(), move || {
         io::completion(move |world| {
             let valid = world.resource::<State>().generation == generation
@@ -279,56 +292,192 @@ fn choose(
             if !valid {
                 let mut state = world.resource_mut::<State>();
                 state.busy = false;
-                state.plan = None;
                 state.message = "Operation cancelled: project or document changed.".into();
                 return;
             }
-            let deleting = matches!(&operation, Operation::Delete(_));
-            let result = match operation {
-                Operation::Delete(plan) => plan.apply().map(|item| item.original),
-                Operation::Restore(item) => item.restore(&[], true),
-            };
-            let status = match result {
-                Ok(path) => {
-                    prepared.refresh();
-                    if let Some(mut browser) = world.get_resource_mut::<super::AssetBrowserState>()
-                    {
-                        browser.reconcile(prepared.content(), prepared.content_revision());
-                        if browser
-                            .inspected
-                            .is_some_and(|id| prepared.content().source(id).is_none())
-                        {
-                            browser.inspected = None;
-                        }
-                        if !deleting
-                            && let Ok(relative) = path.strip_prefix(prepared.root())
-                            && let Some(entry) =
-                                prepared.content().source_tree().at_relative_path(relative)
-                        {
-                            browser.locate(prepared.content(), entry.id);
-                        }
-                    }
-                    io::publish_catalog(world, prepared);
-                    world.resource_mut::<State>().open = false;
+            match item.clone().restore(&drafts, complete) {
+                Ok(_) => {
                     world
-                        .resource_mut::<DocumentProtectionState>()
-                        .asset_delete_open = false;
-                    format!(
-                        "{}: {}",
-                        if deleting {
-                            "Moved to Deleted Items"
-                        } else {
-                            "Restored"
-                        },
-                        path.display()
-                    )
+                        .resource_mut::<crate::history::asset_order::AssetOrder>()
+                        .forget_restored(item.journal());
+                    crate::history::asset_order::clear_redo(world);
+                    closed.restore(world);
+                    publish_change(world, prepared, &item.original, false);
                 }
-                Err(error) => format!("Operation blocked: {error}"),
-            };
-            let mut state = world.resource_mut::<State>();
-            state.busy = false;
-            state.message = status.clone();
-            world.resource_mut::<EditorSession>().status = status;
+                Err(error) => show_error(world, error.to_string()),
+            }
+        })
+    });
+}
+
+fn show_error(world: &mut World, message: String) {
+    let mut state = world.resource_mut::<State>();
+    state.open = true;
+    state.busy = false;
+    state.message = message.clone();
+    world
+        .resource_mut::<DocumentProtectionState>()
+        .asset_delete_open = true;
+    world.resource_mut::<EditorSession>().status = message;
+}
+
+fn publish_change(
+    world: &mut World,
+    mut prepared: ProjectEffectCatalog,
+    relative: &std::path::Path,
+    deleting: bool,
+) {
+    prepared.refresh();
+    if let Some(mut browser) = world.get_resource_mut::<super::AssetBrowserState>() {
+        browser.reconcile(prepared.content(), prepared.content_revision());
+        if browser
+            .inspected
+            .is_some_and(|id| prepared.content().source(id).is_none())
+        {
+            browser.inspected = None;
+        }
+        if !deleting
+            && let Some(entry) = prepared.content().source_tree().at_relative_path(relative)
+        {
+            browser.locate(prepared.content(), entry.id);
+        }
+    }
+    io::publish_catalog(world, prepared);
+    let mut state = world.resource_mut::<State>();
+    state.open = false;
+    state.busy = false;
+    state.message.clear();
+    world
+        .resource_mut::<DocumentProtectionState>()
+        .asset_delete_open = false;
+    world.resource_mut::<EditorSession>().status = format!(
+        "{}: {}",
+        world.resource::<Localizer>().text(if deleting {
+            "browser-delete-status"
+        } else {
+            "browser-restore-status"
+        }),
+        relative.display()
+    );
+}
+
+/// Undo/Redo keeps its stack entry until guarded, serialized publication succeeds.
+pub(crate) fn history_step(world: &mut World, item: DeletedSource, undo: bool, revision: u64) {
+    use crate::history::asset_order::AssetOrder;
+    if !io::idle_world(world) {
+        return;
+    }
+    // Callers queue this after the observer; compare ordering again before capturing I/O.
+    world.resource_scope(|world, mut order: Mut<AssetOrder>| {
+        order.sync(
+            world.resource::<EditorSession>(),
+            world.resource::<ProjectEffectCatalog>(),
+        );
+    });
+    if !world
+        .resource::<AssetOrder>()
+        .matches_delete(undo, revision)
+    {
+        return;
+    }
+    if world.resource::<DocumentProtectionState>().is_open() {
+        return;
+    }
+    let catalog = world.resource::<ProjectEffectCatalog>();
+    let session = world.resource::<EditorSession>();
+    let closed = match ClosedDocuments::read(&item).and_then(|closed| {
+        if undo {
+            closed.validate_restore(catalog, &item.original)?;
+        } else {
+            let source = catalog
+                .content()
+                .source_tree()
+                .at_relative_path(&item.original)
+                .ok_or("Deleted source disappeared")?
+                .id;
+            let current = ClosedDocuments::capture(catalog, session, source)?;
+            closed.validate_redo(&current)?;
+            return Ok(current);
+        }
+        Ok(closed)
+    }) {
+        Ok(closed) => closed,
+        Err(error) => {
+            world.resource_mut::<EditorSession>().status = error;
+            return;
+        }
+    };
+    let for_checks = if undo {
+        catalog.clone()
+    } else {
+        closed.without_drafts(catalog)
+    };
+    let (drafts, complete) = super::inspection::deletion_draft_inventory(&for_checks, session);
+    if !complete {
+        world.resource_mut::<EditorSession>().status =
+            "Asset Undo/Redo blocked: draft inventory is incomplete".into();
+        return;
+    }
+    if !undo
+        && catalog
+            .content()
+            .source_tree()
+            .at_relative_path(&item.original)
+            .is_none_or(|source| active_block(catalog, session, source.id))
+    {
+        world.resource_mut::<EditorSession>().status =
+            "Redo deletion blocked: source is missing or referenced by the active document".into();
+        return;
+    }
+    let prepared = catalog.clone();
+    let guard = IoGuard::capture(catalog, session);
+    io::enqueue(&mut world.commands(), guard.clone(), move || {
+        let planned: Result<Option<DeletePlan>, String> = if undo {
+            Ok(None)
+        } else {
+            item.plan_redo(&drafts, complete)
+                .map(Some)
+                .map_err(|error| error.to_string())
+        };
+        io::completion(move |world| {
+            if !guard.matches(
+                world.resource::<ProjectEffectCatalog>(),
+                world.resource::<EditorSession>(),
+            ) || !world
+                .resource::<AssetOrder>()
+                .matches_delete(undo, revision)
+                || world.resource::<DocumentProtectionState>().is_open()
+            {
+                world.resource_mut::<EditorSession>().status =
+                    "Asset Undo/Redo cancelled: project or document changed".into();
+                return;
+            }
+            let result = planned.and_then(|plan| match plan {
+                Some(plan) => plan.apply().map_err(|e| e.to_string()),
+                None => item
+                    .clone()
+                    .restore(&drafts, complete)
+                    .map(|_| item)
+                    .map_err(|e| e.to_string()),
+            });
+            match result {
+                Ok(item) => {
+                    let relative = item.original.clone();
+                    world
+                        .resource_mut::<AssetOrder>()
+                        .finish_delete(undo, revision, item);
+                    if undo {
+                        closed.restore(world);
+                    } else {
+                        closed.close(world);
+                    }
+                    publish_change(world, prepared, &relative, !undo);
+                }
+                Err(error) => {
+                    world.resource_mut::<EditorSession>().status =
+                        format!("Asset Undo/Redo blocked: {error}");
+                }
+            }
         })
     });
 }
@@ -448,25 +597,24 @@ fn sync(
     for body in &bodies {
         commands.entity(body).despawn_children();
         commands.entity(body).with_children(|host| {
+            let source = state.source.and_then(|id| catalog.content().source(id));
+            let folder = source
+                .is_some_and(|source| source.kind == aestra_project::ProjectSourceKind::Directory);
             label(
                 host,
-                localizer.text(if state.source.is_some() {
+                localizer.text(if folder {
+                    "browser-delete-folder-title"
+                } else if state.source.is_some() {
                     "browser-delete-title"
                 } else {
                     "browser-deleted-items"
                 }),
             );
-            label(host, localizer.text("browser-delete-description"));
-            if let Some(plan) = &state.plan {
-                label(
-                    host,
-                    format!(
-                        "{}\n{} files · {} folders",
-                        plan.original().display(),
-                        plan.file_count(),
-                        plan.folder_count()
-                    ),
-                );
+            if let Some(source) = source {
+                label(host, source.relative_path.display().to_string());
+            }
+            if state.source.is_none() {
+                label(host, localizer.text("browser-deleted-description"));
             }
             if !state.message.is_empty() {
                 label(host, state.message.clone());
@@ -509,29 +657,33 @@ fn sync(
                     state.busy || (state.page + 1) * 8 >= state.entries.len(),
                 );
             }
-            let cancel = button(
-                host,
-                &localizer.text("browser-folder-cancel"),
-                Choice::Cancel,
-                state.busy,
-            );
-            button(
-                host,
-                &localizer.text("browser-recovery-retry"),
-                Choice::Refresh,
-                state.busy,
-            );
-            if state.source.is_some() {
-                button(
-                    host,
-                    &localizer.text("browser-delete-confirm"),
-                    Choice::Confirm,
-                    state.plan.is_none() || state.busy,
+            host.spawn(Node {
+                justify_content: JustifyContent::End,
+                flex_wrap: FlexWrap::Wrap,
+                flex_shrink: 0.0,
+                column_gap: Val::Px(8.0),
+                row_gap: Val::Px(8.0),
+                ..default()
+            })
+            .with_children(|actions| {
+                if state.source.is_none() || (!state.busy && !state.message.is_empty()) {
+                    button(
+                        actions,
+                        &localizer.text("browser-recovery-retry"),
+                        Choice::Refresh,
+                        state.busy,
+                    );
+                }
+                let cancel = button(
+                    actions,
+                    &localizer.text("common-close"),
+                    Choice::Cancel,
+                    state.busy,
                 );
-            }
-            if let Some(focus) = focus.as_deref_mut() {
-                focus.set(cancel, FocusCause::Navigated);
-            }
+                if let Some(focus) = focus.as_deref_mut() {
+                    focus.set(cancel, FocusCause::Navigated);
+                }
+            });
         });
     }
 }
@@ -562,7 +714,9 @@ fn button(host: &mut ChildSpawnerCommands, value: &str, choice: Choice, disabled
             Node {
                 min_height: Val::Px(28.0),
                 flex_shrink: 0.0,
-                padding: UiRect::all(Val::Px(5.0)),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
         ))

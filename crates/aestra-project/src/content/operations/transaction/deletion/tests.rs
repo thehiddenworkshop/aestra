@@ -59,6 +59,30 @@ fn delete_and_restore_folder_keep_ids_exact_bytes_and_empty_directories() {
 }
 
 #[test]
+fn recovery_data_survives_listing_restore_and_redo() {
+    let (root, content, source) = fixture();
+    let data = b"editor draft and document state".to_vec();
+    let item = content
+        .plan_delete_source(source, &[], true)
+        .unwrap()
+        .with_recovery_data(data.clone())
+        .apply()
+        .unwrap();
+    assert_eq!(item.recovery_data(), data);
+    let fresh = ProjectContent::scan(root.path())
+        .deleted_sources()
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(fresh.recovery_data(), data);
+    fresh.clone().restore(&[], true).unwrap();
+    let redone = fresh.plan_redo(&[], true).unwrap().apply().unwrap();
+    assert_eq!(redone.recovery_data(), data);
+    redone.restore(&[], true).unwrap();
+    assert!(root.path().join("pack/empty").exists());
+}
+
+#[test]
 fn references_block_leaf_deletion_but_internal_folder_references_are_allowed() {
     let (root, content, source) = fixture();
     let image = content
@@ -298,7 +322,7 @@ fn restore_refuses_collision_edited_payload_changed_journal_and_duplicate_ids() 
 }
 
 #[test]
-fn restore_requires_clean_drafts_and_single_file_uses_same_path() {
+fn restore_requires_complete_inventory_and_single_file_uses_same_path() {
     let (root, content, _) = fixture();
     let source = content
         .source_tree()
@@ -315,6 +339,98 @@ fn restore_requires_clean_drafts_and_single_file_uses_same_path() {
     assert!(item.payload().is_file());
     let path = item.restore(&[], true).unwrap();
     assert_eq!(fs::read(path).unwrap(), before);
+}
+
+#[test]
+fn unrelated_drafts_survive_delete_restore_and_redo_but_current_references_block() {
+    let (root, _, source) = fixture();
+    let mut owner = EffectAsset::new("Owner", 1.0);
+    owner
+        .save_ron(root.path().join("owner.aestra.ron"))
+        .unwrap();
+    let content = ProjectContent::scan(root.path());
+    let owner_id = content
+        .source_tree()
+        .at_relative_path("owner.aestra.ron")
+        .unwrap()
+        .id;
+    owner.name = "Unsaved name".into();
+    let drafts = vec![(owner_id, DraftDocument::Effect(Box::new(owner.clone())))];
+    let item = content
+        .plan_delete_source(source, &drafts, true)
+        .unwrap()
+        .apply()
+        .unwrap();
+    item.clone().restore(&drafts, true).unwrap();
+    let redone = item.plan_redo(&drafts, true).unwrap().apply().unwrap();
+    redone.restore(&drafts, true).unwrap();
+    assert_eq!(
+        EffectAsset::load_ron(root.path().join("owner.aestra.ron"))
+            .unwrap()
+            .name,
+        "Owner"
+    );
+    // A resource reference introduced only by an unsaved draft must block too.
+    owner.assets.push(AssetDefinition::texture(
+        "New usage",
+        "pack/image.png#Layer0",
+    ));
+    let drafts = vec![(owner_id, DraftDocument::Effect(Box::new(owner)))];
+    assert!(
+        ProjectContent::scan(root.path())
+            .plan_delete_source(source, &drafts, true)
+            .unwrap_err()
+            .to_string()
+            .contains("owner.aestra.ron")
+    );
+    assert!(root.path().join("pack/image.png").exists());
+}
+
+#[test]
+fn affected_draft_is_protected_and_unsaved_semantic_usage_blocks() {
+    let (root, content, folder) = fixture();
+    let entry = content
+        .source_tree()
+        .at_relative_path("pack/program.aestra.material.ron")
+        .unwrap();
+    let mut program = MaterialProgram::load_ron(&entry.path).unwrap();
+    program.name = "Unsaved target".into();
+    let drafts = vec![(entry.id, DraftDocument::Program(Box::new(program.clone())))];
+    for target in [folder, entry.id] {
+        assert!(
+            content
+                .plan_delete_source(target, &drafts, true)
+                .unwrap_err()
+                .to_string()
+                .contains("unsaved edits")
+        );
+    }
+    let mut owner = EffectAsset::new("Owner", 1.0);
+    owner
+        .save_ron(root.path().join("owner.aestra.ron"))
+        .unwrap();
+    let fresh = ProjectContent::scan(root.path());
+    let owner_id = fresh
+        .source_tree()
+        .at_relative_path("owner.aestra.ron")
+        .unwrap()
+        .id;
+    owner
+        .material_instances
+        .push(aestra_core::material::MaterialInstance {
+            id: aestra_core::MaterialId::new(),
+            program: aestra_core::material::MaterialProgramRef::Project(program.id),
+            values: BTreeMap::new(),
+            render_state: aestra_core::material::MaterialRenderState::additive_sprite(),
+        });
+    let drafts = vec![(owner_id, DraftDocument::Effect(Box::new(owner)))];
+    assert!(
+        fresh
+            .plan_delete_source(entry.id, &drafts, true)
+            .unwrap_err()
+            .to_string()
+            .contains("referenced by")
+    );
 }
 
 #[test]
@@ -352,4 +468,55 @@ fn restore_requires_external_resources_deleted_later_to_be_restored_first() {
     image.restore(&[], true).unwrap();
     effect.restore(&[], true).unwrap();
     assert!(root.path().join("pack/effect.aestra.ron").exists());
+}
+
+#[test]
+fn redo_requires_exact_restored_contents_and_fresh_reference_and_draft_checks() {
+    for changed in 0..4 {
+        let (root, content, source) = fixture();
+        let item = content
+            .plan_delete_source(source, &[], true)
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert!(item.plan_redo(&[], true).is_err(), "not restored yet");
+        item.clone().restore(&[], true).unwrap();
+        assert!(item.plan_redo(&[], false).is_err());
+        match changed {
+            0 => {
+                let next = item.plan_redo(&[], true).unwrap().apply().unwrap();
+                assert_ne!(item.journal(), next.journal());
+                next.restore(&[], true).unwrap();
+                assert!(root.path().join("pack/empty").exists());
+            }
+            1 => {
+                fs::write(root.path().join("pack/image.png"), b"changed").unwrap();
+                assert!(item.plan_redo(&[], true).is_err());
+            }
+            2 => {
+                let mut effect = EffectAsset::new("New owner", 1.0);
+                effect
+                    .assets
+                    .push(AssetDefinition::texture("Used", "pack/image.png#Layer0"));
+                effect
+                    .save_ron(root.path().join("owner.aestra.ron"))
+                    .unwrap();
+                assert!(
+                    item.plan_redo(&[], true)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("referenced by")
+                );
+            }
+            _ => {
+                fs::write(
+                    item.journal().with_file_name("record.restored"),
+                    b"changed journal",
+                )
+                .unwrap();
+                assert!(item.plan_redo(&[], true).is_err());
+            }
+        }
+        assert!(root.path().join("pack/image.png").exists());
+    }
 }

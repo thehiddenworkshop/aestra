@@ -73,6 +73,7 @@ pub(crate) struct EditorSession {
     pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
+    pub(crate) operation_order: crate::history::asset_order::EditOrder,
     history_generation: u64,
     saved_effect: Option<EffectAsset>,
     saved_source_bytes: Option<Vec<u8>>,
@@ -110,6 +111,7 @@ impl EditorSession {
             preview: None,
             ui_revision: self.ui_revision,
             history: self.history.clone(),
+            operation_order: self.operation_order.clone(),
             history_generation: self.history_generation,
             saved_effect: self.saved_effect.clone(),
             saved_source_bytes: self.saved_source_bytes.clone(),
@@ -170,6 +172,7 @@ impl EditorSession {
             preview: Some(preview),
             ui_revision: 0,
             history: CommandHistory::default(),
+            operation_order: Default::default(),
             history_generation: 0,
             saved_effect: Some(saved_effect),
             saved_source_bytes: None,
@@ -524,6 +527,7 @@ impl EditorSession {
         self.dirty = true;
         self.saved_effect = None;
         self.history.clear();
+        self.operation_order = Default::default();
         self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
     }
@@ -629,6 +633,7 @@ impl EditorSession {
         self.playing = false;
         self.dirty = false;
         self.history.clear();
+        self.operation_order = Default::default();
         self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
     }
@@ -660,6 +665,7 @@ impl EditorSession {
         self.saved_effect = saved_effect;
         self.update_dirty_state();
         self.history.clear();
+        self.operation_order = Default::default();
         self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
     }
@@ -762,6 +768,10 @@ impl EditorSession {
             .execute(&mut self.effect, &self.locks, transaction)
         {
             Ok(diff) => {
+                if !diff.is_empty() {
+                    self.operation_order
+                        .record(crate::history::asset_order::Context::Effect);
+                }
                 self.last_diff = diff;
                 self.invalidate_effect_checkpoints();
                 self.refresh_preview();
@@ -978,6 +988,10 @@ impl EditorSession {
             .commit_preview(&mut self.effect, &self.locks, pending.preview)
         {
             Ok(diff) => {
+                if !diff.is_empty() {
+                    self.operation_order
+                        .record(crate::history::asset_order::Context::Effect);
+                }
                 self.last_diff = diff;
                 self.invalidate_effect_checkpoints();
                 self.selection.repair(&self.effect);
@@ -1018,6 +1032,8 @@ impl EditorSession {
         }
         match self.history.undo(&mut self.effect) {
             Ok(Some(result)) => {
+                self.operation_order
+                    .step(crate::history::asset_order::Context::Effect, true);
                 self.selection.repair(&self.effect);
                 self.repair_emitter_region_selection();
                 self.invalidate_effect_checkpoints();
@@ -1040,6 +1056,8 @@ impl EditorSession {
         }
         match self.history.redo(&mut self.effect) {
             Ok(Some(result)) => {
+                self.operation_order
+                    .step(crate::history::asset_order::Context::Effect, false);
                 self.selection.repair(&self.effect);
                 self.repair_emitter_region_selection();
                 self.invalidate_effect_checkpoints();

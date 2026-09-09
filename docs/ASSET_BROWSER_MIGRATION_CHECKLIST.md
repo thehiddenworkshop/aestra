@@ -1343,3 +1343,92 @@ Implementation is ready for native acceptance; AB6 is not marked user-accepted y
 Verification: 661 editor unit tests plus the architecture test and all 131 project
 tests pass (two opt-in editor tests remain ignored). Strict all-target project/editor
 Clippy, formatting and diff checks pass on the supported Windows MSVC toolchain.
+
+### Delete ergonomics and ordered Undo/Redo — 2026-09-09
+
+This supersedes the confirmation flow described in the initial AB6b slice above.
+Delete removes the selected asset, or folder and all descendants, immediately after
+safety preflight. Only blocked deletion opens an explanatory in-app panel with Close
+and Check again; there is no force-delete action. Successful deletion offers Ctrl+Z
+through the status message. English and French UI wording is updated.
+
+Recent deletions join the action order of effect, standalone material and function
+edits. Undo restores the exact original bytes, IDs and empty directories; Redo checks
+the restored contents, current dependencies and drafts before deleting again. Collisions,
+external changes or affected dirty drafts keep the history entry available for retry without
+undoing an unrelated edit. New edits invalidate the redo branch. Explicit Deleted Items
+restore removes the matching deletion entry, and recovery remains available after restart.
+
+The ordering bridge is bounded to 256 entries and resets when opening/reloading another
+effect or switching projects. Before the first deletion, existing scoped document history
+behavior is unchanged. Rename/move Undo and permanent purge are not part of this slice.
+
+Automated regressions cover repeated exact Delete/Undo/Redo, mixed document history,
+focus changes, redo invalidation, collisions and edited restored contents, project switches,
+draft changes during queued I/O, active-resource blocking and scrollable error panels.
+Native acceptance remains pending: use a disposable folder to check Delete, Ctrl+Z,
+Ctrl+Shift+Z/Ctrl+Y, menu Undo/Redo, restored selection and Deleted Items after restart.
+
+Verification: 668 editor unit tests plus the architecture test and all 132 project
+tests pass (two opt-in editor tests remain ignored). Strict all-target editor/project
+Clippy, formatting and diff checks pass on Windows MSVC 1.98.1. No user assets were
+mutated by these tests; all filesystem mutation fixtures use temporary projects.
+
+### Deletion with unrelated drafts — 2026-09-09
+
+Removed the blanket save/discard requirement. Delete, Undo/Redo and Deleted Items
+restore preserve unrelated effect/material/function drafts. Untitled effects need no
+invented source identity: their current references are checked separately, while mapped
+drafts are validated against their actual source and semantic ID. Both saved references
+and newly introduced draft references block deletion; an unsaved reference removal does
+not authorize breaking the saved document. Drafts inside the target folder or belonging
+to the target asset still require saving/discarding that specific draft. Existing I/O
+guards reject edits made after preflight and retain the drafts unchanged.
+
+Verification: 669 editor tests, the architecture test and 134 project tests pass;
+two opt-in editor tests remain ignored. Regression coverage includes unrelated drafts
+through Delete/Undo/Redo/manual restore, unsaved-only semantic/resource usages, affected
+draft protection and queued edit cancellation. Strict Clippy and formatting pass.
+
+### Assets Delete shortcut ownership — 2026-09-09
+
+A consumed focused Delete event was still present in the editor's global keyboard
+snapshot. With the timeline visible, its shortcut handler could create an emitter
+deletion proposal behind the Assets panel. That pending proposal then marked deletion's
+draft inventory incomplete even with zero unsaved materials. Timeline shortcuts now
+defer to focused Assets surfaces (tree, list and descendants); global Undo/Save remain
+available. An unrelated existing proposal also no longer blocks asset deletion: its
+candidate references are checked alongside the active effect, and the proposal is
+preserved during Delete/Undo. Proposed usages still block, and the I/O guard still
+cancels if the proposal changes during preparation.
+
+Regression coverage dispatches native keyboard messages with Assets focus, checks the
+focused handler receives Delete without creating a timeline proposal, then returns
+focus to the timeline to verify normal deletion still works. Temporary-project tests
+cover preserved unrelated proposals and references introduced only in a proposal.
+
+Verification: 671 editor unit tests and the architecture test pass (two opt-in tests
+ignored), including the keyboard-dispatch regression. Strict editor Clippy, formatting
+and diff checks pass. Native user acceptance remains pending.
+
+### Delete open documents without losing drafts — 2026-09-09
+
+Being open is no longer a deletion blocker. Material/function views close after
+successful deletion of their source or containing folder. The same synced recovery
+journal retains affected drafts and the graph target, so Undo and Deleted Items restore
+both original file bytes and unsaved edits. Journal data survives a restart and Redo;
+live draft collisions or changed restored drafts block recovery/Redo without overwrite.
+An open effect is retained in memory as Untitled, requiring Save As; Undo reattaches
+its original source without replacing unsaved work. References from surviving saved
+documents and draft documents still block deletion. Failed/stale operations leave views
+and drafts untouched. This supersedes the open-document and affected-draft restrictions
+recorded in earlier slices.
+
+Temporary-project regressions cover file/folder deletion with a dirty open material,
+cross-document edit Undo/Redo, restart-style draft recovery, open dirty effects, function
+drafts, failed publication preserving views, and recovery payload retention. Native
+manual acceptance of this open-document workflow remains pending.
+
+Verification: 674 editor unit tests, the architecture test and 135 project tests pass;
+two opt-in editor tests remain ignored. Strict Clippy for both packages, formatting
+and diff checks pass. No user assets were deleted during verification.

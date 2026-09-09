@@ -19,6 +19,7 @@ use std::{
 };
 
 const MATERIAL_HISTORY_LIMIT: usize = 256;
+pub(crate) mod asset_order;
 
 pub(crate) struct EditorHistoryPlugin;
 
@@ -108,6 +109,7 @@ impl Plugin for EditorHistoryPlugin {
         crate::material_function_editor::register(app);
         app.init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>()
+            .init_resource::<asset_order::AssetOrder>()
             .add_observer(queue_history_action_activation)
             .add_observer(execute_history_action)
             .add_observer(capture_history_focus)
@@ -198,6 +200,9 @@ impl MaterialProgramEditHistory {
             history.undo.pop_front();
         }
         history.redo.clear();
+        session
+            .operation_order
+            .record(asset_order::Context::current(session));
         Ok(())
     }
 
@@ -224,6 +229,9 @@ impl MaterialProgramEditHistory {
             history.undo.pop_front();
         }
         history.redo.clear();
+        session
+            .operation_order
+            .record(asset_order::Context::current(session));
         Ok(())
     }
 
@@ -251,6 +259,9 @@ impl MaterialProgramEditHistory {
                 session.set_material_drafts(catalog.material_drafts.clone());
                 let label = entry.label.clone();
                 self.redo.push(entry);
+                session
+                    .operation_order
+                    .step(asset_order::Context::current(session), true);
                 Ok(Some(label))
             }
             Err(error) => {
@@ -291,6 +302,9 @@ impl MaterialProgramEditHistory {
                 session.set_material_drafts(catalog.material_drafts.clone());
                 let label = entry.label.clone();
                 self.undo.push_back(entry);
+                session
+                    .operation_order
+                    .step(asset_order::Context::current(session), false);
                 Ok(Some(label))
             }
             Err(error) => {
@@ -623,38 +637,105 @@ fn handle_history_buttons(
     }
 }
 
-fn execute_history_action(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_history_action(
     action: On<HistoryAction>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
     mut ledger: ResMut<EditorHistoryLedger>,
     mut functions: ResMut<crate::material_function_editor::FunctionEditor>,
+    mut order: Option<ResMut<asset_order::AssetOrder>>,
+    tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    protection: Option<Res<crate::DocumentProtectionState>>,
+    mut commands: Commands,
 ) {
-    if session.standalone_function().is_some() {
-        session.status =
-            match functions.step(&mut session, &mut catalog, *action == HistoryAction::Undo) {
-                Ok(()) => "Function history applied".into(),
-                Err(error) => error,
-            };
-        session.ui_revision += 1;
+    if !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open()) {
         return;
     }
-    match ledger.capture_effect_changes(&session) {
+    if let Some(order) = order.as_deref_mut()
+        && order.sync(&session, &catalog)
+    {
+        session.clear_effect_redo();
+        ledger.redo.clear();
+        asset_order::clear_material_redo(&mut material_history);
+        functions.clear_redo();
+    }
+    let undo = *action == HistoryAction::Undo;
+    let active = order.as_deref().is_some_and(|order| order.active());
+    let next = order.as_deref().and_then(|order| order.top(undo)).cloned();
+    if let Some(asset_order::Entry::Delete(item)) = next {
+        let revision = order.as_ref().unwrap().revision;
+        commands.queue(move |world: &mut World| {
+            crate::asset_browser::deletion::history_step(world, *item, undo, revision);
+        });
+        return;
+    }
+    if active && next.is_none() {
+        session.status = if undo {
+            "Nothing to undo"
+        } else {
+            "Nothing to redo"
+        }
+        .into();
+        return;
+    }
+    let previous_target = session.material_target.clone();
+    let previous_active = session.material_history_active;
+    if let Some(asset_order::Entry::Document(context)) = &next {
+        context.select(&mut session);
+    }
+    let context = asset_order::Context::current(&session);
+    let succeeded = execute_document_history(
+        *action,
+        &mut session,
+        &mut catalog,
+        &mut material_history,
+        &mut ledger,
+        &mut functions,
+    );
+    if succeeded && active {
+        order.as_deref_mut().unwrap().finish_document(undo, context);
+    } else if !succeeded {
+        session.material_target = previous_target;
+        session.material_history_active = previous_active;
+    }
+}
+
+fn execute_document_history(
+    action: HistoryAction,
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    material_history: &mut MaterialProgramEditHistory,
+    ledger: &mut EditorHistoryLedger,
+    functions: &mut crate::material_function_editor::FunctionEditor,
+) -> bool {
+    if session.standalone_function().is_some() {
+        let result = functions.step(session, catalog, action == HistoryAction::Undo);
+        let succeeded = result.is_ok();
+        session.status = match result {
+            Ok(()) => "Function history applied".into(),
+            Err(error) => error,
+        };
+        session.ui_revision += 1;
+        return succeeded;
+    }
+    match ledger.capture_effect_changes(session) {
         EffectHistoryChange::Reset => material_history.clear(),
         EffectHistoryChange::Edited => material_history.clear_redo(),
         EffectHistoryChange::None => {}
     }
     if session.standalone_material().is_some() && session.material_history_active {
-        let history = material_history.for_target_mut(&session);
-        let result = match *action {
-            HistoryAction::Undo => history.undo(&mut session, &mut catalog),
-            HistoryAction::Redo => history.redo(&mut session, &mut catalog),
+        let history = material_history.for_target_mut(session);
+        let result = match action {
+            HistoryAction::Undo => history.undo(session, catalog),
+            HistoryAction::Redo => history.redo(session, catalog),
         };
+        let succeeded = matches!(&result, Ok(Some(_)));
         session.status = match result {
             Ok(Some(label)) => format!(
                 "{} {label}",
-                if *action == HistoryAction::Undo {
+                if action == HistoryAction::Undo {
                     "Undid"
                 } else {
                     "Redid"
@@ -664,21 +745,21 @@ fn execute_history_action(
             Err(error) => format!("Material history failed: {error}"),
         };
         session.ui_revision += 1;
-        return;
+        return succeeded;
     }
-    let domain = match *action {
+    let domain = match action {
         HistoryAction::Undo => ledger.undo.pop(),
         HistoryAction::Redo => ledger.redo.pop(),
     };
     let Some(domain) = domain else {
-        session.status = match *action {
+        session.status = match action {
             HistoryAction::Undo => "Nothing to undo".into(),
             HistoryAction::Redo => "Nothing to redo".into(),
         };
-        return;
+        return false;
     };
 
-    let result = match (*action, domain) {
+    let result = match (action, domain) {
         (HistoryAction::Undo, HistoryDomain::Effect) => {
             let before = session.effect_undo_len();
             session.undo();
@@ -694,7 +775,7 @@ fn execute_history_action(
             })
         }
         (HistoryAction::Undo, HistoryDomain::MaterialProgram) => {
-            match material_history.undo(&mut session, &mut catalog) {
+            match material_history.undo(session, catalog) {
                 Ok(Some(label)) => {
                     session.status = format!("Undid {label}");
                     session.ui_revision += 1;
@@ -709,7 +790,7 @@ fn execute_history_action(
             }
         }
         (HistoryAction::Redo, HistoryDomain::MaterialProgram) => {
-            match material_history.redo(&mut session, &mut catalog) {
+            match material_history.redo(session, catalog) {
                 Ok(Some(label)) => {
                     session.status = format!("Redid {label}");
                     session.ui_revision += 1;
@@ -725,12 +806,13 @@ fn execute_history_action(
         }
     };
     if result.is_none() {
-        match *action {
+        match action {
             HistoryAction::Undo => ledger.undo.push(domain),
             HistoryAction::Redo => ledger.redo.push(domain),
         }
     }
-    ledger.observe_effect_history(&session);
+    ledger.observe_effect_history(session);
+    result.is_some()
 }
 
 fn history_keyboard_input(
@@ -758,26 +840,32 @@ fn history_keyboard_input(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_history_availability(
     session: Res<EditorSession>,
     ledger: Res<EditorHistoryLedger>,
     material_history: Res<MaterialProgramEditHistory>,
     functions: Res<crate::material_function_editor::FunctionEditor>,
+    order: Option<Res<asset_order::AssetOrder>>,
+    tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    protection: Option<Res<crate::DocumentProtectionState>>,
     mut commands: Commands,
     items: Query<
         (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
         Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
     >,
 ) {
-    if !session.is_changed()
-        && !ledger.is_changed()
-        && !material_history.is_changed()
-        && !functions.is_changed()
-    {
-        return;
-    }
+    let blocked =
+        !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open());
     for (entity, undo, redo) in &items {
-        let enabled = if session.standalone_function().is_some() {
+        let ordered = order.as_ref().filter(|order| order.active());
+        let enabled = if blocked {
+            false
+        } else if ordered.is_some_and(|order| order.top(undo).is_some()) {
+            true
+        } else if ordered.is_some() {
+            false
+        } else if session.standalone_function().is_some() {
             (undo && functions.available(&session, true))
                 || (redo && functions.available(&session, false))
         } else if session.standalone_material().is_some() && session.material_history_active {
@@ -799,14 +887,25 @@ fn update_history_availability(
 }
 
 fn sync_effect_history_ledger(
-    session: Res<EditorSession>,
+    mut session: ResMut<EditorSession>,
     mut ledger: ResMut<EditorHistoryLedger>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
+    mut order: Option<ResMut<asset_order::AssetOrder>>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut functions: ResMut<crate::material_function_editor::FunctionEditor>,
 ) {
     match ledger.capture_effect_changes(&session) {
         EffectHistoryChange::Reset => material_history.clear(),
         EffectHistoryChange::Edited => material_history.clear_redo(),
         EffectHistoryChange::None => {}
+    }
+    if let Some(order) = order.as_deref_mut()
+        && order.sync(&session, &catalog)
+    {
+        session.clear_effect_redo();
+        ledger.redo.clear();
+        asset_order::clear_material_redo(&mut material_history);
+        functions.clear_redo();
     }
 }
 

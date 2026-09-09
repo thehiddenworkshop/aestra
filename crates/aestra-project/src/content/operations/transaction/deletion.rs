@@ -15,6 +15,9 @@ struct Backup {
     assets: BTreeMap<PathBuf, ProjectAssetId>,
     required_assets: BTreeSet<ProjectAssetId>,
     required_files: BTreeSet<String>,
+    /// Opaque host document state, retained atomically with the deleted files.
+    #[serde(default)]
+    recovery_data: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -40,6 +43,10 @@ pub struct DeletedSource {
 }
 
 impl DeletePlan {
+    pub fn with_recovery_data(mut self, data: Vec<u8>) -> Self {
+        self.backup.recovery_data = data;
+        self
+    }
     pub fn original(&self) -> &Path {
         &self.backup.source
     }
@@ -111,8 +118,10 @@ impl ProjectContent {
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<DeletePlan, OperationError> {
-        if !complete || !drafts.is_empty() {
-            return Err(blocked("Save or discard all drafts before deletion"));
+        if !complete {
+            return Err(blocked(
+                "Draft inventory is incomplete; deletion cannot be checked safely",
+            ));
         }
         let root = self.source_tree().root_path().to_owned();
         if self.deleted_sources()?.len() >= 256 {
@@ -132,7 +141,7 @@ impl ProjectContent {
             .source(source)
             .ok_or_else(|| blocked("Missing source"))?;
         validate_path(&entry.relative_path)?;
-        let report = fresh.reference_preflight_inner(source, &[], true, true, true);
+        let report = fresh.reference_preflight_inner(source, drafts, true, true, true);
         if let Some(reason) = report.incomplete.first() {
             return Err(blocked(reason));
         }
@@ -148,6 +157,7 @@ impl ProjectContent {
             assets: BTreeMap::new(),
             required_assets: BTreeSet::new(),
             required_files: BTreeSet::new(),
+            recovery_data: Vec::new(),
         };
         for (path, node) in nodes {
             match node {
@@ -174,6 +184,7 @@ impl ProjectContent {
             }
         }
         validate(&backup)?;
+        let projected = check_drafts(&fresh, drafts, &backup)?;
         let deleted: BTreeSet<_> = backup.assets.values().copied().collect();
         let file_keys: BTreeSet<_> = backup
             .files
@@ -200,7 +211,14 @@ impl ProjectContent {
                 }
                 continue;
             }
-            for dependency in fresh.source_relations(owner.id).dependencies {
+            // Keep saved references safe as well as current unsaved references:
+            // a draft must not authorize breaking the document still on disk.
+            for dependency in fresh
+                .source_relations(owner.id)
+                .dependencies
+                .into_iter()
+                .chain(projected.source_relations(owner.id).dependencies)
+            {
                 let used = match dependency.target {
                     crate::ProjectRelationTarget::Asset(id) => deleted.contains(&id),
                     crate::ProjectRelationTarget::File(path) => {
@@ -253,6 +271,39 @@ impl ProjectContent {
 }
 
 impl DeletedSource {
+    pub fn recovery_data(&self) -> &[u8] {
+        &self.backup.recovery_data
+    }
+    /// Prepare Redo only for the exact original restored by this recovery record.
+    /// Fresh dependency/draft checks prevent deleting a replacement or a new usage.
+    pub fn plan_redo(
+        &self,
+        drafts: &[(ProjectSourceId, DraftDocument)],
+        complete: bool,
+    ) -> Result<DeletePlan, OperationError> {
+        let archived = self.journal.with_file_name("record.restored");
+        let restored = Self::read(&self.backup.root, &archived)?;
+        if restored.check()? || restored.backup != self.backup {
+            return Err(blocked(
+                "Redo blocked: restored source or recovery record changed",
+            ));
+        }
+        let content = ProjectContent::scan(&self.backup.root);
+        let source = content
+            .source_tree()
+            .at_relative_path(&self.original)
+            .ok_or_else(|| blocked("Redo blocked: source moved or disappeared"))?
+            .id;
+        let plan = content.plan_delete_source(source, drafts, complete)?;
+        if plan.backup.files != self.backup.files
+            || plan.backup.directories != self.backup.directories
+            || plan.backup.assets != self.backup.assets
+        {
+            return Err(blocked("Redo blocked: restored contents changed"));
+        }
+        Ok(plan.with_recovery_data(self.backup.recovery_data.clone()))
+    }
+
     pub fn journal(&self) -> &Path {
         &self.journal
     }
@@ -264,7 +315,10 @@ impl DeletedSource {
             .parent()
             .ok_or_else(|| blocked("Invalid recovery entry"))?;
         if entry.parent() != Some(storage(root, false)?.as_path())
-            || journal.file_name().and_then(|v| v.to_str()) != Some("record.json")
+            || !matches!(
+                journal.file_name().and_then(|v| v.to_str()),
+                Some("record.json" | "record.restored")
+            )
             || !entry
                 .file_name()
                 .and_then(|v| v.to_str())
@@ -357,9 +411,9 @@ impl DeletedSource {
         drafts: &[(ProjectSourceId, DraftDocument)],
         complete: bool,
     ) -> Result<PathBuf, OperationError> {
-        if !complete || !drafts.is_empty() {
+        if !complete {
             return Err(blocked(
-                "Save or discard all drafts before restoring deleted assets",
+                "Draft inventory is incomplete; restoration cannot be checked safely",
             ));
         }
         ensure_idle(&self.backup.root)?;
@@ -368,6 +422,11 @@ impl DeletedSource {
         if fresh.backup != self.backup {
             return Err(blocked("Recovery journal changed"));
         }
+        check_drafts(
+            &ProjectContent::scan(&self.backup.root),
+            drafts,
+            &self.backup,
+        )?;
         vacant(
             self.journal.parent().unwrap(),
             &self.journal.with_file_name("record.restored"),
@@ -418,6 +477,54 @@ impl DeletedSource {
         )?;
         Ok(self.backup.root.join(self.original))
     }
+}
+
+/// Preserve unrelated drafts; reject drafts owned by the deleted/restored source.
+/// The projected relations additionally expose references introduced only in memory.
+fn check_drafts(
+    content: &ProjectContent,
+    drafts: &[(ProjectSourceId, DraftDocument)],
+    backup: &Backup,
+) -> Result<ProjectContent, OperationError> {
+    let mut projected = content.clone();
+    let mut seen = BTreeSet::new();
+    for (owner, draft) in drafts {
+        let (asset, document) = match draft {
+            DraftDocument::Effect(value) => (
+                ProjectAssetId::Effect(value.id),
+                ProjectSourceDocument::Effect(value.clone()),
+            ),
+            DraftDocument::Program(value) => (
+                ProjectAssetId::MaterialProgram(value.id),
+                ProjectSourceDocument::MaterialProgram(value.clone()),
+            ),
+            DraftDocument::Function(value) => (
+                ProjectAssetId::MaterialFunction(value.id),
+                ProjectSourceDocument::MaterialFunction(value.clone()),
+            ),
+        };
+        if backup.assets.values().any(|id| *id == asset) {
+            return Err(blocked(
+                "This asset (or a folder item) has unsaved edits. Save or discard that draft first.",
+            ));
+        }
+        let entry = content
+            .source(*owner)
+            .ok_or_else(|| blocked("Draft source is missing"))?;
+        if entry.relative_path.starts_with(&backup.source) {
+            return Err(blocked(
+                "This folder contains unsaved edits. Save or discard those drafts first.",
+            ));
+        }
+        if !seen.insert(*owner) || content.asset_for_source(*owner) != Some(asset) {
+            return Err(blocked(
+                "Draft source is duplicated or has a different identity",
+            ));
+        }
+        projected.documents.insert(*owner, document);
+    }
+    projected.relations = crate::content::relations::RelationIndex::build(&projected.documents);
+    Ok(projected)
 }
 
 fn storage(root: &Path, create: bool) -> Result<PathBuf, OperationError> {

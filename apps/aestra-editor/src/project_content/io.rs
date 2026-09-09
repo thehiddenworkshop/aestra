@@ -14,6 +14,11 @@ pub(crate) struct ProjectIoTasks {
 pub(crate) fn idle(tasks: Option<Res<ProjectIoTasks>>) -> bool {
     tasks.is_none_or(|tasks| !tasks.busy)
 }
+pub(crate) fn idle_world(world: &World) -> bool {
+    world
+        .get_resource::<ProjectIoTasks>()
+        .is_none_or(|tasks| !tasks.busy)
+}
 
 #[derive(Clone)]
 pub(crate) struct IoGuard {

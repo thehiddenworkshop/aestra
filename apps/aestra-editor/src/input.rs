@@ -121,6 +121,7 @@ pub(crate) struct ShortcutContext<'w, 's> {
     editable: Query<'w, 's, (), With<EditableText>>,
     parents: Query<'w, 's, &'static ChildOf>,
     menu_items: Query<'w, 's, (), With<bevy::ui_widgets::MenuItem>>,
+    asset_surfaces: Query<'w, 's, (), With<crate::asset_browser::BrowserSurface>>,
     protection: Option<Res<'w, crate::persistence::DocumentProtectionState>>,
     library: Option<Res<'w, crate::library::LibraryAssetOperationState>>,
     menus: Option<Res<'w, crate::menus::MenuState>>,
@@ -129,6 +130,19 @@ pub(crate) struct ShortcutContext<'w, 's> {
 }
 
 impl ShortcutContext<'_, '_> {
+    /// Panel-local shortcuts must not also edit the timeline behind Assets.
+    /// Keep global history/save shortcuts available by not folding this into blocked().
+    pub(crate) fn asset_browser_focused(&self) -> bool {
+        let mut focused = self.focus.as_ref().and_then(|focus| focus.get());
+        while let Some(entity) = focused {
+            if self.asset_surfaces.contains(entity) {
+                return true;
+            }
+            focused = self.parents.get(entity).ok().map(ChildOf::parent);
+        }
+        false
+    }
+
     pub(crate) fn blocked(&self) -> bool {
         if self
             .protection
