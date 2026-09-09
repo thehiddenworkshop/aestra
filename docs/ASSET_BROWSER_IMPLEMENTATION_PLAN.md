@@ -101,8 +101,9 @@ recoverable deletion and Deleted Items restore, are implemented. Native manual
 acceptance remains pending.
 The user accepted the open-document deletion P0 check on 2026-09-09.
 AB7a (typed Asset Browser Effect → Timeline drops) is implemented; verification and
-native acceptance are tracked in the migration checklist. Remaining AB7 drops and
-AB8–AB9 are pending.
+native acceptance are tracked in the migration checklist. AB7b material-program
+assignment is implemented; preset-drop semantics and native acceptance remain pending.
+Remaining AB7 drops and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -604,6 +605,18 @@ preview. Invalid types, ambiguous/missing/stale sources, self/cyclic references 
 pending document operations produce feedback without authoring changes. No disk asset
 is moved or copied by an authoring drop. Other typed consumers/pickers remain pending.
 
+**AB7b (material programs):** Renderer cards in Properties accept the same browser
+payload, including drops on their child controls. Hover shows an assignment or rejection
+outline/label. Drop rechecks source identity, renderer domain, graph validity, locks and
+pending document operations. Sprite/Flipbook accepts Sprite programs; Ribbon/Trail
+accepts Ribbon; Mesh accepts Mesh. One effect transaction creates a default local
+material instance when needed and assigns it. Existing default instances are reused;
+instances with overrides are not adopted from another renderer. Repeating the current
+assignment is a no-op. Undo/Redo restores both binding and instance identity. Shared
+source programs and their drafts remain unchanged; existing drafts are used for checks.
+Preset drops are not implemented yet: presets are graph recipes, so creating a new
+named material versus changing an existing shared program requires a user decision.
+
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
 feedback. Compatibility is shared by pickers and drag targets, not inferred by icons.
@@ -681,7 +694,7 @@ marked tested. AB5 was subsequently accepted by the user; the dated migration ch
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
 user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
-user accepted the deletion P0 check on 2026-09-09. **Current step (P1):** verify AB7a
-Asset Browser Effect → Timeline authoring drops, then extend typed consumers to
-materials and functions. Keep the transitional Library until its remaining capabilities
-have tested replacements.
+user accepted the deletion P0 check on 2026-09-09. **Current step (P1):** manually
+verify AB7a Effect → Timeline and AB7b Material Program → Renderer drops; resolve
+preset-drop semantics before completing AB7b, then extend typed consumers to functions.
+Keep the transitional Library until its remaining capabilities have tested replacements.

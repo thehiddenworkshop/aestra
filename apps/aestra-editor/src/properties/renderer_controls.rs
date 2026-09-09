@@ -2575,10 +2575,16 @@ pub(super) fn spawn_renderer_card(
             .with_help("Controls how this emitter is drawn.")
             .with_enabled(renderer.enabled)
             .with_border(base_border),
-        PropertiesSemanticTarget {
-            target: SemanticTarget::Renderer(renderer.id),
-            base_border,
-        },
+        (
+            super::material_drop::RendererDropTarget {
+                effect: session.effect.id,
+                renderer: renderer.id,
+            },
+            PropertiesSemanticTarget {
+                target: SemanticTarget::Renderer(renderer.id),
+                base_border,
+            },
+        ),
         PropertiesSelectionTarget(SemanticTarget::Renderer(renderer.id)),
         PropertiesAction::ToggleSection(PropertiesSection::Renderer(renderer.id)),
         |header| {

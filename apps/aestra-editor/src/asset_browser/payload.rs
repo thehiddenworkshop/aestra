@@ -4,6 +4,27 @@ use crate::*;
 use aestra_project::{ProjectAssetId, ProjectContentVersion, ProjectSourceId};
 use std::path::PathBuf;
 
+/// Shared gate for typed authoring drops; filesystem operations have their own I/O guards.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct AuthoringDropGuard<'w> {
+    protection: Option<Res<'w, DocumentProtectionState>>,
+    tasks: Option<Res<'w, crate::project_content::io::ProjectIoTasks>>,
+}
+
+impl AuthoringDropGuard<'_> {
+    pub(crate) fn check(&self) -> Result<(), String> {
+        if self
+            .protection
+            .as_ref()
+            .is_some_and(|state| state.is_open())
+            || !crate::project_content::io::idle(self.tasks.as_ref().map(Res::clone))
+        {
+            return Err("Finish the current document operation before dropping an asset".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AssetPayload {
     root: PathBuf,

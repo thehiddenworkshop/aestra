@@ -4,25 +4,7 @@ use crate::asset_browser::payload::AssetPayload;
 #[cfg(test)]
 mod tests;
 
-#[derive(bevy::ecs::system::SystemParam)]
-pub(super) struct DropGuard<'w> {
-    protection: Option<Res<'w, crate::DocumentProtectionState>>,
-    tasks: Option<Res<'w, crate::project_content::io::ProjectIoTasks>>,
-}
-
-impl DropGuard<'_> {
-    pub(super) fn check(&self) -> Result<(), String> {
-        if self
-            .protection
-            .as_ref()
-            .is_some_and(|state| state.is_open())
-            || !crate::project_content::io::idle(self.tasks.as_ref().map(Res::clone))
-        {
-            return Err("Finish the current document operation before adding an effect".into());
-        }
-        Ok(())
-    }
-}
+pub(super) use crate::asset_browser::payload::AuthoringDropGuard as DropGuard;
 
 pub(super) fn clear_cancelled_preview(
     payloads: Query<&AssetPayload>,

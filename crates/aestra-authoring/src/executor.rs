@@ -483,6 +483,24 @@ fn apply_command(
                 material: previous,
             }]
         }
+        EffectCommand::AddMaterialInstance { instance, index } => {
+            checked_insert(
+                &mut effect.material_instances,
+                *index,
+                instance.clone(),
+                "material instances",
+            )?;
+            vec![EffectCommand::RemoveMaterialInstance { id: instance.id }]
+        }
+        EffectCommand::RemoveMaterialInstance { id } => {
+            let index = effect
+                .material_instances
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("material instance", id))?;
+            let instance = effect.material_instances.remove(index);
+            vec![EffectCommand::AddMaterialInstance { instance, index }]
+        }
         EffectCommand::SetMaterialInstance { id, instance } => {
             let index = effect
                 .material_instances

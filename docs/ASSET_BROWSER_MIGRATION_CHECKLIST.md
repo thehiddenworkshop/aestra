@@ -1464,3 +1464,40 @@ feedback, Undo/Redo, and check self/invalid drops and Escape leave the document 
 Verification: 678 editor unit tests and the architecture test pass (two opt-in tests
 ignored). Strict editor Clippy and formatting pass. Tests use temporary assets; no
 user asset files were moved, copied, edited or deleted for this slice.
+
+### AB7b — Material Program → Renderer assignment — 2026-09-09
+
+Properties renderer cards consume the shared snapshot-bound AssetPayload. Material
+program drops are authoring operations, not file moves. Hover gives an accent/red
+outline and assignment/rejection label. Primary drops resolve child labels to their
+owning card and revalidate source identity, current effect/renderer, domain, compiler,
+locks, pending proposals and document-operation guards. Sprite/Flipbook, Ribbon/Trail
+and Mesh require their corresponding program domain. Unsupported assets are rejected.
+
+One effect-history transaction adds a default MaterialInstance if needed and changes
+the renderer binding. A matching default instance is reused; another renderer's
+overrides are never silently adopted. Dropping the already-assigned program preserves
+overrides and adds no history entry. Undo removes only the newly created instance and
+restores the prior binding; Redo restores the same identities. The shared source file
+and any shared draft remain unchanged. Successful assignment routes Undo to the effect
+without navigating away from an open graph.
+
+Automated regression coverage includes pointer child-target propagation, atomic
+assignment Undo/Redo and RON round-trip, reuse/no-op/override isolation, domain mapping,
+draft-aware planning, invalid/stale/locked/protected target rejection and hover cleanup.
+Authoring command coverage checks insertion/removal serialization, inverse commands,
+duplicate IDs, invalid indices and rollback after partial transaction failure.
+
+Native acceptance is pending: drag a compatible material onto expanded and collapsed
+renderer cards; inspect feedback and preview, Undo/Redo, repeat the drop, and try a
+mismatched domain and Escape. Test both list/grid origins and high-DPI/detached panels.
+
+AB7b is **partial**: presets are graph-building recipes, not assignable programs.
+The user has been asked whether a renderer preset drop should create a new named
+material or modify its existing shared material. No preset-drop mutations are enabled
+pending that decision. Reusable pickers and other typed consumers remain pending.
+
+Verification: 686 editor unit tests and the architecture test pass (two opt-in tests
+ignored); all aestra-authoring tests pass. Strict Clippy for both packages, formatting
+and diff checks pass. User-authored assets were left untouched. Native manual
+acceptance is not claimed by these automated checks.

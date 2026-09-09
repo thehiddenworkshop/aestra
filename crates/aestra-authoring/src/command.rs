@@ -138,6 +138,13 @@ pub enum EffectCommand {
         id: MaterialId,
         instance: aestra_core::material::MaterialInstance,
     },
+    AddMaterialInstance {
+        instance: aestra_core::material::MaterialInstance,
+        index: usize,
+    },
+    RemoveMaterialInstance {
+        id: MaterialId,
+    },
     AddFlipbook {
         flipbook: FlipbookDefinition,
         index: usize,

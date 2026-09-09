@@ -112,6 +112,76 @@ fn semantic_material_instance_replacements_join_effect_history() {
 }
 
 #[test]
+fn material_instance_insertion_removal_and_validation_are_atomic() {
+    let mut effect = test_effect();
+    let instance = MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(MaterialProgramId::new()),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    };
+    let before = effect.clone();
+    let mut history = CommandHistory::default();
+    let insert = EffectTransaction::single(
+        "Add instance",
+        EffectCommand::AddMaterialInstance {
+            instance: instance.clone(),
+            index: 0,
+        },
+    );
+    let serialized = ron::to_string(&insert).unwrap();
+    let insert: EffectTransaction = ron::from_str(&serialized).unwrap();
+    history
+        .execute(&mut effect, &LockState::default(), insert.clone())
+        .unwrap();
+    assert_eq!(effect.material_instances, vec![instance.clone()]);
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, before);
+    history.redo(&mut effect).unwrap();
+    let inserted = effect.clone();
+    for transaction in [
+        insert, // Duplicate semantic identity.
+        EffectTransaction::single(
+            "Bad index",
+            EffectCommand::AddMaterialInstance {
+                instance: MaterialInstance {
+                    id: MaterialId::new(),
+                    ..instance.clone()
+                },
+                index: 10,
+            },
+        ),
+        EffectTransaction::new(
+            "Atomic failure",
+            vec![
+                EffectCommand::RemoveMaterialInstance { id: instance.id },
+                EffectCommand::RemoveMaterialInstance {
+                    id: MaterialId::new(),
+                },
+            ],
+        ),
+    ] {
+        assert!(
+            CommandExecutor::execute(&mut effect, &LockState::default(), &transaction).is_err()
+        );
+        assert_eq!(effect, inserted);
+    }
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Remove instance",
+                EffectCommand::RemoveMaterialInstance { id: instance.id },
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect, before);
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, inserted);
+}
+
+#[test]
 fn emitter_region_edits_are_transactional_and_undoable() {
     let mut effect = test_effect();
     let emitter_id = effect.emitters[0].id;
