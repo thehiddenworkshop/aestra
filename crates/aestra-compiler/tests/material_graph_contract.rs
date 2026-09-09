@@ -135,15 +135,17 @@ fn graph_projection_is_deterministic_typed_and_source_mapped() {
     let projection = compiler.project_graph(&program, Some(&ir));
     assert!(projection.diagnostics.is_valid());
     // The three single-use edge/value constants inline onto the smoothstep node instead of
-    // appearing as their own nodes; every other expression remains a node.
-    let inline_constants = program.inline_constants();
+    // appearing as their own nodes; every other expression remains a node. Projection normalizes,
+    // which also drops the now-orphaned original alpha constant, so compare against that view.
+    let normalized = program.normalized();
+    let inline_constants = normalized.inline_constants();
     assert_eq!(
         inline_constants,
         BTreeSet::from([value, edge_min, edge_max])
     );
     assert_eq!(
         projection.nodes.len(),
-        program.expressions.len() - inline_constants.len()
+        normalized.expressions.len() - inline_constants.len()
     );
     assert!(
         projection
@@ -356,9 +358,14 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
             .inline_constants()
             .contains(&explicit.expression)
     );
+    // The authoring layer pins a palette-created constant as a node; once pinned it renders as a
+    // standalone node even while unconnected (an unpinned, unreferenced constant is dropped as an
+    // orphan on projection).
+    let mut pinned = explicit.replacement.clone();
+    pinned.node_constants.push(explicit.expression);
     assert!(
         compiler
-            .project_graph(&explicit.replacement, None)
+            .project_graph(&pinned, None)
             .nodes
             .iter()
             .any(|node| node.expression == explicit.expression)

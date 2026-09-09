@@ -2095,6 +2095,26 @@ impl MaterialProgram {
             .sort_by_key(|expression| expression.id);
         normalized.disabled_expressions.sort();
         normalized.disabled_expressions.dedup();
+        // Drop orphaned constants: bare constants that nothing references, that are not bound to a
+        // program output, and were not explicitly kept as nodes. These are dead inline-default
+        // remnants (e.g. a default whose consuming node was deleted) that only clutter the graph.
+        let referenced = normalized
+            .expressions
+            .iter()
+            .flat_map(|expression| expression.kind.dependencies())
+            .collect::<BTreeSet<_>>();
+        let output_roots = normalized.outputs.roots().collect::<BTreeSet<_>>();
+        let pinned = normalized
+            .node_constants
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        normalized.expressions.retain(|expression| {
+            !matches!(expression.kind, MaterialExpressionKind::Constant(_))
+                || referenced.contains(&expression.id)
+                || output_roots.contains(&expression.id)
+                || pinned.contains(&expression.id)
+        });
         let constants = normalized
             .expressions
             .iter()

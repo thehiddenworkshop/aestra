@@ -4267,10 +4267,8 @@ fn spawn_material_graph_default_control(
     expression: MaterialExpressionId,
     value: &MaterialValue,
 ) {
-    parent.spawn(Node {
-        flex_grow: 1.0,
-        ..default()
-    });
+    // The control sits immediately after the port label; no flex spacer pushing it to the far
+    // right of the node.
     match value {
         MaterialValue::Float(number) => {
             parent
