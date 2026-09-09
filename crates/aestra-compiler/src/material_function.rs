@@ -304,7 +304,7 @@ pub(crate) fn inline_material_functions(
             .iter()
             .any(|expression| expression.id == *id)
     });
-    expanded.inline_constants.retain(|id| {
+    expanded.node_constants.retain(|id| {
         expanded
             .expressions
             .iter()

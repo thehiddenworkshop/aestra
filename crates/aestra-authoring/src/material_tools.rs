@@ -6,9 +6,10 @@ use crate::{
     material_authoring::{material_expression_input_source, rewire_expression},
 };
 use aestra_compiler::{
-    MaterialCompileError, MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
-    MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialPresetCatalog,
-    MaterialStackEditError, MaterialStackModifierKind, MaterialStackProjection,
+    MaterialCompileError, MaterialCompiler, MaterialFunctionLibrary, MaterialGraphCreateKind,
+    MaterialGraphEdgeTarget, MaterialGraphNodeCreationError, MaterialGraphOutputKind,
+    MaterialGraphProjection, MaterialPresetCatalog, MaterialStackEditError,
+    MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId,
@@ -543,18 +544,15 @@ impl MaterialToolPlanner {
             target,
         };
         let mut commands = append_expression_commands(program, &created.replacement);
-        commands.extend(
-            created
-                .replacement
-                .inline_constants
-                .iter()
-                .filter(|expression| !program.inline_constants.contains(expression))
-                .map(|expression| MaterialCommand::SetMaterialExpressionInline {
-                    program: program_id,
-                    expression: *expression,
-                    inline: true,
-                }),
-        );
+        // A constant added directly from the palette is an explicit node request; keep it as a
+        // node. Default-input constants are single-use and inline automatically.
+        if matches!(kind, MaterialGraphCreateKind::Constant(_)) {
+            commands.push(MaterialCommand::SetMaterialExpressionAsNode {
+                program: program_id,
+                expression: created.expression,
+                as_node: true,
+            });
+        }
         if let Some(target) = target {
             commands.push(connection_command(program_id, target, created.expression));
         }
@@ -669,7 +667,7 @@ impl MaterialToolPlanner {
         }
 
         let functions = document.material_function_library();
-        let projection = MaterialCompiler.project_graph_with_functions(program, None, &functions);
+        let projection = expanded_graph_projection(program, &functions);
         let mut replacement = program.clone();
         let mut created_expressions = Vec::new();
         for edge in &projection.edges {
@@ -754,6 +752,7 @@ impl MaterialToolPlanner {
 
         // Inline constants are implementation details of their owning node. Absorb them into the
         // function instead of exposing surprising constant-valued signature ports.
+        let inline_constants = program.inline_constants();
         loop {
             let mut added = false;
             let selected_snapshot = selected.clone();
@@ -763,8 +762,7 @@ impl MaterialToolPlanner {
                 .filter(|expression| selected_snapshot.contains(&expression.id))
             {
                 for dependency in expression.kind.dependencies() {
-                    if program.inline_constants.contains(&dependency) && selected.insert(dependency)
-                    {
+                    if inline_constants.contains(&dependency) && selected.insert(dependency) {
                         added = true;
                     }
                 }
@@ -906,7 +904,7 @@ impl MaterialToolPlanner {
             .expressions
             .retain(|expression| !selected.contains(&expression.id));
         replacement
-            .inline_constants
+            .node_constants
             .retain(|expression| !selected.contains(expression));
         for source in boundary_outputs {
             let value_type = expression_type(source)
@@ -998,7 +996,7 @@ impl MaterialToolPlanner {
             );
         }
         let functions = document.material_function_library();
-        let projection = MaterialCompiler.project_graph_with_functions(program, None, &functions);
+        let projection = expanded_graph_projection(program, &functions);
         let value_type = projection.edges.iter().find_map(|edge| {
             (graph_connection_target(&edge.target) == Some(target))
                 .then_some(edge.value_type)
@@ -1195,6 +1193,23 @@ impl MaterialToolPlanner {
         );
         validate_plan(document, command, transaction, created_expressions)
     }
+}
+
+/// Projects the graph with every constant forced to a standalone node, so authoring transforms
+/// can reason about all connections. The editor-facing projection instead inlines single-use
+/// constants and drops their edges, which would hide those connections from these planners.
+fn expanded_graph_projection(
+    program: &MaterialProgram,
+    functions: &MaterialFunctionLibrary,
+) -> MaterialGraphProjection {
+    let mut expanded = program.clone();
+    expanded.node_constants = expanded
+        .expressions
+        .iter()
+        .filter(|expression| matches!(expression.kind, MaterialExpressionKind::Constant(_)))
+        .map(|expression| expression.id)
+        .collect();
+    MaterialCompiler.project_graph_with_functions(&expanded, None, functions)
 }
 
 fn append_unique_expression(

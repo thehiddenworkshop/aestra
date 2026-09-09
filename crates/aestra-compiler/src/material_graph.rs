@@ -529,17 +529,8 @@ impl MaterialCompiler {
                 )
             }
         };
-        if !matches!(kind, MaterialGraphCreateKind::Constant(_)) {
-            let inline_constants = replacement.expressions[first_created..]
-                .iter()
-                .filter_map(|candidate| {
-                    (candidate.id != expression
-                        && matches!(&candidate.kind, MaterialExpressionKind::Constant(_)))
-                    .then_some(candidate.id)
-                })
-                .collect::<Vec<_>>();
-            replacement.inline_constants.extend(inline_constants);
-        }
+        // Default-input constants are single-use, so they inline onto their consuming socket
+        // automatically (see `MaterialProgram::inline_constants`); nothing is recorded here.
         self.compile_with_functions(&replacement, functions)?;
         let created_expressions = replacement.expressions[first_created..]
             .iter()
@@ -600,11 +591,7 @@ impl MaterialCompiler {
             .filter(|ir| ir.source == program.id)
             .map(|ir| &ir.source_map.values);
 
-        let inline_constants = program
-            .inline_constants
-            .iter()
-            .copied()
-            .collect::<BTreeSet<_>>();
+        let inline_constants = program.inline_constants();
         let nodes = program
             .expressions
             .iter()

@@ -11,6 +11,7 @@ use aestra_core::{
         MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
     },
 };
+use std::collections::BTreeSet;
 
 #[test]
 fn function_catalog_uses_material_recipes_without_a_material_document() {
@@ -133,7 +134,23 @@ fn graph_projection_is_deterministic_typed_and_source_mapped() {
     let ir = compiler.compile(&program).unwrap();
     let projection = compiler.project_graph(&program, Some(&ir));
     assert!(projection.diagnostics.is_valid());
-    assert_eq!(projection.nodes.len(), program.expressions.len());
+    // The three single-use edge/value constants inline onto the smoothstep node instead of
+    // appearing as their own nodes; every other expression remains a node.
+    let inline_constants = program.inline_constants();
+    assert_eq!(
+        inline_constants,
+        BTreeSet::from([value, edge_min, edge_max])
+    );
+    assert_eq!(
+        projection.nodes.len(),
+        program.expressions.len() - inline_constants.len()
+    );
+    assert!(
+        projection
+            .nodes
+            .iter()
+            .all(|node| !inline_constants.contains(&node.expression))
+    );
     let node = projection
         .nodes
         .iter()
@@ -306,15 +323,16 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
             .map(|expression| &expression.kind),
         Some(MaterialExpressionKind::Add(left, _)) if *left == source
     ));
+    let inline_constants = plan.replacement.inline_constants();
     let inline = plan
         .replacement
         .expressions
         .iter()
         .find(|candidate| {
-            plan.replacement.inline_constants.contains(&candidate.id)
+            inline_constants.contains(&candidate.id)
                 && matches!(&candidate.kind, MaterialExpressionKind::Constant(_))
         })
-        .expect("generated function default should be marked inline")
+        .expect("generated single-use function default should inline")
         .id;
     let projection = compiler.project_graph(&plan.replacement, None);
     assert!(
@@ -335,7 +353,7 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
     assert!(
         !explicit
             .replacement
-            .inline_constants
+            .inline_constants()
             .contains(&explicit.expression)
     );
     assert!(

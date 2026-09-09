@@ -2001,9 +2001,11 @@ pub struct MaterialProgram {
     /// Semantic operations retained in the authored graph but bypassed during compilation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_expressions: Vec<MaterialExpressionId>,
-    /// Compiler-generated constants presented as editable values on their consuming input socket.
+    /// Constants explicitly kept as standalone graph nodes (e.g. created via the palette or
+    /// promoted by the user). Every other single-use constant is inlined onto its consuming
+    /// input socket instead of appearing as its own node — see [`MaterialProgram::inline_constants`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inline_constants: Vec<MaterialExpressionId>,
+    pub node_constants: Vec<MaterialExpressionId>,
     pub outputs: MaterialOutputs,
 }
 
@@ -2052,13 +2054,37 @@ impl MaterialProgram {
                 },
             ],
             disabled_expressions: Vec::new(),
-            inline_constants: Vec::new(),
+            node_constants: Vec::new(),
             outputs: MaterialOutputs {
                 color,
                 alpha,
                 vertex_offset: None,
             },
         }
+    }
+
+    /// Returns the constants that render inline on their consuming input socket rather than as
+    /// standalone graph nodes. A constant inlines when it feeds exactly one input, is not bound
+    /// directly to a program output, and has not been explicitly kept as a node (`node_constants`).
+    pub fn inline_constants(&self) -> BTreeSet<MaterialExpressionId> {
+        let node_constants = self.node_constants.iter().copied().collect::<BTreeSet<_>>();
+        let output_roots = self.outputs.roots().collect::<BTreeSet<_>>();
+        let mut consumers = BTreeMap::<MaterialExpressionId, usize>::new();
+        for expression in &self.expressions {
+            for dependency in expression.kind.dependencies() {
+                *consumers.entry(dependency).or_default() += 1;
+            }
+        }
+        self.expressions
+            .iter()
+            .filter(|expression| {
+                matches!(&expression.kind, MaterialExpressionKind::Constant(_))
+                    && !node_constants.contains(&expression.id)
+                    && !output_roots.contains(&expression.id)
+                    && consumers.get(&expression.id).copied() == Some(1)
+            })
+            .map(|expression| expression.id)
+            .collect()
     }
 
     pub fn normalized(&self) -> Self {
@@ -2077,10 +2103,10 @@ impl MaterialProgram {
                     .then_some(expression.id)
             })
             .collect::<BTreeSet<_>>();
-        normalized.inline_constants.sort();
-        normalized.inline_constants.dedup();
+        normalized.node_constants.sort();
+        normalized.node_constants.dedup();
         normalized
-            .inline_constants
+            .node_constants
             .retain(|expression| constants.contains(expression));
         normalized
             .render_state_policy

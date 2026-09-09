@@ -3561,6 +3561,7 @@ pub(crate) fn spawn_material_graph_workspace(
                 MaterialGraphCanvas,
                 |overlay| spawn_graph_wires(overlay, &projection),
                 |canvas| {
+                    let inline_constants = program_definition.inline_constants();
                     for node in &projection.nodes {
                         let position = layout
                             .nodes
@@ -3572,6 +3573,7 @@ pub(crate) fn spawn_material_graph_workspace(
                             projection.program,
                             node,
                             &program_definition,
+                            &inline_constants,
                             position,
                             selection,
                             previews,
@@ -4241,11 +4243,12 @@ fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphPro
     }
 }
 
-fn inline_material_graph_default(
-    program: &MaterialProgram,
+fn inline_material_graph_default<'a>(
+    program: &'a MaterialProgram,
+    inline_constants: &BTreeSet<MaterialExpressionId>,
     source: MaterialExpressionId,
-) -> Option<&MaterialValue> {
-    if !program.inline_constants.contains(&source) {
+) -> Option<&'a MaterialValue> {
+    if !inline_constants.contains(&source) {
         return None;
     }
     program
@@ -4621,11 +4624,13 @@ fn set_material_graph_value_component(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_expression_node(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
     node: &MaterialGraphNode,
     program_definition: &MaterialProgram,
+    inline_constants: &BTreeSet<MaterialExpressionId>,
     position: Vec2,
     selection: &MaterialGraphSelectionState,
     previews: &MaterialGraphPreviewState,
@@ -4717,7 +4722,11 @@ fn spawn_expression_node(
                     continue;
                 };
                 let presentation = input_port_presentation(&port.name);
-                let inline_default = inline_material_graph_default(program_definition, port.source);
+                let inline_default = inline_material_graph_default(
+                    program_definition,
+                    inline_constants,
+                    port.source,
+                );
                 spawn_graph_port_with(
                     body,
                     GraphPortProps {
@@ -5731,15 +5740,49 @@ mod tests {
     }
 
     #[test]
-    fn only_annotated_generated_constants_render_as_inline_defaults() {
+    fn single_use_constants_inline_while_nodes_and_shared_constants_do_not() {
         let mut program = MaterialProgram::additive_sprite("Inline defaults");
-        let inline = program.outputs.alpha;
-        let explicit = program.outputs.color;
+        // A constant bound directly to a program output stays a node.
+        let output_root = program.outputs.color;
+        let single = MaterialExpressionId::new();
+        let shared = MaterialExpressionId::new();
+        let promoted = MaterialExpressionId::new();
+        let multiply = MaterialExpressionId::new();
+        let add = MaterialExpressionId::new();
+        program.expressions.extend([
+            MaterialExpression {
+                id: single,
+                kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+            },
+            MaterialExpression {
+                id: shared,
+                kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+            },
+            MaterialExpression {
+                id: promoted,
+                kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+            },
+            MaterialExpression {
+                id: multiply,
+                kind: MaterialExpressionKind::Multiply(single, shared),
+            },
+            MaterialExpression {
+                id: add,
+                kind: MaterialExpressionKind::Add(shared, promoted),
+            },
+        ]);
+        // `promoted` is single-use but explicitly kept as a node.
+        program.node_constants.push(promoted);
 
-        program.inline_constants.push(inline);
-
-        assert!(inline_material_graph_default(&program, inline).is_some());
-        assert!(inline_material_graph_default(&program, explicit).is_none());
+        let inline = program.inline_constants();
+        // single-use, not an output, not promoted → inline on its consuming socket.
+        assert!(inline_material_graph_default(&program, &inline, single).is_some());
+        // consumed by two inputs → stays a node.
+        assert!(inline_material_graph_default(&program, &inline, shared).is_none());
+        // explicitly promoted to a node.
+        assert!(inline_material_graph_default(&program, &inline, promoted).is_none());
+        // bound to a program output.
+        assert!(inline_material_graph_default(&program, &inline, output_root).is_none());
     }
 
     #[test]

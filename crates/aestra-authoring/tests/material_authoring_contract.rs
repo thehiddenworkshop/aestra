@@ -2878,9 +2878,11 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
             ..
         }
     )));
-    assert!(plan.transaction.commands.iter().any(|command| matches!(
+    // A generated single-use default constant inlines structurally; creating a function node
+    // must not explicitly pin any expression as a standalone node.
+    assert!(!plan.transaction.commands.iter().any(|command| matches!(
         command,
-        MaterialCommand::SetMaterialExpressionInline { inline: true, .. }
+        MaterialCommand::SetMaterialExpressionAsNode { as_node: true, .. }
     )));
 
     let created = plan.created_expressions[0];
@@ -2904,7 +2906,7 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
         Some(MaterialExpressionKind::Multiply(_, right)) => *right,
         _ => unreachable!("created expression was asserted as multiply"),
     };
-    assert!(document.programs[0].inline_constants.contains(&inline));
+    assert!(document.programs[0].inline_constants().contains(&inline));
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before);
 }
@@ -3050,7 +3052,9 @@ fn connected_subgraph_extraction_creates_a_function_and_replaces_it_atomically()
             },
         },
     ]);
-    program.inline_constants.extend([lower, upper]);
+    // `lower`/`upper` are single-use, so they inline and are absorbed into the extracted
+    // function; `original_alpha` is kept as an explicit node so it remains a boundary input.
+    program.node_constants.push(original_alpha);
     program.outputs.alpha = smoothstep;
     document.programs.push(program);
     let before = document.clone();

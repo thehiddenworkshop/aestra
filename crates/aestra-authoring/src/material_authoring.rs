@@ -309,10 +309,12 @@ pub enum MaterialCommand {
         expression: MaterialExpressionId,
         replacement: MaterialExpression,
     },
-    SetMaterialExpressionInline {
+    /// Keeps a constant as a standalone graph node (`as_node = true`) or lets it inline onto its
+    /// consuming socket (`as_node = false`), toggling membership in `MaterialProgram::node_constants`.
+    SetMaterialExpressionAsNode {
         program: MaterialProgramId,
         expression: MaterialExpressionId,
-        inline: bool,
+        as_node: bool,
     },
     RewireMaterialExpressionInput {
         program: MaterialProgramId,
@@ -751,20 +753,20 @@ pub(crate) fn apply_command(
             let program = program_mut(document, *program)?;
             let index = expression_index(program, *expression)?;
             let expression = program.expressions.remove(index);
-            let was_inline = program.inline_constants.contains(&expression.id);
+            let was_node = program.node_constants.contains(&expression.id);
             program
-                .inline_constants
+                .node_constants
                 .retain(|candidate| *candidate != expression.id);
             let mut inverse = vec![MaterialCommand::AddMaterialExpression {
                 program: program.id,
                 expression: expression.clone(),
                 index,
             }];
-            if was_inline {
-                inverse.push(MaterialCommand::SetMaterialExpressionInline {
+            if was_node {
+                inverse.push(MaterialCommand::SetMaterialExpressionAsNode {
                     program: program.id,
                     expression: expression.id,
-                    inline: true,
+                    as_node: true,
                 });
             }
             inverse
@@ -784,25 +786,25 @@ pub(crate) fn apply_command(
                 replacement: previous,
             }]
         }
-        MaterialCommand::SetMaterialExpressionInline {
+        MaterialCommand::SetMaterialExpressionAsNode {
             program,
             expression,
-            inline,
+            as_node,
         } => {
             let program = program_mut(document, *program)?;
             expression_index(program, *expression)?;
-            let previous = program.inline_constants.contains(expression);
-            if *inline && !previous {
-                program.inline_constants.push(*expression);
-            } else if !*inline && previous {
+            let previous = program.node_constants.contains(expression);
+            if *as_node && !previous {
+                program.node_constants.push(*expression);
+            } else if !*as_node && previous {
                 program
-                    .inline_constants
+                    .node_constants
                     .retain(|candidate| candidate != expression);
             }
-            vec![MaterialCommand::SetMaterialExpressionInline {
+            vec![MaterialCommand::SetMaterialExpressionAsNode {
                 program: program.id,
                 expression: *expression,
-                inline: previous,
+                as_node: previous,
             }]
         }
         MaterialCommand::RewireMaterialExpressionInput {
