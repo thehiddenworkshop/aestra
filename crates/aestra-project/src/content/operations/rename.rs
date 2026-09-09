@@ -49,8 +49,25 @@ pub(super) fn non_referencing_asset(path: &Path) -> bool {
     fs::read(path).is_ok_and(|bytes| non_referencing_bytes(path, &bytes))
 }
 
+/// Format capability only. Parsing and external-reference proof remain mandatory.
+pub(super) fn resource_relocation_format(path: &Path) -> bool {
+    super::super::ProjectFileClassification::for_path(path)
+        == super::super::ProjectFileClassification::Texture
+        || path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                ["gltf", "svg", "wgsl", "wesl"]
+                    .iter()
+                    .any(|known| ext.eq_ignore_ascii_case(known))
+            })
+}
+
 /// The journal validates resource backups with the same format boundary as preflight.
 pub(super) fn non_referencing_bytes(path: &Path, bytes: &[u8]) -> bool {
+    if !resource_relocation_format(path) {
+        return false;
+    }
     if super::super::ProjectFileClassification::for_path(path)
         == super::super::ProjectFileClassification::Texture
     {

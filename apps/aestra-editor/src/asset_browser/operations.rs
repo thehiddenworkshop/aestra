@@ -62,7 +62,12 @@ fn sync_controls(
             return true;
         };
         let (drafts, complete) = super::inspection::draft_inventory(catalog, session);
-        !complete || drafts.iter().any(|(owner, _)| *owner == source)
+        !complete
+            || if prompt.rename {
+                !drafts.is_empty()
+            } else {
+                drafts.iter().any(|(owner, _)| *owner == source)
+            }
     });
     for (mut text, mut node) in &mut errors {
         node.display = if prompt.inline_label.is_none()
@@ -76,7 +81,7 @@ fn sync_controls(
             text.0 = prompt.failure.clone().unwrap_or_else(|| {
                 localizer.text(if draft_block {
                     if prompt.rename {
-                        "browser-rename-save-first"
+                        "browser-relocation-save-first"
                     } else {
                         "browser-duplicate-save-first"
                     }
@@ -238,7 +243,15 @@ fn open(
         let Some(entry) = catalog.content().source(source) else {
             return;
         };
-        let Some(suffix) = catalog.content().asset_operation_suffix(source) else {
+        let suffix = if prompt.rename {
+            catalog.content().source_relocation_suffix(source)
+        } else {
+            catalog
+                .content()
+                .asset_operation_suffix(source)
+                .map(str::to_owned)
+        };
+        let Some(suffix) = suffix else {
             return;
         };
         prompt.target = Some((
@@ -248,12 +261,12 @@ fn open(
             version,
         ));
         prompt.duplicate = Some(source);
-        prompt.suffix = suffix.into();
+        prompt.suffix = suffix.clone();
         if prompt.rename {
             prompt.name = entry
                 .name
                 .to_string_lossy()
-                .strip_suffix(suffix)
+                .strip_suffix(&suffix)
                 .unwrap_or_default()
                 .into();
         }
@@ -619,6 +632,7 @@ fn choose(
     catalog: Res<ProjectEffectCatalog>,
     mut session: ResMut<EditorSession>,
     tasks: Option<Res<io::ProjectIoTasks>>,
+    protection: Option<Res<DocumentProtectionState>>,
 ) {
     let Ok(choice) = choices.get(event.entity) else {
         return;
@@ -627,7 +641,7 @@ fn choose(
         close(&mut commands, &mut prompt);
         return;
     }
-    if !io::idle(tasks) {
+    if !io::idle(tasks) || protection.is_some_and(|state| state.is_open()) {
         return;
     }
     if prompt.name.trim().is_empty() || name_collision(&prompt, &catalog) {
@@ -652,33 +666,22 @@ fn choose(
                 source,
                 name: prompt.name.clone(),
             };
-            // Resolve the open document before moving the file; canonical paths no
-            // longer resolve at the old location afterwards. Other assets share
-            // the workflow but need no effect-session path adjustment.
-            let renames_open_effect = catalog.content().asset_for_source(source)
-                == Some(aestra_project::ProjectAssetId::Effect(session.effect.id))
-                && session
-                    .source_path
-                    .as_ref()
-                    .and_then(|path| path.canonicalize().ok())
-                    .zip(
-                        catalog
-                            .content()
-                            .source(source)
-                            .and_then(|entry| entry.path.canonicalize().ok()),
-                    )
-                    .is_some_and(|(open, source)| open == source);
+            let Some(entry) = catalog.content().source(source) else {
+                return;
+            };
+            let source_path = entry.path.clone();
             let guard = IoGuard::capture(&catalog, &session);
             let submitted_target = prompt.target;
             let submitted_name = prompt.name.clone();
             let submitted_generation = prompt.generation;
             prompt.pending = true;
             prompt.failure = None;
-            let mut prepared = catalog.clone();
+            let prepared = catalog.clone();
             io::enqueue(&mut commands, guard.clone(), move || {
-                let plan = prepared
-                    .content()
-                    .plan_asset_rename(request, &drafts, complete);
+                let plan =
+                    prepared
+                        .content()
+                        .plan_content_relocations(vec![request], &drafts, complete);
                 io::completion(move |world| {
                     let current = world.resource::<Prompt>();
                     if current.generation != submitted_generation {
@@ -701,36 +704,26 @@ fn choose(
                         return;
                     }
                     let result = plan.and_then(|plan| plan.apply());
-                    if result.is_ok() {
-                        prepared.refresh();
-                    }
-                    let status = match &result {
-                        Ok(result) => format!("Renamed file: {}", result.destination.display()),
-                        Err(error) => format!("Rename failed: {error}"),
-                    };
-                    if let Ok(result) = &result
-                        && let Ok(entry) = prepared.content().unique_source_for_asset(result.asset)
-                        && let Some(mut state) = world.get_resource_mut::<AssetBrowserState>()
-                    {
-                        state.reconcile(prepared.content(), prepared.content_revision());
-                        state.locate(prepared.content(), entry.id);
-                    }
-                    if result.is_ok() {
-                        if renames_open_effect && let Ok(result) = &result {
-                            world
-                                .resource_mut::<EditorSession>()
-                                .accept_external_source_path(result.destination.clone());
-                        }
-                        io::publish_catalog(world, prepared);
+                    let status = if let Ok(result) = result {
+                        let (path, warning) =
+                            super::relocation::publish(world, prepared, result, &source_path);
                         world.resource_scope(|world, mut prompt: Mut<Prompt>| {
                             prompt.pending = false;
                             close(&mut world.commands(), &mut prompt);
                         });
+                        let mut status = format!("Renamed source: {}", path.display());
+                        if let Some(warning) = warning {
+                            status.push_str(&format!("\n{warning}"));
+                        }
+                        status
                     } else {
+                        let status = format!("Rename failed: {}", result.unwrap_err());
                         let mut prompt = world.resource_mut::<Prompt>();
                         prompt.pending = false;
                         prompt.failure = Some(status.clone());
-                    }
+                        super::relocation::failed(world);
+                        status
+                    };
                     world.resource_mut::<EditorSession>().status = status;
                 })
             });

@@ -29,6 +29,45 @@ pub struct ReferencePreflight {
 }
 
 impl ProjectContent {
+    /// Snapshot-only Move/Rename affordance. Empty suffix means a directory; compound
+    /// semantic suffixes and resource extensions are preserved. This is not authority
+    /// to mutate: `plan_content_relocations` must validate bytes, references and drafts.
+    pub fn source_relocation_suffix(&self, source: ProjectSourceId) -> Option<String> {
+        let entry = self.source(source)?;
+        if entry.relative_path.as_os_str().is_empty()
+            || entry.error.is_some()
+            || entry
+                .metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.readonly)
+        {
+            return None;
+        }
+        if entry.kind == ProjectSourceKind::Directory {
+            return Some(String::new());
+        }
+        if !matches!(entry.kind, ProjectSourceKind::File(_)) {
+            return None;
+        }
+        if let Some(suffix) = self.asset_operation_suffix(source) {
+            return Some(suffix.into());
+        }
+        if matches!(
+            self.documents.get(&source),
+            Some(ProjectSourceDocument::MaterialPreset(_))
+        ) {
+            return Some(".aestra.material-preset.ron".into());
+        }
+        if !rename::resource_relocation_format(&entry.path) {
+            return None;
+        }
+        entry
+            .path
+            .extension()?
+            .to_str()
+            .map(|extension| format!(".{extension}"))
+    }
+
     /// One capability/format boundary for filename operations. UI code should not
     /// duplicate the supported-type list. A suffix is not authorization: planners
     /// still check identity, drafts, references and the current filesystem.
@@ -378,6 +417,48 @@ impl OperationPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn relocation_capability_preserves_extensions_without_authorizing_unsafe_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("folder.with.dots")).unwrap();
+        fs::write(root.path().join("image.PNG"), b"texture").unwrap();
+        fs::write(root.path().join("unknown.bin"), b"unknown").unwrap();
+        fs::write(root.path().join("include.wgsl"), "#import unsafe").unwrap();
+        let content = ProjectContent::scan(root.path());
+        let id = |name| content.source_tree().at_relative_path(name).unwrap().id;
+        assert_eq!(
+            content.source_relocation_suffix(content.source_tree().root()),
+            None
+        );
+        assert_eq!(
+            content.source_relocation_suffix(id("folder.with.dots")),
+            Some("".into())
+        );
+        assert_eq!(
+            content.source_relocation_suffix(id("image.PNG")),
+            Some(".PNG".into())
+        );
+        assert_eq!(content.source_relocation_suffix(id("unknown.bin")), None);
+        assert_eq!(
+            content.source_relocation_suffix(id("include.wgsl")),
+            Some(".wgsl".into())
+        );
+        assert!(
+            content
+                .plan_content_relocations(
+                    vec![OperationRequest::Rename {
+                        source: id("include.wgsl"),
+                        name: "renamed".into(),
+                    }],
+                    &[],
+                    true
+                )
+                .is_err(),
+            "format eligibility is not reference proof"
+        );
+        assert!(root.path().join("include.wgsl").exists());
+    }
+
     #[test]
     fn draft_references_replace_saved_references_and_unknown_files_block() {
         use aestra_core::material::*;

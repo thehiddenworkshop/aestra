@@ -10,6 +10,7 @@ mod inspection;
 mod operations;
 mod panel;
 mod persistence;
+mod relocation;
 pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]

@@ -58,6 +58,8 @@ fn spawn_menu(
                             &localizer.text("browser-duplicate"),
                             BrowserAction::Duplicate(source, catalog.content_revision()),
                         );
+                    }
+                    if catalog.content().source_relocation_suffix(source).is_some() {
                         spawn_pointer_context_menu_item(
                             menu,
                             &localizer.text("browser-rename"),

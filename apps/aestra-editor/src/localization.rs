@@ -91,6 +91,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "panel-viewport",
     "panel-assets",
     "browser-recovery-title",
+    "browser-relocation-save-first",
     "browser-recovery-description",
     "browser-recovery-summary",
     "browser-recovery-later",

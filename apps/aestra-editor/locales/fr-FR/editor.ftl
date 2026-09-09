@@ -134,6 +134,7 @@ browser-rename = Renommer
 browser-move-here = Déplacer ici
 browser-copy-here = Copier ici
 browser-rename-save-first = Enregistrez la source et résolvez les modifications en attente avant de renommer.
+browser-relocation-save-first = Enregistrez ou abandonnez tous les effets, matériaux, fonctions et changements en attente avant de déplacer ou renommer les assets.
 browser-rename-empty = Saisissez un nom de fichier avant de confirmer le renommage.
 browser-rename-name = Nouveau nom de fichier (sans extension). L’identité et le nom affiché restent inchangés.
 browser-duplicate-name = Nouveau nom de fichier (sans extension). Copie la version enregistrée ; le nom affiché reste inchangé.

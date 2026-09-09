@@ -1243,3 +1243,42 @@ Later/Escape/reopening, restored folder/resource bindings and exact Save baselin
 shared graph context, dirty and mid-preparation edits, project switches, altered
 journals, external additions, explicit retry, shared drafts, path-only history
 preservation, outside-project same-ID documents and modal focus/disabled controls.
+
+### AB6b browser folder/resource relocation — 2026-09-09
+
+Inline Rename and drag/drop Move now call the same journaled source relocation planner
+for semantic assets, folders and supported resources. The shared capability supplies
+the preserved suffix (empty for directories), not mutation authority; the backend still
+proves current bytes, reference completeness, destinations and the draft-free inventory.
+Unsupported formats, unsafe descendants, root/self-descendant targets, collisions and
+stale or dirty state remain blockers. No cross-project move or silent merge is enabled.
+
+F2 edits the existing label in list/grid views; Enter and blur use the existing commit
+path, Escape cancels. Folder/resource rows retain the floating drag preview and drop onto
+folder rows or tree destinations. Their drop menu offers Move Here only; semantic asset
+Copy/Duplicate retains its separate fresh-ID implementation. Tree-source dragging and
+folder/resource Copy are not part of this slice.
+
+Forward publication and recovery share clean-document reconciliation: preserve IDs,
+reload rewritten resource bindings, adopt exact Save baselines, retain graph targets and
+preserve history for path-only changes. Forward moves also remap browser history,
+expansion, selection and inspection before path-derived source IDs expire. A post-move
+reload error is reported as a warning after publication rather than a failed move that
+could be retried. Failed transactions trigger read-only pending-journal inspection;
+rollback still requires the explicit guarded in-app recovery action.
+
+Regression coverage extends both views' inline Rename and folder-row/tree drop tests
+to folders/resources, verifies resource suffix preservation and Move-only menus, and
+tests real folder/resource moves with active effects, rewritten bindings, empty folders,
+selection/inspection, safe subsequent Save and mid-preparation draft rejection. Shared
+state tests exercise relocated history/expansion; capability tests verify unsupported
+formats stay unavailable and format recognition cannot bypass reference proof.
+
+Native UX acceptance remains pending: rename a folder and texture; move a folder from
+the content view onto a folder tree destination; verify its effect still plays/saves,
+then verify dirty drafts/collisions block without partial moves. Recoverable deletion
+is the next implementation gate after acceptance. User assets are not test fixtures.
+
+Verification: 655 editor unit tests and the architecture test pass (two opt-in tests
+ignored), along with all 118 project tests. Strict all-target project/editor Clippy,
+formatting and diff checks pass on the supported Windows MSVC toolchain.

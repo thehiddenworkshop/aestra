@@ -1,5 +1,6 @@
 //! Explicit recovery of journaled relocations. Inspection is read-only; publication
 //! uses the serialized project queue and rechecks document guards on the main thread.
+use super::relocation::reconcile_document;
 use crate::project_content::io::{self, IoGuard};
 use crate::*;
 use aestra_project::content::operations::PendingAssetMoveBatch;
@@ -220,63 +221,7 @@ fn restore(world: &mut World, guard: IoGuard, pending: PendingAssetMoveBatch) {
     }
 }
 
-/// Material/function targets are ID-based and read the refreshed catalog. Effects
-/// additionally retain a path and exact-byte save baseline, both of which must agree
-/// with the restored source. Never resolve an ambiguous ID or adopt an unrelated file.
-fn reconcile_document(
-    catalog: &ProjectEffectCatalog,
-    session: &mut EditorSession,
-) -> Result<(), String> {
-    let Some(source) = &session.source_path else {
-        return Ok(());
-    };
-    // A same-ID document opened outside this project is not owned by recovery.
-    if !inside_project(source, catalog.root()) {
-        return Ok(());
-    }
-    let path = catalog.openable_path(session.effect.id.into())
-        .ok_or("Locations restored, but the open effect is unavailable or ambiguous. Reopen it before saving.")?;
-    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    let effect =
-        EffectAsset::from_ron(std::str::from_utf8(&bytes).map_err(|error| error.to_string())?)
-            .map_err(|error| error.to_string())?;
-    if effect.id != session.effect.id {
-        return Err("Restored effect identity changed; reopen it before saving.".into());
-    }
-    if effect == session.effect {
-        session.accept_restored_source(path.to_owned(), bytes);
-    } else {
-        let compiled = catalog.compile_project(&effect)
-            .map_err(|error| format!("Locations restored, but the open effect could not reload: {error}. Reopen it before saving."))?;
-        let target = session.material_target.clone();
-        let material_history_active = session.material_history_active;
-        session.open_refreshed_effect(path, effect, compiled.root, bytes);
-        session.material_target = target;
-        session.material_history_active = material_history_active;
-    }
-    Ok(())
-}
-
 pub(super) fn journal_present(root: &std::path::Path) -> bool {
     !matches!(std::fs::symlink_metadata(root.join(".aestra/asset-transactions/active.pending")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound)
-}
-
-fn inside_project(path: &std::path::Path, root: &std::path::Path) -> bool {
-    if path
-        .components()
-        .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        return false;
-    }
-    fn normalized(path: &std::path::Path) -> String {
-        let path = path.to_string_lossy().replace('\\', "/");
-        let path = path.strip_prefix("//?/").unwrap_or(&path);
-        if cfg!(windows) {
-            path.to_lowercase()
-        } else {
-            path.to_owned()
-        }
-    }
-    normalized(path).starts_with(&format!("{}/", normalized(root).trim_end_matches('/')))
 }

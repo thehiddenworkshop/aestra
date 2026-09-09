@@ -94,8 +94,10 @@ these work on 2026-09-08. AB6b single semantic-file drops, journaled atomic move
 drag previews were also accepted by the user on 2026-09-08. The bounded semantic-file
 batch transaction/explicit restart-rollback foundation and typed resource-path edits
 and audited folder/resource relocation plans are implemented. Guarded in-app batch
-recovery and clean-document reconciliation are implemented. Browser relocation wiring
-and the broader delete gates remain pending. AB7–AB9 remain pending.
+recovery and clean-document reconciliation are implemented. Browser inline Rename and
+drag/drop Move now use the shared planner for folders and supported resource files as
+well as semantic assets. Manual acceptance and recoverable deletion remain pending.
+AB7–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -522,8 +524,15 @@ presets retain typed IDs; resources use location changes without invented semant
 Bounds remain 128 files, 128 directories and a 64 MiB serialized journal. Unknown or
 excluded/hidden descendants, links, root/self-descendant moves, merging, overlapping
 selections, stale inventories and collisions block authorization. Version-1/2 journals
-remain recoverable. Existing single-file browser actions retain their accepted journal
-and folder/resource operations remain gated on host integration. The editor now inspects
+remain recoverable. Browser Rename/Move now share this batch planner and publication
+path for folders, supported resources and semantic assets; Duplicate/Copy stays on its
+identity-regenerating semantic-asset path. Folder/resource rows can be dragged from list
+or grid onto a folder row or tree destination. Copy is not offered for those sources.
+Inline F2/Enter/blur/Escape semantics remain shared; extensions are preserved. Successful
+relocations retarget browsing history, selection and inspection, refresh path references
+and the clean effect's exact Save baseline, and preserve material/function targets.
+Unsaved drafts, stale prepared actions and modal document protection block application.
+The editor now inspects
 pending batches read-only and offers Restore original locations / Check again / Later
 in an in-app modal. Escape defers recovery; an Assets toolbar action reopens it and
 Refresh rechecks journals. Unsaved drafts, proposals, changed sessions, altered journals
@@ -543,8 +552,9 @@ transaction explicitly owns both; never claim Ctrl+Z support for an unjournaled 
 Exit tests: semantic move/duplicate identities, supported path rewrites, partial
 dependency knowledge blocking, dirty drafts, naming collisions, case-only rename,
 read-only source, missing destination, links/traversal, failure after each staged step,
-restart recovery/restore and watcher reconciliation. Folder mutation stays disabled
-until this full gate passes; warning-only unsafe operations are not an alternative.
+restart recovery/restore and watcher reconciliation. Only the audited supported formats
+are enabled; unsafe folders remain blocked rather than proceeding with a warning.
+Native manual acceptance and the separate recoverable-delete gate remain outstanding.
 
 ### AB7 — Typed drag/drop, reusable pickers and document resources
 

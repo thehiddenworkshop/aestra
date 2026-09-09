@@ -146,19 +146,7 @@ impl ProjectContent {
 }
 
 fn suffix(content: &ProjectContent, source: ProjectSourceId) -> Result<String, OperationError> {
-    if let Some(suffix) = content.asset_operation_suffix(source) {
-        return Ok(suffix.into());
-    }
-    if matches!(
-        content.documents.get(&source),
-        Some(ProjectSourceDocument::MaterialPreset(_))
-    ) {
-        return Ok(".aestra.material-preset.ron".into());
-    }
     content
-        .source(source)
-        .and_then(|entry| entry.path.extension())
-        .and_then(|ext| ext.to_str())
-        .map(|extension| format!(".{extension}"))
+        .source_relocation_suffix(source)
         .ok_or_else(|| blocked("Unsupported source suffix"))
 }

@@ -716,9 +716,9 @@ impl EditorSession {
         self.ui_revision += 1;
     }
 
-    /// Recovery has verified the same clean typed document at this location.
+    /// Relocation has verified the same clean typed document at this location.
     /// Adopt its exact bytes as the new conflict baseline without resetting history.
-    pub(crate) fn accept_restored_source(&mut self, path: PathBuf, bytes: Vec<u8>) {
+    pub(crate) fn accept_relocated_source(&mut self, path: PathBuf, bytes: Vec<u8>) {
         self.saved_source_bytes = Some(bytes);
         self.accept_external_source_path(path);
     }

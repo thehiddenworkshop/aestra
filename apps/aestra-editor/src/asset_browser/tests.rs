@@ -979,14 +979,16 @@ fn keyboard_context_menu_and_escape_restore_list_focus() {
 }
 
 #[test]
-fn semantic_assets_share_menu_capabilities_and_inline_rename() {
-    for kind in 0..3 {
+fn supported_sources_share_menu_capabilities_and_inline_rename() {
+    for kind in 0..5 {
         for view in [ViewMode::List, ViewMode::Grid] {
             let root = tempfile::tempdir().unwrap();
             let suffix = match kind {
                 0 => ".aestra.ron",
                 1 => ".aestra.material.ron",
-                _ => ".aestra.material-function.ron",
+                2 => ".aestra.material-function.ron",
+                3 => ".PNG",
+                _ => "",
             };
             let path = root.path().join(format!("original{suffix}"));
             match kind {
@@ -996,14 +998,16 @@ fn semantic_assets_share_menu_capabilities_and_inline_rename() {
                 1 => aestra_core::material::MaterialProgram::additive_sprite("Authored name")
                     .save_ron(&path)
                     .unwrap(),
-                _ => aestra_core::material::MaterialFunction::from_ron(include_str!(
+                2 => aestra_core::material::MaterialFunction::from_ron(include_str!(
                     "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
                 ))
                 .unwrap()
                 .save_ron(&path)
                 .unwrap(),
+                3 => std::fs::write(&path, b"test texture").unwrap(),
+                _ => std::fs::create_dir(&path).unwrap(),
             }
-            let bytes = std::fs::read(&path).unwrap();
+            let bytes = std::fs::read(&path).ok();
             let mut app = browser_app(root.path());
             app.world_mut().resource_mut::<AssetBrowserState>().view = view;
             app.update();
@@ -1022,10 +1026,11 @@ fn semantic_assets_share_menu_capabilities_and_inline_rename() {
                     .iter()
                     .any(|action| matches!(action, BrowserAction::Rename(_, _)))
             );
-            assert!(
+            assert_eq!(
                 actions
                     .iter()
-                    .any(|action| matches!(action, BrowserAction::Duplicate(_, _)))
+                    .any(|action| matches!(action, BrowserAction::Duplicate(_, _))),
+                kind < 3
             );
             app.init_resource::<ButtonInput<KeyCode>>();
             app.world_mut()
@@ -1051,10 +1056,9 @@ fn semantic_assets_share_menu_capabilities_and_inline_rename() {
                 "kind={kind}: {}",
                 app.world().resource::<EditorSession>().status
             );
-            assert_eq!(
-                std::fs::read(root.path().join(format!("renamed{suffix}"))).unwrap(),
-                bytes
-            );
+            let destination = root.path().join(format!("renamed{suffix}"));
+            assert!(destination.exists());
+            assert_eq!(std::fs::read(destination).ok(), bytes);
         }
     }
 }

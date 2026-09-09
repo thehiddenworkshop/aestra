@@ -164,6 +164,55 @@ impl Default for AssetBrowserState {
 }
 
 impl AssetBrowserState {
+    /// Retarget browsing history and inspection before the old path-derived IDs vanish.
+    pub(super) fn reconcile_relocations(
+        &mut self,
+        before: &ProjectContent,
+        after: &ProjectContent,
+        result: &aestra_project::content::operations::AssetMoveBatchResult,
+    ) {
+        let map = |path: &std::path::Path| -> PathBuf {
+            let absolute = before.source_tree().root_path().join(path);
+            let relocated = result
+                .folders
+                .iter()
+                .find_map(|item| {
+                    absolute
+                        .strip_prefix(&item.source)
+                        .ok()
+                        .map(|tail| item.destination.join(tail))
+                })
+                .or_else(|| {
+                    result
+                        .moves
+                        .iter()
+                        .find(|item| item.source == absolute)
+                        .map(|item| item.destination.clone())
+                })
+                .unwrap_or(absolute);
+            relocated
+                .strip_prefix(after.source_tree().root_path())
+                .unwrap_or(path)
+                .to_owned()
+        };
+        let map_id = |id| {
+            before
+                .source(id)
+                .and_then(|entry| {
+                    after
+                        .source_tree()
+                        .at_relative_path(map(&entry.relative_path))
+                })
+                .map(|entry| entry.id)
+        };
+        self.folder = map(&self.folder);
+        self.back = self.back.iter().map(|path| map(path)).collect();
+        self.forward = self.forward.iter().map(|path| map(path)).collect();
+        self.expanded = self.expanded.iter().filter_map(|id| map_id(*id)).collect();
+        self.selected = self.selected.and_then(map_id);
+        self.inspected = self.inspected.and_then(map_id);
+    }
+
     pub(super) fn reconcile(&mut self, content: &ProjectContent, version: ProjectContentVersion) {
         if self.version == Some(version) && self.root == content.source_tree().root_path() {
             return;
