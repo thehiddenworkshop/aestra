@@ -1647,6 +1647,10 @@ mod tests {
             let wire_endpoint_screen = viewport.project_graph_point(graph_point);
 
             assert_vec2_close(wire_endpoint_screen, node_socket_screen);
+            assert_vec2_close(
+                viewport.unproject_viewport_point(wire_endpoint_screen),
+                graph_point,
+            );
         }
     }
 

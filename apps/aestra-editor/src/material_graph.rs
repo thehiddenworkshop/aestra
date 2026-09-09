@@ -59,6 +59,7 @@ use std::{
 };
 
 const COLUMN_WIDTH: f32 = 282.0;
+pub(crate) mod asset_drop;
 const CANVAS_PADDING: f32 = 34.0;
 const NODE_GAP: f32 = 22.0;
 const SNAP_RADIUS: f32 = 38.0;
@@ -101,6 +102,7 @@ fn reset_graph_document_transients(
 
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
+        asset_drop::register(app);
         app.init_resource::<MaterialGraphGesture>()
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<MaterialGraphSelectionState>()
@@ -3592,12 +3594,12 @@ pub(crate) fn spawn_material_graph_workspace(
                     );
                 },
             );
-            panel
-                .commands()
-                .entity(viewport)
-                .insert(MaterialGraphViewport {
+            panel.commands().entity(viewport).insert((
+                MaterialGraphViewport {
                     program: projection.program,
-                });
+                },
+                asset_drop::GraphDropTarget::program(session, projection.program),
+            ));
             if let Some(open) = palette
                 .open
                 .as_ref()

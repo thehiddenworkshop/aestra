@@ -104,6 +104,8 @@ AB7a (typed Asset Browser Effect → Timeline drops) is implemented; verificatio
 native acceptance are tracked in the migration checklist. AB7b material-program
 assignment is manually accepted. Project preset drops create a new named material and
 assign it; native acceptance of that flow remains pending.
+AB7c function drops into material/function graphs are implemented; native acceptance
+is pending. Existing function sources are referenced, not copied or moved.
 Remaining AB7 drops and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
@@ -626,6 +628,20 @@ instance; the explicitly created reusable source remains in Assets (explained in
 dialog). A document change during I/O retains the new source but skips assignment with
 feedback. Built-in virtual sources/pickers remain a later AB7 migration slice.
 
+**AB7c (function calls):** Both graph viewports accept project material-function
+payloads, resolving child picking targets through the same drop handler. Hover outlines
+the graph and explains the accepted action or rejection. Release creates call nodes
+at the graph-space pointer position using existing compiler node/default construction
+and authoring validation. Multi-output functions create one node per output, matching
+the Add Node menu, together in a single history entry. Generated default input nodes
+are placed to the left. Program edits use material history; function edits use function
+draft history and validate indexed callers. Undo/Redo preserves node identities and
+layout memory. The called source remains unchanged. Wrong types, stale/ambiguous
+payloads, changed graph targets, pending/protected operations and direct/indirect
+recursive function calls are rejected without an edit. Custom WESL functions may be
+called; their read-only bodies do not become editable graph targets. Native acceptance
+is pending for list/grid origins, both graph targets, zoomed placement and Undo/Redo.
+
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
 feedback. Compatibility is shared by pickers and drag targets, not inferred by icons.
@@ -704,7 +720,7 @@ records its later slices and AB6a implementation. AB6a was subsequently accepted
 user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
-drops. **Current step (P1):** manually verify the AB7b preset creation/assignment flow,
-then extend typed consumers to functions. AB7a native acceptance remains recorded
+drops. **Current step (P1):** manually verify AB7b preset creation/assignment and AB7c
+function graph drops, then extend typed consumers to textures and meshes. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

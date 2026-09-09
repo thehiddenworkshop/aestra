@@ -835,7 +835,10 @@ pub(crate) fn spawn(
             );
         },
     );
-    parent.commands().entity(viewport).insert(View(function.id));
+    parent.commands().entity(viewport).insert((
+        View(function.id),
+        crate::material_graph::asset_drop::GraphDropTarget::function(session, function.id),
+    ));
 }
 
 fn props(
