@@ -780,6 +780,7 @@ fn sync_chrome(
     let previous = ui.rendered.as_ref();
     if ui.toolbar_actions.is_empty() {
         commands.entity(ui.toolbar).with_children(|parent| {
+            super::relocation_recovery::spawn_reopen_button(parent, localizer);
             // Text arrows use the same Feathers button as the icon controls.
             for (label, action, disabled) in [
                 ("←", BrowserAction::Back, state.back.is_empty()),

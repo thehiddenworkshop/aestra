@@ -93,8 +93,9 @@ single-asset operations (effects, materials and graph functions); the user confi
 these work on 2026-09-08. AB6b single semantic-file drops, journaled atomic moves and
 drag previews were also accepted by the user on 2026-09-08. The bounded semantic-file
 batch transaction/explicit restart-rollback foundation and typed resource-path edits
-and audited folder/resource relocation plans are implemented. Editor integration,
-guarded recovery actions and the broader delete gates remain pending. AB7–AB9 remain pending.
+and audited folder/resource relocation plans are implemented. Guarded in-app batch
+recovery and clean-document reconciliation are implemented. Browser relocation wiring
+and the broader delete gates remain pending. AB7–AB9 remain pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -521,8 +522,15 @@ presets retain typed IDs; resources use location changes without invented semant
 Bounds remain 128 files, 128 directories and a 64 MiB serialized journal. Unknown or
 excluded/hidden descendants, links, root/self-descendant moves, merging, overlapping
 selections, stale inventories and collisions block authorization. Version-1/2 journals
-remain recoverable. This is backend-only: existing single-file browser actions retain
-their accepted journal and folder/resource operations remain gated on host integration.
+remain recoverable. Existing single-file browser actions retain their accepted journal
+and folder/resource operations remain gated on host integration. The editor now inspects
+pending batches read-only and offers Restore original locations / Check again / Later
+in an in-app modal. Escape defers recovery; an Assets toolbar action reopens it and
+Refresh rechecks journals. Unsaved drafts, proposals, changed sessions, altered journals
+or unexpected filesystem states block restoration. Successful rollback refreshes the
+catalog and reconciles the clean open effect by identity, restoring path/reference data
+and the exact-byte save baseline while retaining standalone material/function targets.
+Failures preserve backups and show their location. Native acceptance remains pending.
 
 Use staged writes, backups and an operation journal with explicit rollback/recovery;
 multi-file changes are not inherently filesystem-atomic. Deletes move to a project
@@ -616,8 +624,9 @@ accepted AB4 and requested AB5 on 2026-09-08; those gaps remain recorded, not re
 marked tested. AB5 was subsequently accepted by the user; the dated migration checklist
 records its later slices and AB6a implementation. AB6a was subsequently accepted by the
 user, followed by single-asset drops and drag-preview acceptance. **Immediate next step
-(P0):** guarded in-app recovery actions and document-path reconciliation, then connect
-browser rename/drop actions to the shared relocation planner, including folders/resources.
+(P0):** connect browser rename/drop actions to the shared relocation planner, including
+folders/resources, reusing the implemented recovery and clean-document reconciliation
+rules for successful forward publication. Manually accept the in-app recovery flow.
 Folder rename/move stays disabled until those host integration gates pass; recoverable
 deletion remains a separate gate. Keep the transitional
 Library until its remaining capabilities have tested replacements.

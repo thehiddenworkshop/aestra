@@ -1206,3 +1206,40 @@ folder and loose-file batches, every directory/replacement interruption boundary
 interrupted reverse recovery, hidden/excluded descendants, external additions, stale
 empty-directory inventories, read-only folders, overlaps/collisions and tampered or
 legacy journals. Existing file-only transaction and reference-edit tests remain green.
+
+### AB6b guarded in-app relocation recovery — 2026-09-09
+
+Interrupted batch journals are inspected without replay on project open and on explicit
+Assets Refresh. The in-app Asset recovery dialog shows moved file/folder counts and the
+backup location, with Restore original locations, Check again and Later actions.
+Escape defers recovery without changing files or deleting the journal; the conditional
+Assets toolbar button reopens it. Unreadable, altered and ambiguous journals remain
+visible with errors and cannot be restored until a fresh inspection succeeds.
+
+Restore uses the serialized project I/O queue and checks the captured project, document,
+target, proposal, locks and draft inventory immediately before rollback. All drafts must
+be saved/discarded. The exact inspected journal is retained through preparation; a new
+journal at the same path cannot silently replace it. Backend before/after validation
+still rejects external edits and additions. Save/open shortcuts respect the modal;
+window close defers it before the normal unsaved-document exit prompt.
+
+After rollback the catalog is refreshed, including ID-based material/function targets.
+The clean open effect is resolved by unique identity within its project, its restored
+resource paths are reloaded, and its exact-byte Save baseline is refreshed. A path-only
+change preserves history; a changed effect reloads through the normal document path
+while preserving standalone graph context. Same-ID documents outside the project are
+not adopted. A failed reload reports the error and retains existing source-conflict
+protection rather than accepting a stale baseline. Backups remain archived.
+
+Browser folder/resource Move/Rename wiring is still the next gate. This change does not
+enable deletion, automatic recovery replay, cross-project moves or journal cleanup.
+No native UX acceptance, Linux execution or power-loss guarantee is claimed. Regression
+tests use temporary projects and the real transaction writer; user assets are untouched.
+
+Verification: 653 editor unit tests, the editor architecture test and all 117 project
+tests pass (two opt-in editor tests ignored). Strict all-target project/editor Clippy,
+formatting and diff checks pass. Eight new regressions cover read-only discovery,
+Later/Escape/reopening, restored folder/resource bindings and exact Save baselines,
+shared graph context, dirty and mid-preparation edits, project switches, altered
+journals, external additions, explicit retry, shared drafts, path-only history
+preservation, outside-project same-ID documents and modal focus/disabled controls.

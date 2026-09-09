@@ -119,6 +119,16 @@ browser-refresh = Actualiser le projet
 browser-new-folder = Nouveau dossier
 browser-folder-name = Nom du dossier
 browser-folder-exists = Un fichier ou dossier porte déjà ce nom. Choisissez un autre nom.
+browser-recovery-title = Récupération des assets
+browser-recovery-description = Un déplacement d’assets a été interrompu. Restaurez les emplacements d’origine pour annuler les déplacements et les mises à jour de références. Toute modification ou fichier inattendu bloque la restauration. Plus tard conserve le journal et laisse les opérations sur les assets bloquées.
+browser-recovery-summary = { $files } fichier(s) déplacé(s), { $folders } dossier(s) déplacé(s).
+    Journal de sauvegarde : { $path }
+browser-recovery-later = Plus tard
+browser-recovery-retry = Vérifier à nouveau
+browser-recovery-restore = Restaurer les emplacements d’origine
+browser-recovery-drafts = Enregistrez ou abandonnez les effets, matériaux, fonctions et modifications en attente avant de restaurer. Choisissez Plus tard pour revenir aux documents.
+browser-recovery-changed = Le projet ou le document a changé. Aucune récupération effectuée. Vérifiez à nouveau avant de restaurer.
+browser-recovery-restored = Emplacements d’origine restaurés. Sauvegarde conservée : { $path }
 browser-duplicate = Dupliquer
 browser-rename = Renommer
 browser-move-here = Déplacer ici

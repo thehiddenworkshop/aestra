@@ -69,7 +69,7 @@ fn recover_on_project_open(
     *checked = Some(generation);
     let root = catalog.content().source_tree().root_path();
     if !root.join(".aestra/asset-moves").exists()
-        && !root.join(".aestra/asset-transactions").exists()
+        || super::relocation_recovery::journal_present(root)
     {
         return;
     }
@@ -556,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn project_open_reports_pending_batch_without_replaying_it() {
+    fn legacy_recovery_defers_pending_batches_to_explicit_dialog() {
         let root = tempfile::tempdir().unwrap();
         let directory = root.path().join(".aestra/asset-transactions");
         std::fs::create_dir_all(&directory).unwrap();
@@ -572,12 +572,6 @@ mod tests {
             .add_systems(Update, recover_on_project_open);
         app.update();
         io::drain(app.world_mut());
-        assert!(
-            app.world()
-                .resource::<EditorSession>()
-                .status
-                .contains("explicit recovery")
-        );
         assert_eq!(std::fs::read(original).unwrap(), bytes);
         assert_eq!(
             std::fs::read(journal).unwrap(),

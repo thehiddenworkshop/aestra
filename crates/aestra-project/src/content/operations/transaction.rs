@@ -69,7 +69,7 @@ pub struct AssetMoveBatchResult {
 
 /// Opaque read-only inspection. The host must gather fresh drafts and recheck its
 /// session guard before explicitly requesting rollback. No automatic destructive replay.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PendingAssetMoveBatch {
     root: PathBuf,
     record: Record,

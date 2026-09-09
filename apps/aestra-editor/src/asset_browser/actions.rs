@@ -129,7 +129,10 @@ pub(super) fn handle_action(
             state.tree_page = page_step(state.tree_page, state.folders(content).len(), next);
         }
         BrowserAction::OpenProject => commands.trigger(DocumentAction::OpenProject),
-        BrowserAction::Refresh => commands.trigger(crate::library::LibraryAction::RefreshProject),
+        BrowserAction::Refresh => {
+            commands.trigger(crate::library::LibraryAction::RefreshProject);
+            commands.trigger(super::relocation_recovery::CheckRecovery);
+        }
         BrowserAction::NewFolder => {
             commands.trigger(super::operations::OpenFolderPrompt(None, false))
         }

@@ -10,6 +10,7 @@ mod inspection;
 mod operations;
 mod panel;
 mod persistence;
+pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,7 @@ impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
         operations::register(app);
         drag_drop::register(app);
+        relocation_recovery::register(app);
         app.init_resource::<AssetBrowserState>()
             .init_resource::<persistence::BrowserPersistence>()
             .init_resource::<actions::BrowserClickState>()

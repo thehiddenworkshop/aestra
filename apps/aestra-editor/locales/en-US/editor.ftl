@@ -119,6 +119,16 @@ browser-refresh = Refresh project
 browser-new-folder = New Folder
 browser-folder-name = Folder name
 browser-folder-exists = A file or folder with this name already exists. Choose another name.
+browser-recovery-title = Asset recovery
+browser-recovery-description = An asset relocation was interrupted. Restore original locations to undo its file moves and reference updates. Existing edits or unexpected files block restoration. Later keeps the journal and leaves asset mutations blocked.
+browser-recovery-summary = { $files } relocated file(s), { $folders } relocated folder(s).
+    Backup journal: { $path }
+browser-recovery-later = Later
+browser-recovery-retry = Check again
+browser-recovery-restore = Restore original locations
+browser-recovery-drafts = Save or discard all unsaved effects, materials, functions and pending changes before restoring. Choose Later to return to your documents.
+browser-recovery-changed = The project or document changed. No recovery was applied. Check again before restoring.
+browser-recovery-restored = Original locations restored. Backup retained: { $path }
 browser-duplicate = Duplicate
 browser-rename = Rename
 browser-move-here = Move Here
