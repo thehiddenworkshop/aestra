@@ -673,17 +673,16 @@ pub(crate) struct WorkspaceLayout {
 
 impl Default for WorkspaceLayout {
     fn default() -> Self {
-        // The material graph is the central workspace; the viewport and profiler sit stacked on the
-        // left, properties on the right, and the utility panels group into a bottom strip.
+        // The material graph is the central workspace; the viewport sits on the left, properties on
+        // the right, and the utility panels group into a bottom strip. The profiler is hidden by
+        // default and reopens beneath the viewport.
         let viewport = DockNode::tabs(2, &[DockPanel::Viewport], DockPanel::Viewport);
-        let profiler = DockNode::tabs(10, &[DockPanel::Profiler], DockPanel::Profiler);
-        let left_column = DockNode::split(11, DockAxis::Vertical, 0.7, viewport, profiler);
         let center = DockNode::tabs(
             8,
             &[DockPanel::Timeline, DockPanel::MaterialGraph],
             DockPanel::MaterialGraph,
         );
-        let left_center = DockNode::split(9, DockAxis::Horizontal, 0.26, left_column, center);
+        let left_center = DockNode::split(9, DockAxis::Horizontal, 0.26, viewport, center);
         let properties = DockNode::tabs(3, &[DockPanel::Properties], DockPanel::Properties);
         let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
         let bottom = DockNode::tabs(
@@ -699,7 +698,7 @@ impl Default for WorkspaceLayout {
         Self {
             root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
             floating: Vec::new(),
-            next_node_id: 12,
+            next_node_id: 10,
         }
     }
 }
@@ -1373,12 +1372,9 @@ mod tests {
     #[test]
     fn profiler_restores_beneath_the_viewport() {
         let mut layout = WorkspaceLayout::default();
-        // The profiler sits beneath the viewport, separate from the bottom utility strip.
-        assert_ne!(
-            layout.root.node_containing(DockPanel::Profiler),
-            layout.root.node_containing(DockPanel::Curves)
-        );
-        assert!(layout.close(DockPanel::Profiler));
+        // The profiler is hidden by default and reopens beneath the viewport, not in the bottom
+        // utility strip.
+        assert!(!layout.root.contains(DockPanel::Profiler));
         assert!(layout.show(DockPanel::Profiler));
         assert!(layout.root.contains(DockPanel::Profiler));
         assert!(layout.is_active(DockPanel::Profiler));
