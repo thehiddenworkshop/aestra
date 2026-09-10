@@ -396,7 +396,9 @@ fn spawn_dock_stack(
         .apply_scene(ui_shell::dock_pane())
         .insert(BackgroundColor(dock_pane_background(stack.active)))
         .with_children(|pane| {
-            spawn_dock_tab_bar(pane, node, stack, sources.localizer);
+            let material_graph_unsaved =
+                crate::material_graph::material_graph_unsaved(sources.session, sources.catalog);
+            spawn_dock_tab_bar(pane, node, stack, material_graph_unsaved, sources.localizer);
             if let Some(panel) = stack.active {
                 spawn_panel_content(pane, panel, workspace, sources);
             }
@@ -687,6 +689,7 @@ fn spawn_dock_tab_bar(
     parent: &mut ChildSpawnerCommands,
     node: DockNodeId,
     stack: &DockStack,
+    material_graph_unsaved: bool,
     localizer: &Localizer,
 ) {
     parent
@@ -706,7 +709,8 @@ fn spawn_dock_tab_bar(
         ))
         .with_children(|bar| {
             for panel in &stack.tabs {
-                spawn_dock_tab(bar, *panel, stack.active == Some(*panel), localizer);
+                let dirty = *panel == DockPanel::MaterialGraph && material_graph_unsaved;
+                spawn_dock_tab(bar, *panel, stack.active == Some(*panel), dirty, localizer);
             }
             bar.spawn((
                 DockTabAppendZone(node),
@@ -743,6 +747,7 @@ fn spawn_dock_tab(
     parent: &mut ChildSpawnerCommands,
     panel: DockPanel,
     selected: bool,
+    dirty: bool,
     localizer: &Localizer,
 ) {
     parent
@@ -798,6 +803,20 @@ fn spawn_dock_tab(
                 TextColor(theme::TEXT),
                 Pickable::IGNORE,
             ));
+            if dirty {
+                // IDE-style unsaved marker beside the panel name.
+                tab.spawn((
+                    Node {
+                        width: Val::Px(6.0),
+                        height: Val::Px(6.0),
+                        margin: UiRect::left(Val::Px(6.0)),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(theme::ACCENT),
+                    Pickable::IGNORE,
+                ));
+            }
             tab.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
