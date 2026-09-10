@@ -399,6 +399,7 @@ pub(super) fn open_source(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn open_function(
     event: On<OpenFunction>,
     mut session: ResMut<EditorSession>,
@@ -406,12 +407,22 @@ pub(super) fn open_function(
     catalog: Res<ProjectEffectCatalog>,
     io: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::persistence::DocumentProtectionState>>,
+    mut documents: ResMut<crate::document::DocumentManager>,
+    mut views: ResMut<crate::editor_view::EditorViewManager>,
+    mut active: ResMut<crate::editor_view::ActiveEditorContext>,
 ) {
     if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
         return;
     }
     match session.open_material_function(&catalog, event.0) {
         Ok(()) => {
+            crate::editor_view::open_document_view(
+                &mut documents,
+                &mut views,
+                &mut active,
+                crate::document::DocumentKey::MaterialFunction(event.0),
+                crate::editor_view::EditorViewKind::MaterialFunctionGraph,
+            );
             session.status = if session
                 .graph_function(&catalog)
                 .is_ok_and(|function| function.custom_wesl.is_some())
@@ -429,6 +440,7 @@ pub(super) fn open_function(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn open_material(
     event: On<OpenMaterial>,
     mut session: ResMut<EditorSession>,
@@ -437,6 +449,9 @@ pub(super) fn open_material(
     catalog: Res<ProjectEffectCatalog>,
     io: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::persistence::DocumentProtectionState>>,
+    mut documents: ResMut<crate::document::DocumentManager>,
+    mut views: ResMut<crate::editor_view::EditorViewManager>,
+    mut active: ResMut<crate::editor_view::ActiveEditorContext>,
 ) {
     if !crate::project_content::io::idle(io)
         || protection.is_some_and(|protection| protection.is_open())
@@ -448,6 +463,13 @@ pub(super) fn open_material(
     if let Err(error) = session.open_material_program(&catalog, event.0) {
         session.status = format!("Cannot open material: {error}");
     } else {
+        crate::editor_view::open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            crate::document::DocumentKey::MaterialProgram(event.0),
+            crate::editor_view::EditorViewKind::MaterialGraph,
+        );
         session.status = localizer.text("browser-material-opened");
         reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
     }

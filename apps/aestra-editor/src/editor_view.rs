@@ -9,7 +9,7 @@
 #![allow(dead_code)] // Consumed by Milestones 4+.
 
 use crate::docking::EditorViewId;
-use crate::document::DocumentId;
+use crate::document::{DocumentId, DocumentKey, DocumentManager};
 use bevy::prelude::*;
 use std::collections::BTreeMap;
 
@@ -110,6 +110,33 @@ impl EditorViewManager {
     }
 }
 
+/// The editor view (and its document) that contextual tool panels follow — updated whenever an
+/// asset is opened or focused. Milestone 10 extends the tool panels to read this; for now it simply
+/// records what the user last brought forward.
+#[derive(Resource, Debug, Default)]
+pub(crate) struct ActiveEditorContext {
+    pub(crate) active_view: Option<EditorViewId>,
+    pub(crate) active_document: Option<DocumentId>,
+}
+
+/// Opens (or focuses) the document for `key`, ensures it has a default editor view of `kind`, and
+/// marks that view active. Returns the view. This is the single entry point the asset browser and
+/// other open paths route through, so opening an already-open asset focuses it rather than
+/// replacing another.
+pub(crate) fn open_document_view(
+    documents: &mut DocumentManager,
+    views: &mut EditorViewManager,
+    active: &mut ActiveEditorContext,
+    key: DocumentKey,
+    kind: EditorViewKind,
+) -> EditorViewId {
+    let document = documents.open(key);
+    let view = views.open_default_view(document, kind);
+    active.active_document = Some(document);
+    active.active_view = Some(view);
+    view
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +180,51 @@ mod tests {
         let mut views: Vec<_> = manager.views_for_document(doc).collect();
         views.sort();
         assert_eq!(views, vec![a, b]);
+    }
+
+    #[test]
+    fn open_document_view_routes_documents_views_and_active_context() {
+        use crate::document::DocumentKey;
+        use aestra_core::MaterialProgramId;
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+        let key_a = DocumentKey::MaterialProgram(MaterialProgramId::from_u128(0xa));
+        let key_b = DocumentKey::MaterialProgram(MaterialProgramId::from_u128(0xb));
+
+        let view_a = open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            key_a,
+            EditorViewKind::MaterialGraph,
+        );
+        let view_b = open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            key_b,
+            EditorViewKind::MaterialGraph,
+        );
+        // Opening a second asset does not replace the first: two documents, two views.
+        assert_ne!(view_a, view_b);
+        assert_eq!(documents.len(), 2);
+        assert_eq!(views.len(), 2);
+        assert_eq!(active.active_view, Some(view_b));
+
+        // Reopening the first asset focuses its existing view and makes it active again.
+        let refocus = open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            key_a,
+            EditorViewKind::MaterialGraph,
+        );
+        assert_eq!(refocus, view_a);
+        assert_eq!(documents.len(), 2);
+        assert_eq!(views.len(), 2);
+        assert_eq!(active.active_view, Some(view_a));
     }
 
     #[test]

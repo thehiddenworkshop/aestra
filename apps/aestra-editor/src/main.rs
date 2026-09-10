@@ -247,6 +247,7 @@ fn main() {
         .add_plugins(DockingPlugin)
         .init_resource::<document::DocumentManager>()
         .init_resource::<editor_view::EditorViewManager>()
+        .init_resource::<editor_view::ActiveEditorContext>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
