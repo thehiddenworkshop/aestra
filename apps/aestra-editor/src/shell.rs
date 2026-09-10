@@ -841,7 +841,9 @@ fn keyboard_shortcuts(
             commands.trigger(DocumentAction::Open);
         }
         if control && keys.just_pressed(KeyCode::KeyS) {
-            commands.trigger(if shift {
+            commands.trigger(if alt {
+                DocumentAction::SaveAll
+            } else if shift {
                 DocumentAction::SaveAs
             } else {
                 DocumentAction::Save

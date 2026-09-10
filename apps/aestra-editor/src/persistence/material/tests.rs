@@ -490,6 +490,55 @@ fn save_keeps_untitled_effect_and_unrelated_drafts_unsaved() {
 }
 
 #[test]
+fn save_all_writes_every_dirty_open_material_document() {
+    use crate::document::{DocumentKey, DocumentManager};
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, first, second) = setup(directory.path());
+    // Both materials are open documents; scoped Save would only write the active one.
+    {
+        let mut documents = app.world_mut().resource_mut::<DocumentManager>();
+        documents.open(DocumentKey::MaterialProgram(first.id));
+        documents.open(DocumentKey::MaterialProgram(second.id));
+    }
+    let first_edited = edit(&mut app, &first, "First edited");
+    let second_edited = edit(&mut app, &second, "Second edited");
+    assert!(
+        !app.world().resource::<EditorSession>().effect_is_dirty(),
+        "the effect stays clean, so Save All takes the material-only path"
+    );
+
+    app.world_mut().trigger(DocumentAction::SaveAll);
+    io::drain(app.world_mut());
+
+    // Both documents were written to disk, and both drafts were cleared.
+    assert_eq!(
+        MaterialProgram::load_ron(directory.path().join("first.aestra.material.ron")).unwrap(),
+        first_edited
+    );
+    assert_eq!(
+        MaterialProgram::load_ron(directory.path().join("second.aestra.material.ron")).unwrap(),
+        second_edited
+    );
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    assert!(!catalog.material_drafts.programs.contains_key(&first.id));
+    assert!(!catalog.material_drafts.programs.contains_key(&second.id));
+}
+
+#[test]
+fn save_all_reports_nothing_to_save_when_no_document_is_dirty() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, _first, _second) = setup(directory.path());
+    app.world_mut().trigger(DocumentAction::SaveAll);
+    io::drain(app.world_mut());
+    assert!(
+        app.world()
+            .resource::<EditorSession>()
+            .status
+            .contains("Nothing to save")
+    );
+}
+
+#[test]
 fn external_conflict_and_duplicate_identity_saves_preserve_disk_and_drafts() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, first, _) = setup(directory.path());

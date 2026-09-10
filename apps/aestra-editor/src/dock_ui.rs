@@ -438,7 +438,16 @@ fn spawn_dock_stack(
         .with_children(|pane| {
             let material_graph_unsaved =
                 crate::material_graph::material_graph_unsaved(sources.session, sources.catalog);
-            spawn_dock_tab_bar(pane, node, stack, material_graph_unsaved, sources.localizer);
+            spawn_dock_tab_bar(
+                pane,
+                node,
+                stack,
+                material_graph_unsaved,
+                sources.documents,
+                sources.views,
+                sources.catalog,
+                sources.localizer,
+            );
             match stack.active {
                 Some(DockTab::Tool(panel)) => spawn_panel_content(pane, panel, workspace, sources),
                 Some(DockTab::Editor(view)) => spawn_editor_view_content(pane, view, sources),
@@ -773,11 +782,38 @@ fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis
         });
 }
 
+/// Whether an editor view's material document has an unsaved draft, so its tab shows the dirty dot.
+fn editor_view_dirty(
+    view: crate::docking::EditorViewId,
+    views: &crate::editor_view::EditorViewManager,
+    documents: &crate::document::DocumentManager,
+    catalog: &ProjectEffectCatalog,
+) -> bool {
+    let Some(document) = views
+        .document_of(view)
+        .and_then(|id| documents.document(id))
+    else {
+        return false;
+    };
+    match document.key {
+        crate::document::DocumentKey::MaterialProgram(id) => {
+            catalog.material_drafts.programs.contains_key(&id)
+        }
+        crate::document::DocumentKey::MaterialFunction(id) => {
+            catalog.material_drafts.functions.contains_key(&id)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spawn_dock_tab_bar(
     parent: &mut ChildSpawnerCommands,
     node: DockNodeId,
     stack: &DockStack,
     material_graph_unsaved: bool,
+    documents: &crate::document::DocumentManager,
+    views: &crate::editor_view::EditorViewManager,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
 ) {
     parent
@@ -797,8 +833,11 @@ fn spawn_dock_tab_bar(
         ))
         .with_children(|bar| {
             for tab in &stack.tabs {
-                let dirty =
-                    *tab == DockTab::Tool(ToolPanel::MaterialGraph) && material_graph_unsaved;
+                let dirty = match tab {
+                    DockTab::Tool(ToolPanel::MaterialGraph) => material_graph_unsaved,
+                    DockTab::Editor(view) => editor_view_dirty(*view, views, documents, catalog),
+                    _ => false,
+                };
                 spawn_dock_tab(bar, *tab, stack.active == Some(*tab), dirty, localizer);
             }
             bar.spawn((

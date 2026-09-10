@@ -77,6 +77,98 @@ fn save_scope(
     Ok(scope)
 }
 
+/// The union of every target's [`save_scope`] — each dirty document's own draft plus its transitive
+/// function dependencies — validated together. Used by Save All so one atomic write commits every
+/// open dirty material document without touching unrelated drafts.
+fn save_all_scope(
+    catalog: &ProjectEffectCatalog,
+    targets: &[MaterialEditingTarget],
+) -> Result<MaterialDrafts, String> {
+    let mut union = MaterialDrafts::default();
+    for target in targets {
+        let scope = save_scope(catalog, target)?;
+        union.programs.extend(scope.programs);
+        union.functions.extend(scope.functions);
+    }
+    if !union.validate_root(catalog.root()) {
+        return Err("Material save destination is outside the active project".into());
+    }
+    Ok(union)
+}
+
+/// Save All: commit every currently-dirty open material document in one I/O operation. Mirrors
+/// [`queue_save`] but saves the union scope of several targets and never reloads.
+pub(super) fn queue_save_all(
+    commands: &mut Commands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    targets: Vec<MaterialEditingTarget>,
+) {
+    if targets.is_empty() {
+        return;
+    }
+    let guard = IoGuard::capture(catalog, session);
+    let mut prepared = catalog.clone();
+    io::enqueue(commands, guard.clone(), move || {
+        prepared.refresh();
+        let mut before = MaterialDrafts::default();
+        let mut remaining = MaterialDrafts::default();
+        let result: Result<(), String> = (|| {
+            for target in &targets {
+                let root = match target {
+                    MaterialEditingTarget::Program { root, .. }
+                    | MaterialEditingTarget::Function { root, .. } => root,
+                    _ => return Err("No shared material target selected".into()),
+                };
+                if root != prepared.root() {
+                    return Err("A material belongs to another project".into());
+                }
+            }
+            before = save_all_scope(&prepared, &targets)?;
+            remaining = before.clone();
+            if !prepared.snapshot_is_current() {
+                return Err("Project sources changed while preparing the save; retry".into());
+            }
+            remaining.save()
+        })();
+        let receipts = MaterialDrafts::saved_baselines(&before, &remaining);
+        prepared.refresh();
+        io::completion(move |world| {
+            if !guard.same_document(
+                world.resource::<ProjectEffectCatalog>(),
+                world.resource::<EditorSession>(),
+            ) {
+                io::set_status(world, "project-operation-save-stale");
+                return;
+            }
+            world
+                .resource_mut::<ProjectEffectCatalog>()
+                .material_drafts
+                .accept_saved_baselines(&before, receipts);
+            let drafts = world
+                .resource::<ProjectEffectCatalog>()
+                .material_drafts
+                .clone();
+            let localizer = world.resource::<Localizer>();
+            let status = match result {
+                Ok(()) => localizer.text("material-save-complete"),
+                Err(error) => {
+                    let mut args = FluentArgs::new();
+                    args.set("error", error);
+                    localizer.text_with("material-save-failed", &args)
+                }
+            };
+            {
+                let mut session = world.resource_mut::<EditorSession>();
+                session.set_material_drafts(drafts);
+                session.status = status;
+                session.ui_revision += 1;
+            }
+            io::publish_catalog(world, prepared);
+        })
+    });
+}
+
 pub(super) fn queue_save(
     commands: &mut Commands,
     session: &EditorSession,

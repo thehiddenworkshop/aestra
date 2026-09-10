@@ -287,6 +287,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                         ("file-open-project", "", DocumentAction::OpenProject),
                         ("file-save", "Ctrl+S", DocumentAction::Save),
                         ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
+                        ("file-save-all", "Ctrl+Alt+S", DocumentAction::SaveAll),
                         ("file-reload-material", "", DocumentAction::ReloadMaterial),
                     ] {
                         let message_id = if action == DocumentAction::Save && standalone {
@@ -1092,7 +1093,7 @@ mod tests {
             .iter(app.world())
             .map(|(entity, action)| (*action, entity))
             .collect::<Vec<_>>();
-        assert_eq!(items.len(), 6, "all target-specific items must be retained");
+        assert_eq!(items.len(), 7, "all target-specific items must be retained");
         for standalone in [false, true, false, true] {
             app.world_mut()
                 .resource_mut::<EditorSession>()

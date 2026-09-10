@@ -60,6 +60,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "file-open",
     "file-save",
     "file-save-as",
+    "file-save-all",
     "file-settings",
     "file-exit",
     "edit-undo",

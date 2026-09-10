@@ -78,6 +78,7 @@ pub(crate) enum DocumentAction {
     NavigateSourceAncestor(usize),
     Save,
     SaveAs,
+    SaveAll,
     ReloadMaterial,
     Exit,
 }
@@ -91,6 +92,7 @@ pub(crate) fn install_document_open_test_runtime(app: &mut App, recovery_path: P
         .insert_resource(autosave)
         .init_resource::<DocumentProtectionState>()
         .init_resource::<crate::project_content::io::ProjectIoTasks>()
+        .init_resource::<crate::document::DocumentManager>()
         .add_observer(execute_document_action)
         .add_systems(Update, crate::project_content::io::poll);
     crate::viewport::install_project_preview_test_runtime(app);
@@ -520,6 +522,38 @@ fn handle_document_action_buttons(
     }
 }
 
+/// The shared-material editing targets for every open document that currently has an unsaved draft.
+/// Save All commits exactly these — open, dirty documents — and nothing else.
+fn dirty_material_targets(
+    documents: &crate::document::DocumentManager,
+    catalog: &ProjectEffectCatalog,
+) -> Vec<crate::material_document::MaterialEditingTarget> {
+    use crate::document::DocumentKey;
+    use crate::material_document::MaterialEditingTarget;
+    let root = catalog.root().to_owned();
+    documents
+        .open_documents()
+        .filter_map(|document| match document.key {
+            DocumentKey::MaterialProgram(id) => {
+                catalog.material_drafts.programs.contains_key(&id).then(|| {
+                    MaterialEditingTarget::Program {
+                        root: root.clone(),
+                        id,
+                    }
+                })
+            }
+            DocumentKey::MaterialFunction(id) => catalog
+                .material_drafts
+                .functions
+                .contains_key(&id)
+                .then(|| MaterialEditingTarget::Function {
+                    root: root.clone(),
+                    id,
+                }),
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_document_action(
     action: On<DocumentAction>,
@@ -535,8 +569,35 @@ fn execute_document_action(
     mut timeline: Option<ResMut<TimelineState>>,
     mut navigation: Option<ResMut<SourceNavigationState>>,
     io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    documents: Option<Res<crate::document::DocumentManager>>,
 ) {
     if !crate::project_content::io::idle(io_tasks) || protection.is_open() {
+        return;
+    }
+    if *action == DocumentAction::SaveAll {
+        // A dirty effect uses the effect save, which already commits every material draft alongside
+        // it ("Save All Changes"). With the effect clean, save only the dirty open material
+        // documents so a pristine effect file is not rewritten.
+        if session.effect_is_dirty() {
+            background::queue_save(
+                &mut commands,
+                &mut session,
+                &catalog,
+                false,
+                None,
+                &localizer,
+            );
+        } else {
+            let targets = documents
+                .as_deref()
+                .map(|documents| dirty_material_targets(documents, &catalog))
+                .unwrap_or_default();
+            if targets.is_empty() {
+                session.status = localizer.text("save-all-nothing-to-save");
+            } else {
+                material::queue_save_all(&mut commands, &session, &catalog, targets);
+            }
+        }
         return;
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
