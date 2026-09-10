@@ -4,8 +4,8 @@ use crate::docking::{
     DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
     DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
-    DockTreeHost, DockingAction, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
-    ResizeState, SplitterGrip, StagedNativeFloatingUi, WorkspaceLayout,
+    DockTreeHost, DockingAction, MaximizedPanel, NativeFloatingCamera, NativeFloatingUi,
+    NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi, WorkspaceLayout,
 };
 use crate::feathers::node_graph::GraphViewportMemory;
 use crate::timeline::TimelineState;
@@ -39,6 +39,7 @@ struct PanelSources<'a> {
     settings_panel: &'a SettingsPanelState,
     settings_persistence: &'a SettingsPersistence,
     localizer: &'a Localizer,
+    viewport_maximized: bool,
 }
 
 #[derive(SystemParam)]
@@ -65,6 +66,7 @@ pub(crate) struct DockUiResources<'w> {
     workspace: Res<'w, CurvesState>,
     timeline: Res<'w, TimelineState>,
     navigation: Option<Res<'w, SourceNavigationState>>,
+    maximized: Res<'w, MaximizedPanel>,
 }
 
 impl<'w> DockUiResources<'w> {
@@ -91,6 +93,7 @@ impl<'w> DockUiResources<'w> {
             settings_panel: &self.settings_panel,
             settings_persistence: &self.settings_persistence,
             localizer: &self.localizer,
+            viewport_maximized: self.maximized.0 == Some(DockPanel::Viewport),
         }
     }
 }
@@ -106,14 +109,37 @@ pub(crate) fn build_added_dock_trees(
     hosts: Query<Entity, Added<DockTreeHost>>,
 ) {
     let sources = resources.panel_sources(&session);
+    // A maximized panel fills the whole editor, hiding the rest of the dock tree.
+    let maximized = resources
+        .maximized
+        .0
+        .filter(|panel| resources.layout.root.contains(*panel));
     for host in &hosts {
         commands.entity(host).with_children(|parent| {
-            spawn_dock_node(
-                parent,
-                &resources.layout.root,
-                &resources.workspace,
-                sources,
-            );
+            if let Some(panel) = maximized {
+                parent
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        },
+                        BackgroundColor(dock_pane_background(Some(panel))),
+                    ))
+                    .with_children(|pane| {
+                        spawn_panel_content(pane, panel, &resources.workspace, sources);
+                    });
+            } else {
+                spawn_dock_node(
+                    parent,
+                    &resources.layout.root,
+                    &resources.workspace,
+                    sources,
+                );
+            }
         });
     }
 }
@@ -421,9 +447,12 @@ fn spawn_panel_content(
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => {
-            viewport::spawn_preview(parent, sources.localizer, sources.asset_server)
-        }
+        DockPanel::Viewport => viewport::spawn_preview(
+            parent,
+            sources.viewport_maximized,
+            sources.localizer,
+            sources.asset_server,
+        ),
         DockPanel::Assets => asset_browser::spawn_assets_panel(
             parent,
             sources.session,

@@ -37,6 +37,7 @@ impl Plugin for DockingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DockDragState>()
             .init_resource::<ResizeState>()
+            .init_resource::<MaximizedPanel>()
             .insert_resource(WorkspaceLayout::load())
             .add_observer(queue_docking_action_activation)
             .add_systems(First, crate::dock_ui::activate_staged_native_floating_ui)
@@ -368,6 +369,11 @@ pub(crate) struct DockDragState(pub(crate) Option<DockPanel>);
 #[derive(Resource, Default)]
 pub(crate) struct ResizeState(pub(crate) Option<DockSplitter>);
 
+/// The panel currently maximized to fill the whole editor, hiding the rest of the dock tree.
+/// Transient: not part of the persisted [`WorkspaceLayout`].
+#[derive(Resource, Default)]
+pub(crate) struct MaximizedPanel(pub(crate) Option<DockPanel>);
+
 #[derive(SystemParam)]
 pub(crate) struct DockDropQueries<'w, 's> {
     pub(crate) zones: Query<'w, 's, &'static DockDropZone>,
@@ -621,7 +627,7 @@ impl DockNode {
         }
     }
 
-    fn contains(&self, panel: DockPanel) -> bool {
+    pub(crate) fn contains(&self, panel: DockPanel) -> bool {
         match self {
             Self::Split { first, second, .. } => first.contains(panel) || second.contains(panel),
             Self::Tabs { stack, .. } => stack.tabs.contains(&panel),
@@ -682,7 +688,8 @@ impl Default for WorkspaceLayout {
             &[DockPanel::Timeline, DockPanel::MaterialGraph],
             DockPanel::MaterialGraph,
         );
-        let left_center = DockNode::split(9, DockAxis::Horizontal, 0.26, viewport, center);
+        // Roughly square viewport on a typical 16:9 window; the graph takes the rest.
+        let left_center = DockNode::split(9, DockAxis::Horizontal, 0.42, viewport, center);
         let properties = DockNode::tabs(3, &[DockPanel::Properties], DockPanel::Properties);
         let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
         let bottom = DockNode::tabs(

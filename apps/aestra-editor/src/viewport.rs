@@ -3,6 +3,7 @@
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     ProjectEffectCatalog,
+    docking::DockPanel,
     feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     localization::Localizer,
@@ -165,6 +166,8 @@ pub(crate) enum ViewportAction {
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
     SetPreviewDisplayMode(PreviewDisplayMode),
+    /// Enlarge the viewport to fill the whole editor, or restore it to its docked place.
+    ToggleMaximize,
 }
 
 fn queue_viewport_action_activation(
@@ -221,6 +224,7 @@ fn execute_viewport_action(
     mut preview_camera: ResMut<PreviewCameraController>,
     mut preview_display: ResMut<PreviewDisplayState>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
+    mut maximized: ResMut<crate::docking::MaximizedPanel>,
 ) {
     match *action {
         ViewportAction::ToggleGrid => {
@@ -239,6 +243,14 @@ fn execute_viewport_action(
             transform_gizmo_settings.mode = mode;
         }
         ViewportAction::SetPreviewDisplayMode(mode) => preview_display.set_mode(mode),
+        ViewportAction::ToggleMaximize => {
+            maximized.0 = if maximized.0 == Some(DockPanel::Viewport) {
+                None
+            } else {
+                Some(DockPanel::Viewport)
+            };
+            session.ui_revision += 1;
+        }
     }
 }
 
@@ -256,6 +268,11 @@ fn viewport_keyboard_input(
         let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
         if keys.just_pressed(KeyCode::KeyG) && !control {
             commands.trigger(ViewportAction::ToggleGrid);
+        }
+        // Enlarge/reduce works from anywhere, not just with the cursor over the canvas: once
+        // maximized the canvas fills the editor, and the shortcut is how you get back.
+        if keys.just_pressed(KeyCode::Backquote) && !control {
+            commands.trigger(ViewportAction::ToggleMaximize);
         }
         if !canvases.iter().any(RelativeCursorPosition::cursor_over) {
             continue;
@@ -2122,6 +2139,7 @@ fn spawn_preview_effect_player(
 
 pub(crate) fn spawn_preview(
     parent: &mut ChildSpawnerCommands,
+    maximized: bool,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -2305,6 +2323,33 @@ pub(crate) fn spawn_preview(
                                 localizer,
                                 asset_server,
                             );
+                            tools.spawn((
+                                Node {
+                                    width: Val::Px(1.0),
+                                    height: Val::Px(14.0),
+                                    margin: UiRect::horizontal(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::BORDER_BRIGHT),
+                                Pickable::IGNORE,
+                            ));
+                            spawn_viewport_tool_button(
+                                tools,
+                                ViewportAction::ToggleMaximize,
+                                if maximized {
+                                    "viewport-reduce"
+                                } else {
+                                    "viewport-enlarge"
+                                },
+                                if maximized {
+                                    "viewport-reduce-description"
+                                } else {
+                                    "viewport-enlarge-description"
+                                },
+                                ViewportToolIcon::Fullscreen { maximized },
+                                localizer,
+                                asset_server,
+                            );
                         });
                 });
             column.spawn((
@@ -2359,6 +2404,7 @@ enum ViewportToolIcon {
     Frame,
     Wireframe,
     Rendered,
+    Fullscreen { maximized: bool },
 }
 
 fn spawn_transform_gizmo_tool_button(
@@ -2448,6 +2494,14 @@ fn spawn_viewport_tool_button(
                 };
                 spawn_viewport_svg_icon(button, asset_server, path)
                     .insert(PreviewDisplayModeIcon(mode));
+            }
+            ViewportToolIcon::Fullscreen { maximized } => {
+                let path = if maximized {
+                    "icons/fullscreen-exit-alt.svg"
+                } else {
+                    "icons/fullscreen-alt.svg"
+                };
+                spawn_viewport_svg_icon(button, asset_server, path);
             }
         });
 }
@@ -3056,6 +3110,7 @@ mod tests {
             .init_resource::<PreviewCameraController>()
             .init_resource::<PreviewDisplayState>()
             .init_resource::<TransformGizmoSettings>()
+            .init_resource::<crate::docking::MaximizedPanel>()
             .add_observer(execute_viewport_action);
         (app, temporary)
     }
@@ -3094,6 +3149,23 @@ mod tests {
             app.world().resource::<PreviewDisplayState>().mode,
             PreviewDisplayMode::Wireframe
         );
+    }
+
+    #[test]
+    fn toggle_maximize_flips_the_maximized_viewport_panel() {
+        use crate::docking::{DockPanel, MaximizedPanel};
+        let (mut app, _temporary) = viewport_action_app();
+
+        app.world_mut().trigger(ViewportAction::ToggleMaximize);
+        app.update();
+        assert_eq!(
+            app.world().resource::<MaximizedPanel>().0,
+            Some(DockPanel::Viewport)
+        );
+
+        app.world_mut().trigger(ViewportAction::ToggleMaximize);
+        app.update();
+        assert_eq!(app.world().resource::<MaximizedPanel>().0, None);
     }
 
     #[test]
