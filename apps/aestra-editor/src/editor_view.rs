@@ -10,6 +10,8 @@
 
 use crate::docking::EditorViewId;
 use crate::document::{DocumentId, DocumentKey, DocumentManager};
+use crate::material_document::MaterialEditingTarget;
+use crate::session::EditorSession;
 use bevy::prelude::*;
 use std::collections::BTreeMap;
 
@@ -137,6 +139,70 @@ pub(crate) fn open_document_view(
     view
 }
 
+/// Maps a material editing target to the document key and default view kind it corresponds to, or
+/// `None` for the effect's inline material (which is not a shared-asset document).
+fn document_key_for_target(
+    target: &MaterialEditingTarget,
+) -> Option<(DocumentKey, EditorViewKind)> {
+    match target {
+        MaterialEditingTarget::Program { id, .. } => Some((
+            DocumentKey::MaterialProgram(*id),
+            EditorViewKind::MaterialGraph,
+        )),
+        MaterialEditingTarget::Function { id, .. } => Some((
+            DocumentKey::MaterialFunction(*id),
+            EditorViewKind::MaterialFunctionGraph,
+        )),
+        MaterialEditingTarget::EffectInstance => None,
+    }
+}
+
+/// Reconciles the document/view model and active context with the material target, whatever path
+/// changed it (asset browser, menus, recovery, undo, return-to-effect). While `material_target`
+/// remains authoritative this keeps the view model it feeds correct from every entry point; per-view
+/// rendering (M4c) and target removal (M12) build on the model maintained here.
+pub(crate) fn reconcile_active_from_target(
+    target: &MaterialEditingTarget,
+    documents: &mut DocumentManager,
+    views: &mut EditorViewManager,
+    active: &mut ActiveEditorContext,
+) {
+    match document_key_for_target(target) {
+        Some((key, kind)) => {
+            let already = active
+                .active_document
+                .and_then(|id| documents.document(id))
+                .map(|document| document.key)
+                == Some(key);
+            if !already {
+                open_document_view(documents, views, active, key, kind);
+            }
+        }
+        None => {
+            active.active_view = None;
+            active.active_document = None;
+        }
+    }
+}
+
+/// System wrapper: reconciles the view model from the session material target on change.
+pub(crate) fn sync_active_document_from_target(
+    session: Res<EditorSession>,
+    mut documents: ResMut<DocumentManager>,
+    mut views: ResMut<EditorViewManager>,
+    mut active: ResMut<ActiveEditorContext>,
+) {
+    if !session.is_changed() {
+        return;
+    }
+    reconcile_active_from_target(
+        &session.material_target,
+        &mut documents,
+        &mut views,
+        &mut active,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +291,62 @@ mod tests {
         assert_eq!(documents.len(), 2);
         assert_eq!(views.len(), 2);
         assert_eq!(active.active_view, Some(view_a));
+    }
+
+    #[test]
+    fn reconcile_tracks_the_active_document_across_target_changes() {
+        use aestra_core::MaterialProgramId;
+        use std::path::PathBuf;
+
+        fn program_target(seed: u128) -> MaterialEditingTarget {
+            MaterialEditingTarget::Program {
+                root: PathBuf::from("project"),
+                id: MaterialProgramId::from_u128(seed),
+            }
+        }
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+
+        reconcile_active_from_target(
+            &program_target(0xa),
+            &mut documents,
+            &mut views,
+            &mut active,
+        );
+        let doc_a = active.active_document.unwrap();
+        reconcile_active_from_target(
+            &program_target(0xb),
+            &mut documents,
+            &mut views,
+            &mut active,
+        );
+        let doc_b = active.active_document.unwrap();
+        assert_ne!(doc_a, doc_b);
+        assert_eq!(documents.len(), 2);
+        assert_eq!(views.len(), 2);
+
+        // Switching back to A focuses the existing document/view rather than creating a new one.
+        reconcile_active_from_target(
+            &program_target(0xa),
+            &mut documents,
+            &mut views,
+            &mut active,
+        );
+        assert_eq!(active.active_document, Some(doc_a));
+        assert_eq!(documents.len(), 2);
+        assert_eq!(views.len(), 2);
+
+        // Returning to the effect's inline material clears the active shared-document context.
+        reconcile_active_from_target(
+            &MaterialEditingTarget::EffectInstance,
+            &mut documents,
+            &mut views,
+            &mut active,
+        );
+        assert_eq!(active.active_document, None);
+        assert_eq!(active.active_view, None);
     }
 
     #[test]

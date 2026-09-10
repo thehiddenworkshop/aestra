@@ -252,6 +252,7 @@ fn main() {
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
         .add_plugins(ViewportPlugin)
+        .add_systems(Update, editor_view::sync_active_document_from_target)
         .add_systems(Startup, set_editor_window_icon)
         .configure_sets(
             Startup,
