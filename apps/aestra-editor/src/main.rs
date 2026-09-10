@@ -9,6 +9,7 @@ mod curves;
 mod diagnostics;
 mod dock_ui;
 mod docking;
+mod document;
 mod feathers;
 mod history;
 mod input;
@@ -243,6 +244,7 @@ fn main() {
         .add_plugins(EditorPersistencePlugin)
         .add_plugins(AestraRenderPlugin)
         .add_plugins(DockingPlugin)
+        .init_resource::<document::DocumentManager>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
