@@ -3974,11 +3974,30 @@ fn selected_projection(
     ),
     String,
 > {
-    if session.standalone_function().is_some() {
+    selected_projection_for(&session.material_target, session, catalog)
+}
+
+/// Projects the graph for an explicit editing target, independent of the session's current target.
+/// This is the per-view rendering primitive (M4c): an editor tab projects its own document's target
+/// through this, while `selected_projection` delegates with the session target.
+fn selected_projection_for(
+    target: &crate::material_document::MaterialEditingTarget,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+) -> Result<
+    (
+        String,
+        MaterialGraphProjection,
+        Option<MaterialId>,
+        MaterialProgram,
+    ),
+    String,
+> {
+    if target.function().is_some() {
         return Err("Function inspection is active".into());
     }
-    if session.standalone_material().is_some() {
-        let document = session.graph_authoring_document(catalog)?;
+    if target.program().is_some() {
+        let document = session.graph_authoring_document_for(target, catalog)?;
         let program = &document.programs[0];
         let functions = document.material_function_library();
         let compiler = MaterialCompiler;
@@ -4022,7 +4041,7 @@ fn selected_projection(
         .iter()
         .find(|instance| instance.id == selected_renderer.material)
         .ok_or_else(|| "selected renderer does not use a semantic material".to_owned())?;
-    let programs = session.graph_material_programs(catalog)?;
+    let programs = session.graph_material_programs_for(target, catalog)?;
     let program = programs
         .iter()
         .find(|program| program.id == instance.program.id())

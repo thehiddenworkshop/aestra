@@ -19,20 +19,31 @@ pub(crate) enum MaterialEditingTarget {
     },
 }
 
-impl EditorSession {
-    pub(crate) fn standalone_material(&self) -> Option<MaterialProgramId> {
-        match &self.material_target {
-            MaterialEditingTarget::Function { .. } => None,
-            MaterialEditingTarget::EffectInstance => None,
-            MaterialEditingTarget::Program { id, .. } => Some(*id),
+impl MaterialEditingTarget {
+    /// The shared material program this target edits, if it is a program target.
+    pub(crate) fn program(&self) -> Option<MaterialProgramId> {
+        match self {
+            Self::Program { id, .. } => Some(*id),
+            _ => None,
         }
     }
 
-    pub(crate) fn standalone_function(&self) -> Option<aestra_core::MaterialFunctionId> {
-        match self.material_target {
-            MaterialEditingTarget::Function { id, .. } => Some(id),
+    /// The material function this target edits, if it is a function target.
+    pub(crate) fn function(&self) -> Option<aestra_core::MaterialFunctionId> {
+        match self {
+            Self::Function { id, .. } => Some(*id),
             _ => None,
         }
+    }
+}
+
+impl EditorSession {
+    pub(crate) fn standalone_material(&self) -> Option<MaterialProgramId> {
+        self.material_target.program()
+    }
+
+    pub(crate) fn standalone_function(&self) -> Option<aestra_core::MaterialFunctionId> {
+        self.material_target.function()
     }
 
     pub(crate) fn open_material_function(
@@ -60,7 +71,18 @@ impl EditorSession {
         &self,
         catalog: &ProjectEffectCatalog,
     ) -> Result<aestra_core::material::MaterialFunction, String> {
-        let MaterialEditingTarget::Function { root, id } = &self.material_target else {
+        self.graph_function_for(&self.material_target, catalog)
+    }
+
+    /// Resolves the function for an explicit target, independent of the session's current target.
+    /// Per-view rendering (M4c) passes the view's target here; `graph_function` delegates with the
+    /// session target.
+    pub(crate) fn graph_function_for(
+        &self,
+        target: &MaterialEditingTarget,
+        catalog: &ProjectEffectCatalog,
+    ) -> Result<aestra_core::material::MaterialFunction, String> {
+        let MaterialEditingTarget::Function { root, id } = target else {
             return Err("No function selected".into());
         };
         if root != catalog.root() {
@@ -110,7 +132,15 @@ impl EditorSession {
         &self,
         catalog: &ProjectEffectCatalog,
     ) -> Result<Vec<MaterialProgram>, String> {
-        match &self.material_target {
+        self.graph_material_programs_for(&self.material_target, catalog)
+    }
+
+    pub(crate) fn graph_material_programs_for(
+        &self,
+        target: &MaterialEditingTarget,
+        catalog: &ProjectEffectCatalog,
+    ) -> Result<Vec<MaterialProgram>, String> {
+        match target {
             MaterialEditingTarget::Function { .. } => Ok(Vec::new()),
             MaterialEditingTarget::EffectInstance => {
                 catalog.material_programs_for_effect(&self.effect)
@@ -130,16 +160,26 @@ impl EditorSession {
         &self,
         catalog: &ProjectEffectCatalog,
     ) -> Result<MaterialAuthoringDocument, String> {
-        if self.standalone_function().is_some() {
-            self.graph_function(catalog)?;
+        self.graph_authoring_document_for(&self.material_target, catalog)
+    }
+
+    /// Builds the authoring document for an explicit target, independent of the session's current
+    /// target. Per-view rendering (M4c) uses this; `graph_authoring_document` delegates with the
+    /// session target.
+    pub(crate) fn graph_authoring_document_for(
+        &self,
+        target: &MaterialEditingTarget,
+        catalog: &ProjectEffectCatalog,
+    ) -> Result<MaterialAuthoringDocument, String> {
+        if target.function().is_some() {
+            self.graph_function_for(target, catalog)?;
         }
-        let programs = self.graph_material_programs(catalog)?;
-        let document =
-            if self.standalone_material().is_some() || self.standalone_function().is_some() {
-                MaterialAuthoringDocument::standalone(programs)
-            } else {
-                MaterialAuthoringDocument::new(self.effect.clone(), programs)
-            };
+        let programs = self.graph_material_programs_for(target, catalog)?;
+        let document = if target.program().is_some() || target.function().is_some() {
+            MaterialAuthoringDocument::standalone(programs)
+        } else {
+            MaterialAuthoringDocument::new(self.effect.clone(), programs)
+        };
         Ok(document.with_material_functions(catalog.material_functions()?))
     }
 }
