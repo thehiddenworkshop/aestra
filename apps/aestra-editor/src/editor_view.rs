@@ -139,6 +139,29 @@ pub(crate) fn open_document_view(
     view
 }
 
+/// Resolves the editing target an editor view renders, by following view → document → asset key.
+/// Returns `None` for a stale view (e.g. a persisted editor tab whose view no longer exists), so
+/// the dock can drop it gracefully. `root` is the current project root the target is scoped to.
+pub(crate) fn view_editing_target(
+    view: EditorViewId,
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+    root: &std::path::Path,
+) -> Option<MaterialEditingTarget> {
+    let document_id = views.document_of(view)?;
+    let key = documents.document(document_id)?.key;
+    Some(match key {
+        DocumentKey::MaterialProgram(id) => MaterialEditingTarget::Program {
+            root: root.to_owned(),
+            id,
+        },
+        DocumentKey::MaterialFunction(id) => MaterialEditingTarget::Function {
+            root: root.to_owned(),
+            id,
+        },
+    })
+}
+
 /// Maps a material editing target to the document key and default view kind it corresponds to, or
 /// `None` for the effect's inline material (which is not a shared-asset document).
 fn document_key_for_target(
@@ -347,6 +370,34 @@ mod tests {
         );
         assert_eq!(active.active_document, None);
         assert_eq!(active.active_view, None);
+    }
+
+    #[test]
+    fn view_editing_target_resolves_program_views_and_ignores_stale_ones() {
+        use crate::document::DocumentKey;
+        use aestra_core::MaterialProgramId;
+        use std::path::Path;
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+        let key = DocumentKey::MaterialProgram(MaterialProgramId::from_u128(0x7));
+        let view = open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            key,
+            EditorViewKind::MaterialGraph,
+        );
+
+        let target = view_editing_target(view, &views, &documents, Path::new("project")).unwrap();
+        assert_eq!(target.program(), Some(MaterialProgramId::from_u128(0x7)));
+
+        // A view id with no backing view resolves to nothing, so the dock can drop it.
+        assert!(
+            view_editing_target(EditorViewId(999), &views, &documents, Path::new("project"))
+                .is_none()
+        );
     }
 
     #[test]

@@ -3387,8 +3387,10 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_material_graph_workspace(
     parent: &mut ChildSpawnerCommands,
+    override_target: Option<&crate::material_document::MaterialEditingTarget>,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     palette: &MaterialGraphPaletteState,
@@ -3398,7 +3400,10 @@ pub(crate) fn spawn_material_graph_workspace(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
-    if session.standalone_function().is_some() {
+    // `override_target` renders a specific editor view's document (M4c); the docked tool panel
+    // passes `None` and follows the session's material target.
+    let target = override_target.unwrap_or(&session.material_target);
+    if target.function().is_some() {
         parent
             .spawn(Node {
                 width: Val::Percent(100.0),
@@ -3409,7 +3414,7 @@ pub(crate) fn spawn_material_graph_workspace(
             })
             .with_children(|panel| {
                 if session
-                    .graph_function(catalog)
+                    .graph_function_for(target, catalog)
                     .is_ok_and(|function| function.custom_wesl.is_none())
                 {
                     crate::material_function_editor::spawn_graph(
@@ -3484,7 +3489,7 @@ pub(crate) fn spawn_material_graph_workspace(
             ..default()
         })
         .with_children(|panel| {
-            let projection = selected_projection(session, catalog);
+            let projection = selected_projection_for(target, session, catalog);
             spawn_header(
                 panel,
                 projection
@@ -3492,7 +3497,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     .ok()
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
                 previews,
-                session.standalone_material().is_some(),
+                target.program().is_some(),
                 localizer,
                 asset_server,
             );

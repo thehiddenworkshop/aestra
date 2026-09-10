@@ -4,7 +4,7 @@ use crate::docking::{
     DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
     DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
-    DockTabButton, DockTreeHost, DockingAction, MaximizedPanel, NativeFloatingCamera,
+    DockTabButton, DockTreeHost, DockingAction, EditorViewId, MaximizedPanel, NativeFloatingCamera,
     NativeFloatingUi, NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi,
     ToolPanel, WorkspaceLayout,
 };
@@ -40,6 +40,8 @@ struct PanelSources<'a> {
     settings_panel: &'a SettingsPanelState,
     settings_persistence: &'a SettingsPersistence,
     localizer: &'a Localizer,
+    documents: &'a crate::document::DocumentManager,
+    views: &'a crate::editor_view::EditorViewManager,
     viewport_maximized: bool,
 }
 
@@ -67,6 +69,8 @@ pub(crate) struct DockUiResources<'w> {
     workspace: Res<'w, CurvesState>,
     timeline: Res<'w, TimelineState>,
     navigation: Option<Res<'w, SourceNavigationState>>,
+    documents: Res<'w, crate::document::DocumentManager>,
+    views: Res<'w, crate::editor_view::EditorViewManager>,
     maximized: Res<'w, MaximizedPanel>,
 }
 
@@ -94,6 +98,8 @@ impl<'w> DockUiResources<'w> {
             settings_panel: &self.settings_panel,
             settings_persistence: &self.settings_persistence,
             localizer: &self.localizer,
+            documents: &self.documents,
+            views: &self.views,
             viewport_maximized: self.maximized.0 == Some(ToolPanel::Viewport),
         }
     }
@@ -427,8 +433,10 @@ fn spawn_dock_stack(
             let material_graph_unsaved =
                 crate::material_graph::material_graph_unsaved(sources.session, sources.catalog);
             spawn_dock_tab_bar(pane, node, stack, material_graph_unsaved, sources.localizer);
-            if let Some(panel) = active_tool {
-                spawn_panel_content(pane, panel, workspace, sources);
+            match stack.active {
+                Some(DockTab::Tool(panel)) => spawn_panel_content(pane, panel, workspace, sources),
+                Some(DockTab::Editor(view)) => spawn_editor_view_content(pane, view, sources),
+                None => {}
             }
             spawn_dock_drop_overlay(pane, node);
         });
@@ -449,6 +457,36 @@ pub(crate) fn dock_pane_background(active: Option<ToolPanel>) -> Color {
     } else {
         theme::PANEL_DARK
     }
+}
+
+/// Renders a dynamic editor-view pane: resolves the view's document target and draws its material
+/// graph. A stale view (its backing view/document is gone) renders nothing so the dock degrades
+/// gracefully until the layout is normalized.
+fn spawn_editor_view_content(
+    parent: &mut ChildSpawnerCommands,
+    view: EditorViewId,
+    sources: PanelSources<'_>,
+) {
+    let Some(target) = crate::editor_view::view_editing_target(
+        view,
+        sources.views,
+        sources.documents,
+        sources.catalog.root(),
+    ) else {
+        return;
+    };
+    spawn_material_graph_workspace(
+        parent,
+        Some(&target),
+        sources.session,
+        sources.catalog,
+        sources.material_graph_palette,
+        sources.material_graph_selection,
+        sources.material_graph_previews,
+        sources.graph_viewport_memory,
+        sources.localizer,
+        sources.asset_server,
+    );
 }
 
 fn spawn_panel_content(
@@ -522,6 +560,7 @@ fn spawn_panel_content(
         }
         ToolPanel::MaterialGraph => spawn_material_graph_workspace(
             parent,
+            None,
             sources.session,
             sources.catalog,
             sources.material_graph_palette,
