@@ -1802,6 +1802,66 @@ fn material_activation_opens_shared_source_without_retargeting_the_effect() {
 }
 
 #[test]
+fn opening_two_materials_docks_two_editor_tabs_side_by_side() {
+    use aestra_core::material::MaterialProgram;
+    let root = tempfile::tempdir().unwrap();
+    let first = MaterialProgram::additive_sprite("First").normalized();
+    first
+        .save_ron(root.path().join("first.aestra.material.ron"))
+        .unwrap();
+    let second = MaterialProgram::additive_sprite("Second").normalized();
+    second
+        .save_ron(root.path().join("second.aestra.material.ron"))
+        .unwrap();
+    let mut app = browser_app(root.path());
+    let mut layout = WorkspaceLayout::default();
+    layout.show(ToolPanel::MaterialGraph); // Give the editor tabs a place to dock beside.
+    app.insert_resource(layout);
+
+    let sources = rows(&mut app);
+    let first_source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("first.aestra.material.ron"))
+        .unwrap()
+        .id;
+    let second_source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("second.aestra.material.ron"))
+        .unwrap()
+        .id;
+
+    click(&mut app, sources[&first_source], 1);
+    click(&mut app, sources[&first_source], 2);
+    app.update();
+    let after_first = app.world().resource::<WorkspaceLayout>().editor_views();
+    assert_eq!(
+        after_first.len(),
+        1,
+        "opening a material should dock exactly one editor tab"
+    );
+
+    click(&mut app, sources[&second_source], 1);
+    click(&mut app, sources[&second_source], 2);
+    app.update();
+    let after_second = app.world().resource::<WorkspaceLayout>().editor_views();
+    assert_eq!(
+        after_second.len(),
+        2,
+        "opening a second material should dock a second tab, not replace the first"
+    );
+    assert_eq!(
+        after_second[0], after_first[0],
+        "the first material's editor tab must stay docked when the second opens"
+    );
+}
+
+#[test]
 fn effect_activation_uses_guarded_document_routing_once_and_rejects_duplicates() {
     let root = tempfile::tempdir().unwrap();
     let effect = test_support::session_with_timing_slack().effect;

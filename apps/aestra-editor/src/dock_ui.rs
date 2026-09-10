@@ -564,9 +564,12 @@ fn spawn_panel_content(
         ToolPanel::CompilerInspector => {
             spawn_compiler_inspector_workspace(parent, sources.session, sources.localizer)
         }
+        // The material-graph tool panel is the effect's own inline material; shared programs and
+        // functions open as their own editor tabs (DockTab::Editor), so it renders the effect
+        // instance explicitly rather than following the focused shared-document target.
         ToolPanel::MaterialGraph => spawn_material_graph_workspace(
             parent,
-            None,
+            Some(&crate::material_document::MaterialEditingTarget::EffectInstance),
             sources.session,
             sources.catalog,
             sources.material_graph_palette,
@@ -1194,22 +1197,32 @@ fn select_dock_tab(
     // Focusing an editor view makes it the active material target so rendering, history, and
     // contextual tools follow the focused document (the singleton target still drives the tool
     // panels; editor tabs steer it here).
-    if let DockTab::Editor(view) = tab.0
-        && let Some(document) = views
-            .document_of(view)
-            .and_then(|id| documents.document(id))
-    {
-        let result = match document.key {
-            crate::document::DocumentKey::MaterialProgram(id) => {
-                session.open_material_program(&catalog, id)
+    match tab.0 {
+        DockTab::Editor(view) => {
+            if let Some(document) = views
+                .document_of(view)
+                .and_then(|id| documents.document(id))
+            {
+                let result = match document.key {
+                    crate::document::DocumentKey::MaterialProgram(id) => {
+                        session.open_material_program(&catalog, id)
+                    }
+                    crate::document::DocumentKey::MaterialFunction(id) => {
+                        session.open_material_function(&catalog, id)
+                    }
+                };
+                if result.is_ok() {
+                    changed = true;
+                }
             }
-            crate::document::DocumentKey::MaterialFunction(id) => {
-                session.open_material_function(&catalog, id)
-            }
-        };
-        if result.is_ok() {
+        }
+        // Focusing the effect-material panel returns the target to the effect instance so its
+        // history and rendering are active again.
+        DockTab::Tool(ToolPanel::MaterialGraph) => {
+            session.return_to_effect_material();
             changed = true;
         }
+        DockTab::Tool(_) => {}
     }
     if changed {
         session.ui_revision += 1;

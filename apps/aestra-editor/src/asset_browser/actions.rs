@@ -416,7 +416,7 @@ pub(super) fn open_function(
     }
     match session.open_material_function(&catalog, event.0) {
         Ok(()) => {
-            crate::editor_view::open_document_view(
+            let view = crate::editor_view::open_document_view(
                 &mut documents,
                 &mut views,
                 &mut active,
@@ -431,7 +431,7 @@ pub(super) fn open_function(
             } else {
                 "Graph function opened; edit its signature in Properties".into()
             };
-            reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
+            crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
         }
         Err(error) => {
             session.status = format!("Cannot open function: {error}");
@@ -463,7 +463,7 @@ pub(super) fn open_material(
     if let Err(error) = session.open_material_program(&catalog, event.0) {
         session.status = format!("Cannot open material: {error}");
     } else {
-        crate::editor_view::open_document_view(
+        let view = crate::editor_view::open_document_view(
             &mut documents,
             &mut views,
             &mut active,
@@ -471,7 +471,7 @@ pub(super) fn open_material(
             crate::editor_view::EditorViewKind::MaterialGraph,
         );
         session.status = localizer.text("browser-material-opened");
-        reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
+        crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
     }
 }
 

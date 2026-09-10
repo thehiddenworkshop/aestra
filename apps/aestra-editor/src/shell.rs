@@ -943,6 +943,22 @@ pub(crate) fn reveal_dock_panel(
     }
 }
 
+/// Docks (or focuses) a dynamic editor-view tab, so opening an asset places its own tab beside any
+/// already-open editors instead of replacing them.
+pub(crate) fn reveal_editor_tab(
+    layout: &mut WorkspaceLayout,
+    session: &mut EditorSession,
+    view: crate::docking::EditorViewId,
+) {
+    if !layout.show_editor(view) {
+        return;
+    }
+    session.ui_revision += 1;
+    if let Err(error) = layout.save() {
+        warn!("failed to save editor workspace layout: {error}");
+    }
+}
+
 fn activate_staged_editor_ui(world: &mut World) {
     let revision = world.resource::<EditorSession>().ui_revision;
     let contents = {

@@ -962,6 +962,46 @@ impl WorkspaceLayout {
         self.dock(panel, target, drop)
     }
 
+    /// Collects the editor views docked anywhere in the tree, in traversal order.
+    #[allow(dead_code)] // Also used by workspace persistence/close in later milestones.
+    pub(crate) fn editor_views(&self) -> Vec<EditorViewId> {
+        fn collect(node: &DockNode, out: &mut Vec<EditorViewId>) {
+            match node {
+                DockNode::Split { first, second, .. } => {
+                    collect(first, out);
+                    collect(second, out);
+                }
+                DockNode::Tabs { stack, .. } => {
+                    for tab in &stack.tabs {
+                        if let DockTab::Editor(view) = tab {
+                            out.push(*view);
+                        }
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        collect(&self.root, &mut out);
+        out
+    }
+
+    /// Shows an editor-view tab: activates it if already docked, otherwise docks it beside the
+    /// material-graph area (falling back to the viewport). Returns whether the layout changed.
+    pub(crate) fn show_editor(&mut self, view: EditorViewId) -> bool {
+        let tab = DockTab::Editor(view);
+        if self.root.contains(tab) {
+            return self.root.activate(tab);
+        }
+        let target = self
+            .root
+            .node_containing(ToolPanel::MaterialGraph)
+            .or_else(|| self.root.node_containing(ToolPanel::Viewport));
+        let Some(target) = target else {
+            return false;
+        };
+        self.dock(tab, target, DockDrop::Center)
+    }
+
     pub(crate) fn float_panel(
         &mut self,
         panel: ToolPanel,
