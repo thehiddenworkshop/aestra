@@ -252,8 +252,15 @@ fn main() {
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
         .add_plugins(ViewportPlugin)
-        .add_systems(Update, editor_view::sync_active_document_from_target)
+        .add_systems(
+            Update,
+            (
+                editor_view::sync_active_document_from_target,
+                editor_view::persist_editor_workspace,
+            ),
+        )
         .add_systems(Startup, set_editor_window_icon)
+        .add_systems(Startup, editor_view::restore_editor_workspace)
         .configure_sets(
             Startup,
             (

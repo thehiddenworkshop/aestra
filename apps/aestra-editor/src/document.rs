@@ -24,7 +24,9 @@ pub(crate) struct DocumentRevision(pub(crate) u64);
 
 /// Identifies the project asset a document authors. One asset corresponds to one open document by
 /// default, so opening the same asset twice never creates two independent drafts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub(crate) enum DocumentKey {
     MaterialProgram(MaterialProgramId),
     MaterialFunction(MaterialFunctionId),

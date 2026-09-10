@@ -985,6 +985,28 @@ impl WorkspaceLayout {
         out
     }
 
+    /// Removes every docked editor-view tab whose id is not in `keep`, then normalizes. Used on
+    /// restore to drop tabs whose backing view could not be reconstructed (e.g. its manifest entry
+    /// was lost). Returns whether the layout changed.
+    pub(crate) fn prune_editor_views(
+        &mut self,
+        keep: &std::collections::HashSet<EditorViewId>,
+    ) -> bool {
+        let stale: Vec<EditorViewId> = self
+            .editor_views()
+            .into_iter()
+            .filter(|view| !keep.contains(view))
+            .collect();
+        if stale.is_empty() {
+            return false;
+        }
+        for view in stale {
+            self.root.remove_tab(DockTab::Editor(view));
+        }
+        self.root.normalize();
+        true
+    }
+
     /// Shows an editor-view tab: activates it if already docked, otherwise docks it beside the
     /// material-graph area (falling back to the viewport). Returns whether the layout changed.
     pub(crate) fn show_editor(&mut self, view: EditorViewId) -> bool {
@@ -1193,18 +1215,24 @@ fn max_node_id(node: &DockNode) -> u64 {
 }
 
 fn workspace_layout_path() -> PathBuf {
+    workspace_config_path("editor-layout.ron")
+}
+
+/// Resolves a file inside the editor's per-user config directory, shared by the workspace layout and
+/// its companion editor-document manifest so both persist to the same place.
+pub(crate) fn workspace_config_path(file: &str) -> PathBuf {
     if let Some(path) = std::env::var_os("AESTRA_CONFIG_DIR") {
-        return PathBuf::from(path).join("editor-layout.ron");
+        return PathBuf::from(path).join(file);
     }
     #[cfg(target_os = "windows")]
     if let Some(path) = std::env::var_os("APPDATA") {
-        return PathBuf::from(path).join("Aestra").join("editor-layout.ron");
+        return PathBuf::from(path).join("Aestra").join(file);
     }
     #[cfg(not(target_os = "windows"))]
     if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
-        return PathBuf::from(path).join("aestra").join("editor-layout.ron");
+        return PathBuf::from(path).join("aestra").join(file);
     }
-    PathBuf::from(".aestra").join("editor-layout.ron")
+    PathBuf::from(".aestra").join(file)
 }
 
 #[cfg(test)]
