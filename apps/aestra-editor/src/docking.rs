@@ -73,7 +73,7 @@ impl Plugin for DockingPlugin {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DockingAction {
-    Select(ToolPanel),
+    Select(DockTab),
     Close(ToolPanel),
     Show(ToolPanel),
     Toggle(ToolPanel),
@@ -116,7 +116,7 @@ fn handle_docking_actions(
             Entity,
             &Interaction,
             &DockingAction,
-            Option<&DockTab>,
+            Option<&DockTabButton>,
             Option<&DockCloseButton>,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
@@ -313,7 +313,7 @@ fn dock_tree_host_node() -> Node {
 }
 
 #[derive(Component)]
-pub(crate) struct DockTab(pub(crate) ToolPanel);
+pub(crate) struct DockTabButton(pub(crate) DockTab);
 
 #[derive(Component)]
 pub(crate) struct DockTabAppendZone(pub(crate) DockNodeId);
@@ -364,7 +364,7 @@ pub(crate) struct DockSplitter {
 pub(crate) struct DockFirstPane(pub(crate) DockNodeId);
 
 #[derive(Resource, Default)]
-pub(crate) struct DockDragState(pub(crate) Option<ToolPanel>);
+pub(crate) struct DockDragState(pub(crate) Option<DockTab>);
 
 #[derive(Resource, Default)]
 pub(crate) struct ResizeState(pub(crate) Option<DockSplitter>);
@@ -377,7 +377,7 @@ pub(crate) struct MaximizedPanel(pub(crate) Option<ToolPanel>);
 #[derive(SystemParam)]
 pub(crate) struct DockDropQueries<'w, 's> {
     pub(crate) zones: Query<'w, 's, &'static DockDropZone>,
-    pub(crate) tabs: Query<'w, 's, &'static DockTab>,
+    pub(crate) tabs: Query<'w, 's, &'static DockTabButton>,
     pub(crate) parents: Query<'w, 's, &'static ChildOf>,
 }
 
@@ -390,7 +390,7 @@ pub(crate) struct DockResizeQueries<'w, 's> {
     pub(crate) colors: Query<'w, 's, &'static mut BackgroundColor, With<DockSplitter>>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum ToolPanel {
     #[default]
     Viewport,
@@ -465,11 +465,40 @@ pub(crate) enum DockDrop {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct DockNodeId(pub(crate) u64);
 
+/// Identity of one open editor-view instance (a dockable asset editor). Distinct from the editor's
+/// kind and from its document, so several editors of the same kind can be docked at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub(crate) struct EditorViewId(pub(crate) u64);
+
+/// What a dock tab hosts: a singleton [`ToolPanel`], or a dynamic asset-editor view. Tool panels are
+/// deduplicated; editor views are not, so multiple asset editors can coexist as independent tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) enum DockTab {
+    Tool(ToolPanel),
+    Editor(EditorViewId),
+}
+
+impl From<ToolPanel> for DockTab {
+    fn from(panel: ToolPanel) -> Self {
+        Self::Tool(panel)
+    }
+}
+
+impl DockTab {
+    /// The tool panel this tab hosts, or `None` for a dynamic editor view.
+    pub(crate) fn tool(self) -> Option<ToolPanel> {
+        match self {
+            Self::Tool(panel) => Some(panel),
+            Self::Editor(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct DockStack {
-    pub(crate) tabs: Vec<ToolPanel>,
-    pub(crate) active: Option<ToolPanel>,
+    pub(crate) tabs: Vec<DockTab>,
+    pub(crate) active: Option<DockTab>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -491,7 +520,7 @@ impl Default for FloatingPanel {
 }
 
 impl DockStack {
-    pub(crate) fn new(tabs: impl IntoIterator<Item = ToolPanel>, active: ToolPanel) -> Self {
+    pub(crate) fn new(tabs: impl IntoIterator<Item = DockTab>, active: DockTab) -> Self {
         let mut stack = Self {
             tabs: tabs.into_iter().collect(),
             active: Some(active),
@@ -502,11 +531,11 @@ impl DockStack {
 
     fn normalize(&mut self) {
         let mut unique = Vec::with_capacity(self.tabs.len());
-        self.tabs.retain(|panel| {
-            if unique.contains(panel) {
+        self.tabs.retain(|tab| {
+            if unique.contains(tab) {
                 false
             } else {
-                unique.push(*panel);
+                unique.push(*tab);
                 true
             }
         });
@@ -518,15 +547,15 @@ impl DockStack {
         }
     }
 
-    fn remove(&mut self, panel: ToolPanel) {
-        self.tabs.retain(|candidate| *candidate != panel);
+    fn remove(&mut self, tab: DockTab) {
+        self.tabs.retain(|candidate| *candidate != tab);
         self.normalize();
     }
 
-    fn push_active(&mut self, panel: ToolPanel) {
-        self.remove(panel);
-        self.tabs.push(panel);
-        self.active = Some(panel);
+    fn push_active(&mut self, tab: DockTab) {
+        self.remove(tab);
+        self.tabs.push(tab);
+        self.active = Some(tab);
     }
 }
 
@@ -552,10 +581,13 @@ impl DockNode {
         }
     }
 
-    fn tabs(id: u64, panels: &[ToolPanel], active: ToolPanel) -> Self {
+    fn tool_tabs(id: u64, panels: &[ToolPanel], active: ToolPanel) -> Self {
         Self::Tabs {
             id: DockNodeId(id),
-            stack: DockStack::new(panels.iter().copied(), active),
+            stack: DockStack::new(
+                panels.iter().copied().map(DockTab::Tool),
+                DockTab::Tool(active),
+            ),
         }
     }
 
@@ -603,43 +635,53 @@ impl DockNode {
         }
     }
 
-    fn remove_panel(&mut self, panel: ToolPanel) {
+    fn remove_tab(&mut self, tab: DockTab) {
         match self {
             Self::Split { first, second, .. } => {
-                first.remove_panel(panel);
-                second.remove_panel(panel);
+                first.remove_tab(tab);
+                second.remove_tab(tab);
             }
-            Self::Tabs { stack, .. } => stack.remove(panel),
+            Self::Tabs { stack, .. } => stack.remove(tab),
         }
     }
 
-    fn activate(&mut self, panel: ToolPanel) -> bool {
+    fn activate(&mut self, tab: DockTab) -> bool {
         match self {
-            Self::Split { first, second, .. } => first.activate(panel) || second.activate(panel),
+            Self::Split { first, second, .. } => first.activate(tab) || second.activate(tab),
             Self::Tabs { stack, .. } => {
-                if !stack.tabs.contains(&panel) || stack.active == Some(panel) {
+                if !stack.tabs.contains(&tab) || stack.active == Some(tab) {
                     false
                 } else {
-                    stack.active = Some(panel);
+                    stack.active = Some(tab);
                     true
                 }
             }
         }
     }
 
-    pub(crate) fn contains(&self, panel: ToolPanel) -> bool {
+    pub(crate) fn contains(&self, tab: impl Into<DockTab>) -> bool {
+        self.contains_tab(tab.into())
+    }
+
+    fn contains_tab(&self, tab: DockTab) -> bool {
         match self {
-            Self::Split { first, second, .. } => first.contains(panel) || second.contains(panel),
-            Self::Tabs { stack, .. } => stack.tabs.contains(&panel),
+            Self::Split { first, second, .. } => {
+                first.contains_tab(tab) || second.contains_tab(tab)
+            }
+            Self::Tabs { stack, .. } => stack.tabs.contains(&tab),
         }
     }
 
-    fn node_containing(&self, panel: ToolPanel) -> Option<DockNodeId> {
+    fn node_containing(&self, tab: impl Into<DockTab>) -> Option<DockNodeId> {
+        self.node_containing_tab(tab.into())
+    }
+
+    fn node_containing_tab(&self, tab: DockTab) -> Option<DockNodeId> {
         match self {
             Self::Split { first, second, .. } => first
-                .node_containing(panel)
-                .or_else(|| second.node_containing(panel)),
-            Self::Tabs { id, stack } => stack.tabs.contains(&panel).then_some(*id),
+                .node_containing_tab(tab)
+                .or_else(|| second.node_containing_tab(tab)),
+            Self::Tabs { id, stack } => stack.tabs.contains(&tab).then_some(*id),
         }
     }
 
@@ -682,17 +724,17 @@ impl Default for WorkspaceLayout {
         // The material graph is the central workspace; the viewport sits on the left, properties on
         // the right, and the utility panels group into a bottom strip. The profiler is hidden by
         // default and reopens beneath the viewport.
-        let viewport = DockNode::tabs(2, &[ToolPanel::Viewport], ToolPanel::Viewport);
-        let center = DockNode::tabs(
+        let viewport = DockNode::tool_tabs(2, &[ToolPanel::Viewport], ToolPanel::Viewport);
+        let center = DockNode::tool_tabs(
             8,
             &[ToolPanel::Timeline, ToolPanel::MaterialGraph],
             ToolPanel::MaterialGraph,
         );
         // Roughly square viewport on a typical 16:9 window; the graph takes the rest.
         let left_center = DockNode::split(9, DockAxis::Horizontal, 0.42, viewport, center);
-        let properties = DockNode::tabs(3, &[ToolPanel::Properties], ToolPanel::Properties);
+        let properties = DockNode::tool_tabs(3, &[ToolPanel::Properties], ToolPanel::Properties);
         let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
-        let bottom = DockNode::tabs(
+        let bottom = DockNode::tool_tabs(
             4,
             &[
                 ToolPanel::Curves,
@@ -729,16 +771,23 @@ impl WorkspaceLayout {
         fs::write(path, source)
     }
 
-    pub(crate) fn dock(&mut self, panel: ToolPanel, target: DockNodeId, drop: DockDrop) -> bool {
+    pub(crate) fn dock(
+        &mut self,
+        tab: impl Into<DockTab>,
+        target: DockNodeId,
+        drop: DockDrop,
+    ) -> bool {
+        let tab = tab.into();
         let previous = self.clone();
-        self.root.remove_panel(panel);
-        self.floating.retain(|floating| floating.panel != panel);
+        self.root.remove_tab(tab);
+        self.floating
+            .retain(|floating| DockTab::Tool(floating.panel) != tab);
         if drop == DockDrop::Center {
             let Some(stack) = self.root.find_tabs_mut(target) else {
                 *self = previous;
                 return false;
             };
-            stack.push_active(panel);
+            stack.push_active(tab);
         } else {
             let new_tabs_id = self.allocate_id();
             let new_split_id = self.allocate_id();
@@ -753,7 +802,7 @@ impl WorkspaceLayout {
             let existing = std::mem::replace(target_node, placeholder);
             let new_panel = DockNode::Tabs {
                 id: new_tabs_id,
-                stack: DockStack::new([panel], panel),
+                stack: DockStack::new([tab], tab),
             };
             let (axis, ratio, first, second) = match drop {
                 DockDrop::Left => (DockAxis::Horizontal, 0.28, new_panel, existing),
@@ -774,22 +823,25 @@ impl WorkspaceLayout {
         *self != previous
     }
 
-    pub(crate) fn activate(&mut self, panel: ToolPanel) -> bool {
-        self.root.activate(panel)
+    pub(crate) fn activate(&mut self, tab: impl Into<DockTab>) -> bool {
+        self.root.activate(tab.into())
     }
 
     pub(crate) fn reorder_tab(
         &mut self,
-        panel: ToolPanel,
-        target: ToolPanel,
+        tab: impl Into<DockTab>,
+        target: impl Into<DockTab>,
         before: bool,
     ) -> bool {
-        if panel == target || !self.contains(panel) || !self.root.contains(target) {
+        let tab = tab.into();
+        let target = target.into();
+        if tab == target || !self.contains(tab) || !self.root.contains(target) {
             return false;
         }
         let previous = self.clone();
-        self.root.remove_panel(panel);
-        self.floating.retain(|floating| floating.panel != panel);
+        self.root.remove_tab(tab);
+        self.floating
+            .retain(|floating| DockTab::Tool(floating.panel) != tab);
         let Some(target_node) = self.root.node_containing(target) else {
             *self = previous;
             return false;
@@ -804,37 +856,40 @@ impl WorkspaceLayout {
             return false;
         };
         let insertion_index = target_index + usize::from(!before);
-        stack.tabs.insert(insertion_index, panel);
-        stack.active = Some(panel);
+        stack.tabs.insert(insertion_index, tab);
+        stack.active = Some(tab);
         self.root.normalize();
         *self != previous
     }
 
-    pub(crate) fn is_active(&self, panel: ToolPanel) -> bool {
-        if self.floating.iter().any(|floating| floating.panel == panel) {
+    pub(crate) fn is_active(&self, tab: impl Into<DockTab>) -> bool {
+        let tab = tab.into();
+        if self
+            .floating
+            .iter()
+            .any(|floating| DockTab::Tool(floating.panel) == tab)
+        {
             return true;
         }
-        fn visit(node: &DockNode, panel: ToolPanel) -> bool {
+        fn visit(node: &DockNode, tab: DockTab) -> bool {
             match node {
-                DockNode::Split { first, second, .. } => {
-                    visit(first, panel) || visit(second, panel)
-                }
-                DockNode::Tabs { stack, .. } => stack.active == Some(panel),
+                DockNode::Split { first, second, .. } => visit(first, tab) || visit(second, tab),
+                DockNode::Tabs { stack, .. } => stack.active == Some(tab),
             }
         }
 
-        visit(&self.root, panel)
+        visit(&self.root, tab)
     }
 
-    pub(crate) fn is_visible(&self, panel: ToolPanel) -> bool {
-        self.contains(panel)
+    pub(crate) fn is_visible(&self, tab: impl Into<DockTab>) -> bool {
+        self.contains(tab)
     }
 
     pub(crate) fn close(&mut self, panel: ToolPanel) -> bool {
         if !panel.closable() || !self.contains(panel) {
             return false;
         }
-        self.root.remove_panel(panel);
+        self.root.remove_tab(panel.into());
         self.floating.retain(|floating| floating.panel != panel);
         self.root.normalize();
         true
@@ -845,7 +900,7 @@ impl WorkspaceLayout {
             return false;
         }
         if self.root.contains(panel) {
-            return self.root.activate(panel);
+            return self.root.activate(panel.into());
         }
         if panel == ToolPanel::AssetInspector
             && let Some(target) = self.root.node_containing(ToolPanel::Properties)
@@ -916,7 +971,7 @@ impl WorkspaceLayout {
         if panel == ToolPanel::Viewport || !self.root.contains(panel) {
             return false;
         }
-        self.root.remove_panel(panel);
+        self.root.remove_tab(panel.into());
         self.root.normalize();
         let size = default_floating_size(panel, available_size);
         self.floating.push(FloatingPanel {
@@ -985,8 +1040,13 @@ impl WorkspaceLayout {
         id
     }
 
-    fn contains(&self, panel: ToolPanel) -> bool {
-        self.root.contains(panel) || self.floating.iter().any(|floating| floating.panel == panel)
+    fn contains(&self, tab: impl Into<DockTab>) -> bool {
+        let tab = tab.into();
+        self.root.contains(tab)
+            || self
+                .floating
+                .iter()
+                .any(|floating| DockTab::Tool(floating.panel) == tab)
     }
 
     fn normalized(mut self) -> Self {
@@ -1033,7 +1093,7 @@ impl WorkspaceLayout {
             || !self
                 .root
                 .find_tabs(settings_node)
-                .is_some_and(|stack| stack.tabs == [ToolPanel::Settings])
+                .is_some_and(|stack| stack.tabs == [DockTab::Tool(ToolPanel::Settings)])
         {
             return;
         }
@@ -1069,7 +1129,7 @@ fn remove_duplicate_occurrences(node: &mut DockNode, panel: ToolPanel, found: &m
         }
         DockNode::Tabs { stack, .. } => {
             stack.tabs.retain(|candidate| {
-                if *candidate != panel {
+                if *candidate != DockTab::Tool(panel) {
                     true
                 } else if *found {
                     false
@@ -1330,10 +1390,10 @@ mod tests {
         assert_eq!(
             stack.tabs,
             vec![
-                ToolPanel::Assets,
-                ToolPanel::Curves,
-                ToolPanel::Diagnostics,
-                ToolPanel::Changes,
+                DockTab::Tool(ToolPanel::Assets),
+                DockTab::Tool(ToolPanel::Curves),
+                DockTab::Tool(ToolPanel::Diagnostics),
+                DockTab::Tool(ToolPanel::Changes),
             ]
         );
 
@@ -1344,6 +1404,54 @@ mod tests {
             Some(bottom)
         );
         assert!(layout.is_active(ToolPanel::Timeline));
+    }
+
+    #[test]
+    fn editor_views_coexist_and_move_as_independent_tabs() {
+        let mut layout = WorkspaceLayout::default();
+        let view_a = DockTab::Editor(EditorViewId(101));
+        let view_b = DockTab::Editor(EditorViewId(102));
+        let center = layout
+            .root
+            .node_containing(ToolPanel::MaterialGraph)
+            .unwrap();
+        assert!(layout.dock(view_a, center, DockDrop::Center));
+        assert!(layout.dock(view_b, center, DockDrop::Center));
+        // Two editor views of the same kind coexist — editor tabs are not deduplicated.
+        assert!(layout.root.contains(view_a));
+        assert!(layout.root.contains(view_b));
+        assert_eq!(layout.root.node_containing(view_a), Some(center));
+        assert!(layout.is_active(view_b));
+
+        // An editor tab moves to another stack without disturbing the other.
+        let bottom = layout.root.node_containing(ToolPanel::Curves).unwrap();
+        assert!(layout.dock(view_a, bottom, DockDrop::Center));
+        assert_eq!(layout.root.node_containing(view_a), Some(bottom));
+        assert!(layout.root.contains(view_b));
+    }
+
+    #[test]
+    fn tool_panels_are_not_duplicated_by_docking() {
+        fn occurrences(node: &DockNode, tab: DockTab) -> usize {
+            match node {
+                DockNode::Split { first, second, .. } => {
+                    occurrences(first, tab) + occurrences(second, tab)
+                }
+                DockNode::Tabs { stack, .. } => stack
+                    .tabs
+                    .iter()
+                    .filter(|candidate| **candidate == tab)
+                    .count(),
+            }
+        }
+        let mut layout = WorkspaceLayout::default();
+        let viewport = layout.root.node_containing(ToolPanel::Viewport).unwrap();
+        // Docking an already-present tool panel relocates it rather than creating a duplicate.
+        assert!(layout.dock(ToolPanel::Assets, viewport, DockDrop::Center));
+        assert_eq!(
+            occurrences(&layout.root, DockTab::Tool(ToolPanel::Assets)),
+            1
+        );
     }
 
     #[test]
@@ -1404,11 +1512,11 @@ mod tests {
         let viewport_index = stack
             .tabs
             .iter()
-            .position(|panel| *panel == ToolPanel::Viewport)
+            .position(|panel| *panel == DockTab::Tool(ToolPanel::Viewport))
             .unwrap();
         assert_eq!(
             stack.tabs.get(viewport_index + 1),
-            Some(&ToolPanel::Settings)
+            Some(&DockTab::Tool(ToolPanel::Settings))
         );
         assert!(layout.is_active(ToolPanel::Settings));
     }

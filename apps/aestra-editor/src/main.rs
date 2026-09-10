@@ -89,7 +89,7 @@ use dock_ui::{clear_finished_dock_drag, dock_pane_background};
 #[cfg(test)]
 use docking::DockDragState;
 #[cfg(test)]
-use docking::DockTab;
+use docking::{DockTab, DockTabButton};
 use docking::{
     DockTreeHost, DockingPlugin, DockingSet, NativeFloatingWindow, ToolPanel, WorkspaceLayout,
 };
@@ -334,12 +334,12 @@ mod tests {
         let mut buttons = ButtonInput::<MouseButton>::default();
         buttons.press(MouseButton::Left);
         app.insert_resource(buttons);
-        app.insert_resource(DockDragState(Some(ToolPanel::Properties)));
+        app.insert_resource(DockDragState(Some(DockTab::Tool(ToolPanel::Properties))));
         app.add_systems(Update, clear_finished_dock_drag);
         let tab = app
             .world_mut()
             .spawn((
-                DockTab(ToolPanel::Properties),
+                DockTabButton(DockTab::Tool(ToolPanel::Properties)),
                 UiTransform {
                     translation: Val2::px(20.0, 10.0),
                     ..default()
@@ -351,7 +351,7 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().resource::<DockDragState>().0,
-            Some(ToolPanel::Properties)
+            Some(DockTab::Tool(ToolPanel::Properties))
         );
 
         app.world_mut()

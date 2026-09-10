@@ -4,9 +4,9 @@ use crate::docking::{
     DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
     DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
-    DockTreeHost, DockingAction, MaximizedPanel, NativeFloatingCamera, NativeFloatingUi,
-    NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi, ToolPanel,
-    WorkspaceLayout,
+    DockTabButton, DockTreeHost, DockingAction, MaximizedPanel, NativeFloatingCamera,
+    NativeFloatingUi, NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi,
+    ToolPanel, WorkspaceLayout,
 };
 use crate::feathers::node_graph::GraphViewportMemory;
 use crate::timeline::TimelineState;
@@ -406,11 +406,12 @@ fn spawn_dock_stack(
     workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
+    let active_tool = stack.active.and_then(DockTab::tool);
     parent
         .spawn((
             DockPane(node),
             crate::history::HistoryScope::for_panel(
-                stack.active,
+                active_tool,
                 sources.session.standalone_material().is_some()
                     || sources.session.standalone_function().is_some(),
             ),
@@ -421,16 +422,25 @@ fn spawn_dock_stack(
             },
         ))
         .apply_scene(ui_shell::dock_pane())
-        .insert(BackgroundColor(dock_pane_background(stack.active)))
+        .insert(BackgroundColor(dock_pane_background(active_tool)))
         .with_children(|pane| {
             let material_graph_unsaved =
                 crate::material_graph::material_graph_unsaved(sources.session, sources.catalog);
             spawn_dock_tab_bar(pane, node, stack, material_graph_unsaved, sources.localizer);
-            if let Some(panel) = stack.active {
+            if let Some(panel) = active_tool {
                 spawn_panel_content(pane, panel, workspace, sources);
             }
             spawn_dock_drop_overlay(pane, node);
         });
+}
+
+/// A dock tab's display title: a tool panel's localized name, or an editor view's own title
+/// (a placeholder until editor views carry document-derived names).
+fn dock_tab_title(tab: DockTab, localizer: &Localizer) -> String {
+    match tab {
+        DockTab::Tool(panel) => localizer.text(panel.message_id()),
+        DockTab::Editor(_) => "Editor".to_owned(),
+    }
 }
 
 pub(crate) fn dock_pane_background(active: Option<ToolPanel>) -> Color {
@@ -738,9 +748,10 @@ fn spawn_dock_tab_bar(
             BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|bar| {
-            for panel in &stack.tabs {
-                let dirty = *panel == ToolPanel::MaterialGraph && material_graph_unsaved;
-                spawn_dock_tab(bar, *panel, stack.active == Some(*panel), dirty, localizer);
+            for tab in &stack.tabs {
+                let dirty =
+                    *tab == DockTab::Tool(ToolPanel::MaterialGraph) && material_graph_unsaved;
+                spawn_dock_tab(bar, *tab, stack.active == Some(*tab), dirty, localizer);
             }
             bar.spawn((
                 DockTabAppendZone(node),
@@ -775,7 +786,7 @@ fn spawn_dock_tab_bar(
 
 fn spawn_dock_tab(
     parent: &mut ChildSpawnerCommands,
-    panel: ToolPanel,
+    tab: DockTab,
     selected: bool,
     dirty: bool,
     localizer: &Localizer,
@@ -784,8 +795,8 @@ fn spawn_dock_tab(
         .spawn((
             Button,
             EditorNativeControl,
-            DockingAction::Select(panel),
-            DockTab(panel),
+            DockingAction::Select(tab),
+            DockTabButton(tab),
             RelativeCursorPosition::default(),
             Pickable {
                 should_block_lower: false,
@@ -822,20 +833,37 @@ fn spawn_dock_tab(
         .observe(reorder_dock_tab)
         .observe(select_dock_tab)
         .observe(open_dock_tab_context_menu)
-        .with_children(|tab| {
-            tab.spawn((
-                LocalizedText(panel.message_id()),
-                Text::new(localizer.text(panel.message_id())),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-                Pickable::IGNORE,
-            ));
+        .with_children(|row| {
+            // Tool panels use their localized name; editor views (added later) carry their own
+            // document-derived title.
+            match tab {
+                DockTab::Tool(panel) => {
+                    row.spawn((
+                        LocalizedText(panel.message_id()),
+                        Text::new(localizer.text(panel.message_id())),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Pickable::IGNORE,
+                    ));
+                }
+                DockTab::Editor(_) => {
+                    row.spawn((
+                        Text::new("Editor"),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Pickable::IGNORE,
+                    ));
+                }
+            }
             if dirty {
                 // IDE-style unsaved marker beside the panel name.
-                tab.spawn((
+                row.spawn((
                     Node {
                         width: Val::Px(6.0),
                         height: Val::Px(6.0),
@@ -847,12 +875,16 @@ fn spawn_dock_tab(
                     Pickable::IGNORE,
                 ));
             }
-            tab.spawn(Node {
+            row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
             });
-            if panel.closable() {
-                tab.spawn((
+            // Editor-view close routes through document lifecycle (added in a later milestone);
+            // for now only closable tool panels show the close affordance.
+            if let DockTab::Tool(panel) = tab
+                && panel.closable()
+            {
+                row.spawn((
                     Button,
                     EditorNativeControl,
                     DockingAction::Close(panel),
@@ -1030,7 +1062,7 @@ fn reset_cursor(
     }
 }
 
-fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With<DockTab>>) {
+fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With<DockTabButton>>) {
     if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
         transform.translation = Val2::px(drag.distance.x, drag.distance.y);
     }
@@ -1038,7 +1070,7 @@ fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With
 
 fn begin_dock_tab_drag(
     drag: On<Pointer<DragStart>>,
-    tabs: Query<&DockTab>,
+    tabs: Query<&DockTabButton>,
     mut commands: Commands,
     mut state: ResMut<DockDragState>,
 ) {
@@ -1052,7 +1084,7 @@ fn begin_dock_tab_drag(
 
 fn reset_dock_tab(
     drag: On<Pointer<DragEnd>>,
-    mut tabs: Query<&mut UiTransform, With<DockTab>>,
+    mut tabs: Query<&mut UiTransform, With<DockTabButton>>,
     mut commands: Commands,
     mut state: ResMut<DockDragState>,
 ) {
@@ -1068,7 +1100,7 @@ fn reset_dock_tab(
 pub(crate) fn clear_finished_dock_drag(
     buttons: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<DockDragState>,
-    mut tabs: Query<(Entity, &mut UiTransform), With<DockTab>>,
+    mut tabs: Query<(Entity, &mut UiTransform), With<DockTabButton>>,
     mut commands: Commands,
 ) {
     if state.0.is_none() || buttons.pressed(MouseButton::Left) {
@@ -1086,7 +1118,7 @@ pub(crate) fn clear_finished_dock_drag(
 /// tab entity alive long enough for the drag gesture to start.
 fn select_dock_tab(
     mut click: On<Pointer<Click>>,
-    tabs: Query<&DockTab>,
+    tabs: Query<&DockTabButton>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
@@ -1117,7 +1149,7 @@ fn select_dock_tab(
 
 fn open_dock_tab_context_menu(
     mut click: On<Pointer<Click>>,
-    tabs: Query<&DockTab>,
+    tabs: Query<&DockTabButton>,
     parents: Query<&ChildOf>,
     layout: Res<WorkspaceLayout>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -1137,11 +1169,15 @@ fn open_dock_tab_context_menu(
         };
         entity = parent.parent();
     };
-    if tab.0 == ToolPanel::Viewport
+    // The float/close context menu is tool-panel-specific; editor views manage their own lifecycle.
+    let Some(panel) = tab.0.tool() else {
+        return;
+    };
+    if panel == ToolPanel::Viewport
         || layout
             .floating
             .iter()
-            .any(|floating| floating.panel == tab.0)
+            .any(|floating| floating.panel == panel)
     {
         return;
     }
@@ -1149,7 +1185,7 @@ fn open_dock_tab_context_menu(
     let maximum_x = (window.width() - 188.0).max(0.0);
     let maximum_y = (window.height() - 148.0).max(0.0);
     menu.tab_context = Some(TabContextMenu {
-        panel: tab.0,
+        panel,
         position: [
             click.pointer_location.position.x.clamp(0.0, maximum_x),
             (click.pointer_location.position.y - 84.0).clamp(0.0, maximum_y),
@@ -1194,7 +1230,7 @@ fn dock_panel_drop(
         }
         session.ui_revision += 1;
         let mut args = FluentArgs::new();
-        args.set("panel", localizer.text(tab.0.message_id()));
+        args.set("panel", dock_tab_title(tab.0, &localizer));
         session.status = localizer.text_with("dock-status-docked", &args);
     }
     drop.propagate(false);
@@ -1202,7 +1238,7 @@ fn dock_panel_drop(
 
 fn reorder_dock_tab(
     mut drop: On<Pointer<DragDrop>>,
-    tabs: Query<(&DockTab, &RelativeCursorPosition)>,
+    tabs: Query<(&DockTabButton, &RelativeCursorPosition)>,
     parents: Query<&ChildOf>,
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -1240,7 +1276,7 @@ fn reorder_dock_tab(
         }
         session.ui_revision += 1;
         let mut args = FluentArgs::new();
-        args.set("source", localizer.text(source.0.message_id()));
+        args.set("source", dock_tab_title(source.0, &localizer));
         args.set(
             "relation",
             localizer.text(if before {
@@ -1249,7 +1285,7 @@ fn reorder_dock_tab(
                 "dock-relation-after"
             }),
         );
-        args.set("target", localizer.text(target.0.message_id()));
+        args.set("target", dock_tab_title(target.0, &localizer));
         session.status = localizer.text_with("dock-status-moved-relative", &args);
     }
     drop.propagate(false);
@@ -1258,7 +1294,7 @@ fn reorder_dock_tab(
 fn append_dock_tab(
     mut drop: On<Pointer<DragDrop>>,
     append_zones: Query<&DockTabAppendZone>,
-    tabs: Query<&DockTab>,
+    tabs: Query<&DockTabButton>,
     parents: Query<&ChildOf>,
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -1285,7 +1321,7 @@ fn append_dock_tab(
         }
         session.ui_revision += 1;
         let mut args = FluentArgs::new();
-        args.set("panel", localizer.text(source.0.message_id()));
+        args.set("panel", dock_tab_title(source.0, &localizer));
         session.status = localizer.text_with("dock-status-moved-end", &args);
     }
     drop.propagate(false);
@@ -1321,7 +1357,7 @@ pub(crate) fn sync_tab_reorder_hints(
     state: Res<DockDragState>,
     layout: Res<WorkspaceLayout>,
     mut tabs: Query<(
-        &DockTab,
+        &DockTabButton,
         &RelativeCursorPosition,
         &mut Node,
         &mut BorderColor,
