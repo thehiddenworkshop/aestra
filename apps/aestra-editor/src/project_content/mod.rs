@@ -226,6 +226,26 @@ impl EditorProjectContent {
         self.material_functions().map(MaterialFunctionLibrary::new)
     }
 
+    /// Whether a shared material program is definitively absent from the project index — its source
+    /// was moved or deleted — as opposed to present or merely ambiguous. Workspace restore uses this
+    /// to safely drop editor tabs whose asset is gone, while leaving ambiguous (recoverable) ones.
+    pub(crate) fn material_program_missing(&self, id: aestra_core::MaterialProgramId) -> bool {
+        matches!(
+            self.content()
+                .cached_material_program(aestra_core::material::MaterialProgramRef::Project(id)),
+            Err(ResolveMaterialProgramError::Missing { .. })
+        )
+    }
+
+    /// Function counterpart to [`Self::material_program_missing`].
+    pub(crate) fn material_function_missing(&self, id: aestra_core::MaterialFunctionId) -> bool {
+        matches!(
+            self.content()
+                .cached_material_function(aestra_core::material::MaterialFunctionRef::Project(id)),
+            Err(ResolveMaterialFunctionError::Missing { .. })
+        )
+    }
+
     pub(crate) fn material_preset_catalog(&self) -> Result<MaterialPresetCatalog, String> {
         let presets = self
             .snapshot

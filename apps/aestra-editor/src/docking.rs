@@ -1007,6 +1007,17 @@ impl WorkspaceLayout {
         true
     }
 
+    /// Removes a single editor-view tab from the tree, then normalizes. Returns whether the layout
+    /// changed. Used when a document's asset is gone (restore) or the view is closed.
+    pub(crate) fn close_editor(&mut self, view: EditorViewId) -> bool {
+        if !self.root.contains(DockTab::Editor(view)) {
+            return false;
+        }
+        self.root.remove_tab(DockTab::Editor(view));
+        self.root.normalize();
+        true
+    }
+
     /// Shows an editor-view tab: activates it if already docked, otherwise docks it beside the
     /// material-graph area (falling back to the viewport). Returns whether the layout changed.
     pub(crate) fn show_editor(&mut self, view: EditorViewId) -> bool {

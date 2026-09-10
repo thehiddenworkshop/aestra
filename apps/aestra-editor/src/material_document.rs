@@ -190,6 +190,20 @@ mod tests {
     use crate::test_support;
 
     #[test]
+    fn missing_program_detection_distinguishes_absent_from_present() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Present").normalized();
+        program
+            .save_ron(root.path().join("present.aestra.material.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        // A present source is not reported missing; an unknown id is.
+        assert!(!catalog.material_program_missing(program.id));
+        assert!(catalog.material_program_missing(MaterialProgramId::from_u128(0xdead_beef)));
+        assert!(catalog.material_function_missing(aestra_core::MaterialFunctionId::from_u128(0x1)));
+    }
+
+    #[test]
     fn function_target_rejects_ambiguous_and_wrong_root_sources() {
         let root = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();

@@ -364,6 +364,70 @@ pub(crate) fn persist_editor_workspace(
     }
 }
 
+/// Selects the restored editor views whose backing asset is definitively gone. Split out from the
+/// reconcile system so the decision can be tested without a live project catalog.
+fn views_with_missing_assets(
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+    is_missing: impl Fn(DocumentKey) -> bool,
+) -> Vec<EditorViewId> {
+    views
+        .iter()
+        .filter_map(|view| {
+            let key = documents.document(view.document)?.key;
+            is_missing(key).then_some(view.id)
+        })
+        .collect()
+}
+
+/// Once the project index is fully scanned, drops restored editor tabs whose asset was moved or
+/// deleted while the editor was closed — the plan's "skip safely" branch of missing-asset handling.
+/// Runs a single time; assets that are merely ambiguous (recoverable) or present are left untouched,
+/// and the manifest is rewritten by [`persist_editor_workspace`] because the view set changed.
+pub(crate) fn reconcile_restored_documents_against_catalog(
+    catalog: Res<crate::ProjectEffectCatalog>,
+    mut done: Local<bool>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut documents: ResMut<DocumentManager>,
+    mut views: ResMut<EditorViewManager>,
+    mut active: ResMut<ActiveEditorContext>,
+) {
+    if *done {
+        return;
+    }
+    // Wait for a fully-scanned index: a mid-scan empty catalog must never prune live tabs.
+    if !matches!(
+        catalog.availability(),
+        aestra_project::ProjectAssetIndexAvailability::Ready
+    ) {
+        return;
+    }
+    *done = true;
+    if views.is_empty() {
+        return;
+    }
+    let missing = views_with_missing_assets(&views, &documents, |key| match key {
+        DocumentKey::MaterialProgram(id) => catalog.material_program_missing(id),
+        DocumentKey::MaterialFunction(id) => catalog.material_function_missing(id),
+    });
+    let mut layout_changed = false;
+    for view in missing {
+        layout_changed |= layout.close_editor(view);
+        if let Some((removed, orphaned)) = views.close_view(view) {
+            if orphaned {
+                documents.close(removed.document);
+            }
+            if active.active_view == Some(view) {
+                active.active_view = None;
+                active.active_document = None;
+            }
+        }
+    }
+    if layout_changed && let Err(error) = layout.save() {
+        warn!("failed to persist workspace layout after dropping missing documents: {error}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,6 +717,52 @@ mod tests {
                 .unwrap()
                 .program(),
             Some(MaterialProgramId::from_u128(0xb))
+        );
+    }
+
+    #[test]
+    fn missing_asset_restore_drops_only_the_gone_document() {
+        use crate::docking::ToolPanel;
+        use crate::document::DocumentKey;
+        use aestra_core::MaterialProgramId;
+
+        // Restore two materials; the first asset was deleted while the editor was closed.
+        let present = MaterialProgramId::from_u128(0xa);
+        let gone = MaterialProgramId::from_u128(0xb);
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let doc_present = documents.open(DocumentKey::MaterialProgram(present));
+        let doc_gone = documents.open(DocumentKey::MaterialProgram(gone));
+        let view_present = views.create_view(doc_present, EditorViewKind::MaterialGraph);
+        let view_gone = views.create_view(doc_gone, EditorViewKind::MaterialGraph);
+
+        let missing = views_with_missing_assets(&views, &documents, |key| {
+            key == DocumentKey::MaterialProgram(gone)
+        });
+        assert_eq!(missing, vec![view_gone]);
+
+        // Applying the decision drops the gone tab/view/document and keeps the present one.
+        let mut layout = WorkspaceLayout::default();
+        layout.show(ToolPanel::MaterialGraph);
+        layout.show_editor(view_present);
+        layout.show_editor(view_gone);
+        for view in missing {
+            assert!(layout.close_editor(view));
+            let (_, orphaned) = views.close_view(view).unwrap();
+            assert!(orphaned);
+            documents.close(doc_gone);
+        }
+        assert_eq!(layout.editor_views(), vec![view_present]);
+        assert_eq!(views.len(), 1);
+        assert!(
+            documents
+                .find(&DocumentKey::MaterialProgram(gone))
+                .is_none()
+        );
+        assert!(
+            documents
+                .find(&DocumentKey::MaterialProgram(present))
+                .is_some()
         );
     }
 

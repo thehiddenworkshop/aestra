@@ -255,9 +255,11 @@ fn main() {
         .add_systems(
             Update,
             (
+                editor_view::reconcile_restored_documents_against_catalog,
                 editor_view::sync_active_document_from_target,
                 editor_view::persist_editor_workspace,
-            ),
+            )
+                .chain(),
         )
         .add_systems(Startup, set_editor_window_icon)
         .add_systems(Startup, editor_view::restore_editor_workspace)
