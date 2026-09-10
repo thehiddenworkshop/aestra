@@ -413,14 +413,20 @@ fn spawn_dock_stack(
     sources: PanelSources<'_>,
 ) {
     let active_tool = stack.active.and_then(DockTab::tool);
+    // Editor-view panes edit shared material documents, so they route undo/redo to material
+    // history like the material graph tool panel does.
+    let history_scope = match stack.active {
+        Some(DockTab::Editor(_)) => crate::history::HistoryScope::Material,
+        _ => crate::history::HistoryScope::for_panel(
+            active_tool,
+            sources.session.standalone_material().is_some()
+                || sources.session.standalone_function().is_some(),
+        ),
+    };
     parent
         .spawn((
             DockPane(node),
-            crate::history::HistoryScope::for_panel(
-                active_tool,
-                sources.session.standalone_material().is_some()
-                    || sources.session.standalone_function().is_some(),
-            ),
+            history_scope,
             RelativeCursorPosition::default(),
             Pickable {
                 should_block_lower: false,
@@ -1155,12 +1161,16 @@ pub(crate) fn clear_finished_dock_drag(
 /// Activates a dock tab on primary-click release. Selection is intentionally not done on
 /// press (see `handle_docking_actions`) so that a press which turns into a drag keeps the
 /// tab entity alive long enough for the drag gesture to start.
+#[allow(clippy::too_many_arguments)]
 fn select_dock_tab(
     mut click: On<Pointer<Click>>,
     tabs: Query<&DockTabButton>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
+    catalog: Res<ProjectEffectCatalog>,
+    views: Res<crate::editor_view::EditorViewManager>,
+    documents: Res<crate::document::DocumentManager>,
 ) {
     if click.button != PointerButton::Primary {
         return;
@@ -1180,6 +1190,26 @@ fn select_dock_tab(
             warn!("failed to save editor workspace layout: {error}");
         }
         changed = true;
+    }
+    // Focusing an editor view makes it the active material target so rendering, history, and
+    // contextual tools follow the focused document (the singleton target still drives the tool
+    // panels; editor tabs steer it here).
+    if let DockTab::Editor(view) = tab.0
+        && let Some(document) = views
+            .document_of(view)
+            .and_then(|id| documents.document(id))
+    {
+        let result = match document.key {
+            crate::document::DocumentKey::MaterialProgram(id) => {
+                session.open_material_program(&catalog, id)
+            }
+            crate::document::DocumentKey::MaterialFunction(id) => {
+                session.open_material_function(&catalog, id)
+            }
+        };
+        if result.is_ok() {
+            changed = true;
+        }
     }
     if changed {
         session.ui_revision += 1;
