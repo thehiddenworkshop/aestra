@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
     ui::RelativeCursorPosition,
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    window::PrimaryWindow,
 };
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,18 @@ pub(crate) enum EditorTooltipSide {
     #[default]
     Left,
     Right,
+}
+
+/// How a tooltip is positioned relative to its hovered target.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum EditorTooltipAnchor {
+    /// Anchored to the hovered element's bounds. Correct for ordinary chrome laid out in place.
+    #[default]
+    Element,
+    /// Anchored beside the cursor, outside the target's surface. Use for targets that live under a
+    /// transformed/clipped surface (e.g. the pan/zoom graph canvas), where the element bounds do
+    /// not match the visible position and clipping would cut the popup.
+    Cursor,
 }
 
 /// Resolved editor-facing tooltip content.
@@ -31,6 +44,7 @@ pub(crate) struct EditorTooltip {
     footer: Option<String>,
     delay: Duration,
     preferred_side: EditorTooltipSide,
+    anchor: EditorTooltipAnchor,
 }
 
 impl EditorTooltip {
@@ -42,6 +56,7 @@ impl EditorTooltip {
             footer: None,
             delay: DEFAULT_TOOLTIP_DELAY,
             preferred_side: EditorTooltipSide::Left,
+            anchor: EditorTooltipAnchor::Element,
         }
     }
 
@@ -71,6 +86,13 @@ impl EditorTooltip {
 
     pub(crate) fn with_preferred_side(mut self, side: EditorTooltipSide) -> Self {
         self.preferred_side = side;
+        self
+    }
+
+    /// Anchors the tooltip beside the cursor instead of the element. Required for targets under the
+    /// pan/zoom graph canvas, whose element bounds and clip do not match the visible position.
+    pub(crate) fn anchored_to_cursor(mut self) -> Self {
+        self.anchor = EditorTooltipAnchor::Cursor;
         self
     }
 
@@ -126,6 +148,9 @@ pub(crate) fn update_tooltip(
     mut state: ResMut<TooltipState>,
     tooltips: Query<(&EditorTooltip, &RelativeCursorPosition)>,
     popups: Query<(), With<TooltipPopup>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    parents: Query<&ChildOf>,
+    cameras: Query<&UiTargetCamera>,
 ) {
     if state.popup.is_some_and(|popup| !popups.contains(popup)) {
         state.popup = None;
@@ -152,78 +177,134 @@ pub(crate) fn update_tooltip(
     let content = tooltip.clone();
     let accessible_label = content.accessible_label();
     let positions = tooltip_positions(content.preferred_side);
-    let mut popup = None;
-    commands.entity(target).with_children(|target| {
-        popup = Some(
-            target
+    match content.anchor {
+        EditorTooltipAnchor::Element => {
+            let mut popup = None;
+            commands.entity(target).with_children(|parent| {
+                popup = Some(spawn_tooltip_body(
+                    parent,
+                    &content,
+                    positions,
+                    accessible_label,
+                    true,
+                ));
+            });
+            state.popup = popup;
+        }
+        EditorTooltipAnchor::Cursor => {
+            // The target lives under the transformed, clipped graph canvas, so anchor a fresh
+            // root node beside the cursor (in window space) and hang the popup off that instead.
+            let Ok(window) = windows.single() else {
+                return;
+            };
+            let Some(cursor) = window.cursor_position() else {
+                return;
+            };
+            // The root anchor no longer inherits the target's camera, so resolve the nearest one
+            // up the tree and pin it explicitly (falling back to the default UI camera).
+            let camera = std::iter::once(target)
+                .chain(parents.iter_ancestors(target))
+                .find_map(|entity| cameras.get(entity).ok().cloned());
+            let mut anchor = commands.spawn((
+                TooltipPopup,
+                Pickable::IGNORE,
+                GlobalZIndex(300),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(cursor.x),
+                    top: Val::Px(cursor.y),
+                    ..default()
+                },
+            ));
+            if let Some(camera) = camera {
+                anchor.insert(camera);
+            }
+            let anchor = anchor.id();
+            commands.entity(anchor).with_children(|parent| {
+                spawn_tooltip_body(parent, &content, positions, accessible_label, false);
+            });
+            state.popup = Some(anchor);
+        }
+    }
+}
+
+/// Spawns the tooltip popup (a window-aware [`Popover`] with the resolved content). `tracked` marks
+/// it with [`TooltipPopup`] so the lifecycle can find it; the cursor anchor carries that marker
+/// instead, so its inner body passes `false`.
+fn spawn_tooltip_body(
+    parent: &mut ChildSpawnerCommands,
+    content: &EditorTooltip,
+    positions: Vec<PopoverPlacement>,
+    accessible_label: String,
+    tracked: bool,
+) -> Entity {
+    let mut body = parent.spawn((
+        Popover {
+            positions,
+            window_margin: 10.0,
+        },
+        OverrideClip,
+        GlobalZIndex(300),
+        Pickable::IGNORE,
+        AccessibleLabel(accessible_label),
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Px(280.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(5.0),
+            padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            border_radius: BorderRadius::all(Val::Px(4.0)),
+            ..default()
+        },
+        BackgroundColor(theme::PANEL),
+        BorderColor::all(theme::BORDER_BRIGHT),
+        BoxShadow::new(
+            Color::srgba(0.0, 0.0, 0.0, 0.65),
+            Val::Px(0.0),
+            Val::Px(2.0),
+            Val::Px(3.0),
+            Val::Px(5.0),
+        ),
+    ));
+    if tracked {
+        body.insert(TooltipPopup);
+    }
+    body.with_children(|popup| {
+        if content.title.is_some() || content.shortcut.is_some() {
+            popup
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    column_gap: Val::Px(10.0),
+                    ..default()
+                })
+                .with_children(|header| {
+                    if let Some(title) = content.title.as_ref() {
+                        header.spawn(tooltip_text(title, 11.0, theme::TEXT));
+                    }
+                    if let Some(shortcut) = content.shortcut.as_ref() {
+                        header.spawn(tooltip_text(shortcut, 9.0, theme::TEXT_MUTED));
+                    }
+                });
+        }
+        popup.spawn(tooltip_text(&content.description, 10.0, theme::TEXT));
+        if let Some(footer) = content.footer.as_ref() {
+            popup
                 .spawn((
-                    TooltipPopup,
-                    Popover {
-                        positions,
-                        window_margin: 10.0,
-                    },
-                    OverrideClip,
-                    GlobalZIndex(300),
-                    Pickable::IGNORE,
-                    AccessibleLabel(accessible_label),
                     Node {
-                        position_type: PositionType::Absolute,
-                        width: Val::Px(280.0),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(5.0),
-                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        width: Val::Percent(100.0),
+                        padding: UiRect::top(Val::Px(5.0)),
+                        border: UiRect::top(Val::Px(1.0)),
                         ..default()
                     },
-                    BackgroundColor(theme::PANEL),
-                    BorderColor::all(theme::BORDER_BRIGHT),
-                    BoxShadow::new(
-                        Color::srgba(0.0, 0.0, 0.0, 0.65),
-                        Val::Px(0.0),
-                        Val::Px(2.0),
-                        Val::Px(3.0),
-                        Val::Px(5.0),
-                    ),
+                    BorderColor::all(theme::BORDER),
                 ))
-                .with_children(|popup| {
-                    if content.title.is_some() || content.shortcut.is_some() {
-                        popup
-                            .spawn(Node {
-                                width: Val::Percent(100.0),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::SpaceBetween,
-                                column_gap: Val::Px(10.0),
-                                ..default()
-                            })
-                            .with_children(|header| {
-                                if let Some(title) = content.title.as_ref() {
-                                    header.spawn(tooltip_text(title, 11.0, theme::TEXT));
-                                }
-                                if let Some(shortcut) = content.shortcut.as_ref() {
-                                    header.spawn(tooltip_text(shortcut, 9.0, theme::TEXT_MUTED));
-                                }
-                            });
-                    }
-                    popup.spawn(tooltip_text(&content.description, 10.0, theme::TEXT));
-                    if let Some(footer) = content.footer.as_ref() {
-                        popup
-                            .spawn((
-                                Node {
-                                    width: Val::Percent(100.0),
-                                    padding: UiRect::top(Val::Px(5.0)),
-                                    border: UiRect::top(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                BorderColor::all(theme::BORDER),
-                            ))
-                            .with_child(tooltip_text(footer, 9.0, theme::TEXT_MUTED));
-                    }
-                })
-                .id(),
-        );
+                .with_child(tooltip_text(footer, 9.0, theme::TEXT_MUTED));
+        }
     });
-    state.popup = popup;
+    body.id()
 }
 
 fn tooltip_positions(preferred_side: EditorTooltipSide) -> Vec<PopoverPlacement> {
@@ -430,6 +511,24 @@ mod tests {
         let tooltip = EditorTooltip::description("Slow help").with_delay(delay);
 
         assert_eq!(tooltip.delay, delay);
+    }
+
+    #[test]
+    fn tooltip_anchor_defaults_to_element_and_can_target_the_cursor() {
+        let element = EditorTooltip::titled(
+            "Lower edge input [Float]",
+            "Value where the smooth transition begins.",
+        );
+        assert_eq!(element.anchor, EditorTooltipAnchor::Element);
+        // The name [type] title is carried into the accessible label so it is never dropped.
+        assert!(
+            element
+                .accessible_label()
+                .contains("Lower edge input [Float]")
+        );
+
+        let cursor = element.anchored_to_cursor();
+        assert_eq!(cursor.anchor, EditorTooltipAnchor::Cursor);
     }
 
     #[test]

@@ -1454,7 +1454,10 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
                     .with_preferred_side(match props.side {
                         GraphSocketSide::Input => EditorTooltipSide::Left,
                         GraphSocketSide::Output => EditorTooltipSide::Right,
-                    }),
+                    })
+                    // Sockets live under the pan/zoom canvas transform and clip, so anchor the
+                    // tooltip beside the cursor rather than the (mis-placed, clipped) element.
+                    .anchored_to_cursor(),
                 EntityCursor::System(SystemCursorIcon::Pointer),
                 Node {
                     width: Val::Px(SOCKET_HIT_SIZE),
