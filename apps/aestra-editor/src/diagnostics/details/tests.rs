@@ -51,7 +51,7 @@ fn details_snapshot_latest_status_and_back_preserves_filter_and_document() {
     let effect = session.effect.clone();
     let mut layout = WorkspaceLayout::default();
     // Keep the test in-memory: the already-visible panel needs no layout save.
-    layout.show(DockPanel::Diagnostics);
+    layout.show(ToolPanel::Diagnostics);
     app.insert_resource(session)
         .insert_resource(layout)
         .insert_resource(DiagnosticsPanelState {

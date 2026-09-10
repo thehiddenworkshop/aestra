@@ -150,7 +150,7 @@ fn handle_diagnostics_actions(
                         if state.details.take().is_some() {
                             session.ui_revision += 1;
                         }
-                        reveal_dock_panel(&mut layout, &mut session, DockPanel::Diagnostics);
+                        reveal_dock_panel(&mut layout, &mut session, ToolPanel::Diagnostics);
                     }
                     DiagnosticsAction::SetFilter(filter) => {
                         if state.filter != filter {
@@ -161,7 +161,7 @@ fn handle_diagnostics_actions(
                     DiagnosticsAction::Select { source, index } => {
                         if navigate_to_diagnostic(&mut session, catalog.as_deref(), source, index) {
                             workspace.clear();
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
+                            reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                         }
                     }
                 }

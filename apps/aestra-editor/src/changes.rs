@@ -85,7 +85,7 @@ fn handle_changes_actions(
                     }
                     ChangesAction::Navigate(target) => {
                         if select_change_target(&mut session, target, &localizer) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
+                            reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                         }
                     }
                 }

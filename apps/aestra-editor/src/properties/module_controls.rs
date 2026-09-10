@@ -49,7 +49,7 @@ pub(super) fn handle_module_action(
         PropertiesAction::DuplicateModule(id) => session.duplicate_module(id),
         PropertiesAction::DeleteModule(id) => {
             if preview_module_deletion(session, id) {
-                reveal_dock_panel(layout, session, DockPanel::Changes);
+                reveal_dock_panel(layout, session, ToolPanel::Changes);
                 workspace.clear();
             }
         }

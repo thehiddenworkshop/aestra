@@ -32,16 +32,16 @@ pub(crate) enum HistoryScope {
 }
 
 impl HistoryScope {
-    pub(crate) fn for_panel(panel: Option<crate::docking::DockPanel>, standalone: bool) -> Self {
-        use crate::docking::DockPanel;
+    pub(crate) fn for_panel(panel: Option<crate::docking::ToolPanel>, standalone: bool) -> Self {
+        use crate::docking::ToolPanel;
         match panel {
-            Some(DockPanel::MaterialGraph) => Self::Material,
-            Some(DockPanel::Properties) if standalone => Self::Material,
+            Some(ToolPanel::MaterialGraph) => Self::Material,
+            Some(ToolPanel::Properties) if standalone => Self::Material,
             Some(
-                DockPanel::Properties
-                | DockPanel::Timeline
-                | DockPanel::Curves
-                | DockPanel::Viewport,
+                ToolPanel::Properties
+                | ToolPanel::Timeline
+                | ToolPanel::Curves
+                | ToolPanel::Viewport,
             ) => Self::Effect,
             _ => Self::Neutral,
         }

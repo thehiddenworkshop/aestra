@@ -1721,7 +1721,7 @@ fn material_activation_opens_shared_source_without_retargeting_the_effect() {
         .unwrap();
     let mut app = browser_app(root.path());
     let mut layout = WorkspaceLayout::default();
-    layout.show(DockPanel::MaterialGraph); // Already visible, so no layout file is written.
+    layout.show(ToolPanel::MaterialGraph); // Already visible, so no layout file is written.
     app.insert_resource(layout);
     let (source, row) = rows(&mut app).into_iter().next().unwrap();
     let original_selection = app.world().resource::<EditorSession>().selection;
@@ -1914,5 +1914,5 @@ fn legacy_switch_keeps_the_same_dock_slot_and_browser_choices() {
         app.world().resource::<AssetBrowserState>().view,
         ViewMode::Grid
     );
-    assert_eq!(DockPanel::Assets.message_id(), "panel-assets");
+    assert_eq!(ToolPanel::Assets.message_id(), "panel-assets");
 }

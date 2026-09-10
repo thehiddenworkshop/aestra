@@ -121,7 +121,7 @@ pub(super) fn activate_details(
         state.details = next;
         session.ui_revision += 1;
     }
-    reveal_dock_panel(&mut layout, &mut session, DockPanel::Diagnostics);
+    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Diagnostics);
 }
 
 pub(super) fn sync_status_details(

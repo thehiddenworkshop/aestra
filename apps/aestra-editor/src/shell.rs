@@ -932,7 +932,7 @@ pub(crate) fn handle_buttons(
 pub(crate) fn reveal_dock_panel(
     layout: &mut WorkspaceLayout,
     session: &mut EditorSession,
-    panel: DockPanel,
+    panel: ToolPanel,
 ) {
     if !layout.show(panel) {
         return;

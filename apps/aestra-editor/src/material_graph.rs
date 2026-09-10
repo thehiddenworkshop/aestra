@@ -860,7 +860,7 @@ fn select_material_graph_node(
         .select_expression(action.program, action.expression, control, shift)
         .map(|expression| (action.program, expression));
     session.ui_revision += 1;
-    reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
+    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
     click.propagate(false);
 }
 

@@ -91,7 +91,7 @@ use docking::DockDragState;
 #[cfg(test)]
 use docking::DockTab;
 use docking::{
-    DockPanel, DockTreeHost, DockingPlugin, DockingSet, NativeFloatingWindow, WorkspaceLayout,
+    DockTreeHost, DockingPlugin, DockingSet, NativeFloatingWindow, ToolPanel, WorkspaceLayout,
 };
 #[cfg(test)]
 use feathers::button::queue_action_activation as queue_feathers_action_activation;
@@ -320,9 +320,9 @@ mod tests {
 
     #[test]
     fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {
-        assert_eq!(dock_pane_background(Some(DockPanel::Viewport)), Color::NONE);
+        assert_eq!(dock_pane_background(Some(ToolPanel::Viewport)), Color::NONE);
         assert_eq!(
-            dock_pane_background(Some(DockPanel::Properties)),
+            dock_pane_background(Some(ToolPanel::Properties)),
             theme::PANEL_DARK
         );
         assert_eq!(dock_pane_background(None), theme::PANEL_DARK);
@@ -334,12 +334,12 @@ mod tests {
         let mut buttons = ButtonInput::<MouseButton>::default();
         buttons.press(MouseButton::Left);
         app.insert_resource(buttons);
-        app.insert_resource(DockDragState(Some(DockPanel::Properties)));
+        app.insert_resource(DockDragState(Some(ToolPanel::Properties)));
         app.add_systems(Update, clear_finished_dock_drag);
         let tab = app
             .world_mut()
             .spawn((
-                DockTab(DockPanel::Properties),
+                DockTab(ToolPanel::Properties),
                 UiTransform {
                     translation: Val2::px(20.0, 10.0),
                     ..default()
@@ -351,7 +351,7 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().resource::<DockDragState>().0,
-            Some(DockPanel::Properties)
+            Some(ToolPanel::Properties)
         );
 
         app.world_mut()

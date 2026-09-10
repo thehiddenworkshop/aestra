@@ -53,11 +53,11 @@ fn handle_compiler_inspector_actions(
                 background.0 = theme::ACCENT_DIM;
                 workspace.clear();
                 if focus_compiled_target(&mut session, &mut properties_focus, target, &localizer) {
-                    reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
+                    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                 } else {
                     session.status = localizer.text("compiler-status-pending-target");
                     session.ui_revision += 1;
-                    reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Changes);
                 }
             }
         }

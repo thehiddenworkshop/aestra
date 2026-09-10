@@ -3,7 +3,7 @@
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     ProjectEffectCatalog,
-    docking::DockPanel,
+    docking::ToolPanel,
     feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     localization::Localizer,
@@ -244,10 +244,10 @@ fn execute_viewport_action(
         }
         ViewportAction::SetPreviewDisplayMode(mode) => preview_display.set_mode(mode),
         ViewportAction::ToggleMaximize => {
-            maximized.0 = if maximized.0 == Some(DockPanel::Viewport) {
+            maximized.0 = if maximized.0 == Some(ToolPanel::Viewport) {
                 None
             } else {
-                Some(DockPanel::Viewport)
+                Some(ToolPanel::Viewport)
             };
             session.ui_revision += 1;
         }
@@ -3153,14 +3153,14 @@ mod tests {
 
     #[test]
     fn toggle_maximize_flips_the_maximized_viewport_panel() {
-        use crate::docking::{DockPanel, MaximizedPanel};
+        use crate::docking::{MaximizedPanel, ToolPanel};
         let (mut app, _temporary) = viewport_action_app();
 
         app.world_mut().trigger(ViewportAction::ToggleMaximize);
         app.update();
         assert_eq!(
             app.world().resource::<MaximizedPanel>().0,
-            Some(DockPanel::Viewport)
+            Some(ToolPanel::Viewport)
         );
 
         app.world_mut().trigger(ViewportAction::ToggleMaximize);

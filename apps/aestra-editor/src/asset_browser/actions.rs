@@ -196,7 +196,7 @@ pub(super) fn handle_action(
                 state.inspection_tab = tab;
                 state.inspection_page = 0;
                 if let Some(layout) = layout.as_deref_mut() {
-                    reveal_dock_panel(layout, &mut session, DockPanel::AssetInspector);
+                    reveal_dock_panel(layout, &mut session, ToolPanel::AssetInspector);
                 }
             }
         }
@@ -256,7 +256,7 @@ fn reveal_browser(
         session.ui_revision += 1;
     }
     if let Some(layout) = layout {
-        reveal_dock_panel(layout, session, DockPanel::Assets);
+        reveal_dock_panel(layout, session, ToolPanel::Assets);
     }
 }
 
@@ -420,7 +420,7 @@ pub(super) fn open_function(
             } else {
                 "Graph function opened; edit its signature in Properties".into()
             };
-            reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
+            reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
         }
         Err(error) => {
             session.status = format!("Cannot open function: {error}");
@@ -449,7 +449,7 @@ pub(super) fn open_material(
         session.status = format!("Cannot open material: {error}");
     } else {
         session.status = localizer.text("browser-material-opened");
-        reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
+        reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
     }
 }
 

@@ -86,7 +86,7 @@ impl Default for MenuState {
 
 #[derive(Clone, Copy)]
 pub(crate) struct TabContextMenu {
-    pub(crate) panel: DockPanel,
+    pub(crate) panel: ToolPanel,
     pub(crate) position: [f32; 2],
 }
 
@@ -131,7 +131,7 @@ pub(crate) struct AboutDescription;
 struct PanelsSubmenu;
 
 #[derive(Component)]
-struct PanelVisibilityLabel(DockPanel);
+struct PanelVisibilityLabel(ToolPanel);
 
 #[derive(Component)]
 struct MenuDropdown(MenuKind);
@@ -310,7 +310,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                         dropdown,
                         "file-settings",
                         "",
-                        DockingAction::Show(DockPanel::Settings),
+                        DockingAction::Show(ToolPanel::Settings),
                         localizer,
                     );
                     dropdown
@@ -599,7 +599,7 @@ fn spawn_view_menu(
                             ThemeBorderColor(tokens::MENU_BORDER),
                         ))
                         .with_children(|submenu| {
-                            for panel in DockPanel::ALL {
+                            for panel in ToolPanel::ALL {
                                 let visible = layout.is_visible(panel);
                                 let mut item = submenu.spawn_empty();
                                 item.apply_scene(ui_shell::feathers_menu_item()).insert((
@@ -759,7 +759,7 @@ fn spawn_checkable_menu_item<A: Component>(
         });
 }
 
-fn panel_visibility_label(localizer: &Localizer, panel: DockPanel, visible: bool) -> String {
+fn panel_visibility_label(localizer: &Localizer, panel: ToolPanel, visible: bool) -> String {
     format!(
         "[{}]  {}",
         if visible { "x" } else { " " },
@@ -1343,11 +1343,11 @@ mod tests {
     fn panel_visibility_labels_use_checkbox_notation() {
         let localizer = Localizer::new("en-US").unwrap();
         assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::Diagnostics, true),
+            panel_visibility_label(&localizer, ToolPanel::Diagnostics, true),
             "[x]  DIAGNOSTICS"
         );
         assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::Diagnostics, false),
+            panel_visibility_label(&localizer, ToolPanel::Diagnostics, false),
             "[ ]  DIAGNOSTICS"
         );
     }

@@ -179,7 +179,7 @@ pub(super) fn handle_renderer_action(
         PropertiesAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
         PropertiesAction::DeleteRenderer(id) => {
             if preview_renderer_deletion(session, id) {
-                reveal_dock_panel(layout, session, DockPanel::Changes);
+                reveal_dock_panel(layout, session, ToolPanel::Changes);
                 workspace.clear();
             }
         }

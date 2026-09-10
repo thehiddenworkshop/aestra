@@ -2,10 +2,11 @@
 
 use crate::docking::{
     DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
-    DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
+    DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
     DockTreeHost, DockingAction, MaximizedPanel, NativeFloatingCamera, NativeFloatingUi,
-    NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi, WorkspaceLayout,
+    NativeFloatingWindow, ResizeState, SplitterGrip, StagedNativeFloatingUi, ToolPanel,
+    WorkspaceLayout,
 };
 use crate::feathers::node_graph::GraphViewportMemory;
 use crate::timeline::TimelineState;
@@ -93,7 +94,7 @@ impl<'w> DockUiResources<'w> {
             settings_panel: &self.settings_panel,
             settings_persistence: &self.settings_persistence,
             localizer: &self.localizer,
-            viewport_maximized: self.maximized.0 == Some(DockPanel::Viewport),
+            viewport_maximized: self.maximized.0 == Some(ToolPanel::Viewport),
         }
     }
 }
@@ -432,8 +433,8 @@ fn spawn_dock_stack(
         });
 }
 
-pub(crate) fn dock_pane_background(active: Option<DockPanel>) -> Color {
-    if active == Some(DockPanel::Viewport) {
+pub(crate) fn dock_pane_background(active: Option<ToolPanel>) -> Color {
+    if active == Some(ToolPanel::Viewport) {
         Color::NONE
     } else {
         theme::PANEL_DARK
@@ -442,18 +443,18 @@ pub(crate) fn dock_pane_background(active: Option<DockPanel>) -> Color {
 
 fn spawn_panel_content(
     parent: &mut ChildSpawnerCommands,
-    panel: DockPanel,
+    panel: ToolPanel,
     workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => viewport::spawn_preview(
+        ToolPanel::Viewport => viewport::spawn_preview(
             parent,
             sources.viewport_maximized,
             sources.localizer,
             sources.asset_server,
         ),
-        DockPanel::Assets => asset_browser::spawn_assets_panel(
+        ToolPanel::Assets => asset_browser::spawn_assets_panel(
             parent,
             sources.session,
             sources.catalog,
@@ -461,8 +462,8 @@ fn spawn_panel_content(
             sources.browser,
             sources.localizer,
         ),
-        DockPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
-        DockPanel::Properties => {
+        ToolPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
+        ToolPanel::Properties => {
             spawn_properties(
                 parent,
                 sources.session,
@@ -478,7 +479,7 @@ fn spawn_panel_content(
                 sources.asset_server,
             );
         }
-        DockPanel::Timeline => timeline::spawn_timeline(
+        ToolPanel::Timeline => timeline::spawn_timeline(
             parent,
             sources.session,
             sources.timeline,
@@ -488,7 +489,7 @@ fn spawn_panel_content(
             sources.localizer,
             sources.asset_server,
         ),
-        DockPanel::Curves => {
+        ToolPanel::Curves => {
             spawn_curves_workspace(
                 parent,
                 sources.session,
@@ -497,7 +498,7 @@ fn spawn_panel_content(
                 sources.localizer,
             );
         }
-        DockPanel::Diagnostics => {
+        ToolPanel::Diagnostics => {
             spawn_diagnostics_workspace(
                 parent,
                 sources.session,
@@ -506,10 +507,10 @@ fn spawn_panel_content(
                 sources.localizer,
             );
         }
-        DockPanel::CompilerInspector => {
+        ToolPanel::CompilerInspector => {
             spawn_compiler_inspector_workspace(parent, sources.session, sources.localizer)
         }
-        DockPanel::MaterialGraph => spawn_material_graph_workspace(
+        ToolPanel::MaterialGraph => spawn_material_graph_workspace(
             parent,
             sources.session,
             sources.catalog,
@@ -520,11 +521,11 @@ fn spawn_panel_content(
             sources.localizer,
             sources.asset_server,
         ),
-        DockPanel::Profiler => {
+        ToolPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
         }
-        DockPanel::Changes => spawn_changes_workspace(parent, sources.session, sources.localizer),
-        DockPanel::Settings => spawn_settings_workspace(
+        ToolPanel::Changes => spawn_changes_workspace(parent, sources.session, sources.localizer),
+        ToolPanel::Settings => spawn_settings_workspace(
             parent,
             sources.settings,
             sources.settings_panel,
@@ -536,7 +537,7 @@ fn spawn_panel_content(
 
 fn spawn_native_floating_ui(
     commands: &mut Commands,
-    panel: DockPanel,
+    panel: ToolPanel,
     camera: Entity,
     revision: u64,
     workspace: &CurvesState,
@@ -738,7 +739,7 @@ fn spawn_dock_tab_bar(
         ))
         .with_children(|bar| {
             for panel in &stack.tabs {
-                let dirty = *panel == DockPanel::MaterialGraph && material_graph_unsaved;
+                let dirty = *panel == ToolPanel::MaterialGraph && material_graph_unsaved;
                 spawn_dock_tab(bar, *panel, stack.active == Some(*panel), dirty, localizer);
             }
             bar.spawn((
@@ -774,7 +775,7 @@ fn spawn_dock_tab_bar(
 
 fn spawn_dock_tab(
     parent: &mut ChildSpawnerCommands,
-    panel: DockPanel,
+    panel: ToolPanel,
     selected: bool,
     dirty: bool,
     localizer: &Localizer,
@@ -1136,7 +1137,7 @@ fn open_dock_tab_context_menu(
         };
         entity = parent.parent();
     };
-    if tab.0 == DockPanel::Viewport
+    if tab.0 == ToolPanel::Viewport
         || layout
             .floating
             .iter()
@@ -1435,7 +1436,7 @@ mod tests {
         let old = app
             .world_mut()
             .spawn(NativeFloatingUi {
-                panel: DockPanel::Properties,
+                panel: ToolPanel::Properties,
                 revision: 3,
             })
             .insert(Node::default())
@@ -1445,7 +1446,7 @@ mod tests {
             .world_mut()
             .spawn((
                 NativeFloatingUi {
-                    panel: DockPanel::Properties,
+                    panel: ToolPanel::Properties,
                     revision: 4,
                 },
                 StagedNativeFloatingUi,

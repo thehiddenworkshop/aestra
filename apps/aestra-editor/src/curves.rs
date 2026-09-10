@@ -204,7 +204,7 @@ fn handle_curves_actions(
                 match *action {
                     CurvesAction::OpenHost(channel) => {
                         host_motion::open(&mut session, &mut state, &mut timeline, channel);
-                        reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
+                        reveal_dock_panel(&mut layout, &mut session, ToolPanel::Curves);
                     }
                     CurvesAction::HostAddKey => {
                         host_motion::add_key(&mut session, &mut state, &mut timeline)
@@ -214,7 +214,7 @@ fn handle_curves_actions(
                     }
                     CurvesAction::OpenInput(module, input) => {
                         state.host = None;
-                        reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
+                        reveal_dock_panel(&mut layout, &mut session, ToolPanel::Curves);
                         state.complex = Some(ComplexSelection {
                             module,
                             input,

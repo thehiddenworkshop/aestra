@@ -73,20 +73,20 @@ impl Plugin for DockingPlugin {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DockingAction {
-    Select(DockPanel),
-    Close(DockPanel),
-    Show(DockPanel),
-    Toggle(DockPanel),
-    Float(DockPanel, [f32; 2]),
+    Select(ToolPanel),
+    Close(ToolPanel),
+    Show(ToolPanel),
+    Toggle(ToolPanel),
+    Float(ToolPanel, [f32; 2]),
     ResetWorkspace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DockingStatus {
-    Closed(DockPanel),
-    Showing(DockPanel),
-    Hidden(DockPanel),
-    Floated(DockPanel),
+    Closed(ToolPanel),
+    Showing(ToolPanel),
+    Hidden(ToolPanel),
+    Floated(ToolPanel),
     WorkspaceReset,
 }
 
@@ -313,7 +313,7 @@ fn dock_tree_host_node() -> Node {
 }
 
 #[derive(Component)]
-pub(crate) struct DockTab(pub(crate) DockPanel);
+pub(crate) struct DockTab(pub(crate) ToolPanel);
 
 #[derive(Component)]
 pub(crate) struct DockTabAppendZone(pub(crate) DockNodeId);
@@ -322,14 +322,14 @@ pub(crate) struct DockTabAppendZone(pub(crate) DockNodeId);
 pub(crate) struct DockTabAppendIndicator(pub(crate) DockNodeId);
 
 #[derive(Component)]
-pub(crate) struct NativeFloatingWindow(pub(crate) DockPanel);
+pub(crate) struct NativeFloatingWindow(pub(crate) ToolPanel);
 
 #[derive(Component)]
-pub(crate) struct NativeFloatingCamera(pub(crate) DockPanel);
+pub(crate) struct NativeFloatingCamera(pub(crate) ToolPanel);
 
 #[derive(Component)]
 pub(crate) struct NativeFloatingUi {
-    pub(crate) panel: DockPanel,
+    pub(crate) panel: ToolPanel,
     pub(crate) revision: u64,
 }
 
@@ -364,7 +364,7 @@ pub(crate) struct DockSplitter {
 pub(crate) struct DockFirstPane(pub(crate) DockNodeId);
 
 #[derive(Resource, Default)]
-pub(crate) struct DockDragState(pub(crate) Option<DockPanel>);
+pub(crate) struct DockDragState(pub(crate) Option<ToolPanel>);
 
 #[derive(Resource, Default)]
 pub(crate) struct ResizeState(pub(crate) Option<DockSplitter>);
@@ -372,7 +372,7 @@ pub(crate) struct ResizeState(pub(crate) Option<DockSplitter>);
 /// The panel currently maximized to fill the whole editor, hiding the rest of the dock tree.
 /// Transient: not part of the persisted [`WorkspaceLayout`].
 #[derive(Resource, Default)]
-pub(crate) struct MaximizedPanel(pub(crate) Option<DockPanel>);
+pub(crate) struct MaximizedPanel(pub(crate) Option<ToolPanel>);
 
 #[derive(SystemParam)]
 pub(crate) struct DockDropQueries<'w, 's> {
@@ -391,7 +391,7 @@ pub(crate) struct DockResizeQueries<'w, 's> {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum DockPanel {
+pub(crate) enum ToolPanel {
     #[default]
     Viewport,
     Assets,
@@ -409,7 +409,7 @@ pub(crate) enum DockPanel {
     Settings,
 }
 
-impl DockPanel {
+impl ToolPanel {
     pub(crate) const ALL: [Self; 12] = [
         Self::Viewport,
         Self::Assets,
@@ -468,14 +468,14 @@ pub(crate) struct DockNodeId(pub(crate) u64);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct DockStack {
-    pub(crate) tabs: Vec<DockPanel>,
-    pub(crate) active: Option<DockPanel>,
+    pub(crate) tabs: Vec<ToolPanel>,
+    pub(crate) active: Option<ToolPanel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct FloatingPanel {
-    pub(crate) panel: DockPanel,
+    pub(crate) panel: ToolPanel,
     pub(crate) position: [f32; 2],
     pub(crate) size: [f32; 2],
 }
@@ -483,7 +483,7 @@ pub(crate) struct FloatingPanel {
 impl Default for FloatingPanel {
     fn default() -> Self {
         Self {
-            panel: DockPanel::Properties,
+            panel: ToolPanel::Properties,
             position: [120.0, 80.0],
             size: [420.0, 520.0],
         }
@@ -491,7 +491,7 @@ impl Default for FloatingPanel {
 }
 
 impl DockStack {
-    pub(crate) fn new(tabs: impl IntoIterator<Item = DockPanel>, active: DockPanel) -> Self {
+    pub(crate) fn new(tabs: impl IntoIterator<Item = ToolPanel>, active: ToolPanel) -> Self {
         let mut stack = Self {
             tabs: tabs.into_iter().collect(),
             active: Some(active),
@@ -518,12 +518,12 @@ impl DockStack {
         }
     }
 
-    fn remove(&mut self, panel: DockPanel) {
+    fn remove(&mut self, panel: ToolPanel) {
         self.tabs.retain(|candidate| *candidate != panel);
         self.normalize();
     }
 
-    fn push_active(&mut self, panel: DockPanel) {
+    fn push_active(&mut self, panel: ToolPanel) {
         self.remove(panel);
         self.tabs.push(panel);
         self.active = Some(panel);
@@ -552,7 +552,7 @@ impl DockNode {
         }
     }
 
-    fn tabs(id: u64, panels: &[DockPanel], active: DockPanel) -> Self {
+    fn tabs(id: u64, panels: &[ToolPanel], active: ToolPanel) -> Self {
         Self::Tabs {
             id: DockNodeId(id),
             stack: DockStack::new(panels.iter().copied(), active),
@@ -603,7 +603,7 @@ impl DockNode {
         }
     }
 
-    fn remove_panel(&mut self, panel: DockPanel) {
+    fn remove_panel(&mut self, panel: ToolPanel) {
         match self {
             Self::Split { first, second, .. } => {
                 first.remove_panel(panel);
@@ -613,7 +613,7 @@ impl DockNode {
         }
     }
 
-    fn activate(&mut self, panel: DockPanel) -> bool {
+    fn activate(&mut self, panel: ToolPanel) -> bool {
         match self {
             Self::Split { first, second, .. } => first.activate(panel) || second.activate(panel),
             Self::Tabs { stack, .. } => {
@@ -627,14 +627,14 @@ impl DockNode {
         }
     }
 
-    pub(crate) fn contains(&self, panel: DockPanel) -> bool {
+    pub(crate) fn contains(&self, panel: ToolPanel) -> bool {
         match self {
             Self::Split { first, second, .. } => first.contains(panel) || second.contains(panel),
             Self::Tabs { stack, .. } => stack.tabs.contains(&panel),
         }
     }
 
-    fn node_containing(&self, panel: DockPanel) -> Option<DockNodeId> {
+    fn node_containing(&self, panel: ToolPanel) -> Option<DockNodeId> {
         match self {
             Self::Split { first, second, .. } => first
                 .node_containing(panel)
@@ -682,25 +682,25 @@ impl Default for WorkspaceLayout {
         // The material graph is the central workspace; the viewport sits on the left, properties on
         // the right, and the utility panels group into a bottom strip. The profiler is hidden by
         // default and reopens beneath the viewport.
-        let viewport = DockNode::tabs(2, &[DockPanel::Viewport], DockPanel::Viewport);
+        let viewport = DockNode::tabs(2, &[ToolPanel::Viewport], ToolPanel::Viewport);
         let center = DockNode::tabs(
             8,
-            &[DockPanel::Timeline, DockPanel::MaterialGraph],
-            DockPanel::MaterialGraph,
+            &[ToolPanel::Timeline, ToolPanel::MaterialGraph],
+            ToolPanel::MaterialGraph,
         );
         // Roughly square viewport on a typical 16:9 window; the graph takes the rest.
         let left_center = DockNode::split(9, DockAxis::Horizontal, 0.42, viewport, center);
-        let properties = DockNode::tabs(3, &[DockPanel::Properties], DockPanel::Properties);
+        let properties = DockNode::tabs(3, &[ToolPanel::Properties], ToolPanel::Properties);
         let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
         let bottom = DockNode::tabs(
             4,
             &[
-                DockPanel::Curves,
-                DockPanel::Diagnostics,
-                DockPanel::Changes,
-                DockPanel::Assets,
+                ToolPanel::Curves,
+                ToolPanel::Diagnostics,
+                ToolPanel::Changes,
+                ToolPanel::Assets,
             ],
-            DockPanel::Assets,
+            ToolPanel::Assets,
         );
         Self {
             root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
@@ -729,7 +729,7 @@ impl WorkspaceLayout {
         fs::write(path, source)
     }
 
-    pub(crate) fn dock(&mut self, panel: DockPanel, target: DockNodeId, drop: DockDrop) -> bool {
+    pub(crate) fn dock(&mut self, panel: ToolPanel, target: DockNodeId, drop: DockDrop) -> bool {
         let previous = self.clone();
         self.root.remove_panel(panel);
         self.floating.retain(|floating| floating.panel != panel);
@@ -774,14 +774,14 @@ impl WorkspaceLayout {
         *self != previous
     }
 
-    pub(crate) fn activate(&mut self, panel: DockPanel) -> bool {
+    pub(crate) fn activate(&mut self, panel: ToolPanel) -> bool {
         self.root.activate(panel)
     }
 
     pub(crate) fn reorder_tab(
         &mut self,
-        panel: DockPanel,
-        target: DockPanel,
+        panel: ToolPanel,
+        target: ToolPanel,
         before: bool,
     ) -> bool {
         if panel == target || !self.contains(panel) || !self.root.contains(target) {
@@ -810,11 +810,11 @@ impl WorkspaceLayout {
         *self != previous
     }
 
-    pub(crate) fn is_active(&self, panel: DockPanel) -> bool {
+    pub(crate) fn is_active(&self, panel: ToolPanel) -> bool {
         if self.floating.iter().any(|floating| floating.panel == panel) {
             return true;
         }
-        fn visit(node: &DockNode, panel: DockPanel) -> bool {
+        fn visit(node: &DockNode, panel: ToolPanel) -> bool {
             match node {
                 DockNode::Split { first, second, .. } => {
                     visit(first, panel) || visit(second, panel)
@@ -826,11 +826,11 @@ impl WorkspaceLayout {
         visit(&self.root, panel)
     }
 
-    pub(crate) fn is_visible(&self, panel: DockPanel) -> bool {
+    pub(crate) fn is_visible(&self, panel: ToolPanel) -> bool {
         self.contains(panel)
     }
 
-    pub(crate) fn close(&mut self, panel: DockPanel) -> bool {
+    pub(crate) fn close(&mut self, panel: ToolPanel) -> bool {
         if !panel.closable() || !self.contains(panel) {
             return false;
         }
@@ -840,41 +840,41 @@ impl WorkspaceLayout {
         true
     }
 
-    pub(crate) fn show(&mut self, panel: DockPanel) -> bool {
+    pub(crate) fn show(&mut self, panel: ToolPanel) -> bool {
         if self.floating.iter().any(|floating| floating.panel == panel) {
             return false;
         }
         if self.root.contains(panel) {
             return self.root.activate(panel);
         }
-        if panel == DockPanel::AssetInspector
-            && let Some(target) = self.root.node_containing(DockPanel::Properties)
+        if panel == ToolPanel::AssetInspector
+            && let Some(target) = self.root.node_containing(ToolPanel::Properties)
         {
             return self.dock(panel, target, DockDrop::Center);
         }
-        if panel == DockPanel::Settings {
-            let Some(target) = self.root.node_containing(DockPanel::Viewport) else {
+        if panel == ToolPanel::Settings {
+            let Some(target) = self.root.node_containing(ToolPanel::Viewport) else {
                 return false;
             };
             let previous = self.clone();
             if !self.dock(panel, target, DockDrop::Center) {
                 return false;
             }
-            self.reorder_tab(panel, DockPanel::Viewport, false);
+            self.reorder_tab(panel, ToolPanel::Viewport, false);
             return *self != previous;
         }
         // Panels reopen next to their default neighbours: the material graph and timeline share the
         // central stack, the utility panels the bottom strip, and the profiler sits under the
         // viewport.
-        let center_group = [DockPanel::MaterialGraph, DockPanel::Timeline];
+        let center_group = [ToolPanel::MaterialGraph, ToolPanel::Timeline];
         let bottom_group = [
-            DockPanel::Curves,
-            DockPanel::Diagnostics,
-            DockPanel::Changes,
-            DockPanel::Assets,
-            DockPanel::CompilerInspector,
+            ToolPanel::Curves,
+            ToolPanel::Diagnostics,
+            ToolPanel::Changes,
+            ToolPanel::Assets,
+            ToolPanel::CompilerInspector,
         ];
-        let co_locate = |layout: &Self, group: &[DockPanel]| {
+        let co_locate = |layout: &Self, group: &[ToolPanel]| {
             group
                 .iter()
                 .find_map(|candidate| layout.root.node_containing(*candidate))
@@ -883,22 +883,22 @@ impl WorkspaceLayout {
         let target_and_drop = if center_group.contains(&panel) {
             co_locate(self, &center_group).or_else(|| {
                 self.root
-                    .node_containing(DockPanel::Viewport)
+                    .node_containing(ToolPanel::Viewport)
                     .map(|target| (target, DockDrop::Right))
             })
         } else if bottom_group.contains(&panel) {
             co_locate(self, &bottom_group).or_else(|| {
                 self.root
-                    .node_containing(DockPanel::Viewport)
+                    .node_containing(ToolPanel::Viewport)
                     .map(|target| (target, DockDrop::Bottom))
             })
-        } else if panel == DockPanel::Profiler {
+        } else if panel == ToolPanel::Profiler {
             self.root
-                .node_containing(DockPanel::Viewport)
+                .node_containing(ToolPanel::Viewport)
                 .map(|target| (target, DockDrop::Bottom))
         } else {
             self.root
-                .node_containing(DockPanel::Viewport)
+                .node_containing(ToolPanel::Viewport)
                 .map(|target| (target, DockDrop::Right))
         };
         let Some((target, drop)) = target_and_drop else {
@@ -909,11 +909,11 @@ impl WorkspaceLayout {
 
     pub(crate) fn float_panel(
         &mut self,
-        panel: DockPanel,
+        panel: ToolPanel,
         position: [f32; 2],
         available_size: [f32; 2],
     ) -> bool {
-        if panel == DockPanel::Viewport || !self.root.contains(panel) {
+        if panel == ToolPanel::Viewport || !self.root.contains(panel) {
             return false;
         }
         self.root.remove_panel(panel);
@@ -929,7 +929,7 @@ impl WorkspaceLayout {
 
     pub(crate) fn update_floating_geometry(
         &mut self,
-        panel: DockPanel,
+        panel: ToolPanel,
         position: Option<[f32; 2]>,
         size: Option<[f32; 2]>,
     ) -> bool {
@@ -950,7 +950,7 @@ impl WorkspaceLayout {
         *floating != previous
     }
 
-    pub(crate) fn redock(&mut self, panel: DockPanel) -> bool {
+    pub(crate) fn redock(&mut self, panel: ToolPanel) -> bool {
         if !self.floating.iter().any(|floating| floating.panel == panel) {
             return false;
         }
@@ -985,7 +985,7 @@ impl WorkspaceLayout {
         id
     }
 
-    fn contains(&self, panel: DockPanel) -> bool {
+    fn contains(&self, panel: ToolPanel) -> bool {
         self.root.contains(panel) || self.floating.iter().any(|floating| floating.panel == panel)
     }
 
@@ -993,16 +993,16 @@ impl WorkspaceLayout {
         self.root.normalize();
         let maximum_id = max_node_id(&self.root);
         self.next_node_id = self.next_node_id.max(maximum_id + 1);
-        if !self.root.contains(DockPanel::Viewport) {
+        if !self.root.contains(ToolPanel::Viewport) {
             return Self::default();
         }
-        for panel in DockPanel::ALL {
+        for panel in ToolPanel::ALL {
             let mut found = false;
             remove_duplicate_occurrences(&mut self.root, panel, &mut found);
             self.floating.retain(|floating| {
                 if floating.panel != panel {
                     true
-                } else if found || panel == DockPanel::Viewport {
+                } else if found || panel == ToolPanel::Viewport {
                     false
                 } else {
                     found = true;
@@ -1019,41 +1019,41 @@ impl WorkspaceLayout {
         if self
             .floating
             .iter()
-            .any(|floating| floating.panel == DockPanel::Settings)
+            .any(|floating| floating.panel == ToolPanel::Settings)
         {
             return;
         }
-        let Some(settings_node) = self.root.node_containing(DockPanel::Settings) else {
+        let Some(settings_node) = self.root.node_containing(ToolPanel::Settings) else {
             return;
         };
-        let Some(viewport_node) = self.root.node_containing(DockPanel::Viewport) else {
+        let Some(viewport_node) = self.root.node_containing(ToolPanel::Viewport) else {
             return;
         };
         if settings_node == viewport_node
             || !self
                 .root
                 .find_tabs(settings_node)
-                .is_some_and(|stack| stack.tabs == [DockPanel::Settings])
+                .is_some_and(|stack| stack.tabs == [ToolPanel::Settings])
         {
             return;
         }
-        self.dock(DockPanel::Settings, viewport_node, DockDrop::Center);
-        self.reorder_tab(DockPanel::Settings, DockPanel::Viewport, false);
+        self.dock(ToolPanel::Settings, viewport_node, DockDrop::Center);
+        self.reorder_tab(ToolPanel::Settings, ToolPanel::Viewport, false);
     }
 }
 
-fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2] {
+fn default_floating_size(panel: ToolPanel, available_size: [f32; 2]) -> [f32; 2] {
     let preferred: [f32; 2] = match panel {
-        DockPanel::Timeline
-        | DockPanel::Curves
-        | DockPanel::Diagnostics
-        | DockPanel::CompilerInspector
-        | DockPanel::MaterialGraph
-        | DockPanel::Profiler
-        | DockPanel::Changes => [720.0, 320.0],
-        DockPanel::Assets | DockPanel::Properties | DockPanel::AssetInspector => [420.0, 520.0],
-        DockPanel::Settings => [520.0, 620.0],
-        DockPanel::Viewport => [760.0, 540.0],
+        ToolPanel::Timeline
+        | ToolPanel::Curves
+        | ToolPanel::Diagnostics
+        | ToolPanel::CompilerInspector
+        | ToolPanel::MaterialGraph
+        | ToolPanel::Profiler
+        | ToolPanel::Changes => [720.0, 320.0],
+        ToolPanel::Assets | ToolPanel::Properties | ToolPanel::AssetInspector => [420.0, 520.0],
+        ToolPanel::Settings => [520.0, 620.0],
+        ToolPanel::Viewport => [760.0, 540.0],
     };
     [
         preferred[0].min(available_size[0].max(260.0)),
@@ -1061,7 +1061,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
     ]
 }
 
-fn remove_duplicate_occurrences(node: &mut DockNode, panel: DockPanel, found: &mut bool) {
+fn remove_duplicate_occurrences(node: &mut DockNode, panel: ToolPanel, found: &mut bool) {
     match node {
         DockNode::Split { first, second, .. } => {
             remove_duplicate_occurrences(first, panel, found);
@@ -1114,50 +1114,50 @@ mod tests {
     #[test]
     fn asset_inspector_is_optional_closable_and_reuses_properties_stack() {
         let mut layout = WorkspaceLayout::default();
-        assert!(!layout.contains(DockPanel::AssetInspector));
-        let assets = layout.root.node_containing(DockPanel::Assets);
-        let properties = layout.root.node_containing(DockPanel::Properties);
-        assert!(layout.show(DockPanel::AssetInspector));
+        assert!(!layout.contains(ToolPanel::AssetInspector));
+        let assets = layout.root.node_containing(ToolPanel::Assets);
+        let properties = layout.root.node_containing(ToolPanel::Properties);
+        assert!(layout.show(ToolPanel::AssetInspector));
         assert_eq!(
-            layout.root.node_containing(DockPanel::AssetInspector),
+            layout.root.node_containing(ToolPanel::AssetInspector),
             properties
         );
-        assert_eq!(layout.root.node_containing(DockPanel::Assets), assets);
-        assert!(layout.close(DockPanel::AssetInspector));
-        assert!(layout.contains(DockPanel::Assets));
-        assert!(layout.show(DockPanel::AssetInspector));
-        assert!(layout.float_panel(DockPanel::AssetInspector, [40.0, 40.0], [1000.0, 700.0]));
-        assert!(layout.close(DockPanel::AssetInspector));
+        assert_eq!(layout.root.node_containing(ToolPanel::Assets), assets);
+        assert!(layout.close(ToolPanel::AssetInspector));
+        assert!(layout.contains(ToolPanel::Assets));
+        assert!(layout.show(ToolPanel::AssetInspector));
+        assert!(layout.float_panel(ToolPanel::AssetInspector, [40.0, 40.0], [1000.0, 700.0]));
+        assert!(layout.close(ToolPanel::AssetInspector));
     }
 
     #[test]
     fn docking_actions_own_panel_visibility_and_workspace_reset() {
         let mut layout = WorkspaceLayout::default();
         let closed = apply_docking_action(
-            DockingAction::Close(DockPanel::Properties),
+            DockingAction::Close(ToolPanel::Properties),
             &mut layout,
             None,
         );
         assert!(closed.changed);
         assert_eq!(
             closed.status,
-            Some(DockingStatus::Closed(DockPanel::Properties))
+            Some(DockingStatus::Closed(ToolPanel::Properties))
         );
-        assert!(!layout.is_visible(DockPanel::Properties));
+        assert!(!layout.is_visible(ToolPanel::Properties));
 
         let shown = apply_docking_action(
-            DockingAction::Toggle(DockPanel::Properties),
+            DockingAction::Toggle(ToolPanel::Properties),
             &mut layout,
             None,
         );
         assert!(shown.changed);
         assert_eq!(
             shown.status,
-            Some(DockingStatus::Showing(DockPanel::Properties))
+            Some(DockingStatus::Showing(ToolPanel::Properties))
         );
-        assert!(layout.is_visible(DockPanel::Properties));
+        assert!(layout.is_visible(ToolPanel::Properties));
 
-        assert!(layout.close(DockPanel::Assets));
+        assert!(layout.close(ToolPanel::Assets));
         let reset = apply_docking_action(DockingAction::ResetWorkspace, &mut layout, None);
         assert_eq!(reset.status, Some(DockingStatus::WorkspaceReset));
         assert_eq!(layout, WorkspaceLayout::default());
@@ -1168,10 +1168,10 @@ mod tests {
         let english = Localizer::new("en-US").unwrap();
         let french = Localizer::new("fr-FR").unwrap();
         let english =
-            localize_docking_status(DockingStatus::Floated(DockPanel::Profiler), &english);
+            localize_docking_status(DockingStatus::Floated(ToolPanel::Profiler), &english);
         assert!(english.starts_with("Floated"));
         assert!(english.contains("PROFILER"));
-        let french = localize_docking_status(DockingStatus::Closed(DockPanel::Properties), &french);
+        let french = localize_docking_status(DockingStatus::Closed(ToolPanel::Properties), &french);
         assert!(french.contains("PROPRIÉTÉS"));
         assert!(french.ends_with("fermé · rouvrez-le depuis Affichage"));
     }
@@ -1259,11 +1259,11 @@ mod tests {
     #[test]
     fn legacy_generated_code_panel_name_migrates_to_compiler_inspector() {
         assert_eq!(
-            ron::from_str::<DockPanel>("GeneratedCode").unwrap(),
-            DockPanel::CompilerInspector
+            ron::from_str::<ToolPanel>("GeneratedCode").unwrap(),
+            ToolPanel::CompilerInspector
         );
         assert_eq!(
-            ron::to_string(&DockPanel::CompilerInspector).unwrap(),
+            ron::to_string(&ToolPanel::CompilerInspector).unwrap(),
             "CompilerInspector"
         );
     }
@@ -1271,11 +1271,11 @@ mod tests {
     #[test]
     fn legacy_inspector_panel_name_migrates_to_properties() {
         assert_eq!(
-            ron::from_str::<DockPanel>("Inspector").unwrap(),
-            DockPanel::Properties
+            ron::from_str::<ToolPanel>("Inspector").unwrap(),
+            ToolPanel::Properties
         );
         assert_eq!(
-            ron::to_string(&DockPanel::Properties).unwrap(),
+            ron::to_string(&ToolPanel::Properties).unwrap(),
             "Properties"
         );
     }
@@ -1283,29 +1283,29 @@ mod tests {
     #[test]
     fn center_drop_builds_a_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let target = layout.root.node_containing(DockPanel::Properties).unwrap();
-        assert!(layout.dock(DockPanel::Assets, target, DockDrop::Center));
-        assert_eq!(layout.root.node_containing(DockPanel::Assets), Some(target));
-        assert!(layout.is_active(DockPanel::Assets));
+        let target = layout.root.node_containing(ToolPanel::Properties).unwrap();
+        assert!(layout.dock(ToolPanel::Assets, target, DockDrop::Center));
+        assert_eq!(layout.root.node_containing(ToolPanel::Assets), Some(target));
+        assert!(layout.is_active(ToolPanel::Assets));
     }
 
     #[test]
     fn edge_drop_creates_a_nested_split() {
         let mut layout = WorkspaceLayout::default();
-        let target = layout.root.node_containing(DockPanel::Viewport).unwrap();
-        assert!(layout.dock(DockPanel::Curves, target, DockDrop::Left));
-        assert_ne!(layout.root.node_containing(DockPanel::Curves), Some(target));
-        assert!(layout.root.contains(DockPanel::Viewport));
+        let target = layout.root.node_containing(ToolPanel::Viewport).unwrap();
+        assert!(layout.dock(ToolPanel::Curves, target, DockDrop::Left));
+        assert_ne!(layout.root.node_containing(ToolPanel::Curves), Some(target));
+        assert!(layout.root.contains(ToolPanel::Viewport));
     }
 
     #[test]
     fn closing_the_last_tab_prunes_its_branch() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.close(DockPanel::Properties));
-        assert!(!layout.root.contains(DockPanel::Properties));
-        assert!(layout.root.contains(DockPanel::Viewport));
-        assert!(layout.show(DockPanel::Properties));
-        assert!(layout.is_active(DockPanel::Properties));
+        assert!(layout.close(ToolPanel::Properties));
+        assert!(!layout.root.contains(ToolPanel::Properties));
+        assert!(layout.root.contains(ToolPanel::Viewport));
+        assert!(layout.show(ToolPanel::Properties));
+        assert!(layout.is_active(ToolPanel::Properties));
     }
 
     #[test]
@@ -1322,58 +1322,58 @@ mod tests {
     #[test]
     fn tabs_can_be_reordered_and_moved_between_stacks() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
-        assert!(layout.reorder_tab(DockPanel::Assets, DockPanel::Curves, true));
+        let bottom = layout.root.node_containing(ToolPanel::Curves).unwrap();
+        assert!(layout.reorder_tab(ToolPanel::Assets, ToolPanel::Curves, true));
         let DockNode::Tabs { stack, .. } = layout.root.find_mut(bottom).unwrap() else {
             panic!("bottom node should be a tab stack");
         };
         assert_eq!(
             stack.tabs,
             vec![
-                DockPanel::Assets,
-                DockPanel::Curves,
-                DockPanel::Diagnostics,
-                DockPanel::Changes,
+                ToolPanel::Assets,
+                ToolPanel::Curves,
+                ToolPanel::Diagnostics,
+                ToolPanel::Changes,
             ]
         );
 
         // Pull the timeline out of the central stack into the bottom strip.
-        assert!(layout.reorder_tab(DockPanel::Timeline, DockPanel::Changes, false));
+        assert!(layout.reorder_tab(ToolPanel::Timeline, ToolPanel::Changes, false));
         assert_eq!(
-            layout.root.node_containing(DockPanel::Timeline),
+            layout.root.node_containing(ToolPanel::Timeline),
             Some(bottom)
         );
-        assert!(layout.is_active(DockPanel::Timeline));
+        assert!(layout.is_active(ToolPanel::Timeline));
     }
 
     #[test]
     fn diagnostics_restores_to_the_bottom_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
+        let bottom = layout.root.node_containing(ToolPanel::Curves).unwrap();
         assert_eq!(
-            layout.root.node_containing(DockPanel::Diagnostics),
+            layout.root.node_containing(ToolPanel::Diagnostics),
             Some(bottom)
         );
-        assert!(layout.close(DockPanel::Diagnostics));
-        assert!(layout.show(DockPanel::Diagnostics));
+        assert!(layout.close(ToolPanel::Diagnostics));
+        assert!(layout.show(ToolPanel::Diagnostics));
         assert_eq!(
-            layout.root.node_containing(DockPanel::Diagnostics),
+            layout.root.node_containing(ToolPanel::Diagnostics),
             Some(bottom)
         );
-        assert!(layout.is_active(DockPanel::Diagnostics));
+        assert!(layout.is_active(ToolPanel::Diagnostics));
     }
 
     #[test]
     fn compiler_inspector_is_advanced_and_restores_to_the_bottom_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
-        assert!(!layout.is_visible(DockPanel::CompilerInspector));
-        assert!(layout.show(DockPanel::CompilerInspector));
+        let bottom = layout.root.node_containing(ToolPanel::Curves).unwrap();
+        assert!(!layout.is_visible(ToolPanel::CompilerInspector));
+        assert!(layout.show(ToolPanel::CompilerInspector));
         assert_eq!(
-            layout.root.node_containing(DockPanel::CompilerInspector),
+            layout.root.node_containing(ToolPanel::CompilerInspector),
             Some(bottom)
         );
-        assert!(layout.is_active(DockPanel::CompilerInspector));
+        assert!(layout.is_active(ToolPanel::CompilerInspector));
     }
 
     #[test]
@@ -1381,73 +1381,73 @@ mod tests {
         let mut layout = WorkspaceLayout::default();
         // The profiler is hidden by default and reopens beneath the viewport, not in the bottom
         // utility strip.
-        assert!(!layout.root.contains(DockPanel::Profiler));
-        assert!(layout.show(DockPanel::Profiler));
-        assert!(layout.root.contains(DockPanel::Profiler));
-        assert!(layout.is_active(DockPanel::Profiler));
+        assert!(!layout.root.contains(ToolPanel::Profiler));
+        assert!(layout.show(ToolPanel::Profiler));
+        assert!(layout.root.contains(ToolPanel::Profiler));
+        assert!(layout.is_active(ToolPanel::Profiler));
         assert_ne!(
-            layout.root.node_containing(DockPanel::Profiler),
-            layout.root.node_containing(DockPanel::Curves)
+            layout.root.node_containing(ToolPanel::Profiler),
+            layout.root.node_containing(ToolPanel::Curves)
         );
     }
 
     #[test]
     fn settings_restores_beside_the_viewport_tab() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.show(DockPanel::Settings));
-        let viewport = layout.root.node_containing(DockPanel::Viewport).unwrap();
+        assert!(layout.show(ToolPanel::Settings));
+        let viewport = layout.root.node_containing(ToolPanel::Viewport).unwrap();
         assert_eq!(
-            layout.root.node_containing(DockPanel::Settings),
+            layout.root.node_containing(ToolPanel::Settings),
             Some(viewport)
         );
         let stack = layout.root.find_tabs(viewport).unwrap();
         let viewport_index = stack
             .tabs
             .iter()
-            .position(|panel| *panel == DockPanel::Viewport)
+            .position(|panel| *panel == ToolPanel::Viewport)
             .unwrap();
         assert_eq!(
             stack.tabs.get(viewport_index + 1),
-            Some(&DockPanel::Settings)
+            Some(&ToolPanel::Settings)
         );
-        assert!(layout.is_active(DockPanel::Settings));
+        assert!(layout.is_active(ToolPanel::Settings));
     }
 
     #[test]
     fn legacy_lonely_settings_split_migrates_to_the_viewport_tabs() {
         let mut layout = WorkspaceLayout::default();
-        let viewport = layout.root.node_containing(DockPanel::Viewport).unwrap();
-        assert!(layout.dock(DockPanel::Settings, viewport, DockDrop::Right));
+        let viewport = layout.root.node_containing(ToolPanel::Viewport).unwrap();
+        assert!(layout.dock(ToolPanel::Settings, viewport, DockDrop::Right));
         assert_ne!(
-            layout.root.node_containing(DockPanel::Settings),
-            layout.root.node_containing(DockPanel::Viewport)
+            layout.root.node_containing(ToolPanel::Settings),
+            layout.root.node_containing(ToolPanel::Viewport)
         );
 
         let layout = layout.normalized();
         assert_eq!(
-            layout.root.node_containing(DockPanel::Settings),
-            layout.root.node_containing(DockPanel::Viewport)
+            layout.root.node_containing(ToolPanel::Settings),
+            layout.root.node_containing(ToolPanel::Viewport)
         );
     }
 
     #[test]
     fn floating_panels_leave_no_empty_dock_and_can_redock() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.float_panel(DockPanel::Properties, [900.0, 80.0], [1200.0, 800.0]));
-        assert!(!layout.root.contains(DockPanel::Properties));
-        assert_eq!(layout.floating[0].panel, DockPanel::Properties);
+        assert!(layout.float_panel(ToolPanel::Properties, [900.0, 80.0], [1200.0, 800.0]));
+        assert!(!layout.root.contains(ToolPanel::Properties));
+        assert_eq!(layout.floating[0].panel, ToolPanel::Properties);
 
-        assert!(layout.redock(DockPanel::Properties));
+        assert!(layout.redock(ToolPanel::Properties));
         assert!(layout.floating.is_empty());
-        assert!(layout.root.contains(DockPanel::Properties));
+        assert!(layout.root.contains(ToolPanel::Properties));
     }
 
     #[test]
     fn floating_window_geometry_is_persisted_and_size_is_clamped() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.float_panel(DockPanel::Assets, [40.0, 40.0], [1000.0, 700.0]));
+        assert!(layout.float_panel(ToolPanel::Assets, [40.0, 40.0], [1000.0, 700.0]));
         assert!(layout.update_floating_geometry(
-            DockPanel::Assets,
+            ToolPanel::Assets,
             Some([-2400.0, 160.0]),
             Some([100.0, 120.0]),
         ));

@@ -373,7 +373,7 @@ pub(super) fn activate(
             }
             session.playing = settings.preview.play_on_open;
             if session.standalone_material().is_some() || session.standalone_function().is_some() {
-                reveal_dock_panel(&mut layout, &mut session, DockPanel::MaterialGraph);
+                reveal_dock_panel(&mut layout, &mut session, ToolPanel::MaterialGraph);
             }
             let status = if warnings.is_empty() {
                 PersistenceStatus::RecoveryRestored(session.effect.name.clone())

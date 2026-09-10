@@ -12,11 +12,12 @@ use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollb
 use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
 use crate::material_graph::MaterialGraphViewport;
 use crate::{
-    ComboOption, CurvesState, DockPanel, DocumentAction, EditorModuleRegistry, EditorNativeControl,
+    ComboOption, CurvesState, DocumentAction, EditorModuleRegistry, EditorNativeControl,
     EditorTooltip, FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow,
     Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId,
-    TransportAction, WorkspaceLayout, localized_properties_input, mini_button, module_parameter,
-    reveal_dock_panel, session::EditorSession, spawn_combo_control, theme, ui_shell,
+    ToolPanel, TransportAction, WorkspaceLayout, localized_properties_input, mini_button,
+    module_parameter, reveal_dock_panel, session::EditorSession, spawn_combo_control, theme,
+    ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 #[cfg(test)]
@@ -608,7 +609,7 @@ fn execute_choreography_action(
             if select_choreography_target(&mut session, target)
                 && preview_selected_emitter_deletion(&mut session, &localizer)
             {
-                reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                reveal_dock_panel(&mut layout, &mut session, ToolPanel::Changes);
                 curves.clear();
             }
         }
@@ -998,7 +999,7 @@ mod tests {
         assert!(
             app.world()
                 .resource::<WorkspaceLayout>()
-                .is_visible(DockPanel::Changes)
+                .is_visible(ToolPanel::Changes)
         );
     }
 
@@ -4020,7 +4021,7 @@ mod tests {
         assert!(
             app.world()
                 .resource::<WorkspaceLayout>()
-                .is_visible(DockPanel::Changes)
+                .is_visible(ToolPanel::Changes)
         );
 
         let mut single = test_support::session_with_timing_slack();
