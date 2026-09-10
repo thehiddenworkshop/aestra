@@ -673,27 +673,33 @@ pub(crate) struct WorkspaceLayout {
 
 impl Default for WorkspaceLayout {
     fn default() -> Self {
-        let assets = DockNode::tabs(1, &[DockPanel::Assets], DockPanel::Assets);
+        // The material graph is the central workspace; the viewport and profiler sit stacked on the
+        // left, properties on the right, and the utility panels group into a bottom strip.
         let viewport = DockNode::tabs(2, &[DockPanel::Viewport], DockPanel::Viewport);
+        let profiler = DockNode::tabs(10, &[DockPanel::Profiler], DockPanel::Profiler);
+        let left_column = DockNode::split(11, DockAxis::Vertical, 0.7, viewport, profiler);
+        let center = DockNode::tabs(
+            8,
+            &[DockPanel::Timeline, DockPanel::MaterialGraph],
+            DockPanel::MaterialGraph,
+        );
+        let left_center = DockNode::split(9, DockAxis::Horizontal, 0.26, left_column, center);
         let properties = DockNode::tabs(3, &[DockPanel::Properties], DockPanel::Properties);
+        let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
         let bottom = DockNode::tabs(
             4,
             &[
-                DockPanel::Timeline,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
-                DockPanel::Profiler,
                 DockPanel::Changes,
-                DockPanel::MaterialGraph,
+                DockPanel::Assets,
             ],
-            DockPanel::Timeline,
+            DockPanel::Assets,
         );
-        let center_right = DockNode::split(5, DockAxis::Horizontal, 0.68, viewport, properties);
-        let top = DockNode::split(6, DockAxis::Horizontal, 0.17, assets, center_right);
         Self {
             root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
             floating: Vec::new(),
-            next_node_id: 8,
+            next_node_id: 12,
         }
     }
 }
@@ -851,38 +857,43 @@ impl WorkspaceLayout {
             self.reorder_tab(panel, DockPanel::Viewport, false);
             return *self != previous;
         }
+        // Panels reopen next to their default neighbours: the material graph and timeline share the
+        // central stack, the utility panels the bottom strip, and the profiler sits under the
+        // viewport.
+        let center_group = [DockPanel::MaterialGraph, DockPanel::Timeline];
         let bottom_group = [
-            DockPanel::Timeline,
             DockPanel::Curves,
             DockPanel::Diagnostics,
-            DockPanel::CompilerInspector,
-            DockPanel::MaterialGraph,
-            DockPanel::Profiler,
             DockPanel::Changes,
+            DockPanel::Assets,
+            DockPanel::CompilerInspector,
         ];
-        let target_and_drop = if bottom_group.contains(&panel) {
-            bottom_group
-                .into_iter()
-                .find_map(|candidate| self.root.node_containing(candidate))
+        let co_locate = |layout: &Self, group: &[DockPanel]| {
+            group
+                .iter()
+                .find_map(|candidate| layout.root.node_containing(*candidate))
                 .map(|target| (target, DockDrop::Center))
-                .or_else(|| {
-                    self.root
-                        .node_containing(DockPanel::Viewport)
-                        .map(|target| (target, DockDrop::Bottom))
-                })
+        };
+        let target_and_drop = if center_group.contains(&panel) {
+            co_locate(self, &center_group).or_else(|| {
+                self.root
+                    .node_containing(DockPanel::Viewport)
+                    .map(|target| (target, DockDrop::Right))
+            })
+        } else if bottom_group.contains(&panel) {
+            co_locate(self, &bottom_group).or_else(|| {
+                self.root
+                    .node_containing(DockPanel::Viewport)
+                    .map(|target| (target, DockDrop::Bottom))
+            })
+        } else if panel == DockPanel::Profiler {
+            self.root
+                .node_containing(DockPanel::Viewport)
+                .map(|target| (target, DockDrop::Bottom))
         } else {
             self.root
                 .node_containing(DockPanel::Viewport)
-                .map(|target| {
-                    (
-                        target,
-                        if panel == DockPanel::Assets {
-                            DockDrop::Left
-                        } else {
-                            DockDrop::Right
-                        },
-                    )
-                })
+                .map(|target| (target, DockDrop::Right))
         };
         let Some((target, drop)) = target_and_drop else {
             return false;
@@ -1305,32 +1316,34 @@ mod tests {
     #[test]
     fn tabs_can_be_reordered_and_moved_between_stacks() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
-        assert!(layout.reorder_tab(DockPanel::Changes, DockPanel::Timeline, true));
+        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
+        assert!(layout.reorder_tab(DockPanel::Assets, DockPanel::Curves, true));
         let DockNode::Tabs { stack, .. } = layout.root.find_mut(bottom).unwrap() else {
             panic!("bottom node should be a tab stack");
         };
         assert_eq!(
             stack.tabs,
             vec![
-                DockPanel::Changes,
-                DockPanel::Timeline,
+                DockPanel::Assets,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
-                DockPanel::Profiler,
-                DockPanel::MaterialGraph,
+                DockPanel::Changes,
             ]
         );
 
-        assert!(layout.reorder_tab(DockPanel::Assets, DockPanel::Curves, false));
-        assert_eq!(layout.root.node_containing(DockPanel::Assets), Some(bottom));
-        assert!(layout.is_active(DockPanel::Assets));
+        // Pull the timeline out of the central stack into the bottom strip.
+        assert!(layout.reorder_tab(DockPanel::Timeline, DockPanel::Changes, false));
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Timeline),
+            Some(bottom)
+        );
+        assert!(layout.is_active(DockPanel::Timeline));
     }
 
     #[test]
     fn diagnostics_restores_to_the_bottom_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
         assert_eq!(
             layout.root.node_containing(DockPanel::Diagnostics),
             Some(bottom)
@@ -1347,7 +1360,7 @@ mod tests {
     #[test]
     fn compiler_inspector_is_advanced_and_restores_to_the_bottom_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        let bottom = layout.root.node_containing(DockPanel::Curves).unwrap();
         assert!(!layout.is_visible(DockPanel::CompilerInspector));
         assert!(layout.show(DockPanel::CompilerInspector));
         assert_eq!(
@@ -1358,20 +1371,21 @@ mod tests {
     }
 
     #[test]
-    fn profiler_restores_to_the_bottom_tab_stack() {
+    fn profiler_restores_beneath_the_viewport() {
         let mut layout = WorkspaceLayout::default();
-        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
-        assert_eq!(
+        // The profiler sits beneath the viewport, separate from the bottom utility strip.
+        assert_ne!(
             layout.root.node_containing(DockPanel::Profiler),
-            Some(bottom)
+            layout.root.node_containing(DockPanel::Curves)
         );
         assert!(layout.close(DockPanel::Profiler));
         assert!(layout.show(DockPanel::Profiler));
-        assert_eq!(
-            layout.root.node_containing(DockPanel::Profiler),
-            Some(bottom)
-        );
+        assert!(layout.root.contains(DockPanel::Profiler));
         assert!(layout.is_active(DockPanel::Profiler));
+        assert_ne!(
+            layout.root.node_containing(DockPanel::Profiler),
+            layout.root.node_containing(DockPanel::Curves)
+        );
     }
 
     #[test]
