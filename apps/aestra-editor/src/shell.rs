@@ -815,6 +815,7 @@ fn keyboard_shortcuts(
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
     navigation: Res<SourceNavigationState>,
+    active_editor: Res<crate::editor_view::ActiveEditorContext>,
 ) {
     if palette.open {
         return;
@@ -845,6 +846,14 @@ fn keyboard_shortcuts(
             } else {
                 DocumentAction::Save
             });
+        }
+        // Ctrl+W closes the focused editor view (material graph / function tab). Tool panels are
+        // closed from their own header affordance, so this is inert when no editor view is active.
+        if control
+            && keys.just_pressed(KeyCode::KeyW)
+            && let Some(view) = active_editor.active_view
+        {
+            commands.trigger(crate::editor_view::CloseEditorView(view));
         }
         if alt && keys.just_pressed(KeyCode::ArrowLeft) && navigation.can_go_back() {
             commands.trigger(DocumentAction::BackToSource);
@@ -1068,6 +1077,7 @@ mod tests {
             .init_resource::<MenuState>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<SourceNavigationState>()
+            .init_resource::<crate::editor_view::ActiveEditorContext>()
             .init_resource::<Actions>()
             .add_observer(|event: On<DocumentAction>, mut actions: ResMut<Actions>| {
                 actions.0.push(*event.event())

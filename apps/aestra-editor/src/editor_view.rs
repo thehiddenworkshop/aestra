@@ -428,6 +428,60 @@ pub(crate) fn reconcile_restored_documents_against_catalog(
     }
 }
 
+/// Fired to close a single editor view — from the tab's close button or Ctrl+W.
+#[derive(Event, Debug, Clone, Copy)]
+pub(crate) struct CloseEditorView(pub(crate) EditorViewId);
+
+/// Whether a material editing target edits the asset a document key names.
+fn target_edits_key(target: &MaterialEditingTarget, key: DocumentKey) -> bool {
+    match key {
+        DocumentKey::MaterialProgram(id) => target.program() == Some(id),
+        DocumentKey::MaterialFunction(id) => target.function() == Some(id),
+    }
+}
+
+/// Closes an editor view: removes its dock tab, drops the view, closes its document when it was the
+/// last view of it, and clears the active context if it pointed there. While the singleton target
+/// still drives the shared material tools (pre-M12), closing the view that steers it falls back to
+/// the effect material so the graph and tools do not keep pointing at a closed document. The
+/// manifest is rewritten by [`persist_editor_workspace`] because the view set changed.
+pub(crate) fn close_editor_view(
+    close: On<CloseEditorView>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut documents: ResMut<DocumentManager>,
+    mut views: ResMut<EditorViewManager>,
+    mut active: ResMut<ActiveEditorContext>,
+    mut session: ResMut<EditorSession>,
+) {
+    let view = close.0;
+    let closed_key = views
+        .document_of(view)
+        .and_then(|document| documents.document(document).map(|open| open.key));
+    let mut changed = layout.close_editor(view);
+    if let Some((removed, orphaned)) = views.close_view(view) {
+        if orphaned {
+            documents.close(removed.document);
+        }
+        if active.active_view == Some(view) {
+            active.active_view = None;
+            active.active_document = None;
+        }
+        changed = true;
+    }
+    if let Some(key) = closed_key
+        && target_edits_key(&session.material_target, key)
+    {
+        session.return_to_effect_material();
+        changed = true;
+    }
+    if changed {
+        session.ui_revision += 1;
+        if let Err(error) = layout.save() {
+            warn!("failed to persist workspace layout after closing an editor view: {error}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,6 +771,117 @@ mod tests {
                 .unwrap()
                 .program(),
             Some(MaterialProgramId::from_u128(0xb))
+        );
+    }
+
+    fn program_view_app(ids: &[aestra_core::MaterialProgramId]) -> (App, Vec<EditorViewId>) {
+        use crate::docking::ToolPanel;
+        use crate::document::DocumentKey;
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+        let mut layout = WorkspaceLayout::default();
+        layout.show(ToolPanel::MaterialGraph);
+        let mut view_ids = Vec::new();
+        for id in ids {
+            let view = open_document_view(
+                &mut documents,
+                &mut views,
+                &mut active,
+                DocumentKey::MaterialProgram(*id),
+                EditorViewKind::MaterialGraph,
+            );
+            layout.show_editor(view);
+            view_ids.push(view);
+        }
+        let mut app = App::new();
+        app.add_observer(close_editor_view);
+        app.insert_resource(layout);
+        app.insert_resource(documents);
+        app.insert_resource(views);
+        app.insert_resource(active);
+        app.insert_resource(crate::test_support::session_with_timing_slack());
+        (app, view_ids)
+    }
+
+    #[test]
+    fn closing_the_active_editor_drops_its_document_and_returns_to_the_effect() {
+        use crate::document::DocumentKey;
+        use aestra_core::MaterialProgramId;
+        use std::path::PathBuf;
+
+        let id_a = MaterialProgramId::from_u128(0xa);
+        let id_b = MaterialProgramId::from_u128(0xb);
+        let (mut app, views) = program_view_app(&[id_a, id_b]);
+        let (view_a, view_b) = (views[0], views[1]);
+        // The second view is active and steers the material target.
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .material_target = MaterialEditingTarget::Program {
+            root: PathBuf::from("project"),
+            id: id_b,
+        };
+
+        app.world_mut().trigger(CloseEditorView(view_b));
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<WorkspaceLayout>().editor_views(),
+            vec![view_a]
+        );
+        assert_eq!(app.world().resource::<EditorViewManager>().len(), 1);
+        let documents = app.world().resource::<DocumentManager>();
+        assert!(
+            documents
+                .find(&DocumentKey::MaterialProgram(id_b))
+                .is_none()
+        );
+        assert!(
+            documents
+                .find(&DocumentKey::MaterialProgram(id_a))
+                .is_some()
+        );
+        assert_eq!(
+            app.world().resource::<ActiveEditorContext>().active_view,
+            None
+        );
+        // The closed view was the target, so editing returns to the effect material.
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .standalone_material()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn closing_a_non_target_editor_leaves_the_current_target_untouched() {
+        use aestra_core::MaterialProgramId;
+        use std::path::PathBuf;
+
+        let id_a = MaterialProgramId::from_u128(0xa);
+        let id_b = MaterialProgramId::from_u128(0xb);
+        let (mut app, views) = program_view_app(&[id_a, id_b]);
+        let view_a = views[0];
+        // Target is B; close A (not the target).
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .material_target = MaterialEditingTarget::Program {
+            root: PathBuf::from("project"),
+            id: id_b,
+        };
+
+        app.world_mut().trigger(CloseEditorView(view_a));
+        app.update();
+
+        assert_eq!(app.world().resource::<EditorViewManager>().len(), 1);
+        // The target still edits B.
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .standalone_material(),
+            Some(id_b)
         );
     }
 

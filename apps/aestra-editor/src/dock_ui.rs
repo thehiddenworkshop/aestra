@@ -927,38 +927,63 @@ fn spawn_dock_tab(
                 flex_grow: 1.0,
                 ..default()
             });
-            // Editor-view close routes through document lifecycle (added in a later milestone);
-            // for now only closable tool panels show the close affordance.
-            if let DockTab::Tool(panel) = tab
-                && panel.closable()
-            {
-                row.spawn((
-                    Button,
-                    EditorNativeControl,
-                    DockingAction::Close(panel),
-                    DockCloseButton,
-                    Node {
-                        width: Val::Px(24.0),
-                        height: Val::Percent(100.0),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                    BackgroundColor(Color::NONE),
-                ))
-                .with_children(|close| {
-                    close.spawn((
-                        Text::new("x"),
-                        TextFont {
-                            font_size: FontSize::Px(13.0),
-                            ..default()
+            // Closable tool panels close through the docking action; editor views route through the
+            // document lifecycle (close tab → drop view → close document if last) via CloseEditorView.
+            match tab {
+                DockTab::Tool(panel) if panel.closable() => {
+                    row.spawn((
+                        Button,
+                        EditorNativeControl,
+                        DockingAction::Close(panel),
+                        DockCloseButton,
+                        dock_close_button_node(),
+                        BackgroundColor(Color::NONE),
+                    ))
+                    .with_children(spawn_dock_close_glyph);
+                }
+                DockTab::Editor(view) => {
+                    row.spawn((
+                        Button,
+                        EditorNativeControl,
+                        DockCloseButton,
+                        dock_close_button_node(),
+                        BackgroundColor(Color::NONE),
+                    ))
+                    .observe(
+                        move |mut click: On<Pointer<Click>>, mut commands: Commands| {
+                            if click.button == PointerButton::Primary {
+                                click.propagate(false);
+                                commands.trigger(crate::editor_view::CloseEditorView(view));
+                            }
                         },
-                        TextColor(theme::TEXT_FAINT),
-                        Pickable::IGNORE,
-                    ));
-                });
+                    )
+                    .with_children(spawn_dock_close_glyph);
+                }
+                _ => {}
             }
         });
+}
+
+fn dock_close_button_node() -> Node {
+    Node {
+        width: Val::Px(24.0),
+        height: Val::Percent(100.0),
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::Center,
+        ..default()
+    }
+}
+
+fn spawn_dock_close_glyph(close: &mut ChildSpawnerCommands) {
+    close.spawn((
+        Text::new("x"),
+        TextFont {
+            font_size: FontSize::Px(13.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+        Pickable::IGNORE,
+    ));
 }
 
 fn resize_workspace_pane(
