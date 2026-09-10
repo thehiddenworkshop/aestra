@@ -855,7 +855,7 @@ fn keyboard_shortcuts(
             && keys.just_pressed(KeyCode::KeyW)
             && let Some(view) = active_editor.active_view
         {
-            commands.trigger(crate::editor_view::CloseEditorView(view));
+            commands.trigger(crate::editor_view::CloseEditorView::requested(view));
         }
         if alt && keys.just_pressed(KeyCode::ArrowLeft) && navigation.can_go_back() {
             commands.trigger(DocumentAction::BackToSource);

@@ -253,6 +253,7 @@ dock-relation-after = après
 persistence-file-filter-effect = Effet Aestra
 persistence-dialog-unsaved-title = Modifications non enregistrées
 persistence-dialog-unsaved-description = Enregistrer conserve l’effet et les modifications des matériaux partagés. Abandonner annule toutes les modifications non enregistrées. Les ressources partagées déjà enregistrées sont conservées.
+persistence-dialog-close-unsaved-description = Ce document comporte des modifications non enregistrées. Enregistrer les écrit dans la ressource partagée et ferme l’onglet. Abandonner les annule et ferme l’onglet.
 persistence-dialog-recovery-title = Récupérer votre travail
 persistence-recovery-restore = Restaurer
 persistence-recovery-discard = Supprimer la récupération

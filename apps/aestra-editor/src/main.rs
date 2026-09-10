@@ -262,6 +262,8 @@ fn main() {
                 .chain(),
         )
         .add_observer(editor_view::close_editor_view)
+        .add_observer(editor_view::save_and_close_editor_view)
+        .add_observer(editor_view::discard_and_close_editor_view)
         .add_systems(Startup, set_editor_window_icon)
         .add_systems(Startup, editor_view::restore_editor_workspace)
         .configure_sets(

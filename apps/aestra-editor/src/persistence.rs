@@ -154,6 +154,8 @@ pub(crate) struct DocumentProtectionState {
     pub(crate) asset_create_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
+    /// The editor view awaiting a dirty-close decision (Save / Discard / Cancel), if any.
+    pub(crate) pending_editor_close: Option<crate::docking::EditorViewId>,
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +174,7 @@ struct DocumentProtectionDescription;
 impl DocumentProtectionState {
     pub(crate) fn is_open(&self) -> bool {
         self.pending.is_some()
+            || self.pending_editor_close.is_some()
             || self.recovery_open
             || self.asset_recovery_open
             || self.asset_delete_open
@@ -193,7 +196,7 @@ pub(crate) fn spawn_document_protection_overlay(
                 is_hoverable: true,
             },
             Node {
-                display: if state.pending.is_some() {
+                display: if state.pending.is_some() || state.pending_editor_close.is_some() {
                     Display::Flex
                 } else {
                     Display::None
@@ -237,17 +240,7 @@ pub(crate) fn spawn_document_protection_overlay(
                     ));
                     dialog.spawn((
                         DocumentProtectionDescription,
-                        Text::new(localizer.text(
-                            if state.pending == Some(DocumentAction::ReloadMaterial) {
-                                if matches!(state.reload_target, Some(crate::material_document::MaterialEditingTarget::Function { .. })) {
-                                    "function-reload-confirm"
-                                } else {
-                                    "material-reload-confirm"
-                                }
-                            } else {
-                                "persistence-dialog-unsaved-description"
-                            },
-                        )),
+                        Text::new(localizer.text(document_protection_description_key(state))),
                         TextFont {
                             font_size: FontSize::Px(11.0),
                             ..default()
@@ -554,6 +547,17 @@ fn dirty_material_targets(
         .collect()
 }
 
+/// Queue a save of a single shared-material target (its own draft plus its transitive function
+/// dependencies). Used by the editor-view dirty-close prompt to save one document on demand.
+pub(crate) fn queue_save_target(
+    commands: &mut Commands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    target: crate::material_document::MaterialEditingTarget,
+) {
+    material::queue_save_all(commands, session, catalog, vec![target]);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_document_action(
     action: On<DocumentAction>,
@@ -682,9 +686,12 @@ fn dismiss_document_protection_with_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut protection: ResMut<DocumentProtectionState>,
 ) {
-    if protection.pending.is_some() && keys.just_pressed(KeyCode::Escape) {
+    if keys.just_pressed(KeyCode::Escape)
+        && (protection.pending.is_some() || protection.pending_editor_close.is_some())
+    {
         protection.pending = None;
         protection.reload_target = None;
+        protection.pending_editor_close = None;
     }
 }
 
@@ -706,20 +713,26 @@ fn sync_document_protection_overlay(
         node.display = display;
     }
     for mut text in &mut descriptions {
-        text.0 = localizer.text(
-            if protection.pending == Some(DocumentAction::ReloadMaterial) {
-                if matches!(
-                    protection.reload_target,
-                    Some(crate::material_document::MaterialEditingTarget::Function { .. })
-                ) {
-                    "function-reload-confirm"
-                } else {
-                    "material-reload-confirm"
-                }
-            } else {
-                "persistence-dialog-unsaved-description"
-            },
-        );
+        text.0 = localizer.text(document_protection_description_key(&protection));
+    }
+}
+
+/// The description string id for the shared unsaved-changes dialog, covering the effect save, the
+/// material/function reload, and the editor-view dirty close.
+fn document_protection_description_key(state: &DocumentProtectionState) -> &'static str {
+    if state.pending_editor_close.is_some() {
+        "persistence-dialog-close-unsaved-description"
+    } else if state.pending == Some(DocumentAction::ReloadMaterial) {
+        if matches!(
+            state.reload_target,
+            Some(crate::material_document::MaterialEditingTarget::Function { .. })
+        ) {
+            "function-reload-confirm"
+        } else {
+            "material-reload-confirm"
+        }
+    } else {
+        "persistence-dialog-unsaved-description"
     }
 }
 
@@ -804,6 +817,26 @@ fn resolve_document_protection(
     let Ok(action) = actions.get(activate.entity) else {
         return;
     };
+    // The editor-view dirty-close prompt reuses these buttons but resolves through the document/view
+    // lifecycle, not the effect save. Handle it first so the effect paths below never fire for it.
+    if let Some(view) = protection.pending_editor_close {
+        match *action {
+            DocumentProtectionAction::Cancel => {
+                protection.pending_editor_close = None;
+            }
+            DocumentProtectionAction::Save => {
+                if crate::project_content::io::idle(io_tasks) {
+                    protection.pending_editor_close = None;
+                    commands.trigger(crate::editor_view::SaveAndCloseEditorView(view));
+                }
+            }
+            DocumentProtectionAction::Discard => {
+                protection.pending_editor_close = None;
+                commands.trigger(crate::editor_view::DiscardAndCloseEditorView(view));
+            }
+        }
+        return;
+    }
     if *action == DocumentProtectionAction::Cancel {
         protection.pending = None;
         protection.reload_target = None;

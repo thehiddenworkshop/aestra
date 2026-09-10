@@ -428,9 +428,29 @@ pub(crate) fn reconcile_restored_documents_against_catalog(
     }
 }
 
-/// Fired to close a single editor view — from the tab's close button or Ctrl+W.
+/// Fired to close a single editor view — from the tab's close button or Ctrl+W. When `force` is
+/// false the close is guarded: a document with unsaved edits opens the dirty-close prompt instead of
+/// closing. The prompt's Save/Discard resolutions re-fire this with `force` set.
 #[derive(Event, Debug, Clone, Copy)]
-pub(crate) struct CloseEditorView(pub(crate) EditorViewId);
+pub(crate) struct CloseEditorView {
+    pub(crate) view: EditorViewId,
+    pub(crate) force: bool,
+}
+
+impl CloseEditorView {
+    pub(crate) fn requested(view: EditorViewId) -> Self {
+        Self { view, force: false }
+    }
+}
+
+/// Save the view's document, then close it (the prompt's Save resolution). The save is queued; the
+/// view closes immediately while it proceeds, since the draft lives in the catalog, not the view.
+#[derive(Event, Debug, Clone, Copy)]
+pub(crate) struct SaveAndCloseEditorView(pub(crate) EditorViewId);
+
+/// Discard the view's unsaved draft, then close it (the prompt's Discard resolution).
+#[derive(Event, Debug, Clone, Copy)]
+pub(crate) struct DiscardAndCloseEditorView(pub(crate) EditorViewId);
 
 /// Whether a material editing target edits the asset a document key names.
 fn target_edits_key(target: &MaterialEditingTarget, key: DocumentKey) -> bool {
@@ -440,11 +460,32 @@ fn target_edits_key(target: &MaterialEditingTarget, key: DocumentKey) -> bool {
     }
 }
 
+/// Whether the document `key` names has an unsaved draft in the catalog.
+fn document_key_is_dirty(key: DocumentKey, catalog: &crate::ProjectEffectCatalog) -> bool {
+    match key {
+        DocumentKey::MaterialProgram(id) => catalog.material_drafts.programs.contains_key(&id),
+        DocumentKey::MaterialFunction(id) => catalog.material_drafts.functions.contains_key(&id),
+    }
+}
+
+/// Resolves the document key an editor view edits, if the view is still open.
+fn view_document_key(
+    view: EditorViewId,
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+) -> Option<DocumentKey> {
+    documents
+        .document(views.document_of(view)?)
+        .map(|open| open.key)
+}
+
 /// Closes an editor view: removes its dock tab, drops the view, closes its document when it was the
 /// last view of it, and clears the active context if it pointed there. While the singleton target
 /// still drives the shared material tools (pre-M12), closing the view that steers it falls back to
-/// the effect material so the graph and tools do not keep pointing at a closed document. The
-/// manifest is rewritten by [`persist_editor_workspace`] because the view set changed.
+/// the effect material so the graph and tools do not keep pointing at a closed document.
+///
+/// Unless `force`, a document with unsaved edits opens the dirty-close prompt instead of closing.
+/// The manifest is rewritten by [`persist_editor_workspace`] because the view set changed.
 pub(crate) fn close_editor_view(
     close: On<CloseEditorView>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -452,11 +493,19 @@ pub(crate) fn close_editor_view(
     mut views: ResMut<EditorViewManager>,
     mut active: ResMut<ActiveEditorContext>,
     mut session: ResMut<EditorSession>,
+    catalog: Res<crate::ProjectEffectCatalog>,
+    mut protection: ResMut<crate::persistence::DocumentProtectionState>,
 ) {
-    let view = close.0;
-    let closed_key = views
-        .document_of(view)
-        .and_then(|document| documents.document(document).map(|open| open.key));
+    let CloseEditorView { view, force } = *close;
+    let closed_key = view_document_key(view, &views, &documents);
+    if !force
+        && let Some(key) = closed_key
+        && document_key_is_dirty(key, &catalog)
+    {
+        // Defer to the dirty-close prompt: Save / Discard / Cancel.
+        protection.pending_editor_close = Some(view);
+        return;
+    }
     let mut changed = layout.close_editor(view);
     if let Some((removed, orphaned)) = views.close_view(view) {
         if orphaned {
@@ -480,6 +529,68 @@ pub(crate) fn close_editor_view(
             warn!("failed to persist workspace layout after closing an editor view: {error}");
         }
     }
+}
+
+/// Save resolution of the dirty-close prompt: queue a save of the view's document, then force-close.
+pub(crate) fn save_and_close_editor_view(
+    event: On<SaveAndCloseEditorView>,
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    catalog: Res<crate::ProjectEffectCatalog>,
+    documents: Res<DocumentManager>,
+    views: Res<EditorViewManager>,
+) {
+    let view = event.0;
+    if let Some(key) = view_document_key(view, &views, &documents) {
+        let target = match key {
+            DocumentKey::MaterialProgram(id) => MaterialEditingTarget::Program {
+                root: catalog.root().to_owned(),
+                id,
+            },
+            DocumentKey::MaterialFunction(id) => MaterialEditingTarget::Function {
+                root: catalog.root().to_owned(),
+                id,
+            },
+        };
+        crate::persistence::queue_save_target(&mut commands, &session, &catalog, target);
+    }
+    commands.trigger(CloseEditorView { view, force: true });
+}
+
+/// Discard resolution of the dirty-close prompt: drop the view's unsaved draft (and its edit
+/// history), then force-close.
+pub(crate) fn discard_and_close_editor_view(
+    event: On<DiscardAndCloseEditorView>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<crate::ProjectEffectCatalog>,
+    documents: Res<DocumentManager>,
+    views: Res<EditorViewManager>,
+    mut program_history: Option<ResMut<crate::history::MaterialProgramEditHistory>>,
+    mut function_editor: Option<ResMut<crate::material_function_editor::FunctionEditor>>,
+) {
+    let view = event.0;
+    if let Some(key) = view_document_key(view, &views, &documents) {
+        let root = catalog.root().to_owned();
+        match key {
+            DocumentKey::MaterialProgram(id) => {
+                catalog.material_drafts.programs.remove(&id);
+                if let Some(history) = program_history.as_mut() {
+                    history.clear_program(&root, id);
+                }
+            }
+            DocumentKey::MaterialFunction(id) => {
+                catalog.material_drafts.functions.remove(&id);
+                if let Some(editor) = function_editor.as_mut() {
+                    editor.clear_function(&root, id);
+                }
+            }
+        }
+        catalog.refresh();
+        let drafts = catalog.material_drafts.clone();
+        session.set_material_drafts(drafts);
+    }
+    commands.trigger(CloseEditorView { view, force: true });
 }
 
 #[cfg(test)]
@@ -802,6 +913,10 @@ mod tests {
         app.insert_resource(views);
         app.insert_resource(active);
         app.insert_resource(crate::test_support::session_with_timing_slack());
+        // The close observer reads the catalog (dirty check) and the protection dialog state; an
+        // empty catalog has no drafts, so these views close without a dirty-close prompt.
+        app.insert_resource(crate::ProjectEffectCatalog::from_entries(Vec::new()));
+        app.init_resource::<crate::persistence::DocumentProtectionState>();
         (app, view_ids)
     }
 
@@ -823,7 +938,7 @@ mod tests {
             id: id_b,
         };
 
-        app.world_mut().trigger(CloseEditorView(view_b));
+        app.world_mut().trigger(CloseEditorView::requested(view_b));
         app.update();
 
         assert_eq!(
@@ -872,7 +987,7 @@ mod tests {
             id: id_b,
         };
 
-        app.world_mut().trigger(CloseEditorView(view_a));
+        app.world_mut().trigger(CloseEditorView::requested(view_a));
         app.update();
 
         assert_eq!(app.world().resource::<EditorViewManager>().len(), 1);

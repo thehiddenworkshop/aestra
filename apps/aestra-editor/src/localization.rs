@@ -160,6 +160,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "persistence-file-filter-effect",
     "persistence-dialog-unsaved-title",
     "persistence-dialog-unsaved-description",
+    "persistence-dialog-close-unsaved-description",
     "persistence-dialog-recovery-title",
     "persistence-recovery-restore",
     "persistence-recovery-discard",

@@ -992,7 +992,8 @@ fn spawn_dock_tab(
                         move |mut click: On<Pointer<Click>>, mut commands: Commands| {
                             if click.button == PointerButton::Primary {
                                 click.propagate(false);
-                                commands.trigger(crate::editor_view::CloseEditorView(view));
+                                commands
+                                    .trigger(crate::editor_view::CloseEditorView::requested(view));
                             }
                         },
                     )

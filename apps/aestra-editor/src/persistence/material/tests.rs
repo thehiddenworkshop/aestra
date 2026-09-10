@@ -489,6 +489,143 @@ fn save_keeps_untitled_effect_and_unrelated_drafts_unsaved() {
     assert!(session.status.contains("effect was not saved"));
 }
 
+/// Registers `program_id` as an open editor view docked beside the material graph, and installs the
+/// editor-view close observers, so the dirty-close prompt can be driven end to end.
+fn install_editor_view_close(
+    app: &mut App,
+    program_id: MaterialProgramId,
+) -> crate::docking::EditorViewId {
+    use crate::docking::{ToolPanel, WorkspaceLayout};
+    use crate::document::{DocumentKey, DocumentManager};
+    use crate::editor_view::{
+        ActiveEditorContext, EditorViewKind, EditorViewManager, close_editor_view,
+        discard_and_close_editor_view, open_document_view, save_and_close_editor_view,
+    };
+    let mut documents = DocumentManager::default();
+    let mut views = EditorViewManager::default();
+    let mut active = ActiveEditorContext::default();
+    let view = open_document_view(
+        &mut documents,
+        &mut views,
+        &mut active,
+        DocumentKey::MaterialProgram(program_id),
+        EditorViewKind::MaterialGraph,
+    );
+    let mut layout = WorkspaceLayout::default();
+    layout.show(ToolPanel::MaterialGraph);
+    layout.show_editor(view);
+    app.insert_resource(documents)
+        .insert_resource(views)
+        .insert_resource(active)
+        .insert_resource(layout)
+        .add_observer(close_editor_view)
+        .add_observer(save_and_close_editor_view)
+        .add_observer(discard_and_close_editor_view);
+    view
+}
+
+fn editor_tabs(app: &mut App) -> Vec<crate::docking::EditorViewId> {
+    app.world()
+        .resource::<crate::docking::WorkspaceLayout>()
+        .editor_views()
+}
+
+#[test]
+fn closing_a_dirty_material_tab_prompts_then_saves_and_closes() {
+    use crate::editor_view::CloseEditorView;
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, first, _second) = setup(directory.path());
+    let view = install_editor_view_close(&mut app, first.id);
+    let edited = edit(&mut app, &first, "Edited then closed");
+
+    app.world_mut().trigger(CloseEditorView::requested(view));
+    app.world_mut().flush();
+    // A dirty document defers to the prompt rather than closing.
+    assert_eq!(
+        app.world()
+            .resource::<DocumentProtectionState>()
+            .pending_editor_close,
+        Some(view)
+    );
+    assert_eq!(editor_tabs(&mut app), vec![view]);
+
+    respond(&mut app, DocumentProtectionAction::Save);
+    io::drain(app.world_mut());
+    // Saved to disk, draft cleared, tab closed, prompt dismissed.
+    assert_eq!(
+        MaterialProgram::load_ron(directory.path().join("first.aestra.material.ron")).unwrap(),
+        edited
+    );
+    assert!(
+        !app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .programs
+            .contains_key(&first.id)
+    );
+    assert!(editor_tabs(&mut app).is_empty());
+    assert_eq!(
+        app.world()
+            .resource::<DocumentProtectionState>()
+            .pending_editor_close,
+        None
+    );
+}
+
+#[test]
+fn cancelling_a_dirty_close_keeps_the_tab_and_its_draft() {
+    use crate::editor_view::CloseEditorView;
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, first, _second) = setup(directory.path());
+    let view = install_editor_view_close(&mut app, first.id);
+    edit(&mut app, &first, "Kept draft");
+
+    app.world_mut().trigger(CloseEditorView::requested(view));
+    app.world_mut().flush();
+    respond(&mut app, DocumentProtectionAction::Cancel);
+
+    assert_eq!(
+        app.world()
+            .resource::<DocumentProtectionState>()
+            .pending_editor_close,
+        None
+    );
+    assert_eq!(editor_tabs(&mut app), vec![view]);
+    assert!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .programs
+            .contains_key(&first.id)
+    );
+}
+
+#[test]
+fn discarding_a_dirty_close_drops_the_draft_and_closes_without_writing() {
+    use crate::editor_view::CloseEditorView;
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, first, _second) = setup(directory.path());
+    let path = directory.path().join("first.aestra.material.ron");
+    let view = install_editor_view_close(&mut app, first.id);
+    edit(&mut app, &first, "Discarded draft");
+
+    app.world_mut().trigger(CloseEditorView::requested(view));
+    app.world_mut().flush();
+    respond(&mut app, DocumentProtectionAction::Discard);
+    app.world_mut().flush();
+
+    // The draft was dropped, the tab closed, and the file on disk was never rewritten.
+    assert!(editor_tabs(&mut app).is_empty());
+    assert!(
+        !app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_drafts
+            .programs
+            .contains_key(&first.id)
+    );
+    assert_eq!(MaterialProgram::load_ron(&path).unwrap(), first);
+}
+
 #[test]
 fn save_all_writes_every_dirty_open_material_document() {
     use crate::document::{DocumentKey, DocumentManager};

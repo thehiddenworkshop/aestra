@@ -253,6 +253,7 @@ dock-relation-after = after
 persistence-file-filter-effect = Aestra effect
 persistence-dialog-unsaved-title = Unsaved changes
 persistence-dialog-unsaved-description = Save writes the effect and pending shared material changes. Discard abandons all unsaved changes. Changes already saved to shared assets are kept.
+persistence-dialog-close-unsaved-description = This document has unsaved changes. Save writes them to the shared asset and closes the tab. Discard abandons them and closes the tab.
 persistence-dialog-recovery-title = Recover your work
 persistence-recovery-restore = Restore
 persistence-recovery-discard = Discard Recovery
