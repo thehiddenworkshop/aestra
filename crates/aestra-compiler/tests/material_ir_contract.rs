@@ -854,7 +854,10 @@ fn folding_simplification_and_dead_elimination_preserve_source_mapping() {
     assert!(ir.source_map.eliminated.contains(&color_a));
     assert!(ir.source_map.eliminated.contains(&color_b));
     assert!(ir.source_map.eliminated.contains(&zero));
-    assert!(ir.source_map.eliminated.contains(&unreachable));
+    // `unreachable` is an orphaned constant with no consumer and no output, so normalization drops
+    // it before the IR is built; the optimizer never sees it, so it is absent from the source map.
+    assert!(!ir.source_map.eliminated.contains(&unreachable));
+    assert!(!ir.source_map.values.contains_key(&unreachable));
     assert_eq!(ir.source_map.values[&opacity], ir.source_map.values[&alpha]);
     assert!(matches!(
         ir.value(ir.outputs.color).unwrap().instruction,
