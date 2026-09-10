@@ -3421,7 +3421,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     );
                     return;
                 }
-                spawn_header(panel, None, previews, true, localizer, asset_server);
+                spawn_header(panel, None, previews, true, false, localizer, asset_server);
                 let text = function_inspection_text(session, catalog);
                 spawn_vertical_scroll_area(
                     panel,
@@ -3485,6 +3485,12 @@ pub(crate) fn spawn_material_graph_workspace(
         })
         .with_children(|panel| {
             let projection = selected_projection(session, catalog);
+            let unsaved = projection.as_ref().ok().is_some_and(|(_, graph, _, _)| {
+                catalog
+                    .material_drafts
+                    .programs
+                    .contains_key(&graph.program)
+            });
             spawn_header(
                 panel,
                 projection
@@ -3493,6 +3499,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
                 previews,
                 session.standalone_material().is_some(),
+                unsaved,
                 localizer,
                 asset_server,
             );
@@ -3507,40 +3514,6 @@ pub(crate) fn spawn_material_graph_workspace(
                 );
                 return;
             };
-            if session.effect.material_instances.iter().any(|material| {
-                Some(material.id) == instance
-                    && matches!(
-                        material.program,
-                        aestra_core::material::MaterialProgramRef::Project(_)
-                    )
-            }) {
-                let state = if catalog
-                    .material_drafts
-                    .programs
-                    .contains_key(&projection.program)
-                {
-                    "save-state-unsaved"
-                } else {
-                    "save-state-saved"
-                };
-                panel.spawn((
-                    Text::new(format!(
-                        "{} · {}\n{}",
-                        localizer.text("save-shared-material"),
-                        localizer.text(state),
-                        localizer.text("save-shared-material-description")
-                    )),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT),
-                    Node {
-                        margin: UiRect::all(Val::Px(8.0)),
-                        ..default()
-                    },
-                ));
-            }
             let layout = layout_graph(&projection, previews);
             let graph_key = material_graph_view_key(projection.program);
             let selection_bounds = selected_graph_node_bounds(
@@ -4056,6 +4029,7 @@ fn spawn_header(
     projection: Option<(&str, &MaterialGraphProjection)>,
     previews: &MaterialGraphPreviewState,
     standalone: bool,
+    unsaved: bool,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -4122,6 +4096,28 @@ fn spawn_header(
                     flex_grow: 1.0,
                     ..default()
                 });
+                if unsaved {
+                    // IDE-style unsaved marker: a dot beside the program name, with the shared-save
+                    // caveat moved into its tooltip instead of a permanent block of header text.
+                    header.spawn((
+                        Node {
+                            width: Val::Px(7.0),
+                            height: Val::Px(7.0),
+                            margin: UiRect::right(Val::Px(6.0)),
+                            border_radius: BorderRadius::all(Val::Px(3.5)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::ACCENT),
+                        EditorTooltip::titled(
+                            format!(
+                                "{} · {}",
+                                localizer.text("save-shared-material"),
+                                localizer.text("save-state-unsaved")
+                            ),
+                            localizer.text("save-shared-material-description"),
+                        ),
+                    ));
+                }
                 header.spawn((
                     Text::new(format!(
                         "{}{name}  ·  {} NODES  ·  {} LINKS",
