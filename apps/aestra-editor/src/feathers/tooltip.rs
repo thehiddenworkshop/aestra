@@ -271,23 +271,31 @@ fn spawn_tooltip_body(
         body.insert(TooltipPopup);
     }
     body.with_children(|popup| {
-        if content.title.is_some() || content.shortcut.is_some() {
-            popup
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::SpaceBetween,
-                    column_gap: Val::Px(10.0),
-                    ..default()
-                })
-                .with_children(|header| {
-                    if let Some(title) = content.title.as_ref() {
+        // Render the title as a direct child (like the description) so it always lays out; only a
+        // title paired with a shortcut needs the space-between header row.
+        match (content.title.as_deref(), content.shortcut.as_deref()) {
+            (Some(title), Some(shortcut)) => {
+                popup
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(14.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::SpaceBetween,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|header| {
                         header.spawn(tooltip_text(title, 11.0, theme::TEXT));
-                    }
-                    if let Some(shortcut) = content.shortcut.as_ref() {
                         header.spawn(tooltip_text(shortcut, 9.0, theme::TEXT_MUTED));
-                    }
-                });
+                    });
+            }
+            (Some(title), None) => {
+                popup.spawn(tooltip_text(title, 11.0, theme::TEXT));
+            }
+            (None, Some(shortcut)) => {
+                popup.spawn(tooltip_text(shortcut, 9.0, theme::TEXT_MUTED));
+            }
+            (None, None) => {}
         }
         popup.spawn(tooltip_text(&content.description, 10.0, theme::TEXT));
         if let Some(footer) = content.footer.as_ref() {
