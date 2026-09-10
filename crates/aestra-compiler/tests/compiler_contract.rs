@@ -47,7 +47,7 @@ fn compiler_derives_portable_effect_requirements() {
             .iter()
             .filter(|emitter| emitter.enabled)
             .map(|emitter| emitter.max_particles as usize)
-            .sum()
+            .sum::<usize>()
     );
 
     let flipbook = EffectCompiler::default()
