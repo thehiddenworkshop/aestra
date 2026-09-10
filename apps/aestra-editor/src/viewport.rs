@@ -271,7 +271,7 @@ fn viewport_keyboard_input(
         }
         // Enlarge/reduce works from anywhere, not just with the cursor over the canvas: once
         // maximized the canvas fills the editor, and the shortcut is how you get back.
-        if keys.just_pressed(KeyCode::Backquote) && !control {
+        if keys.just_pressed(KeyCode::F11) {
             commands.trigger(ViewportAction::ToggleMaximize);
         }
         if !canvases.iter().any(RelativeCursorPosition::cursor_over) {
