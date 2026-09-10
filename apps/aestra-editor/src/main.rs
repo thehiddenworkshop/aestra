@@ -10,6 +10,7 @@ mod diagnostics;
 mod dock_ui;
 mod docking;
 mod document;
+mod editor_view;
 mod feathers;
 mod history;
 mod input;
@@ -245,6 +246,7 @@ fn main() {
         .add_plugins(AestraRenderPlugin)
         .add_plugins(DockingPlugin)
         .init_resource::<document::DocumentManager>()
+        .init_resource::<editor_view::EditorViewManager>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
