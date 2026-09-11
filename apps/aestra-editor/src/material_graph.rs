@@ -3946,25 +3946,26 @@ fn spawn_material_graph_node_menu(
     );
 }
 
-/// Whether the material graph is currently showing a document with unsaved edits, used to flag the
-/// panel's dock tab. Covers both the standalone function editor and the selected shared program.
+/// Whether the singleton Material Graph tool tab is showing a shared program with unsaved edits,
+/// used to flag its dock tab. The tool tab always renders the effect's material (M12), so this
+/// reflects the effect material's selected program — independent of any focused editor tab, which
+/// carries its own dirty marker. Per-document editor tabs use [`crate::editor_view`] dirty checks.
 pub(crate) fn material_graph_unsaved(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
 ) -> bool {
-    if session.standalone_function().is_some() {
-        return session
-            .graph_function(catalog)
-            .is_ok_and(|function| catalog.material_drafts.functions.contains_key(&function.id));
-    }
-    selected_projection(session, catalog)
-        .ok()
-        .is_some_and(|(_, graph, _, _)| {
-            catalog
-                .material_drafts
-                .programs
-                .contains_key(&graph.program)
-        })
+    selected_projection_for(
+        &crate::material_document::MaterialEditingTarget::EffectInstance,
+        session,
+        catalog,
+    )
+    .ok()
+    .is_some_and(|(_, graph, _, _)| {
+        catalog
+            .material_drafts
+            .programs
+            .contains_key(&graph.program)
+    })
 }
 
 fn selected_projection(
@@ -6101,6 +6102,28 @@ mod tests {
         assert_eq!(session.effect, effect);
         assert_eq!(session.selection, selection);
         assert_eq!(session.effect_undo_len(), 0);
+    }
+
+    #[test]
+    fn singleton_material_graph_dirty_marker_ignores_the_focused_editor_tab() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Focused tab").normalized();
+        program
+            .save_ron(root.path().join("focused.aestra.material.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = test_support::session_with_timing_slack();
+        // Focus the standalone material (roving target) and give it an unsaved draft.
+        session.open_material_program(&catalog, program.id).unwrap();
+        let mut edited = program.clone();
+        edited.name = "Focused edited".into();
+        catalog.replace_material_program(&program, &edited).unwrap();
+        session.set_material_drafts(catalog.material_drafts.clone());
+        assert!(catalog.material_drafts.programs.contains_key(&program.id));
+
+        // The singleton Material Graph tab renders the effect material (M12), which is clean, so its
+        // dirty marker stays off even though the focused editor tab's document is dirty.
+        assert!(!material_graph_unsaved(&session, &catalog));
     }
 
     #[test]
