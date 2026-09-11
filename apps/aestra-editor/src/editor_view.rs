@@ -291,6 +291,10 @@ struct PersistedEditorView {
     id: EditorViewId,
     document: DocumentKey,
     kind: EditorViewKind,
+    /// The WESL source's project-relative path, so its buffer can be reopened on restore (its
+    /// `WeslSourceId` is a hash of the path and cannot be reversed). `None` for non-WESL views.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wesl_path: Option<PathBuf>,
 }
 
 /// The serializable companion to the workspace layout: the open editor views the layout's editor
@@ -303,15 +307,26 @@ pub(crate) struct EditorWorkspaceManifest {
 
 impl EditorWorkspaceManifest {
     /// Snapshots the currently open editor views by joining each view to its document's asset key.
-    fn from_managers(views: &EditorViewManager, documents: &DocumentManager) -> Self {
+    fn from_managers(
+        views: &EditorViewManager,
+        documents: &DocumentManager,
+        wesl: &crate::wesl_document::WeslDocuments,
+    ) -> Self {
         let mut entries: Vec<PersistedEditorView> = views
             .iter()
             .filter_map(|view| {
                 let key = documents.document(view.document)?.key;
+                let wesl_path = match key {
+                    DocumentKey::WeslSource(id) => {
+                        wesl.relative_path(id).map(std::path::Path::to_path_buf)
+                    }
+                    _ => None,
+                };
                 Some(PersistedEditorView {
                     id: view.id,
                     document: key,
                     kind: view.kind,
+                    wesl_path,
                 })
             })
             .collect();
@@ -343,11 +358,28 @@ fn manifest_path() -> PathBuf {
 
 /// Rebuilds the document and view managers from a persisted manifest. Documents are reopened by
 /// asset key (idempotent, so several views of one asset share a document), and each view is
-/// reinserted under its persisted id so the dock tree's editor tabs resolve.
-fn rebuild_managers(manifest: &EditorWorkspaceManifest) -> (DocumentManager, EditorViewManager) {
+/// reinserted under its persisted id so the dock tree's editor tabs resolve. WESL views also reopen
+/// their source buffer from disk; a WESL view whose file is missing or unreadable is dropped, since
+/// its tab would otherwise render "not loaded".
+fn rebuild_managers(
+    manifest: &EditorWorkspaceManifest,
+    wesl: &mut crate::wesl_document::WeslDocuments,
+    project_root: &std::path::Path,
+) -> (DocumentManager, EditorViewManager) {
     let mut documents = DocumentManager::default();
     let mut views = EditorViewManager::default();
     for entry in &manifest.views {
+        if let DocumentKey::WeslSource(_) = entry.document {
+            let Some(relative) = &entry.wesl_path else {
+                continue; // pre-path manifest entry: cannot reopen the buffer, so drop the tab
+            };
+            match std::fs::read_to_string(project_root.join(relative)) {
+                Ok(text) => {
+                    wesl.open(relative.clone(), text);
+                }
+                Err(_) => continue, // file gone: drop the tab rather than restore a broken one
+            }
+        }
         let document = documents.open(entry.document);
         views.restore_view(entry.id, document, entry.kind);
     }
@@ -361,9 +393,12 @@ pub(crate) fn restore_editor_workspace(
     mut layout: ResMut<WorkspaceLayout>,
     mut documents: ResMut<DocumentManager>,
     mut views: ResMut<EditorViewManager>,
+    mut wesl: ResMut<crate::wesl_document::WeslDocuments>,
+    catalog: Res<crate::ProjectEffectCatalog>,
 ) {
     let manifest = EditorWorkspaceManifest::load();
-    let (restored_documents, restored_views) = rebuild_managers(&manifest);
+    let (restored_documents, restored_views) =
+        rebuild_managers(&manifest, &mut wesl, catalog.root());
     *documents = restored_documents;
     *views = restored_views;
 
@@ -382,11 +417,12 @@ pub(crate) fn restore_editor_workspace(
 pub(crate) fn persist_editor_workspace(
     views: Res<EditorViewManager>,
     documents: Res<DocumentManager>,
+    wesl: Res<crate::wesl_document::WeslDocuments>,
 ) {
     if !views.is_changed() {
         return;
     }
-    let manifest = EditorWorkspaceManifest::from_managers(&views, &documents);
+    let manifest = EditorWorkspaceManifest::from_managers(&views, &documents, &wesl);
     if let Err(error) = manifest.save() {
         warn!("failed to persist editor-document manifest: {error}");
     }
@@ -843,7 +879,11 @@ mod tests {
         let v2 = views.create_view(prog, EditorViewKind::MaterialGraph);
         let v3 = views.create_view(func, EditorViewKind::MaterialFunctionGraph);
 
-        let manifest = EditorWorkspaceManifest::from_managers(&views, &documents);
+        let manifest = EditorWorkspaceManifest::from_managers(
+            &views,
+            &documents,
+            &crate::wesl_document::WeslDocuments::default(),
+        );
         assert_eq!(manifest.views.len(), 3);
         // Round-trips through RON unchanged.
         let encoded = ron::to_string(&manifest).unwrap();
@@ -852,7 +892,11 @@ mod tests {
             manifest
         );
 
-        let (docs2, mut views2) = rebuild_managers(&manifest);
+        let (docs2, mut views2) = rebuild_managers(
+            &manifest,
+            &mut crate::wesl_document::WeslDocuments::default(),
+            std::path::Path::new("project"),
+        );
         assert_eq!(views2.len(), 3);
         assert_eq!(docs2.len(), 2);
         assert_eq!(views2.document_of(v1), views2.document_of(v2));
@@ -865,6 +909,47 @@ mod tests {
         let doc = views2.document_of(v1).unwrap();
         let fresh = views2.create_view(doc, EditorViewKind::MaterialGraph);
         assert!(fresh.0 > v3.0);
+    }
+
+    #[test]
+    fn wesl_view_reopens_its_buffer_and_drops_a_missing_file() {
+        use crate::document::DocumentKey;
+        use crate::wesl_document::{WeslDocuments, WeslSourceId};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("shaders")).unwrap();
+        std::fs::write(root.join("shaders/noise.wesl"), "fn main() {}").unwrap();
+
+        let present = PathBuf::from("shaders/noise.wesl");
+        let present_id = WeslSourceId::for_relative_path(&present);
+        let missing = PathBuf::from("shaders/gone.wesl");
+        let missing_id = WeslSourceId::for_relative_path(&missing);
+
+        let manifest = EditorWorkspaceManifest {
+            views: vec![
+                PersistedEditorView {
+                    id: EditorViewId(1),
+                    document: DocumentKey::WeslSource(present_id),
+                    kind: EditorViewKind::WeslSource,
+                    wesl_path: Some(present.clone()),
+                },
+                PersistedEditorView {
+                    id: EditorViewId(2),
+                    document: DocumentKey::WeslSource(missing_id),
+                    kind: EditorViewKind::WeslSource,
+                    wesl_path: Some(missing),
+                },
+            ],
+        };
+
+        let mut wesl = WeslDocuments::default();
+        let (_documents, views) = rebuild_managers(&manifest, &mut wesl, root);
+
+        // The present file is reopened with its buffer; the missing file's tab is dropped.
+        assert!(views.view(EditorViewId(1)).is_some());
+        assert!(views.view(EditorViewId(2)).is_none());
+        assert_eq!(wesl.text(present_id), Some("fn main() {}"));
     }
 
     #[test]
@@ -919,10 +1004,18 @@ mod tests {
 
         // Persist and restart: the manifest is written, then read back into fresh managers, and the
         // persisted dock tree (stood in for by a clone) is reconciled against them.
-        let manifest = EditorWorkspaceManifest::from_managers(&views, &documents);
+        let manifest = EditorWorkspaceManifest::from_managers(
+            &views,
+            &documents,
+            &crate::wesl_document::WeslDocuments::default(),
+        );
         let restored: EditorWorkspaceManifest =
             ron::from_str(&ron::to_string(&manifest).unwrap()).unwrap();
-        let (documents, views) = rebuild_managers(&restored);
+        let (documents, views) = rebuild_managers(
+            &restored,
+            &mut crate::wesl_document::WeslDocuments::default(),
+            std::path::Path::new("project"),
+        );
         let mut layout = layout.clone();
 
         // Nothing is pruned — both editor tabs still resolve to their programs.
