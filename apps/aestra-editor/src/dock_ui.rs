@@ -45,7 +45,6 @@ struct PanelSources<'a> {
     wesl_documents: &'a crate::wesl_document::WeslDocuments,
     wesl_cursors: &'a crate::wesl_editor::WeslEditorCursors,
     wesl_diagnostics: &'a crate::wesl_document::WeslDiagnostics,
-    focus: Option<Entity>,
     viewport_maximized: bool,
 }
 
@@ -78,7 +77,6 @@ pub(crate) struct DockUiResources<'w> {
     wesl_documents: Res<'w, crate::wesl_document::WeslDocuments>,
     wesl_cursors: Res<'w, crate::wesl_editor::WeslEditorCursors>,
     wesl_diagnostics: Res<'w, crate::wesl_document::WeslDiagnostics>,
-    input_focus: Option<Res<'w, bevy::input_focus::InputFocus>>,
     maximized: Res<'w, MaximizedPanel>,
 }
 
@@ -111,7 +109,6 @@ impl<'w> DockUiResources<'w> {
             wesl_documents: &self.wesl_documents,
             wesl_cursors: &self.wesl_cursors,
             wesl_diagnostics: &self.wesl_diagnostics,
-            focus: self.input_focus.as_ref().and_then(|focus| focus.get()),
             viewport_maximized: self.maximized.0 == Some(ToolPanel::Viewport),
         }
     }
@@ -506,7 +503,6 @@ fn spawn_editor_view_content(
                     sources.wesl_documents,
                     sources.wesl_cursors,
                     sources.wesl_diagnostics,
-                    sources.focus,
                     sources.localizer,
                 );
             }

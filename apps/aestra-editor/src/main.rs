@@ -264,8 +264,9 @@ fn main() {
                 editor_view::reconcile_restored_documents_against_catalog,
                 editor_view::sync_active_document_from_target,
                 editor_view::persist_editor_workspace,
+                wesl_editor::sync_wesl_editors,
                 wesl_document::recompile_changed_wesl,
-                wesl_editor::refresh_wesl_editor_surfaces,
+                wesl_editor::sync_wesl_editor_markers,
                 wesl_editor::refresh_wesl_diagnostics,
             )
                 .chain(),

@@ -7,6 +7,7 @@
 pub(crate) mod automation_curve;
 pub(crate) mod breadcrumb;
 pub(crate) mod button;
+pub(crate) mod code_editor;
 pub(crate) mod color_picker;
 pub(crate) mod combo_box;
 pub(crate) mod context_menu;
@@ -40,6 +41,7 @@ pub(crate) struct AestraFeathersPlugin;
 impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FeathersPlugins)
+            .add_plugins(code_editor::CodeEditorPlugin)
             .add_plugins(node_graph::FeathersNodeGraphPlugin)
             .insert_resource(theme::feathers_theme())
             .init_resource::<automation_curve::AutomationCurveImageCache>()
