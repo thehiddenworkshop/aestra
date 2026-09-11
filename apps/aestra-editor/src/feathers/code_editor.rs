@@ -700,6 +700,52 @@ fn edit_code_editor(
     let count = editor.text.chars().count();
     let mut changed = false;
 
+    if ctrl {
+        // Ctrl shortcuts are matched on the logical letter, not the physical `KeyCode`, so they work
+        // on non-QWERTY layouts (e.g. AZERTY, where the Z key is at the physical W position).
+        let letter = match &key.input.logical_key {
+            Key::Character(text) => text.chars().next().map(|c| c.to_ascii_lowercase()),
+            _ => None,
+        };
+        match letter {
+            Some('a') => {
+                editor.anchor = 0;
+                editor.cursor = count;
+            }
+            Some('c') => {
+                if let Some(text) = editor.selected_text() {
+                    let _ = clipboard.set_text(text);
+                }
+            }
+            Some('x') => {
+                if let Some(text) = editor.selected_text() {
+                    let _ = clipboard.set_text(text);
+                    editor.record(EditKind::Other);
+                    changed = editor.delete_selection();
+                }
+            }
+            Some('v') => {
+                if let Some(Ok(text)) = clipboard.fetch_text().poll_result() {
+                    // Clipboards on Windows carry CRLF; the buffer stores LF only.
+                    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                    if !text.is_empty() {
+                        editor.record(EditKind::Other);
+                        editor.insert(&text);
+                        changed = true;
+                    }
+                }
+            }
+            // Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo.
+            Some('z') => changed = if shift { editor.redo() } else { editor.undo() },
+            Some('y') => changed = editor.redo(),
+            _ => {}
+        }
+        if changed {
+            commands.trigger(CodeEditorChanged(entity));
+        }
+        return;
+    }
+
     match key.input.key_code {
         KeyCode::ArrowLeft => {
             let target = editor.cursor.saturating_sub(1);
@@ -763,46 +809,7 @@ fn edit_code_editor(
             editor.insert("    ");
             changed = true;
         }
-        KeyCode::KeyA if ctrl => {
-            editor.anchor = 0;
-            editor.cursor = count;
-        }
-        KeyCode::KeyC if ctrl => {
-            if let Some(text) = editor.selected_text() {
-                let _ = clipboard.set_text(text);
-            }
-        }
-        KeyCode::KeyX if ctrl => {
-            if let Some(text) = editor.selected_text() {
-                let _ = clipboard.set_text(text);
-                editor.record(EditKind::Other);
-                changed = editor.delete_selection();
-            }
-        }
-        KeyCode::KeyV if ctrl => {
-            if let Some(Ok(text)) = clipboard.fetch_text().poll_result() {
-                // Clipboards on Windows carry CRLF; the buffer stores LF only.
-                let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                if !text.is_empty() {
-                    editor.record(EditKind::Other);
-                    editor.insert(&text);
-                    changed = true;
-                }
-            }
-        }
-        KeyCode::KeyZ if ctrl && shift => {
-            changed = editor.redo();
-        }
-        KeyCode::KeyZ if ctrl => {
-            changed = editor.undo();
-        }
-        KeyCode::KeyY if ctrl => {
-            changed = editor.redo();
-        }
         _ => {
-            if ctrl {
-                return; // other Ctrl combinations are not editor shortcuts
-            }
             if let Key::Character(input) = &key.input.logical_key {
                 editor.record(EditKind::Type);
                 editor.insert(input);
