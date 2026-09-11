@@ -879,7 +879,22 @@ fn spawn_dock_tab_bar(
                     }
                     _ => false,
                 };
-                spawn_dock_tab(bar, *tab, stack.active == Some(*tab), dirty, localizer);
+                let editor_title = match tab {
+                    DockTab::Editor(view) => Some(
+                        crate::editor_view::view_document_key(*view, views, documents)
+                            .map(|key| crate::changes::document_display_name(key, catalog, wesl))
+                            .unwrap_or_else(|| "Editor".to_owned()),
+                    ),
+                    DockTab::Tool(_) => None,
+                };
+                spawn_dock_tab(
+                    bar,
+                    *tab,
+                    stack.active == Some(*tab),
+                    dirty,
+                    editor_title,
+                    localizer,
+                );
             }
             bar.spawn((
                 DockTabAppendZone(node),
@@ -917,6 +932,7 @@ fn spawn_dock_tab(
     tab: DockTab,
     selected: bool,
     dirty: bool,
+    editor_title: Option<String>,
     localizer: &Localizer,
 ) {
     parent
@@ -979,7 +995,7 @@ fn spawn_dock_tab(
                 }
                 DockTab::Editor(_) => {
                     row.spawn((
-                        Text::new("Editor"),
+                        Text::new(editor_title.unwrap_or_else(|| "Editor".to_owned())),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()

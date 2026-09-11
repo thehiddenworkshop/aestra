@@ -505,7 +505,7 @@ fn document_key_is_dirty(
 }
 
 /// Resolves the document key an editor view edits, if the view is still open.
-fn view_document_key(
+pub(crate) fn view_document_key(
     view: EditorViewId,
     views: &EditorViewManager,
     documents: &DocumentManager,

@@ -180,7 +180,7 @@ fn dirty_open_documents(
 }
 
 /// A modified document's display name: the asset's own name, falling back to its id if unresolved.
-fn document_display_name(
+pub(crate) fn document_display_name(
     key: crate::document::DocumentKey,
     catalog: &ProjectEffectCatalog,
     wesl: &crate::wesl_document::WeslDocuments,

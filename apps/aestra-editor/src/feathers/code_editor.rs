@@ -476,7 +476,7 @@ fn blink_carets(
     mut carets: Query<&mut Visibility, With<CaretVisual>>,
 ) {
     let phase = ((time.elapsed_secs() - blink.epoch) / CARET_BLINK_SECONDS) as u64;
-    let visible = phase % 2 == 0;
+    let visible = phase.is_multiple_of(2);
     let next = if visible {
         Visibility::Inherited
     } else {
