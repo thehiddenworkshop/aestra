@@ -987,6 +987,9 @@ fn spawn_dock_tab(
                     .with_children(spawn_dock_close_glyph);
                 }
                 DockTab::Editor(view) => {
+                    // The editor close button routes through the document lifecycle rather than a
+                    // DockingAction, so it styles its own hover instead of relying on the docking
+                    // action handler that lights the tool-tab close buttons.
                     row.spawn((
                         Button,
                         EditorNativeControl,
@@ -1003,6 +1006,8 @@ fn spawn_dock_tab(
                             }
                         },
                     )
+                    .observe(hover_dock_close_button)
+                    .observe(unhover_dock_close_button)
                     .with_children(spawn_dock_close_glyph);
                 }
                 _ => {}
@@ -1017,6 +1022,24 @@ fn dock_close_button_node() -> Node {
         align_items: AlignItems::Center,
         justify_content: JustifyContent::Center,
         ..default()
+    }
+}
+
+fn hover_dock_close_button(
+    over: On<Pointer<Over>>,
+    mut backgrounds: Query<&mut BackgroundColor, With<DockCloseButton>>,
+) {
+    if let Ok(mut background) = backgrounds.get_mut(over.event_target()) {
+        background.0 = theme::BUTTON_HOVER;
+    }
+}
+
+fn unhover_dock_close_button(
+    out: On<Pointer<Out>>,
+    mut backgrounds: Query<&mut BackgroundColor, With<DockCloseButton>>,
+) {
+    if let Ok(mut background) = backgrounds.get_mut(out.event_target()) {
+        background.0 = Color::NONE;
     }
 }
 

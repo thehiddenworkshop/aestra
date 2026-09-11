@@ -704,7 +704,7 @@ fn sync_document_protection_overlay(
     if !protection.is_changed() {
         return;
     }
-    let display = if protection.pending.is_some() {
+    let display = if protection.pending.is_some() || protection.pending_editor_close.is_some() {
         Display::Flex
     } else {
         Display::None
@@ -1579,6 +1579,40 @@ mod tests {
     use super::*;
     use crate::menus::MenuKind;
     use crate::test_support;
+
+    #[test]
+    fn dirty_editor_close_prompt_reveals_the_protection_overlay() {
+        let mut app = App::new();
+        app.init_resource::<DocumentProtectionState>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, sync_document_protection_overlay);
+        let overlay = app
+            .world_mut()
+            .spawn((
+                DocumentProtectionOverlay,
+                Node {
+                    display: Display::None,
+                    ..default()
+                },
+            ))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(overlay).unwrap().display,
+            Display::None
+        );
+
+        // Opening the dirty-close prompt must reveal the shared overlay, or its Save/Discard/Cancel
+        // buttons are unreachable and the document cannot be closed.
+        app.world_mut()
+            .resource_mut::<DocumentProtectionState>()
+            .pending_editor_close = Some(crate::docking::EditorViewId(0));
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(overlay).unwrap().display,
+            Display::Flex
+        );
+    }
 
     fn pending_material_edit(
         root: &Path,
