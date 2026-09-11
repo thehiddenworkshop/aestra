@@ -41,6 +41,7 @@ impl WeslEditorCursors {
 }
 
 const CARET_COLOR: Color = Color::srgb(0.85, 0.85, 0.95);
+const ERROR_COLOR: Color = Color::srgb(1.0, 0.38, 0.32);
 const EDITOR_FONT_SIZE: f32 = 12.0;
 
 /// The display colour for a token class, tuned for the editor's dark panels.
@@ -57,39 +58,87 @@ fn token_color(kind: WeslTokenKind) -> Color {
     }
 }
 
-/// Builds the coloured text runs for `source`, inserting a caret run at `caret` when `focused`.
-fn editor_runs(source: &str, caret: usize, focused: bool) -> Vec<(String, Color)> {
-    let caret = caret.min(source.chars().count());
+/// The character offset of the start of 1-based `line` in `source`.
+fn line_start_offset(source: &str, line: usize) -> usize {
+    if line <= 1 {
+        return 0;
+    }
+    let mut newlines = 0;
+    for (index, character) in source.chars().enumerate() {
+        if character == '\n' {
+            newlines += 1;
+            if newlines == line - 1 {
+                return index + 1;
+            }
+        }
+    }
+    source.chars().count()
+}
+
+/// Builds the coloured token runs for `source`, then splices the given insertions (caret, inline
+/// error marker) in at their character offsets. Concatenating the non-marker runs yields `source`.
+fn editor_runs(
+    source: &str,
+    caret: usize,
+    focused: bool,
+    error_line: Option<usize>,
+) -> Vec<(String, Color)> {
+    let count = source.chars().count();
+    let mut insertions: Vec<(usize, String, Color)> = Vec::new();
+    if focused {
+        insertions.push((caret.min(count), "|".to_owned(), CARET_COLOR));
+    }
+    if let Some(line) = error_line {
+        insertions.push((
+            line_start_offset(source, line),
+            "\u{2717} ".to_owned(),
+            ERROR_COLOR,
+        ));
+    }
+    insertions.sort_by_key(|(offset, _, _)| *offset);
+
     let mut runs = Vec::new();
     let mut offset = 0usize;
-    let mut caret_done = !focused;
+    let mut pending = insertions.into_iter().peekable();
     for token in tokenize(source) {
-        let len = token.text.chars().count();
-        if !caret_done && caret >= offset && caret <= offset + len {
-            let split = caret - offset;
-            let chars: Vec<char> = token.text.chars().collect();
-            let before: String = chars[..split].iter().collect();
-            let after: String = chars[split..].iter().collect();
-            if !before.is_empty() {
-                runs.push((before, token_color(token.kind)));
+        let chars: Vec<char> = token.text.chars().collect();
+        let len = chars.len();
+        let mut start = 0usize;
+        while let Some(&(insert_at, _, _)) = pending.peek() {
+            if insert_at > offset + len {
+                break;
             }
-            runs.push(("|".to_owned(), CARET_COLOR));
-            if !after.is_empty() {
-                runs.push((after, token_color(token.kind)));
+            let split = insert_at.saturating_sub(offset).max(start);
+            if split > start {
+                runs.push((
+                    chars[start..split].iter().collect(),
+                    token_color(token.kind),
+                ));
             }
-            caret_done = true;
-        } else {
-            runs.push((token.text, token_color(token.kind)));
+            let (_, text, color) = pending.next().unwrap();
+            runs.push((text, color));
+            start = split;
+        }
+        if start < len {
+            runs.push((chars[start..len].iter().collect(), token_color(token.kind)));
         }
         offset += len;
     }
-    if !caret_done {
-        runs.push(("|".to_owned(), CARET_COLOR));
+    for (_, text, color) in pending {
+        runs.push((text, color));
     }
     if runs.is_empty() {
         runs.push((String::new(), theme::TEXT));
     }
     runs
+}
+
+/// The inline error line (1-based) for a document, if its last compile failed with a located error.
+fn error_line_of(diagnostics: &WeslDiagnostics, id: WeslSourceId) -> Option<usize> {
+    match diagnostics.state(id) {
+        Some(WeslCompileState::Error { line, .. }) => *line,
+        _ => None,
+    }
 }
 
 fn spawn_runs(text: &mut ChildSpawnerCommands, runs: Vec<(String, Color)>) {
@@ -248,11 +297,15 @@ pub(crate) fn spawn_wesl_editor_view(
                         },
                     ));
                     let focused = focus == Some(surface.id());
+                    let error_line = error_line_of(diagnostics, id);
                     surface
                         .observe(focus_wesl_editor)
                         .observe(edit_wesl_source)
                         .with_children(|text| {
-                            spawn_runs(text, editor_runs(&source, cursors.get(id), focused));
+                            spawn_runs(
+                                text,
+                                editor_runs(&source, cursors.get(id), focused, error_line),
+                            );
                         });
                 },
             );
@@ -394,11 +447,16 @@ fn vertical(chars: &[char], caret: usize, down: bool) -> usize {
 pub(crate) fn refresh_wesl_editor_surfaces(
     documents: Res<WeslDocuments>,
     cursors: Res<WeslEditorCursors>,
+    diagnostics: Res<WeslDiagnostics>,
     focus: Res<InputFocus>,
     surfaces: Query<(Entity, &WeslEditorSurface, Option<&Children>)>,
     mut commands: Commands,
 ) {
-    if !documents.is_changed() && !cursors.is_changed() && !focus.is_changed() {
+    if !documents.is_changed()
+        && !cursors.is_changed()
+        && !diagnostics.is_changed()
+        && !focus.is_changed()
+    {
         return;
     }
     for (entity, surface, children) in &surfaces {
@@ -411,7 +469,8 @@ pub(crate) fn refresh_wesl_editor_surfaces(
             }
         }
         let focused = focus.get() == Some(entity);
-        let runs = editor_runs(source, cursors.get(surface.0), focused);
+        let error_line = error_line_of(&diagnostics, surface.0);
+        let runs = editor_runs(source, cursors.get(surface.0), focused, error_line);
         commands
             .entity(entity)
             .with_children(|text| spawn_runs(text, runs));
@@ -455,9 +514,7 @@ fn diagnostics_message(
     localizer: &Localizer,
 ) -> Option<(String, Color)> {
     match state {
-        Some(WeslCompileState::Error(message)) => {
-            Some((message.clone(), Color::srgb(1.0, 0.38, 0.32)))
-        }
+        Some(WeslCompileState::Error { message, .. }) => Some((message.clone(), ERROR_COLOR)),
         Some(WeslCompileState::Ok) => Some((
             localizer.text("wesl-editor-no-errors"),
             Color::srgb(0.35, 0.88, 0.57),
@@ -543,7 +600,7 @@ mod tests {
     #[test]
     fn editor_runs_reproduce_the_source_and_place_a_caret() {
         let source = "fn f() -> f32 { return 1.0; }";
-        let rebuilt: String = editor_runs(source, 3, true)
+        let rebuilt: String = editor_runs(source, 3, true, None)
             .into_iter()
             .filter(|(run, _)| run != "|")
             .map(|(run, _)| run)
@@ -551,18 +608,35 @@ mod tests {
         assert_eq!(rebuilt, source);
         // With focus, exactly one caret run is present; without focus, none.
         assert_eq!(
-            editor_runs(source, 3, true)
+            editor_runs(source, 3, true, None)
                 .iter()
                 .filter(|(run, _)| run == "|")
                 .count(),
             1
         );
         assert_eq!(
-            editor_runs(source, 3, false)
+            editor_runs(source, 3, false, None)
                 .iter()
                 .filter(|(run, _)| run == "|")
                 .count(),
             0
+        );
+    }
+
+    #[test]
+    fn editor_runs_mark_the_error_line() {
+        let source = "fn a() {}\nfn b( {}\nfn c() {}";
+        // An error on line 2 inserts the error marker at that line's start; nothing when clean.
+        let marked = editor_runs(source, 0, false, Some(2));
+        assert!(
+            marked
+                .iter()
+                .any(|(run, color)| run == "\u{2717} " && *color == ERROR_COLOR)
+        );
+        assert!(
+            !editor_runs(source, 0, false, None)
+                .iter()
+                .any(|(run, _)| run == "\u{2717} ")
         );
     }
 

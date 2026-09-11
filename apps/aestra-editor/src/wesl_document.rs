@@ -161,11 +161,30 @@ impl WeslDocuments {
     }
 }
 
-/// The compile state of a WESL module: clean, or the compiler's error message.
+/// The compile state of a WESL module: clean, or the compiler's error message plus the 1-based
+/// source line it points at (best-effort, parsed from the message) so the editor can mark it inline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum WeslCompileState {
     Ok,
-    Error(String),
+    Error {
+        message: String,
+        line: Option<usize>,
+    },
+}
+
+/// Best-effort extraction of a 1-based line number from a WESL/Naga compiler message. Naga formats
+/// locations as `wgsl:LINE:COL`; generated WGSL lines align with WESL for modules without imports.
+fn error_line(message: &str) -> Option<usize> {
+    for token in message.split(|c: char| c.is_whitespace() || c == '│' || c == '┌' || c == '─')
+    {
+        let digits = token
+            .strip_prefix("wgsl:")
+            .and_then(|rest| rest.split(':').next());
+        if let Some(line) = digits.and_then(|line| line.parse::<usize>().ok()) {
+            return Some(line);
+        }
+    }
+    None
 }
 
 /// Per-document WESL compile diagnostics, refreshed whenever a buffer's revision changes. Paired
@@ -205,7 +224,11 @@ fn module_name_for(path: &Path) -> String {
 pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompileState {
     match aestra_gpu::shader::compile_wesl(module_name, source, &[]) {
         Ok(_) => WeslCompileState::Ok,
-        Err(error) => WeslCompileState::Error(error.to_string()),
+        Err(error) => {
+            let message = error.to_string();
+            let line = error_line(&message);
+            WeslCompileState::Error { message, line }
+        }
     }
 }
 
@@ -271,7 +294,7 @@ mod tests {
             WeslCompileState::Ok
         );
         match compile_wesl_source("noise", "fn broken( {") {
-            WeslCompileState::Error(message) => assert!(!message.is_empty()),
+            WeslCompileState::Error { message, .. } => assert!(!message.is_empty()),
             WeslCompileState::Ok => panic!("expected a compile error for malformed WESL"),
         }
     }
