@@ -42,6 +42,8 @@ enum DiagnosticsAction {
         source: DiagnosticSource,
         index: usize,
     },
+    /// Reveal the WESL editor tab for a shader compile error.
+    SelectShader(crate::wesl_document::WeslSourceId),
 }
 
 #[derive(Resource, Default)]
@@ -128,6 +130,8 @@ fn handle_diagnostics_actions(
     mut workspace: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
     catalog: Option<Res<ProjectEffectCatalog>>,
+    documents: Option<Res<crate::document::DocumentManager>>,
+    views: Option<Res<crate::editor_view::EditorViewManager>>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut actions {
         match *interaction {
@@ -164,6 +168,18 @@ fn handle_diagnostics_actions(
                             reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                         }
                     }
+                    DiagnosticsAction::SelectShader(id) => {
+                        let view = documents.as_deref().zip(views.as_deref()).and_then(
+                            |(documents, views)| {
+                                crate::editor_view::view_for_wesl_source(id, views, documents)
+                            },
+                        );
+                        if let Some(view) = view {
+                            crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
+                        } else {
+                            session.status = "Shader is no longer open".into();
+                        }
+                    }
                 }
             }
             _ => {}
@@ -176,6 +192,8 @@ pub(crate) fn spawn_diagnostics_workspace(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     state: &DiagnosticsPanelState,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
     localizer: &Localizer,
 ) {
     if let Some(message) = &state.details {
@@ -191,10 +209,13 @@ pub(crate) fn spawn_diagnostics_workspace(
         .map(|pending| pending.diagnostics.diagnostics.as_slice())
         .unwrap_or_default();
     let all = current.iter().chain(project.iter()).chain(pending.iter());
+    // Open WESL buffers contribute compile errors (always error severity).
+    let shader_errors = wesl_diagnostics.errors().count();
     let errors = all
         .clone()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-        .count();
+        .count()
+        + shader_errors;
     let warnings = all
         .clone()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
@@ -207,7 +228,12 @@ pub(crate) fn spawn_diagnostics_workspace(
         .chain(project.iter())
         .chain(pending.iter())
         .filter(|diagnostic| state.filter.matches(diagnostic.severity))
-        .count();
+        .count()
+        + if state.filter.matches(DiagnosticSeverity::Error) {
+            shader_errors
+        } else {
+            0
+        };
 
     parent
         .spawn(Node {
@@ -365,6 +391,13 @@ pub(crate) fn spawn_diagnostics_workspace(
                                     localizer,
                                 );
                             }
+                            spawn_wesl_diagnostic_section(
+                                list,
+                                wesl_documents,
+                                wesl_diagnostics,
+                                state.filter,
+                                localizer,
+                            );
                         },
                     );
                 });
@@ -517,6 +550,127 @@ fn spawn_diagnostic_row(
                 ));
                 content.spawn((
                     Text::new(&diagnostic.path),
+                    TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+                    details::wrapped_text_node(),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_FAINT),
+                    Pickable::IGNORE,
+                ));
+            });
+        });
+}
+
+/// Renders the compile errors of open WESL buffers as a "Shaders" section, so all project errors
+/// share one panel. WESL errors are always error severity, so the section is shown only when the
+/// filter includes errors.
+fn spawn_wesl_diagnostic_section(
+    parent: &mut ChildSpawnerCommands,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
+    filter: DiagnosticsFilter,
+    localizer: &Localizer,
+) {
+    if !filter.matches(DiagnosticSeverity::Error) {
+        return;
+    }
+    let mut errors = wesl_diagnostics.errors().peekable();
+    if errors.peek().is_none() {
+        return;
+    }
+    parent.spawn((
+        Text::new(localizer.text("diagnostics-shaders")),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+        Node {
+            margin: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+            ..default()
+        },
+    ));
+    for (id, message, line) in errors {
+        let name = wesl_documents
+            .relative_path(id)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("{id}"));
+        let path = match line {
+            Some(line) => format!("{name}:{line}"),
+            None => name,
+        };
+        spawn_wesl_diagnostic_row(parent, id, message, &path, localizer);
+    }
+}
+
+fn spawn_wesl_diagnostic_row(
+    parent: &mut ChildSpawnerCommands,
+    id: crate::wesl_document::WeslSourceId,
+    message: &str,
+    path: &str,
+    localizer: &Localizer,
+) {
+    let (label, color) = diagnostic_severity_style(DiagnosticSeverity::Error, localizer);
+    let code = localizer.text("diagnostics-code-shader-compile");
+    parent
+        .spawn((
+            Button,
+            EditorNativeControl,
+            DiagnosticsAction::SelectShader(id),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(64.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                column_gap: Val::Px(9.0),
+                align_items: AlignItems::Stretch,
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(4.0),
+                    min_height: Val::Px(48.0),
+                    border_radius: BorderRadius::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(color),
+                Pickable::IGNORE,
+            ));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                ..default()
+            })
+            .with_children(|content| {
+                content.spawn((
+                    Text::new(format!("{label}  ·  {code}")),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(color),
+                    Pickable::IGNORE,
+                ));
+                content.spawn((
+                    Text::new(message),
+                    TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
+                    details::wrapped_text_node(),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+                content.spawn((
+                    Text::new(path),
                     TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),
                     details::wrapped_text_node(),
                     TextFont {

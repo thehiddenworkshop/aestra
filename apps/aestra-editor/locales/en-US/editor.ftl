@@ -827,6 +827,7 @@ diagnostics-no-matches-description = No diagnostics match the selected severity 
 diagnostics-working-effect = WORKING EFFECT
 diagnostics-project-references = PROJECT REFERENCES
 diagnostics-pending-transaction = PENDING TRANSACTION
+diagnostics-shaders = SHADERS
 diagnostics-severity-error = ERROR
 diagnostics-severity-warning = WARNING
 diagnostics-severity-info = INFO
@@ -855,6 +856,7 @@ diagnostics-code-evaluation-domain-mismatch = Evaluation domain mismatch
 diagnostics-code-missing-resource-declaration = Missing resource declaration
 diagnostics-code-invalid-render-state = Invalid render state
 diagnostics-code-unreachable-expression = Unreachable expression
+diagnostics-code-shader-compile = Shader compile error
 
 profiler-effect-profile = PROJECT PROFILE
 profiler-project-instances = ACTIVE EFFECT INSTANCES

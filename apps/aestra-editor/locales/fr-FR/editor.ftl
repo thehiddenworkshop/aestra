@@ -827,6 +827,7 @@ diagnostics-no-matches-description = Aucun diagnostic ne correspond au filtre de
 diagnostics-working-effect = EFFET COURANT
 diagnostics-project-references = RÉFÉRENCES DU PROJET
 diagnostics-pending-transaction = TRANSACTION EN ATTENTE
+diagnostics-shaders = SHADERS
 diagnostics-severity-error = ERREUR
 diagnostics-severity-warning = AVERTISSEMENT
 diagnostics-severity-info = INFO
@@ -855,6 +856,7 @@ diagnostics-code-evaluation-domain-mismatch = Domaine d'évaluation incompatible
 diagnostics-code-missing-resource-declaration = Déclaration de ressource manquante
 diagnostics-code-invalid-render-state = État de rendu non valide
 diagnostics-code-unreachable-expression = Expression inaccessible
+diagnostics-code-shader-compile = Erreur de compilation du shader
 
 profiler-effect-profile = PROFIL DU PROJET
 profiler-project-instances = INSTANCES D’EFFET ACTIVES

@@ -595,6 +595,8 @@ fn spawn_panel_content(
                 sources.session,
                 sources.catalog,
                 sources.diagnostics_panel,
+                sources.wesl_documents,
+                sources.wesl_diagnostics,
                 sources.localizer,
             );
         }

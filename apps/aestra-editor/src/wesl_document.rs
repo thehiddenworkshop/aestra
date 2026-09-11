@@ -198,6 +198,19 @@ impl WeslDiagnostics {
     pub(crate) fn state(&self, id: WeslSourceId) -> Option<&WeslCompileState> {
         self.entries.get(&id).map(|(_, state)| state)
     }
+
+    /// The current compile errors across open WESL buffers, as (source id, message, one-based line),
+    /// for the unified diagnostics panel.
+    pub(crate) fn errors(&self) -> impl Iterator<Item = (WeslSourceId, &str, Option<usize>)> {
+        self.entries
+            .iter()
+            .filter_map(|(id, (_, state))| match state {
+                WeslCompileState::Error { message, line } => {
+                    Some((*id, message.as_str(), *line))
+                }
+                WeslCompileState::Ok => None,
+            })
+    }
 }
 
 /// A WESL module name derived from a file stem, sanitized to a valid identifier for the compiler.

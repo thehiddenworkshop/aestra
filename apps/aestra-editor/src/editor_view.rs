@@ -189,6 +189,19 @@ pub(crate) fn view_kind(view: EditorViewId, views: &EditorViewManager) -> Option
     views.view(view).map(|view| view.kind)
 }
 
+/// The editor view showing a given WESL source, if one is open — so the diagnostics panel can
+/// reveal the tab for a shader error.
+pub(crate) fn view_for_wesl_source(
+    id: crate::wesl_document::WeslSourceId,
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+) -> Option<EditorViewId> {
+    views.iter().find_map(|view| {
+        let key = documents.document(view.document)?.key;
+        (key == DocumentKey::WeslSource(id)).then_some(view.id)
+    })
+}
+
 /// The WESL source id an editor view edits, if it is a WESL document view.
 pub(crate) fn view_wesl_source(
     view: EditorViewId,
