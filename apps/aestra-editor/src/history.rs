@@ -651,9 +651,26 @@ pub(crate) fn execute_history_action(
     mut order: Option<ResMut<asset_order::AssetOrder>>,
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::DocumentProtectionState>>,
+    active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
+    mut code_editors: Query<&mut crate::feathers::code_editor::CodeEditor>,
     mut commands: Commands,
 ) {
     if !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open()) {
+        return;
+    }
+    // A focused code editor owns undo/redo while it is the active editing context.
+    if let Some(entity) = active_editor.as_deref().and_then(|active| active.0)
+        && let Ok(mut editor) = code_editors.get_mut(entity)
+    {
+        let undo = *action == HistoryAction::Undo;
+        let changed = if undo { editor.undo() } else { editor.redo() };
+        session.status = match (undo, changed) {
+            (true, true) => "Undid edit",
+            (false, true) => "Redid edit",
+            (true, false) => "Nothing to undo",
+            (false, false) => "Nothing to redo",
+        }
+        .into();
         return;
     }
     if let Some(order) = order.as_deref_mut()
@@ -852,6 +869,8 @@ fn update_history_availability(
     order: Option<Res<asset_order::AssetOrder>>,
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::DocumentProtectionState>>,
+    active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
+    code_editors: Query<&crate::feathers::code_editor::CodeEditor>,
     mut commands: Commands,
     items: Query<
         (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
@@ -860,10 +879,17 @@ fn update_history_availability(
 ) {
     let blocked =
         !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open());
+    // While a code editor is the active editing context, the Edit menu reflects its own history.
+    let code_editor = active_editor
+        .as_deref()
+        .and_then(|active| active.0)
+        .and_then(|entity| code_editors.get(entity).ok());
     for (entity, undo, redo) in &items {
         let ordered = order.as_ref().filter(|order| order.active());
         let enabled = if blocked {
             false
+        } else if let Some(editor) = code_editor {
+            (undo && editor.can_undo()) || (redo && editor.can_redo())
         } else if ordered.is_some_and(|order| order.top(undo).is_some()) {
             true
         } else if ordered.is_some() {

@@ -160,8 +160,17 @@ impl CodeEditor {
         self.last_edit = Some(kind);
     }
 
+    /// Whether there is anything to undo or redo, so a host (e.g. the Edit menu) can reflect it.
+    pub(crate) fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
     /// Reverts to the previous undo snapshot, pushing the current state onto the redo stack.
-    fn undo(&mut self) -> bool {
+    pub(crate) fn undo(&mut self) -> bool {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
@@ -171,7 +180,7 @@ impl CodeEditor {
     }
 
     /// Re-applies the most recently undone state, pushing the current state onto the undo stack.
-    fn redo(&mut self) -> bool {
+    pub(crate) fn redo(&mut self) -> bool {
         let Some(next) = self.redo.pop() else {
             return false;
         };
@@ -230,6 +239,7 @@ impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CodeEditorPointer>()
             .init_resource::<CaretBlink>()
+            .init_resource::<ActiveCodeEditor>()
             .add_observer(edit_code_editor)
             .add_observer(activate_code_editor_menu)
             .add_systems(
@@ -238,6 +248,7 @@ impl Plugin for CodeEditorPlugin {
                     code_editor_pointer_input,
                     open_code_editor_context_menu,
                     dismiss_code_editor_context_menu,
+                    track_active_code_editor,
                     render_code_editors,
                     render_code_gutters,
                     blink_carets,
@@ -855,6 +866,43 @@ fn edit_code_editor(
     if changed {
         commands.trigger(CodeEditorChanged(entity));
     }
+}
+
+// ---- active editor tracking (for the app's Edit menu) -------------------------------------
+
+/// The code editor the app's Edit-menu undo/redo should target: the last-focused editor, kept
+/// through menu interaction and cleared when another editing context takes focus.
+#[derive(Resource, Default)]
+pub(crate) struct ActiveCodeEditor(pub(crate) Option<Entity>);
+
+/// Tracks which code editor (if any) is the active editing context, so the app's history menu can
+/// reflect and drive its undo/redo. Focusing the editor sets it; focusing a menu keeps it (so its
+/// menu items still act on the editor); focusing another panel clears it.
+fn track_active_code_editor(
+    focus: Res<InputFocus>,
+    editors: Query<(), With<CodeEditor>>,
+    menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
+    parents: Query<&ChildOf>,
+    mut active: ResMut<ActiveCodeEditor>,
+) {
+    if !focus.is_changed() {
+        return;
+    }
+    let Some(target) = focus.get() else {
+        return; // focus momentarily cleared (e.g. a rebuild): keep the last active editor
+    };
+    let mut entity = Some(target);
+    while let Some(current) = entity {
+        if editors.contains(current) {
+            active.0 = Some(current);
+            return;
+        }
+        if menu_items.contains(current) {
+            return; // a menu is being used; keep the active editor so its undo/redo still routes
+        }
+        entity = parents.get(current).ok().map(ChildOf::parent);
+    }
+    active.0 = None; // a non-editor, non-menu context took focus
 }
 
 // ---- context menu ---------------------------------------------------------------------------
