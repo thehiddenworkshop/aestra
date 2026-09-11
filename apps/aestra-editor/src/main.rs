@@ -267,7 +267,6 @@ fn main() {
                 wesl_editor::sync_wesl_editors,
                 wesl_document::recompile_changed_wesl,
                 wesl_editor::sync_wesl_editor_markers,
-                wesl_editor::refresh_wesl_diagnostics,
             )
                 .chain(),
         )
@@ -275,6 +274,7 @@ fn main() {
         .add_observer(editor_view::save_and_close_editor_view)
         .add_observer(editor_view::discard_and_close_editor_view)
         .add_observer(wesl_editor::save_wesl_source)
+        .add_observer(wesl_editor::reveal_wesl_error)
         .add_systems(Startup, set_editor_window_icon)
         .add_systems(Startup, editor_view::restore_editor_workspace)
         .configure_sets(

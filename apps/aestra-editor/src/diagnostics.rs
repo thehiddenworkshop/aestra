@@ -29,6 +29,7 @@ impl Plugin for EditorDiagnosticsPlugin {
                 (
                     handle_diagnostics_actions.in_set(DiagnosticsSet::Actions),
                     update_compile_status.in_set(DiagnosticsSet::Sync),
+                    refresh_diagnostics_panel.in_set(DiagnosticsSet::Sync),
                 ),
             );
     }
@@ -42,8 +43,11 @@ enum DiagnosticsAction {
         source: DiagnosticSource,
         index: usize,
     },
-    /// Reveal the WESL editor tab for a shader compile error.
-    SelectShader(crate::wesl_document::WeslSourceId),
+    /// Reveal the WESL editor tab for a shader compile error and jump to the failing character.
+    SelectShader {
+        id: crate::wesl_document::WeslSourceId,
+        char: Option<usize>,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -168,7 +172,7 @@ fn handle_diagnostics_actions(
                             reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                         }
                     }
-                    DiagnosticsAction::SelectShader(id) => {
+                    DiagnosticsAction::SelectShader { id, char } => {
                         let view = documents.as_deref().zip(views.as_deref()).and_then(
                             |(documents, views)| {
                                 crate::editor_view::view_for_wesl_source(id, views, documents)
@@ -176,6 +180,11 @@ fn handle_diagnostics_actions(
                         );
                         if let Some(view) = view {
                             crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
+                            // Jump the caret/scroll to the failing character once the tab is shown.
+                            commands.trigger(crate::wesl_editor::RevealWeslError {
+                                id,
+                                char: char.unwrap_or(0),
+                            });
                         } else {
                             session.status = "Shader is no longer open".into();
                         }
@@ -187,7 +196,84 @@ fn handle_diagnostics_actions(
     }
 }
 
+/// Re-renders the diagnostics panel content in place when diagnostics change, so shader errors
+/// (which do not bump `ui_revision`, to avoid a dock rebuild that would wipe editor undo) update
+/// live. Effect/material diagnostics still refresh through the normal dock rebuild.
+#[allow(clippy::too_many_arguments)]
+fn refresh_diagnostics_panel(
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    state: Res<DiagnosticsPanelState>,
+    wesl_documents: Res<crate::wesl_document::WeslDocuments>,
+    wesl_diagnostics: Res<crate::wesl_document::WeslDiagnostics>,
+    localizer: Res<Localizer>,
+    roots: Query<(Entity, Option<&Children>), With<DiagnosticsPanelContent>>,
+    mut commands: Commands,
+) {
+    if roots.is_empty()
+        || !(wesl_diagnostics.is_changed() || state.is_changed() || localizer.is_changed())
+    {
+        return;
+    }
+    for (root, children) in &roots {
+        if let Some(children) = children {
+            for &child in children {
+                commands.entity(child).despawn();
+            }
+        }
+        commands.entity(root).with_children(|content| {
+            spawn_diagnostics_content(
+                content,
+                &session,
+                &catalog,
+                &state,
+                &wesl_documents,
+                &wesl_diagnostics,
+                &localizer,
+            );
+        });
+    }
+}
+
+/// Marks the diagnostics panel's content wrapper so [`refresh_diagnostics_panel`] can re-render it
+/// in place when diagnostics change without a full dock rebuild (which would wipe editor undo).
+#[derive(Component)]
+pub(crate) struct DiagnosticsPanelContent;
+
 pub(crate) fn spawn_diagnostics_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    state: &DiagnosticsPanelState,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_width: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                ..default()
+            },
+            DiagnosticsPanelContent,
+        ))
+        .with_children(|content| {
+            spawn_diagnostics_content(
+                content,
+                session,
+                catalog,
+                state,
+                wesl_documents,
+                wesl_diagnostics,
+                localizer,
+            );
+        });
+}
+
+fn spawn_diagnostics_content(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
@@ -592,7 +678,7 @@ fn spawn_wesl_diagnostic_section(
             ..default()
         },
     ));
-    for (id, message, line) in errors {
+    for (id, message, line, span) in errors {
         let name = wesl_documents
             .relative_path(id)
             .map(|path| path.to_string_lossy().into_owned())
@@ -601,13 +687,14 @@ fn spawn_wesl_diagnostic_section(
             Some(line) => format!("{name}:{line}"),
             None => name,
         };
-        spawn_wesl_diagnostic_row(parent, id, message, &path, localizer);
+        spawn_wesl_diagnostic_row(parent, id, span.map(|(start, _)| start), message, &path, localizer);
     }
 }
 
 fn spawn_wesl_diagnostic_row(
     parent: &mut ChildSpawnerCommands,
     id: crate::wesl_document::WeslSourceId,
+    char: Option<usize>,
     message: &str,
     path: &str,
     localizer: &Localizer,
@@ -618,7 +705,7 @@ fn spawn_wesl_diagnostic_row(
         .spawn((
             Button,
             EditorNativeControl,
-            DiagnosticsAction::SelectShader(id),
+            DiagnosticsAction::SelectShader { id, char },
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(64.0),

@@ -7,7 +7,8 @@
 //! footer shows the live compiler message.
 
 use crate::feathers::code_editor::{
-    CodeEditor, CodeEditorHighlighter, CodeEditorMarkers, spawn_code_editor, spawn_code_gutter,
+    CodeEditor, CodeEditorError, CodeEditorHighlighter, CodeEditorMarkers, spawn_code_editor,
+    spawn_code_gutter,
 };
 use crate::wesl_document::{WeslCompileState, WeslDiagnostics, WeslDocuments, WeslSourceId};
 use crate::wesl_syntax::{WeslTokenKind, tokenize};
@@ -23,6 +24,14 @@ pub(crate) struct WeslEditorSurface(pub(crate) WeslSourceId);
 /// Fired to write a WESL buffer back to its module file.
 #[derive(Event, Debug, Clone, Copy)]
 pub(crate) struct SaveWeslSource(pub(crate) WeslSourceId);
+
+/// Fired (by the diagnostics panel) to jump to a WESL compile error: place the caret at the failing
+/// character and scroll it into view.
+#[derive(Event, Debug, Clone, Copy)]
+pub(crate) struct RevealWeslError {
+    pub(crate) id: WeslSourceId,
+    pub(crate) char: usize,
+}
 
 const ERROR_COLOR: Color = Color::srgb(1.0, 0.38, 0.32);
 
@@ -65,16 +74,35 @@ fn wesl_highlighter() -> CodeEditorHighlighter {
     }))
 }
 
-/// The zero-based error line marker for a document, from its last compile.
+/// The inline error marker for a document, from its last compile: the exact failing char range and
+/// a short message shown after it.
 fn error_marker(diagnostics: &WeslDiagnostics, id: WeslSourceId) -> CodeEditorMarkers {
-    let error_line = match diagnostics.state(id) {
-        Some(WeslCompileState::Error { line, .. }) => line.map(|line| line.saturating_sub(1)),
+    let error = match diagnostics.state(id) {
+        Some(WeslCompileState::Error {
+            message,
+            span: Some(span),
+            ..
+        }) => Some(CodeEditorError {
+            span: *span,
+            message: concise_wesl_error(message),
+        }),
         _ => None,
     };
     CodeEditorMarkers {
-        error_line,
+        error,
         error_color: ERROR_COLOR,
     }
+}
+
+/// Trims a verbose WESL compiler message down to the description shown inline in the editor: the
+/// text after the `chars A..B:` location, first line only.
+fn concise_wesl_error(message: &str) -> String {
+    let description = message
+        .rsplit_once("chars ")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(_, description)| description)
+        .unwrap_or(message);
+    description.lines().next().unwrap_or(description).trim().to_owned()
 }
 
 pub(crate) fn spawn_wesl_editor_view(
@@ -219,8 +247,6 @@ pub(crate) fn spawn_wesl_editor_view(
                     spawn_code_gutter(body, code);
                 },
             );
-
-            spawn_diagnostics_footer(panel, id, diagnostics.state(id), localizer);
         });
 }
 
@@ -250,8 +276,32 @@ pub(crate) fn sync_wesl_editor_markers(
     }
     for (surface, mut markers) in &mut editors {
         let next = error_marker(&diagnostics, surface.0);
-        if markers.error_line != next.error_line {
-            markers.error_line = next.error_line;
+        markers.set_if_neq(next);
+    }
+}
+
+/// Jumps to a WESL compile error: sets the persisted caret (applied when the editor respawns from
+/// the tab reveal) and, if the editor is already open, moves its live caret and scrolls the failing
+/// line into view.
+pub(crate) fn reveal_wesl_error(
+    event: On<RevealWeslError>,
+    mut cursors: ResMut<WeslEditorCursors>,
+    mut editors: Query<(&WeslEditorSurface, &mut CodeEditor, &ChildOf)>,
+    mut viewports: Query<(&ComputedNode, &mut bevy::ui::ScrollPosition), Without<CodeEditor>>,
+) {
+    let RevealWeslError { id, char } = *event;
+    cursors.set(id, char, char);
+    for (surface, mut editor, child_of) in &mut editors {
+        if surface.0 != id {
+            continue;
+        }
+        editor.set_caret(char);
+        if let Ok((node, mut scroll)) = viewports.get_mut(child_of.parent()) {
+            let viewport = node.size().y * node.inverse_scale_factor();
+            let line = editor.line_of(char) as f32
+                * crate::feathers::code_editor::CODE_LINE_HEIGHT;
+            // Keep the failing line a little below the top of the viewport.
+            scroll.0.y = (line - viewport * 0.4).max(0.0);
         }
     }
 }
@@ -284,90 +334,3 @@ pub(crate) fn save_wesl_source(
     }
 }
 
-/// Marks a WESL pane's diagnostics footer so the compile result can be refreshed in place.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct WeslDiagnosticsFooter(pub(crate) WeslSourceId);
-
-fn diagnostics_message(
-    state: Option<&WeslCompileState>,
-    localizer: &Localizer,
-) -> Option<(String, Color)> {
-    match state {
-        Some(WeslCompileState::Error { message, .. }) => Some((message.clone(), ERROR_COLOR)),
-        Some(WeslCompileState::Ok) => Some((
-            localizer.text("wesl-editor-no-errors"),
-            Color::srgb(0.35, 0.88, 0.57),
-        )),
-        None => None,
-    }
-}
-
-fn spawn_diagnostics_footer(
-    panel: &mut ChildSpawnerCommands,
-    id: WeslSourceId,
-    state: Option<&WeslCompileState>,
-    localizer: &Localizer,
-) {
-    let message = diagnostics_message(state, localizer);
-    panel
-        .spawn((
-            WeslDiagnosticsFooter(id),
-            if message.is_some() {
-                Visibility::Inherited
-            } else {
-                Visibility::Hidden
-            },
-            Node {
-                width: Val::Percent(100.0),
-                max_height: Val::Px(96.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                border: UiRect::top(Val::Px(1.0)),
-                overflow: Overflow::scroll_y(),
-                flex_shrink: 0.0,
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_child((
-            Text::new(
-                message
-                    .as_ref()
-                    .map(|(text, _)| text.clone())
-                    .unwrap_or_default(),
-            ),
-            TextFont {
-                font_size: FontSize::Px(10.0),
-                ..default()
-            },
-            TextColor(message.map(|(_, color)| color).unwrap_or(theme::TEXT_MUTED)),
-        ));
-}
-
-/// Refreshes each WESL pane's diagnostics footer in place when compile results change.
-pub(crate) fn refresh_wesl_diagnostics(
-    diagnostics: Res<WeslDiagnostics>,
-    localizer: Res<Localizer>,
-    mut footers: Query<(&WeslDiagnosticsFooter, &Children, &mut Visibility)>,
-    mut texts: Query<(&mut Text, &mut TextColor)>,
-) {
-    if !diagnostics.is_changed() {
-        return;
-    }
-    for (footer, children, mut visibility) in &mut footers {
-        let message = diagnostics_message(diagnostics.state(footer.0), &localizer);
-        *visibility = if message.is_some() {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        let Some(&child) = children.first() else {
-            continue;
-        };
-        if let Ok((mut text, mut color)) = texts.get_mut(child) {
-            let (message, tint) = message.unwrap_or_else(|| (String::new(), theme::TEXT_MUTED));
-            text.0 = message;
-            color.0 = tint;
-        }
-    }
-}

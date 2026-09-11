@@ -169,6 +169,10 @@ pub(crate) enum WeslCompileState {
     Error {
         message: String,
         line: Option<usize>,
+        /// The failing character range in the source (start..end, char indices), parsed from the
+        /// compiler's `chars A..B`, so the editor can underline the exact tokens and the diagnostics
+        /// panel can jump the caret to them. Best-effort; `None` if the message has no range.
+        span: Option<(usize, usize)>,
     },
 }
 
@@ -199,15 +203,20 @@ impl WeslDiagnostics {
         self.entries.get(&id).map(|(_, state)| state)
     }
 
-    /// The current compile errors across open WESL buffers, as (source id, message, one-based line),
-    /// for the unified diagnostics panel.
-    pub(crate) fn errors(&self) -> impl Iterator<Item = (WeslSourceId, &str, Option<usize>)> {
+    /// The current compile errors across open WESL buffers, as (source id, message, one-based line,
+    /// failing char span), for the unified diagnostics panel.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn errors(
+        &self,
+    ) -> impl Iterator<Item = (WeslSourceId, &str, Option<usize>, Option<(usize, usize)>)> {
         self.entries
             .iter()
             .filter_map(|(id, (_, state))| match state {
-                WeslCompileState::Error { message, line } => {
-                    Some((*id, message.as_str(), *line))
-                }
+                WeslCompileState::Error {
+                    message,
+                    line,
+                    span,
+                } => Some((*id, message.as_str(), *line, *span)),
                 WeslCompileState::Ok => None,
             })
     }
@@ -242,9 +251,47 @@ pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompil
             // the diagnostics panel shows plain text.
             let message = strip_ansi(&error.to_string());
             let line = error_line(&message);
-            WeslCompileState::Error { message, line }
+            // Parse errors carry a `chars A..B` range; semantic errors (e.g. duplicate declaration)
+            // do not, so fall back to the offending identifier's location.
+            let span =
+                error_char_span(&message, source).or_else(|| identifier_span(&message, source));
+            WeslCompileState::Error {
+                message,
+                line,
+                span,
+            }
         }
     }
+}
+
+/// Best-effort extraction of the failing character range from a WESL compiler message, which formats
+/// locations as `chars A..B` (byte offsets into the source). Converts them to char indices so the
+/// editor can underline exactly those characters. Returns `None` when no range is present.
+fn error_char_span(message: &str, source: &str) -> Option<(usize, usize)> {
+    let rest = message.split("chars ").nth(1)?;
+    let digits = rest
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .find(|part| part.contains(".."))?;
+    let (start, end) = digits.split_once("..")?;
+    let start: usize = start.parse().ok()?;
+    let end: usize = end.parse().ok()?;
+    let byte_to_char =
+        |byte: usize| source.char_indices().take_while(|(i, _)| *i < byte).count();
+    let (start, end) = (byte_to_char(start), byte_to_char(end));
+    (start <= end).then_some((start, end))
+}
+
+/// Fallback location for errors with no character range: the offending identifier named in the
+/// message (e.g. ``duplicate declaration of `name` ``), underlining its last occurrence in the
+/// source — for a duplicate, that is the redeclaration.
+fn identifier_span(message: &str, source: &str) -> Option<(usize, usize)> {
+    let name = message.split("declaration of `").nth(1)?.split('`').next()?;
+    if name.is_empty() {
+        return None;
+    }
+    let byte = source.rfind(name)?;
+    let start = source[..byte].chars().count();
+    Some((start, start + name.chars().count()))
 }
 
 /// Removes ANSI escape sequences (e.g. colour codes) from `input`.
@@ -298,6 +345,26 @@ pub(crate) fn recompile_changed_wesl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_char_span_parses_the_failing_range_as_char_indices() {
+        let source = "fn main() {}"; // ASCII: byte offset == char index
+        assert_eq!(
+            error_char_span("error: chars 3..7: unexpected token", source),
+            Some((3, 7))
+        );
+        assert_eq!(error_char_span("no range in this message", source), None);
+    }
+
+    #[test]
+    fn identifier_span_underlines_the_redeclaration() {
+        let source = "fn foo() {}\nfn foo() {}";
+        // The last occurrence (the duplicate) is underlined.
+        let span = identifier_span("error: duplicate declaration of `foo`", source);
+        let (start, end) = span.unwrap();
+        assert_eq!(&source[..].chars().skip(start).take(end - start).collect::<String>(), "foo");
+        assert!(start > source.find("foo").unwrap()); // the second `foo`, not the first
+    }
 
     #[test]
     fn strip_ansi_removes_colour_codes_but_keeps_text() {

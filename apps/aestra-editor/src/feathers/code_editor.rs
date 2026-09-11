@@ -12,12 +12,14 @@ use crate::feathers::context_menu::{
     spawn_pointer_context_menu_item,
 };
 use crate::theme;
+use bevy::asset::RenderAssetUsages;
 use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::math::BVec2;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::text::{FontSize, LineBreak, LineHeight, TextLayout, TextSpan};
 use bevy::ui::{ComputedNode, IgnoreScroll, RelativeCursorPosition, UiGlobalTransform};
 use bevy::ui_widgets::Activate;
@@ -160,6 +162,18 @@ impl CodeEditor {
         self.last_edit = Some(kind);
     }
 
+    /// Places the caret (collapsing any selection) at a character index, clamped to the text length.
+    pub(crate) fn set_caret(&mut self, index: usize) {
+        let clamped = index.min(self.text.chars().count());
+        self.cursor = clamped;
+        self.anchor = clamped;
+    }
+
+    /// The zero-based line a character index falls on, for scrolling it into view.
+    pub(crate) fn line_of(&self, index: usize) -> usize {
+        line_col(&self.text, index.min(self.text.chars().count())).0
+    }
+
     /// Whether there is anything to undo or redo, so a host (e.g. the Edit menu) can reflect it.
     pub(crate) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -220,12 +234,21 @@ pub(crate) struct CodeEditorHighlighter(
     pub(crate) Arc<dyn Fn(&str) -> Vec<(String, Color)> + Send + Sync>,
 );
 
-/// Optional extra decorations a host can attach (e.g. a compile-error underline on one line).
-#[derive(Component, Debug, Clone, Default)]
+/// Optional extra decorations a host can attach: a compile error underlined at the exact failing
+/// characters, with an inline message.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
 pub(crate) struct CodeEditorMarkers {
-    /// A zero-based line to underline in the error colour, if any.
-    pub(crate) error_line: Option<usize>,
+    pub(crate) error: Option<CodeEditorError>,
     pub(crate) error_color: Color,
+}
+
+/// A compile error to mark in the editor: the failing character range and a short message shown
+/// inline after it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CodeEditorError {
+    /// The failing range as char indices `(start, end)`.
+    pub(crate) span: (usize, usize),
+    pub(crate) message: String,
 }
 
 /// Fired when a code editor's text changes, so the host can persist it (and its caret/selection).
@@ -235,11 +258,49 @@ pub(crate) struct CodeEditorChanged(pub(crate) Entity);
 /// Registers the code-editor rendering and input handling.
 pub(crate) struct CodeEditorPlugin;
 
+/// A tiny tiled squiggle texture (white on transparent) tinted red under compile errors, for the
+/// wavy "error underline" look. Generated once at startup.
+#[derive(Resource)]
+struct CodeEditorSquiggle(Handle<Image>);
+
+/// Builds the 8×5 triangle-wave tile used for the error underline.
+fn build_squiggle(images: &mut Assets<Image>) -> Handle<Image> {
+    const W: usize = 8;
+    const H: usize = 5;
+    let mut data = vec![0u8; W * H * 4];
+    for x in 0..W {
+        // Triangle wave over the tile width: 0,1,2,3,4,3,2,1 (top row = 0).
+        let y = if x < 4 { x } else { 8 - x };
+        for row in [y, y.saturating_sub(1)] {
+            let i = (row * W + x) * 4;
+            data[i..i + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
+    }
+    let image = Image::new(
+        Extent3d {
+            width: W as u32,
+            height: H as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    images.add(image)
+}
+
+fn init_code_editor_squiggle(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let handle = build_squiggle(&mut images);
+    commands.insert_resource(CodeEditorSquiggle(handle));
+}
+
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CodeEditorPointer>()
             .init_resource::<CaretBlink>()
             .init_resource::<ActiveCodeEditor>()
+            .add_systems(Startup, init_code_editor_squiggle)
             .add_observer(edit_code_editor)
             .add_observer(activate_code_editor_menu)
             .add_systems(
@@ -388,6 +449,7 @@ fn spawn_children(
     editor: &CodeEditor,
     highlighter: &CodeEditorHighlighter,
     markers: &CodeEditorMarkers,
+    squiggle: &Handle<Image>,
     focused: bool,
 ) {
     let source = &editor.text;
@@ -450,15 +512,63 @@ fn spawn_children(
             }
         });
 
-    // Error underline marker.
-    if let Some(line) = markers.error_line {
-        let width = (line_length(source, line).max(1) as f32) * CODE_CHAR_WIDTH;
-        surface.spawn(overlay(
-            GUTTER_WIDTH,
-            line as f32 * CODE_LINE_HEIGHT + CODE_LINE_HEIGHT - 2.0,
-            width,
-            2.0,
-            markers.error_color,
+    // Error marker: underline the exact failing characters (per covered line) and show the message
+    // inline after the last one.
+    if let Some(error) = &markers.error {
+        let (start, end) = error.span;
+        let end = end.max(start + 1); // empty ranges still underline one character
+        let (l0, c0) = line_col(source, start);
+        let (l1, c1) = line_col(source, end);
+        for line in l0..=l1 {
+            let from = if line == l0 { c0 } else { 0 };
+            let to = if line == l1 {
+                c1
+            } else {
+                line_length(source, line)
+            };
+            let width = ((to.saturating_sub(from)).max(1) as f32) * CODE_CHAR_WIDTH;
+            // A tiled squiggle image, tinted the error colour, for the wavy underline.
+            surface.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(GUTTER_WIDTH + from as f32 * CODE_CHAR_WIDTH),
+                    top: Val::Px(line as f32 * CODE_LINE_HEIGHT + CODE_LINE_HEIGHT - 5.0),
+                    width: Val::Px(width),
+                    height: Val::Px(5.0),
+                    ..default()
+                },
+                ImageNode {
+                    image: squiggle.clone(),
+                    color: markers.error_color,
+                    image_mode: NodeImageMode::Tiled {
+                        tile_x: true,
+                        tile_y: false,
+                        stretch_value: 1.0,
+                    },
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        }
+        let inline_left =
+            GUTTER_WIDTH + (line_length(source, l1) + 2) as f32 * CODE_CHAR_WIDTH;
+        surface.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(inline_left),
+                top: Val::Px(l1 as f32 * CODE_LINE_HEIGHT),
+                ..default()
+            },
+            Text::new(error.message.clone()),
+            text_font(),
+            LineHeight::Px(CODE_LINE_HEIGHT),
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
+            // Dimmed so the inline message reads as a hint, not competing with the code.
+            TextColor(markers.error_color.with_alpha(0.6)),
+            Pickable::IGNORE,
         ));
     }
 
@@ -591,6 +701,7 @@ fn render_code_editors(
     focus: Res<InputFocus>,
     time: Res<Time>,
     mut blink: ResMut<CaretBlink>,
+    squiggle: Res<CodeEditorSquiggle>,
     mut editors: Query<(
         Entity,
         Ref<CodeEditor>,
@@ -622,7 +733,7 @@ fn render_code_editors(
             }
         }
         commands.entity(entity).with_children(|surface| {
-            spawn_children(surface, &editor, highlighter, &markers, focused);
+            spawn_children(surface, &editor, highlighter, &markers, &squiggle.0, focused);
         });
     }
 }
