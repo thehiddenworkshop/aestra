@@ -12,7 +12,8 @@ use crate::*;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::{FocusedInput, InputFocus};
-use bevy::text::TextSpan;
+use bevy::text::{LineHeight, TextSpan};
+use bevy::ui::{ComputedNode, RelativeCursorPosition};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -42,7 +43,11 @@ impl WeslEditorCursors {
 
 const CARET_COLOR: Color = Color::srgb(0.85, 0.85, 0.95);
 const ERROR_COLOR: Color = Color::srgb(1.0, 0.38, 0.32);
-const EDITOR_FONT_SIZE: f32 = 12.0;
+const EDITOR_FONT_SIZE: f32 = 13.0;
+// Fira Mono metrics at the editor font size, for positioning the caret/underline overlays and
+// mapping clicks to a character. Advance width is ~0.6em for this monospace face.
+const CHAR_WIDTH: f32 = EDITOR_FONT_SIZE * 0.6;
+const LINE_HEIGHT: f32 = 19.0;
 
 /// The display colour for a token class, tuned for the editor's dark panels.
 fn token_color(kind: WeslTokenKind) -> Color {
@@ -58,79 +63,62 @@ fn token_color(kind: WeslTokenKind) -> Color {
     }
 }
 
-/// The character offset of the start of 1-based `line` in `source`.
-fn line_start_offset(source: &str, line: usize) -> usize {
-    if line <= 1 {
-        return 0;
-    }
-    let mut newlines = 0;
-    for (index, character) in source.chars().enumerate() {
-        if character == '\n' {
-            newlines += 1;
-            if newlines == line - 1 {
-                return index + 1;
-            }
-        }
-    }
-    source.chars().count()
-}
-
-/// Builds the coloured token runs for `source`, then splices the given insertions (caret, inline
-/// error marker) in at their character offsets. Concatenating the non-marker runs yields `source`.
-fn editor_runs(
-    source: &str,
-    caret: usize,
-    focused: bool,
-    error_line: Option<usize>,
-) -> Vec<(String, Color)> {
-    let count = source.chars().count();
-    let mut insertions: Vec<(usize, String, Color)> = Vec::new();
-    if focused {
-        insertions.push((caret.min(count), "|".to_owned(), CARET_COLOR));
-    }
-    if let Some(line) = error_line {
-        insertions.push((
-            line_start_offset(source, line),
-            "\u{2717} ".to_owned(),
-            ERROR_COLOR,
-        ));
-    }
-    insertions.sort_by_key(|(offset, _, _)| *offset);
-
-    let mut runs = Vec::new();
-    let mut offset = 0usize;
-    let mut pending = insertions.into_iter().peekable();
-    for token in tokenize(source) {
-        let chars: Vec<char> = token.text.chars().collect();
-        let len = chars.len();
-        let mut start = 0usize;
-        while let Some(&(insert_at, _, _)) = pending.peek() {
-            if insert_at > offset + len {
-                break;
-            }
-            let split = insert_at.saturating_sub(offset).max(start);
-            if split > start {
-                runs.push((
-                    chars[start..split].iter().collect(),
-                    token_color(token.kind),
-                ));
-            }
-            let (_, text, color) = pending.next().unwrap();
-            runs.push((text, color));
-            start = split;
-        }
-        if start < len {
-            runs.push((chars[start..len].iter().collect(), token_color(token.kind)));
-        }
-        offset += len;
-    }
-    for (_, text, color) in pending {
-        runs.push((text, color));
-    }
+/// The coloured token runs for `source`. Concatenating them reproduces `source`.
+fn editor_runs(source: &str) -> Vec<(String, Color)> {
+    let mut runs: Vec<(String, Color)> = tokenize(source)
+        .into_iter()
+        .map(|token| (token.text, token_color(token.kind)))
+        .collect();
     if runs.is_empty() {
         runs.push((String::new(), theme::TEXT));
     }
     runs
+}
+
+/// The (line, column) of a character index in `source`, both zero-based.
+fn line_col(source: &str, caret: usize) -> (usize, usize) {
+    let mut line = 0;
+    let mut column = 0;
+    for character in source.chars().take(caret) {
+        if character == '\n' {
+            line += 1;
+            column = 0;
+        } else {
+            column += 1;
+        }
+    }
+    (line, column)
+}
+
+/// The character index at zero-based (line, column), clamping the column to the line's length.
+fn char_index(source: &str, line: usize, column: usize) -> usize {
+    let mut current_line = 0;
+    let mut index = 0;
+    let mut line_column = 0;
+    for character in source.chars() {
+        if current_line == line && line_column == column {
+            return index;
+        }
+        if character == '\n' {
+            if current_line == line {
+                return index; // end of the target line
+            }
+            current_line += 1;
+            line_column = 0;
+        } else {
+            line_column += 1;
+        }
+        index += 1;
+    }
+    index
+}
+
+/// The visible character length of zero-based `line` in `source` (excluding the newline).
+fn line_length(source: &str, line: usize) -> usize {
+    source
+        .split('\n')
+        .nth(line)
+        .map_or(0, |text| text.chars().count())
 }
 
 /// The inline error line (1-based) for a document, if its last compile failed with a located error.
@@ -141,15 +129,74 @@ fn error_line_of(diagnostics: &WeslDiagnostics, id: WeslSourceId) -> Option<usiz
     }
 }
 
-fn spawn_runs(text: &mut ChildSpawnerCommands, runs: Vec<(String, Color)>) {
-    for (run, color) in runs {
-        text.spawn((
-            TextSpan::new(run),
-            TextFont {
-                font_size: FontSize::Px(EDITOR_FONT_SIZE),
+fn editor_text_font() -> TextFont {
+    TextFont {
+        font_size: FontSize::Px(EDITOR_FONT_SIZE),
+        ..default()
+    }
+}
+
+/// (Re)builds the surface children: the coloured text, the error underline, and the caret overlay.
+fn spawn_surface_children(
+    surface: &mut ChildSpawnerCommands,
+    source: &str,
+    caret: usize,
+    focused: bool,
+    error_line: Option<usize>,
+) {
+    surface
+        .spawn((
+            Text::new(""),
+            editor_text_font(),
+            LineHeight::Px(LINE_HEIGHT),
+            TextColor(theme::TEXT),
+            Node {
+                width: Val::Percent(100.0),
                 ..default()
             },
-            TextColor(color),
+            Pickable::IGNORE,
+        ))
+        .with_children(|text| {
+            for (run, color) in editor_runs(source) {
+                text.spawn((
+                    TextSpan::new(run),
+                    editor_text_font(),
+                    LineHeight::Px(LINE_HEIGHT),
+                    TextColor(color),
+                ));
+            }
+        });
+
+    if let Some(line) = error_line {
+        let row = line.saturating_sub(1);
+        let width = (line_length(source, row).max(1) as f32) * CHAR_WIDTH;
+        surface.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(row as f32 * LINE_HEIGHT + LINE_HEIGHT - 2.0),
+                width: Val::Px(width),
+                height: Val::Px(2.0),
+                ..default()
+            },
+            BackgroundColor(ERROR_COLOR),
+            Pickable::IGNORE,
+        ));
+    }
+
+    if focused {
+        let (line, column) = line_col(source, caret);
+        surface.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(column as f32 * CHAR_WIDTH),
+                top: Val::Px(line as f32 * LINE_HEIGHT),
+                width: Val::Px(2.0),
+                height: Val::Px(LINE_HEIGHT),
+                ..default()
+            },
+            BackgroundColor(CARET_COLOR),
+            Pickable::IGNORE,
         ));
     }
 }
@@ -285,26 +332,26 @@ pub(crate) fn spawn_wesl_editor_view(
                 |body| {
                     let mut surface = body.spawn((
                         WeslEditorSurface(id),
-                        Text::new(""),
-                        TextFont {
-                            font_size: FontSize::Px(EDITOR_FONT_SIZE),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
                         Node {
                             width: Val::Percent(100.0),
+                            min_height: Val::Percent(100.0),
+                            position_type: PositionType::Relative,
                             ..default()
                         },
+                        RelativeCursorPosition::default(),
                     ));
                     let focused = focus == Some(surface.id());
                     let error_line = error_line_of(diagnostics, id);
                     surface
                         .observe(focus_wesl_editor)
                         .observe(edit_wesl_source)
-                        .with_children(|text| {
-                            spawn_runs(
-                                text,
-                                editor_runs(&source, cursors.get(id), focused, error_line),
+                        .with_children(|surface| {
+                            spawn_surface_children(
+                                surface,
+                                &source,
+                                cursors.get(id),
+                                focused,
+                                error_line,
                             );
                         });
                 },
@@ -314,20 +361,37 @@ pub(crate) fn spawn_wesl_editor_view(
         });
 }
 
-/// Clicking the code surface focuses it so keyboard input is routed to this document.
+/// Clicking the code surface focuses it and moves the caret to the clicked character.
 fn focus_wesl_editor(
     mut click: On<Pointer<Click>>,
-    surfaces: Query<Entity, With<WeslEditorSurface>>,
+    surfaces: Query<(
+        Entity,
+        &WeslEditorSurface,
+        &RelativeCursorPosition,
+        &ComputedNode,
+    )>,
+    documents: Res<WeslDocuments>,
+    mut cursors: ResMut<WeslEditorCursors>,
     mut focus: ResMut<InputFocus>,
 ) {
     if click.button != PointerButton::Primary {
         return;
     }
-    let Ok(entity) = surfaces.get(click.event_target()) else {
+    let Ok((entity, surface, relative, node)) = surfaces.get(click.event_target()) else {
         return;
     };
     click.propagate(false);
     *focus = InputFocus::from_entity(entity);
+
+    // Map the click to a caret position using the monospace metrics.
+    if let (Some(normalized), Some(source)) = (relative.normalized, documents.text(surface.0)) {
+        let size = node.size() * node.inverse_scale_factor;
+        let x = normalized.x * size.x;
+        let y = normalized.y * size.y;
+        let line = (y / LINE_HEIGHT).floor().max(0.0) as usize;
+        let column = (x / CHAR_WIDTH).round().max(0.0) as usize;
+        cursors.set(surface.0, char_index(source, line, column));
+    }
 }
 
 /// Applies a keystroke to the focused WESL surface: edits the buffer text and/or moves the caret.
@@ -460,7 +524,7 @@ pub(crate) fn refresh_wesl_editor_surfaces(
         return;
     }
     for (entity, surface, children) in &surfaces {
-        let Some(source) = documents.text(surface.0) else {
+        let Some(source) = documents.text(surface.0).map(str::to_owned) else {
             continue;
         };
         if let Some(children) = children {
@@ -469,11 +533,11 @@ pub(crate) fn refresh_wesl_editor_surfaces(
             }
         }
         let focused = focus.get() == Some(entity);
+        let caret = cursors.get(surface.0);
         let error_line = error_line_of(&diagnostics, surface.0);
-        let runs = editor_runs(source, cursors.get(surface.0), focused, error_line);
-        commands
-            .entity(entity)
-            .with_children(|text| spawn_runs(text, runs));
+        commands.entity(entity).with_children(|surface| {
+            spawn_surface_children(surface, &source, caret, focused, error_line);
+        });
     }
 }
 
@@ -598,46 +662,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn editor_runs_reproduce_the_source_and_place_a_caret() {
+    fn editor_runs_reproduce_the_source() {
         let source = "fn f() -> f32 { return 1.0; }";
-        let rebuilt: String = editor_runs(source, 3, true, None)
+        let rebuilt: String = editor_runs(source)
             .into_iter()
-            .filter(|(run, _)| run != "|")
             .map(|(run, _)| run)
             .collect();
         assert_eq!(rebuilt, source);
-        // With focus, exactly one caret run is present; without focus, none.
-        assert_eq!(
-            editor_runs(source, 3, true, None)
-                .iter()
-                .filter(|(run, _)| run == "|")
-                .count(),
-            1
-        );
-        assert_eq!(
-            editor_runs(source, 3, false, None)
-                .iter()
-                .filter(|(run, _)| run == "|")
-                .count(),
-            0
-        );
     }
 
     #[test]
-    fn editor_runs_mark_the_error_line() {
-        let source = "fn a() {}\nfn b( {}\nfn c() {}";
-        // An error on line 2 inserts the error marker at that line's start; nothing when clean.
-        let marked = editor_runs(source, 0, false, Some(2));
-        assert!(
-            marked
-                .iter()
-                .any(|(run, color)| run == "\u{2717} " && *color == ERROR_COLOR)
-        );
-        assert!(
-            !editor_runs(source, 0, false, None)
-                .iter()
-                .any(|(run, _)| run == "\u{2717} ")
-        );
+    fn caret_positions_round_trip_through_line_column_and_back() {
+        let source = "abc\ndefg\nhi";
+        // Column 2 of the middle line is character index 6.
+        assert_eq!(line_col(source, 6), (1, 2));
+        assert_eq!(char_index(source, 1, 2), 6);
+        // A column past the line clamps to the line end.
+        assert_eq!(char_index(source, 1, 99), 8); // end of "defg"
+        assert_eq!(line_length(source, 1), 4);
     }
 
     #[test]
