@@ -7,7 +7,7 @@
 //! footer shows the live compiler message.
 
 use crate::feathers::code_editor::{
-    CodeEditor, CodeEditorHighlighter, CodeEditorMarkers, spawn_code_editor,
+    CodeEditor, CodeEditorHighlighter, CodeEditorMarkers, spawn_code_editor, spawn_code_gutter,
 };
 use crate::wesl_document::{WeslCompileState, WeslDiagnostics, WeslDocuments, WeslSourceId};
 use crate::wesl_syntax::{WeslTokenKind, tokenize};
@@ -196,7 +196,8 @@ pub(crate) fn spawn_wesl_editor_view(
             let (cursor, anchor) = cursors.get(id);
             let editor = CodeEditor::new(source).with_selection(cursor, anchor);
             // Code does not wrap, so it scrolls on both axes: a vertical scrollbar on the right and
-            // a horizontal one below for long lines.
+            // a horizontal one below for long lines. The line-number gutter is a sibling of the
+            // editor in the same scroll viewport, spawned after it so it draws on top.
             spawn_scroll_area_xy(
                 panel,
                 ScrollMemoryKey::WeslSource,
@@ -205,17 +206,17 @@ pub(crate) fn spawn_wesl_editor_view(
                     min_width: Val::Px(0.0),
                     min_height: Val::Px(0.0),
                     flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
                     ..default()
                 },
                 |body| {
-                    spawn_code_editor(
+                    let code = spawn_code_editor(
                         body,
                         editor,
                         wesl_highlighter(),
                         error_marker(diagnostics, id),
                         WeslEditorSurface(id),
                     );
+                    spawn_code_gutter(body, code);
                 },
             );
 

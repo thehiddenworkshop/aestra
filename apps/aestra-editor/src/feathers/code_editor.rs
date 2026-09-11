@@ -12,9 +12,10 @@ use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::{FocusedInput, InputFocus};
+use bevy::math::BVec2;
 use bevy::prelude::*;
 use bevy::text::{FontSize, LineBreak, LineHeight, TextLayout, TextSpan};
-use bevy::ui::{ComputedNode, RelativeCursorPosition};
+use bevy::ui::{ComputedNode, IgnoreScroll, RelativeCursorPosition};
 use bevy::window::SystemCursorIcon;
 use std::sync::Arc;
 
@@ -26,6 +27,12 @@ pub(crate) const CODE_LINE_HEIGHT: f32 = 19.0;
 
 const CARET_COLOR: Color = Color::srgb(0.85, 0.85, 0.95);
 const SELECTION_COLOR: Color = Color::srgba(0.36, 0.45, 0.85, 0.35);
+
+/// Width of the line-number gutter, and the gap between it and the code. Code content is offset
+/// right by [`GUTTER_WIDTH`] so it clears the gutter, which stays pinned to the left while the code
+/// scrolls horizontally.
+const GUTTER_WIDTH: f32 = 44.0;
+const GUTTER_TEXT_PADDING: f32 = 8.0;
 
 /// The upper bound on retained undo history, so a long editing session cannot grow it without
 /// limit.
@@ -221,7 +228,13 @@ impl Plugin for CodeEditorPlugin {
             .add_observer(edit_code_editor)
             .add_systems(
                 Update,
-                (code_editor_pointer_input, render_code_editors, blink_carets).chain(),
+                (
+                    code_editor_pointer_input,
+                    render_code_editors,
+                    render_code_gutters,
+                    blink_carets,
+                )
+                    .chain(),
             );
     }
 }
@@ -318,7 +331,8 @@ fn vertical(source: &str, caret: usize, down: bool) -> usize {
 
 fn caret_from_local(source: &str, x: f32, y: f32) -> usize {
     let line = (y / CODE_LINE_HEIGHT).floor().max(0.0) as usize;
-    let column = (x / CODE_CHAR_WIDTH).round().max(0.0) as usize;
+    // Clicks land in the same frame the code is drawn in, which is inset past the gutter.
+    let column = ((x - GUTTER_WIDTH) / CODE_CHAR_WIDTH).round().max(0.0) as usize;
     char_index(source, line, column)
 }
 
@@ -368,7 +382,7 @@ fn spawn_children(
             };
             let width = ((to.saturating_sub(from)) as f32 * CODE_CHAR_WIDTH).max(2.0);
             surface.spawn(overlay(
-                from as f32 * CODE_CHAR_WIDTH,
+                GUTTER_WIDTH + from as f32 * CODE_CHAR_WIDTH,
                 line as f32 * CODE_LINE_HEIGHT,
                 width,
                 CODE_LINE_HEIGHT,
@@ -390,8 +404,12 @@ fn spawn_children(
                 ..default()
             },
             TextColor(theme::TEXT),
-            // No width constraint: the text sizes to its longest line so the editor can scroll to it.
-            Node::default(),
+            // No width constraint: the text sizes to its longest line so the editor can scroll to
+            // it. Offset right to clear the line-number gutter pinned on the left.
+            Node {
+                margin: UiRect::left(Val::Px(GUTTER_WIDTH)),
+                ..default()
+            },
             Pickable::IGNORE,
         ))
         .with_children(|text| {
@@ -413,7 +431,7 @@ fn spawn_children(
     if let Some(line) = markers.error_line {
         let width = (line_length(source, line).max(1) as f32) * CODE_CHAR_WIDTH;
         surface.spawn(overlay(
-            0.0,
+            GUTTER_WIDTH,
             line as f32 * CODE_LINE_HEIGHT + CODE_LINE_HEIGHT - 2.0,
             width,
             2.0,
@@ -426,7 +444,7 @@ fn spawn_children(
         let (line, column) = line_col(source, editor.cursor);
         surface.spawn((
             overlay(
-                column as f32 * CODE_CHAR_WIDTH,
+                GUTTER_WIDTH + column as f32 * CODE_CHAR_WIDTH,
                 line as f32 * CODE_LINE_HEIGHT,
                 2.0,
                 CODE_LINE_HEIGHT,
@@ -466,6 +484,82 @@ fn blink_carets(
     };
     for mut visibility in &mut carets {
         visibility.set_if_neq(next);
+    }
+}
+
+/// A line-number gutter bound to a code editor. It is a sibling of the editor inside the same
+/// scroll viewport, pinned horizontally (via [`IgnoreScroll`]) while it scrolls vertically with the
+/// code, and re-rendered when the editor's line count changes.
+#[derive(Component)]
+struct CodeGutter {
+    editor: Entity,
+    lines: usize,
+}
+
+/// Spawns a line-number gutter for `editor`. Spawn it after the editor so it draws on top of any
+/// code scrolled under it.
+pub(crate) fn spawn_code_gutter(parent: &mut ChildSpawnerCommands, editor: Entity) -> Entity {
+    parent
+        .spawn((
+            CodeGutter { editor, lines: 0 },
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Px(GUTTER_WIDTH),
+                min_height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            // Sticky on x only: stays put as the code scrolls horizontally, follows vertical scroll.
+            IgnoreScroll(BVec2::new(true, false)),
+            BackgroundColor(theme::PANEL),
+            Pickable::IGNORE,
+        ))
+        .id()
+}
+
+/// Rebuilds a gutter's line numbers whenever its editor's line count changes.
+fn render_code_gutters(
+    editors: Query<&CodeEditor>,
+    mut gutters: Query<(Entity, &mut CodeGutter, Option<&Children>)>,
+    mut commands: Commands,
+) {
+    for (entity, mut gutter, children) in &mut gutters {
+        let Ok(editor) = editors.get(gutter.editor) else {
+            continue;
+        };
+        let lines = editor.text.split('\n').count();
+        if lines == gutter.lines && children.is_some() {
+            continue;
+        }
+        gutter.lines = lines;
+        if let Some(children) = children {
+            for &child in children {
+                commands.entity(child).despawn();
+            }
+        }
+        commands.entity(entity).with_children(|column| {
+            for line in 0..lines {
+                column
+                    .spawn((
+                        Node {
+                            height: Val::Px(CODE_LINE_HEIGHT),
+                            padding: UiRect::right(Val::Px(GUTTER_TEXT_PADDING)),
+                            justify_content: JustifyContent::FlexEnd,
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_child((
+                        Text::new((line + 1).to_string()),
+                        text_font(),
+                        LineHeight::Px(CODE_LINE_HEIGHT),
+                        TextColor(theme::TEXT_FAINT),
+                        Pickable::IGNORE,
+                    ));
+            }
+        });
     }
 }
 
