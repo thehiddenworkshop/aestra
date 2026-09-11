@@ -44,6 +44,7 @@ struct PanelSources<'a> {
     views: &'a crate::editor_view::EditorViewManager,
     wesl_documents: &'a crate::wesl_document::WeslDocuments,
     wesl_modes: &'a crate::wesl_editor::WeslEditorModes,
+    wesl_diagnostics: &'a crate::wesl_document::WeslDiagnostics,
     viewport_maximized: bool,
 }
 
@@ -75,6 +76,7 @@ pub(crate) struct DockUiResources<'w> {
     views: Res<'w, crate::editor_view::EditorViewManager>,
     wesl_documents: Res<'w, crate::wesl_document::WeslDocuments>,
     wesl_modes: Res<'w, crate::wesl_editor::WeslEditorModes>,
+    wesl_diagnostics: Res<'w, crate::wesl_document::WeslDiagnostics>,
     maximized: Res<'w, MaximizedPanel>,
 }
 
@@ -106,6 +108,7 @@ impl<'w> DockUiResources<'w> {
             views: &self.views,
             wesl_documents: &self.wesl_documents,
             wesl_modes: &self.wesl_modes,
+            wesl_diagnostics: &self.wesl_diagnostics,
             viewport_maximized: self.maximized.0 == Some(ToolPanel::Viewport),
         }
     }
@@ -499,6 +502,7 @@ fn spawn_editor_view_content(
                     id,
                     sources.wesl_documents,
                     sources.wesl_modes,
+                    sources.wesl_diagnostics,
                     sources.localizer,
                 );
             }

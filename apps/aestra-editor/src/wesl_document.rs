@@ -147,6 +147,92 @@ impl WeslDocuments {
     pub(crate) fn len(&self) -> usize {
         self.buffers.len()
     }
+
+    /// Open buffers as (id, relative path, revision, text) — used to recompile changed modules.
+    fn iter(&self) -> impl Iterator<Item = (WeslSourceId, &Path, u64, &str)> + '_ {
+        self.buffers.iter().map(|(id, buffer)| {
+            (
+                *id,
+                buffer.relative_path.as_path(),
+                buffer.revision,
+                buffer.text.as_str(),
+            )
+        })
+    }
+}
+
+/// The compile state of a WESL module: clean, or the compiler's error message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WeslCompileState {
+    Ok,
+    Error(String),
+}
+
+/// Per-document WESL compile diagnostics, refreshed whenever a buffer's revision changes. Paired
+/// with the module's compiled revision so a stale buffer is not reported.
+#[derive(Resource, Debug, Default)]
+pub(crate) struct WeslDiagnostics {
+    entries: BTreeMap<WeslSourceId, (u64, WeslCompileState)>,
+}
+
+impl WeslDiagnostics {
+    pub(crate) fn state(&self, id: WeslSourceId) -> Option<&WeslCompileState> {
+        self.entries.get(&id).map(|(_, state)| state)
+    }
+}
+
+/// A WESL module name derived from a file stem, sanitized to a valid identifier for the compiler.
+fn module_name_for(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("module");
+    let mut name: String = stem
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    if !name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    {
+        name.insert(0, '_');
+    }
+    name
+}
+
+/// Compiles a WESL module (via the WESL compiler and Naga validation) to a clean/error state.
+pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompileState {
+    match aestra_gpu::shader::compile_wesl(module_name, source, &[]) {
+        Ok(_) => WeslCompileState::Ok,
+        Err(error) => WeslCompileState::Error(error.to_string()),
+    }
+}
+
+/// Recompiles WESL modules whose buffer changed since their last compile, and drops entries for
+/// closed documents. Runs only when the document store changes, and only touches changed revisions.
+pub(crate) fn recompile_changed_wesl(
+    documents: Res<WeslDocuments>,
+    mut diagnostics: ResMut<WeslDiagnostics>,
+) {
+    if !documents.is_changed() {
+        return;
+    }
+    for (id, path, revision, text) in documents.iter() {
+        let up_to_date = diagnostics
+            .entries
+            .get(&id)
+            .is_some_and(|(compiled, _)| *compiled == revision);
+        if up_to_date {
+            continue;
+        }
+        let module = module_name_for(path);
+        let state = compile_wesl_source(&module, text);
+        diagnostics.entries.insert(id, (revision, state));
+    }
+    diagnostics
+        .entries
+        .retain(|id, _| documents.buffers.contains_key(id));
 }
 
 #[cfg(test)]
@@ -176,6 +262,18 @@ mod tests {
         let again = documents.open(PathBuf::from("shaders/noise.wesl"), "fn main() { }".into());
         assert_eq!(again, id);
         assert_eq!(documents.len(), 1);
+    }
+
+    #[test]
+    fn compile_reports_ok_for_valid_and_an_error_for_invalid_wesl() {
+        assert_eq!(
+            compile_wesl_source("noise", "fn add(a: f32, b: f32) -> f32 { return a + b; }"),
+            WeslCompileState::Ok
+        );
+        match compile_wesl_source("noise", "fn broken( {") {
+            WeslCompileState::Error(message) => assert!(!message.is_empty()),
+            WeslCompileState::Ok => panic!("expected a compile error for malformed WESL"),
+        }
     }
 
     #[test]

@@ -95,6 +95,7 @@ wesl-editor-edit = Modifier
 wesl-editor-preview = Aperçu
 wesl-editor-save = Enregistrer
 wesl-editor-saved = Module WESL enregistré sur le disque.
+wesl-editor-no-errors = Aucune erreur.
 wesl-editor-unavailable = Ce module WESL n'est pas chargé. Rouvrez-le depuis le navigateur d'assets.
 material-document-back = Revenir au contexte matériau de l'effet (conserver les brouillons partagés)
 file-reload-material = Recharger le matériau

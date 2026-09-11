@@ -5,7 +5,7 @@
 //! editable field whose edits sync into the buffer per keystroke. Ctrl+S or the header Save button
 //! write the buffer back to the `.wesl` file. Compiler diagnostics arrive in a later slice.
 
-use crate::wesl_document::{WeslDocuments, WeslSourceId};
+use crate::wesl_document::{WeslCompileState, WeslDiagnostics, WeslDocuments, WeslSourceId};
 use crate::wesl_syntax::{WeslTokenKind, tokenize};
 use crate::*;
 use bevy::text::{EditableText, TextEditChange, TextSpan};
@@ -59,6 +59,7 @@ pub(crate) fn spawn_wesl_editor_view(
     id: WeslSourceId,
     documents: &WeslDocuments,
     modes: &WeslEditorModes,
+    diagnostics: &WeslDiagnostics,
     localizer: &Localizer,
 ) {
     let name = documents
@@ -225,7 +226,103 @@ pub(crate) fn spawn_wesl_editor_view(
                     }
                 },
             );
+
+            spawn_diagnostics_footer(panel, id, diagnostics.state(id), localizer);
         });
+}
+
+/// Marks a WESL pane's diagnostics footer so the compile result can be refreshed in place (without
+/// rebuilding the pane, which would drop the editable field's focus mid-typing).
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct WeslDiagnosticsFooter(pub(crate) WeslSourceId);
+
+fn diagnostics_message(
+    state: Option<&WeslCompileState>,
+    localizer: &Localizer,
+) -> Option<(String, Color)> {
+    match state {
+        Some(WeslCompileState::Error(message)) => {
+            Some((message.clone(), Color::srgb(1.0, 0.38, 0.32)))
+        }
+        Some(WeslCompileState::Ok) => Some((
+            localizer.text("wesl-editor-no-errors"),
+            Color::srgb(0.35, 0.88, 0.57),
+        )),
+        None => None,
+    }
+}
+
+/// A footer strip reporting the module's last compile result. Always present (hidden while the
+/// module has not compiled yet) so [`refresh_wesl_diagnostics`] can update it live.
+fn spawn_diagnostics_footer(
+    panel: &mut ChildSpawnerCommands,
+    id: WeslSourceId,
+    state: Option<&WeslCompileState>,
+    localizer: &Localizer,
+) {
+    let message = diagnostics_message(state, localizer);
+    panel
+        .spawn((
+            WeslDiagnosticsFooter(id),
+            if message.is_some() {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            },
+            Node {
+                width: Val::Percent(100.0),
+                max_height: Val::Px(96.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                border: UiRect::top(Val::Px(1.0)),
+                overflow: Overflow::scroll_y(),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_child((
+            Text::new(
+                message
+                    .as_ref()
+                    .map(|(text, _)| text.clone())
+                    .unwrap_or_default(),
+            ),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(message.map(|(_, color)| color).unwrap_or(theme::TEXT_MUTED)),
+        ));
+}
+
+/// Refreshes each WESL pane's diagnostics footer in place when compile results change, so errors
+/// appear without rebuilding (and refocusing) the pane while the user is typing.
+pub(crate) fn refresh_wesl_diagnostics(
+    diagnostics: Res<WeslDiagnostics>,
+    localizer: Res<Localizer>,
+    mut footers: Query<(&WeslDiagnosticsFooter, &Children, &mut Visibility)>,
+    mut texts: Query<(&mut Text, &mut TextColor)>,
+) {
+    if !diagnostics.is_changed() {
+        return;
+    }
+    for (footer, children, mut visibility) in &mut footers {
+        let message = diagnostics_message(diagnostics.state(footer.0), &localizer);
+        *visibility = if message.is_some() {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        let Some(&child) = children.first() else {
+            continue;
+        };
+        if let Ok((mut text, mut color)) = texts.get_mut(child) {
+            let (message, tint) = message.unwrap_or_else(|| (String::new(), theme::TEXT_MUTED));
+            text.0 = message;
+            color.0 = tint;
+        }
+    }
 }
 
 fn header_button_node() -> Node {

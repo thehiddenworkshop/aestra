@@ -95,6 +95,7 @@ wesl-editor-edit = Edit
 wesl-editor-preview = Preview
 wesl-editor-save = Save
 wesl-editor-saved = Saved WESL module to disk.
+wesl-editor-no-errors = No errors.
 wesl-editor-unavailable = This WESL module is not loaded. Reopen it from the Assets browser.
 material-document-back = Return to the effect's material context (keep shared drafts)
 file-reload-material = Reload Material

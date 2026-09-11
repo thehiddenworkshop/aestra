@@ -252,6 +252,7 @@ fn main() {
         .init_resource::<editor_view::EditorViewManager>()
         .init_resource::<editor_view::ActiveEditorContext>()
         .init_resource::<wesl_document::WeslDocuments>()
+        .init_resource::<wesl_document::WeslDiagnostics>()
         .init_resource::<wesl_editor::WeslEditorModes>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
@@ -263,6 +264,8 @@ fn main() {
                 editor_view::reconcile_restored_documents_against_catalog,
                 editor_view::sync_active_document_from_target,
                 editor_view::persist_editor_workspace,
+                wesl_document::recompile_changed_wesl,
+                wesl_editor::refresh_wesl_diagnostics,
             )
                 .chain(),
         )

@@ -196,6 +196,7 @@ dependencies = [
  "aestra-bevy-render",
  "aestra-compiler",
  "aestra-core",
+ "aestra-gpu",
  "aestra-project",
  "aestra-runtime",
  "bevy",
