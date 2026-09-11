@@ -195,27 +195,40 @@ pub(crate) fn spawn_wesl_editor_view(
 
             let (cursor, anchor) = cursors.get(id);
             let editor = CodeEditor::new(source).with_selection(cursor, anchor);
-            spawn_vertical_scroll_area(
-                panel,
-                ScrollMemoryKey::WeslSource,
-                Node {
+            // The scroll area lays out its viewport and scrollbar as siblings, so it needs a row
+            // parent for the scrollbar to sit on the viewport's right rather than flowing below it
+            // in this column.
+            panel
+                .spawn(Node {
                     flex_grow: 1.0,
+                    width: Val::Percent(100.0),
                     min_width: Val::Px(0.0),
                     min_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
                     ..default()
-                },
-                |body| {
-                    spawn_code_editor(
-                        body,
-                        editor,
-                        wesl_highlighter(),
-                        error_marker(diagnostics, id),
-                        WeslEditorSurface(id),
+                })
+                .with_children(|row| {
+                    spawn_vertical_scroll_area(
+                        row,
+                        ScrollMemoryKey::WeslSource,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(10.0)),
+                            ..default()
+                        },
+                        |body| {
+                            spawn_code_editor(
+                                body,
+                                editor,
+                                wesl_highlighter(),
+                                error_marker(diagnostics, id),
+                                WeslEditorSurface(id),
+                            );
+                        },
                     );
-                },
-            );
+                });
 
             spawn_diagnostics_footer(panel, id, diagnostics.state(id), localizer);
         });
