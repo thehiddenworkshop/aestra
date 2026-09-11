@@ -195,6 +195,7 @@ pub(super) fn browser_app(root: &Path) -> App {
     .init_resource::<crate::document::DocumentManager>()
     .init_resource::<crate::editor_view::EditorViewManager>()
     .init_resource::<crate::editor_view::ActiveEditorContext>()
+    .init_resource::<crate::wesl_document::WeslDocuments>()
     .insert_resource(Localizer::new("en-US").unwrap())
     .add_plugins(super::EditorAssetBrowserPlugin)
     .add_systems(Startup, spawn_browser_fixture)
@@ -1798,6 +1799,55 @@ fn material_activation_opens_shared_source_without_retargeting_the_effect() {
     assert_eq!(
         app.world().resource::<EditorSession>().selection,
         original_selection
+    );
+}
+
+#[test]
+fn opening_a_wesl_file_docks_a_read_only_editor_tab() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("noise.wesl"),
+        "fn noise(uv: vec2<f32>) -> f32 { return 0.0; }",
+    )
+    .unwrap();
+    let mut app = browser_app(root.path());
+    let mut layout = WorkspaceLayout::default();
+    layout.show(ToolPanel::MaterialGraph); // Give the WESL tab a place to dock beside.
+    app.insert_resource(layout);
+
+    let source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("noise.wesl"))
+        .unwrap()
+        .id;
+    let row = rows(&mut app)[&source];
+    click(&mut app, row, 1);
+    click(&mut app, row, 2);
+    app.update();
+
+    // A WESL document opened and its editor tab docked beside the material graph.
+    assert_eq!(
+        app.world()
+            .resource::<crate::wesl_document::WeslDocuments>()
+            .len(),
+        1
+    );
+    assert_eq!(
+        app.world()
+            .resource::<WorkspaceLayout>()
+            .editor_views()
+            .len(),
+        1
+    );
+    // Opening a WESL source leaves the effect untouched.
+    assert!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_material()
+            .is_none()
     );
 }
 

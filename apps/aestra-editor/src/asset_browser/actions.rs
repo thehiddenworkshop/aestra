@@ -26,6 +26,9 @@ pub(super) struct OpenMaterial(pub(super) aestra_core::MaterialProgramId);
 #[derive(Event)]
 pub(super) struct OpenFunction(pub(super) aestra_core::MaterialFunctionId);
 
+#[derive(Event)]
+pub(super) struct OpenWeslSource(pub(super) std::path::PathBuf);
+
 /// Shared semantic locate route for graph, property, and source-reference controls.
 #[derive(Component, Event, Clone, Copy)]
 pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
@@ -396,7 +399,31 @@ pub(super) fn open_source(
         commands.trigger(OpenMaterial(program));
     } else if let Some(ProjectAssetId::MaterialFunction(function)) = content.asset_for_source(id) {
         commands.trigger(OpenFunction(function));
+    } else if let Some(relative) = wesl_source_relative_path(content, id) {
+        commands.trigger(OpenWeslSource(relative));
     }
+}
+
+/// The project-relative path of a `.wesl`/`.wgsl` source at `id`, if that row is one. WESL modules
+/// have no semantic asset id, so they are opened by path (Milestone 7).
+fn wesl_source_relative_path(
+    content: &aestra_project::ProjectContent,
+    id: ProjectSourceId,
+) -> Option<std::path::PathBuf> {
+    use aestra_project::{ProjectFileClassification, ProjectSourceKind};
+    let entry = content.source(id)?;
+    let ProjectSourceKind::File(info) = &entry.kind else {
+        return None;
+    };
+    if info.classification != ProjectFileClassification::Shader {
+        return None;
+    }
+    let extension = entry
+        .relative_path
+        .extension()
+        .and_then(|extension| extension.to_str())?;
+    (extension.eq_ignore_ascii_case("wesl") || extension.eq_ignore_ascii_case("wgsl"))
+        .then(|| entry.relative_path.clone())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -473,6 +500,44 @@ pub(super) fn open_material(
         session.status = localizer.text("browser-material-opened");
         crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn open_wesl_source(
+    event: On<OpenWeslSource>,
+    mut session: ResMut<EditorSession>,
+    mut layout: ResMut<WorkspaceLayout>,
+    catalog: Res<ProjectEffectCatalog>,
+    localizer: Res<Localizer>,
+    io: Option<Res<crate::project_content::io::ProjectIoTasks>>,
+    protection: Option<Res<crate::persistence::DocumentProtectionState>>,
+    mut wesl_documents: ResMut<crate::wesl_document::WeslDocuments>,
+    mut documents: ResMut<crate::document::DocumentManager>,
+    mut views: ResMut<crate::editor_view::EditorViewManager>,
+    mut active: ResMut<crate::editor_view::ActiveEditorContext>,
+) {
+    if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
+        return;
+    }
+    let relative = &event.0;
+    let absolute = catalog.root().join(relative);
+    let text = match std::fs::read_to_string(&absolute) {
+        Ok(text) => text,
+        Err(error) => {
+            session.status = format!("Cannot open WESL source: {error}");
+            return;
+        }
+    };
+    let id = wesl_documents.open(relative.clone(), text);
+    let view = crate::editor_view::open_document_view(
+        &mut documents,
+        &mut views,
+        &mut active,
+        crate::document::DocumentKey::WeslSource(id),
+        crate::editor_view::EditorViewKind::WeslSource,
+    );
+    session.status = localizer.text("browser-wesl-opened");
+    crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
 }
 
 pub(super) fn keyboard(

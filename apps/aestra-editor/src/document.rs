@@ -30,6 +30,8 @@ pub(crate) struct DocumentRevision(pub(crate) u64);
 pub(crate) enum DocumentKey {
     MaterialProgram(MaterialProgramId),
     MaterialFunction(MaterialFunctionId),
+    /// A standalone WESL source module, identified by its project-relative path (Milestone 7).
+    WeslSource(crate::wesl_document::WeslSourceId),
 }
 
 /// An open authored document: its identity, the asset it edits, and its dirty/revision state.

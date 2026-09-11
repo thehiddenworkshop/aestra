@@ -23,7 +23,8 @@ use std::{fs, io, path::PathBuf};
 pub(crate) enum EditorViewKind {
     MaterialGraph,
     MaterialFunctionGraph,
-    // Added in later milestones: WeslSource, Effect, Texture, Mesh, Flipbook.
+    WeslSource,
+    // Added in later milestones: Effect, Texture, Mesh, Flipbook.
 }
 
 /// One dockable asset-editor instance: a view of a document. Several views may target the same
@@ -169,16 +170,35 @@ pub(crate) fn view_editing_target(
 ) -> Option<MaterialEditingTarget> {
     let document_id = views.document_of(view)?;
     let key = documents.document(document_id)?.key;
-    Some(match key {
-        DocumentKey::MaterialProgram(id) => MaterialEditingTarget::Program {
+    match key {
+        DocumentKey::MaterialProgram(id) => Some(MaterialEditingTarget::Program {
             root: root.to_owned(),
             id,
-        },
-        DocumentKey::MaterialFunction(id) => MaterialEditingTarget::Function {
+        }),
+        DocumentKey::MaterialFunction(id) => Some(MaterialEditingTarget::Function {
             root: root.to_owned(),
             id,
-        },
-    })
+        }),
+        // WESL documents are not material targets; their view renders text, not a material graph.
+        DocumentKey::WeslSource(_) => None,
+    }
+}
+
+/// The editor kind a view renders (material graph vs WESL source), so the dock can pick the pane.
+pub(crate) fn view_kind(view: EditorViewId, views: &EditorViewManager) -> Option<EditorViewKind> {
+    views.view(view).map(|view| view.kind)
+}
+
+/// The WESL source id an editor view edits, if it is a WESL document view.
+pub(crate) fn view_wesl_source(
+    view: EditorViewId,
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+) -> Option<crate::wesl_document::WeslSourceId> {
+    match view_document_key(view, views, documents)? {
+        DocumentKey::WeslSource(id) => Some(id),
+        _ => None,
+    }
 }
 
 /// Maps a material editing target to the document key and default view kind it corresponds to, or
@@ -409,6 +429,8 @@ pub(crate) fn reconcile_restored_documents_against_catalog(
     let missing = views_with_missing_assets(&views, &documents, |key| match key {
         DocumentKey::MaterialProgram(id) => catalog.material_program_missing(id),
         DocumentKey::MaterialFunction(id) => catalog.material_function_missing(id),
+        // WESL restore/pruning is handled by its own store (Milestone 7); never prune here.
+        DocumentKey::WeslSource(_) => false,
     });
     let mut layout_changed = false;
     for view in missing {
@@ -457,14 +479,17 @@ fn target_edits_key(target: &MaterialEditingTarget, key: DocumentKey) -> bool {
     match key {
         DocumentKey::MaterialProgram(id) => target.program() == Some(id),
         DocumentKey::MaterialFunction(id) => target.function() == Some(id),
+        DocumentKey::WeslSource(_) => false,
     }
 }
 
-/// Whether the document `key` names has an unsaved draft in the catalog.
+/// Whether the document `key` names has unsaved edits. WESL modules are read-only in Milestone 7-1,
+/// so they are never dirty yet.
 fn document_key_is_dirty(key: DocumentKey, catalog: &crate::ProjectEffectCatalog) -> bool {
     match key {
         DocumentKey::MaterialProgram(id) => catalog.material_drafts.programs.contains_key(&id),
         DocumentKey::MaterialFunction(id) => catalog.material_drafts.functions.contains_key(&id),
+        DocumentKey::WeslSource(_) => false,
     }
 }
 
@@ -543,16 +568,20 @@ pub(crate) fn save_and_close_editor_view(
     let view = event.0;
     if let Some(key) = view_document_key(view, &views, &documents) {
         let target = match key {
-            DocumentKey::MaterialProgram(id) => MaterialEditingTarget::Program {
+            DocumentKey::MaterialProgram(id) => Some(MaterialEditingTarget::Program {
                 root: catalog.root().to_owned(),
                 id,
-            },
-            DocumentKey::MaterialFunction(id) => MaterialEditingTarget::Function {
+            }),
+            DocumentKey::MaterialFunction(id) => Some(MaterialEditingTarget::Function {
                 root: catalog.root().to_owned(),
                 id,
-            },
+            }),
+            // WESL save lands in a later slice; read-only WESL never reaches the dirty-close prompt.
+            DocumentKey::WeslSource(_) => None,
         };
-        crate::persistence::queue_save_target(&mut commands, &session, &catalog, target);
+        if let Some(target) = target {
+            crate::persistence::queue_save_target(&mut commands, &session, &catalog, target);
+        }
     }
     commands.trigger(CloseEditorView { view, force: true });
 }
@@ -585,6 +614,8 @@ pub(crate) fn discard_and_close_editor_view(
                     editor.clear_function(&root, id);
                 }
             }
+            // WESL discard lands in a later slice; read-only WESL never reaches the prompt.
+            DocumentKey::WeslSource(_) => {}
         }
         catalog.refresh();
         let drafts = catalog.material_drafts.clone();

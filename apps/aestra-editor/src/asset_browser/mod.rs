@@ -45,6 +45,7 @@ impl Plugin for EditorAssetBrowserPlugin {
             .add_observer(actions::click_row)
             .add_observer(actions::open_material)
             .add_observer(actions::open_function)
+            .add_observer(actions::open_wesl_source)
             .add_observer(actions::keyboard)
             .add_observer(actions::activate_locate)
             .add_observer(actions::locate_asset)

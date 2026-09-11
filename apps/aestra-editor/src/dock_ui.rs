@@ -42,6 +42,7 @@ struct PanelSources<'a> {
     localizer: &'a Localizer,
     documents: &'a crate::document::DocumentManager,
     views: &'a crate::editor_view::EditorViewManager,
+    wesl_documents: &'a crate::wesl_document::WeslDocuments,
     viewport_maximized: bool,
 }
 
@@ -71,6 +72,7 @@ pub(crate) struct DockUiResources<'w> {
     navigation: Option<Res<'w, SourceNavigationState>>,
     documents: Res<'w, crate::document::DocumentManager>,
     views: Res<'w, crate::editor_view::EditorViewManager>,
+    wesl_documents: Res<'w, crate::wesl_document::WeslDocuments>,
     maximized: Res<'w, MaximizedPanel>,
 }
 
@@ -100,6 +102,7 @@ impl<'w> DockUiResources<'w> {
             localizer: &self.localizer,
             documents: &self.documents,
             views: &self.views,
+            wesl_documents: &self.wesl_documents,
             viewport_maximized: self.maximized.0 == Some(ToolPanel::Viewport),
         }
     }
@@ -482,26 +485,42 @@ fn spawn_editor_view_content(
     view: EditorViewId,
     sources: PanelSources<'_>,
 ) {
-    let Some(target) = crate::editor_view::view_editing_target(
-        view,
-        sources.views,
-        sources.documents,
-        sources.catalog.root(),
-    ) else {
-        return;
-    };
-    spawn_material_graph_workspace(
-        parent,
-        Some(&target),
-        sources.session,
-        sources.catalog,
-        sources.material_graph_palette,
-        sources.material_graph_selection,
-        sources.material_graph_previews,
-        sources.graph_viewport_memory,
-        sources.localizer,
-        sources.asset_server,
-    );
+    match crate::editor_view::view_kind(view, sources.views) {
+        Some(crate::editor_view::EditorViewKind::WeslSource) => {
+            if let Some(id) =
+                crate::editor_view::view_wesl_source(view, sources.views, sources.documents)
+            {
+                crate::wesl_editor::spawn_wesl_editor_view(
+                    parent,
+                    id,
+                    sources.wesl_documents,
+                    sources.localizer,
+                );
+            }
+        }
+        _ => {
+            let Some(target) = crate::editor_view::view_editing_target(
+                view,
+                sources.views,
+                sources.documents,
+                sources.catalog.root(),
+            ) else {
+                return;
+            };
+            spawn_material_graph_workspace(
+                parent,
+                Some(&target),
+                sources.session,
+                sources.catalog,
+                sources.material_graph_palette,
+                sources.material_graph_selection,
+                sources.material_graph_previews,
+                sources.graph_viewport_memory,
+                sources.localizer,
+                sources.asset_server,
+            );
+        }
+    }
 }
 
 fn spawn_panel_content(
@@ -808,6 +827,8 @@ fn editor_view_dirty(
         crate::document::DocumentKey::MaterialFunction(id) => {
             catalog.material_drafts.functions.contains_key(&id)
         }
+        // WESL modules are read-only in Milestone 7-1, so never dirty.
+        crate::document::DocumentKey::WeslSource(_) => false,
     }
 }
 
@@ -1304,6 +1325,9 @@ fn select_dock_tab(
                     crate::document::DocumentKey::MaterialFunction(id) => {
                         session.open_material_function(&catalog, id)
                     }
+                    // Focusing a WESL editor tab leaves the material target as it is; the WESL pane
+                    // renders its own text and does not drive the singleton material graph.
+                    crate::document::DocumentKey::WeslSource(_) => Ok(()),
                 };
                 if result.is_ok() {
                     changed = true;

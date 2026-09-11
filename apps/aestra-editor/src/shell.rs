@@ -76,6 +76,7 @@ pub(crate) enum ScrollMemoryKey {
     Curves,
     MaterialGraphPalette,
     MaterialFunctionInspector,
+    WeslSource,
 }
 
 #[derive(Resource, Default)]

@@ -94,24 +94,28 @@ fn handle_changes_actions(
                     ChangesAction::SaveDocument(key) => {
                         let target = match key {
                             crate::document::DocumentKey::MaterialProgram(id) => {
-                                crate::material_document::MaterialEditingTarget::Program {
+                                Some(crate::material_document::MaterialEditingTarget::Program {
                                     root: catalog.root().to_owned(),
                                     id,
-                                }
+                                })
                             }
                             crate::document::DocumentKey::MaterialFunction(id) => {
-                                crate::material_document::MaterialEditingTarget::Function {
+                                Some(crate::material_document::MaterialEditingTarget::Function {
                                     root: catalog.root().to_owned(),
                                     id,
-                                }
+                                })
                             }
+                            // WESL documents never appear in the modified list yet (read-only).
+                            crate::document::DocumentKey::WeslSource(_) => None,
                         };
-                        crate::persistence::queue_save_target(
-                            &mut commands,
-                            &session,
-                            &catalog,
-                            target,
-                        );
+                        if let Some(target) = target {
+                            crate::persistence::queue_save_target(
+                                &mut commands,
+                                &session,
+                                &catalog,
+                                target,
+                            );
+                        }
                     }
                 }
             }
@@ -160,6 +164,8 @@ fn dirty_open_documents(
                 DocumentKey::MaterialFunction(id) => {
                     catalog.material_drafts.functions.contains_key(&id)
                 }
+                // WESL modules are read-only in Milestone 7-1, so never dirty.
+                DocumentKey::WeslSource(_) => false,
             };
             dirty.then(|| (document.key, document_display_name(document.key, catalog)))
         })
@@ -183,6 +189,7 @@ fn document_display_name(
             .and_then(|functions| functions.into_iter().find(|function| function.id == id))
             .map(|function| function.name)
             .unwrap_or_else(|| format!("Function {id}")),
+        DocumentKey::WeslSource(id) => format!("WESL {id}"),
     }
 }
 

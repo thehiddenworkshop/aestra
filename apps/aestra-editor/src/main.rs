@@ -37,6 +37,8 @@ mod theme;
 mod timeline;
 mod transport;
 mod viewport;
+mod wesl_document;
+mod wesl_editor;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy_render::AestraRenderPlugin;
@@ -248,6 +250,7 @@ fn main() {
         .init_resource::<document::DocumentManager>()
         .init_resource::<editor_view::EditorViewManager>()
         .init_resource::<editor_view::ActiveEditorContext>()
+        .init_resource::<wesl_document::WeslDocuments>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)

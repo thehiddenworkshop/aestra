@@ -543,6 +543,8 @@ fn dirty_material_targets(
                     root: root.clone(),
                     id,
                 }),
+            // WESL modules are not material targets and are saved through their own path.
+            DocumentKey::WeslSource(_) => None,
         })
         .collect()
 }
