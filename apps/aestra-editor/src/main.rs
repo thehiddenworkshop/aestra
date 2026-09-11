@@ -253,7 +253,7 @@ fn main() {
         .init_resource::<editor_view::ActiveEditorContext>()
         .init_resource::<wesl_document::WeslDocuments>()
         .init_resource::<wesl_document::WeslDiagnostics>()
-        .init_resource::<wesl_editor::WeslEditorModes>()
+        .init_resource::<wesl_editor::WeslEditorCursors>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
@@ -265,6 +265,7 @@ fn main() {
                 editor_view::sync_active_document_from_target,
                 editor_view::persist_editor_workspace,
                 wesl_document::recompile_changed_wesl,
+                wesl_editor::refresh_wesl_editor_surfaces,
                 wesl_editor::refresh_wesl_diagnostics,
             )
                 .chain(),
@@ -272,9 +273,7 @@ fn main() {
         .add_observer(editor_view::close_editor_view)
         .add_observer(editor_view::save_and_close_editor_view)
         .add_observer(editor_view::discard_and_close_editor_view)
-        .add_observer(wesl_editor::sync_wesl_source_edit)
         .add_observer(wesl_editor::save_wesl_source)
-        .add_observer(wesl_editor::toggle_wesl_mode)
         .add_systems(Startup, set_editor_window_icon)
         .add_systems(Startup, editor_view::restore_editor_workspace)
         .configure_sets(

@@ -1,44 +1,47 @@
-//! WESL source editor pane (Milestone 7).
+//! WESL source code editor pane (Milestone 7).
 //!
-//! Renders an open [`crate::wesl_document::WeslDocuments`] buffer docked as its own editor tab. The
-//! pane has two modes: a syntax-coloured read-only Preview (via [`crate::wesl_syntax`]) and a plain
-//! editable field whose edits sync into the buffer per keystroke. Ctrl+S or the header Save button
-//! write the buffer back to the `.wesl` file. Compiler diagnostics arrive in a later slice.
+//! A single-mode, syntax-coloured, editable code view for an open
+//! [`crate::wesl_document::WeslDocuments`] buffer. Text is rendered as coloured token spans (via
+//! [`crate::wesl_syntax`]) with a caret; keyboard input edits the buffer in place through a custom
+//! editor (Bevy's built-in text field is single-line only). Ctrl+S or the header Save button write
+//! the buffer to the `.wesl` file, and the footer shows live compiler diagnostics.
 
 use crate::wesl_document::{WeslCompileState, WeslDiagnostics, WeslDocuments, WeslSourceId};
 use crate::wesl_syntax::{WeslTokenKind, tokenize};
 use crate::*;
-use bevy::text::{EditableText, TextEditChange, TextSpan};
+use bevy::input::ButtonState;
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input_focus::{FocusedInput, InputFocus};
+use bevy::text::TextSpan;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Marks the editable text field of a WESL pane so edits route to the right buffer.
+/// The editable code surface for a WESL document. Carries the id so clicks (focus) and keyboard
+/// events route to the right buffer, and so the render can be refreshed in place.
 #[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct WeslSourceEditorField(pub(crate) WeslSourceId);
+pub(crate) struct WeslEditorSurface(pub(crate) WeslSourceId);
 
 /// Fired to write a WESL buffer back to its module file.
 #[derive(Event, Debug, Clone, Copy)]
 pub(crate) struct SaveWeslSource(pub(crate) WeslSourceId);
 
-/// Fired to flip a WESL pane between the coloured preview and the plain editable field.
-#[derive(Event, Debug, Clone, Copy)]
-pub(crate) struct ToggleWeslMode(pub(crate) WeslSourceId);
-
-/// Per-document choice between the coloured read-only preview (default) and the editable field.
-/// Persisted in a resource so it survives the dock rebuilds that reconstruct the pane.
+/// Per-document caret position, as a character index into the buffer. Kept in a resource so it
+/// survives the dock rebuilds that reconstruct the pane.
 #[derive(Resource, Debug, Default)]
-pub(crate) struct WeslEditorModes(HashMap<WeslSourceId, bool>);
+pub(crate) struct WeslEditorCursors(HashMap<WeslSourceId, usize>);
 
-impl WeslEditorModes {
-    pub(crate) fn is_editing(&self, id: WeslSourceId) -> bool {
-        self.0.get(&id).copied().unwrap_or(false)
+impl WeslEditorCursors {
+    fn get(&self, id: WeslSourceId) -> usize {
+        self.0.get(&id).copied().unwrap_or(0)
     }
 
-    fn toggle(&mut self, id: WeslSourceId) {
-        let editing = self.0.entry(id).or_insert(false);
-        *editing = !*editing;
+    fn set(&mut self, id: WeslSourceId, position: usize) {
+        self.0.insert(id, position);
     }
 }
+
+const CARET_COLOR: Color = Color::srgb(0.85, 0.85, 0.95);
+const EDITOR_FONT_SIZE: f32 = 12.0;
 
 /// The display colour for a token class, tuned for the editor's dark panels.
 fn token_color(kind: WeslTokenKind) -> Color {
@@ -54,12 +57,61 @@ fn token_color(kind: WeslTokenKind) -> Color {
     }
 }
 
+/// Builds the coloured text runs for `source`, inserting a caret run at `caret` when `focused`.
+fn editor_runs(source: &str, caret: usize, focused: bool) -> Vec<(String, Color)> {
+    let caret = caret.min(source.chars().count());
+    let mut runs = Vec::new();
+    let mut offset = 0usize;
+    let mut caret_done = !focused;
+    for token in tokenize(source) {
+        let len = token.text.chars().count();
+        if !caret_done && caret >= offset && caret <= offset + len {
+            let split = caret - offset;
+            let chars: Vec<char> = token.text.chars().collect();
+            let before: String = chars[..split].iter().collect();
+            let after: String = chars[split..].iter().collect();
+            if !before.is_empty() {
+                runs.push((before, token_color(token.kind)));
+            }
+            runs.push(("|".to_owned(), CARET_COLOR));
+            if !after.is_empty() {
+                runs.push((after, token_color(token.kind)));
+            }
+            caret_done = true;
+        } else {
+            runs.push((token.text, token_color(token.kind)));
+        }
+        offset += len;
+    }
+    if !caret_done {
+        runs.push(("|".to_owned(), CARET_COLOR));
+    }
+    if runs.is_empty() {
+        runs.push((String::new(), theme::TEXT));
+    }
+    runs
+}
+
+fn spawn_runs(text: &mut ChildSpawnerCommands, runs: Vec<(String, Color)>) {
+    for (run, color) in runs {
+        text.spawn((
+            TextSpan::new(run),
+            TextFont {
+                font_size: FontSize::Px(EDITOR_FONT_SIZE),
+                ..default()
+            },
+            TextColor(color),
+        ));
+    }
+}
+
 pub(crate) fn spawn_wesl_editor_view(
     parent: &mut ChildSpawnerCommands,
     id: WeslSourceId,
     documents: &WeslDocuments,
-    modes: &WeslEditorModes,
+    cursors: &WeslEditorCursors,
     diagnostics: &WeslDiagnostics,
+    focus: Option<Entity>,
     localizer: &Localizer,
 ) {
     let name = documents
@@ -68,7 +120,6 @@ pub(crate) fn spawn_wesl_editor_view(
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| format!("{id}"));
     let dirty = documents.is_dirty(id);
-    let editing = modes.is_editing(id);
 
     parent
         .spawn(Node {
@@ -118,32 +169,18 @@ pub(crate) fn spawn_wesl_editor_view(
                         flex_grow: 1.0,
                         ..default()
                     });
-                    let toggle_label = localizer.text(if editing {
-                        "wesl-editor-preview"
-                    } else {
-                        "wesl-editor-edit"
-                    });
                     header
                         .spawn((
                             Button,
                             EditorNativeControl,
-                            header_button_node(),
-                            BackgroundColor(theme::BUTTON),
-                        ))
-                        .observe(
-                            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
-                                if click.button == PointerButton::Primary {
-                                    click.propagate(false);
-                                    commands.trigger(ToggleWeslMode(id));
-                                }
+                            Node {
+                                height: Val::Px(22.0),
+                                padding: UiRect::horizontal(Val::Px(10.0)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                border_radius: BorderRadius::all(Val::Px(3.0)),
+                                ..default()
                             },
-                        )
-                        .with_child(header_button_label(toggle_label));
-                    header
-                        .spawn((
-                            Button,
-                            EditorNativeControl,
-                            header_button_node(),
                             BackgroundColor(if dirty {
                                 theme::ACCENT_DIM
                             } else {
@@ -158,10 +195,18 @@ pub(crate) fn spawn_wesl_editor_view(
                                 }
                             },
                         )
-                        .with_child(header_button_label(localizer.text("wesl-editor-save")));
+                        .with_child((
+                            Text::new(localizer.text("wesl-editor-save")),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                            Pickable::IGNORE,
+                        ));
                 });
 
-            let Some(source) = documents.text(id) else {
+            let Some(source) = documents.text(id).map(str::to_owned) else {
                 panel.spawn((
                     Text::new(localizer.text("wesl-editor-unavailable")),
                     TextFont {
@@ -189,41 +234,26 @@ pub(crate) fn spawn_wesl_editor_view(
                     ..default()
                 },
                 |body| {
-                    if editing {
-                        // Plain editable field: edits sync to the buffer per keystroke.
-                        body.spawn((
-                            Text::new(source.to_owned()),
-                            EditableText::new(source),
-                            WeslSourceEditorField(id),
-                            TextFont {
-                                font_size: FontSize::Px(11.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                    } else {
-                        // Read-only coloured preview: one text with a coloured span per token run.
-                        body.spawn((
-                            Text::new(""),
-                            TextFont {
-                                font_size: FontSize::Px(11.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ))
+                    let mut surface = body.spawn((
+                        WeslEditorSurface(id),
+                        Text::new(""),
+                        TextFont {
+                            font_size: FontSize::Px(EDITOR_FONT_SIZE),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            width: Val::Percent(100.0),
+                            ..default()
+                        },
+                    ));
+                    let focused = focus == Some(surface.id());
+                    surface
+                        .observe(focus_wesl_editor)
+                        .observe(edit_wesl_source)
                         .with_children(|text| {
-                            for token in tokenize(source) {
-                                text.spawn((
-                                    TextSpan::new(token.text),
-                                    TextFont {
-                                        font_size: FontSize::Px(11.0),
-                                        ..default()
-                                    },
-                                    TextColor(token_color(token.kind)),
-                                ));
-                            }
+                            spawn_runs(text, editor_runs(&source, cursors.get(id), focused));
                         });
-                    }
                 },
             );
 
@@ -231,8 +261,192 @@ pub(crate) fn spawn_wesl_editor_view(
         });
 }
 
-/// Marks a WESL pane's diagnostics footer so the compile result can be refreshed in place (without
-/// rebuilding the pane, which would drop the editable field's focus mid-typing).
+/// Clicking the code surface focuses it so keyboard input is routed to this document.
+fn focus_wesl_editor(
+    mut click: On<Pointer<Click>>,
+    surfaces: Query<Entity, With<WeslEditorSurface>>,
+    mut focus: ResMut<InputFocus>,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(entity) = surfaces.get(click.event_target()) else {
+        return;
+    };
+    click.propagate(false);
+    *focus = InputFocus::from_entity(entity);
+}
+
+/// Applies a keystroke to the focused WESL surface: edits the buffer text and/or moves the caret.
+fn edit_wesl_source(
+    key: On<FocusedInput<KeyboardInput>>,
+    surfaces: Query<&WeslEditorSurface>,
+    mut documents: ResMut<WeslDocuments>,
+    mut cursors: ResMut<WeslEditorCursors>,
+) {
+    let Ok(surface) = surfaces.get(key.event_target()) else {
+        return;
+    };
+    if key.input.state != ButtonState::Pressed {
+        return;
+    }
+    let id = surface.0;
+    let Some(text) = documents.text(id) else {
+        return;
+    };
+    let mut chars: Vec<char> = text.chars().collect();
+    let mut caret = cursors.get(id).min(chars.len());
+    let mut text_changed = false;
+
+    match key.input.key_code {
+        KeyCode::Backspace => {
+            if caret > 0 {
+                chars.remove(caret - 1);
+                caret -= 1;
+                text_changed = true;
+            }
+        }
+        KeyCode::Delete => {
+            if caret < chars.len() {
+                chars.remove(caret);
+                text_changed = true;
+            }
+        }
+        KeyCode::Enter | KeyCode::NumpadEnter => {
+            chars.insert(caret, '\n');
+            caret += 1;
+            text_changed = true;
+        }
+        KeyCode::Tab => {
+            for _ in 0..4 {
+                chars.insert(caret, ' ');
+                caret += 1;
+            }
+            text_changed = true;
+        }
+        KeyCode::ArrowLeft => caret = caret.saturating_sub(1),
+        KeyCode::ArrowRight => caret = (caret + 1).min(chars.len()),
+        KeyCode::Home => caret = line_start(&chars, caret),
+        KeyCode::End => caret = line_end(&chars, caret),
+        KeyCode::ArrowUp => caret = vertical(&chars, caret, false),
+        KeyCode::ArrowDown => caret = vertical(&chars, caret, true),
+        _ => {
+            if let Key::Character(input) = &key.input.logical_key {
+                for character in input.chars() {
+                    chars.insert(caret, character);
+                    caret += 1;
+                }
+                text_changed = true;
+            } else if key.input.logical_key == Key::Space {
+                chars.insert(caret, ' ');
+                caret += 1;
+                text_changed = true;
+            } else {
+                return;
+            }
+        }
+    }
+
+    if text_changed {
+        documents.set_text(id, chars.into_iter().collect());
+    }
+    cursors.set(id, caret);
+}
+
+fn line_start(chars: &[char], caret: usize) -> usize {
+    chars[..caret]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map_or(0, |index| index + 1)
+}
+
+fn line_end(chars: &[char], caret: usize) -> usize {
+    chars[caret..]
+        .iter()
+        .position(|&c| c == '\n')
+        .map_or(chars.len(), |index| caret + index)
+}
+
+/// Moves the caret up (`down == false`) or down one visual line, keeping the column where possible.
+fn vertical(chars: &[char], caret: usize, down: bool) -> usize {
+    let start = line_start(chars, caret);
+    let column = caret - start;
+    if down {
+        let end = line_end(chars, caret);
+        if end >= chars.len() {
+            return caret;
+        }
+        let next_start = end + 1;
+        let next_end = line_end(chars, next_start);
+        (next_start + column).min(next_end)
+    } else {
+        if start == 0 {
+            return caret;
+        }
+        let prev_end = start - 1;
+        let prev_start = line_start(chars, prev_end);
+        (prev_start + column).min(prev_end)
+    }
+}
+
+/// Re-renders the coloured runs (and caret) of each open code surface when its buffer, caret, or
+/// focus changes — in place, so editing does not rebuild (and refocus) the pane.
+pub(crate) fn refresh_wesl_editor_surfaces(
+    documents: Res<WeslDocuments>,
+    cursors: Res<WeslEditorCursors>,
+    focus: Res<InputFocus>,
+    surfaces: Query<(Entity, &WeslEditorSurface, Option<&Children>)>,
+    mut commands: Commands,
+) {
+    if !documents.is_changed() && !cursors.is_changed() && !focus.is_changed() {
+        return;
+    }
+    for (entity, surface, children) in &surfaces {
+        let Some(source) = documents.text(surface.0) else {
+            continue;
+        };
+        if let Some(children) = children {
+            for &child in children {
+                commands.entity(child).despawn();
+            }
+        }
+        let focused = focus.get() == Some(entity);
+        let runs = editor_runs(source, cursors.get(surface.0), focused);
+        commands
+            .entity(entity)
+            .with_children(|text| spawn_runs(text, runs));
+    }
+}
+
+/// Writes a WESL buffer back to its `.wesl` file and clears its dirty state.
+pub(crate) fn save_wesl_source(
+    event: On<SaveWeslSource>,
+    mut session: ResMut<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    localizer: Res<Localizer>,
+    mut documents: ResMut<WeslDocuments>,
+) {
+    let id = event.0;
+    let (Some(relative), Some(text)) = (
+        documents.relative_path(id).map(Path::to_path_buf),
+        documents.text(id).map(str::to_owned),
+    ) else {
+        return;
+    };
+    let absolute = catalog.root().join(&relative);
+    match std::fs::write(&absolute, text) {
+        Ok(()) => {
+            documents.mark_saved(id);
+            session.status = localizer.text("wesl-editor-saved");
+            session.ui_revision += 1;
+        }
+        Err(error) => {
+            session.status = format!("Cannot save WESL source: {error}");
+        }
+    }
+}
+
+/// Marks a WESL pane's diagnostics footer so the compile result can be refreshed in place.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct WeslDiagnosticsFooter(pub(crate) WeslSourceId);
 
@@ -252,8 +466,6 @@ fn diagnostics_message(
     }
 }
 
-/// A footer strip reporting the module's last compile result. Always present (hidden while the
-/// module has not compiled yet) so [`refresh_wesl_diagnostics`] can update it live.
 fn spawn_diagnostics_footer(
     panel: &mut ChildSpawnerCommands,
     id: WeslSourceId,
@@ -296,8 +508,7 @@ fn spawn_diagnostics_footer(
         ));
 }
 
-/// Refreshes each WESL pane's diagnostics footer in place when compile results change, so errors
-/// appear without rebuilding (and refocusing) the pane while the user is typing.
+/// Refreshes each WESL pane's diagnostics footer in place when compile results change.
 pub(crate) fn refresh_wesl_diagnostics(
     diagnostics: Res<WeslDiagnostics>,
     localizer: Res<Localizer>,
@@ -325,117 +536,43 @@ pub(crate) fn refresh_wesl_diagnostics(
     }
 }
 
-fn header_button_node() -> Node {
-    Node {
-        height: Val::Px(22.0),
-        padding: UiRect::horizontal(Val::Px(10.0)),
-        align_items: AlignItems::Center,
-        justify_content: JustifyContent::Center,
-        border_radius: BorderRadius::all(Val::Px(3.0)),
-        ..default()
-    }
-}
-
-fn header_button_label(label: String) -> impl Bundle {
-    (
-        Text::new(label),
-        TextFont {
-            font_size: FontSize::Px(10.0),
-            ..default()
-        },
-        TextColor(theme::TEXT),
-        Pickable::IGNORE,
-    )
-}
-
-/// Flips a WESL pane between the coloured preview and the editable field, then rebuilds the dock.
-pub(crate) fn toggle_wesl_mode(
-    event: On<ToggleWeslMode>,
-    mut modes: ResMut<WeslEditorModes>,
-    mut session: ResMut<EditorSession>,
-) {
-    modes.toggle(event.0);
-    session.ui_revision += 1;
-}
-
-/// Per-keystroke sync of an editable WESL field into its buffer. Deliberately does not bump the UI
-/// revision, so typing does not rebuild (and refocus) the pane on every character.
-pub(crate) fn sync_wesl_source_edit(
-    change: On<TextEditChange>,
-    fields: Query<(&WeslSourceEditorField, &EditableText)>,
-    mut documents: ResMut<WeslDocuments>,
-) {
-    if let Ok((field, text)) = fields.get(change.event_target()) {
-        documents.set_text(field.0, text.value().to_string());
-    }
-}
-
-/// Writes a WESL buffer back to its `.wesl` file and clears its dirty state.
-pub(crate) fn save_wesl_source(
-    event: On<SaveWeslSource>,
-    mut session: ResMut<EditorSession>,
-    catalog: Res<ProjectEffectCatalog>,
-    localizer: Res<Localizer>,
-    mut documents: ResMut<WeslDocuments>,
-) {
-    let id = event.0;
-    let (Some(relative), Some(text)) = (
-        documents.relative_path(id).map(Path::to_path_buf),
-        documents.text(id).map(str::to_owned),
-    ) else {
-        return;
-    };
-    let absolute = catalog.root().join(&relative);
-    match std::fs::write(&absolute, text) {
-        Ok(()) => {
-            documents.mark_saved(id);
-            session.status = localizer.text("wesl-editor-saved");
-            session.ui_revision += 1;
-        }
-        Err(error) => {
-            session.status = format!("Cannot save WESL source: {error}");
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn editing_then_saving_writes_the_file_and_clears_dirty() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("noise.wesl");
-        std::fs::write(&path, "fn noise() -> f32 { return 0.0; }").unwrap();
-
-        let mut app = App::new();
-        app.insert_resource(crate::test_support::session_with_timing_slack())
-            .insert_resource(ProjectEffectCatalog::scan(root.path()))
-            .insert_resource(Localizer::new("en-US").unwrap())
-            .init_resource::<WeslDocuments>()
-            .add_observer(save_wesl_source);
-
-        let id = app.world_mut().resource_mut::<WeslDocuments>().open(
-            std::path::PathBuf::from("noise.wesl"),
-            "fn noise() -> f32 { return 0.0; }".into(),
-        );
-
-        // Simulate a keystroke edit into the buffer.
-        assert!(
-            app.world_mut()
-                .resource_mut::<WeslDocuments>()
-                .set_text(id, "fn noise() -> f32 { return 1.0; }".into())
-        );
-        assert!(app.world().resource::<WeslDocuments>().is_dirty(id));
-
-        app.world_mut().trigger(SaveWeslSource(id));
-        app.world_mut().flush();
-
-        // The file on disk now holds the edit, and the buffer is clean.
+    fn editor_runs_reproduce_the_source_and_place_a_caret() {
+        let source = "fn f() -> f32 { return 1.0; }";
+        let rebuilt: String = editor_runs(source, 3, true)
+            .into_iter()
+            .filter(|(run, _)| run != "|")
+            .map(|(run, _)| run)
+            .collect();
+        assert_eq!(rebuilt, source);
+        // With focus, exactly one caret run is present; without focus, none.
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "fn noise() -> f32 { return 1.0; }"
+            editor_runs(source, 3, true)
+                .iter()
+                .filter(|(run, _)| run == "|")
+                .count(),
+            1
         );
-        assert!(!app.world().resource::<WeslDocuments>().is_dirty(id));
+        assert_eq!(
+            editor_runs(source, 3, false)
+                .iter()
+                .filter(|(run, _)| run == "|")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn vertical_navigation_keeps_the_column() {
+        let chars: Vec<char> = "abc\ndefg\nhi".chars().collect();
+        // Caret at column 2 of the middle line ("de|fg"), index 6.
+        let up = vertical(&chars, 6, false);
+        assert_eq!(chars[..up].iter().collect::<String>(), "ab"); // clamped to "abc" column 2
+        let down = vertical(&chars, 6, true);
+        assert_eq!(chars[..down].iter().collect::<String>(), "abc\ndefg\nhi"); // clamped to end "hi"
     }
 }
