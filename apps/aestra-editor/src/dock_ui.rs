@@ -591,7 +591,13 @@ fn spawn_panel_content(
         ToolPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
         }
-        ToolPanel::Changes => spawn_changes_workspace(parent, sources.session, sources.localizer),
+        ToolPanel::Changes => spawn_changes_workspace(
+            parent,
+            sources.session,
+            sources.documents,
+            sources.catalog,
+            sources.localizer,
+        ),
         ToolPanel::Settings => spawn_settings_workspace(
             parent,
             sources.settings,

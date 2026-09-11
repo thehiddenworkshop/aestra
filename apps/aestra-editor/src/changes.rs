@@ -25,6 +25,8 @@ enum ChangesAction {
     Apply,
     Discard,
     Navigate(SemanticTarget),
+    /// Save one open, dirty shared-material document from the modified-documents list.
+    SaveDocument(crate::document::DocumentKey),
 }
 
 fn queue_changes_action_activation(
@@ -58,6 +60,7 @@ fn handle_changes_actions(
     >,
     mut session: ResMut<EditorSession>,
     mut layout: ResMut<WorkspaceLayout>,
+    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut actions {
@@ -88,6 +91,28 @@ fn handle_changes_actions(
                             reveal_dock_panel(&mut layout, &mut session, ToolPanel::Properties);
                         }
                     }
+                    ChangesAction::SaveDocument(key) => {
+                        let target = match key {
+                            crate::document::DocumentKey::MaterialProgram(id) => {
+                                crate::material_document::MaterialEditingTarget::Program {
+                                    root: catalog.root().to_owned(),
+                                    id,
+                                }
+                            }
+                            crate::document::DocumentKey::MaterialFunction(id) => {
+                                crate::material_document::MaterialEditingTarget::Function {
+                                    root: catalog.root().to_owned(),
+                                    id,
+                                }
+                            }
+                        };
+                        crate::persistence::queue_save_target(
+                            &mut commands,
+                            &session,
+                            &catalog,
+                            target,
+                        );
+                    }
                 }
             }
             _ => {}
@@ -117,11 +142,130 @@ fn select_change_target(
     true
 }
 
+/// The open, dirty shared-material documents, each with a display name for the modified list. Drives
+/// the Changes panel's document overview from [`DocumentManager`], independent of the effect's
+/// pending transaction.
+fn dirty_open_documents(
+    documents: &crate::document::DocumentManager,
+    catalog: &ProjectEffectCatalog,
+) -> Vec<(crate::document::DocumentKey, String)> {
+    use crate::document::DocumentKey;
+    documents
+        .open_documents()
+        .filter_map(|document| {
+            let dirty = match document.key {
+                DocumentKey::MaterialProgram(id) => {
+                    catalog.material_drafts.programs.contains_key(&id)
+                }
+                DocumentKey::MaterialFunction(id) => {
+                    catalog.material_drafts.functions.contains_key(&id)
+                }
+            };
+            dirty.then(|| (document.key, document_display_name(document.key, catalog)))
+        })
+        .collect()
+}
+
+/// A modified document's display name: the asset's own name, falling back to its id if unresolved.
+fn document_display_name(
+    key: crate::document::DocumentKey,
+    catalog: &ProjectEffectCatalog,
+) -> String {
+    use crate::document::DocumentKey;
+    match key {
+        DocumentKey::MaterialProgram(id) => catalog
+            .material_program(id)
+            .map(|program| program.name)
+            .unwrap_or_else(|_| format!("Material {id}")),
+        DocumentKey::MaterialFunction(id) => catalog
+            .material_functions()
+            .ok()
+            .and_then(|functions| functions.into_iter().find(|function| function.id == id))
+            .map(|function| function.name)
+            .unwrap_or_else(|| format!("Function {id}")),
+    }
+}
+
+fn spawn_modified_documents_section(
+    panel: &mut ChildSpawnerCommands,
+    modified: &[(crate::document::DocumentKey, String)],
+    localizer: &Localizer,
+) {
+    let mut heading_args = FluentArgs::new();
+    heading_args.set("count", modified.len());
+    panel
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
+                row_gap: Val::Px(4.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|section| {
+            section.spawn((
+                Text::new(localizer.text_with("changes-modified-documents", &heading_args)),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+            for (key, name) in modified {
+                section
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(28.0),
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(8.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        // IDE-style unsaved dot beside the document name.
+                        row.spawn((
+                            Node {
+                                width: Val::Px(6.0),
+                                height: Val::Px(6.0),
+                                border_radius: BorderRadius::MAX,
+                                ..default()
+                            },
+                            BackgroundColor(theme::ACCENT),
+                        ));
+                        row.spawn((
+                            Text::new(name.clone()),
+                            TextFont {
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                            Node {
+                                flex_grow: 1.0,
+                                ..default()
+                            },
+                        ));
+                        properties_action_button(
+                            row,
+                            &localizer.text("changes-save-document"),
+                            ChangesAction::SaveDocument(*key),
+                            None,
+                        );
+                    });
+            }
+        });
+}
+
 pub(crate) fn spawn_changes_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
+    documents: &crate::document::DocumentManager,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
 ) {
+    let modified = dirty_open_documents(documents, catalog);
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -132,6 +276,9 @@ pub(crate) fn spawn_changes_workspace(
             ..default()
         })
         .with_children(|panel| {
+            if !modified.is_empty() {
+                spawn_modified_documents_section(panel, &modified, localizer);
+            }
             panel
                 .spawn((
                     Node {
@@ -419,6 +566,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(test_support::session_with_timing_slack())
             .insert_resource(Localizer::new("en-US").unwrap())
+            .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
             .init_resource::<WorkspaceLayout>()
             .add_systems(Update, handle_changes_actions);
         app.world_mut().spawn((
@@ -428,6 +576,35 @@ mod tests {
             BackgroundColor(theme::PANEL),
         ));
         app
+    }
+
+    #[test]
+    fn modified_documents_lists_only_dirty_open_documents_with_names() {
+        use crate::document::{DocumentKey, DocumentManager};
+        use aestra_core::material::MaterialProgram;
+        let root = tempfile::tempdir().unwrap();
+        let clean = MaterialProgram::additive_sprite("Clean").normalized();
+        let dirty = MaterialProgram::additive_sprite("Dirty").normalized();
+        clean
+            .save_ron(root.path().join("clean.aestra.material.ron"))
+            .unwrap();
+        dirty
+            .save_ron(root.path().join("dirty.aestra.material.ron"))
+            .unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root.path());
+        let mut edited = dirty.clone();
+        edited.name = "Dirty edited".into();
+        catalog.replace_material_program(&dirty, &edited).unwrap();
+
+        // Both materials are open documents; only one has an unsaved draft.
+        let mut documents = DocumentManager::default();
+        documents.open(DocumentKey::MaterialProgram(clean.id));
+        documents.open(DocumentKey::MaterialProgram(dirty.id));
+
+        let modified = dirty_open_documents(&documents, &catalog);
+        assert_eq!(modified.len(), 1);
+        assert_eq!(modified[0].0, DocumentKey::MaterialProgram(dirty.id));
+        assert_eq!(modified[0].1, "Dirty edited");
     }
 
     #[test]

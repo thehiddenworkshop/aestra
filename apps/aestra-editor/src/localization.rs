@@ -491,6 +491,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "changes-none-pending",
     "changes-summary",
     "changes-empty-description",
+    "changes-modified-documents",
+    "changes-save-document",
     "changes-ready",
     "changes-blocked",
     "changes-discard",
