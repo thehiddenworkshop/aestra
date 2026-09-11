@@ -9,7 +9,7 @@ fn function_recovery_preserves_identity_drafts_and_conflict_baselines() {
         let (mut session, mut catalog, program) = fixture(&directory.path().join("project"));
         edit(&mut session, &mut catalog, &program);
         let function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+            "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
         ))
         .unwrap();
         let path = catalog.root().join("function.aestra.material-function.ron");
@@ -72,7 +72,7 @@ fn autosave_retains_clean_function_target() {
     let directory = tempfile::tempdir().unwrap();
     let (mut session, mut catalog, _) = fixture(&directory.path().join("project"));
     let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     function

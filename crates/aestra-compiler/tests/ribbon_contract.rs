@@ -11,11 +11,11 @@ use std::collections::BTreeMap;
 fn fixture() -> (EffectAsset, MaterialProgram) {
     (
         EffectAsset::from_ron(include_str!(
-            "../../../assets/effects/ribbon_lab.aestra.ron"
+            "../../../assets/test/effects/ribbon_lab.aestra.ron"
         ))
         .unwrap(),
         MaterialProgram::from_ron(include_str!(
-            "../../../assets/materials/ribbon_lab.aestra.material.ron"
+            "../../../assets/test/materials/ribbon_lab.aestra.material.ron"
         ))
         .unwrap(),
     )
@@ -59,7 +59,7 @@ fn ribbon_lab_compiles_and_requires_native_presentation() {
 
 #[test]
 fn ribbon_strand_count_defaults_validates_and_rejects_conflicting_shared_links() {
-    let legacy = include_str!("../../../assets/effects/ribbon_lab.aestra.ron")
+    let legacy = include_str!("../../../assets/test/effects/ribbon_lab.aestra.ron")
         .replace(", strand_count: 3", "");
     let legacy = EffectAsset::from_ron(&legacy).unwrap();
     assert!(matches!(

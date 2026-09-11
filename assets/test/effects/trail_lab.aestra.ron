@@ -1,27 +1,30 @@
 (
     format_version: 3,
-    id: "a3574a00-0000-4000-8000-000000009001",
-    name: "Material Graph Lab",
+    id: "a3574a00-0000-4000-8000-00000000c001",
+    name: "Trail Lab",
     duration: 3.0,
     playback_mode: LoopContinuous,
     material_instances: [
         (
-            id: "a3574a00-0000-4000-8000-000000009101",
-            program: Project("a3574a00-0000-4000-8000-000000009201"),
+            id: "a3574a00-0000-4000-8000-00000000c101",
+            program: Project("a3574a00-0000-4000-8000-00000000c201"),
             values: {},
             render_state: (
-                blend: Additive,
+                blend: Alpha,
                 depth_test: LessEqual,
                 depth_write: false,
-                cull_mode: r#None,
+                cull_mode: None,
             ),
         ),
+    ],
+    assets: [
+        (id: "a3574a00-0000-4000-8000-00000000c401", name: "Trail Tile", kind: Texture, path: "textures/ember_spark.png"),
     ],
     parameters: [],
     emitters: [
         (
-            id: "a3574a00-0000-4000-8000-000000009301",
-            name: "Graph Orb",
+            id: "a3574a00-0000-4000-8000-00000000c301",
+            name: "Comet Trails",
             enabled: true,
             display_color: Some((0.22, 0.55, 1.0, 1.0)),
             transform: (
@@ -31,46 +34,46 @@
             ),
             start_time: 0.0,
             duration: 3.0,
-            max_particles: 128,
+            max_particles: 32,
             simulation_domain: Particle,
             modules: [
                 (
-                    id: "a3574a00-0000-4000-8000-000000009311",
+                    id: "a3574a00-0000-4000-8000-00000000c311",
                     module_type: "aestra.emission.rate",
                     stage: EmitterUpdate,
                     enabled: true,
                     parameters: Emission(
-                        spawn_rate: 30.0,
-                        burst_count: 10,
+                        spawn_rate: 4.0,
+                        burst_count: 0,
                     ),
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-000000009312",
+                    id: "a3574a00-0000-4000-8000-00000000c312",
                     module_type: "aestra.spawn.shape",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Shape(
                         shape: Sphere(
-                            radius: 10.0,
+                            radius: 0.0,
                         ),
                     ),
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-000000009313",
+                    id: "a3574a00-0000-4000-8000-00000000c313",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Initialize(
                         lifetime: (
-                            min: 0.9,
-                            max: 1.6,
+                            min: 2.4,
+                            max: 2.4,
                         ),
                         speed: (
-                            min: 5.0,
-                            max: 18.0,
+                            min: 55.0,
+                            max: 55.0,
                         ),
-                        direction: (0.0, 1.0, 0.0),
-                        spread_degrees: 360.0,
+                        direction: (0.8, 0.6, 0.0),
+                        spread_degrees: 25.0,
                         angular_velocity: (
                             min: -1.5,
                             max: 1.5,
@@ -78,24 +81,24 @@
                     ),
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-000000009314",
+                    id: "a3574a00-0000-4000-8000-00000000c314",
                     module_type: "aestra.update.motion",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Motion(
-                        gravity: (0.0, 5.0, 0.0),
-                        drag: 0.8,
-                        turbulence: 2.0,
+                        gravity: (0.0, -35.0, 0.0),
+                        drag: 0.0,
+                        turbulence: 5.0,
                     ),
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-000000009315",
+                    id: "a3574a00-0000-4000-8000-00000000c315",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
                         size: (
-                            id: "a3574a00-0000-4000-8000-000000009321",
+                            id: "a3574a00-0000-4000-8000-00000000c321",
                             keys: [
                                 (
                                     time: 0.0,
@@ -103,7 +106,7 @@
                                 ),
                                 (
                                     time: 0.35,
-                                    value: 9.0,
+                                    value: 12.0,
                                 ),
                                 (
                                     time: 1.0,
@@ -112,7 +115,7 @@
                             ],
                         ),
                         opacity: (
-                            id: "a3574a00-0000-4000-8000-000000009322",
+                            id: "a3574a00-0000-4000-8000-00000000c322",
                             keys: [
                                 (
                                     time: 0.0,
@@ -129,7 +132,7 @@
                             ],
                         ),
                         color: (
-                            id: "a3574a00-0000-4000-8000-000000009323",
+                            id: "a3574a00-0000-4000-8000-00000000c323",
                             keys: [
                                 (
                                     time: 0.0,
@@ -150,11 +153,11 @@
             ],
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-000000009331",
-                    renderer_type: "aestra.renderer.sprite",
+                    id: "a3574a00-0000-4000-8000-00000000c331",
+                    renderer_type: "aestra.renderer.trail",
                     enabled: true,
-                    material: "a3574a00-0000-4000-8000-000000009101",
-                    properties: Sprite,
+                    material: "a3574a00-0000-4000-8000-00000000c101",
+                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0, uv_mode: Tile, tile_length: 8.0),
                 ),
             ],
         ),
@@ -162,6 +165,6 @@
     events: [],
     dependencies: [],
     metadata: {
-        "purpose": "Material graph projection test asset",
+        "purpose": "World-space bounded per-particle trail history; continuous loops preserve history, explicit seeks rebuild it",
     },
 )

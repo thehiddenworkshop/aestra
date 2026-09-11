@@ -5498,7 +5498,7 @@ mod tests {
 
     #[test]
     fn every_registered_material_preset_produces_a_preview() {
-        let asset_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let asset_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let project_catalog =
             ProjectEffectCatalog::scan_project(&asset_root, asset_root.join("effects"));
         let catalog = project_catalog

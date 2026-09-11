@@ -69,7 +69,7 @@ fn project_index_resolves_typed_material_function_assets() {
 fn project_index_resolves_custom_wesl_function_assets() {
     let temporary = tempfile::tempdir().unwrap();
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     function

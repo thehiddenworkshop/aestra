@@ -118,13 +118,13 @@ fn check_seek_replay(
     nested: bool,
 ) {
     let effect = aestra_core::EffectAsset::from_ron(if moving {
-        include_str!("../../../assets/effects/moving_trail_lab.aestra.ron")
+        include_str!("../../../assets/test/effects/moving_trail_lab.aestra.ron")
     } else {
-        include_str!("../../../assets/effects/trail_lab.aestra.ron")
+        include_str!("../../../assets/test/effects/trail_lab.aestra.ron")
     })
     .unwrap();
     let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/trail_lab.aestra.material.ron"
+        "../../../assets/test/materials/trail_lab.aestra.material.ron"
     ))
     .unwrap();
     let effect = aestra_compiler::EffectCompiler::default()

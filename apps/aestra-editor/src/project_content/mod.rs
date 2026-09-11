@@ -30,7 +30,9 @@ pub(crate) struct EditorProjectContent {
 
 impl Default for EditorProjectContent {
     fn default() -> Self {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        // The editor opens the curated sample project at the repo root by default. Editor UI assets
+        // live under `assets/`; workspace test fixtures live under `assets/test/`.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
         let root = root.canonicalize().unwrap_or(root);
         Self::scan_project(&root, root.join("effects"))
     }

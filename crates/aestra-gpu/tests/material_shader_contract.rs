@@ -170,7 +170,7 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
     assert!(second_uv.shader.wesl.contains("@location(3) uv1"));
     assert!(!second_uv.shader.wesl.contains("@location(4) tangent"));
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+        "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap();
     assert_portable_shader_targets(&compile(&program).shader.wgsl);
@@ -251,7 +251,7 @@ fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
 #[test]
 fn ribbon_material_has_portable_uv_direction_and_no_mesh_attributes() {
     let mut program = aestra_core::material::MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        "../../../assets/test/materials/ribbon_lab.aestra.material.ron"
     ))
     .unwrap();
     let original = compile(&program);
@@ -539,14 +539,14 @@ fn preset_host_program() -> aestra_core::material::MaterialProgram {
 #[test]
 fn curated_material_presets_generate_portable_gpu_shaders() {
     let presets = [
-        include_str!("../../../assets/materials/additive_flame.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/soft_smoke.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/energy_beam.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/magic_shield.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/hologram.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/ghost.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/portal.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/impact_flash.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/additive_flame.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/soft_smoke.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/energy_beam.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/magic_shield.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/hologram.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/ghost.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/portal.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/impact_flash.aestra.material-preset.ron"),
     ]
     .map(|source| MaterialPresetDescriptor::from_ron(source).unwrap());
     let preset_ids = presets.each_ref().map(|preset| preset.id);
@@ -575,7 +575,7 @@ fn curated_material_presets_generate_portable_gpu_shaders() {
 #[test]
 fn custom_wesl_function_is_namespaced_and_compiles_for_portable_gpu_targets() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let color = MaterialExpressionId::from_u128(0xFA11);

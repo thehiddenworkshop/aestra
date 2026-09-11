@@ -3036,7 +3036,7 @@ mod tests {
     fn ribbon_strands_use_integer_feather_scrubbing_and_undo_redo() {
         let mut session = test_support::session_with_timing_slack();
         let lab = EffectAsset::from_ron(include_str!(
-            "../../../../assets/effects/ribbon_lab.aestra.ron"
+            "../../../../assets/test/effects/ribbon_lab.aestra.ron"
         ))
         .unwrap();
         session.effect.material_instances = lab.material_instances;

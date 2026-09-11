@@ -23,9 +23,9 @@ use aestra_runtime::{
 };
 use std::{collections::BTreeMap, sync::Arc};
 
-const SAMPLE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
-const TEXTURED_SAMPLE: &str = include_str!("../../../assets/effects/ember_sigil.aestra.ron");
-const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/effects/plasma_burst.aestra.ron");
+const SAMPLE: &str = include_str!("../../../assets/test/effects/prism_bloom.aestra.ron");
+const TEXTURED_SAMPLE: &str = include_str!("../../../assets/test/effects/ember_sigil.aestra.ron");
+const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/test/effects/plasma_burst.aestra.ron");
 
 #[test]
 fn compiler_derives_portable_effect_requirements() {

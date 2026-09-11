@@ -200,7 +200,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let original = root.path().join("original.aestra.ron");
         let effect = EffectAsset::from_ron(include_str!(
-            "../../../../../assets/effects/prism_bloom.aestra.ron"
+            "../../../../../assets/test/effects/prism_bloom.aestra.ron"
         ))
         .unwrap();
         effect.save_ron(&original).unwrap();
@@ -275,7 +275,7 @@ mod tests {
     fn copies_have_fresh_identity_but_keep_wiring_names_and_shared_references() {
         let root = tempfile::tempdir().unwrap();
         let function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+            "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
         ))
         .unwrap();
         let function_path = root.path().join("function.aestra.material-function.ron");
@@ -394,7 +394,7 @@ mod tests {
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
 
         let function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+            "../../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
         ))
         .unwrap();
         function

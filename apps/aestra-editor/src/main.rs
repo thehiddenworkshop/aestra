@@ -160,13 +160,13 @@ use viewport::{
     ViewportSet, emitter_transform_from_bevy,
 };
 
-const EFFECT_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
+const EFFECT_SOURCE: &str = include_str!("../../../assets/test/effects/prism_bloom.aestra.ron");
 #[cfg(test)]
 const MATERIAL_GRAPH_LAB_EFFECT_SOURCE: &str =
-    include_str!("../../../assets/effects/material_graph_lab.aestra.ron");
+    include_str!("../../../assets/test/effects/material_graph_lab.aestra.ron");
 #[cfg(test)]
 const MATERIAL_GRAPH_LAB_PROGRAM_SOURCE: &str =
-    include_str!("../../../assets/materials/material_graph_lab.aestra.material.ron");
+    include_str!("../../../assets/test/materials/material_graph_lab.aestra.material.ron");
 const EDITOR_ASSET_ROOT: &str = "../../assets";
 const EDITOR_ICON: &[u8] = include_bytes!("../../../assets/project/icon.png");
 
@@ -428,7 +428,7 @@ mod tests {
             )
         )));
 
-        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EDITOR_ASSET_ROOT);
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let index = aestra_project::ProjectAssetIndex::scan(&asset_root);
         aestra_compiler::EffectCompiler::default()
             .compile_project(&effect, &index)
@@ -437,15 +437,18 @@ mod tests {
 
     #[test]
     fn editor_asset_root_contains_bundled_textures() {
-        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EDITOR_ASSET_ROOT);
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // Effect textures are test fixtures under assets/test; editor icons live under assets/.
+        let fixtures_root = manifest.join("../../assets/test");
+        let editor_root = manifest.join(EDITOR_ASSET_ROOT);
         for source in [
-            include_str!("../../../assets/effects/ember_sigil.aestra.ron"),
-            include_str!("../../../assets/effects/plasma_burst.aestra.ron"),
+            include_str!("../../../assets/test/effects/ember_sigil.aestra.ron"),
+            include_str!("../../../assets/test/effects/plasma_burst.aestra.ron"),
         ] {
             let effect = EffectAsset::from_ron(source).unwrap();
             for asset in effect.assets {
                 assert!(
-                    asset_root.join(&asset.path).is_file(),
+                    fixtures_root.join(&asset.path).is_file(),
                     "missing bundled asset {}",
                     asset.path
                 );
@@ -464,7 +467,7 @@ mod tests {
             "wireframe.svg",
         ] {
             assert!(
-                asset_root.join("icons").join(icon).is_file(),
+                editor_root.join("icons").join(icon).is_file(),
                 "missing bundled transport icon {icon}"
             );
         }

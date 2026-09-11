@@ -208,7 +208,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();
         let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
-            "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+            "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
         ))
         .unwrap();
         function

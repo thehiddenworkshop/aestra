@@ -5,7 +5,7 @@ fn fixture() -> (tempfile::TempDir, App, RendererDropTarget) {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("materials")).unwrap();
     let preset = MaterialPresetDescriptor::from_ron(include_str!(
-        "../../../../../../assets/materials/portal.aestra.material-preset.ron"
+        "../../../../../../assets/test/materials/portal.aestra.material-preset.ron"
     ))
     .unwrap();
     preset

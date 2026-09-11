@@ -10,7 +10,7 @@ use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
 
 fn program() -> MaterialProgram {
     MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+        "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap()
 }

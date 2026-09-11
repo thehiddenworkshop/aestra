@@ -56,7 +56,7 @@ fn material_preset_assets_reject_invalid_recipe_defaults() {
 #[test]
 fn graph_material_preset_asset_round_trips_with_named_portable_nodes() {
     let preset = MaterialPresetDescriptor::from_ron(include_str!(
-        "../../../assets/materials/hologram.aestra.material-preset.ron"
+        "../../../assets/test/materials/hologram.aestra.material-preset.ron"
     ))
     .unwrap();
     let MaterialPresetRecipe::Graph(recipe) = &preset.recipe else {
@@ -79,7 +79,7 @@ fn graph_material_preset_asset_round_trips_with_named_portable_nodes() {
 #[test]
 fn graph_material_presets_reject_cycles_and_forward_references() {
     let mut preset = MaterialPresetDescriptor::from_ron(include_str!(
-        "../../../assets/materials/hologram.aestra.material-preset.ron"
+        "../../../assets/test/materials/hologram.aestra.material-preset.ron"
     ))
     .unwrap();
     let MaterialPresetRecipe::Graph(recipe) = &mut preset.recipe else {

@@ -3,7 +3,7 @@ use aestra_core::MaterialProgramId;
 
 fn function_fixture(root: &Path) -> (App, MaterialFunction, PathBuf) {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     let path = root.join("function.aestra.material-function.ron");
@@ -141,7 +141,7 @@ fn function_reload_rejects_concurrent_edits() {
 fn function_inspection_save_does_not_save_the_effect() {
     let directory = tempfile::tempdir().unwrap();
     let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     function
@@ -178,7 +178,7 @@ fn function_inspection_save_does_not_save_the_effect() {
 fn function_save_is_scoped_and_rejects_external_changes() {
     let directory = tempfile::tempdir().unwrap();
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     let path = directory

@@ -3476,7 +3476,7 @@ mod tests {
 
     #[test]
     fn project_catalog_resolves_bundled_effect_materials_outside_the_effect_folder() {
-        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let effect_root = asset_root.join("effects");
         let catalog = ProjectEffectCatalog::scan_project(&asset_root, &effect_root);
         let reference =
@@ -3495,7 +3495,7 @@ mod tests {
 
     #[test]
     fn project_catalog_merges_bundled_material_presets_with_builtins() {
-        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let catalog = ProjectEffectCatalog::scan_project(&asset_root, asset_root.join("effects"));
 
         let presets = catalog.material_preset_catalog().unwrap();

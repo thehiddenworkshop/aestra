@@ -468,7 +468,7 @@ mod tests {
         let effect = EffectAsset::new("Effect", 1.0);
         let program = MaterialProgram::additive_sprite("Material");
         let function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+            "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
         ))
         .unwrap();
         effect
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn self_contained_meshes_and_shaders_do_not_block_but_external_sources_do() {
         assert!(non_referencing_gltf(include_bytes!(
-            "../../../../../assets/meshes/lab_cube.gltf"
+            "../../../../../assets/test/meshes/lab_cube.gltf"
         )));
         for source in [
             r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"original.aestra.material.ron"}]}"#,
@@ -729,7 +729,7 @@ mod tests {
             assert!(!non_referencing_gltf(source.as_bytes()), "{source}");
         }
         assert!(non_referencing_shader(include_str!(
-            "../../../../../assets/shaders/preview_grid.wesl"
+            "../../../../../assets/test/shaders/preview_grid.wesl"
         )));
         for source in [
             "import package::external; fn main() {}",
@@ -748,7 +748,7 @@ mod tests {
             .save_ron(root.path().join("original.aestra.material.ron"))
             .unwrap();
         let mut function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+            "../../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
         ))
         .unwrap();
         let path = root.path().join("pulse.aestra.material-function.ron");
@@ -794,7 +794,7 @@ mod tests {
         // icons, mesh, shader and custom-function sources must all be accounted for.
         // All publication happens in the temporary copy, never in the workspace.
         let root = tempfile::tempdir().unwrap();
-        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let tree = ProjectSourceTree::scan(&assets);
         for entry in tree.entries() {
             let destination = root.path().join(&entry.relative_path);
@@ -882,7 +882,7 @@ mod tests {
     fn function_identity_and_all_signatures_survive_rename() {
         let root = tempfile::tempdir().unwrap();
         let function = MaterialFunction::from_ron(include_str!(
-            "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+            "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
         ))
         .unwrap();
         function

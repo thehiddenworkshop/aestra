@@ -132,7 +132,7 @@ fn function_projection_keeps_signature_edges_and_invalid_sources() {
 fn custom_source_projection_is_not_an_editable_graph() {
     use aestra_compiler::MaterialFunctionBodyProjection;
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let projection =
@@ -146,7 +146,7 @@ fn custom_source_projection_is_not_an_editable_graph() {
 #[test]
 fn custom_wesl_omitted_arguments_lower_to_typed_defaults() {
     let mut function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     for input in &mut function.inputs {
@@ -258,7 +258,7 @@ fn custom_wesl_calling_program(function: &MaterialFunction) -> MaterialProgram {
 #[test]
 fn typed_custom_wesl_calls_lower_without_erasing_the_validated_source() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let program = custom_wesl_calling_program(&function);
@@ -588,7 +588,7 @@ fn multiple_outputs_of_nested_functions_share_internal_work() {
 #[test]
 fn custom_wesl_calls_and_their_wrappers_are_never_shared() {
     let custom = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     for wrapped in [false, true] {

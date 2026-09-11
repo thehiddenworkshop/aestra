@@ -24,7 +24,7 @@ use aestra_runtime::{
 #[test]
 fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history() {
     let effect = EffectAsset::from_ron(include_str!(
-        "../../../assets/effects/moving_trail_lab.aestra.ron"
+        "../../../assets/test/effects/moving_trail_lab.aestra.ron"
     ))
     .unwrap();
     assert_eq!(
@@ -32,7 +32,7 @@ fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history()
         effect
     );
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/trail_lab.aestra.material.ron"
+        "../../../assets/test/materials/trail_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()
@@ -131,11 +131,11 @@ fn interpolation_modes_survive_compiled_artifact_round_trips() {
 #[test]
 fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
     let effect = EffectAsset::from_ron(include_str!(
-        "../../../assets/effects/mesh_material_lab.aestra.ron"
+        "../../../assets/test/effects/mesh_material_lab.aestra.ron"
     ))
     .unwrap();
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+        "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()
@@ -161,11 +161,11 @@ fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
 #[test]
 fn ribbon_renderer_material_inputs_and_width_survive_artifact_round_trip() {
     let effect = EffectAsset::from_ron(include_str!(
-        "../../../assets/effects/ribbon_lab.aestra.ron"
+        "../../../assets/test/effects/ribbon_lab.aestra.ron"
     ))
     .unwrap();
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        "../../../assets/test/materials/ribbon_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()
@@ -280,11 +280,12 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
 
 #[test]
 fn trail_lab_round_trip_preserves_bounded_history_contract() {
-    let effect =
-        EffectAsset::from_ron(include_str!("../../../assets/effects/trail_lab.aestra.ron"))
-            .unwrap();
+    let effect = EffectAsset::from_ron(include_str!(
+        "../../../assets/test/effects/trail_lab.aestra.ron"
+    ))
+    .unwrap();
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/trail_lab.aestra.material.ron"
+        "../../../assets/test/materials/trail_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()

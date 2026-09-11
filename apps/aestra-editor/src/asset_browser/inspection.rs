@@ -13,7 +13,7 @@ fn preflight_includes_unsaved_program_dependencies() {
     use aestra_core::material::*;
     let root = tempfile::tempdir().unwrap();
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     function

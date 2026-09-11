@@ -14,15 +14,15 @@ use std::{collections::BTreeMap, sync::Arc};
 const SHOWCASES: [(&str, &str); 3] = [
     (
         "Ember Sigil",
-        include_str!("../../../assets/effects/ember_sigil.aestra.ron"),
+        include_str!("../../../assets/test/effects/ember_sigil.aestra.ron"),
     ),
     (
         "Plasma Burst",
-        include_str!("../../../assets/effects/plasma_burst.aestra.ron"),
+        include_str!("../../../assets/test/effects/plasma_burst.aestra.ron"),
     ),
     (
         "Prism Bloom",
-        include_str!("../../../assets/effects/prism_bloom.aestra.ron"),
+        include_str!("../../../assets/test/effects/prism_bloom.aestra.ron"),
     ),
 ];
 

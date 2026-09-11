@@ -629,7 +629,7 @@ fn open_function_draft_survives_failed_delete_and_restores_after_success() {
     use aestra_core::material::{MaterialExpression, MaterialExpressionKind, MaterialFunction};
     let (root, mut app, source) = fixture();
     let mut original = MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     original.custom_wesl = None;
@@ -749,7 +749,7 @@ fn deletion_orders_function_edits_even_after_returning_to_the_effect() {
     use aestra_core::material::{MaterialExpression, MaterialExpressionKind, MaterialFunction};
     let (root, mut app, source) = fixture();
     let mut function = MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     function.custom_wesl = None;

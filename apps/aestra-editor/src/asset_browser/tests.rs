@@ -23,7 +23,7 @@ const VERSION: ProjectContentVersion = ProjectContentVersion {
 fn function_browser_activation_preserves_effect_and_reopens_same_target() {
     let root = tempfile::tempdir().unwrap();
     let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
-        "../../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     function
@@ -1003,7 +1003,7 @@ fn supported_sources_share_menu_capabilities_and_inline_rename() {
                     .save_ron(&path)
                     .unwrap(),
                 2 => aestra_core::material::MaterialFunction::from_ron(include_str!(
-                    "../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+                    "../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
                 ))
                 .unwrap()
                 .save_ron(&path)
@@ -1017,7 +1017,7 @@ fn supported_sources_share_menu_capabilities_and_inline_rename() {
                 std::fs::create_dir(root.path().join("z_meshes")).unwrap();
                 std::fs::write(
                     root.path().join("z_meshes/lab_cube.gltf"),
-                    include_bytes!("../../../../assets/meshes/lab_cube.gltf"),
+                    include_bytes!("../../../../assets/test/meshes/lab_cube.gltf"),
                 )
                 .unwrap();
                 let mut effect = EffectAsset::new("Mesh effect", 1.0);
@@ -1946,7 +1946,7 @@ fn browser_effect_activation_loads_documents_through_the_background_worker() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("effects")).unwrap();
     let mut first = EffectAsset::from_ron(include_str!(
-        "../../../../assets/effects/ember_sigil.aestra.ron"
+        "../../../../assets/test/effects/ember_sigil.aestra.ron"
     ))
     .unwrap();
     first.name = "First browser effect".into();

@@ -42,7 +42,7 @@ fn typed_material_function_round_trips_with_stable_identity() {
 #[test]
 fn custom_wesl_function_round_trips_and_rejects_resource_declarations() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let encoded = function.to_pretty_ron().unwrap();
@@ -60,7 +60,7 @@ fn custom_wesl_function_round_trips_and_rejects_resource_declarations() {
 fn optional_defaults_are_backward_compatible_typed_and_finite() {
     use aestra_core::material::MaterialValue;
     let mut function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     assert!(function.inputs.iter().all(|input| input.default.is_none()));

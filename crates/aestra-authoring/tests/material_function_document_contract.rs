@@ -196,7 +196,7 @@ fn body_argument_disconnect_uses_default_and_undo_restores_connection() {
 fn graph_body_command_rejects_custom_wesl_without_touching_source() {
     use aestra_authoring::MaterialFunctionBodyCommand as B;
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let mut document =
@@ -408,7 +408,7 @@ fn recursive_body_preflight_reports_cycle_without_changing_source() {
 #[test]
 fn custom_wesl_metadata_edit_and_history_preserve_exact_source() {
     let original = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let mut document =

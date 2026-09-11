@@ -1,0 +1,22 @@
+(
+    schema_version: 2,
+    id: "a3574a00-0000-4000-8000-00000000a102",
+    display_name: "Additive Flame",
+    description: "Builds a hot additive flame tint that cools and fades across particle life.",
+    category: Shaping,
+    tags: ["fire", "flame", "additive", "glow", "particle age"],
+    recipe: Graph((
+        nodes: [
+            (name: "age", kind: Input(ParticleNormalizedAge)),
+            (name: "one", kind: Constant(Float(1.0))),
+            (name: "remaining_life", kind: Function(Subtract), inputs: {"A": Node("one"), "B": Node("age")}),
+            (name: "opacity", kind: Function(Multiply), inputs: {"A": Source, "B": Node("remaining_life")}),
+            (name: "ember", kind: Constant(ColorSrgb((1.0, 0.12, 0.015, 1.0)))),
+            (name: "hot", kind: Constant(ColorSrgb((1.0, 0.82, 0.18, 1.0)))),
+            (name: "flame_tint", kind: Function(Lerp), inputs: {"Start": Node("ember"), "End": Node("hot"), "Factor": Node("remaining_life")}),
+            (name: "color", kind: Function(Multiply), inputs: {"A": ProgramColor, "B": Node("flame_tint")}),
+        ],
+        output: Node("opacity"),
+        program_outputs: {Color: Node("color"), Alpha: Node("opacity")},
+    )),
+)

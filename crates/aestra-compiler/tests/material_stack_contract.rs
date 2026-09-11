@@ -615,7 +615,7 @@ fn explicit_preset_catalogs_accept_new_semantic_recipes_without_compiler_changes
 #[test]
 fn project_graph_recipe_materializes_a_branched_hologram_atomically() {
     let preset = MaterialPresetDescriptor::from_ron(include_str!(
-        "../../../assets/materials/hologram.aestra.material-preset.ron"
+        "../../../assets/test/materials/hologram.aestra.material-preset.ron"
     ))
     .unwrap();
     let preset_id = preset.id;

@@ -40,7 +40,7 @@ use preview_report::{
 };
 use visual_regression::{ComparisonReport, compare_capture};
 
-const SAMPLE_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
+const SAMPLE_SOURCE: &str = include_str!("../../../assets/test/effects/prism_bloom.aestra.ron");
 const VIEW_WIDTH: u32 = 960;
 const VIEW_HEIGHT: u32 = 540;
 const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
@@ -733,7 +733,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
 }
 
 fn viewer_asset_root(path: Option<&std::path::Path>) -> PathBuf {
-    let default_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let default_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let parent = path
         .and_then(std::path::Path::parent)
         .unwrap_or(&default_root);
@@ -1397,7 +1397,7 @@ mod tests {
             gpu_bench: None,
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../assets/effects/nested_moving_trail_lab.aestra.ron");
+            .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");
         let prepared = prepare_viewer(&config(path)).unwrap_or_else(|e| panic!("{}", e.message));
         assert_eq!(prepared.project.dependencies.len(), 2);
         assert!(Arc::ptr_eq(&prepared.compiled, &prepared.project.root));
@@ -1429,7 +1429,7 @@ mod tests {
     #[test]
     fn viewer_resolves_existing_mesh_materials_before_legacy_migration() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../assets/effects/mesh_material_lab.aestra.ron");
+            .join("../../assets/test/effects/mesh_material_lab.aestra.ron");
         let mut effect = EffectAsset::load_ron(&path).unwrap();
         let programs = load_viewer_material_programs(&effect, Some(&path)).unwrap();
         assert_eq!(programs.len(), 1);

@@ -190,7 +190,7 @@ fn inherited_edits_invalidate_history_but_equivalent_contexts_and_seeks_do_not()
 
 #[test]
 fn nested_moving_trail_lab_compiles_and_evaluates_after_parent_loops() {
-    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let root =
         EffectAsset::load_ron(assets.join("effects/nested_moving_trail_lab.aestra.ron")).unwrap();
     let project = EffectCompiler::default()

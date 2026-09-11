@@ -11,11 +11,11 @@ use std::collections::BTreeMap;
 fn fixture() -> (EffectAsset, MaterialProgram) {
     (
         EffectAsset::from_ron(include_str!(
-            "../../../assets/effects/mesh_material_lab.aestra.ron"
+            "../../../assets/test/effects/mesh_material_lab.aestra.ron"
         ))
         .unwrap(),
         MaterialProgram::from_ron(include_str!(
-            "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+            "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
         ))
         .unwrap(),
     )

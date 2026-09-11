@@ -45,6 +45,10 @@
             ),
         ),
         (
+            id: "0c0a9ca4-af95-4a57-aede-4bc26a92dae8",
+            kind: Constant(Float(4.75)),
+        ),
+        (
             id: "20d17bc3-64d4-4078-83c2-1c4e3e146b29",
             kind: Constant(Float(0.0)),
         ),
@@ -147,11 +151,16 @@
             ),
         ),
         (
+            id: "c353dee5-e1ca-4988-97e3-64034b72779f",
+            kind: Constant(Float(2.22)),
+        ),
+        (
             id: "e7dce44e-6e1e-49d4-b8b2-5749c1c28bc3",
             kind: Constant(Float(11.944)),
         ),
     ],
     inline_constants: [
+        "0c0a9ca4-af95-4a57-aede-4bc26a92dae8",
         "20d17bc3-64d4-4078-83c2-1c4e3e146b29",
         "21566720-9427-4a56-b27e-12d59e5143ca",
         "225210d0-a26b-438d-aed1-ac3d20592937",
@@ -159,6 +168,7 @@
         "a3574a00-0000-4000-8000-000000009223",
         "a3574a00-0000-4000-8000-000000009224",
         "ab2b08ec-3442-4b4c-97fb-1fd8102c28a8",
+        "c353dee5-e1ca-4988-97e3-64034b72779f",
         "e7dce44e-6e1e-49d4-b8b2-5749c1c28bc3",
     ],
     outputs: (

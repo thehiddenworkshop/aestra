@@ -169,13 +169,13 @@ fn assert_ribbon_strands_match_across_seeks_and_loops(harness: &GpuHarness) {
             strand_count: 3,
         };
         let lab = EffectAsset::from_ron(include_str!(
-            "../../../assets/effects/ribbon_lab.aestra.ron"
+            "../../../assets/test/effects/ribbon_lab.aestra.ron"
         ))
         .unwrap();
         renderer.material = lab.material_instances[0].id;
         asset.material_instances = lab.material_instances;
         let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
-            "../../../assets/materials/ribbon_lab.aestra.material.ron"
+            "../../../assets/test/materials/ribbon_lab.aestra.material.ron"
         ))
         .unwrap();
         let effect = Arc::new(

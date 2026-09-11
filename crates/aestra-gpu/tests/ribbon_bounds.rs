@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 fn bounds(effect: &EffectAsset) -> RibbonParticleBounds {
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        "../../../assets/test/materials/ribbon_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()
@@ -27,7 +27,7 @@ fn bounds(effect: &EffectAsset) -> RibbonParticleBounds {
 #[test]
 fn authored_width_size_motion_and_emitter_transform_refresh_ribbon_bounds() {
     let mut effect = EffectAsset::from_ron(include_str!(
-        "../../../assets/effects/ribbon_lab.aestra.ron"
+        "../../../assets/test/effects/ribbon_lab.aestra.ron"
     ))
     .unwrap();
     let initial = bounds(&effect);

@@ -1,0 +1,211 @@
+(
+    id: "a3574a00-0000-4000-8000-00000000c201",
+    schema_version: 1,
+    name: "Trail Lab Tiles",
+    domain: Ribbon,
+    render_state_policy: (
+        default: (
+            blend: Alpha,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000c211",
+            name: "Trail Texture",
+            value_type: Texture2D((
+                color_space: SrgbColor,
+                sampler: (
+                    filter: Linear,
+                    mip_filter: Linear,
+                    address_u: Repeat,
+                    address_v: ClampToEdge,
+                ),
+            )),
+            evaluation_domain: Instance,
+            default: Some(Texture2D("a3574a00-0000-4000-8000-00000000c401")),
+        ),
+    ],
+    expressions: [
+        (
+            id: "00c039c9-2062-4b93-8548-7d35680cf39d",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "0c6c4758-f3f6-451a-8ccb-dc2439c67219",
+            kind: Constant(Float(0.9)),
+        ),
+        (
+            id: "0f7cceeb-20d5-4dd2-8e79-0f9d8d90a21a",
+            kind: Constant(Float(0.8)),
+        ),
+        (
+            id: "18c98db2-8a35-4f72-af5b-27500c2e15df",
+            kind: Constant(Vec2((1.1, 1.1))),
+        ),
+        (
+            id: "1a4be087-90af-476e-a450-42d749920bb1",
+            kind: Constant(Float(0.1)),
+        ),
+        (
+            id: "25eacf7d-6ec5-43e6-9a4c-798ac739818b",
+            kind: Constant(Float(0.2)),
+        ),
+        (
+            id: "2d7ad029-aaaf-4f16-9cf6-75b9f6717b8d",
+            kind: Constant(Float(0.8)),
+        ),
+        (
+            id: "2f9e6103-4f1b-41e6-8c6b-208c5a3aff6c",
+            kind: Remap(
+                value: "937dfb4f-8895-4621-8bc9-adafc1af4ff2",
+                input_min: "1a4be087-90af-476e-a450-42d749920bb1",
+                input_max: "0c6c4758-f3f6-451a-8ccb-dc2439c67219",
+                output_min: "e1f5bd2d-3358-46cf-8d5e-8e5262f048b5",
+                output_max: "00c039c9-2062-4b93-8548-7d35680cf39d",
+            ),
+        ),
+        (
+            id: "377a14d6-47fe-4d03-84f9-ad837173abb4",
+            kind: Constant(Float(0.1)),
+        ),
+        (
+            id: "385b5644-d3ca-48c1-98a8-a2d392cff0f5",
+            kind: PanUv(
+                uv: "70dedcdf-feed-4c30-b6fc-19c6c4bbe68b",
+                speed: "391e55b2-e256-4a4a-b28f-2378e9388524",
+                time: "b0e30e93-6bb1-410c-8f12-1dbb4874c646",
+            ),
+        ),
+        (
+            id: "391e55b2-e256-4a4a-b28f-2378e9388524",
+            kind: Constant(Vec2((0.15, 0.05))),
+        ),
+        (
+            id: "558cca13-83d6-45cd-b321-520cd7261147",
+            kind: Smoothstep(
+                edge_min: "25eacf7d-6ec5-43e6-9a4c-798ac739818b",
+                edge_max: "2d7ad029-aaaf-4f16-9cf6-75b9f6717b8d",
+                value: "2f9e6103-4f1b-41e6-8c6b-208c5a3aff6c",
+            ),
+        ),
+        (
+            id: "70dedcdf-feed-4c30-b6fc-19c6c4bbe68b",
+            kind: Remap(
+                value: "a3574a00-0000-4000-8000-00000000c223",
+                input_min: "377a14d6-47fe-4d03-84f9-ad837173abb4",
+                input_max: "9e9c021f-13c1-49d5-b4a6-cd743119ccf0",
+                output_min: "d37177dd-8f09-481a-9e8d-93e563482410",
+                output_max: "e62f95a7-290a-4e35-a02f-81497c604dbb",
+            ),
+        ),
+        (
+            id: "937dfb4f-8895-4621-8bc9-adafc1af4ff2",
+            kind: ScaleUv(
+                uv: "385b5644-d3ca-48c1-98a8-a2d392cff0f5",
+                center: "9e2f8220-66a2-423b-84d2-70ebb143a0c1",
+                scale: "18c98db2-8a35-4f72-af5b-27500c2e15df",
+            ),
+        ),
+        (
+            id: "97f0e851-ba35-4a7a-9349-ade14e13c724",
+            kind: Smoothstep(
+                edge_min: "cdfcac3b-4933-458c-8aa5-1788a242d5f2",
+                edge_max: "0f7cceeb-20d5-4dd2-8e79-0f9d8d90a21a",
+                value: "558cca13-83d6-45cd-b321-520cd7261147",
+            ),
+        ),
+        (
+            id: "9e2f8220-66a2-423b-84d2-70ebb143a0c1",
+            kind: Constant(Vec2((0.5, 0.5))),
+        ),
+        (
+            id: "9e9c021f-13c1-49d5-b4a6-cd743119ccf0",
+            kind: Constant(Float(0.9)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c221",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c222",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c223",
+            kind: Input(RibbonUv),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c224",
+            kind: Parameter("a3574a00-0000-4000-8000-00000000c211"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c225",
+            kind: SampleTexture(
+                texture: "a3574a00-0000-4000-8000-00000000c224",
+                uv: "97f0e851-ba35-4a7a-9349-ade14e13c724",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c226",
+            kind: Multiply("a3574a00-0000-4000-8000-00000000c221", "a3574a00-0000-4000-8000-00000000c231"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c227",
+            kind: ExtractComponent(
+                value: "a3574a00-0000-4000-8000-00000000c225",
+                component: W,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c228",
+            kind: Constant(Float(0.8)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c229",
+            kind: Constant(Float(0.6)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c230",
+            kind: Multiply("a3574a00-0000-4000-8000-00000000c227", "a3574a00-0000-4000-8000-00000000c228"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000c231",
+            kind: Add("a3574a00-0000-4000-8000-00000000c230", "a3574a00-0000-4000-8000-00000000c229"),
+        ),
+        (
+            id: "b0e30e93-6bb1-410c-8f12-1dbb4874c646",
+            kind: Input(EffectTime),
+        ),
+        (
+            id: "cdfcac3b-4933-458c-8aa5-1788a242d5f2",
+            kind: Constant(Float(0.2)),
+        ),
+        (
+            id: "d37177dd-8f09-481a-9e8d-93e563482410",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "e1f5bd2d-3358-46cf-8d5e-8e5262f048b5",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "e62f95a7-290a-4e35-a02f-81497c604dbb",
+            kind: Constant(Float(1.0)),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-00000000c226",
+        alpha: "a3574a00-0000-4000-8000-00000000c222",
+    ),
+)

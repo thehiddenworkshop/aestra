@@ -54,7 +54,7 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
         assert_pipeline(&device, &legacy.wgsl, fragment, 1);
     }
     let mut mesh_program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+        "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap();
     // Both display modes use the exact same deformed vertex entry implementation.

@@ -3730,7 +3730,7 @@ mod tests {
 
     #[test]
     fn nested_preview_matches_reference_motion_across_parent_loops_and_retiming() {
-        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
         let mut root = aestra_core::EffectAsset::load_ron(
             assets.join("effects/nested_moving_trail_lab.aestra.ron"),
         )
@@ -3805,11 +3805,11 @@ mod tests {
     #[test]
     fn editor_preview_keeps_authored_motion_across_seek_and_recompile() {
         let mut effect = aestra_core::EffectAsset::from_ron(include_str!(
-            "../../../assets/effects/moving_trail_lab.aestra.ron"
+            "../../../assets/test/effects/moving_trail_lab.aestra.ron"
         ))
         .unwrap();
         let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
-            "../../../assets/materials/trail_lab.aestra.material.ron"
+            "../../../assets/test/materials/trail_lab.aestra.material.ron"
         ))
         .unwrap();
         let programs = std::collections::BTreeMap::from([(program.id, program)]);

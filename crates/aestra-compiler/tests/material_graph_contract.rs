@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 #[test]
 fn function_catalog_uses_material_recipes_without_a_material_document() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     let before = function.clone();
@@ -189,7 +189,7 @@ fn graph_projection_is_deterministic_typed_and_source_mapped() {
 #[test]
 fn reusable_functions_are_catalogued_created_and_projected_with_typed_signature_ports() {
     let project_function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .expect("bundled project function should parse");
     let functions = MaterialFunctionLibrary::new([project_function.clone()]);

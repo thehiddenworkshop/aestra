@@ -634,7 +634,7 @@ mod tests {
 
     fn fixture() -> MaterialFunction {
         let mut function = MaterialFunction::from_ron(include_str!(
-            "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+            "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
         ))
         .unwrap();
         function.custom_wesl = None;
@@ -996,7 +996,7 @@ mod tests {
         assert!(editor.step(&mut session, &mut catalog, true).is_err());
         assert!(editor.available(&session, true));
         let custom = MaterialFunction::from_ron(include_str!(
-            "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+            "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
         ))
         .unwrap();
         custom.save_ron(&path).unwrap();

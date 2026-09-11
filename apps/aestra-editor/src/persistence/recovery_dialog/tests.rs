@@ -68,7 +68,7 @@ fn restore_function_through_dialog_keeps_target_and_draft() {
     let (directory, mut app, _) = fixture();
     let root = directory.path().join("project");
     let function = aestra_core::material::MaterialFunction::from_ron(include_str!(
-        "../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     function

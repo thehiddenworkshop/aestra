@@ -2249,14 +2249,14 @@ fn material_preset_tool_applies_a_project_catalog_recipe_transactionally() {
 #[test]
 fn curated_project_material_presets_apply_and_undo_as_one_transaction() {
     let presets = [
-        include_str!("../../../assets/materials/additive_flame.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/soft_smoke.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/energy_beam.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/magic_shield.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/hologram.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/ghost.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/portal.aestra.material-preset.ron"),
-        include_str!("../../../assets/materials/impact_flash.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/additive_flame.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/soft_smoke.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/energy_beam.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/magic_shield.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/hologram.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/ghost.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/portal.aestra.material-preset.ron"),
+        include_str!("../../../assets/test/materials/impact_flash.aestra.material-preset.ron"),
     ]
     .map(|source| MaterialPresetDescriptor::from_ron(source).unwrap());
     let preset_ids = presets.each_ref().map(|preset| preset.id);
@@ -2914,7 +2914,7 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
 #[test]
 fn project_function_call_creation_and_signature_rewiring_are_transactional() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     let mut document = authoring_document();
@@ -2985,7 +2985,7 @@ fn project_function_call_creation_and_signature_rewiring_are_transactional() {
 #[test]
 fn custom_wesl_function_insertion_is_transactional_and_compiler_validated() {
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+        "../../../assets/test/materials/pulse_wave.aestra.material-function.ron"
     ))
     .unwrap();
     let mut document = authoring_document();
@@ -3349,7 +3349,7 @@ fn material_graph_disconnect_replaces_the_edge_with_a_typed_default() {
 fn mesh_vertex_output_connect_disconnect_and_undo_preserve_the_document() {
     let mut document = authoring_document();
     let mut program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+        "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap();
     let source = program.outputs.vertex_offset.take().unwrap();

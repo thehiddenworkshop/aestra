@@ -10,7 +10,7 @@ pub(super) fn fixture() -> (tempfile::TempDir, ProjectContent, Vec<OperationRequ
     let effect = EffectAsset::new("Effect", 1.0);
     let program = MaterialProgram::additive_sprite("Material");
     let function = MaterialFunction::from_ron(include_str!(
-        "../../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+        "../../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
     ))
     .unwrap();
     fs::write(

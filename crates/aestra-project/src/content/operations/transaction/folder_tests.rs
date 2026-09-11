@@ -16,7 +16,7 @@ fn labeled_mesh_fixture() -> tempfile::TempDir {
     fs::create_dir(root.path().join("destination")).unwrap();
     fs::write(
         root.path().join("meshes/lab_cube.gltf"),
-        include_bytes!("../../../../../../assets/meshes/lab_cube.gltf"),
+        include_bytes!("../../../../../../assets/test/meshes/lab_cube.gltf"),
     )
     .unwrap();
     let mut effect = EffectAsset::new("Mesh effect", 1.0);
@@ -189,14 +189,14 @@ fn fixture() -> (tempfile::TempDir, ProjectContent, OperationRequest) {
         root.path()
             .join("pack/function.aestra.material-function.ron"),
         include_bytes!(
-            "../../../../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+            "../../../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
         ),
     )
     .unwrap();
     fs::write(
         root.path().join("pack/preset.aestra.material-preset.ron"),
         include_bytes!(
-            "../../../../../../assets/materials/additive_flame.aestra.material-preset.ron"
+            "../../../../../../assets/test/materials/additive_flame.aestra.material-preset.ron"
         ),
     )
     .unwrap();

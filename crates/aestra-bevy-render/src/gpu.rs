@@ -2320,7 +2320,7 @@ mod tests {
     #[test]
     fn artifact_packs_explicit_flipbook_frames_for_wesl() {
         let effect = EffectAsset::from_ron(include_str!(
-            "../../../assets/effects/plasma_burst.aestra.ron"
+            "../../../assets/test/effects/plasma_burst.aestra.ron"
         ))
         .unwrap();
         let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
