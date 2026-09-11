@@ -1,13 +1,15 @@
-//! WESL source editor pane (Milestone 7-2).
+//! WESL source editor pane (Milestone 7).
 //!
-//! Renders an open [`crate::wesl_document::WeslDocuments`] buffer as an editable, scrollable text
-//! pane docked as its own editor tab. Edits sync into the buffer per keystroke; Ctrl+S or the
-//! header Save button write it back to the `.wesl` file. Tokenizer-based coloration and compiler
-//! diagnostics arrive in a later Milestone 7 slice.
+//! Renders an open [`crate::wesl_document::WeslDocuments`] buffer docked as its own editor tab. The
+//! pane has two modes: a syntax-coloured read-only Preview (via [`crate::wesl_syntax`]) and a plain
+//! editable field whose edits sync into the buffer per keystroke. Ctrl+S or the header Save button
+//! write the buffer back to the `.wesl` file. Compiler diagnostics arrive in a later slice.
 
 use crate::wesl_document::{WeslDocuments, WeslSourceId};
+use crate::wesl_syntax::{WeslTokenKind, tokenize};
 use crate::*;
-use bevy::text::{EditableText, TextEditChange};
+use bevy::text::{EditableText, TextEditChange, TextSpan};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Marks the editable text field of a WESL pane so edits route to the right buffer.
@@ -18,10 +20,45 @@ pub(crate) struct WeslSourceEditorField(pub(crate) WeslSourceId);
 #[derive(Event, Debug, Clone, Copy)]
 pub(crate) struct SaveWeslSource(pub(crate) WeslSourceId);
 
+/// Fired to flip a WESL pane between the coloured preview and the plain editable field.
+#[derive(Event, Debug, Clone, Copy)]
+pub(crate) struct ToggleWeslMode(pub(crate) WeslSourceId);
+
+/// Per-document choice between the coloured read-only preview (default) and the editable field.
+/// Persisted in a resource so it survives the dock rebuilds that reconstruct the pane.
+#[derive(Resource, Debug, Default)]
+pub(crate) struct WeslEditorModes(HashMap<WeslSourceId, bool>);
+
+impl WeslEditorModes {
+    pub(crate) fn is_editing(&self, id: WeslSourceId) -> bool {
+        self.0.get(&id).copied().unwrap_or(false)
+    }
+
+    fn toggle(&mut self, id: WeslSourceId) {
+        let editing = self.0.entry(id).or_insert(false);
+        *editing = !*editing;
+    }
+}
+
+/// The display colour for a token class, tuned for the editor's dark panels.
+fn token_color(kind: WeslTokenKind) -> Color {
+    match kind {
+        WeslTokenKind::Comment => Color::srgb(0.45, 0.52, 0.45),
+        WeslTokenKind::Keyword => Color::srgb(0.78, 0.55, 1.0),
+        WeslTokenKind::Type => Color::srgb(0.40, 0.82, 0.86),
+        WeslTokenKind::Number => Color::srgb(1.0, 0.72, 0.42),
+        WeslTokenKind::Attribute => Color::srgb(1.0, 0.80, 0.36),
+        WeslTokenKind::String => Color::srgb(0.55, 0.86, 0.58),
+        WeslTokenKind::Ident | WeslTokenKind::Whitespace => theme::TEXT,
+        WeslTokenKind::Punctuation => theme::TEXT_MUTED,
+    }
+}
+
 pub(crate) fn spawn_wesl_editor_view(
     parent: &mut ChildSpawnerCommands,
     id: WeslSourceId,
     documents: &WeslDocuments,
+    modes: &WeslEditorModes,
     localizer: &Localizer,
 ) {
     let name = documents
@@ -30,6 +67,7 @@ pub(crate) fn spawn_wesl_editor_view(
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| format!("{id}"));
     let dirty = documents.is_dirty(id);
+    let editing = modes.is_editing(id);
 
     parent
         .spawn(Node {
@@ -79,18 +117,32 @@ pub(crate) fn spawn_wesl_editor_view(
                         flex_grow: 1.0,
                         ..default()
                     });
+                    let toggle_label = localizer.text(if editing {
+                        "wesl-editor-preview"
+                    } else {
+                        "wesl-editor-edit"
+                    });
                     header
                         .spawn((
                             Button,
                             EditorNativeControl,
-                            Node {
-                                height: Val::Px(22.0),
-                                padding: UiRect::horizontal(Val::Px(10.0)),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                ..default()
+                            header_button_node(),
+                            BackgroundColor(theme::BUTTON),
+                        ))
+                        .observe(
+                            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
+                                if click.button == PointerButton::Primary {
+                                    click.propagate(false);
+                                    commands.trigger(ToggleWeslMode(id));
+                                }
                             },
+                        )
+                        .with_child(header_button_label(toggle_label));
+                    header
+                        .spawn((
+                            Button,
+                            EditorNativeControl,
+                            header_button_node(),
                             BackgroundColor(if dirty {
                                 theme::ACCENT_DIM
                             } else {
@@ -105,15 +157,7 @@ pub(crate) fn spawn_wesl_editor_view(
                                 }
                             },
                         )
-                        .with_child((
-                            Text::new(localizer.text("wesl-editor-save")),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                            Pickable::IGNORE,
-                        ));
+                        .with_child(header_button_label(localizer.text("wesl-editor-save")));
                 });
 
             let Some(source) = documents.text(id) else {
@@ -144,19 +188,77 @@ pub(crate) fn spawn_wesl_editor_view(
                     ..default()
                 },
                 |body| {
-                    body.spawn((
-                        Text::new(source.to_owned()),
-                        EditableText::new(source),
-                        WeslSourceEditorField(id),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                    ));
+                    if editing {
+                        // Plain editable field: edits sync to the buffer per keystroke.
+                        body.spawn((
+                            Text::new(source.to_owned()),
+                            EditableText::new(source),
+                            WeslSourceEditorField(id),
+                            TextFont {
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ));
+                    } else {
+                        // Read-only coloured preview: one text with a coloured span per token run.
+                        body.spawn((
+                            Text::new(""),
+                            TextFont {
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ))
+                        .with_children(|text| {
+                            for token in tokenize(source) {
+                                text.spawn((
+                                    TextSpan::new(token.text),
+                                    TextFont {
+                                        font_size: FontSize::Px(11.0),
+                                        ..default()
+                                    },
+                                    TextColor(token_color(token.kind)),
+                                ));
+                            }
+                        });
+                    }
                 },
             );
         });
+}
+
+fn header_button_node() -> Node {
+    Node {
+        height: Val::Px(22.0),
+        padding: UiRect::horizontal(Val::Px(10.0)),
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::Center,
+        border_radius: BorderRadius::all(Val::Px(3.0)),
+        ..default()
+    }
+}
+
+fn header_button_label(label: String) -> impl Bundle {
+    (
+        Text::new(label),
+        TextFont {
+            font_size: FontSize::Px(10.0),
+            ..default()
+        },
+        TextColor(theme::TEXT),
+        Pickable::IGNORE,
+    )
+}
+
+/// Flips a WESL pane between the coloured preview and the editable field, then rebuilds the dock.
+pub(crate) fn toggle_wesl_mode(
+    event: On<ToggleWeslMode>,
+    mut modes: ResMut<WeslEditorModes>,
+    mut session: ResMut<EditorSession>,
+) {
+    modes.toggle(event.0);
+    session.ui_revision += 1;
 }
 
 /// Per-keystroke sync of an editable WESL field into its buffer. Deliberately does not bump the UI

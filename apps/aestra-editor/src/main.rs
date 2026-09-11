@@ -39,6 +39,7 @@ mod transport;
 mod viewport;
 mod wesl_document;
 mod wesl_editor;
+mod wesl_syntax;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy_render::AestraRenderPlugin;
@@ -251,6 +252,7 @@ fn main() {
         .init_resource::<editor_view::EditorViewManager>()
         .init_resource::<editor_view::ActiveEditorContext>()
         .init_resource::<wesl_document::WeslDocuments>()
+        .init_resource::<wesl_editor::WeslEditorModes>()
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
@@ -269,6 +271,7 @@ fn main() {
         .add_observer(editor_view::discard_and_close_editor_view)
         .add_observer(wesl_editor::sync_wesl_source_edit)
         .add_observer(wesl_editor::save_wesl_source)
+        .add_observer(wesl_editor::toggle_wesl_mode)
         .add_systems(Startup, set_editor_window_icon)
         .add_systems(Startup, editor_view::restore_editor_workspace)
         .configure_sets(
