@@ -119,6 +119,7 @@ impl ShortcutKeys<'_> {
 pub(crate) struct ShortcutContext<'w, 's> {
     focus: Option<Res<'w, InputFocus>>,
     editable: Query<'w, 's, (), With<EditableText>>,
+    code_editors: Query<'w, 's, (), With<crate::feathers::code_editor::CodeEditor>>,
     parents: Query<'w, 's, &'static ChildOf>,
     menu_items: Query<'w, 's, (), With<bevy::ui_widgets::MenuItem>>,
     asset_surfaces: Query<'w, 's, (), With<crate::asset_browser::BrowserSurface>>,
@@ -165,7 +166,10 @@ impl ShortcutContext<'_, '_> {
         }
         let mut focused = self.focus.as_ref().and_then(|focus| focus.get());
         while let Some(entity) = focused {
-            if self.editable.contains(entity) || self.menu_items.contains(entity) {
+            if self.editable.contains(entity)
+                || self.code_editors.contains(entity)
+                || self.menu_items.contains(entity)
+            {
                 return true;
             }
             focused = self.parents.get(entity).ok().map(ChildOf::parent);

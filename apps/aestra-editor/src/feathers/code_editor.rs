@@ -468,9 +468,8 @@ fn focus_code_editor(
     };
     click.propagate(false);
     *focus = InputFocus::from_entity(target);
-    if let Some(normalized) = relative.normalized {
-        let size = node.size() * node.inverse_scale_factor;
-        let caret = caret_from_local(&editor.text, normalized.x * size.x, normalized.y * size.y);
+    if let Some((x, y)) = local_cursor(relative, node) {
+        let caret = caret_from_local(&editor.text, x, y);
         if click.count >= 2 {
             editor.select_word_at(caret); // double-click selects the word under the cursor
         } else {
@@ -478,6 +477,16 @@ fn focus_code_editor(
             editor.set_cursor(caret, extend);
         }
     }
+}
+
+/// The cursor position in the node's local logical pixels (origin at its top-left), or `None` when
+/// the pointer is off the node. Bevy's `RelativeCursorPosition::normalized` centres the node at the
+/// origin and ranges (-0.5, -0.5) top-left to (0.5, 0.5) bottom-right, so shift it into a top-left
+/// origin before scaling by the node size.
+fn local_cursor(relative: &RelativeCursorPosition, node: &ComputedNode) -> Option<(f32, f32)> {
+    let normalized = relative.normalized?;
+    let size = node.size() * node.inverse_scale_factor;
+    Some(((normalized.x + 0.5) * size.x, (normalized.y + 0.5) * size.y))
 }
 
 fn drag_code_editor(
@@ -490,9 +499,8 @@ fn drag_code_editor(
     let Ok((mut editor, relative, node)) = editors.get_mut(drag.event_target()) else {
         return;
     };
-    if let Some(normalized) = relative.normalized {
-        let size = node.size() * node.inverse_scale_factor;
-        let caret = caret_from_local(&editor.text, normalized.x * size.x, normalized.y * size.y);
+    if let Some((x, y)) = local_cursor(relative, node) {
+        let caret = caret_from_local(&editor.text, x, y);
         editor.set_cursor(caret, true); // drag extends the selection from the press point
     }
 }
