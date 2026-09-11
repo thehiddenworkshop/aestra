@@ -12,7 +12,7 @@ use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::prelude::*;
-use bevy::text::{FontSize, LineHeight, TextSpan};
+use bevy::text::{FontSize, LineBreak, LineHeight, TextLayout, TextSpan};
 use bevy::ui::{ComputedNode, RelativeCursorPosition};
 use std::sync::Arc;
 
@@ -214,10 +214,13 @@ pub(crate) struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(press_code_editor)
-            .add_observer(drag_code_editor)
+        app.init_resource::<CodeEditorPointer>()
+            .init_resource::<CaretBlink>()
             .add_observer(edit_code_editor)
-            .add_systems(Update, render_code_editors);
+            .add_systems(
+                Update,
+                (code_editor_pointer_input, render_code_editors, blink_carets).chain(),
+            );
     }
 }
 
@@ -375,6 +378,12 @@ fn spawn_children(
             Text::new(""),
             text_font(),
             LineHeight::Px(CODE_LINE_HEIGHT),
+            // Code does not reflow: without this, narrowing the pane wraps long lines so the visual
+            // rows stop matching the logical line/column the caret and selection are placed by.
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
             TextColor(theme::TEXT),
             Node {
                 width: Val::Percent(100.0),
@@ -412,19 +421,56 @@ fn spawn_children(
     // Caret.
     if focused {
         let (line, column) = line_col(source, editor.cursor);
-        surface.spawn(overlay(
-            column as f32 * CODE_CHAR_WIDTH,
-            line as f32 * CODE_LINE_HEIGHT,
-            2.0,
-            CODE_LINE_HEIGHT,
-            CARET_COLOR,
+        surface.spawn((
+            overlay(
+                column as f32 * CODE_CHAR_WIDTH,
+                line as f32 * CODE_LINE_HEIGHT,
+                2.0,
+                CODE_LINE_HEIGHT,
+                CARET_COLOR,
+            ),
+            CaretVisual,
         ));
+    }
+}
+
+/// Marks the caret bar so [`blink_carets`] can pulse its visibility.
+#[derive(Component)]
+struct CaretVisual;
+
+/// The half-period of the caret blink, in seconds.
+const CARET_BLINK_SECONDS: f32 = 0.53;
+
+/// The time origin of the caret blink phase, reset whenever an editor changes so the caret shows
+/// solid immediately after the caret moves or the text is edited.
+#[derive(Resource, Default)]
+struct CaretBlink {
+    epoch: f32,
+}
+
+/// Pulses every caret's visibility on a fixed cadence, like a typical editor.
+fn blink_carets(
+    time: Res<Time>,
+    blink: Res<CaretBlink>,
+    mut carets: Query<&mut Visibility, With<CaretVisual>>,
+) {
+    let phase = ((time.elapsed_secs() - blink.epoch) / CARET_BLINK_SECONDS) as u64;
+    let visible = phase % 2 == 0;
+    let next = if visible {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    for mut visibility in &mut carets {
+        visibility.set_if_neq(next);
     }
 }
 
 /// Rebuilds each editor's children when its text/selection, markers, or focus change.
 fn render_code_editors(
     focus: Res<InputFocus>,
+    time: Res<Time>,
+    mut blink: ResMut<CaretBlink>,
     editors: Query<(
         Entity,
         Ref<CodeEditor>,
@@ -439,12 +485,15 @@ fn render_code_editors(
         if !focus_changed && !editor.is_changed() && !markers.is_changed() {
             continue;
         }
+        let focused = focus.get() == Some(entity);
+        if focused && editor.is_changed() {
+            blink.epoch = time.elapsed_secs(); // keep the caret solid right after it moves
+        }
         if let Some(children) = children {
             for &child in children {
                 commands.entity(child).despawn();
             }
         }
-        let focused = focus.get() == Some(entity);
         commands.entity(entity).with_children(|surface| {
             spawn_children(surface, &editor, highlighter, &markers, focused);
         });
@@ -453,32 +502,75 @@ fn render_code_editors(
 
 // ---- input ----------------------------------------------------------------------------------
 
-/// Places the caret (and focuses the editor) on mouse-down. Driven by `Press` rather than `Click`
-/// so it fires even when the button-down is followed by a tiny drag (which suppresses `Click`); that
-/// press also resets the selection anchor, so a subsequent drag extends from the true press point.
-fn press_code_editor(
-    mut press: On<Pointer<Press>>,
-    mut editors: Query<(&mut CodeEditor, &RelativeCursorPosition, &ComputedNode)>,
+/// The window seconds within which a second press on the same spot counts as a double-click.
+const DOUBLE_CLICK_SECONDS: f32 = 0.4;
+
+/// Drag/double-click bookkeeping for the pointer input system.
+#[derive(Resource, Default)]
+struct CodeEditorPointer {
+    /// The editor currently being drag-selected (mouse held after a press over it).
+    dragging: Option<Entity>,
+    /// The last press: editor, elapsed time, and caret index, for double-click detection.
+    last_press: Option<(Entity, f32, usize)>,
+}
+
+/// Places and extends the caret from the mouse, driven by `ButtonInput<MouseButton>` +
+/// `RelativeCursorPosition` rather than pointer-pick events. The coloured text drawn over the
+/// editor is `Pickable::IGNORE`, but `Click`/`Press` events still fail to fall through to the
+/// widget over a glyph; `cursor_over`, computed for every node under the pointer, does not, so a
+/// press anywhere over the editor — text or empty space — reliably moves the caret.
+fn code_editor_pointer_input(
+    mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut pointer: ResMut<CodeEditorPointer>,
     mut focus: ResMut<InputFocus>,
+    mut editors: Query<(
+        Entity,
+        &mut CodeEditor,
+        &RelativeCursorPosition,
+        &ComputedNode,
+    )>,
 ) {
-    if press.button != PointerButton::Primary {
-        return;
+    if mouse.just_released(MouseButton::Left) {
+        pointer.dragging = None;
     }
-    let target = press.event_target();
-    let Ok((mut editor, relative, node)) = editors.get_mut(target) else {
-        return;
-    };
-    press.propagate(false);
-    *focus = InputFocus::from_entity(target);
-    if let Some((x, y)) = local_cursor(relative, node) {
-        let caret = caret_from_local(&editor.text, x, y);
-        if press.count >= 2 {
-            editor.select_word_at(caret); // double-press selects the word under the cursor
-        } else {
-            let extend = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-            editor.set_cursor(caret, extend);
+
+    if mouse.just_pressed(MouseButton::Left) {
+        let hovered = editors
+            .iter()
+            .find_map(|(entity, _, relative, _)| relative.cursor_over.then_some(entity));
+        if let Some(entity) = hovered {
+            let (_, mut editor, relative, node) = editors.get_mut(entity).expect("hovered editor");
+            *focus = InputFocus::from_entity(entity);
+            pointer.dragging = Some(entity);
+            if let Some((x, y)) = local_cursor(relative, node) {
+                let caret = caret_from_local(&editor.text, x, y);
+                let now = time.elapsed_secs();
+                let double = pointer
+                    .last_press
+                    .is_some_and(|(last_entity, at, last_caret)| {
+                        last_entity == entity
+                            && now - at < DOUBLE_CLICK_SECONDS
+                            && last_caret == caret
+                    });
+                if double {
+                    editor.select_word_at(caret);
+                } else {
+                    let extend =
+                        keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+                    editor.set_cursor(caret, extend);
+                }
+                pointer.last_press = Some((entity, now, caret));
+            }
         }
+    } else if mouse.pressed(MouseButton::Left)
+        && let Some(entity) = pointer.dragging
+        && let Ok((_, mut editor, relative, node)) = editors.get_mut(entity)
+        && let Some((x, y)) = local_cursor(relative, node)
+    {
+        let caret = caret_from_local(&editor.text, x, y);
+        editor.set_cursor(caret, true); // drag extends the selection from the press point
     }
 }
 
@@ -490,22 +582,6 @@ fn local_cursor(relative: &RelativeCursorPosition, node: &ComputedNode) -> Optio
     let normalized = relative.normalized?;
     let size = node.size() * node.inverse_scale_factor;
     Some(((normalized.x + 0.5) * size.x, (normalized.y + 0.5) * size.y))
-}
-
-fn drag_code_editor(
-    drag: On<Pointer<Drag>>,
-    mut editors: Query<(&mut CodeEditor, &RelativeCursorPosition, &ComputedNode)>,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    let Ok((mut editor, relative, node)) = editors.get_mut(drag.event_target()) else {
-        return;
-    };
-    if let Some((x, y)) = local_cursor(relative, node) {
-        let caret = caret_from_local(&editor.text, x, y);
-        editor.set_cursor(caret, true); // drag extends the selection from the press point
-    }
 }
 
 fn edit_code_editor(
