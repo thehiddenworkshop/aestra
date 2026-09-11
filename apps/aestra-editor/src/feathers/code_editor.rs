@@ -214,7 +214,7 @@ pub(crate) struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(focus_code_editor)
+        app.add_observer(press_code_editor)
             .add_observer(drag_code_editor)
             .add_observer(edit_code_editor)
             .add_systems(Update, render_code_editors);
@@ -453,25 +453,28 @@ fn render_code_editors(
 
 // ---- input ----------------------------------------------------------------------------------
 
-fn focus_code_editor(
-    mut click: On<Pointer<Click>>,
+/// Places the caret (and focuses the editor) on mouse-down. Driven by `Press` rather than `Click`
+/// so it fires even when the button-down is followed by a tiny drag (which suppresses `Click`); that
+/// press also resets the selection anchor, so a subsequent drag extends from the true press point.
+fn press_code_editor(
+    mut press: On<Pointer<Press>>,
     mut editors: Query<(&mut CodeEditor, &RelativeCursorPosition, &ComputedNode)>,
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: ResMut<InputFocus>,
 ) {
-    if click.button != PointerButton::Primary {
+    if press.button != PointerButton::Primary {
         return;
     }
-    let target = click.event_target();
+    let target = press.event_target();
     let Ok((mut editor, relative, node)) = editors.get_mut(target) else {
         return;
     };
-    click.propagate(false);
+    press.propagate(false);
     *focus = InputFocus::from_entity(target);
     if let Some((x, y)) = local_cursor(relative, node) {
         let caret = caret_from_local(&editor.text, x, y);
-        if click.count >= 2 {
-            editor.select_word_at(caret); // double-click selects the word under the cursor
+        if press.count >= 2 {
+            editor.select_word_at(caret); // double-press selects the word under the cursor
         } else {
             let extend = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
             editor.set_cursor(caret, extend);
