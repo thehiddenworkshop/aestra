@@ -116,7 +116,7 @@ use feathers::{
         spawn_status_list_row,
     },
     panel::spawn_panel_heading as panel_heading,
-    scroll::{PersistedScroll, spawn_vertical_scroll_area},
+    scroll::{PersistedScroll, spawn_scroll_area_xy, spawn_vertical_scroll_area},
     search_field::spawn_search_field,
     text_input::spawn_text_input,
     tooltip::EditorTooltip,

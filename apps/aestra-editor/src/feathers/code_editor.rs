@@ -242,7 +242,9 @@ pub(crate) fn spawn_code_editor(
             markers,
             tag,
             Node {
-                width: Val::Percent(100.0),
+                // At least fill the viewport, but grow to the longest (unwrapped) line so it can
+                // scroll horizontally.
+                min_width: Val::Percent(100.0),
                 min_height: Val::Percent(100.0),
                 position_type: PositionType::Relative,
                 ..default()
@@ -388,10 +390,8 @@ fn spawn_children(
                 ..default()
             },
             TextColor(theme::TEXT),
-            Node {
-                width: Val::Percent(100.0),
-                ..default()
-            },
+            // No width constraint: the text sizes to its longest line so the editor can scroll to it.
+            Node::default(),
             Pickable::IGNORE,
         ))
         .with_children(|text| {
