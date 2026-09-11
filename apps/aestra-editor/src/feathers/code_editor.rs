@@ -25,6 +25,29 @@ pub(crate) const CODE_LINE_HEIGHT: f32 = 19.0;
 const CARET_COLOR: Color = Color::srgb(0.85, 0.85, 0.95);
 const SELECTION_COLOR: Color = Color::srgba(0.36, 0.45, 0.85, 0.35);
 
+/// The upper bound on retained undo history, so a long editing session cannot grow it without
+/// limit.
+const MAX_UNDO: usize = 256;
+
+/// The kind of the last text edit, used to coalesce a run of same-kind edits into one undo step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditKind {
+    /// A single typed character (coalesces with adjacent typing).
+    Type,
+    /// A single-character deletion (coalesces with adjacent deletions).
+    Erase,
+    /// Any other edit (newline, tab, paste, cut, deleting a selection): never coalesces.
+    Other,
+}
+
+/// A captured editor state for undo/redo.
+#[derive(Debug, Clone)]
+struct EditSnapshot {
+    text: String,
+    cursor: usize,
+    anchor: usize,
+}
+
 /// The editable state of a code editor: its text, caret (character index), and selection anchor.
 /// A selection spans the range between `anchor` and `cursor`; they are equal when nothing is
 /// selected.
@@ -33,6 +56,9 @@ pub(crate) struct CodeEditor {
     pub(crate) text: String,
     pub(crate) cursor: usize,
     pub(crate) anchor: usize,
+    undo: Vec<EditSnapshot>,
+    redo: Vec<EditSnapshot>,
+    last_edit: Option<EditKind>,
 }
 
 impl CodeEditor {
@@ -42,6 +68,9 @@ impl CodeEditor {
             text,
             cursor: end,
             anchor: end,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            last_edit: None,
         }
     }
 
@@ -93,6 +122,72 @@ impl CodeEditor {
         self.cursor += insert.chars().count();
         self.text = chars.into_iter().collect();
         self.anchor = self.cursor;
+    }
+
+    fn snapshot(&self) -> EditSnapshot {
+        EditSnapshot {
+            text: self.text.clone(),
+            cursor: self.cursor,
+            anchor: self.anchor,
+        }
+    }
+
+    /// Records the pre-edit state onto the undo stack (called before mutating). Consecutive edits
+    /// of the same coalescing kind fold into the one step so a run of typing undoes together.
+    fn record(&mut self, kind: EditKind) {
+        let coalesce = kind != EditKind::Other && self.last_edit == Some(kind);
+        if !coalesce {
+            self.undo.push(self.snapshot());
+            if self.undo.len() > MAX_UNDO {
+                self.undo.remove(0);
+            }
+        }
+        self.redo.clear();
+        self.last_edit = Some(kind);
+    }
+
+    /// Reverts to the previous undo snapshot, pushing the current state onto the redo stack.
+    fn undo(&mut self) -> bool {
+        let Some(previous) = self.undo.pop() else {
+            return false;
+        };
+        self.redo.push(self.snapshot());
+        self.apply(previous);
+        true
+    }
+
+    /// Re-applies the most recently undone state, pushing the current state onto the undo stack.
+    fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(self.snapshot());
+        self.apply(next);
+        true
+    }
+
+    fn apply(&mut self, snapshot: EditSnapshot) {
+        self.text = snapshot.text;
+        self.cursor = snapshot.cursor;
+        self.anchor = snapshot.anchor;
+        self.last_edit = None; // an undo/redo breaks any coalescing run
+    }
+
+    /// Selects the word (alphanumeric or `_` run) under `index`; if not on a word, collapses there.
+    fn select_word_at(&mut self, index: usize) {
+        let chars: Vec<char> = self.text.chars().collect();
+        let is_word = |c: char| c.is_alphanumeric() || c == '_';
+        let index = index.min(chars.len());
+        let mut start = index;
+        let mut end = index;
+        while start > 0 && is_word(chars[start - 1]) {
+            start -= 1;
+        }
+        while end < chars.len() && is_word(chars[end]) {
+            end += 1;
+        }
+        self.anchor = start;
+        self.cursor = end;
     }
 }
 
@@ -376,8 +471,12 @@ fn focus_code_editor(
     if let Some(normalized) = relative.normalized {
         let size = node.size() * node.inverse_scale_factor;
         let caret = caret_from_local(&editor.text, normalized.x * size.x, normalized.y * size.y);
-        let extend = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-        editor.set_cursor(caret, extend);
+        if click.count >= 2 {
+            editor.select_word_at(caret); // double-click selects the word under the cursor
+        } else {
+            let extend = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+            editor.set_cursor(caret, extend);
+        }
     }
 }
 
@@ -445,9 +544,11 @@ fn edit_code_editor(
             editor.set_cursor(target, shift);
         }
         KeyCode::Backspace => {
-            if editor.delete_selection() {
-                changed = true;
+            if editor.selection().is_some() {
+                editor.record(EditKind::Other);
+                changed = editor.delete_selection();
             } else if editor.cursor > 0 {
+                editor.record(EditKind::Erase);
                 let mut chars: Vec<char> = editor.text.chars().collect();
                 chars.remove(editor.cursor - 1);
                 editor.cursor -= 1;
@@ -457,9 +558,11 @@ fn edit_code_editor(
             }
         }
         KeyCode::Delete => {
-            if editor.delete_selection() {
-                changed = true;
+            if editor.selection().is_some() {
+                editor.record(EditKind::Other);
+                changed = editor.delete_selection();
             } else if editor.cursor < count {
+                editor.record(EditKind::Erase);
                 let mut chars: Vec<char> = editor.text.chars().collect();
                 chars.remove(editor.cursor);
                 editor.text = chars.into_iter().collect();
@@ -467,10 +570,12 @@ fn edit_code_editor(
             }
         }
         KeyCode::Enter | KeyCode::NumpadEnter => {
+            editor.record(EditKind::Other);
             editor.insert("\n");
             changed = true;
         }
         KeyCode::Tab => {
+            editor.record(EditKind::Other);
             editor.insert("    ");
             changed = true;
         }
@@ -486,6 +591,7 @@ fn edit_code_editor(
         KeyCode::KeyX if ctrl => {
             if let Some(text) = editor.selected_text() {
                 let _ = clipboard.set_text(text);
+                editor.record(EditKind::Other);
                 changed = editor.delete_selection();
             }
         }
@@ -494,19 +600,31 @@ fn edit_code_editor(
                 // Clipboards on Windows carry CRLF; the buffer stores LF only.
                 let text = text.replace("\r\n", "\n").replace('\r', "\n");
                 if !text.is_empty() {
+                    editor.record(EditKind::Other);
                     editor.insert(&text);
                     changed = true;
                 }
             }
+        }
+        KeyCode::KeyZ if ctrl && shift => {
+            changed = editor.redo();
+        }
+        KeyCode::KeyZ if ctrl => {
+            changed = editor.undo();
+        }
+        KeyCode::KeyY if ctrl => {
+            changed = editor.redo();
         }
         _ => {
             if ctrl {
                 return; // other Ctrl combinations are not editor shortcuts
             }
             if let Key::Character(input) = &key.input.logical_key {
+                editor.record(EditKind::Type);
                 editor.insert(input);
                 changed = true;
             } else if key.input.logical_key == Key::Space {
+                editor.record(EditKind::Type);
                 editor.insert(" ");
                 changed = true;
             } else {
@@ -564,5 +682,44 @@ mod tests {
         assert!(editor.delete_selection());
         assert_eq!(editor.text, "aef");
         assert_eq!(editor.cursor, 1);
+    }
+
+    #[test]
+    fn typing_coalesces_into_a_single_undo_step() {
+        let mut editor = CodeEditor::new(String::new());
+        for character in ["h", "i"] {
+            editor.record(EditKind::Type);
+            editor.insert(character);
+        }
+        assert_eq!(editor.text, "hi");
+        // One undo reverts the whole typing run back to the empty start.
+        assert!(editor.undo());
+        assert_eq!(editor.text, "");
+        assert!(!editor.undo());
+    }
+
+    #[test]
+    fn redo_restores_an_undone_edit() {
+        let mut editor = CodeEditor::new("a".into());
+        editor.record(EditKind::Other);
+        editor.insert("b");
+        assert_eq!(editor.text, "ab");
+        assert!(editor.undo());
+        assert_eq!(editor.text, "a");
+        assert!(editor.redo());
+        assert_eq!(editor.text, "ab");
+        // A fresh edit clears the redo stack.
+        editor.record(EditKind::Other);
+        editor.insert("c");
+        assert!(!editor.redo());
+    }
+
+    #[test]
+    fn double_click_selects_the_word_under_the_cursor() {
+        let mut editor = CodeEditor::new("let value = 3;".into());
+        editor.select_word_at(6); // inside "value"
+        assert_eq!(editor.selected_text().as_deref(), Some("value"));
+        editor.select_word_at(11); // on the space between "=" and "3"
+        assert_eq!(editor.selected_text(), None);
     }
 }
