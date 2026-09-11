@@ -549,6 +549,18 @@ fn dirty_material_targets(
         .collect()
 }
 
+/// The WESL source id of the active editor document, if the focused editor tab is a WESL module.
+fn active_wesl_source(
+    active: Option<&crate::editor_view::ActiveEditorContext>,
+    documents: Option<&crate::document::DocumentManager>,
+) -> Option<crate::wesl_document::WeslSourceId> {
+    let document = active?.active_document?;
+    match documents?.document(document)?.key {
+        crate::document::DocumentKey::WeslSource(id) => Some(id),
+        _ => None,
+    }
+}
+
 /// Queue a save of a single shared-material target (its own draft plus its transitive function
 /// dependencies). Used by the editor-view dirty-close prompt to save one document on demand.
 pub(crate) fn queue_save_target(
@@ -576,6 +588,8 @@ fn execute_document_action(
     mut navigation: Option<ResMut<SourceNavigationState>>,
     io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     documents: Option<Res<crate::document::DocumentManager>>,
+    active_editor: Option<Res<crate::editor_view::ActiveEditorContext>>,
+    wesl: Option<Res<crate::wesl_document::WeslDocuments>>,
 ) {
     if !crate::project_content::io::idle(io_tasks) || protection.is_open() {
         return;
@@ -604,9 +618,22 @@ fn execute_document_action(
                 material::queue_save_all(&mut commands, &session, &catalog, targets);
             }
         }
+        // Save All also commits every dirty WESL module (its own file save, independent of I/O).
+        if let Some(wesl) = wesl.as_deref() {
+            for (id, _) in wesl.dirty_documents() {
+                commands.trigger(crate::wesl_editor::SaveWeslSource(id));
+            }
+        }
         return;
     }
     if matches!(*action, DocumentAction::Save | DocumentAction::SaveAs) {
+        // Ctrl+S over a focused WESL editor tab saves that module, not the effect.
+        if *action == DocumentAction::Save
+            && let Some(id) = active_wesl_source(active_editor.as_deref(), documents.as_deref())
+        {
+            commands.trigger(crate::wesl_editor::SaveWeslSource(id));
+            return;
+        }
         if session.standalone_function().is_some() {
             if *action == DocumentAction::SaveAs {
                 session.status = localizer.text("material-save-as-unavailable");

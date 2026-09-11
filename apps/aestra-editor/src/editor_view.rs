@@ -241,8 +241,16 @@ pub(crate) fn reconcile_active_from_target(
             }
         }
         None => {
-            active.active_view = None;
-            active.active_document = None;
+            // Returning to the effect material clears the active shared-material document, but a
+            // focused WESL module has no material target, so it must stay active.
+            let active_is_wesl = active
+                .active_document
+                .and_then(|id| documents.document(id))
+                .is_some_and(|document| matches!(document.key, DocumentKey::WeslSource(_)));
+            if !active_is_wesl {
+                active.active_view = None;
+                active.active_document = None;
+            }
         }
     }
 }
@@ -483,13 +491,16 @@ fn target_edits_key(target: &MaterialEditingTarget, key: DocumentKey) -> bool {
     }
 }
 
-/// Whether the document `key` names has unsaved edits. WESL modules are read-only in Milestone 7-1,
-/// so they are never dirty yet.
-fn document_key_is_dirty(key: DocumentKey, catalog: &crate::ProjectEffectCatalog) -> bool {
+/// Whether the document `key` names has unsaved edits — a material draft, or a modified WESL buffer.
+fn document_key_is_dirty(
+    key: DocumentKey,
+    catalog: &crate::ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
+) -> bool {
     match key {
         DocumentKey::MaterialProgram(id) => catalog.material_drafts.programs.contains_key(&id),
         DocumentKey::MaterialFunction(id) => catalog.material_drafts.functions.contains_key(&id),
-        DocumentKey::WeslSource(_) => false,
+        DocumentKey::WeslSource(id) => wesl.is_dirty(id),
     }
 }
 
@@ -519,13 +530,14 @@ pub(crate) fn close_editor_view(
     mut active: ResMut<ActiveEditorContext>,
     mut session: ResMut<EditorSession>,
     catalog: Res<crate::ProjectEffectCatalog>,
+    wesl: Res<crate::wesl_document::WeslDocuments>,
     mut protection: ResMut<crate::persistence::DocumentProtectionState>,
 ) {
     let CloseEditorView { view, force } = *close;
     let closed_key = view_document_key(view, &views, &documents);
     if !force
         && let Some(key) = closed_key
-        && document_key_is_dirty(key, &catalog)
+        && document_key_is_dirty(key, &catalog, &wesl)
     {
         // Defer to the dirty-close prompt: Save / Discard / Cancel.
         protection.pending_editor_close = Some(view);
@@ -567,20 +579,32 @@ pub(crate) fn save_and_close_editor_view(
 ) {
     let view = event.0;
     if let Some(key) = view_document_key(view, &views, &documents) {
-        let target = match key {
-            DocumentKey::MaterialProgram(id) => Some(MaterialEditingTarget::Program {
-                root: catalog.root().to_owned(),
-                id,
-            }),
-            DocumentKey::MaterialFunction(id) => Some(MaterialEditingTarget::Function {
-                root: catalog.root().to_owned(),
-                id,
-            }),
-            // WESL save lands in a later slice; read-only WESL never reaches the dirty-close prompt.
-            DocumentKey::WeslSource(_) => None,
-        };
-        if let Some(target) = target {
-            crate::persistence::queue_save_target(&mut commands, &session, &catalog, target);
+        match key {
+            DocumentKey::MaterialProgram(id) => {
+                crate::persistence::queue_save_target(
+                    &mut commands,
+                    &session,
+                    &catalog,
+                    MaterialEditingTarget::Program {
+                        root: catalog.root().to_owned(),
+                        id,
+                    },
+                );
+            }
+            DocumentKey::MaterialFunction(id) => {
+                crate::persistence::queue_save_target(
+                    &mut commands,
+                    &session,
+                    &catalog,
+                    MaterialEditingTarget::Function {
+                        root: catalog.root().to_owned(),
+                        id,
+                    },
+                );
+            }
+            DocumentKey::WeslSource(id) => {
+                commands.trigger(crate::wesl_editor::SaveWeslSource(id));
+            }
         }
     }
     commands.trigger(CloseEditorView { view, force: true });
@@ -595,6 +619,7 @@ pub(crate) fn discard_and_close_editor_view(
     mut catalog: ResMut<crate::ProjectEffectCatalog>,
     documents: Res<DocumentManager>,
     views: Res<EditorViewManager>,
+    mut wesl: ResMut<crate::wesl_document::WeslDocuments>,
     mut program_history: Option<ResMut<crate::history::MaterialProgramEditHistory>>,
     mut function_editor: Option<ResMut<crate::material_function_editor::FunctionEditor>>,
 ) {
@@ -614,8 +639,10 @@ pub(crate) fn discard_and_close_editor_view(
                     editor.clear_function(&root, id);
                 }
             }
-            // WESL discard lands in a later slice; read-only WESL never reaches the prompt.
-            DocumentKey::WeslSource(_) => {}
+            // Discarding a WESL edit reverts the buffer to the last on-disk text.
+            DocumentKey::WeslSource(id) => {
+                wesl.revert(id);
+            }
         }
         catalog.refresh();
         let drafts = catalog.material_drafts.clone();
@@ -948,6 +975,7 @@ mod tests {
         // empty catalog has no drafts, so these views close without a dirty-close prompt.
         app.insert_resource(crate::ProjectEffectCatalog::from_entries(Vec::new()));
         app.init_resource::<crate::persistence::DocumentProtectionState>();
+        app.init_resource::<crate::wesl_document::WeslDocuments>();
         (app, view_ids)
     }
 

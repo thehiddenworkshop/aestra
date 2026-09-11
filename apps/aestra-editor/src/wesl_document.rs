@@ -94,11 +94,50 @@ impl WeslDocuments {
         self.buffers.contains_key(&id)
     }
 
-    /// Read-only in Milestone 7-1, so a buffer is never dirty yet.
+    /// Replaces the buffer text, advancing its revision when the text actually changed. Returns
+    /// whether it changed, so callers can avoid redundant work.
+    pub(crate) fn set_text(&mut self, id: WeslSourceId, text: String) -> bool {
+        let Some(buffer) = self.buffers.get_mut(&id) else {
+            return false;
+        };
+        if buffer.text == text {
+            return false;
+        }
+        buffer.text = text;
+        buffer.revision += 1;
+        true
+    }
+
+    /// Records that the current buffer text was written to disk, clearing the dirty state.
+    pub(crate) fn mark_saved(&mut self, id: WeslSourceId) {
+        if let Some(buffer) = self.buffers.get_mut(&id) {
+            buffer.disk = buffer.text.clone();
+        }
+    }
+
+    /// Reverts the buffer to the last on-disk text (the discard action).
+    pub(crate) fn revert(&mut self, id: WeslSourceId) {
+        if let Some(buffer) = self.buffers.get_mut(&id) {
+            buffer.text = buffer.disk.clone();
+        }
+    }
+
     pub(crate) fn is_dirty(&self, id: WeslSourceId) -> bool {
         self.buffers
             .get(&id)
             .is_some_and(|buffer| buffer.text != buffer.disk)
+    }
+
+    pub(crate) fn revision(&self, id: WeslSourceId) -> Option<u64> {
+        self.buffers.get(&id).map(|buffer| buffer.revision)
+    }
+
+    /// The open WESL documents that currently have unsaved edits, as (id, relative path).
+    pub(crate) fn dirty_documents(&self) -> impl Iterator<Item = (WeslSourceId, &Path)> + '_ {
+        self.buffers
+            .iter()
+            .filter(|(_, buffer)| buffer.text != buffer.disk)
+            .map(|(id, buffer)| (*id, buffer.relative_path.as_path()))
     }
 
     pub(crate) fn close(&mut self, id: WeslSourceId) {

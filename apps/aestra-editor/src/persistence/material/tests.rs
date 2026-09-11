@@ -518,6 +518,7 @@ fn install_editor_view_close(
         .insert_resource(views)
         .insert_resource(active)
         .insert_resource(layout)
+        .init_resource::<crate::wesl_document::WeslDocuments>()
         .add_observer(close_editor_view)
         .add_observer(save_and_close_editor_view)
         .add_observer(discard_and_close_editor_view);

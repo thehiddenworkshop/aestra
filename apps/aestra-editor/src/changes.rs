@@ -105,8 +105,10 @@ fn handle_changes_actions(
                                     id,
                                 })
                             }
-                            // WESL documents never appear in the modified list yet (read-only).
-                            crate::document::DocumentKey::WeslSource(_) => None,
+                            crate::document::DocumentKey::WeslSource(id) => {
+                                commands.trigger(crate::wesl_editor::SaveWeslSource(id));
+                                None
+                            }
                         };
                         if let Some(target) = target {
                             crate::persistence::queue_save_target(
@@ -152,6 +154,7 @@ fn select_change_target(
 fn dirty_open_documents(
     documents: &crate::document::DocumentManager,
     catalog: &ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
 ) -> Vec<(crate::document::DocumentKey, String)> {
     use crate::document::DocumentKey;
     documents
@@ -164,10 +167,14 @@ fn dirty_open_documents(
                 DocumentKey::MaterialFunction(id) => {
                     catalog.material_drafts.functions.contains_key(&id)
                 }
-                // WESL modules are read-only in Milestone 7-1, so never dirty.
-                DocumentKey::WeslSource(_) => false,
+                DocumentKey::WeslSource(id) => wesl.is_dirty(id),
             };
-            dirty.then(|| (document.key, document_display_name(document.key, catalog)))
+            dirty.then(|| {
+                (
+                    document.key,
+                    document_display_name(document.key, catalog, wesl),
+                )
+            })
         })
         .collect()
 }
@@ -176,6 +183,7 @@ fn dirty_open_documents(
 fn document_display_name(
     key: crate::document::DocumentKey,
     catalog: &ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
 ) -> String {
     use crate::document::DocumentKey;
     match key {
@@ -189,7 +197,11 @@ fn document_display_name(
             .and_then(|functions| functions.into_iter().find(|function| function.id == id))
             .map(|function| function.name)
             .unwrap_or_else(|| format!("Function {id}")),
-        DocumentKey::WeslSource(id) => format!("WESL {id}"),
+        DocumentKey::WeslSource(id) => wesl
+            .relative_path(id)
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("WESL {id}")),
     }
 }
 
@@ -270,9 +282,10 @@ pub(crate) fn spawn_changes_workspace(
     session: &EditorSession,
     documents: &crate::document::DocumentManager,
     catalog: &ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
     localizer: &Localizer,
 ) {
-    let modified = dirty_open_documents(documents, catalog);
+    let modified = dirty_open_documents(documents, catalog, wesl);
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -608,7 +621,8 @@ mod tests {
         documents.open(DocumentKey::MaterialProgram(clean.id));
         documents.open(DocumentKey::MaterialProgram(dirty.id));
 
-        let modified = dirty_open_documents(&documents, &catalog);
+        let wesl = crate::wesl_document::WeslDocuments::default();
+        let modified = dirty_open_documents(&documents, &catalog, &wesl);
         assert_eq!(modified.len(), 1);
         assert_eq!(modified[0].0, DocumentKey::MaterialProgram(dirty.id));
         assert_eq!(modified[0].1, "Dirty edited");

@@ -449,6 +449,7 @@ fn spawn_dock_stack(
                 sources.documents,
                 sources.views,
                 sources.catalog,
+                sources.wesl_documents,
                 sources.localizer,
             );
             match stack.active {
@@ -615,6 +616,7 @@ fn spawn_panel_content(
             sources.session,
             sources.documents,
             sources.catalog,
+            sources.wesl_documents,
             sources.localizer,
         ),
         ToolPanel::Settings => spawn_settings_workspace(
@@ -807,12 +809,14 @@ fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis
         });
 }
 
-/// Whether an editor view's material document has an unsaved draft, so its tab shows the dirty dot.
+/// Whether an editor view's document has unsaved edits (material draft or modified WESL buffer), so
+/// its tab shows the dirty dot.
 fn editor_view_dirty(
     view: crate::docking::EditorViewId,
     views: &crate::editor_view::EditorViewManager,
     documents: &crate::document::DocumentManager,
     catalog: &ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
 ) -> bool {
     let Some(document) = views
         .document_of(view)
@@ -827,8 +831,7 @@ fn editor_view_dirty(
         crate::document::DocumentKey::MaterialFunction(id) => {
             catalog.material_drafts.functions.contains_key(&id)
         }
-        // WESL modules are read-only in Milestone 7-1, so never dirty.
-        crate::document::DocumentKey::WeslSource(_) => false,
+        crate::document::DocumentKey::WeslSource(id) => wesl.is_dirty(id),
     }
 }
 
@@ -841,6 +844,7 @@ fn spawn_dock_tab_bar(
     documents: &crate::document::DocumentManager,
     views: &crate::editor_view::EditorViewManager,
     catalog: &ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
     localizer: &Localizer,
 ) {
     parent
@@ -862,7 +866,9 @@ fn spawn_dock_tab_bar(
             for tab in &stack.tabs {
                 let dirty = match tab {
                     DockTab::Tool(ToolPanel::MaterialGraph) => material_graph_unsaved,
-                    DockTab::Editor(view) => editor_view_dirty(*view, views, documents, catalog),
+                    DockTab::Editor(view) => {
+                        editor_view_dirty(*view, views, documents, catalog, wesl)
+                    }
                     _ => false,
                 };
                 spawn_dock_tab(bar, *tab, stack.active == Some(*tab), dirty, localizer);
@@ -1289,6 +1295,7 @@ fn select_dock_tab(
     catalog: Res<ProjectEffectCatalog>,
     views: Res<crate::editor_view::EditorViewManager>,
     documents: Res<crate::document::DocumentManager>,
+    mut active: ResMut<crate::editor_view::ActiveEditorContext>,
 ) {
     if click.button != PointerButton::Primary {
         return;
@@ -1326,8 +1333,13 @@ fn select_dock_tab(
                         session.open_material_function(&catalog, id)
                     }
                     // Focusing a WESL editor tab leaves the material target as it is; the WESL pane
-                    // renders its own text and does not drive the singleton material graph.
-                    crate::document::DocumentKey::WeslSource(_) => Ok(()),
+                    // renders its own text and does not drive the singleton material graph. It does
+                    // become the active editor document so Ctrl+S and contextual tools follow it.
+                    crate::document::DocumentKey::WeslSource(_) => {
+                        active.active_view = Some(view);
+                        active.active_document = Some(document.id);
+                        Ok(())
+                    }
                 };
                 if result.is_ok() {
                     changed = true;
