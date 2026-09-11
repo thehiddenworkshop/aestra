@@ -225,11 +225,35 @@ pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompil
     match aestra_gpu::shader::compile_wesl(module_name, source, &[]) {
         Ok(_) => WeslCompileState::Ok,
         Err(error) => {
-            let message = error.to_string();
+            // The WESL compiler formats errors with ANSI colour codes for a terminal; strip them so
+            // the diagnostics panel shows plain text.
+            let message = strip_ansi(&error.to_string());
             let line = error_line(&message);
             WeslCompileState::Error { message, line }
         }
     }
+}
+
+/// Removes ANSI escape sequences (e.g. colour codes) from `input`.
+fn strip_ansi(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        // A CSI sequence is ESC '[' … final-byte (0x40..=0x7e); drop it whole. A lone ESC is dropped.
+        if chars.clone().next() == Some('[') {
+            chars.next();
+            for byte in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&byte) {
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Recompiles WESL modules whose buffer changed since their last compile, and drops entries for
@@ -261,6 +285,16 @@ pub(crate) fn recompile_changed_wesl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strip_ansi_removes_colour_codes_but_keeps_text() {
+        let coloured = "\u{1b}[1m\u{1b}[91merror\u{1b}[0m: duplicate declaration of `value_noise`";
+        assert_eq!(
+            strip_ansi(coloured),
+            "error: duplicate declaration of `value_noise`"
+        );
+        assert_eq!(strip_ansi("plain message"), "plain message");
+    }
 
     #[test]
     fn same_relative_path_yields_a_stable_id_across_separators() {
