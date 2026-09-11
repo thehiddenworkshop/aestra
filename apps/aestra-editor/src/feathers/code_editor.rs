@@ -7,6 +7,10 @@
 //! so a host can persist it. Clipboard (cut/copy/paste) is layered on in a later stage.
 #![allow(dead_code)] // Reusable widget API; not every hook is used by the current single consumer.
 
+use crate::feathers::context_menu::{
+    pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu,
+    spawn_pointer_context_menu_item,
+};
 use crate::theme;
 use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonState;
@@ -15,8 +19,9 @@ use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::math::BVec2;
 use bevy::prelude::*;
 use bevy::text::{FontSize, LineBreak, LineHeight, TextLayout, TextSpan};
-use bevy::ui::{ComputedNode, IgnoreScroll, RelativeCursorPosition};
-use bevy::window::SystemCursorIcon;
+use bevy::ui::{ComputedNode, IgnoreScroll, RelativeCursorPosition, UiGlobalTransform};
+use bevy::ui_widgets::Activate;
+use bevy::window::{PrimaryWindow, SystemCursorIcon};
 use std::sync::Arc;
 
 pub(crate) const CODE_FONT_SIZE: f32 = 13.0;
@@ -226,10 +231,13 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<CodeEditorPointer>()
             .init_resource::<CaretBlink>()
             .add_observer(edit_code_editor)
+            .add_observer(activate_code_editor_menu)
             .add_systems(
                 Update,
                 (
                     code_editor_pointer_input,
+                    open_code_editor_context_menu,
+                    dismiss_code_editor_context_menu,
                     render_code_editors,
                     render_code_gutters,
                     blink_carets,
@@ -255,10 +263,14 @@ pub(crate) fn spawn_code_editor(
             markers,
             tag,
             Node {
-                // At least fill the viewport, but grow to the longest (unwrapped) line so it can
-                // scroll horizontally.
+                // Width grows to the longest (unwrapped) line; height is set to the text height by
+                // `render_code_editors` (with min_height as a floor so short files still fill the
+                // viewport). flex_shrink: 0 stops the scroll container from shrinking the widget back
+                // to the viewport height — it must keep its full content height and overflow, so its
+                // own box (which `cursor_over` and click mapping use) covers every line.
                 min_width: Val::Percent(100.0),
                 min_height: Val::Percent(100.0),
+                flex_shrink: 0.0,
                 position_type: PositionType::Relative,
                 ..default()
             },
@@ -568,19 +580,26 @@ fn render_code_editors(
     focus: Res<InputFocus>,
     time: Res<Time>,
     mut blink: ResMut<CaretBlink>,
-    editors: Query<(
+    mut editors: Query<(
         Entity,
         Ref<CodeEditor>,
         &CodeEditorHighlighter,
         Ref<CodeEditorMarkers>,
+        &mut Node,
         Option<&Children>,
     )>,
     mut commands: Commands,
 ) {
     let focus_changed = focus.is_changed();
-    for (entity, editor, highlighter, markers, children) in &editors {
+    for (entity, editor, highlighter, markers, mut node, children) in &mut editors {
         if !focus_changed && !editor.is_changed() && !markers.is_changed() {
             continue;
+        }
+        // Size the widget's own box to the text height so `cursor_over` and click mapping cover every
+        // line; min_height keeps it at least the viewport height for short files.
+        if editor.is_changed() {
+            let lines = editor.text.split('\n').count().max(1);
+            node.height = Val::Px(lines as f32 * CODE_LINE_HEIGHT);
         }
         let focused = focus.get() == Some(entity);
         if focused && editor.is_changed() {
@@ -826,6 +845,167 @@ fn edit_code_editor(
 
     if changed {
         commands.trigger(CodeEditorChanged(entity));
+    }
+}
+
+// ---- context menu ---------------------------------------------------------------------------
+
+/// Marks the anchor of an open code-editor context menu (despawned to close it).
+#[derive(Component)]
+struct CodeEditorContextAnchor;
+
+/// Marks the menu surface, so a click outside it dismisses the menu.
+#[derive(Component)]
+struct CodeEditorContextMenu;
+
+/// The edit command a context-menu item runs on its editor.
+#[derive(Component, Clone, Copy)]
+struct CodeEditorMenuAction {
+    editor: Entity,
+    command: CodeEditorCommand,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum CodeEditorCommand {
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+    Undo,
+    Redo,
+}
+
+/// Opens a right-click edit menu over the editor under the pointer. Uses the mouse button plus
+/// `cursor_over` (not a pick event, which does not fall through the text) and is spawned as a child
+/// of the editor's scroll viewport so [`render_code_editors`] rebuilding the editor does not drop it.
+fn open_code_editor_context_menu(
+    mouse: Res<ButtonInput<MouseButton>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    editors: Query<(Entity, &RelativeCursorPosition, &ChildOf), With<CodeEditor>>,
+    hosts: Query<(&ComputedNode, &UiGlobalTransform)>,
+    anchors: Query<Entity, With<CodeEditorContextAnchor>>,
+    mut focus: ResMut<InputFocus>,
+    mut commands: Commands,
+) {
+    if !mouse.just_pressed(MouseButton::Right) {
+        return;
+    }
+    for anchor in &anchors {
+        commands.entity(anchor).despawn();
+    }
+    let Some((editor, _, child_of)) = editors.iter().find(|(_, cursor, _)| cursor.cursor_over)
+    else {
+        return;
+    };
+    let host = child_of.parent();
+    let (Ok((node, transform)), Ok(window)) = (hosts.get(host), window.single()) else {
+        return;
+    };
+    let Some(cursor) = window.physical_cursor_position() else {
+        return;
+    };
+    *focus = InputFocus::from_entity(editor);
+    let position = pointer_position_in_node(cursor, node, transform) * node.inverse_scale_factor();
+    commands.entity(host).with_children(|host| {
+        spawn_pointer_context_menu(
+            host,
+            position,
+            CodeEditorContextAnchor,
+            CodeEditorContextMenu,
+            |menu| {
+                for (label, command) in [
+                    ("Cut", CodeEditorCommand::Cut),
+                    ("Copy", CodeEditorCommand::Copy),
+                    ("Paste", CodeEditorCommand::Paste),
+                    ("Select All", CodeEditorCommand::SelectAll),
+                    ("Undo", CodeEditorCommand::Undo),
+                    ("Redo", CodeEditorCommand::Redo),
+                ] {
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        label,
+                        CodeEditorMenuAction { editor, command },
+                    );
+                }
+            },
+        );
+    });
+}
+
+/// Runs a context-menu command on its editor and closes the menu.
+fn activate_code_editor_menu(
+    event: On<Activate>,
+    actions: Query<&CodeEditorMenuAction>,
+    anchors: Query<Entity, With<CodeEditorContextAnchor>>,
+    mut editors: Query<&mut CodeEditor>,
+    mut clipboard: ResMut<Clipboard>,
+    mut commands: Commands,
+) {
+    let Ok(action) = actions.get(event.entity) else {
+        return;
+    };
+    if let Ok(mut editor) = editors.get_mut(action.editor) {
+        let mut changed = false;
+        match action.command {
+            CodeEditorCommand::Copy => {
+                if let Some(text) = editor.selected_text() {
+                    let _ = clipboard.set_text(text);
+                }
+            }
+            CodeEditorCommand::Cut => {
+                if let Some(text) = editor.selected_text() {
+                    let _ = clipboard.set_text(text);
+                    editor.record(EditKind::Other);
+                    changed = editor.delete_selection();
+                }
+            }
+            CodeEditorCommand::Paste => {
+                if let Some(Ok(text)) = clipboard.fetch_text().poll_result() {
+                    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                    if !text.is_empty() {
+                        editor.record(EditKind::Other);
+                        editor.insert(&text);
+                        changed = true;
+                    }
+                }
+            }
+            CodeEditorCommand::SelectAll => {
+                editor.anchor = 0;
+                editor.cursor = editor.text.chars().count();
+            }
+            CodeEditorCommand::Undo => changed = editor.undo(),
+            CodeEditorCommand::Redo => changed = editor.redo(),
+        }
+        if changed {
+            commands.trigger(CodeEditorChanged(action.editor));
+        }
+    }
+    for anchor in &anchors {
+        commands.entity(anchor).despawn();
+    }
+}
+
+/// Closes the context menu on Escape or a left-click outside it.
+fn dismiss_code_editor_context_menu(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    surfaces: Query<&RelativeCursorPosition, With<CodeEditorContextMenu>>,
+    anchors: Query<Entity, With<CodeEditorContextAnchor>>,
+    mut commands: Commands,
+) {
+    if anchors.is_empty() {
+        return;
+    }
+    let dismiss = should_dismiss_pointer_context_menu(
+        true,
+        buttons.just_pressed(MouseButton::Left),
+        keys.just_pressed(KeyCode::Escape),
+        surfaces.iter().any(RelativeCursorPosition::cursor_over),
+    );
+    if dismiss {
+        for anchor in &anchors {
+            commands.entity(anchor).despawn();
+        }
     }
 }
 
