@@ -641,6 +641,7 @@ fn code_editor_pointer_input(
     time: Res<Time>,
     mut pointer: ResMut<CodeEditorPointer>,
     mut focus: ResMut<InputFocus>,
+    menus: Query<&RelativeCursorPosition, With<CodeEditorContextMenu>>,
     mut editors: Query<(
         Entity,
         &mut CodeEditor,
@@ -650,6 +651,14 @@ fn code_editor_pointer_input(
 ) {
     if mouse.just_released(MouseButton::Left) {
         pointer.dragging = None;
+    }
+
+    // A click on an open context menu overlays the editor: let the menu's own action run (and the
+    // dismiss handler close it) without the editor moving the caret and clearing the selection.
+    if mouse.just_pressed(MouseButton::Left)
+        && menus.iter().any(RelativeCursorPosition::cursor_over)
+    {
+        return;
     }
 
     if mouse.just_pressed(MouseButton::Left) {
