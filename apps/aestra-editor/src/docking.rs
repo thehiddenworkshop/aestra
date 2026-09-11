@@ -55,6 +55,7 @@ impl Plugin for DockingPlugin {
                     crate::dock_ui::sync_tab_reorder_hints,
                     crate::dock_ui::sync_tab_append_hint,
                     crate::dock_ui::update_dock_zone_style,
+                    crate::dock_ui::sync_dock_tab_dirty,
                 )
                     .chain()
                     .in_set(DockingSet::Reconcile),

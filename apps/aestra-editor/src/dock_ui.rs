@@ -819,6 +819,35 @@ fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis
 
 /// Whether an editor view's document has unsaved edits (material draft or modified WESL buffer), so
 /// its tab shows the dirty dot.
+/// Marks a dock tab's unsaved dot so its visibility tracks the live dirty state, since editing a
+/// document does not rebuild the tab bar.
+#[derive(Component)]
+pub(crate) struct DockTabDirty(DockTab);
+
+/// Shows or hides each tab's unsaved dot from the document's live dirty state.
+pub(crate) fn sync_dock_tab_dirty(
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    views: Res<crate::editor_view::EditorViewManager>,
+    documents: Res<crate::document::DocumentManager>,
+    wesl: Res<crate::wesl_document::WeslDocuments>,
+    mut dots: Query<(&DockTabDirty, &mut Node)>,
+) {
+    for (mark, mut node) in &mut dots {
+        let dirty = match mark.0 {
+            DockTab::Tool(ToolPanel::MaterialGraph) => {
+                crate::material_graph::material_graph_unsaved(&session, &catalog)
+            }
+            DockTab::Editor(view) => editor_view_dirty(view, &views, &documents, &catalog, &wesl),
+            _ => false,
+        };
+        let display = if dirty { Display::Flex } else { Display::None };
+        if node.display != display {
+            node.display = display;
+        }
+    }
+}
+
 fn editor_view_dirty(
     view: crate::docking::EditorViewId,
     views: &crate::editor_view::EditorViewManager,
@@ -1005,20 +1034,22 @@ fn spawn_dock_tab(
                     ));
                 }
             }
-            if dirty {
-                // IDE-style unsaved marker beside the panel name.
-                row.spawn((
-                    Node {
-                        width: Val::Px(6.0),
-                        height: Val::Px(6.0),
-                        margin: UiRect::left(Val::Px(6.0)),
-                        border_radius: BorderRadius::MAX,
-                        ..default()
-                    },
-                    BackgroundColor(theme::ACCENT),
-                    Pickable::IGNORE,
-                ));
-            }
+            // IDE-style unsaved marker beside the panel name. Always spawned (display-toggled) and
+            // marked so `sync_dock_tab_dirty` can update it live, since editing does not rebuild the
+            // tab bar.
+            row.spawn((
+                DockTabDirty(tab),
+                Node {
+                    width: Val::Px(6.0),
+                    height: Val::Px(6.0),
+                    margin: UiRect::left(Val::Px(6.0)),
+                    border_radius: BorderRadius::MAX,
+                    display: if dirty { Display::Flex } else { Display::None },
+                    ..default()
+                },
+                BackgroundColor(theme::ACCENT),
+                Pickable::IGNORE,
+            ));
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()

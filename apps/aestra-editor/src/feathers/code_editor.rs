@@ -876,12 +876,21 @@ fn edit_code_editor(
 pub(crate) struct ActiveCodeEditor(pub(crate) Option<Entity>);
 
 /// Tracks which code editor (if any) is the active editing context, so the app's history menu can
-/// reflect and drive its undo/redo. Focusing the editor sets it; focusing a menu keeps it (so its
-/// menu items still act on the editor); focusing another panel clears it.
+/// reflect and drive its undo/redo. Focusing the editor sets it; focusing another editing panel
+/// (one carrying a `HistoryScope`) clears it; focusing menus, the toolbar, or other unscoped UI
+/// keeps it, so the Edit menu's own items still act on the editor.
+type MenuMarker = Or<(
+    With<bevy::ui_widgets::MenuItem>,
+    With<bevy::ui_widgets::MenuPopup>,
+    With<crate::feathers::context_menu::PointerContextMenuItem>,
+    With<crate::feathers::context_menu::PointerContextMenuSurface>,
+)>;
+
 fn track_active_code_editor(
     focus: Res<InputFocus>,
     editors: Query<(), With<CodeEditor>>,
-    menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
+    menus: Query<(), MenuMarker>,
+    scopes: Query<(), With<crate::history::HistoryScope>>,
     parents: Query<&ChildOf>,
     mut active: ResMut<ActiveCodeEditor>,
 ) {
@@ -897,12 +906,18 @@ fn track_active_code_editor(
             active.0 = Some(current);
             return;
         }
-        if menu_items.contains(current) {
-            return; // a menu is being used; keep the active editor so its undo/redo still routes
+        // A menu (checked before the scope, since a context menu is spawned inside a scoped pane)
+        // keeps the active editor, so its own items still act on it.
+        if menus.contains(current) {
+            return;
+        }
+        if scopes.contains(current) {
+            active.0 = None; // focus entered another editing panel
+            return;
         }
         entity = parents.get(current).ok().map(ChildOf::parent);
     }
-    active.0 = None; // a non-editor, non-menu context took focus
+    // The toolbar and other unscoped UI keep the active editor.
 }
 
 // ---- context menu ---------------------------------------------------------------------------
