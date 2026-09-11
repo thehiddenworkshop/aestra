@@ -8,12 +8,14 @@
 #![allow(dead_code)] // Reusable widget API; not every hook is used by the current single consumer.
 
 use crate::theme;
+use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::prelude::*;
 use bevy::text::{FontSize, LineBreak, LineHeight, TextLayout, TextSpan};
 use bevy::ui::{ComputedNode, RelativeCursorPosition};
+use bevy::window::SystemCursorIcon;
 use std::sync::Arc;
 
 pub(crate) const CODE_FONT_SIZE: f32 = 13.0;
@@ -246,6 +248,7 @@ pub(crate) fn spawn_code_editor(
                 ..default()
             },
             RelativeCursorPosition::default(),
+            EntityCursor::System(SystemCursorIcon::Text), // I-beam over the editable text
         ))
         .id()
 }
