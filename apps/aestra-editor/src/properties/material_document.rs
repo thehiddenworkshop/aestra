@@ -258,6 +258,10 @@ mod tests {
                     &MaterialStackInspectorState::default(),
                     None,
                     &assets,
+                    &crate::editor_view::ActiveEditorContext::default(),
+                    &crate::document::DocumentManager::default(),
+                    &crate::wesl_document::WeslDocuments::default(),
+                    &crate::wesl_document::WeslDiagnostics::default(),
                 );
             });
         app.world_mut().flush();

@@ -223,7 +223,7 @@ impl WeslDiagnostics {
 }
 
 /// A WESL module name derived from a file stem, sanitized to a valid identifier for the compiler.
-fn module_name_for(path: &Path) -> String {
+pub(crate) fn module_name_for(path: &Path) -> String {
     let stem = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -275,8 +275,7 @@ fn error_char_span(message: &str, source: &str) -> Option<(usize, usize)> {
     let (start, end) = digits.split_once("..")?;
     let start: usize = start.parse().ok()?;
     let end: usize = end.parse().ok()?;
-    let byte_to_char =
-        |byte: usize| source.char_indices().take_while(|(i, _)| *i < byte).count();
+    let byte_to_char = |byte: usize| source.char_indices().take_while(|(i, _)| *i < byte).count();
     let (start, end) = (byte_to_char(start), byte_to_char(end));
     (start <= end).then_some((start, end))
 }
@@ -285,7 +284,11 @@ fn error_char_span(message: &str, source: &str) -> Option<(usize, usize)> {
 /// message (e.g. ``duplicate declaration of `name` ``), underlining its last occurrence in the
 /// source — for a duplicate, that is the redeclaration.
 fn identifier_span(message: &str, source: &str) -> Option<(usize, usize)> {
-    let name = message.split("declaration of `").nth(1)?.split('`').next()?;
+    let name = message
+        .split("declaration of `")
+        .nth(1)?
+        .split('`')
+        .next()?;
     if name.is_empty() {
         return None;
     }
@@ -362,7 +365,14 @@ mod tests {
         // The last occurrence (the duplicate) is underlined.
         let span = identifier_span("error: duplicate declaration of `foo`", source);
         let (start, end) = span.unwrap();
-        assert_eq!(&source[..].chars().skip(start).take(end - start).collect::<String>(), "foo");
+        assert_eq!(
+            &source[..]
+                .chars()
+                .skip(start)
+                .take(end - start)
+                .collect::<String>(),
+            "foo"
+        );
         assert!(start > source.find("foo").unwrap()); // the second `foo`, not the first
     }
 

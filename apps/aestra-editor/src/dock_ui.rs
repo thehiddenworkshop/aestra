@@ -42,6 +42,7 @@ struct PanelSources<'a> {
     localizer: &'a Localizer,
     documents: &'a crate::document::DocumentManager,
     views: &'a crate::editor_view::EditorViewManager,
+    active: &'a crate::editor_view::ActiveEditorContext,
     wesl_documents: &'a crate::wesl_document::WeslDocuments,
     wesl_cursors: &'a crate::wesl_editor::WeslEditorCursors,
     wesl_diagnostics: &'a crate::wesl_document::WeslDiagnostics,
@@ -74,6 +75,7 @@ pub(crate) struct DockUiResources<'w> {
     navigation: Option<Res<'w, SourceNavigationState>>,
     documents: Res<'w, crate::document::DocumentManager>,
     views: Res<'w, crate::editor_view::EditorViewManager>,
+    active: Res<'w, crate::editor_view::ActiveEditorContext>,
     wesl_documents: Res<'w, crate::wesl_document::WeslDocuments>,
     wesl_cursors: Res<'w, crate::wesl_editor::WeslEditorCursors>,
     wesl_diagnostics: Res<'w, crate::wesl_document::WeslDiagnostics>,
@@ -106,6 +108,7 @@ impl<'w> DockUiResources<'w> {
             localizer: &self.localizer,
             documents: &self.documents,
             views: &self.views,
+            active: &self.active,
             wesl_documents: &self.wesl_documents,
             wesl_cursors: &self.wesl_cursors,
             wesl_diagnostics: &self.wesl_diagnostics,
@@ -568,6 +571,10 @@ fn spawn_panel_content(
                 sources.material_stack_inspector,
                 sources.navigation,
                 sources.asset_server,
+                sources.active,
+                sources.documents,
+                sources.wesl_documents,
+                sources.wesl_diagnostics,
             );
         }
         ToolPanel::Timeline => timeline::spawn_timeline(

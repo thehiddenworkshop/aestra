@@ -40,6 +40,7 @@ mod material_drop;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
+mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;
 #[cfg(test)]
@@ -996,6 +997,10 @@ mod tests {
                     &MaterialStackInspectorState::default(),
                     None,
                     &assets,
+                    &crate::editor_view::ActiveEditorContext::default(),
+                    &crate::document::DocumentManager::default(),
+                    &crate::wesl_document::WeslDocuments::default(),
+                    &crate::wesl_document::WeslDiagnostics::default(),
                 );
             });
         app.world_mut().flush();
@@ -5793,7 +5798,22 @@ pub(crate) fn spawn_properties(
     material_stack_inspector: &MaterialStackInspectorState,
     navigation: Option<&SourceNavigationState>,
     asset_server: &AssetServer,
+    active: &crate::editor_view::ActiveEditorContext,
+    documents: &crate::document::DocumentManager,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
 ) {
+    // An active WESL editor tab shows source properties instead of the effect/material inspector.
+    if wesl::spawn(
+        parent,
+        active,
+        documents,
+        wesl_documents,
+        wesl_diagnostics,
+        localizer,
+    ) {
+        return;
+    }
     if material_document::spawn(parent, session, catalog, localizer) {
         return;
     }
