@@ -58,6 +58,12 @@ impl CodeEditor {
             .then(|| (self.cursor.min(self.anchor), self.cursor.max(self.anchor)))
     }
 
+    /// The currently selected text, if any.
+    fn selected_text(&self) -> Option<String> {
+        let (start, end) = self.selection()?;
+        Some(self.text.chars().skip(start).take(end - start).collect())
+    }
+
     fn set_cursor(&mut self, cursor: usize, extend: bool) {
         self.cursor = cursor;
         if !extend {
@@ -396,6 +402,7 @@ fn edit_code_editor(
     key: On<FocusedInput<KeyboardInput>>,
     mut editors: Query<&mut CodeEditor>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut clipboard: ResMut<Clipboard>,
     mut commands: Commands,
 ) {
     let entity = key.event_target();
@@ -471,9 +478,30 @@ fn edit_code_editor(
             editor.anchor = 0;
             editor.cursor = count;
         }
+        KeyCode::KeyC if ctrl => {
+            if let Some(text) = editor.selected_text() {
+                let _ = clipboard.set_text(text);
+            }
+        }
+        KeyCode::KeyX if ctrl => {
+            if let Some(text) = editor.selected_text() {
+                let _ = clipboard.set_text(text);
+                changed = editor.delete_selection();
+            }
+        }
+        KeyCode::KeyV if ctrl => {
+            if let Some(Ok(text)) = clipboard.fetch_text().poll_result() {
+                // Clipboards on Windows carry CRLF; the buffer stores LF only.
+                let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                if !text.is_empty() {
+                    editor.insert(&text);
+                    changed = true;
+                }
+            }
+        }
         _ => {
             if ctrl {
-                return; // reserved for clipboard shortcuts (added later)
+                return; // other Ctrl combinations are not editor shortcuts
             }
             if let Key::Character(input) = &key.input.logical_key {
                 editor.insert(input);
@@ -513,6 +541,19 @@ mod tests {
         assert_eq!(line_col(source, 6), (1, 2));
         assert_eq!(char_index(source, 1, 2), 6);
         assert_eq!(char_index(source, 1, 99), 8);
+    }
+
+    #[test]
+    fn selected_text_returns_the_covered_range() {
+        let mut editor = CodeEditor::new("hello world".into());
+        assert_eq!(editor.selected_text(), None);
+        editor.anchor = 6;
+        editor.cursor = 11; // select "world"
+        assert_eq!(editor.selected_text().as_deref(), Some("world"));
+        // The order of anchor/cursor should not matter.
+        editor.anchor = 11;
+        editor.cursor = 6;
+        assert_eq!(editor.selected_text().as_deref(), Some("world"));
     }
 
     #[test]
