@@ -17,36 +17,43 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Marks the code-editor widget of a WESL pane so its text/caret sync to the right document.
+/// Marks the code-editor widget of a WESL pane so its text syncs to the right document (`source`)
+/// and its caret to the right *view* (`view`). Two views of one module share the buffer but keep
+/// independent carets, so the pair carries both ids.
 #[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct WeslEditorSurface(pub(crate) WeslSourceId);
+pub(crate) struct WeslEditorSurface {
+    pub(crate) source: WeslSourceId,
+    pub(crate) view: crate::docking::EditorViewId,
+}
 
 /// Fired to write a WESL buffer back to its module file.
 #[derive(Event, Debug, Clone, Copy)]
 pub(crate) struct SaveWeslSource(pub(crate) WeslSourceId);
 
-/// Fired (by the diagnostics panel) to jump to a WESL compile error: place the caret at the failing
-/// character and scroll it into view.
+/// Fired (by the diagnostics panel) to jump to a WESL compile error in a specific view: place the
+/// caret at the failing character and scroll it into view.
 #[derive(Event, Debug, Clone, Copy)]
 pub(crate) struct RevealWeslError {
+    pub(crate) view: crate::docking::EditorViewId,
     pub(crate) id: WeslSourceId,
     pub(crate) char: usize,
 }
 
 const ERROR_COLOR: Color = Color::srgb(1.0, 0.38, 0.32);
 
-/// Per-document caret + selection anchor, kept so they survive the dock rebuilds that reconstruct
-/// the pane (and its widget).
+/// Per-view caret + selection anchor, kept so they survive the dock rebuilds that reconstruct the
+/// pane (and its widget). Keyed by view, not document, so two views of one module scroll and place
+/// their carets independently while sharing the buffer.
 #[derive(Resource, Debug, Default)]
-pub(crate) struct WeslEditorCursors(HashMap<WeslSourceId, (usize, usize)>);
+pub(crate) struct WeslEditorCursors(HashMap<crate::docking::EditorViewId, (usize, usize)>);
 
 impl WeslEditorCursors {
-    fn get(&self, id: WeslSourceId) -> (usize, usize) {
-        self.0.get(&id).copied().unwrap_or((0, 0))
+    fn get(&self, view: crate::docking::EditorViewId) -> (usize, usize) {
+        self.0.get(&view).copied().unwrap_or((0, 0))
     }
 
-    fn set(&mut self, id: WeslSourceId, cursor: usize, anchor: usize) {
-        self.0.insert(id, (cursor, anchor));
+    fn set(&mut self, view: crate::docking::EditorViewId, cursor: usize, anchor: usize) {
+        self.0.insert(view, (cursor, anchor));
     }
 }
 
@@ -113,6 +120,7 @@ fn concise_wesl_error(message: &str) -> String {
 pub(crate) fn spawn_wesl_editor_view(
     parent: &mut ChildSpawnerCommands,
     id: WeslSourceId,
+    view: crate::docking::EditorViewId,
     documents: &WeslDocuments,
     cursors: &WeslEditorCursors,
     diagnostics: &WeslDiagnostics,
@@ -226,14 +234,14 @@ pub(crate) fn spawn_wesl_editor_view(
                 return;
             };
 
-            let (cursor, anchor) = cursors.get(id);
+            let (cursor, anchor) = cursors.get(view);
             let editor = CodeEditor::new(source).with_selection(cursor, anchor);
             // Code does not wrap, so it scrolls on both axes: a vertical scrollbar on the right and
             // a horizontal one below for long lines. The line-number gutter is a sibling of the
             // editor in the same scroll viewport, spawned after it so it draws on top.
             spawn_scroll_area_xy(
                 panel,
-                ScrollMemoryKey::WeslSource,
+                ScrollMemoryKey::WeslSource(view),
                 Node {
                     flex_grow: 1.0,
                     min_width: Val::Px(0.0),
@@ -247,7 +255,10 @@ pub(crate) fn spawn_wesl_editor_view(
                         editor,
                         wesl_highlighter(),
                         error_marker(diagnostics, id),
-                        WeslEditorSurface(id),
+                        WeslEditorSurface {
+                            source: id,
+                            view,
+                        },
                     );
                     spawn_code_gutter(body, code);
                 },
@@ -266,8 +277,8 @@ pub(crate) fn sync_wesl_editors(
         if !editor.is_changed() {
             continue;
         }
-        documents.set_text(surface.0, editor.text.clone());
-        cursors.set(surface.0, editor.cursor, editor.anchor);
+        documents.set_text(surface.source, editor.text.clone());
+        cursors.set(surface.view, editor.cursor, editor.anchor);
     }
 }
 
@@ -280,7 +291,7 @@ pub(crate) fn sync_wesl_editor_markers(
         return;
     }
     for (surface, mut markers) in &mut editors {
-        let next = error_marker(&diagnostics, surface.0);
+        let next = error_marker(&diagnostics, surface.source);
         markers.set_if_neq(next);
     }
 }
@@ -294,10 +305,10 @@ pub(crate) fn reveal_wesl_error(
     mut editors: Query<(&WeslEditorSurface, &mut CodeEditor, &ChildOf)>,
     mut viewports: Query<(&ComputedNode, &mut bevy::ui::ScrollPosition), Without<CodeEditor>>,
 ) {
-    let RevealWeslError { id, char } = *event;
-    cursors.set(id, char, char);
+    let RevealWeslError { view, id, char } = *event;
+    cursors.set(view, char, char);
     for (surface, mut editor, child_of) in &mut editors {
-        if surface.0 != id {
+        if surface.view != view || surface.source != id {
             continue;
         }
         editor.set_caret(char);
@@ -335,5 +346,25 @@ pub(crate) fn save_wesl_source(
         Err(error) => {
             session.status = format!("Cannot save WESL source: {error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::docking::EditorViewId;
+
+    #[test]
+    fn carets_are_tracked_per_view_not_per_document() {
+        // Two views of the same WESL module keep independent carets: writing one leaves the other's
+        // untouched, and an unseen view falls back to the origin.
+        let mut cursors = WeslEditorCursors::default();
+        let left = EditorViewId(1);
+        let right = EditorViewId(2);
+        cursors.set(left, 40, 12);
+        cursors.set(right, 3, 3);
+        assert_eq!(cursors.get(left), (40, 12));
+        assert_eq!(cursors.get(right), (3, 3));
+        assert_eq!(cursors.get(EditorViewId(99)), (0, 0));
     }
 }

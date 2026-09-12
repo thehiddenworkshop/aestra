@@ -182,6 +182,7 @@ fn handle_diagnostics_actions(
                             crate::shell::reveal_editor_tab(&mut layout, &mut session, view);
                             // Jump the caret/scroll to the failing character once the tab is shown.
                             commands.trigger(crate::wesl_editor::RevealWeslError {
+                                view,
                                 id,
                                 char: char.unwrap_or(0),
                             });

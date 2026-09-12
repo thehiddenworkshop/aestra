@@ -503,6 +503,7 @@ fn spawn_editor_view_content(
                 crate::wesl_editor::spawn_wesl_editor_view(
                     parent,
                     id,
+                    view,
                     sources.wesl_documents,
                     sources.wesl_cursors,
                     sources.wesl_diagnostics,

@@ -76,7 +76,8 @@ pub(crate) enum ScrollMemoryKey {
     Curves,
     MaterialGraphPalette,
     MaterialFunctionInspector,
-    WeslSource,
+    /// Per-view so two views of one WESL module scroll independently.
+    WeslSource(crate::docking::EditorViewId),
 }
 
 #[derive(Resource, Default)]
