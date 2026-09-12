@@ -1635,3 +1635,33 @@ Creation tests additionally cover starting from a sprite-only effect, the source
 single/multiple primitives, built-in default material compilation in standalone/project
 contexts, renderer selection, atomic Undo/Redo and sample-project dependency validation.
 Native acceptance remains pending; unrelated user edits were left untouched.
+
+### AB7f — Shared Properties asset picker — 2026-09-12
+
+Material, Mesh and Texture value buttons now open the same bounded, scrollable, searchable
+in-app picker. Project sources are filtered for the field; local materials/instances and
+registered textures remain available, including Procedural for sprite textures. Search is
+case-insensitive; Enter in Search selects the first match and result buttons retain normal
+keyboard activation. Escape, Cancel and backdrop clicks dismiss without edits. The modal
+blocks graph navigation; its search input receives initial focus.
+
+Project-source choices and drag release share AssignAsset, source checks, target validation,
+preset creation and asynchronous mesh inspection/primitive selection. Local texture choices
+reuse the same binding planner as drops. Selection is snapshot guarded against document,
+project, lock and draft changes; failed validation does not silently assign to a different
+target. Repeated assignments are no-ops; successful changes use one effect Undo/Redo entry.
+Material value fields are distinct typed drop targets, so meshes cannot fall through to
+the surrounding renderer card. The old texture/material combo actions were retired.
+
+Automated coverage includes field filtering, search/empty results, initial focus, project
+material/texture selection, local texture/Procedural parity, repeat/no-op and Undo/Redo,
+stale/cancelled/locked requests, mesh-picker handoff and unchanged material bindings,
+inside-versus-backdrop click behavior and mesh rejection on Material fields.
+
+Verification: 792 editor tests passed, two opt-in tests ignored. Strict editor Clippy
+with all targets and warnings denied, touched-file formatting and diff checks passed.
+
+Native acceptance pending: field click, popup sizing at narrow docks/DPI, search, scrollbar,
+keyboard/Enter, Escape/outside click, preset/primitive handoff, live preview and Undo/Redo.
+This does not complete virtual-source or Library parity migration. Keep Library until its
+remaining built-in presets and local resource creation workflows have tested replacements.

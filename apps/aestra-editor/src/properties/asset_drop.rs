@@ -23,10 +23,17 @@ pub(super) struct Assignment {
 }
 
 #[derive(Clone, Copy)]
-enum DropTarget {
+pub(super) enum DropTarget {
     Renderer(RendererDropTarget),
     Texture(super::texture_drop::TextureDropTarget),
     Mesh(super::mesh_drop::MeshDropTarget),
+    Material(RendererDropTarget),
+}
+
+#[derive(Event)]
+pub(super) struct AssignAsset {
+    pub payload: AssetPayload,
+    pub target: DropTarget,
 }
 type DropTargets<'w, 's> = Query<
     'w,
@@ -35,10 +42,11 @@ type DropTargets<'w, 's> = Query<
         Option<&'static RendererDropTarget>,
         Option<&'static super::texture_drop::TextureDropTarget>,
         Option<&'static super::mesh_drop::MeshDropTarget>,
+        Option<&'static super::asset_picker::PickerField>,
     ),
 >;
 
-fn plan_target(
+pub(super) fn plan_target(
     payload: &AssetPayload,
     target: DropTarget,
     catalog: &ProjectEffectCatalog,
@@ -48,7 +56,9 @@ fn plan_target(
         return super::mesh_drop::prepare(payload, target, catalog, session);
     }
     match target {
-        DropTarget::Renderer(target) => plan(payload, target, catalog, session),
+        DropTarget::Renderer(target) | DropTarget::Material(target) => {
+            plan(payload, target, catalog, session)
+        }
         DropTarget::Texture(target) => super::texture_drop::plan(payload, target, catalog, session),
         DropTarget::Mesh(_) => unreachable!("mesh target handled above"),
     }
@@ -69,7 +79,7 @@ fn mesh_target(
     }
 }
 
-fn renderer_domain(properties: &RendererProperties) -> Option<MaterialDomain> {
+pub(super) fn renderer_domain(properties: &RendererProperties) -> Option<MaterialDomain> {
     match properties {
         RendererProperties::Sprite | RendererProperties::Flipbook { .. } => {
             Some(MaterialDomain::Sprite)
@@ -200,15 +210,84 @@ fn plan_program(
 
 type DropFeedback = crate::asset_drop::Feedback<DropTarget>;
 
+pub(super) fn plan_local_material(
+    target: RendererDropTarget,
+    material: MaterialId,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Assignment, String> {
+    if target.effect != session.effect.id || session.pending_change.is_some() {
+        return Err("Effect changed or has a pending edit".into());
+    }
+    let (emitter, renderer) = session
+        .effect
+        .emitters
+        .iter()
+        .find_map(|emitter| {
+            emitter
+                .renderers
+                .iter()
+                .find(|r| r.id == target.renderer)
+                .map(|r| (emitter.id, r))
+        })
+        .ok_or("Renderer no longer exists")?;
+    let expected = renderer_domain(&renderer.properties).ok_or("Unsupported renderer")?;
+    let programs = catalog.material_programs_for_effect(&session.effect)?;
+    let compatible = if session.effect.materials.iter().any(|m| m.id == material) {
+        matches!(
+            renderer.properties,
+            RendererProperties::Sprite
+                | RendererProperties::Flipbook { .. }
+                | RendererProperties::Trail { .. }
+        )
+    } else {
+        session
+            .effect
+            .material_instances
+            .iter()
+            .find(|m| m.id == material)
+            .and_then(|instance| programs.iter().find(|p| p.id == instance.program.id()))
+            .is_some_and(|program| program.domain == expected)
+    };
+    if !compatible {
+        return Err("Material is missing or incompatible with this renderer".into());
+    }
+    let transaction = EffectTransaction::single(
+        "Assign local material",
+        EffectCommand::SetRendererMaterial {
+            emitter,
+            renderer: renderer.id,
+            material,
+        },
+    );
+    let mut candidate = session.effect.clone();
+    aestra_authoring::CommandExecutor::execute(&mut candidate, &session.locks, &transaction)
+        .map_err(|e| e.to_string())?;
+    MaterialAuthoringDocument::new(candidate, programs)
+        .with_material_functions(catalog.material_functions()?)
+        .validate()
+        .map_err(|e| e.to_string())?;
+    Ok(Assignment {
+        label: "Assign local material".into(),
+        transaction: (renderer.material != material).then_some(transaction),
+    })
+}
+
 pub(super) fn register(app: &mut App) {
     preset_drop::register(app);
     super::mesh_drop::register(app);
+    super::asset_picker::register(app);
     crate::asset_drop::register_feedback::<DropTarget>(app);
-    app.add_observer(hover).add_observer(drop_asset);
+    app.add_observer(hover)
+        .add_observer(drop_asset)
+        .add_observer(assign_asset);
 }
 
 fn target(entity: Entity, targets: &DropTargets) -> Option<DropTarget> {
-    let (renderer, texture, mesh) = targets.get(entity).ok()?;
+    let (renderer, texture, mesh, picker) = targets.get(entity).ok()?;
+    if let Some(picker) = picker {
+        return Some(picker.0);
+    }
     if let Some(mesh) = mesh {
         return Some(DropTarget::Mesh(*mesh));
     }
@@ -265,9 +344,6 @@ fn drop_asset(
     sources: Query<&AssetPayload>,
     targets: DropTargets,
     parents: Query<&ChildOf>,
-    catalog: Res<ProjectEffectCatalog>,
-    mut session: ResMut<EditorSession>,
-    guard: AuthoringDropGuard,
     feedback: Query<Entity, With<DropFeedback>>,
     mut commands: Commands,
 ) {
@@ -283,6 +359,18 @@ fn drop_asset(
     };
     event.propagate(false);
     crate::asset_drop::clear_feedback(&feedback, &mut commands);
+    commands.trigger(AssignAsset { payload, target });
+}
+
+fn assign_asset(
+    event: On<AssignAsset>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut session: ResMut<EditorSession>,
+    guard: AuthoringDropGuard,
+    mut commands: Commands,
+) {
+    let payload = event.payload.clone();
+    let target = event.target;
     match guard.check_release().and_then(|()| {
         if matches!(target, DropTarget::Texture(_)) {
             super::texture_drop::check_file(&payload, &catalog)?;
@@ -294,7 +382,7 @@ fn drop_asset(
                 commands.trigger(super::mesh_drop::OpenMeshDrop { payload, target });
                 return;
             }
-            if let DropTarget::Renderer(target) = target
+            if let DropTarget::Renderer(target) | DropTarget::Material(target) = target
                 && matches!(
                     payload.resolve(&catalog),
                     Ok(Some(ProjectAssetId::MaterialPreset(_)))

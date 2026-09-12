@@ -273,6 +273,30 @@ fn sample_project_exposes_a_valid_mesh_effect() {
 }
 
 #[test]
+fn mesh_dropped_on_material_field_never_falls_back_to_geometry() {
+    let mut f = Fixture::new(false);
+    let marker = *f.app.world().get::<RendererDropTarget>(f.card).unwrap();
+    f.app
+        .world_mut()
+        .entity_mut(f.input)
+        .insert(crate::properties::asset_picker::PickerField(
+            crate::properties::asset_drop::DropTarget::Material(marker),
+        ));
+    let before = f.effect();
+    f.drop_on(false);
+    f.app.world_mut().flush();
+    assert_eq!(f.effect(), before);
+    assert!(f.app.world().resource::<Prompt>().0.is_none());
+    assert!(
+        f.app
+            .world()
+            .resource::<EditorSession>()
+            .status
+            .contains("rejected")
+    );
+}
+
+#[test]
 fn single_mesh_drop_on_card_or_input_is_one_undoable_assignment() {
     for card in [false, true] {
         let mut f = Fixture::new(false);

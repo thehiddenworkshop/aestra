@@ -36,6 +36,7 @@ use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
 mod asset_drop;
+mod asset_picker;
 mod material_document;
 mod mesh_drop;
 mod module_controls;
@@ -211,20 +212,13 @@ pub(crate) enum PropertiesAction {
         input: u8,
         choice: u8,
     },
-    SetRendererMaterial(RendererId, usize),
     SetRendererBlend(RendererId, BlendMode),
-    SetRendererTexture(RendererId, Option<usize>),
     SetRendererFlipbook(RendererId, usize),
     SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
     SetTrailSampling(RendererId, aestra_core::TrailSamplingMode),
     SetTrailUvMode(RendererId, aestra_core::TrailUvMode),
     SetTrailEndCap(RendererId, aestra_core::TrailEndCap),
     SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
-    SetSemanticMaterialTexture {
-        instance: MaterialId,
-        parameter: MaterialParameterId,
-        asset: usize,
-    },
     SetSemanticMaterialSource {
         instance: MaterialId,
         parameter: MaterialParameterId,
@@ -620,35 +614,6 @@ fn handle_properties_actions(
                             true,
                         );
                     }
-                    PropertiesAction::SetSemanticMaterialTexture {
-                        instance,
-                        parameter,
-                        asset,
-                    } => {
-                        let Some(asset) = session.effect.assets.get(asset).map(|asset| asset.id)
-                        else {
-                            continue;
-                        };
-                        let Some(catalog) = catalog.as_deref() else {
-                            session.status = "Material program catalog is unavailable".into();
-                            continue;
-                        };
-                        match catalog.material_programs_for_effect(&session.effect) {
-                            Ok(programs) => {
-                                session.set_material_instance_parameter(
-                                    &programs,
-                                    instance,
-                                    parameter,
-                                    Some(MaterialParameterValue::Constant(
-                                        MaterialValue::Texture2D(asset),
-                                    )),
-                                );
-                            }
-                            Err(error) => {
-                                session.status = format!("Material program unavailable: {error}");
-                            }
-                        }
-                    }
                     PropertiesAction::SetSemanticMaterialSource {
                         instance,
                         parameter,
@@ -834,9 +799,7 @@ fn handle_properties_actions(
                     | PropertiesAction::AddMeshRenderer
                     | PropertiesAction::AddTrailRenderer
                     | PropertiesAction::AddFlipbookRenderer
-                    | PropertiesAction::SetRendererMaterial(_, _)
                     | PropertiesAction::SetRendererBlend(_, _)
-                    | PropertiesAction::SetRendererTexture(_, _)
                     | PropertiesAction::SetRendererFlipbook(_, _)
                     | PropertiesAction::SetFlipbookTimeSource(_, _)
                     | PropertiesAction::SetTrailSampling(_, _)

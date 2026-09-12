@@ -125,25 +125,8 @@ pub(super) fn handle_renderer_action(
             session.add_flipbook_renderer();
             palette.open = false;
         }
-        PropertiesAction::SetRendererMaterial(id, index) => {
-            if let Some(material) = session
-                .effect
-                .materials
-                .get(index)
-                .map(|material| material.id)
-            {
-                session.set_renderer_material(id, material);
-            }
-        }
         PropertiesAction::SetRendererBlend(id, blend) => {
             session.set_renderer_blend(id, blend);
-        }
-        PropertiesAction::SetRendererTexture(id, index) => {
-            let texture = index
-                .and_then(|index| session.effect.assets.get(index))
-                .filter(|asset| asset.kind == aestra_core::AssetKind::Texture)
-                .map(|asset| asset.id);
-            session.set_renderer_texture(id, texture);
         }
         PropertiesAction::SetRendererFlipbook(id, index) => {
             if let Some(flipbook) = session
@@ -1447,7 +1430,15 @@ fn spawn_semantic_material_controls(
         .project_stack(program)
         .map_err(|error| error.to_string())?;
 
-    spawn_properties_read_only_control(parent, "Material", &controls.name);
+    super::asset_picker::row(
+        parent,
+        super::asset_drop::DropTarget::Material(super::asset_drop::RendererDropTarget {
+            effect: session.effect.id,
+            renderer: renderer.id,
+        }),
+        "Material",
+        &controls.name,
+    );
     if matches!(
         instance.program,
         aestra_core::material::MaterialProgramRef::Project(_)
@@ -2528,22 +2519,6 @@ fn spawn_semantic_material_texture(
         Some(MaterialValue::Texture2D(selected)) => Some(*selected),
         _ => None,
     };
-    let options = session
-        .effect
-        .assets
-        .iter()
-        .enumerate()
-        .filter(|(_, asset)| asset.kind == AssetKind::Texture)
-        .map(|(index, asset)| ComboOption {
-            label: asset.name.clone(),
-            selected: Some(asset.id) == selected,
-            action: PropertiesAction::SetSemanticMaterialTexture {
-                instance,
-                parameter,
-                asset: index,
-            },
-        })
-        .collect::<Vec<_>>();
     let current = session
         .effect
         .assets
@@ -2561,7 +2536,12 @@ fn spawn_semantic_material_texture(
         super::texture_drop::TextureDropTarget::parameter(session, instance, parameter)
     {
         super::texture_drop::row(parent, target, |row| {
-            spawn_properties_combo_row(row, "Texture", current, &options, None);
+            super::asset_picker::row(
+                row,
+                super::asset_drop::DropTarget::Texture(target),
+                "Texture",
+                current,
+            );
         });
     }
 }
@@ -2789,18 +2769,15 @@ pub(super) fn spawn_renderer_card(
                 spawn_inline_diagnostics(card, diagnostic_path, session);
                 return;
             };
-            let material_options = session
-                .effect
-                .materials
-                .iter()
-                .enumerate()
-                .map(|(index, candidate)| ComboOption {
-                    label: candidate.name.clone(),
-                    selected: candidate.id == material.id,
-                    action: PropertiesAction::SetRendererMaterial(renderer.id, index),
-                })
-                .collect::<Vec<_>>();
-            spawn_properties_combo_row(card, "Material", &material.name, &material_options, None);
+            super::asset_picker::row(
+                card,
+                super::asset_drop::DropTarget::Material(super::asset_drop::RendererDropTarget {
+                    effect: session.effect.id,
+                    renderer: renderer.id,
+                }),
+                "Material",
+                &material.name,
+            );
             let blend_options = [BlendMode::Alpha, BlendMode::Additive, BlendMode::Multiply]
                 .into_iter()
                 .map(|blend| ComboOption {
@@ -2838,44 +2815,19 @@ pub(super) fn spawn_renderer_card(
                     let texture_name = texture
                         .and_then(|id| session.effect.assets.iter().find(|asset| asset.id == id))
                         .map_or("Procedural", |asset| asset.name.as_str());
-                    let mut texture_options = vec![ComboOption {
-                        label: "Procedural".into(),
-                        selected: texture.is_none(),
-                        action: PropertiesAction::SetRendererTexture(renderer.id, None),
-                    }];
-                    texture_options.extend(
-                        session
-                            .effect
-                            .assets
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, asset)| asset.kind == aestra_core::AssetKind::Texture)
-                            .map(|(index, asset)| ComboOption {
-                                label: asset.name.clone(),
-                                selected: Some(asset.id) == *texture,
-                                action: PropertiesAction::SetRendererTexture(
-                                    renderer.id,
-                                    Some(index),
-                                ),
-                            }),
+                    let target = super::texture_drop::TextureDropTarget::sprite(
+                        session,
+                        renderer.id,
+                        material.id,
                     );
-                    super::texture_drop::row(
-                        card,
-                        super::texture_drop::TextureDropTarget::sprite(
-                            session,
-                            renderer.id,
-                            material.id,
-                        ),
-                        |row| {
-                            spawn_properties_combo_row(
-                                row,
-                                "Texture",
-                                texture_name,
-                                &texture_options,
-                                None,
-                            )
-                        },
-                    );
+                    super::texture_drop::row(card, target, |row| {
+                        super::asset_picker::row(
+                            row,
+                            super::asset_drop::DropTarget::Texture(target),
+                            "Texture",
+                            texture_name,
+                        )
+                    });
                     if texture.is_some() {
                         for (label, component) in [
                             ("UV Min X", 0),

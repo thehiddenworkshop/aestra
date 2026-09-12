@@ -2177,6 +2177,7 @@ impl EditorSession {
         );
     }
 
+    #[cfg(test)]
     pub fn set_renderer_material(&mut self, id: RendererId, material: MaterialId) {
         let Some(selected_layer) = self.selected_layer() else {
             return;
@@ -2234,6 +2235,7 @@ impl EditorSession {
         self.update_material("Changed material softness", material);
     }
 
+    #[cfg(test)]
     pub fn set_renderer_texture(&mut self, id: RendererId, value: Option<AssetId>) {
         let Some(mut material) = self.renderer_material(id).cloned() else {
             self.status = "Renderer material no longer exists".into();

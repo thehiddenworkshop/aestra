@@ -77,6 +77,11 @@ pub(super) fn plan(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Result<Assignment, String> {
+    check_target(target, session)?;
+    plan_source(payload, target, catalog, session)
+}
+
+fn check_target(target: TextureDropTarget, session: &EditorSession) -> Result<(), String> {
     if target.effect != session.effect.id {
         return Err("Effect changed; drop on its current texture input".into());
     }
@@ -102,6 +107,15 @@ pub(super) fn plan(
             }
         }
     }
+    Ok(())
+}
+
+fn plan_source(
+    payload: &AssetPayload,
+    target: TextureDropTarget,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Assignment, String> {
     let source = payload.texture_source(catalog)?;
     let path = source
         .relative_path
@@ -133,6 +147,50 @@ pub(super) fn plan(
             index: session.effect.assets.len(),
         });
     }
+    plan_binding(
+        target,
+        Some(asset.id),
+        &asset.name,
+        catalog,
+        session,
+        commands,
+    )
+}
+
+pub(super) fn allows_procedural(target: TextureDropTarget) -> bool {
+    matches!(target.slot, Slot::Sprite { .. })
+}
+
+pub(super) fn plan_local(
+    target: TextureDropTarget,
+    asset: Option<AssetId>,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Assignment, String> {
+    check_target(target, session)?;
+    let name = match asset {
+        Some(id) => session
+            .effect
+            .assets
+            .iter()
+            .find(|a| a.id == id && a.kind == AssetKind::Texture)
+            .ok_or("Texture is no longer registered")?
+            .name
+            .as_str(),
+        None if allows_procedural(target) => "Procedural",
+        None => return Err("This input requires a texture".into()),
+    };
+    plan_binding(target, asset, name, catalog, session, Vec::new())
+}
+
+fn plan_binding(
+    target: TextureDropTarget,
+    asset: Option<AssetId>,
+    name: &str,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+    mut commands: Vec<EffectCommand>,
+) -> Result<Assignment, String> {
     let changed = match target.slot {
         Slot::Sprite { renderer, material } => {
             let renderer = session
@@ -155,10 +213,10 @@ pub(super) fn plan(
                 .cloned()
                 .ok_or("Sprite material no longer exists")?;
             let MaterialProperties::Sprite { texture, .. } = &mut replacement.properties;
-            if *texture == Some(asset.id) {
+            if *texture == asset {
                 false
             } else {
-                *texture = Some(asset.id);
+                *texture = asset;
                 commands.push(EffectCommand::SetMaterial {
                     id: material,
                     material: replacement,
@@ -190,7 +248,9 @@ pub(super) fn plan(
             if !matches!(descriptor.value_type, MaterialValueType::Texture2D(_)) {
                 return Err("This material input does not accept a texture".into());
             }
-            let value = MaterialParameterValue::Constant(MaterialValue::Texture2D(asset.id));
+            let value = MaterialParameterValue::Constant(MaterialValue::Texture2D(
+                asset.ok_or("This input requires a texture")?,
+            ));
             let current = replacement.values.get(&parameter).cloned().or_else(|| {
                 descriptor
                     .default
@@ -211,11 +271,11 @@ pub(super) fn plan(
     };
     if !changed {
         return Ok(Assignment {
-            label: format!("{} is already assigned", asset.name),
+            label: format!("{name} is already assigned"),
             transaction: None,
         });
     }
-    let transaction = EffectTransaction::new(format!("Assign texture {}", asset.name), commands);
+    let transaction = EffectTransaction::new(format!("Assign texture {name}"), commands);
     // Validate registration + binding together, including semantic locks and typed input rules.
     let mut candidate = session.effect.clone();
     aestra_authoring::CommandExecutor::execute(&mut candidate, &session.locks, &transaction)
@@ -226,7 +286,7 @@ pub(super) fn plan(
         .validate()
         .map_err(|error| error.to_string())?;
     Ok(Assignment {
-        label: format!("Assign texture {}", asset.name),
+        label: format!("Assign texture {name}"),
         transaction: Some(transaction),
     })
 }

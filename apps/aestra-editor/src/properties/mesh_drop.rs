@@ -321,6 +321,13 @@ pub(super) fn spawn_input(
         parent,
         target,
         "Drop a glTF/GLB mesh from Assets. Multiple primitives open a chooser; materials stay unchanged.",
-        |row| spawn_properties_read_only_control(row, "Mesh", current),
+        |row| {
+            super::asset_picker::row(
+                row,
+                super::asset_drop::DropTarget::Mesh(target),
+                "Mesh",
+                current,
+            )
+        },
     );
 }

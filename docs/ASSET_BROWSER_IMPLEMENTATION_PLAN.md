@@ -109,7 +109,8 @@ is pending. Existing function sources are referenced, not copied or moved.
 AB7d texture drops onto Properties texture inputs are implemented; native acceptance
 is pending. Source files stay in place; registrations and bindings are effect-local.
 AB7e mesh drops onto mesh renderers are implemented; native acceptance is pending.
-Reusable pickers/virtual-source migration and AB8–AB9 are pending.
+AB7f's shared Properties asset picker is implemented; native acceptance is pending.
+Virtual-source migration and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -702,6 +703,20 @@ Use one source/project/generation-aware payload with optional typed semantic ide
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
 feedback. Compatibility is shared by pickers and drag targets, not inferred by icons.
 
+**AB7f (Properties picker):** Mesh, Material and Texture value buttons open one compact,
+searchable, scrollable in-app picker. It includes compatible project sources, effect-local
+materials/instances and registered textures; sprite textures retain the Procedural option.
+Material candidates use the renderer's domain; mesh fields list glTF/GLB sources only.
+Search is case-insensitive and does not edit the effect. Enter from Search assigns its
+first match; result buttons also support normal keyboard activation. Escape, Cancel,
+outside click, or stale document/project/locks dismiss without changes. Source selection
+uses the same AssignAsset event as drag release, including preset creation and background
+mesh primitive inspection. Local texture selections reuse the same binding planner as
+texture drops. Assignments remain one effect Undo/Redo entry; shared sources are not edited.
+The Material field is a typed drop target distinct from its renderer card, preventing a
+mesh released over Material from replacing geometry. Library removal/virtual-source parity
+are deliberately deferred, not implied by this picker slice.
+
 Port Effect → Timeline with current cycle checks, Material Program/Preset → renderer,
 Function → graph call, Texture → compatible material input, Mesh → mesh renderer.
 File-backed drops register/reuse effect-local assets through semantic commands and
@@ -778,6 +793,6 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
 function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
-then continue reusable picker/virtual-source migration. AB7a native acceptance remains recorded
+and AB7f picker filtering/selection/keyboard/Undo, then continue virtual-source migration. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.
