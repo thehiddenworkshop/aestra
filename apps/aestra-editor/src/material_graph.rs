@@ -869,6 +869,9 @@ enum MaterialGraphGesture {
     Idle,
     Connecting {
         program: MaterialProgramId,
+        /// The viewport the drag started in, so the ghost wire and snapping project through that
+        /// view — correct even when two views of one program are open at once.
+        viewport: Entity,
         origin: MaterialGraphSocketKind,
         cursor: Vec2,
         snap: Option<MaterialGraphSocketKind>,
@@ -1403,6 +1406,7 @@ fn begin_material_connection_drag(
     sockets: Query<(&MaterialGraphSocket, &ComputedNode)>,
     viewports: Query<(Entity, &MaterialGraphViewport)>,
     wire_layers: Query<(Entity, &FeathersGraphWireLayer)>,
+    parents: Query<&ChildOf>,
     mut materials: ResMut<Assets<GraphWireMaterial>>,
     mut gesture: ResMut<MaterialGraphGesture>,
     mut commands: Commands,
@@ -1411,22 +1415,29 @@ fn begin_material_connection_drag(
     if event.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
         return;
     }
-    let Ok((socket, computed)) = sockets.get(event.event_target()) else {
+    let socket_entity = event.event_target();
+    let Ok((socket, computed)) = sockets.get(socket_entity) else {
+        return;
+    };
+    // The drag belongs to the viewport that contains its socket, so a connection started in one of
+    // two views of a program tracks and snaps in that view rather than the first one.
+    let Some(viewport) = std::iter::once(socket_entity)
+        .chain(parents.iter_ancestors(socket_entity))
+        .find(|entity| viewports.contains(*entity))
+    else {
         return;
     };
     let cursor = event.pointer_location.position / computed.inverse_scale_factor;
     *gesture = MaterialGraphGesture::Connecting {
         program: socket.program,
+        viewport,
         origin: socket.kind,
         cursor,
         snap: None,
     };
-    if let Some((viewport, _)) = viewports
+    if let Some((wire_layer, _)) = wire_layers
         .iter()
-        .find(|(_, viewport)| viewport.program == socket.program)
-        && let Some((wire_layer, _)) = wire_layers
-            .iter()
-            .find(|(_, wire_layer)| wire_layer.viewport == viewport)
+        .find(|(_, wire_layer)| wire_layer.viewport == viewport)
     {
         let material = materials.add(GraphWireMaterial::default());
         commands.spawn((
@@ -2223,6 +2234,7 @@ fn update_material_graph_wires(
 
     let MaterialGraphGesture::Connecting {
         program,
+        viewport: origin_viewport,
         origin,
         cursor,
         snap,
@@ -2267,10 +2279,9 @@ fn update_material_graph_wires(
         }
     }
     *snap = nearest.map(|(_, endpoint, _)| endpoint);
-    let Some((_, viewport, computed, transform)) = viewports
-        .iter()
-        .find(|(marker, _, _, _)| marker.program == *program)
-    else {
+    // Project through the view the drag started in, so the ghost tracks that pane even when a
+    // second view of the same program is open.
+    let Ok((_, viewport, computed, transform)) = viewports.get(*origin_viewport) else {
         return;
     };
     let origin_position = viewport.project_graph_point(origin_graph);
