@@ -2,6 +2,8 @@
 //! Filesystem operations deliberately retain their serialized I/O and recovery path.
 mod payload;
 pub(crate) mod resource;
+pub(crate) mod virtual_sources;
+pub(crate) use payload::VirtualAsset;
 pub(crate) use payload::{AssetPayload, AuthoringDropGuard};
 
 use crate::*;

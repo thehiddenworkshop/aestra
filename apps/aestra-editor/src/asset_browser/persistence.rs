@@ -303,7 +303,7 @@ pub(super) fn persist_preferences(
     exits: Option<Res<Messages<AppExit>>>,
 ) {
     // Selection/hover can mark the state changed, but identical preferences never write.
-    if state.is_changed() {
+    if state.is_changed() && state.scope == SourceScope::Project {
         persistence.capture(&state, catalog.content());
     }
     if exits.is_some_and(|exits| !exits.is_empty())

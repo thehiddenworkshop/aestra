@@ -43,6 +43,7 @@ mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
 mod texture_drop;
+mod virtual_drop;
 pub(crate) mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;

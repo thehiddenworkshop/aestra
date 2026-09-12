@@ -64,6 +64,8 @@ pub(crate) enum ScrollMemoryKey {
     Library,
     AssetBrowserSources,
     AssetBrowserItems,
+    AssetBrowserBuiltIns,
+    AssetBrowserDocument,
     LibraryRelations,
     LibraryDeletion,
     Properties,

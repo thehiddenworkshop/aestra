@@ -110,7 +110,8 @@ AB7d texture drops onto Properties texture inputs are implemented; native accept
 is pending. Source files stay in place; registrations and bindings are effect-local.
 AB7e mesh drops onto mesh renderers are implemented; native acceptance is pending.
 AB7f's shared Properties asset picker is implemented; native acceptance is pending.
-Virtual-source migration and AB8–AB9 are pending.
+AB7g's Built-ins and Current Document virtual sources are implemented; native acceptance
+is pending. Remaining Library parity review and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -717,6 +718,29 @@ The Material field is a typed drop target distinct from its renderer card, preve
 mesh released over Material from replacing geometry. Library removal/virtual-source parity
 are deliberately deferred, not implied by this picker slice.
 
+**AB7g (virtual sources):** Assets exposes Project, Built-ins and Current Document
+alongside the transitional Library. Built-ins lists immutable material presets; Current
+Document lists effect-local materials/instances, registered textures/meshes and flipbooks.
+These use explicit virtual identities, never synthetic project-file entries. Search,
+list/grid presentation, bounded pages and scrolling are available. Selection does not
+open or mutate a source; drag previews follow the pointer and release/cancel restores
+the original row. Virtual resources do not expose filesystem rename/move/delete actions.
+
+Browser drags and compatible Properties pickers use the same virtual catalog and
+AssignAsset validation/transaction route. Built-in presets use the existing named-project-
+material creation prompt. Local materials/textures reuse existing binding planners;
+local meshes/flipbooks change only the compatible geometry/atlas binding, preserving
+material and playback settings. Old document/history snapshots and locked targets are
+rejected. Current Document can create a local sprite material or a 4×1 flipbook from
+the selected registered texture; creation is effect Undo/Redo, not a new project file.
+The Library entry points delegate to the same session creation command.
+
+Native acceptance: switch sources, search/scroll at narrow docks/high DPI, select a
+texture and create/undo an atlas, drag virtual resources onto matching/wrong inputs,
+cancel drags, create a material from a built-in, then Undo/Redo. Before AB8, audit remaining
+Library editing, repair/extract/explode and preset workflows; this slice does not remove
+Library or claim full parity. Source scope/local selection are transient UI state.
+
 Port Effect → Timeline with current cycle checks, Material Program/Preset → renderer,
 Function → graph call, Texture → compatible material input, Mesh → mesh renderer.
 File-backed drops register/reuse effect-local assets through semantic commands and
@@ -793,6 +817,7 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
 function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
-and AB7f picker filtering/selection/keyboard/Undo, then continue virtual-source migration. AB7a native acceptance remains recorded
+AB7f picker filtering/selection/keyboard/Undo, and AB7g virtual browsing, creation and
+assignment. Then complete the remaining Library parity audit before AB8. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

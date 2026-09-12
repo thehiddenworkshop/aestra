@@ -145,19 +145,31 @@ pub(crate) fn spawn_assets_panel(
         ))
         .with_children(|root| {
             root.spawn(row_node()).with_children(|bar| {
-                for (label, legacy) in [("browser-mode", false), ("browser-legacy", true)] {
+                for (label, scope) in [
+                    ("browser-source-project", SourceScope::Project),
+                    ("browser-source-builtins", SourceScope::BuiltIns),
+                    ("browser-source-document", SourceScope::CurrentDocument),
+                ] {
                     spawn_feathers_action_button(
                         bar,
                         &localizer.text(label),
-                        BrowserAction::Legacy(legacy),
-                        state.legacy == legacy,
+                        BrowserAction::Scope(scope),
+                        !state.legacy && state.scope == scope,
                     );
                 }
+                spawn_feathers_action_button(
+                    bar,
+                    &localizer.text("browser-legacy"),
+                    BrowserAction::Legacy(true),
+                    state.legacy,
+                );
             });
             if state.legacy {
                 spawn_library(root, session, catalog, library, localizer);
-            } else {
+            } else if state.scope == SourceScope::Project {
                 spawn_browser(root, state, localizer);
+            } else {
+                super::virtual_sources::spawn(root, state, localizer);
             }
         });
 }
@@ -494,7 +506,7 @@ pub(super) fn sync_panel(
     mut focus: ResMut<bevy::input_focus::InputFocus>,
     mut last_locate: Local<u64>,
 ) {
-    if state.legacy {
+    if state.legacy || state.scope != SourceScope::Project {
         return;
     }
     let content = catalog.content();

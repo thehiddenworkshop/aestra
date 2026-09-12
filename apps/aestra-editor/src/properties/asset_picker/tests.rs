@@ -207,6 +207,54 @@ fn local_texture_and_procedural_remain_available() {
 }
 
 #[test]
+fn virtual_picker_entries_share_drop_validation_and_undo() {
+    let mut f = Fixture::new(false);
+    f.app
+        .world_mut()
+        .resource_mut::<EditorSession>()
+        .add_sprite_material();
+    let local = f.effect().materials.last().unwrap().id;
+    f.open();
+    let pending = f.app.world().resource::<Picker>().0.as_ref().unwrap();
+    assert!(pending.entries.iter().any(|entry| matches!(&entry.selection, Selection::Source(payload) if matches!(payload.virtual_asset(), Some(crate::asset_drop::VirtualAsset::BuiltInPreset(_))))));
+    let (index, payload) = pending
+        .entries
+        .iter()
+        .enumerate()
+        .find_map(|(i, entry)| match &entry.selection {
+            Selection::Source(payload)
+                if payload.virtual_asset()
+                    == Some(crate::asset_drop::VirtualAsset::Material(local)) =>
+            {
+                Some((i, payload.clone()))
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        super::super::asset_drop::plan_target(
+            &payload,
+            f.target,
+            f.app.world().resource::<ProjectEffectCatalog>(),
+            f.app.world().resource::<EditorSession>()
+        )
+        .is_ok()
+    );
+    let before = f.effect();
+    select(f.app.world_mut(), index);
+    f.app.world_mut().flush();
+    assert_eq!(f.effect().emitters[0].renderers[0].material, local);
+    f.app.world_mut().resource_mut::<EditorSession>().undo();
+    assert_eq!(f.effect(), before);
+    assert!(
+        payload
+            .check_document(f.app.world().resource::<EditorSession>())
+            .is_err(),
+        "old drag must not survive a history change"
+    );
+}
+
+#[test]
 fn cancel_stale_document_and_locks_never_assign() {
     for case in 0..3 {
         let mut f = Fixture::new(true);

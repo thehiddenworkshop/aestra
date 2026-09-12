@@ -25,6 +25,31 @@ pub(super) fn spawn(
     localizer: &Localizer,
 ) -> Entity {
     let kind = Kind::of(entry);
+    spawn_named(
+        commands,
+        root,
+        origin,
+        pointer,
+        position,
+        &panel::display_name(entry),
+        kind,
+        &localizer.text(kind.label()),
+        assets,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn spawn_named(
+    commands: &mut Commands,
+    root: Entity,
+    origin: Entity,
+    pointer: PointerId,
+    position: Vec2,
+    name: &str,
+    kind: Kind,
+    subtitle: &str,
+    assets: &AssetServer,
+) -> Entity {
     let position = position + OFFSET;
     let mut preview = commands.spawn((
         DragPreview {
@@ -80,8 +105,8 @@ pub(super) fn spawn(
             ))
             .with_children(|labels| {
                 for (label, size, color) in [
-                    (panel::display_name(entry), 12.0, theme::TEXT),
-                    (localizer.text(kind.label()), 10.0, theme::TEXT_MUTED),
+                    (name.to_owned(), 12.0, theme::TEXT),
+                    (subtitle.to_owned(), 10.0, theme::TEXT_MUTED),
                 ] {
                     labels.spawn((
                         Text::new(label),

@@ -15,7 +15,6 @@ pub(super) struct PickerField(pub DropTarget);
 enum Selection {
     Source(AssetPayload),
     Texture(Option<aestra_core::AssetId>),
-    Material(MaterialId),
 }
 #[derive(Clone)]
 struct Entry {
@@ -97,56 +96,24 @@ fn entries(
     session: &EditorSession,
 ) -> Vec<Entry> {
     let mut entries = Vec::new();
-    match target {
-        DropTarget::Texture(texture) => {
-            if super::texture_drop::allows_procedural(texture) {
+    if let DropTarget::Texture(texture) = target
+        && super::texture_drop::allows_procedural(texture)
+    {
+        entries.push(Entry {
+            label: "Procedural · No texture".into(),
+            selection: Selection::Texture(None),
+        });
+    }
+    for built_in in [false, true] {
+        for entry in crate::asset_drop::virtual_sources::entries(catalog, session, built_in) {
+            let payload = AssetPayload::capture_virtual(catalog, session, entry.asset);
+            if super::asset_drop::plan_target(&payload, target, catalog, session).is_ok() {
                 entries.push(Entry {
-                    label: "Procedural · No texture".into(),
-                    selection: Selection::Texture(None),
-                });
-            }
-            for asset in session
-                .effect
-                .assets
-                .iter()
-                .filter(|a| a.kind == AssetKind::Texture)
-            {
-                entries.push(Entry {
-                    label: format!("{} · Local texture", asset.name),
-                    selection: Selection::Texture(Some(asset.id)),
+                    label: format!("{} · {}", entry.name, entry.kind),
+                    selection: Selection::Source(payload),
                 });
             }
         }
-        DropTarget::Material(renderer) => {
-            for material in &session.effect.materials {
-                if super::asset_drop::plan_local_material(renderer, material.id, catalog, session)
-                    .is_ok()
-                {
-                    entries.push(Entry {
-                        label: format!("{} · Local material", material.name),
-                        selection: Selection::Material(material.id),
-                    });
-                }
-            }
-            let programs = catalog
-                .material_programs_for_effect(&session.effect)
-                .unwrap_or_default();
-            for (index, instance) in session.effect.material_instances.iter().enumerate() {
-                if super::asset_drop::plan_local_material(renderer, instance.id, catalog, session)
-                    .is_ok()
-                {
-                    let name = programs
-                        .iter()
-                        .find(|p| p.id == instance.program.id())
-                        .map_or("Material", |p| p.name.as_str());
-                    entries.push(Entry {
-                        label: format!("{name} · Local instance {}", index + 1),
-                        selection: Selection::Material(instance.id),
-                    });
-                }
-            }
-        }
-        _ => {}
     }
     for source in catalog.content().source_tree().entries() {
         let payload = AssetPayload::capture(catalog, source.id);
@@ -393,9 +360,6 @@ fn local_plan(
         }
         (Selection::Texture(asset), DropTarget::Texture(target)) => {
             super::texture_drop::plan_local(target, *asset, catalog, session)
-        }
-        (Selection::Material(material), DropTarget::Material(target)) => {
-            super::asset_drop::plan_local_material(target, *material, catalog, session)
         }
         _ => Err("Selection is incompatible with this field".into()),
     }

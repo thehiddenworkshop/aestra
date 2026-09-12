@@ -46,6 +46,7 @@ pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
 
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BrowserAction {
+    Scope(SourceScope),
     Legacy(bool),
     Navigate(ProjectSourceId),
     Expand(ProjectSourceId),
@@ -100,6 +101,14 @@ pub(super) fn handle_action(
     clicks.0 = None;
     let content = catalog.content();
     match *event {
+        BrowserAction::Scope(scope) => {
+            state.scope = scope;
+            state.legacy = false;
+            state.query.clear();
+            state.page = 0;
+            state.selected = None;
+            session.ui_revision += 1;
+        }
         BrowserAction::Legacy(legacy) => {
             if state.legacy != legacy {
                 state.legacy = legacy;
@@ -271,8 +280,9 @@ fn reveal_browser(
     session: &mut EditorSession,
     layout: Option<&mut WorkspaceLayout>,
 ) {
-    if state.legacy {
+    if state.legacy || state.scope != SourceScope::Project {
         state.legacy = false;
+        state.scope = SourceScope::Project;
         session.ui_revision += 1;
     }
     if let Some(layout) = layout {

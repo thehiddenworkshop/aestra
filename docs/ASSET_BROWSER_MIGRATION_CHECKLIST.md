@@ -1665,3 +1665,34 @@ Native acceptance pending: field click, popup sizing at narrow docks/DPI, search
 keyboard/Enter, Escape/outside click, preset/primitive handoff, live preview and Undo/Redo.
 This does not complete virtual-source or Library parity migration. Keep Library until its
 remaining built-in presets and local resource creation workflows have tested replacements.
+
+### AB7g — Built-ins and Current Document virtual sources — 2026-09-12
+
+Assets now exposes Project, Built-ins, Current Document and the transitional Library.
+The virtual catalog is shared with Properties pickers. Built-in material presets retain
+their semantic IDs; local resources carry effect/history/revision guards and never enter
+the project source tree. Virtual rows have no filesystem-operation identity. Search,
+list/grid layout, bounded pages and scrolling do not edit the document. Selection remains
+stable by semantic ID through refresh; document switching clears local selection.
+
+Virtual drags use the existing pointer-following non-pickable preview and AssignAsset
+route. Presets open the same named material creation prompt; local materials/textures
+reuse binding planners. Local mesh and flipbook drops validate matching renderer types,
+locks and the candidate document, preserve materials/playback settings, and create one
+Undo/Redo edit. Wrong-field drops cannot fall through to geometry. Release over empty
+space, Escape, stale snapshots and removed source widgets clear the drag visual.
+
+Current Document offers local sprite-material creation and explicit 4×1 atlas creation
+from the selected registered texture. No selection/no texture disables atlas creation.
+Both use the session's existing semantic commands and effect history; the source texture
+is unchanged. Library remains available for the remaining parity audit and native
+acceptance. Virtual source scope/selection are intentionally not persisted as file paths.
+
+Regression coverage: virtual/file identity separation, filtering and pagination, selected-
+texture creation and Undo/Redo, drag visual cleanup, stale local handles, shared picker
+validation, built-in preset creation without a preset file, local geometry/atlas bindings
+and lock/wrong-field rejection. Native input, detached-window/DPI, preview and end-to-end
+acceptance remain pending. Verification: 800 editor tests passed, two opt-in tests ignored;
+strict editor Clippy (all targets, warnings denied), touched-file formatting and diff
+checks passed. The narrow list/grid layout regression at 1.5× scale confirms a bounded
+scrollable viewport; it does not substitute for native high-DPI input acceptance.

@@ -65,7 +65,7 @@ impl MeshDropTarget {
         })
     }
 
-    fn check(&self, session: &EditorSession) -> Result<(), String> {
+    pub(super) fn check(&self, session: &EditorSession) -> Result<(), String> {
         if session.effect.id != self.effect || session.pending_change.is_some() {
             return Err(
                 "Effect changed or has a pending edit; drop on its current mesh input".into(),
@@ -94,6 +94,15 @@ impl MeshDropTarget {
             return Err("The mesh renderer or its emitter is locked".into());
         }
         Ok(())
+    }
+}
+
+impl MeshDropTarget {
+    pub(super) fn renderer(self) -> RendererDropTarget {
+        RendererDropTarget {
+            effect: self.effect,
+            renderer: self.renderer,
+        }
     }
 }
 

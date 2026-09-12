@@ -10,6 +10,14 @@ use std::{collections::BTreeSet, path::PathBuf};
 pub(super) const PAGE_SIZE: usize = 96;
 pub(super) const HISTORY_LIMIT: usize = 64;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum SourceScope {
+    #[default]
+    Project,
+    BuiltIns,
+    CurrentDocument,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum ViewMode {
     #[default]
@@ -112,6 +120,7 @@ impl Kind {
 
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub(crate) struct AssetBrowserState {
+    pub(super) scope: SourceScope,
     pub(super) legacy: bool,
     pub(super) view: ViewMode,
     pub(super) sort: Sort,
@@ -138,6 +147,7 @@ pub(crate) struct AssetBrowserState {
 impl Default for AssetBrowserState {
     fn default() -> Self {
         Self {
+            scope: SourceScope::Project,
             legacy: false,
             view: ViewMode::List,
             sort: Sort::Name,

@@ -37,19 +37,71 @@ impl AuthoringDropGuard<'_> {
 pub(crate) struct AssetPayload {
     root: PathBuf,
     version: ProjectContentVersion,
-    source: ProjectSourceId,
+    source: Option<ProjectSourceId>,
     asset: Option<ProjectAssetId>,
+    virtual_asset: Option<VirtualAsset>,
+    document: Option<(aestra_core::EffectId, u64, u64)>,
+}
+
+/// Virtual resources have semantic identities, never filesystem source identities.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum VirtualAsset {
+    BuiltInPreset(aestra_core::MaterialPresetId),
+    Material(aestra_core::MaterialId),
+    Texture(aestra_core::AssetId),
+    Mesh(aestra_core::AssetId),
+    Flipbook(aestra_core::AssetId),
 }
 
 impl AssetPayload {
+    pub(crate) fn virtual_asset(&self) -> Option<VirtualAsset> {
+        self.virtual_asset
+    }
+
+    pub(crate) fn capture_virtual(
+        catalog: &ProjectEffectCatalog,
+        session: &EditorSession,
+        asset: VirtualAsset,
+    ) -> Self {
+        Self {
+            root: catalog.root().to_path_buf(),
+            version: catalog.content_revision(),
+            source: None,
+            asset: None,
+            virtual_asset: Some(asset),
+            document: (!matches!(asset, VirtualAsset::BuiltInPreset(_))).then_some((
+                session.effect.id,
+                session.history_generation(),
+                session.document_revision(),
+            )),
+        }
+    }
+
+    pub(crate) fn check_document(&self, session: &EditorSession) -> Result<(), String> {
+        if self.document.is_some_and(|snapshot| {
+            snapshot
+                != (
+                    session.effect.id,
+                    session.history_generation(),
+                    session.document_revision(),
+                )
+        }) {
+            return Err("Document changed; select the resource again".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn mesh_source<'a>(
         &self,
         catalog: &'a ProjectEffectCatalog,
     ) -> Result<&'a aestra_project::ProjectSourceEntry, String> {
         self.resolve(catalog)?;
+        if self.virtual_asset.is_some() {
+            return Err("Expected a project mesh file".into());
+        }
         let source = catalog
             .content()
-            .source(self.source)
+            .source(self.source.ok_or("Expected a file source")?)
             .ok_or("Mesh source disappeared")?;
         if !matches!(&source.kind, aestra_project::ProjectSourceKind::File(info)
             if info.classification == aestra_project::ProjectFileClassification::Mesh)
@@ -87,9 +139,12 @@ impl AssetPayload {
         catalog: &'a ProjectEffectCatalog,
     ) -> Result<&'a aestra_project::ProjectSourceEntry, String> {
         self.resolve(catalog)?;
+        if self.virtual_asset.is_some() {
+            return Err("Expected a project texture file".into());
+        }
         let source = catalog
             .content()
-            .source(self.source)
+            .source(self.source.ok_or("Expected a file source")?)
             .ok_or("Texture source disappeared")?;
         if !matches!(&source.kind, aestra_project::ProjectSourceKind::File(info)
             if info.classification == aestra_project::ProjectFileClassification::Texture)
@@ -121,8 +176,10 @@ impl AssetPayload {
         Self {
             root: catalog.root().to_path_buf(),
             version: catalog.content_revision(),
-            source,
+            source: Some(source),
             asset: catalog.content().asset_for_source(source),
+            virtual_asset: None,
+            document: None,
         }
     }
 
@@ -133,11 +190,27 @@ impl AssetPayload {
         if self.root != catalog.root() || self.version != catalog.content_revision() {
             return Err("Project changed; drag the asset again".into());
         }
+        if let Some(asset) = self.virtual_asset {
+            return match asset {
+                VirtualAsset::BuiltInPreset(id) => {
+                    if !aestra_compiler::MaterialCompiler
+                        .material_preset_catalog()
+                        .iter()
+                        .any(|preset| preset.id == id)
+                    {
+                        return Err("Built-in preset no longer exists".into());
+                    }
+                    Ok(Some(ProjectAssetId::MaterialPreset(id)))
+                }
+                _ => Ok(None),
+            };
+        }
+        let source_id = self.source.ok_or("Expected a file source")?;
         catalog
             .content()
-            .source(self.source)
+            .source(source_id)
             .ok_or("Source no longer exists")?;
-        if catalog.content().asset_for_source(self.source) != self.asset {
+        if catalog.content().asset_for_source(source_id) != self.asset {
             return Err("Asset identity changed; drag the asset again".into());
         }
         if let Some(asset) = self.asset {
@@ -145,7 +218,7 @@ impl AssetPayload {
                 .content()
                 .unique_source_for_asset(asset)
                 .map_err(|error| error.to_string())?;
-            if source.id != self.source {
+            if source.id != source_id {
                 return Err("Asset source changed; drag the asset again".into());
             }
         }

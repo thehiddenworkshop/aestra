@@ -52,6 +52,13 @@ pub(super) fn plan_target(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Result<Assignment, String> {
+    payload.resolve(catalog)?;
+    payload.check_document(session)?;
+    if let Some(asset) = payload.virtual_asset()
+        && !matches!(asset, crate::asset_drop::VirtualAsset::BuiltInPreset(_))
+    {
+        return super::virtual_drop::plan(asset, target, catalog, session);
+    }
     if let Some(target) = mesh_target(payload, target, catalog, session)? {
         return super::mesh_drop::prepare(payload, target, catalog, session);
     }
@@ -60,7 +67,7 @@ pub(super) fn plan_target(
             plan(payload, target, catalog, session)
         }
         DropTarget::Texture(target) => super::texture_drop::plan(payload, target, catalog, session),
-        DropTarget::Mesh(_) => unreachable!("mesh target handled above"),
+        DropTarget::Mesh(_) => Err("Drop a mesh onto this input".into()),
     }
 }
 
@@ -70,6 +77,9 @@ fn mesh_target(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Result<Option<super::mesh_drop::MeshDropTarget>, String> {
+    if payload.virtual_asset().is_some() {
+        return Ok(None);
+    }
     match target {
         DropTarget::Mesh(target) => Ok(Some(target)),
         DropTarget::Renderer(target) if payload.resolve(catalog)?.is_none() => {
@@ -372,7 +382,7 @@ fn assign_asset(
     let payload = event.payload.clone();
     let target = event.target;
     match guard.check_release().and_then(|()| {
-        if matches!(target, DropTarget::Texture(_)) {
+        if matches!(target, DropTarget::Texture(_)) && payload.virtual_asset().is_none() {
             super::texture_drop::check_file(&payload, &catalog)?;
         }
         plan_target(&payload, target, &catalog, &session)

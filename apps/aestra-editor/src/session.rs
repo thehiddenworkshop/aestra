@@ -1960,6 +1960,19 @@ impl EditorSession {
             self.status = "Import a texture before creating a flipbook".into();
             return;
         };
+        self.add_grid_flipbook_for_texture(texture);
+    }
+
+    pub(crate) fn add_grid_flipbook_for_texture(&mut self, texture: aestra_core::AssetId) {
+        if !self
+            .effect
+            .assets
+            .iter()
+            .any(|asset| asset.id == texture && asset.kind == AssetKind::Texture)
+        {
+            self.status = "Select a registered texture before creating a flipbook".into();
+            return;
+        }
         let flipbook = FlipbookDefinition::grid(
             format!("Flipbook {}", self.effect.flipbooks.len() + 1),
             texture,

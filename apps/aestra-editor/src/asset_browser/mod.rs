@@ -17,6 +17,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 mod tree;
+mod virtual_sources;
 
 use crate::*;
 pub(crate) use actions::LocateInAssets;
@@ -29,6 +30,7 @@ pub(crate) struct EditorAssetBrowserPlugin;
 
 impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
+        virtual_sources::register(app);
         operations::register(app);
         tree::register(app);
         drag_drop::register(app);

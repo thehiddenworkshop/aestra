@@ -150,6 +150,59 @@ fn preset_creates_new_saved_material_and_one_undoable_assignment() {
 }
 
 #[test]
+fn built_in_preset_uses_same_creation_prompt_without_a_source_file() {
+    let (root, mut app, target) = fixture();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Escape);
+    app.world_mut().run_system_once(sync).unwrap();
+    app.world_mut().flush();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .clear();
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let session = app.world().resource::<EditorSession>();
+    let payload = MaterialCompiler
+        .material_preset_catalog()
+        .iter()
+        .find_map(|preset| {
+            let payload = AssetPayload::capture_virtual(
+                catalog,
+                session,
+                crate::asset_drop::VirtualAsset::BuiltInPreset(preset.id),
+            );
+            prepare(&payload, target, catalog, session)
+                .is_ok()
+                .then_some(payload)
+        })
+        .expect("a built-in sprite preset");
+    let before = session.effect.clone();
+    app.world_mut().trigger(super::super::AssignAsset {
+        payload,
+        target: super::super::DropTarget::Material(target),
+    });
+    app.world_mut().flush();
+    assert!(app.world().resource::<Prompt>().0.is_some());
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+    enter_name(&mut app, "From Builtin");
+    submit_prompt(&mut app);
+    io::drain(app.world_mut());
+    assert!(
+        app.world().resource::<Prompt>().0.is_none(),
+        "{}",
+        app.world().resource::<EditorSession>().status
+    );
+    assert!(
+        root.path()
+            .join("materials/From Builtin.aestra.material.ron")
+            .exists()
+    );
+    assert_ne!(app.world().resource::<EditorSession>().effect, before);
+    app.world_mut().resource_mut::<EditorSession>().undo();
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+}
+
+#[test]
 fn empty_or_colliding_name_disables_create_and_escape_cancels_without_writes() {
     let (root, mut app, _) = fixture();
     let before = app.world().resource::<EditorSession>().effect.clone();

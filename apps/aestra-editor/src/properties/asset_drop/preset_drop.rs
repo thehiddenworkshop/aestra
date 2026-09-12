@@ -16,6 +16,27 @@ pub(super) struct OpenPresetDrop {
     pub target: RendererDropTarget,
 }
 
+fn descriptor(
+    payload: &AssetPayload,
+    catalog: &ProjectEffectCatalog,
+) -> Result<MaterialPresetDescriptor, String> {
+    let Some(ProjectAssetId::MaterialPreset(id)) = payload.resolve(catalog)? else {
+        return Err("Expected a material preset".into());
+    };
+    if payload.virtual_asset().is_some() {
+        MaterialCompiler
+            .material_preset_catalog()
+            .get(id)
+            .cloned()
+            .ok_or("Built-in preset no longer exists".into())
+    } else {
+        catalog
+            .content()
+            .cached_material_preset(id)
+            .map_err(|error| error.to_string())
+    }
+}
+
 pub(super) fn prepare(
     payload: &AssetPayload,
     target: RendererDropTarget,
@@ -144,10 +165,7 @@ fn open(
             return;
         }
     };
-    let Ok(Some(ProjectAssetId::MaterialPreset(id))) = event.payload.resolve(&catalog) else {
-        return;
-    };
-    let Ok(preset) = catalog.content().cached_material_preset(id) else {
+    let Ok(preset) = descriptor(&event.payload, &catalog) else {
         return;
     };
     let folder = catalog
@@ -472,16 +490,27 @@ fn submit(
     let mut prepared = catalog.clone();
     let name = pending.name.clone();
     let expected_preset = pending.preset.clone();
+    let payload = pending.payload.clone();
     let effect = session.effect.clone();
     let locks = session.locks.clone();
     pending.busy = true;
     io::enqueue(&mut commands, guard.clone(), move || {
         prepared.refresh();
         let result = (|| -> Result<std::path::PathBuf, String> {
-            let current = prepared
-                .content()
-                .cached_material_preset(expected_preset.id)
-                .map_err(|e| e.to_string())?;
+            // Refresh changes the snapshot version. Compare the recipe by semantic
+            // identity to reject changes on disk without inventing a built-in file.
+            let current = if payload.virtual_asset().is_some() {
+                MaterialCompiler
+                    .material_preset_catalog()
+                    .get(expected_preset.id)
+                    .cloned()
+                    .ok_or("Built-in preset no longer exists")?
+            } else {
+                prepared
+                    .content()
+                    .cached_material_preset(expected_preset.id)
+                    .map_err(|e| e.to_string())?
+            };
             if current != expected_preset {
                 return Err("Preset changed on disk; cancel and drag it again".into());
             }
