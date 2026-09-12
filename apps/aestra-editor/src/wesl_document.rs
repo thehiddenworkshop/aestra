@@ -251,9 +251,31 @@ pub(crate) fn module_name_for(path: &Path) -> String {
     name
 }
 
+/// The WESL compiler module path for a module of the given (sanitized) name. Modules live under the
+/// `package::` root so `import package::<name>::<item>;` resolves against the other open modules —
+/// bare names would resolve relative to the importing module and fail.
+pub(crate) fn wesl_module_path(module_name: &str) -> String {
+    format!("package::{module_name}")
+}
+
 /// Compiles a WESL module (via the WESL compiler and Naga validation) to a clean/error state.
-pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompileState {
-    match aestra_gpu::shader::compile_wesl(module_name, source, &[]) {
+/// `imports` are the other available modules as `(sanitized name, source)`, registered so this
+/// module's `import package::<name>::…;` statements resolve.
+pub(crate) fn compile_wesl_source(
+    module_name: &str,
+    source: &str,
+    imports: &[(&str, &str)],
+) -> WeslCompileState {
+    let module_path = wesl_module_path(module_name);
+    let import_paths: Vec<(String, &str)> = imports
+        .iter()
+        .map(|(name, src)| (wesl_module_path(name), *src))
+        .collect();
+    let import_refs: Vec<(&str, &str)> = import_paths
+        .iter()
+        .map(|(path, src)| (path.as_str(), *src))
+        .collect();
+    match aestra_gpu::shader::compile_wesl_with_imports(&module_path, source, &[], &import_refs) {
         Ok(compiled) => WeslCompileState::Ok {
             wgsl: compiled.wgsl,
         },
@@ -339,17 +361,29 @@ pub(crate) fn recompile_changed_wesl(
     if !documents.is_changed() {
         return;
     }
-    for (id, path, revision, text) in documents.iter() {
+    // Snapshot every open module's name and source so any module can import any other. Owned copies
+    // detach the borrow of `documents` before the diagnostics are written.
+    let modules: Vec<(WeslSourceId, String, u64, String)> = documents
+        .iter()
+        .map(|(id, path, revision, text)| (id, module_name_for(path), revision, text.to_owned()))
+        .collect();
+    for (id, module, revision, text) in &modules {
         let up_to_date = diagnostics
             .entries
-            .get(&id)
-            .is_some_and(|(compiled, _)| *compiled == revision);
+            .get(id)
+            .is_some_and(|(compiled, _)| compiled == revision);
         if up_to_date {
             continue;
         }
-        let module = module_name_for(path);
-        let state = compile_wesl_source(&module, text);
-        diagnostics.entries.insert(id, (revision, state));
+        // Every other open module is available for `import package::<name>::…;`. An unimported
+        // module is simply never composed, so listing them all is safe.
+        let imports: Vec<(&str, &str)> = modules
+            .iter()
+            .filter(|(other, _, _, _)| other != id)
+            .map(|(_, name, _, src)| (name.as_str(), src.as_str()))
+            .collect();
+        let state = compile_wesl_source(module, text, &imports);
+        diagnostics.entries.insert(*id, (*revision, state));
     }
     diagnostics
         .entries
@@ -430,18 +464,43 @@ mod tests {
         match compile_wesl_source(
             "noise",
             "@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+            &[],
         ) {
             WeslCompileState::Ok { wgsl } => assert!(wgsl.contains("fn main")),
             WeslCompileState::Error { .. } => panic!("expected a clean compile for valid WESL"),
         }
         // Unused declarations are tree-shaken away, so a lone function composes to empty WGSL.
-        match compile_wesl_source("noise", "fn add(a: f32, b: f32) -> f32 { return a + b; }") {
+        match compile_wesl_source(
+            "noise",
+            "fn add(a: f32, b: f32) -> f32 { return a + b; }",
+            &[],
+        ) {
             WeslCompileState::Ok { wgsl } => assert!(wgsl.trim().is_empty()),
             WeslCompileState::Error { .. } => panic!("expected a clean compile for valid WESL"),
         }
-        match compile_wesl_source("noise", "fn broken( {") {
+        match compile_wesl_source("noise", "fn broken( {", &[]) {
             WeslCompileState::Error { message, .. } => assert!(!message.is_empty()),
             WeslCompileState::Ok { .. } => panic!("expected a compile error for malformed WESL"),
+        }
+    }
+
+    #[test]
+    fn a_module_can_import_another_open_module() {
+        // A library module of helpers, imported by an entry-point module. With the helper passed as
+        // an available import, the entry point composes cleanly; without it, the import is unresolved.
+        let helper = "fn scale(x: f32) -> f32 { return x * 2.0; }";
+        let main = "import package::helpers::scale;\n\
+                    @fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(scale(0.5)); }";
+        match compile_wesl_source("main", main, &[("helpers", helper)]) {
+            WeslCompileState::Ok { wgsl } => assert!(wgsl.contains("fn main")),
+            WeslCompileState::Error { message, .. } => {
+                panic!("expected the import to resolve, got: {message}")
+            }
+        }
+        // Without the helper module available, the import cannot resolve.
+        match compile_wesl_source("main", main, &[]) {
+            WeslCompileState::Error { .. } => {}
+            WeslCompileState::Ok { .. } => panic!("expected an unresolved-import error"),
         }
     }
 

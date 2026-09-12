@@ -74,6 +74,31 @@ fn representative_artifact_produces_naga_validated_shader_package() {
 }
 
 #[test]
+fn wesl_modules_resolve_package_qualified_imports() {
+    // A helper module imported by an entry-point module. The importer references it by its
+    // package-qualified path; the resolver serves it from the supplied imports.
+    let helper = "fn add(a: f32, b: f32) -> f32 { return a + b; }";
+    let main = "import package::helpers::add;\n\
+                @fragment fn probe() -> @location(0) vec4<f32> { return vec4<f32>(add(1.0, 2.0)); }";
+
+    let compiled = aestra_gpu::shader::compile_wesl_with_imports(
+        "package::main",
+        main,
+        &["probe"],
+        &[("package::helpers", helper)],
+    )
+    .expect("a package-qualified import must resolve against the supplied modules");
+    assert!(compiled.wgsl.contains("fn probe"));
+
+    // Without the helper module supplied, the same import cannot resolve.
+    assert!(
+        aestra_gpu::shader::compile_wesl_with_imports("package::main", main, &["probe"], &[])
+            .is_err(),
+        "an import with no matching module must fail to compose"
+    );
+}
+
+#[test]
 fn mesh_wireframe_uses_shared_geometry_and_portable_line_shader() {
     let shader = aestra_gpu::shader::compile_wesl(
         "package::aestra_mesh_wireframe",

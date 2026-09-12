@@ -247,6 +247,19 @@ pub fn compile_wesl(
     wesl: &str,
     required_entry_points: &[&str],
 ) -> Result<CompiledWesl, GpuShaderError> {
+    compile_wesl_with_imports(module_name, wesl, required_entry_points, &[])
+}
+
+/// Composes one WESL module, resolving its `import` statements against `imports` (each entry a
+/// `(module_name, source)` pair registered in the resolver), and validates the generated WGSL.
+/// Standalone `.wesl` modules can therefore import one another. An import whose name collides with
+/// the root module is ignored so the module under compilation is never shadowed.
+pub fn compile_wesl_with_imports(
+    module_name: &str,
+    wesl: &str,
+    required_entry_points: &[&str],
+    imports: &[(&str, &str)],
+) -> Result<CompiledWesl, GpuShaderError> {
     let module: ModulePath = module_name
         .parse()
         .map_err(|error| GpuShaderError::ModulePath {
@@ -255,6 +268,15 @@ pub fn compile_wesl(
         })?;
     let mut resolver = VirtualResolver::new();
     resolver.add_module(module.clone(), wesl.into());
+    for (name, source) in imports {
+        let path: ModulePath = name.parse().map_err(|error| GpuShaderError::ModulePath {
+            module: (*name).to_owned(),
+            message: format!("{error:?}"),
+        })?;
+        if path != module {
+            resolver.add_module(path, (*source).into());
+        }
+    }
     let wgsl = Wesl::new("")
         .set_custom_resolver(resolver)
         .compile(&module)
