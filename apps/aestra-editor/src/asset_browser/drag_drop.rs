@@ -142,7 +142,7 @@ fn begin(
         if let Some(origin) = drag.origin.take() {
             commands
                 .entity(origin)
-                .try_remove::<super::payload::AssetPayload>();
+                .try_remove::<crate::asset_drop::AssetPayload>();
         }
         if let Some(preview) = drag.preview.take() {
             commands.entity(preview).try_despawn();
@@ -171,7 +171,7 @@ fn begin(
         drag.source = Some((source, catalog.content_revision()));
         commands
             .entity(event.entity)
-            .insert(super::payload::AssetPayload::capture(&catalog, source));
+            .insert(crate::asset_drop::AssetPayload::capture(&catalog, source));
         drag.origin = Some(event.entity);
         drag.ended = false;
         drag.suppress_click = true;
@@ -192,20 +192,18 @@ fn target(
     parents: &Query<&ChildOf>,
     catalog: &ProjectEffectCatalog,
 ) -> Option<(Entity, ProjectSourceId)> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| {
-            let id = if let Ok(BrowserAction::Navigate(id)) = folders.get(entity) {
-                *id
-            } else {
-                rows.get(entity).ok()?.0
-            };
-            catalog
-                .content()
-                .source(id)
-                .filter(|entry| entry.kind == ProjectSourceKind::Directory)
-                .map(|_| (entity, id))
-        })
+    crate::asset_drop::nearest(entity, parents, |entity| {
+        let id = if let Ok(BrowserAction::Navigate(id)) = folders.get(entity) {
+            *id
+        } else {
+            rows.get(entity).ok()?.0
+        };
+        catalog
+            .content()
+            .source(id)
+            .filter(|entry| entry.kind == ProjectSourceKind::Directory)
+            .map(|_| id)
+    })
 }
 
 fn eligible(
@@ -414,7 +412,7 @@ fn clear_ended(
         if let Some(origin) = drag.origin.take() {
             commands
                 .entity(origin)
-                .try_remove::<super::payload::AssetPayload>();
+                .try_remove::<crate::asset_drop::AssetPayload>();
         }
         drag.ended = false;
         for highlight in &highlights {
@@ -432,7 +430,7 @@ fn dismiss(
     mut drag: ResMut<AssetDrag>,
     mut commands: Commands,
 ) {
-    let escape = keys.is_some_and(|keys| keys.just_pressed(KeyCode::Escape));
+    let escape = crate::asset_drop::cancelled(keys.as_deref());
     if escape
         || drag
             .source
@@ -765,7 +763,7 @@ mod tests {
                     );
                     assert!(
                         app.world()
-                            .get::<super::super::payload::AssetPayload>(source_row)
+                            .get::<crate::asset_drop::AssetPayload>(source_row)
                             .unwrap()
                             .resolve(app.world().resource::<ProjectEffectCatalog>())
                             .is_ok()

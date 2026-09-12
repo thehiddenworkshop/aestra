@@ -2165,6 +2165,14 @@ fn spawn_semantic_material_parameter(
         asset_server,
         &source,
     );
+    if descriptor.control == MaterialControlKind::Texture {
+        let value = match descriptor.current_value.as_ref() {
+            Some(MaterialParameterValue::Constant(value)) => Some(value),
+            _ => None,
+        };
+        spawn_semantic_material_texture(parent, instance, descriptor.id, value, session);
+        return;
+    }
     match descriptor.current_value.as_ref() {
         Some(MaterialParameterValue::Constant(value)) => match descriptor.control {
             MaterialControlKind::Number
@@ -2187,9 +2195,7 @@ fn spawn_semantic_material_parameter(
                     spawn_semantic_material_toggle(parent, instance, descriptor.id, *value);
                 }
             }
-            MaterialControlKind::Texture => {
-                spawn_semantic_material_texture(parent, instance, descriptor.id, value, session);
-            }
+            MaterialControlKind::Texture => {}
         },
         Some(MaterialParameterValue::RandomRange { min, max, .. }) => {
             spawn_semantic_material_value_rows(
@@ -2514,11 +2520,12 @@ fn spawn_semantic_material_texture(
     parent: &mut ChildSpawnerCommands,
     instance: MaterialId,
     parameter: MaterialParameterId,
-    value: &MaterialValue,
+    value: Option<&MaterialValue>,
     session: &EditorSession,
 ) {
-    let MaterialValue::Texture2D(selected) = value else {
-        return;
+    let selected = match value {
+        Some(MaterialValue::Texture2D(selected)) => Some(*selected),
+        _ => None,
     };
     let options = session
         .effect
@@ -2528,7 +2535,7 @@ fn spawn_semantic_material_texture(
         .filter(|(_, asset)| asset.kind == AssetKind::Texture)
         .map(|(index, asset)| ComboOption {
             label: asset.name.clone(),
-            selected: asset.id == *selected,
+            selected: Some(asset.id) == selected,
             action: PropertiesAction::SetSemanticMaterialTexture {
                 instance,
                 parameter,
@@ -2540,9 +2547,22 @@ fn spawn_semantic_material_texture(
         .effect
         .assets
         .iter()
-        .find(|asset| asset.id == *selected)
-        .map_or("Missing texture", |asset| asset.name.as_str());
-    spawn_properties_combo_row(parent, "Texture", current, &options, None);
+        .find(|asset| Some(asset.id) == selected)
+        .map_or(
+            if selected.is_some() {
+                "Missing texture"
+            } else {
+                "Drop texture from Assets"
+            },
+            |asset| asset.name.as_str(),
+        );
+    if let Some(target) =
+        super::texture_drop::TextureDropTarget::parameter(session, instance, parameter)
+    {
+        super::texture_drop::row(parent, target, |row| {
+            spawn_properties_combo_row(row, "Texture", current, &options, None);
+        });
+    }
 }
 
 pub(super) fn spawn_renderer_card(
@@ -2576,7 +2596,7 @@ pub(super) fn spawn_renderer_card(
             .with_enabled(renderer.enabled)
             .with_border(base_border),
         (
-            super::material_drop::RendererDropTarget {
+            super::asset_drop::RendererDropTarget {
                 effect: session.effect.id,
                 renderer: renderer.id,
             },
@@ -2836,12 +2856,22 @@ pub(super) fn spawn_renderer_card(
                                 ),
                             }),
                     );
-                    spawn_properties_combo_row(
+                    super::texture_drop::row(
                         card,
-                        "Texture",
-                        texture_name,
-                        &texture_options,
-                        None,
+                        super::texture_drop::TextureDropTarget::sprite(
+                            session,
+                            renderer.id,
+                            material.id,
+                        ),
+                        |row| {
+                            spawn_properties_combo_row(
+                                row,
+                                "Texture",
+                                texture_name,
+                                &texture_options,
+                                None,
+                            )
+                        },
                     );
                     if texture.is_some() {
                         for (label, component) in [

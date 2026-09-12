@@ -10,7 +10,6 @@ mod drag_preview;
 mod inspection;
 mod operations;
 mod panel;
-pub(crate) mod payload;
 mod persistence;
 mod relocation;
 pub(crate) mod relocation_recovery;

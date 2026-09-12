@@ -1,15 +1,12 @@
 //! Typed browser function drops shared by material and function graph viewports.
 use super::*;
-use crate::asset_browser::payload::{AssetPayload, AuthoringDropGuard};
+use crate::asset_drop::{AssetPayload, AuthoringDropGuard};
 use crate::material_document::MaterialEditingTarget;
 use crate::material_function_editor::FunctionEditor;
 use aestra_authoring::{MaterialCommand, MaterialFunctionBodyCommand, MaterialTransaction};
 use aestra_core::material::{MaterialFunction, MaterialFunctionRef};
 use aestra_project::ProjectAssetId;
-use bevy::picking::{
-    events::{DragEnter, DragLeave},
-    pointer::PointerButton,
-};
+use bevy::picking::events::DragEnter;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Owner {
@@ -214,42 +211,13 @@ fn plan(
     })
 }
 
-#[derive(Component)]
-struct Feedback {
-    payload: AssetPayload,
-    target: Entity,
-}
+type Feedback = crate::asset_drop::Feedback<GraphDropTarget>;
 
 pub(super) fn register(app: &mut App) {
+    crate::asset_drop::register_feedback::<GraphDropTarget>(app);
     app.add_observer(hover)
-        .add_observer(leave)
         .add_observer(drop_function)
         .add_systems(Update, cleanup);
-}
-
-fn source(
-    entity: Entity,
-    sources: &Query<&AssetPayload>,
-    parents: &Query<&ChildOf>,
-) -> Option<AssetPayload> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| sources.get(entity).ok().cloned())
-}
-fn destination(
-    entity: Entity,
-    targets: &Query<&GraphDropTarget>,
-    parents: &Query<&ChildOf>,
-) -> Option<(Entity, GraphDropTarget)> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| {
-            targets
-                .get(entity)
-                .ok()
-                .cloned()
-                .map(|target| (entity, target))
-        })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -264,27 +232,22 @@ fn hover(
     feedback: Query<Entity, With<Feedback>>,
     mut commands: Commands,
 ) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    let Some(payload) = source(event.dragged, &sources, &parents) else {
-        return;
-    };
-    let Some((entity, target)) = destination(event.entity, &targets, &parents) else {
+    let Some((payload, entity, target)) = crate::asset_drop::resolve(
+        event.button,
+        event.dragged,
+        event.entity,
+        &sources,
+        &parents,
+        |entity| targets.get(entity).ok().cloned(),
+    ) else {
         return;
     };
     event.propagate(false);
-    for entity in &feedback {
-        commands.entity(entity).try_despawn();
-    }
+    crate::asset_drop::clear_feedback(&feedback, &mut commands);
     let result = guard
         .check()
         .and_then(|()| plan(&payload, &target, &session, &catalog));
-    let color = if result.is_ok() {
-        theme::ACCENT
-    } else {
-        Color::srgb(0.95, 0.3, 0.3)
-    };
+    let accepted = result.is_ok();
     let label = result.map_or_else(
         |error| error,
         |plan| {
@@ -299,62 +262,13 @@ fn hover(
             }
         },
     );
-    commands.entity(entity).with_children(|parent| {
-        parent
-            .spawn((
-                Feedback {
-                    payload,
-                    target: entity,
-                },
-                Pickable::IGNORE,
-                GlobalZIndex(275),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    border: UiRect::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BorderColor::all(color),
-            ))
-            .with_child((
-                Text::new(label),
-                TextColor(theme::TEXT),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                Pickable::IGNORE,
-                BackgroundColor(theme::PANEL),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    max_width: Val::Percent(100.0),
-                    padding: UiRect::all(Val::Px(5.0)),
-                    ..default()
-                },
-            ));
-    });
-}
-
-fn leave(
-    event: On<Pointer<DragLeave>>,
-    parents: Query<&ChildOf>,
-    feedback: Query<(Entity, &Feedback)>,
-    mut commands: Commands,
-) {
-    for (entity, marker) in &feedback {
-        if event.entity == marker.target
-            || parents
-                .iter_ancestors(event.entity)
-                .any(|entity| entity == marker.target)
-        {
-            commands.entity(entity).try_despawn();
-        }
-    }
+    crate::asset_drop::show_feedback::<GraphDropTarget>(
+        &mut commands,
+        entity,
+        payload,
+        label,
+        accepted,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -371,31 +285,23 @@ fn drop_function(
     mut ledger: ResMut<EditorHistoryLedger>,
     mut functions: ResMut<FunctionEditor>,
     mut memory: ResMut<GraphViewportMemory>,
-    keys: Option<Res<ButtonInput<KeyCode>>>,
     feedback: Query<Entity, With<Feedback>>,
     mut commands: Commands,
 ) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    let Some(payload) = source(event.dropped, &sources, &parents) else {
-        return;
-    };
-    let Some((entity, target)) = destination(event.entity, &targets, &parents) else {
+    let Some((payload, entity, target)) = crate::asset_drop::resolve(
+        event.button,
+        event.dropped,
+        event.entity,
+        &sources,
+        &parents,
+        |entity| targets.get(entity).ok().cloned(),
+    ) else {
         return;
     };
     event.propagate(false);
-    for entity in &feedback {
-        commands.entity(entity).try_despawn();
-    }
+    crate::asset_drop::clear_feedback(&feedback, &mut commands);
     let result = (|| {
-        if keys
-            .as_ref()
-            .is_some_and(|keys| keys.just_pressed(KeyCode::Escape))
-        {
-            return Err("Function drop cancelled".into());
-        }
-        guard.check()?;
+        guard.check_release()?;
         let (viewport, computed, transform) = geometry
             .get(entity)
             .map_err(|_| "Graph viewport is unavailable")?;
@@ -448,24 +354,17 @@ fn drop_function(
     session.ui_revision += 1;
 }
 
+// Domain invalidation is additional to the common payload/Escape/end-of-drag cleanup.
 fn cleanup(
-    sources: Query<&AssetPayload>,
     feedback: Query<(Entity, &Feedback)>,
     targets: Query<&GraphDropTarget>,
     session: Res<EditorSession>,
-    catalog: Res<ProjectEffectCatalog>,
-    keys: Option<Res<ButtonInput<KeyCode>>>,
     mut commands: Commands,
 ) {
     for (entity, marker) in &feedback {
-        if keys
-            .as_ref()
-            .is_some_and(|keys| keys.just_pressed(KeyCode::Escape))
-            || marker.payload.resolve(&catalog).is_err()
-            || targets
-                .get(marker.target)
-                .map_or(true, |target| target.check(&session).is_err())
-            || !sources.iter().any(|source| *source == marker.payload)
+        if targets
+            .get(marker.target)
+            .map_or(true, |target| target.check(&session).is_err())
         {
             commands.entity(entity).try_despawn();
         }

@@ -1,10 +1,10 @@
 //! Both browser and transitional Library sources feed the same placement command.
 use super::*;
-use crate::asset_browser::payload::AssetPayload;
+use crate::asset_drop::AssetPayload;
 #[cfg(test)]
 mod tests;
 
-pub(super) use crate::asset_browser::payload::AuthoringDropGuard as DropGuard;
+pub(super) use crate::asset_drop::AuthoringDropGuard as DropGuard;
 
 pub(super) fn clear_cancelled_preview(
     payloads: Query<&AssetPayload>,
@@ -13,10 +13,7 @@ pub(super) fn clear_cancelled_preview(
     mut state: ResMut<TimelineState>,
 ) {
     if state.browser_drop.as_ref().is_some_and(|payload| {
-        keys.as_ref()
-            .is_some_and(|keys| keys.just_pressed(KeyCode::Escape))
-            || payload.resolve(&catalog).is_err()
-            || !payloads.iter().any(|active| active == payload)
+        !crate::asset_drop::active(payload, &payloads, Some(&catalog), keys.as_deref())
     }) {
         state.browser_drop = None;
         state.effect_drop_preview = None;

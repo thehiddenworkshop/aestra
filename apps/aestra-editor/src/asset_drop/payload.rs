@@ -7,11 +7,19 @@ use std::path::PathBuf;
 /// Shared gate for typed authoring drops; filesystem operations have their own I/O guards.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct AuthoringDropGuard<'w> {
+    keys: Option<Res<'w, ButtonInput<KeyCode>>>,
     protection: Option<Res<'w, DocumentProtectionState>>,
     tasks: Option<Res<'w, crate::project_content::io::ProjectIoTasks>>,
 }
 
 impl AuthoringDropGuard<'_> {
+    pub(crate) fn check_release(&self) -> Result<(), String> {
+        if super::cancelled(self.keys.as_deref()) {
+            return Err("Asset drop cancelled".into());
+        }
+        self.check()
+    }
+
     pub(crate) fn check(&self) -> Result<(), String> {
         if self
             .protection
@@ -34,6 +42,42 @@ pub(crate) struct AssetPayload {
 }
 
 impl AssetPayload {
+    /// File-backed texture intent; format support comes from the runtime loader, not icons.
+    pub(crate) fn texture_source<'a>(
+        &self,
+        catalog: &'a ProjectEffectCatalog,
+    ) -> Result<&'a aestra_project::ProjectSourceEntry, String> {
+        self.resolve(catalog)?;
+        let source = catalog
+            .content()
+            .source(self.source)
+            .ok_or("Texture source disappeared")?;
+        if !matches!(&source.kind, aestra_project::ProjectSourceKind::File(info)
+            if info.classification == aestra_project::ProjectFileClassification::Texture)
+            || source.error.is_some()
+        {
+            return Err("Drop a texture file onto this input".into());
+        }
+        let path = source
+            .relative_path
+            .to_str()
+            .ok_or("Texture path is not valid UTF-8")?;
+        if path.contains(['#', ':']) {
+            return Err("Texture path contains a loader-reserved character (# or :)".into());
+        }
+        let extension = source
+            .path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if bevy::image::ImageFormat::from_extension(extension).is_none() {
+            return Err(format!(
+                "The texture loader does not support .{extension} in this build"
+            ));
+        }
+        Ok(source)
+    }
+
     pub(crate) fn capture(catalog: &ProjectEffectCatalog, source: ProjectSourceId) -> Self {
         Self {
             root: catalog.root().to_path_buf(),

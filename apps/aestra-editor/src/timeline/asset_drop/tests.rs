@@ -141,6 +141,48 @@ fn browser_drop_on_canvas_or_header_is_one_undoable_transaction() {
 }
 
 #[test]
+fn escape_on_release_cancels_canvas_and_header_drops() {
+    for canvas in [true, false] {
+        let (_root, catalog, payload, _) = fixture();
+        let session = crate::test_support::session_with_timing_slack();
+        let original = session.effect.clone();
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(session)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .insert_resource(TimelineState::framed(2.0))
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(reject_project_effect_drop);
+        let source = app.world_mut().spawn(payload).id();
+        let target = if canvas {
+            app.world_mut()
+                .spawn((
+                    TimelineCanvas,
+                    RelativeCursorPosition {
+                        normalized: Some(Vec2::ZERO),
+                        ..default()
+                    },
+                ))
+                .observe(drop_project_effect_on_timeline)
+                .id()
+        } else {
+            app.world_mut()
+                .spawn_empty()
+                .observe(drop_project_effect_on_track_headers)
+                .id()
+        };
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Escape);
+        drop_on(&mut app, source, target, PointerButton::Primary);
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect, original);
+        assert!(!session.can_undo());
+        assert!(session.status.contains("cancelled"));
+    }
+}
+
+#[test]
 fn browser_hover_previews_effect_and_cancel_removes_gap_without_editing() {
     let (_root, catalog, payload, child) = fixture();
     let session = crate::test_support::session_with_timing_slack();

@@ -35,11 +35,12 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
+mod asset_drop;
 mod material_document;
-mod material_drop;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
+mod texture_drop;
 pub(crate) mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;
@@ -90,7 +91,7 @@ pub(crate) struct PropertiesPlugin;
 
 impl Plugin for PropertiesPlugin {
     fn build(&self, app: &mut App) {
-        material_drop::register(app);
+        asset_drop::register(app);
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<EffectClipRepairState>()

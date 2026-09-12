@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod asset_browser;
+mod asset_drop;
 mod changes;
 mod compiler_inspector;
 mod curves;

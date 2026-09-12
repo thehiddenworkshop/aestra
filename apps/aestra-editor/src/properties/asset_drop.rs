@@ -4,12 +4,12 @@ mod preset_drop;
 mod tests;
 
 use super::*;
-use crate::asset_browser::payload::{AssetPayload, AuthoringDropGuard};
+use crate::asset_drop::{AssetPayload, AuthoringDropGuard};
 use aestra_core::material::{
     MaterialDomain, MaterialInstance, MaterialProgram, MaterialProgramRef,
 };
 use aestra_project::ProjectAssetId;
-use bevy::picking::events::{DragEnter, DragLeave};
+use bevy::picking::events::DragEnter;
 
 #[derive(Component, Clone, Copy)]
 pub(super) struct RendererDropTarget {
@@ -17,9 +17,35 @@ pub(super) struct RendererDropTarget {
     pub renderer: RendererId,
 }
 
-struct Assignment {
-    label: String,
-    transaction: Option<EffectTransaction>,
+pub(super) struct Assignment {
+    pub label: String,
+    pub transaction: Option<EffectTransaction>,
+}
+
+#[derive(Clone, Copy)]
+enum DropTarget {
+    Renderer(RendererDropTarget),
+    Texture(super::texture_drop::TextureDropTarget),
+}
+type DropTargets<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Option<&'static RendererDropTarget>,
+        Option<&'static super::texture_drop::TextureDropTarget>,
+    ),
+>;
+
+fn plan_target(
+    payload: &AssetPayload,
+    target: DropTarget,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Assignment, String> {
+    match target {
+        DropTarget::Renderer(target) => plan(payload, target, catalog, session),
+        DropTarget::Texture(target) => super::texture_drop::plan(payload, target, catalog, session),
+    }
 }
 
 fn renderer_domain(properties: &RendererProperties) -> Option<MaterialDomain> {
@@ -151,50 +177,27 @@ fn plan_program(
     })
 }
 
-#[derive(Component)]
-struct DropFeedback {
-    source: AssetPayload,
-    target: Entity,
-}
+type DropFeedback = crate::asset_drop::Feedback<DropTarget>;
 
 pub(super) fn register(app: &mut App) {
     preset_drop::register(app);
-    app.add_observer(hover)
-        .add_observer(leave)
-        .add_observer(drop_material)
-        .add_systems(Update, cleanup);
+    crate::asset_drop::register_feedback::<DropTarget>(app);
+    app.add_observer(hover).add_observer(drop_asset);
 }
 
-fn source(
-    entity: Entity,
-    sources: &Query<&AssetPayload>,
-    parents: &Query<&ChildOf>,
-) -> Option<AssetPayload> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| sources.get(entity).ok().cloned())
-}
-fn target(
-    entity: Entity,
-    targets: &Query<&RendererDropTarget>,
-    parents: &Query<&ChildOf>,
-) -> Option<(Entity, RendererDropTarget)> {
-    std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|entity| {
-            targets
-                .get(entity)
-                .ok()
-                .copied()
-                .map(|target| (entity, target))
-        })
+fn target(entity: Entity, targets: &DropTargets) -> Option<DropTarget> {
+    let (renderer, texture) = targets.get(entity).ok()?;
+    texture
+        .copied()
+        .map(DropTarget::Texture)
+        .or_else(|| renderer.copied().map(DropTarget::Renderer))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn hover(
     mut event: On<Pointer<DragEnter>>,
     sources: Query<&AssetPayload>,
-    targets: Query<&RendererDropTarget>,
+    targets: DropTargets,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     session: Res<EditorSession>,
@@ -202,27 +205,22 @@ fn hover(
     feedback: Query<Entity, With<DropFeedback>>,
     mut commands: Commands,
 ) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    let Some(payload) = source(event.dragged, &sources, &parents) else {
-        return;
-    };
-    let Some((entity, target)) = target(event.entity, &targets, &parents) else {
+    let Some((payload, entity, target)) = crate::asset_drop::resolve(
+        event.button,
+        event.dragged,
+        event.entity,
+        &sources,
+        &parents,
+        |entity| target(entity, &targets),
+    ) else {
         return;
     };
     event.propagate(false);
-    for entity in &feedback {
-        commands.entity(entity).try_despawn();
-    }
+    crate::asset_drop::clear_feedback(&feedback, &mut commands);
     let result = guard
         .check()
-        .and_then(|()| plan(&payload, target, &catalog, &session));
-    let color = if result.is_ok() {
-        theme::ACCENT
-    } else {
-        Color::srgb(0.95, 0.3, 0.3)
-    };
+        .and_then(|()| plan_target(&payload, target, &catalog, &session));
+    let accepted = result.is_ok();
     let label = result.map_or_else(
         |error| error,
         |plan| {
@@ -233,69 +231,14 @@ fn hover(
             }
         },
     );
-    commands.entity(entity).with_children(|parent| {
-        parent
-            .spawn((
-                DropFeedback {
-                    source: payload,
-                    target: entity,
-                },
-                Pickable::IGNORE,
-                GlobalZIndex(275),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    border: UiRect::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BorderColor::all(color),
-            ))
-            .with_child((
-                Text::new(label),
-                TextColor(theme::TEXT),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                Pickable::IGNORE,
-                BackgroundColor(theme::PANEL),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    max_width: Val::Percent(100.0),
-                    padding: UiRect::all(Val::Px(5.0)),
-                    ..default()
-                },
-            ));
-    });
-}
-
-fn leave(
-    event: On<Pointer<DragLeave>>,
-    parents: Query<&ChildOf>,
-    feedback: Query<(Entity, &DropFeedback)>,
-    mut commands: Commands,
-) {
-    for (entity, marker) in &feedback {
-        if event.entity == marker.target
-            || parents
-                .iter_ancestors(event.entity)
-                .any(|ancestor| ancestor == marker.target)
-        {
-            commands.entity(entity).try_despawn();
-        }
-    }
+    crate::asset_drop::show_feedback::<DropTarget>(&mut commands, entity, payload, label, accepted);
 }
 
 #[allow(clippy::too_many_arguments)]
-fn drop_material(
+fn drop_asset(
     mut event: On<Pointer<DragDrop>>,
     sources: Query<&AssetPayload>,
-    targets: Query<&RendererDropTarget>,
+    targets: DropTargets,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     mut session: ResMut<EditorSession>,
@@ -303,28 +246,31 @@ fn drop_material(
     feedback: Query<Entity, With<DropFeedback>>,
     mut commands: Commands,
 ) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    let Some(payload) = source(event.dropped, &sources, &parents) else {
-        return;
-    };
-    let Some((_, target)) = target(event.entity, &targets, &parents) else {
+    let Some((payload, _, target)) = crate::asset_drop::resolve(
+        event.button,
+        event.dropped,
+        event.entity,
+        &sources,
+        &parents,
+        |entity| target(entity, &targets),
+    ) else {
         return;
     };
     event.propagate(false);
-    for entity in &feedback {
-        commands.entity(entity).try_despawn();
-    }
-    match guard
-        .check()
-        .and_then(|()| plan(&payload, target, &catalog, &session))
-    {
+    crate::asset_drop::clear_feedback(&feedback, &mut commands);
+    match guard.check_release().and_then(|()| {
+        if matches!(target, DropTarget::Texture(_)) {
+            super::texture_drop::check_file(&payload, &catalog)?;
+        }
+        plan_target(&payload, target, &catalog, &session)
+    }) {
         Ok(plan) => {
-            if matches!(
-                payload.resolve(&catalog),
-                Ok(Some(ProjectAssetId::MaterialPreset(_)))
-            ) {
+            if let DropTarget::Renderer(target) = target
+                && matches!(
+                    payload.resolve(&catalog),
+                    Ok(Some(ProjectAssetId::MaterialPreset(_)))
+                )
+            {
                 commands.trigger(preset_drop::OpenPresetDrop { payload, target });
                 return;
             }
@@ -337,26 +283,5 @@ fn drop_material(
             }
         }
         Err(error) => session.status = format!("Material drop rejected: {error}"),
-    }
-}
-
-fn cleanup(
-    sources: Query<&AssetPayload>,
-    feedback: Query<(Entity, &DropFeedback)>,
-    catalog: Option<Res<ProjectEffectCatalog>>,
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    mut commands: Commands,
-) {
-    for (entity, marker) in &feedback {
-        if keys
-            .as_ref()
-            .is_some_and(|keys| keys.just_pressed(KeyCode::Escape))
-            || catalog
-                .as_ref()
-                .is_none_or(|catalog| marker.source.resolve(catalog).is_err())
-            || !sources.iter().any(|source| *source == marker.source)
-        {
-            commands.entity(entity).try_despawn();
-        }
     }
 }

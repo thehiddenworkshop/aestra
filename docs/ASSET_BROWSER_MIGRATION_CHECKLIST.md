@@ -1537,3 +1537,61 @@ latest native field submission, creation/assignment/Undo/Redo, original preset b
 empty and colliding names, cancellation, stale presets, late collisions, missing folders,
 new locks and a document change during I/O. Tests use temporary project roots; existing
 user asset edits were not included or changed. Native manual acceptance is still pending.
+
+### AB7c review / AB7d — Texture → Properties input — 2026-09-12
+
+Reviewed the current committed function-drop implementation (`d80a3a0`) and ran its six
+regression tests successfully. The plan's missing next consumer was texture assignment;
+mesh drops, reusable pickers and Library cutover are not yet complete. Existing manual
+acceptance gaps are not retroactively marked tested.
+
+Properties now accepts project textures on sprite Texture rows and exposed material
+Texture2D parameters. Unassigned parameters have a visible drop target. Closest-input
+routing prevents the parent renderer's material-drop handler from also processing a
+texture-field drop. Existing typed-payload validation, drag ghost, hover outline/label,
+document guards and effect history are reused. A single transaction adds a local asset
+registration when needed and sets the input; same paths are reused, including slash/dot
+aliases and Windows case aliases. Already assigned identities win over duplicate legacy
+registrations. Undo removes only a newly registered local reference and restores the
+previous binding; Redo restores the same IDs. No disk file is moved, copied or deleted,
+and no shared material/function source/default or flipbook metadata is changed.
+
+Validation rejects non-textures, loader-disabled formats, reserved loader-path characters,
+stale payloads, changed bindings, locked material consumers and pending/protected edits.
+Release rechecks file existence, metadata and link/reparse status before assignment.
+Image bytes are decoded asynchronously by the renderer loader, not on the UI hover path.
+
+Native acceptance checklist: list/grid drag origins; a legacy sprite texture field;
+an exposed Texture2D input with/without a value; repeat assignment; Undo/Redo; wrong-type
+and locked-target rejection; Escape; live preview; detached/high-DPI panels. Native
+acceptance is pending. AB7's next implementation slice is Mesh → mesh renderer.
+
+Verification: all 771 editor unit tests pass (two opt-in tests ignored), including seven
+texture-drop tests. Strict editor Clippy with all targets and warnings denied passes.
+Formatting checks for the touched Rust files and `git diff --check` pass. Whole-repo
+formatting has pre-existing differences outside this slice; unrelated diagnostics edits,
+new icons and roadmap files were left untouched. Native acceptance remains pending.
+
+### AB7 shared asset-drop infrastructure — 2026-09-12
+
+Moved the browser-owned payload into the editor-level `asset_drop` module. Graph and
+Properties drops now share primary-button source/nearest-target resolution, hover
+outline/message construction, leave/end/stale-source cleanup and release cancellation.
+Feedback registration is idempotent and scoped by consumer type. Graph-specific target
+invalidation remains in its adapter. The Properties adapter and its existing tests/preset
+workflow were renamed from `material_drop` to `asset_drop`.
+
+Timeline placement and browser folder targets use the same ancestor-routing helper;
+timeline preview cleanup shares the payload lifetime check, and both timeline release
+targets now recheck Escape. Browser drag ghosts still originate in the browser and
+follow the pointer across consumers. File move/copy keeps its existing serialized I/O,
+confirmation and recovery; document assignments and graph edits keep their own history.
+No mesh drop or new asset mutation behavior is introduced by this refactor.
+
+Added shared routing/lifecycle regression coverage and a same-frame Escape/release test
+for both timeline targets. Native drag/drop acceptance remains pending.
+
+Verification: all 776 editor unit tests pass (two opt-in tests ignored). Strict editor
+Clippy with all targets and warnings denied, touched-file formatting and diff checks pass.
+The refactor preserves existing material/preset, texture, function graph, timeline and
+folder-move regression coverage. Unrelated user changes remain untouched.

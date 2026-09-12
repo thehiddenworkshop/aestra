@@ -106,6 +106,8 @@ assignment is manually accepted. Project preset drops create a new named materia
 assign it; native acceptance of that flow remains pending.
 AB7c function drops into material/function graphs are implemented; native acceptance
 is pending. Existing function sources are referenced, not copied or moved.
+AB7d texture drops onto Properties texture inputs are implemented; native acceptance
+is pending. Source files stay in place; registrations and bindings are effect-local.
 Remaining AB7 drops and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
@@ -642,6 +644,32 @@ recursive function calls are rejected without an edit. Custom WESL functions may
 called; their read-only bodies do not become editable graph targets. Native acceptance
 is pending for list/grid origins, both graph targets, zoomed placement and Undo/Redo.
 
+**Shared drop infrastructure (AB7 follow-up):** The editor-level `asset_drop` module owns
+snapshot-bound payloads, ancestor routing, primary-button source/target resolution,
+document/release guards, cancellation, and reusable owner-scoped hover feedback and
+cleanup. Properties' former `material_drop` adapter is now named `asset_drop`, covering
+materials, presets and textures. Graph and Properties adapters share transport/feedback;
+timeline and folder drops reuse routing/payload/cancellation helpers while retaining
+their specialized placement previews and filesystem I/O. Target-specific validation,
+transactions, graph history, preset creation and file-move recovery remain separate.
+Mesh assignment should extend this infrastructure, not copy another event/feedback loop.
+
+**AB7d (texture inputs):** Project texture files can be dropped onto the sprite Texture
+row or an exposed semantic material Texture2D parameter in Properties, including a
+currently unassigned input. The closest typed input owns the drop instead of the enclosing
+renderer material card; both consumers share hover feedback, guards and event routing.
+One effect transaction registers/reuses the texture's project-relative resource path
+and updates the binding. Same-path registrations are reused, preferring an already
+assigned identity; repeated assignments are no-ops. Undo/Redo restores the registration
+and previous input together. Linked parameter sources are replaced only at that input;
+shared program/function defaults and source files are never rewritten. Existing sampler
+and color-space declarations remain unchanged. Runtime-enabled image formats are checked
+without disk I/O on hover; release rechecks regular-file/link status and saved metadata.
+Decoding remains asynchronous with renderer diagnostics. Wrong types, stale/changed
+files and bindings, locks and pending/protected operations are rejected without an edit.
+Escape cancels. Dropping an image never invents flipbook/atlas metadata. Native acceptance
+is pending; mesh-renderer drops and reusable picker/virtual-source migration remain next.
+
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
 feedback. Compatibility is shared by pickers and drag targets, not inferred by icons.
@@ -720,7 +748,8 @@ records its later slices and AB6a implementation. AB6a was subsequently accepted
 user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
-drops. **Current step (P1):** manually verify AB7b preset creation/assignment and AB7c
-function graph drops, then extend typed consumers to textures and meshes. AB7a native acceptance remains recorded
+drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
+function graph drops and AB7d texture input drops, then extend typed consumers to mesh
+renderers. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

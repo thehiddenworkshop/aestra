@@ -72,7 +72,7 @@ pub(crate) struct TimelineState {
     pub(super) reveal_emitter: Option<EmitterId>,
     pub(super) reveal_wait_frames: u8,
     pub(super) effect_drop_preview: Option<EffectDropPreview>,
-    pub(super) browser_drop: Option<crate::asset_browser::payload::AssetPayload>,
+    pub(super) browser_drop: Option<crate::asset_drop::AssetPayload>,
     pub(super) effect_drop_insertion: Option<(ChoreographyTrackId, bool)>,
     pub(super) vertical_scroll: f32,
     pub(super) known_duration: f32,

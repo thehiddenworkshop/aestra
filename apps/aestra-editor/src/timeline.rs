@@ -8170,24 +8170,18 @@ fn timeline_wheel_intent(
 }
 
 fn dragged_project_effect(
-    mut entity: Entity,
+    entity: Entity,
     rows: &EffectDragRows,
     parents: &Query<&ChildOf>,
 ) -> Option<EffectDragSource> {
-    loop {
-        if let Ok((row, payload)) = rows.get(entity) {
-            if let Some(payload) = payload {
-                return Some(EffectDragSource::Asset(payload.clone()));
-            }
-            if let Some(row) = row {
-                return Some(EffectDragSource::Library(row.id()));
-            }
-        }
-        let Ok(parent) = parents.get(entity) else {
-            return None;
-        };
-        entity = parent.parent();
-    }
+    crate::asset_drop::nearest(entity, parents, |entity| {
+        let (row, payload) = rows.get(entity).ok()?;
+        payload
+            .cloned()
+            .map(EffectDragSource::Asset)
+            .or_else(|| row.map(|row| EffectDragSource::Library(row.id())))
+    })
+    .map(|(_, source)| source)
 }
 
 fn show_invalid_timeline_drop_feedback(
@@ -8302,7 +8296,7 @@ fn drop_project_effect_on_timeline(
     let insertion = state.effect_drop_insertion.take();
     state.effect_drop_preview = None;
 
-    let result = guard.check().and_then(|()| {
+    let result = guard.check_release().and_then(|()| {
         canvases
             .single()
             .ok()
@@ -8347,7 +8341,7 @@ fn drop_project_effect_on_track_headers(
     state.effect_drop_preview = None;
 
     let playhead_time = session.time();
-    let result = guard.check().and_then(|()| {
+    let result = guard.check_release().and_then(|()| {
         insert_project_effect_clip(
             source_row,
             playhead_time,
