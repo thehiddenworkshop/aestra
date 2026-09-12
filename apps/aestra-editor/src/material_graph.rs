@@ -556,8 +556,13 @@ fn mirror_material_graph_camera_to_document(
         if viewport.viewport_key == document_key {
             continue;
         }
-        if let Some((pan, zoom)) = graph_memory.view(&viewport.viewport_key) {
-            graph_memory.set_view(document_key, pan, zoom);
+        let Some(view) = graph_memory.view(&viewport.viewport_key) else {
+            continue;
+        };
+        // Only write when the document camera actually differs, so an idle open graph does not
+        // dirty the memory (and trigger a layout rebuild) every frame.
+        if graph_memory.view(&document_key) != Some(view) {
+            graph_memory.set_view(document_key, view.0, view.1);
         }
     }
 }
@@ -569,25 +574,32 @@ fn persist_material_graph_layout(
     previews: Res<MaterialGraphPreviewState>,
     mut persistence: ResMut<MaterialGraphLayoutPersistence>,
 ) {
-    let Ok(programs) = session.graph_material_programs(&catalog) else {
-        return;
-    };
-    update_material_graph_layout_document(
-        &mut persistence.document,
-        &programs,
-        &graph_memory,
-        &previews,
-    );
-    if persistence.document == persistence.persisted {
-        persistence.changed_at = None;
-        return;
+    // Rebuild the layout document only when an input that feeds it changed. An idle graph (no edit,
+    // pan, or node move) leaves all of these unchanged, so it does no per-frame work here.
+    if (graph_memory.is_changed()
+        || session.is_changed()
+        || catalog.is_changed()
+        || previews.is_changed())
+        && let Ok(programs) = session.graph_material_programs(&catalog)
+    {
+        update_material_graph_layout_document(
+            &mut persistence.document,
+            &programs,
+            &graph_memory,
+            &previews,
+        );
+        if persistence.document == persistence.persisted {
+            persistence.changed_at = None;
+        } else {
+            persistence.changed_at.get_or_insert_with(Instant::now);
+        }
     }
-    let now = Instant::now();
-    let changed_at = persistence.changed_at.get_or_insert(now);
-    if now.duration_since(*changed_at) < MATERIAL_GRAPH_LAYOUT_SAVE_DELAY {
-        return;
+    // Fire the debounced save once a pending change has settled, whether or not this frame rebuilt.
+    if let Some(changed_at) = persistence.changed_at
+        && Instant::now().duration_since(changed_at) >= MATERIAL_GRAPH_LAYOUT_SAVE_DELAY
+    {
+        save_material_graph_layout(&mut persistence);
     }
-    save_material_graph_layout(&mut persistence);
 }
 
 fn flush_material_graph_layout_on_exit(
@@ -5641,6 +5653,49 @@ mod tests {
         // initial camera follow the most recent view.
         let memory = app.world().resource::<GraphViewportMemory>();
         assert_eq!(memory.view(&document_key), Some((Vec2::new(30.0, -8.0), 1.5)));
+    }
+
+    #[test]
+    fn camera_mirror_does_not_rewrite_an_already_synced_document_camera() {
+        use crate::docking::EditorViewId;
+        // An idle open graph must not dirty the viewport memory every frame (which would rebuild
+        // and re-persist the layout each tick). Once the document camera matches the view camera,
+        // the mirror writes nothing.
+        #[derive(Resource, Default)]
+        struct MemoryDirtied(bool);
+
+        let program = MaterialProgramId::new();
+        let viewport_key = material_graph_viewport_key(program, Some(EditorViewId(3)));
+        let document_key = material_graph_view_key(program);
+        let mut memory = GraphViewportMemory::default();
+        memory.set_view(viewport_key.clone(), Vec2::new(30.0, -8.0), 1.5);
+        memory.set_view(document_key, Vec2::new(30.0, -8.0), 1.5);
+
+        let mut app = App::new();
+        app.insert_resource(memory).init_resource::<MemoryDirtied>();
+        app.add_systems(
+            Update,
+            (
+                mirror_material_graph_camera_to_document,
+                |memory: Res<GraphViewportMemory>, mut dirtied: ResMut<MemoryDirtied>| {
+                    dirtied.0 = memory.is_changed();
+                },
+            )
+                .chain(),
+        );
+        app.world_mut().spawn(MaterialGraphViewport {
+            program,
+            viewport_key,
+            scope: Some(EditorViewId(3)),
+        });
+        // First tick: a freshly inserted resource always reads as changed, so ignore it.
+        app.update();
+        // Second idle tick: nothing touched the memory, and the mirror leaves it alone.
+        app.update();
+        assert!(
+            !app.world().resource::<MemoryDirtied>().0,
+            "the camera mirror rewrote an already-synced document camera"
+        );
     }
 
     #[test]
