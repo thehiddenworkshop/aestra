@@ -847,6 +847,7 @@ diagnostics-working-effect = WORKING EFFECT
 diagnostics-project-references = PROJECT REFERENCES
 diagnostics-pending-transaction = PENDING TRANSACTION
 diagnostics-shaders = SHADERS
+diagnostics-copy = Copy error
 diagnostics-severity-error = ERROR
 diagnostics-severity-warning = WARNING
 diagnostics-severity-info = INFO

@@ -1,8 +1,13 @@
 //! Diagnostics workspace, semantic navigation, and compile-status presentation.
 
+use crate::feathers::context_menu::{
+    pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu,
+    spawn_pointer_context_menu_item,
+};
 use crate::feathers::panel::spawn_panel_empty_state;
 use crate::*;
 use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
+use bevy::ui::RelativeCursorPosition;
 use bevy::ui_widgets::Activate;
 
 pub(crate) mod details;
@@ -24,10 +29,13 @@ impl Plugin for EditorDiagnosticsPlugin {
                 details::sync_status_details.in_set(DiagnosticsSet::Sync),
             )
             .add_observer(queue_diagnostics_action_activation)
+            .add_observer(open_diagnostics_context_menu)
+            .add_observer(copy_diagnostic_to_clipboard)
             .add_systems(
                 Update,
                 (
                     handle_diagnostics_actions.in_set(DiagnosticsSet::Actions),
+                    dismiss_diagnostics_context_menu,
                     update_compile_status.in_set(DiagnosticsSet::Sync),
                     refresh_diagnostics_panel.in_set(DiagnosticsSet::Sync),
                 ),
@@ -49,6 +57,22 @@ enum DiagnosticsAction {
         char: Option<usize>,
     },
 }
+
+/// The full text of a diagnostic row (severity, code, message, path), carried on the row so a
+/// right-click can copy it to the clipboard.
+#[derive(Component)]
+struct DiagnosticCopyText(String);
+
+/// Marks a diagnostics right-click menu's anchor (for despawn) and its surface (for the cursor-over
+/// dismiss check), distinct from other panels' context menus.
+#[derive(Component)]
+struct DiagnosticsContextAnchor;
+#[derive(Component)]
+struct DiagnosticsContextMenu;
+
+/// A diagnostics context-menu item that copies `.0` to the clipboard.
+#[derive(Component)]
+struct DiagnosticCopyAction(String);
 
 #[derive(Resource, Default)]
 pub(crate) struct DiagnosticsPanelState {
@@ -109,6 +133,101 @@ fn queue_diagnostics_action_activation(
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+/// Opens a right-click "Copy" menu on the diagnostic row under the cursor, offering to copy the
+/// diagnostic's full text (severity, message, path) to the clipboard.
+fn open_diagnostics_context_menu(
+    mut click: On<Pointer<Click>>,
+    rows: Query<(&DiagnosticCopyText, &ComputedNode, &UiGlobalTransform)>,
+    parents: Query<&ChildOf>,
+    menus: Query<Entity, With<DiagnosticsContextAnchor>>,
+    localizer: Res<Localizer>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let Some(row) = std::iter::once(click.entity)
+        .chain(parents.iter_ancestors(click.entity))
+        .find(|entity| rows.contains(*entity))
+    else {
+        return;
+    };
+    let (copy, node, transform) = rows.get(row).unwrap();
+    let text = copy.0.clone();
+    for menu in &menus {
+        commands.entity(menu).despawn();
+    }
+    let position = pointer_position_in_node(click.pointer_location.position, node, transform)
+        * node.inverse_scale_factor();
+    let label = localizer.text("diagnostics-copy");
+    commands.entity(row).with_children(|parent| {
+        spawn_pointer_context_menu(
+            parent,
+            position,
+            DiagnosticsContextAnchor,
+            DiagnosticsContextMenu,
+            |menu| {
+                spawn_pointer_context_menu_item(menu, &label, DiagnosticCopyAction(text));
+            },
+        );
+    });
+    click.propagate(false);
+}
+
+/// Copies the diagnostic text to the clipboard when its context-menu item is activated, then closes
+/// the menu.
+fn copy_diagnostic_to_clipboard(
+    activate: On<Activate>,
+    items: Query<&DiagnosticCopyAction>,
+    menus: Query<Entity, With<DiagnosticsContextAnchor>>,
+    parents: Query<&ChildOf>,
+    mut clipboard: ResMut<Clipboard>,
+    mut commands: Commands,
+) {
+    let Ok(action) = items.get(activate.entity) else {
+        return;
+    };
+    let _ = clipboard.set_text(action.0.clone());
+    for menu in &menus {
+        if activate.entity == menu
+            || parents
+                .iter_ancestors(activate.entity)
+                .any(|entity| entity == menu)
+        {
+            commands.entity(menu).despawn();
+        }
+    }
+}
+
+/// Dismisses the diagnostics right-click menu on Escape or a primary click outside its surface.
+fn dismiss_diagnostics_context_menu(
+    buttons: Option<Res<ButtonInput<MouseButton>>>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    surfaces: Query<&RelativeCursorPosition, With<DiagnosticsContextMenu>>,
+    menus: Query<Entity, With<DiagnosticsContextAnchor>>,
+    mut commands: Commands,
+) {
+    if menus.is_empty() {
+        return;
+    }
+    let escape = keys
+        .as_deref()
+        .is_some_and(|keys| keys.just_pressed(KeyCode::Escape));
+    let dismiss = should_dismiss_pointer_context_menu(
+        true,
+        buttons
+            .as_deref()
+            .is_some_and(|buttons| buttons.just_pressed(MouseButton::Left)),
+        escape,
+        surfaces.iter().any(RelativeCursorPosition::cursor_over),
+    );
+    if dismiss {
+        for menu in &menus {
+            commands.entity(menu).despawn();
+        }
     }
 }
 
@@ -585,6 +704,10 @@ fn spawn_diagnostic_row(
             Button,
             EditorNativeControl,
             DiagnosticsAction::Select { source, index },
+            DiagnosticCopyText(format!(
+                "{label} · {code}\n{}\n{}",
+                diagnostic.message, diagnostic.path
+            )),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(64.0),
@@ -714,6 +837,7 @@ fn spawn_wesl_diagnostic_row(
             Button,
             EditorNativeControl,
             DiagnosticsAction::SelectShader { id, char },
+            DiagnosticCopyText(format!("{label} · {code}\n{message}\n{path}")),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(64.0),

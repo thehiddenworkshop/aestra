@@ -847,6 +847,7 @@ diagnostics-working-effect = EFFET COURANT
 diagnostics-project-references = RÉFÉRENCES DU PROJET
 diagnostics-pending-transaction = TRANSACTION EN ATTENTE
 diagnostics-shaders = SHADERS
+diagnostics-copy = Copier l’erreur
 diagnostics-severity-error = ERREUR
 diagnostics-severity-warning = AVERTISSEMENT
 diagnostics-severity-info = INFO
