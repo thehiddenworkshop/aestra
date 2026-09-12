@@ -2118,7 +2118,7 @@ fn attach_material_graph_wire_materials(
 
 fn update_material_graph_wires(
     mut materials: ResMut<Assets<GraphWireMaterial>>,
-    wires: Query<(&MaterialGraphWire, &MaterialNode<GraphWireMaterial>)>,
+    wires: Query<(Entity, &MaterialGraphWire, &MaterialNode<GraphWireMaterial>)>,
     ghosts: Query<(&MaterialGraphGhostWire, &MaterialNode<GraphWireMaterial>)>,
     mut sockets: Query<(
         &MaterialGraphSocket,
@@ -2132,6 +2132,10 @@ fn update_material_graph_wires(
         &ComputedNode,
         &UiGlobalTransform,
     )>,
+    // A wire lives in its viewport's own wire layer; both are resolved so each wire projects through
+    // the viewport that owns it, keeping two views of one program independent.
+    parents: Query<&ChildOf>,
+    wire_layers: Query<&FeathersGraphWireLayer>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
     selection: Res<MaterialGraphSelectionState>,
@@ -2164,7 +2168,7 @@ fn update_material_graph_wires(
         } => Some(*target),
         _ => None,
     };
-    for (wire, material) in &wires {
+    for (entity, wire, material) in &wires {
         let Some(start_graph) = socket_graph_position(
             &socket_positions,
             wire.program,
@@ -2179,9 +2183,10 @@ fn update_material_graph_wires(
         ) else {
             continue;
         };
-        let Some((marker, viewport, _, _)) = viewports
-            .iter()
-            .find(|(marker, _, _, _)| marker.program == wire.program)
+        // Project through the viewport that owns this wire, not the first one for the program, so
+        // both views of a program place their wires with their own pan/zoom.
+        let Some((marker, viewport, _, _)) = wire_viewport(entity, &parents, &wire_layers)
+            .and_then(|viewport_entity| viewports.get(viewport_entity).ok())
         else {
             continue;
         };
@@ -2298,6 +2303,17 @@ fn viewport_local_position(
     transform.try_inverse().map_or(world_position, |inverse| {
         inverse.transform_point2(world_position) + computed.size() * 0.5
     })
+}
+
+/// The viewport entity that owns a wire (or ghost wire): the wire is a child of a graph wire layer,
+/// which names its viewport. Lets each wire project through its own view's pan/zoom.
+fn wire_viewport(
+    wire: Entity,
+    parents: &Query<&ChildOf>,
+    wire_layers: &Query<&FeathersGraphWireLayer>,
+) -> Option<Entity> {
+    let layer = parents.get(wire).ok()?.parent();
+    Some(wire_layers.get(layer).ok()?.viewport)
 }
 
 fn socket_graph_position(
@@ -6164,6 +6180,43 @@ mod tests {
         assert_eq!(expressions(&selection), BTreeSet::from([second]));
         selection.select_expression(scope, program, second, true, false);
         assert!(expressions(&selection).is_empty());
+    }
+
+    #[test]
+    fn a_wire_resolves_the_viewport_that_owns_it() {
+        use bevy::ecs::system::RunSystemOnce;
+        // Two views of one program each have their own wire layer; a wire resolves to the viewport
+        // its layer names, so it projects through that view's pan/zoom rather than the first match.
+        let mut app = App::new();
+        let left_viewport = app.world_mut().spawn_empty().id();
+        let right_viewport = app.world_mut().spawn_empty().id();
+        let left_layer = app
+            .world_mut()
+            .spawn(FeathersGraphWireLayer {
+                viewport: left_viewport,
+            })
+            .id();
+        let right_layer = app
+            .world_mut()
+            .spawn(FeathersGraphWireLayer {
+                viewport: right_viewport,
+            })
+            .id();
+        let left_wire = app.world_mut().spawn(ChildOf(left_layer)).id();
+        let right_wire = app.world_mut().spawn(ChildOf(right_layer)).id();
+
+        let resolved = app
+            .world_mut()
+            .run_system_once(
+                move |parents: Query<&ChildOf>, layers: Query<&FeathersGraphWireLayer>| {
+                    (
+                        wire_viewport(left_wire, &parents, &layers),
+                        wire_viewport(right_wire, &parents, &layers),
+                    )
+                },
+            )
+            .unwrap();
+        assert_eq!(resolved, (Some(left_viewport), Some(right_viewport)));
     }
 
     #[test]
