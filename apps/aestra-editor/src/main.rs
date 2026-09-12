@@ -406,6 +406,23 @@ mod tests {
     }
 
     #[test]
+    fn bundled_effect_clip_sources_resolve_in_the_default_project() {
+        // The welcome effect opens against the default project (sample-project), so every effect it
+        // nests via an effect clip must exist there — otherwise the editor shows an "invalid
+        // reference" diagnostic on launch. Guards against the default effect and default project
+        // drifting apart.
+        let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
+        let catalog = ProjectEffectCatalog::default();
+        for clip in &effect.effect_clips {
+            assert!(
+                catalog.openable_path(clip.source).is_some(),
+                "bundled effect nests {:?}, which is missing from the default project",
+                clip.source
+            );
+        }
+    }
+
+    #[test]
     fn bundled_material_graph_lab_is_valid_compilable_and_graph_rich() {
         let effect = EffectAsset::from_ron(MATERIAL_GRAPH_LAB_EFFECT_SOURCE)
             .expect("material graph lab effect should parse");
