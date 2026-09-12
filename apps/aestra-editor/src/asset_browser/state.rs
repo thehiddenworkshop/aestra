@@ -121,7 +121,6 @@ impl Kind {
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub(crate) struct AssetBrowserState {
     pub(super) scope: SourceScope,
-    pub(super) legacy: bool,
     pub(super) view: ViewMode,
     pub(super) sort: Sort,
     pub(super) sources_visible: bool,
@@ -148,7 +147,6 @@ impl Default for AssetBrowserState {
     fn default() -> Self {
         Self {
             scope: SourceScope::Project,
-            legacy: false,
             view: ViewMode::List,
             sort: Sort::Name,
             sources_visible: true,

@@ -261,7 +261,6 @@ pub(super) fn browser_app(root: &Path) -> App {
     .init_asset::<bevy_resvg::prelude::SvgFile>()
     .insert_resource(ProjectEffectCatalog::scan(root))
     .insert_resource(test_support::session_with_timing_slack())
-    .init_resource::<LibraryState>()
     .init_resource::<crate::document::DocumentManager>()
     .init_resource::<crate::editor_view::EditorViewManager>()
     .init_resource::<crate::editor_view::ActiveEditorContext>()
@@ -280,9 +279,6 @@ pub(super) fn browser_app(root: &Path) -> App {
 fn spawn_browser_fixture(
     mut commands: Commands,
     state: Res<AssetBrowserState>,
-    session: Res<EditorSession>,
-    catalog: Res<ProjectEffectCatalog>,
-    library: Res<LibraryState>,
     localizer: Res<Localizer>,
 ) {
     commands
@@ -292,7 +288,7 @@ fn spawn_browser_fixture(
             ..default()
         })
         .with_children(|parent| {
-            super::spawn_assets_panel(parent, &session, &catalog, &library, &state, &localizer);
+            super::spawn_assets_panel(parent, &state, &localizer);
         });
 }
 
@@ -2146,24 +2142,105 @@ fn browser_effect_activation_loads_documents_through_the_background_worker() {
 }
 
 #[test]
-fn legacy_switch_keeps_the_same_dock_slot_and_browser_choices() {
+fn source_switch_keeps_the_same_dock_slot_and_browser_choices() {
     let root = tempfile::tempdir().unwrap();
     let mut app = browser_app(root.path());
     app.world_mut().trigger(BrowserAction::View(ViewMode::Grid));
     app.update();
     let revision = app.world().resource::<EditorSession>().ui_revision;
-    app.world_mut().trigger(BrowserAction::Legacy(true));
+    app.world_mut()
+        .trigger(BrowserAction::Scope(SourceScope::BuiltIns));
     app.update();
-    assert!(app.world().resource::<AssetBrowserState>().legacy);
+    assert_eq!(
+        app.world().resource::<AssetBrowserState>().scope,
+        SourceScope::BuiltIns
+    );
     assert_eq!(
         app.world().resource::<EditorSession>().ui_revision,
         revision + 1
     );
-    app.world_mut().trigger(BrowserAction::Legacy(false));
+    app.world_mut()
+        .trigger(BrowserAction::Scope(SourceScope::Project));
     app.update();
     assert_eq!(
         app.world().resource::<AssetBrowserState>().view,
         ViewMode::Grid
     );
     assert_eq!(ToolPanel::Assets.message_id(), "panel-assets");
+}
+
+#[test]
+fn assets_toolbar_has_only_project_builtins_and_document_scopes_in_both_locales() {
+    for locale in ["en-US", "fr-FR"] {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .insert_resource(AssetBrowserState::default())
+        .insert_resource(Localizer::new(locale).unwrap())
+        .add_systems(Startup, spawn_browser_fixture);
+        app.update();
+        let world = app.world_mut();
+        let scopes: Vec<_> = world
+            .query::<&BrowserAction>()
+            .iter(world)
+            .filter_map(|action| {
+                if let BrowserAction::Scope(scope) = action {
+                    Some(*scope)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            scopes,
+            [
+                SourceScope::Project,
+                SourceScope::BuiltIns,
+                SourceScope::CurrentDocument
+            ]
+        );
+        assert!(
+            !world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| matches!(text.0.as_str(), "Library" | "Bibliothèque"))
+        );
+    }
+}
+
+#[test]
+fn effect_usage_activation_routes_through_document_protection_and_rejects_stale_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = browser_app(root.path());
+    app.init_resource::<OpenRequests>().add_observer(
+        |event: On<DocumentAction>, mut requests: ResMut<OpenRequests>| requests.0.push(*event),
+    );
+    let owner = EffectAssetRef::new(aestra_core::EffectId::new());
+    let clip = aestra_core::EffectClipId::new();
+    let version = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content_revision();
+    let button = app
+        .world_mut()
+        .spawn(BrowserAction::OpenEffectUsage(owner, clip, version))
+        .id();
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: button });
+    app.world_mut().flush();
+    assert_eq!(
+        app.world().resource::<OpenRequests>().0,
+        [DocumentAction::OpenCatalogClip(owner, clip)]
+    );
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .refresh();
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: button });
+    app.world_mut().flush();
+    assert_eq!(app.world().resource::<OpenRequests>().0.len(), 1);
 }

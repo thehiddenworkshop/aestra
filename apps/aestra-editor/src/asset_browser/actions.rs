@@ -47,7 +47,6 @@ pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BrowserAction {
     Scope(SourceScope),
-    Legacy(bool),
     Navigate(ProjectSourceId),
     Expand(ProjectSourceId),
     Back,
@@ -74,6 +73,11 @@ pub(super) enum BrowserAction {
     InspectSource(ProjectSourceId, ProjectContentVersion, InspectionTab),
     InspectionTab(InspectionTab),
     InspectionPage(bool),
+    OpenEffectUsage(
+        EffectAssetRef,
+        aestra_core::EffectClipId,
+        ProjectContentVersion,
+    ),
 }
 
 pub(super) fn activate_button(
@@ -103,17 +107,10 @@ pub(super) fn handle_action(
     match *event {
         BrowserAction::Scope(scope) => {
             state.scope = scope;
-            state.legacy = false;
             state.query.clear();
             state.page = 0;
             state.selected = None;
             session.ui_revision += 1;
-        }
-        BrowserAction::Legacy(legacy) => {
-            if state.legacy != legacy {
-                state.legacy = legacy;
-                session.ui_revision += 1;
-            }
         }
         BrowserAction::Navigate(id) => state.navigate(content, id),
         BrowserAction::Expand(id) => {
@@ -161,6 +158,11 @@ pub(super) fn handle_action(
         BrowserAction::Refresh => {
             commands.trigger(crate::asset_actions::AssetAction::RefreshProject);
             commands.trigger(super::relocation_recovery::CheckRecovery);
+        }
+        BrowserAction::OpenEffectUsage(owner, clip, version) => {
+            if version == catalog.content_revision() {
+                commands.trigger(DocumentAction::OpenCatalogClip(owner, clip));
+            }
         }
         BrowserAction::NewFolder => {
             commands.trigger(super::operations::OpenFolderPrompt(None, false, None))
@@ -280,8 +282,7 @@ fn reveal_browser(
     session: &mut EditorSession,
     layout: Option<&mut WorkspaceLayout>,
 ) {
-    if state.legacy || state.scope != SourceScope::Project {
-        state.legacy = false;
+    if state.scope != SourceScope::Project {
         state.scope = SourceScope::Project;
         session.ui_revision += 1;
     }

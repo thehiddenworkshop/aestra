@@ -582,7 +582,6 @@ fn inline_lifecycle(
     parents: Query<&ChildOf>,
     nodes: Query<&Node>,
     pending: Query<(), With<PendingFocus>>,
-    state: Option<Res<AssetBrowserState>>,
     catalog: Option<Res<ProjectEffectCatalog>>,
 ) {
     let (Some(wrapper), Some(row)) = (prompt.overlay, prompt.inline_row) else {
@@ -601,12 +600,11 @@ fn inline_lifecycle(
     let hidden = nodes
         .get(row)
         .map_or(true, |node| node.display == Display::None);
-    let changed = state.as_ref().is_some_and(|state| state.legacy)
-        || catalog.as_ref().is_some_and(|catalog| {
-            prompt.target.is_some_and(|(_, version)| {
-                version.generation != catalog.content_revision().generation
-            })
-        });
+    let changed = catalog.as_ref().is_some_and(|catalog| {
+        prompt
+            .target
+            .is_some_and(|(_, version)| version.generation != catalog.content_revision().generation)
+    });
     if changed || (hidden && !prompt.submit_requested && !prompt.pending) {
         // Focus already moved to another control; never steal it back on blur/navigation.
         prompt.return_focus = None;

@@ -2,6 +2,8 @@
 pub(crate) mod io;
 mod plugin;
 pub(crate) use plugin::{EditorProjectContentPlugin, ProjectContentSet};
+#[cfg(test)]
+mod catalog_tests;
 mod refresh;
 use crate::*;
 use aestra_compiler::{
@@ -445,82 +447,6 @@ impl EditorProjectContent {
 
     pub(crate) fn availability(&self) -> &ProjectAssetIndexAvailability {
         self.index().availability()
-    }
-
-    pub(crate) fn rename_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-        name: &str,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        self.edit_index(|index| index.rename_effect_source(source, name))
-    }
-
-    pub(crate) fn move_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-        destination: &Path,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        if !destination.is_dir() {
-            return Err(ProjectAssetOperationError::InvalidDestination {
-                path: destination.to_owned(),
-            });
-        }
-        let effect_root = fs::canonicalize(&self.effect_root).map_err(|error| {
-            ProjectAssetOperationError::FileSystem {
-                operation: "resolve project effect root",
-                path: self.effect_root.clone(),
-                message: error.to_string(),
-            }
-        })?;
-        let destination = fs::canonicalize(destination).map_err(|error| {
-            ProjectAssetOperationError::FileSystem {
-                operation: "resolve destination",
-                path: destination.to_owned(),
-                message: error.to_string(),
-            }
-        })?;
-        if !destination.starts_with(&effect_root) {
-            return Err(ProjectAssetOperationError::DestinationOutsideRoot {
-                destination,
-                root: effect_root,
-            });
-        }
-        self.edit_index(|index| index.move_effect_source(source, destination))
-    }
-
-    pub(crate) fn effect_usage_graph(
-        &self,
-        reference: EffectAssetRef,
-    ) -> Result<ProjectEffectUsageGraph, String> {
-        self.index()
-            .effect_usage_graph(reference)
-            .map_err(|error| error.to_string())
-    }
-
-    pub(crate) fn cached_effect_usage_graph(
-        &self,
-        reference: EffectAssetRef,
-    ) -> Result<ProjectEffectUsageGraph, String> {
-        self.snapshot
-            .content
-            .cached_effect_usage_graph(reference)
-            .map_err(|error| error.to_string())
-    }
-
-    pub(crate) fn delete_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        self.edit_index(|index| {
-            index.delete_effect_source(source, ProjectEffectDeletePolicy::AllowReferenced)
-        })
-    }
-
-    pub(crate) fn effect_name(&self, reference: EffectAssetRef) -> String {
-        self.index().resolve(reference).map_or_else(
-            |_| reference.to_string(),
-            |entry| entry.display_name.clone(),
-        )
     }
 
     #[cfg(test)]

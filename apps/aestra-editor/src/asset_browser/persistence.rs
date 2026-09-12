@@ -231,9 +231,7 @@ impl BrowserPersistence {
         if self.root.as_deref() == Some(root) {
             // A guarded reopen can publish a new generation of the same project.
             // Rebind relative locations from memory; don't erase its navigation or reread disk.
-            let legacy = state.legacy;
             self.current.restore(state, content, version);
-            state.legacy = legacy;
             return;
         }
         // Flush the cached old-root projection before accepting the new snapshot.

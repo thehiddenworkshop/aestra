@@ -1,19 +1,10 @@
 use super::*;
 use crate::{session::blank_effect, test_support};
-use aestra_core::{AssetDefinition, ChoreographyTrackId, EffectClip, EffectId, Emitter, Value};
+use aestra_core::{AssetDefinition, ChoreographyTrackId, EffectAssetRef, Emitter, Value};
 use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
 #[derive(Resource, Default)]
-struct CapturedDocumentAction(Option<DocumentAction>);
-#[derive(Resource, Default)]
 struct CapturedAssetAction(Option<AssetAction>);
-
-fn capture_document_action(
-    action: On<DocumentAction>,
-    mut captured: ResMut<CapturedDocumentAction>,
-) {
-    captured.0 = Some(*action);
-}
 
 fn capture_asset_action(action: On<AssetAction>, mut captured: ResMut<CapturedAssetAction>) {
     captured.0 = Some(*action);
@@ -30,24 +21,17 @@ fn asset_action_test_app(session: EditorSession, catalog: ProjectEffectCatalog) 
         .init_resource::<ButtonInput<KeyCode>>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_plugins((EditorProjectContentPlugin, EditorAssetActionsPlugin));
-    assert!(!app.world().contains_resource::<LibraryState>());
-    assert!(!app.is_plugin_added::<EditorLibraryPlugin>());
     app
 }
 
 fn spawn_test_asset_operation_overlay(
     mut commands: Commands,
     state: Res<AssetOperationState>,
-    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
     commands.spawn(Node::default()).with_children(|parent| {
-        spawn_asset_operation_overlay(parent, &state, &catalog, &localizer);
+        spawn_asset_operation_overlay(parent, &state, &localizer);
     });
-}
-
-fn test_source_id(value: u64) -> ProjectEffectEntryId {
-    ProjectEffectEntryId::from_u64(value)
 }
 
 #[test]
@@ -127,7 +111,6 @@ fn shared_dialog_blocks_shortcuts_and_escape_cancels_without_library() {
 #[test]
 fn asset_actions_work_without_library() {
     let session = test_support::session_with_timing_slack();
-    let initial_materials = session.effect.materials.len();
     let root = tempfile::tempdir().unwrap();
     let mut app = asset_action_test_app(session, ProjectEffectCatalog::scan(root.path()));
     let control = app
@@ -136,7 +119,7 @@ fn asset_actions_work_without_library() {
             Button,
             FeathersActionButton,
             Interaction::None,
-            AssetAction::AddSpriteMaterial,
+            AssetAction::CreateReusableEffectFromSelection,
             BackgroundColor::default(),
         ))
         .id();
@@ -150,14 +133,7 @@ fn asset_actions_work_without_library() {
             .entity(control)
             .contains::<PendingFeathersActivation>()
     );
-    assert_eq!(
-        app.world()
-            .resource::<EditorSession>()
-            .effect
-            .materials
-            .len(),
-        initial_materials + 1
-    );
+    assert!(app.world().resource::<AssetOperationState>().is_open());
 }
 
 #[test]
@@ -189,92 +165,6 @@ fn context_menu_asset_actions_dispatch_without_a_background_component() {
 }
 
 #[test]
-fn source_rename_keeps_the_open_document_clean_and_updates_its_source_path() {
-    let temporary = tempfile::tempdir().unwrap();
-    let original = temporary.path().join("original.aestra.ron");
-    let session = test_support::session_with_source_path(&original);
-    session.effect.save_ron(&original).unwrap();
-    let catalog = ProjectEffectCatalog::scan(temporary.path());
-    let source = catalog.entries()[0].id;
-    let reference = catalog.entries()[0].reference.unwrap();
-    let mut app = App::new();
-    app.insert_resource(session)
-        .insert_resource(catalog)
-        .init_resource::<CurvesState>()
-        .init_resource::<WorkspaceLayout>()
-        .init_resource::<MenuState>()
-        .init_resource::<ModulePaletteState>()
-        .init_resource::<ButtonInput<KeyCode>>()
-        .insert_resource(Localizer::new("en-US").unwrap())
-        .add_plugins((EditorProjectContentPlugin, EditorAssetActionsPlugin));
-
-    app.world_mut()
-        .trigger(AssetAction::RenameProjectEffect(source));
-    app.world_mut()
-        .resource_mut::<AssetOperationState>()
-        .rename
-        .as_mut()
-        .unwrap()
-        .draft = "Renamed Effect".into();
-    let confirm = app
-        .world_mut()
-        .spawn(AssetOperationAction::ConfirmRename)
-        .id();
-    app.world_mut().trigger(Activate { entity: confirm });
-
-    let session = app.world().resource::<EditorSession>();
-    assert_eq!(session.effect.name, "Editor Test Effect");
-    crate::project_content::io::drain(app.world_mut());
-    let session = app.world().resource::<EditorSession>();
-    assert_eq!(session.effect.name, "Renamed Effect");
-    assert_eq!(
-        session.source_path.as_deref().unwrap().file_name().unwrap(),
-        "renamed_effect.aestra.ron"
-    );
-    assert!(!session.dirty);
-    assert!(!original.exists());
-    let catalog = app.world().resource::<ProjectEffectCatalog>();
-    assert_eq!(
-        catalog.openable_path(reference),
-        session.source_path.as_deref()
-    );
-    assert!(!app.world().resource::<AssetOperationState>().is_open());
-}
-
-#[test]
-fn source_rename_requires_saving_when_the_source_is_open_and_dirty() {
-    let temporary = tempfile::tempdir().unwrap();
-    let original = temporary.path().join("original.aestra.ron");
-    let mut session = test_support::session_with_source_path(&original);
-    session.effect.save_ron(&original).unwrap();
-    session.dirty = true;
-    let catalog = ProjectEffectCatalog::scan(temporary.path());
-    let source = catalog.entries()[0].id;
-    let mut app = App::new();
-    app.insert_resource(session)
-        .insert_resource(catalog)
-        .init_resource::<CurvesState>()
-        .init_resource::<WorkspaceLayout>()
-        .init_resource::<MenuState>()
-        .init_resource::<ModulePaletteState>()
-        .init_resource::<ButtonInput<KeyCode>>()
-        .insert_resource(Localizer::new("en-US").unwrap())
-        .add_plugins((EditorProjectContentPlugin, EditorAssetActionsPlugin));
-
-    app.world_mut()
-        .trigger(AssetAction::RenameProjectEffect(source));
-
-    assert!(!app.world().resource::<AssetOperationState>().is_open());
-    assert!(
-        app.world()
-            .resource::<EditorSession>()
-            .status
-            .contains("Save")
-    );
-    assert!(original.exists());
-}
-
-#[test]
 fn reusable_effect_extraction_overlay_tracks_modal_state_without_query_conflicts() {
     let state = AssetOperationState {
         extraction: Some(ReusableEffectExtractionState {
@@ -283,7 +173,6 @@ fn reusable_effect_extraction_overlay_tracks_modal_state_without_query_conflicts
             replace_selection: true,
             error: Some("Choose another name".into()),
         }),
-        ..default()
     };
     let mut app = App::new();
     app.add_plugins((
@@ -311,11 +200,6 @@ fn reusable_effect_extraction_overlay_tracks_modal_state_without_query_conflicts
         .single(world)
         .unwrap();
     assert_eq!(extraction.display, Display::Flex);
-    let rename = world
-        .query_filtered::<&Node, With<SourceRenameDialog>>()
-        .single(world)
-        .unwrap();
-    assert_eq!(rename.display, Display::None);
     let (error, error_node) = world
         .query_filtered::<(&Text, &Node), With<ReusableEffectExtractionError>>()
         .single(world)
@@ -337,37 +221,6 @@ fn reusable_effect_extraction_overlay_tracks_modal_state_without_query_conflicts
         .single(world)
         .unwrap();
     assert_eq!(extraction.display, Display::None);
-}
-
-#[test]
-fn relation_overlay_change_queues_one_follow_up_shell_rebuild() {
-    let source = test_source_id(701);
-    let state = AssetOperationState {
-        dependency_inspector: Some(DependencyInspectorState {
-            source,
-            graph: ProjectEffectUsageGraph::default(),
-        }),
-        ..default()
-    };
-    let session = test_support::session_with_timing_slack();
-    let initial_revision = session.ui_revision;
-    let mut app = App::new();
-    app.insert_resource(state)
-        .init_resource::<RenderedAssetRelationOverlay>()
-        .insert_resource(session)
-        .add_systems(Update, queue_asset_relation_overlay_rebuild);
-
-    app.update();
-    assert_eq!(
-        app.world().resource::<EditorSession>().ui_revision,
-        initial_revision + 1
-    );
-    app.update();
-    assert_eq!(
-        app.world().resource::<EditorSession>().ui_revision,
-        initial_revision + 1,
-        "an unchanged relation view must not rebuild every frame"
-    );
 }
 
 #[test]
@@ -511,124 +364,5 @@ fn explode_replaces_the_clip_with_editable_emitters_and_is_undoable() {
     assert_eq!(
         session.effect.choreography_order,
         vec![ChoreographyTrackId::EffectClip(clip_id)]
-    );
-}
-
-#[test]
-fn dependency_inspector_reports_actionable_reverse_clip_usages() {
-    let temporary = tempfile::tempdir().unwrap();
-    let child_path = temporary.path().join("child.aestra.ron");
-    let mut child = EffectAsset::new("Child", 1.0);
-    child.id = EffectId::from_u128(0xD01);
-    child.save_ron(&child_path).unwrap();
-    let owner_path = temporary.path().join("owner.aestra.ron");
-    let mut owner = EffectAsset::new("Owner", 1.0);
-    owner.id = EffectId::from_u128(0xD02);
-    let clip = EffectClip::new(child.id, 0.0, 1.0);
-    let clip_id = clip.id;
-    owner.effect_clips.push(clip);
-    owner.save_ron(&owner_path).unwrap();
-
-    let catalog = ProjectEffectCatalog::scan(temporary.path());
-    let source = catalog
-        .entries()
-        .iter()
-        .find(|entry| entry.reference == Some(child.id.into()))
-        .unwrap()
-        .id;
-    let session = test_support::session_with_timing_slack();
-    let mut app = asset_action_test_app(session, catalog);
-
-    app.world_mut()
-        .trigger(AssetAction::InspectProjectEffect(source));
-
-    let inspector = app
-        .world()
-        .resource::<AssetOperationState>()
-        .dependency_inspector
-        .as_ref()
-        .unwrap();
-    let usage = inspector.graph.direct_usages().next().unwrap();
-    assert_eq!(usage.owner.id, owner.id);
-    assert_eq!(usage.clip, clip_id);
-}
-
-#[test]
-fn dependency_navigation_opens_and_selects_the_exact_owner_clip() {
-    let session = test_support::session_with_timing_slack();
-    let catalog = ProjectEffectCatalog::from_entries(Vec::new());
-    let owner = EffectAssetRef::new(EffectId::from_u128(0xD11));
-    let clip = EffectClipId::new();
-    let mut app = asset_action_test_app(session, catalog);
-    app.init_resource::<CapturedDocumentAction>()
-        .add_observer(capture_document_action);
-    let action = app
-        .world_mut()
-        .spawn(AssetOperationAction::NavigateToEffect {
-            effect: owner,
-            clip: Some(clip),
-        })
-        .id();
-
-    app.world_mut().trigger(Activate { entity: action });
-    app.world_mut().flush();
-
-    assert_eq!(
-        app.world().resource::<CapturedDocumentAction>().0,
-        Some(DocumentAction::OpenCatalogClip(owner, clip))
-    );
-}
-
-#[test]
-fn confirmed_effect_deletion_removes_the_source_after_showing_usages() {
-    let temporary = tempfile::tempdir().unwrap();
-    let child_path = temporary.path().join("child.aestra.ron");
-    let mut child = EffectAsset::new("Child", 1.0);
-    child.id = EffectId::from_u128(0xD21);
-    child.save_ron(&child_path).unwrap();
-    let mut owner = EffectAsset::new("Owner", 1.0);
-    owner.id = EffectId::from_u128(0xD22);
-    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
-    owner
-        .save_ron(temporary.path().join("owner.aestra.ron"))
-        .unwrap();
-    let catalog = ProjectEffectCatalog::scan(temporary.path());
-    let source = catalog
-        .entries()
-        .iter()
-        .find(|entry| entry.reference == Some(child.id.into()))
-        .unwrap()
-        .id;
-    let session = test_support::session_with_timing_slack();
-    let mut app = asset_action_test_app(session, catalog);
-
-    app.world_mut()
-        .trigger(AssetAction::DeleteProjectEffect(source));
-    crate::project_content::io::drain(app.world_mut());
-    assert_eq!(
-        app.world()
-            .resource::<AssetOperationState>()
-            .deletion
-            .as_ref()
-            .unwrap()
-            .graph
-            .direct_usages()
-            .count(),
-        1
-    );
-    let confirm = app
-        .world_mut()
-        .spawn(AssetOperationAction::ConfirmEffectDeletion)
-        .id();
-    app.world_mut().trigger(Activate { entity: confirm });
-
-    crate::project_content::io::drain(app.world_mut());
-    assert!(!child_path.exists());
-    assert!(!app.world().resource::<AssetOperationState>().is_open());
-    assert!(
-        app.world()
-            .resource::<EditorSession>()
-            .status
-            .contains("Deleted")
     );
 }

@@ -9,6 +9,40 @@ const RELATION_PAGE_SIZE: usize = 24;
 
 #[cfg(test)]
 #[test]
+fn effect_usages_keep_each_exact_owner_clip_from_the_snapshot() {
+    use aestra_core::{EffectAsset, EffectClip};
+    let root = tempfile::tempdir().unwrap();
+    let child = EffectAsset::new("Child", 1.0);
+    child
+        .save_ron(root.path().join("child.aestra.ron"))
+        .unwrap();
+    let mut owner = EffectAsset::new("Owner", 2.0);
+    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
+    owner.effect_clips.push(EffectClip::new(child.id, 1.0, 1.0));
+    owner
+        .save_ron(root.path().join("owner.aestra.ron"))
+        .unwrap();
+    let content = ProjectContent::scan(root.path());
+    let source = content
+        .unique_source_for_asset(ProjectAssetId::Effect(child.id))
+        .unwrap()
+        .id;
+    // Inspection remains snapshot-only even when disk state changes after publication.
+    std::fs::remove_file(root.path().join("owner.aestra.ron")).unwrap();
+    let (rows, known) = relation_rows(&content, source, InspectionTab::Usages);
+    assert!(known);
+    assert_eq!(rows.len(), 2);
+    for clip in &owner.effect_clips {
+        assert!(
+            rows.iter()
+                .any(|row| row.clip == Some((owner.id.into(), clip.id)))
+        );
+    }
+    assert!(rows.iter().all(|row| row.source.is_some()));
+}
+
+#[cfg(test)]
+#[test]
 fn preflight_includes_unsaved_program_dependencies() {
     use aestra_core::material::*;
     let root = tempfile::tempdir().unwrap();
@@ -228,6 +262,7 @@ struct RelationRow {
     label: String,
     status: ProjectRelationStatus,
     source: Option<ProjectSourceId>,
+    clip: Option<(EffectAssetRef, aestra_core::EffectClipId)>,
 }
 
 fn identity(asset: ProjectAssetId) -> String {
@@ -245,6 +280,26 @@ fn relation_rows(
     tab: InspectionTab,
 ) -> (Vec<RelationRow>, bool) {
     let report = content.source_relations(selected);
+    // Preserve exact owner-clip navigation from the retired Library inspector.
+    // Keep this view scoped to direct authored references, like the other asset kinds.
+    if tab == InspectionTab::Usages
+        && let Some(ProjectAssetId::Effect(id)) = content.asset_for_source(selected)
+        && let Ok(graph) = content.cached_effect_usage_graph(id.into())
+    {
+        let rows = graph
+            .direct_usages()
+            .filter_map(|usage| {
+                let source = content.source(usage.owner_source)?;
+                Some(RelationRow {
+                    label: format!("{} · {}", source.relative_path.display(), usage.clip),
+                    status: ProjectRelationStatus::Available,
+                    source: Some(source.id),
+                    clip: Some((usage.owner, usage.clip)),
+                })
+            })
+            .collect();
+        return (rows, report.usages_complete);
+    }
     let known = if tab == InspectionTab::Dependencies {
         report.dependencies_known
     } else {
@@ -275,6 +330,7 @@ fn relation_rows(
                 label,
                 status,
                 source: None,
+                clip: None,
             });
         } else {
             for id in sources {
@@ -283,6 +339,7 @@ fn relation_rows(
                         label: source.relative_path.display().to_string(),
                         status,
                         source: Some(id),
+                        clip: None,
                     });
                 }
             }
@@ -581,6 +638,21 @@ pub(super) fn sync(
                                                     line(label, localizer.text(key));
                                                 }
                                             });
+                                            if let Some((owner, clip)) = row.clip {
+                                                panel::tool(
+                                                    item,
+                                                    assets,
+                                                    localizer.text("browser-open-usage"),
+                                                    "icons/chevron-right.svg",
+                                                    BrowserAction::OpenEffectUsage(
+                                                        owner,
+                                                        clip,
+                                                        catalog.content_revision(),
+                                                    ),
+                                                    false,
+                                                    false,
+                                                );
+                                            }
                                             if let Some(source) = row.source {
                                                 panel::tool(
                                                     item,

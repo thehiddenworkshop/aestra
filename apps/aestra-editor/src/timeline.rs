@@ -9,16 +9,14 @@ use crate::feathers::context_menu::{
 };
 use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
-use crate::library::ProjectEffectRow;
 use crate::material_graph::MaterialGraphViewport;
 use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
 use crate::{
     ComboOption, CurvesState, DocumentAction, EditorModuleRegistry, EditorNativeControl,
     EditorTooltip, FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow,
-    Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId,
-    ToolPanel, TransportAction, WorkspaceLayout, localized_properties_input, mini_button,
-    module_parameter, reveal_dock_panel, session::EditorSession, spawn_combo_control, theme,
-    ui_shell,
+    Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, ToolPanel,
+    TransportAction, WorkspaceLayout, localized_properties_input, mini_button, module_parameter,
+    reveal_dock_panel, session::EditorSession, spawn_combo_control, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 #[cfg(test)]
@@ -833,7 +831,7 @@ mod tests {
         assert!(!should_dismiss_timeline_popover(false, false, true));
     }
 
-    use crate::{LibraryState, test_support};
+    use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     fn spawn_test_timeline(
@@ -1447,7 +1445,7 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_insertion_uses_the_hovered_track_boundary() {
+    fn asset_drop_insertion_uses_the_hovered_track_boundary() {
         let first = ChoreographyTrackId::Emitter(EmitterId::new());
         let second = ChoreographyTrackId::Emitter(EmitterId::new());
         let third = ChoreographyTrackId::Emitter(EmitterId::new());
@@ -1490,7 +1488,7 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_ghost_uses_the_selected_insertion_row() {
+    fn asset_drop_ghost_uses_the_selected_insertion_row() {
         let session = test_support::session_with_timing_slack();
         let state = TimelineState::framed(session.playback_duration());
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
@@ -1527,7 +1525,7 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_ghost_reserves_a_synchronized_track_gap() {
+    fn asset_drop_ghost_reserves_a_synchronized_track_gap() {
         let session = test_support::session_with_timing_slack();
         let order = normalized_choreography_order(&session.effect);
         let mut state = TimelineState::framed(session.playback_duration());
@@ -1596,7 +1594,7 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_uses_the_reserved_gap_without_track_edge_highlights() {
+    fn asset_drop_uses_the_reserved_gap_without_track_edge_highlights() {
         let emitter = EmitterId::new();
         let track = ChoreographyTrackId::Emitter(emitter);
         let state = TimelineState {
@@ -1666,7 +1664,7 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_insertion_stays_stable_while_crossing_the_open_gap() {
+    fn asset_drop_insertion_stays_stable_while_crossing_the_open_gap() {
         let track = ChoreographyTrackId::Emitter(EmitterId::new());
         let state = TimelineState {
             effect_drop_preview: Some(EffectDropPreview {
@@ -3604,7 +3602,7 @@ mod tests {
         let pane_layout = {
             let world = app.world_mut();
             let mut query =
-                world.query::<(&TimelineVerticalPane, &Node, Has<TimelineLibraryDropTarget>)>();
+                world.query::<(&TimelineVerticalPane, &Node, Has<TimelineAssetDropTarget>)>();
             query
                 .iter(world)
                 .map(|(pane, node, drop_target)| (*pane, node.align_content, drop_target))
@@ -3742,10 +3740,6 @@ mod tests {
         let session = test_support::session_with_timing_slack();
         let target = session.effect.emitters[2].id;
         let mut app = choreography_app(session);
-        app.insert_resource(LibraryState {
-            query: "does not match anything".into(),
-            ..default()
-        });
         app.insert_resource({
             let mut curves = CurvesState::default();
             curves.select_for_test(aestra_core::ModuleId::new(), 0, 0);
@@ -3764,10 +3758,6 @@ mod tests {
             Some(target)
         );
         assert!(!app.world().resource::<CurvesState>().has_selection());
-        assert_eq!(
-            app.world().resource::<LibraryState>().query,
-            "does not match anything"
-        );
     }
 
     #[test]
@@ -4950,7 +4940,7 @@ struct TimelineChoreographyEventDrag {
 }
 
 #[derive(Component)]
-struct TimelineLibraryDropTarget;
+struct TimelineAssetDropTarget;
 
 #[derive(Component)]
 struct TimelineInvalidDropFeedback {
@@ -5759,7 +5749,7 @@ pub(crate) fn spawn_timeline(
                         labels
                             .spawn((
                                 TimelineVerticalPane::Headers,
-                                TimelineLibraryDropTarget,
+                                TimelineAssetDropTarget,
                                 RelativeCursorPosition::default(),
                                 ScrollPosition(Vec2::new(0.0, state.vertical_scroll)),
                                 ScrollArea,
@@ -8176,11 +8166,7 @@ fn dragged_project_effect(
     parents: &Query<&ChildOf>,
 ) -> Option<EffectDragSource> {
     crate::asset_drop::nearest(entity, parents, |entity| {
-        let (row, payload) = rows.get(entity).ok()?;
-        payload
-            .cloned()
-            .map(EffectDragSource::Asset)
-            .or_else(|| row.map(|row| EffectDragSource::Library(row.id())))
+        rows.get(entity).ok().cloned().map(EffectDragSource)
     })
     .map(|(_, source)| source)
 }
@@ -8202,10 +8188,7 @@ fn show_invalid_timeline_drop_feedback(
     let Some(row) = dragged_project_effect(enter.dragged, &rows, &parents) else {
         return;
     };
-    state.browser_drop = match &row {
-        EffectDragSource::Asset(payload) => Some(payload.clone()),
-        _ => None,
-    };
+    state.browser_drop = Some(row.0.clone());
     let result = guard.check().and_then(|()| row.preview(&catalog, &session));
     state.effect_drop_preview = result.as_ref().ok().cloned();
     for (mut feedback, mut node) in &mut feedback {

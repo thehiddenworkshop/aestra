@@ -1371,6 +1371,30 @@ mod tests {
     }
 
     #[test]
+    fn assets_cutover_preserves_docked_closed_and_floating_layouts() {
+        for placement in 0..3 {
+            let mut layout = WorkspaceLayout::default();
+            match placement {
+                1 => assert!(layout.close(ToolPanel::Assets)),
+                2 => assert!(layout.float_panel(
+                    ToolPanel::Assets,
+                    [-1200.0, 80.0],
+                    [1800.0, 1100.0]
+                )),
+                _ => {}
+            }
+            let slot = layout.root.node_containing(ToolPanel::Assets);
+            let source = ron::to_string(&layout).unwrap();
+            let restored = ron::from_str::<WorkspaceLayout>(&source)
+                .unwrap()
+                .normalized();
+            assert_eq!(restored.root.node_containing(ToolPanel::Assets), slot);
+            assert_eq!(restored, layout);
+            assert_eq!(ron::to_string(&ToolPanel::Assets).unwrap(), "Assets");
+        }
+    }
+
+    #[test]
     fn default_workspace_reserves_professional_choreography_height() {
         let layout = WorkspaceLayout::default();
         let DockNode::Split { axis, ratio, .. } = layout.root else {

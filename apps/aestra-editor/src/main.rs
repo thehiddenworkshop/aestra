@@ -17,7 +17,6 @@ mod effect_authoring;
 mod feathers;
 mod history;
 mod input;
-mod library;
 mod localization;
 mod material_document;
 mod material_drafts;
@@ -54,8 +53,8 @@ use aestra_core::{
     RendererProperties, StageKind, Value,
 };
 pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};
-pub(crate) use asset_actions::{AssetAction, AssetOperationState, spawn_asset_operation_overlay};
 use asset_actions::{AssetActionsSet, EditorAssetActionsPlugin};
+pub(crate) use asset_actions::{AssetOperationState, spawn_asset_operation_overlay};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
 use bevy::{
@@ -116,9 +115,8 @@ use feathers::{
     },
     combo_box::{ComboOption, spawn_action_menu, spawn_combo_control, spawn_icon_action_menu},
     list_row::{
-        KeyboardNavigableList, KeyboardNavigableListRow, ListRowStatus, spawn_action_list_row,
-        spawn_info_list_row, spawn_list_empty_state, spawn_list_section_header,
-        spawn_status_list_row,
+        KeyboardNavigableList, KeyboardNavigableListRow, spawn_action_list_row,
+        spawn_list_empty_state,
     },
     panel::spawn_panel_heading as panel_heading,
     scroll::{PersistedScroll, spawn_scroll_area_xy, spawn_vertical_scroll_area},
@@ -129,8 +127,6 @@ use feathers::{
 use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
 use history::{EditorHistoryLedger, EditorHistoryPlugin, HistorySet, MaterialProgramEditHistory};
-use library::{EditorLibraryPlugin, LibrarySet};
-pub(crate) use library::{LibraryState, spawn_library};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 use material_graph::EditorMaterialGraphPlugin;
@@ -240,7 +236,6 @@ fn main() {
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorProjectContentPlugin)
         .add_plugins(EditorAssetActionsPlugin)
-        .add_plugins(EditorLibraryPlugin)
         .add_plugins(asset_browser::EditorAssetBrowserPlugin)
         .add_plugins(EditorMaterialGraphPlugin)
         .add_plugins(EditorChangesPlugin)
@@ -310,7 +305,6 @@ fn main() {
                 AestraFeathersSet::Input,
                 (
                     AssetActionsSet::Actions,
-                    LibrarySet::Actions,
                     ChangesSet::Actions,
                     CompilerInspectorSet::Actions,
                     CurvesSet::Actions,
@@ -335,8 +329,6 @@ fn main() {
                 EditorSet::UiRebuild,
                 TimelineSet::Visuals,
                 (
-                    AssetActionsSet::Sync,
-                    LibrarySet::Sync,
                     DiagnosticsSet::Sync,
                     HistorySet::Sync,
                     ProfilerSet::Sync,

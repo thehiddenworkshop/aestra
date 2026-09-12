@@ -120,7 +120,7 @@ pub(super) fn spawn(
             root,
             &state.query,
             &localizer.text("browser-search"),
-            &localizer.text("library-search-clear"),
+            &localizer.text("browser-search-clear"),
             BrowserSearch,
         );
         root.spawn((
@@ -226,7 +226,7 @@ fn sync(
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     view_buttons: Query<(Entity, &BrowserAction)>,
 ) {
-    if state.legacy || state.scope == SourceScope::Project || panels.is_empty() {
+    if state.scope == SourceScope::Project || panels.is_empty() {
         return;
     }
     let document = (session.effect.id, session.history_generation());

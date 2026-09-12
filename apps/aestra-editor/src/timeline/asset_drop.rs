@@ -1,4 +1,4 @@
-//! Both browser and transitional Library sources feed the same placement command.
+//! Asset payloads feed the shared effect-placement command.
 use super::*;
 use crate::asset_drop::AssetPayload;
 #[cfg(test)]
@@ -21,41 +21,17 @@ pub(super) fn clear_cancelled_preview(
     }
 }
 
-pub(super) type EffectDragRows<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Option<&'static ProjectEffectRow>,
-        Option<&'static AssetPayload>,
-    ),
-    Or<(With<ProjectEffectRow>, With<AssetPayload>)>,
->;
+pub(super) type EffectDragRows<'w, 's> = Query<'w, 's, &'static AssetPayload>;
 
 #[derive(Clone)]
-pub(super) enum EffectDragSource {
-    Library(ProjectEffectEntryId),
-    Asset(AssetPayload),
-}
+pub(super) struct EffectDragSource(pub(super) AssetPayload);
 
 impl EffectDragSource {
     pub(super) fn resolve(
         &self,
         catalog: &ProjectEffectCatalog,
     ) -> Result<(EffectAssetRef, String), String> {
-        match self {
-            Self::Asset(payload) => payload.timeline_effect(catalog),
-            Self::Library(row) => {
-                let entry = catalog
-                    .entry(*row)
-                    .ok_or("The Library entry no longer exists")?;
-                Ok((
-                    entry
-                        .reference
-                        .ok_or("The Library entry is not a valid effect asset")?,
-                    entry.display_name.clone(),
-                ))
-            }
-        }
+        self.0.timeline_effect(catalog)
     }
 
     pub(super) fn preview(

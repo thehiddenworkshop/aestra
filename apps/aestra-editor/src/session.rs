@@ -729,23 +729,6 @@ impl EditorSession {
         self.accept_external_source_path(path);
     }
 
-    /// Legacy Library rename changes both the filename and authored display name.
-    ///
-    /// Library asset operations save the renamed source atomically before updating the session,
-    /// so this only realigns the in-memory document identity and clean baseline.
-    pub(crate) fn accept_external_source_rename(
-        &mut self,
-        path: impl Into<PathBuf>,
-        name: impl Into<String>,
-    ) {
-        self.effect.name = name.into();
-        self.source_path = Some(path.into());
-        self.saved_source_bytes = self.effect.to_pretty_ron().ok().map(String::into_bytes);
-        self.saved_effect = Some(self.effect.clone());
-        self.update_dirty_state();
-        self.ui_revision += 1;
-    }
-
     pub fn execute(
         &mut self,
         label: impl Into<String>,
@@ -1947,20 +1930,6 @@ impl EditorSession {
         ) {
             self.selection.primary = aestra_authoring::SemanticTarget::Renderer(id);
         }
-    }
-
-    pub fn add_grid_flipbook(&mut self) {
-        let Some(texture) = self
-            .effect
-            .assets
-            .iter()
-            .find(|asset| asset.kind == AssetKind::Texture)
-            .map(|asset| asset.id)
-        else {
-            self.status = "Import a texture before creating a flipbook".into();
-            return;
-        };
-        self.add_grid_flipbook_for_texture(texture);
     }
 
     pub(crate) fn add_grid_flipbook_for_texture(&mut self, texture: aestra_core::AssetId) {
@@ -3220,7 +3189,14 @@ mod tests {
     #[test]
     fn flipbook_authoring_is_compiled_and_undoable() {
         let mut session = test_support::session_with_texture();
-        session.add_grid_flipbook();
+        let texture = session
+            .effect
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Texture)
+            .unwrap()
+            .id;
+        session.add_grid_flipbook_for_texture(texture);
         assert_eq!(session.effect.flipbooks.len(), 1);
         session.add_flipbook_renderer();
         let renderer = session.effect.emitters[0].renderers.last().unwrap().id;

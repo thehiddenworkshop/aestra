@@ -29,7 +29,10 @@ fn cached_panel_graph_timeline_and_compile_queries_do_not_reopen_sources() {
         render_state: MaterialRenderState::additive_sprite(),
     });
     let catalog = world.resource::<EditorProjectContent>();
-    let graph = catalog.cached_effect_usage_graph(child.id.into()).unwrap();
+    let graph = catalog
+        .content()
+        .cached_effect_usage_graph(child.id.into())
+        .unwrap();
     assert!(catalog.prepared.is_none());
     for name in [
         "open.aestra.ron",
@@ -53,13 +56,16 @@ fn cached_panel_graph_timeline_and_compile_queries_do_not_reopen_sources() {
     assert!(catalog.material_preset_catalog().is_ok());
     assert!(catalog.dependency_validation_report(&root).is_valid());
     assert_eq!(
-        catalog.cached_effect_usage_graph(child.id.into()).unwrap(),
+        catalog
+            .content()
+            .cached_effect_usage_graph(child.id.into())
+            .unwrap(),
         graph
     );
     assert!(catalog.compile_project(&root).is_ok());
     // Commands keep the latest-source policy, especially deletion confirmation.
     assert!(catalog.load_effect(child.id.into()).is_err());
-    assert!(catalog.effect_usage_graph(child.id.into()).is_err());
+    assert!(catalog.index().effect_usage_graph(child.id.into()).is_err());
 }
 
 #[test]

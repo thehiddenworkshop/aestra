@@ -72,7 +72,6 @@ mod tests {
             );
             std::thread::yield_now();
         }
-        assert!(!app.world().contains_resource::<LibraryState>());
     }
 
     #[test]
@@ -110,7 +109,6 @@ mod tests {
         );
         assert_eq!(app.world().resource::<EditorSession>().effect, original);
         assert!(app.world().contains_resource::<io::ProjectIoTasks>());
-        assert!(!app.world().contains_resource::<LibraryState>());
         assert!(
             !app.world()
                 .contains_resource::<crate::asset_browser::AssetBrowserState>()

@@ -24,7 +24,6 @@ struct PanelSources<'a> {
     timeline: &'a TimelineState,
     navigation: Option<&'a SourceNavigationState>,
     catalog: &'a ProjectEffectCatalog,
-    library: &'a LibraryState,
     browser: &'a asset_browser::AssetBrowserState,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
@@ -53,7 +52,6 @@ struct PanelSources<'a> {
 pub(crate) struct DockUiResources<'w> {
     asset_server: Res<'w, AssetServer>,
     catalog: Res<'w, ProjectEffectCatalog>,
-    library: Res<'w, LibraryState>,
     browser: Res<'w, asset_browser::AssetBrowserState>,
     layout: Res<'w, WorkspaceLayout>,
     registry: Res<'w, EditorModuleRegistry>,
@@ -90,7 +88,6 @@ impl<'w> DockUiResources<'w> {
             timeline: &self.timeline,
             navigation: self.navigation.as_deref(),
             catalog: &self.catalog,
-            library: &self.library,
             browser: &self.browser,
             registry: &self.registry,
             palette: &self.palette,
@@ -550,14 +547,9 @@ fn spawn_panel_content(
             sources.localizer,
             sources.asset_server,
         ),
-        ToolPanel::Assets => asset_browser::spawn_assets_panel(
-            parent,
-            sources.session,
-            sources.catalog,
-            sources.library,
-            sources.browser,
-            sources.localizer,
-        ),
+        ToolPanel::Assets => {
+            asset_browser::spawn_assets_panel(parent, sources.browser, sources.localizer)
+        }
         ToolPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
         ToolPanel::Properties => {
             spawn_properties(

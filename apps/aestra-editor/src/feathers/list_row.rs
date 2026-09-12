@@ -24,9 +24,6 @@ pub(crate) struct CompactListRow;
 pub(crate) struct ListRowPrimaryLabel;
 
 #[derive(Component)]
-pub(crate) struct CompactListSectionHeader;
-
-#[derive(Component)]
 pub(crate) struct CompactListEmptyState;
 
 pub(super) fn update_keyboard_list_focus_visuals(
@@ -78,34 +75,6 @@ pub(crate) fn spawn_action_list_row<A: Component>(
         action,
         AccessibleLabel(accessible_label.to_owned()),
     ));
-    entity
-}
-
-pub(crate) fn spawn_status_list_row(
-    parent: &mut ChildSpawnerCommands,
-    primary: &str,
-    secondary: Option<&str>,
-    status: ListRowStatus<'_>,
-    accessible_label: &str,
-) -> Entity {
-    let entity = spawn_list_row_content(parent, primary, secondary, Some(status));
-    parent
-        .commands()
-        .entity(entity)
-        .insert(AccessibleLabel(accessible_label.to_owned()));
-    entity
-}
-
-pub(crate) fn spawn_info_list_row(
-    parent: &mut ChildSpawnerCommands,
-    primary: &str,
-    secondary: Option<&str>,
-) -> Entity {
-    let entity = spawn_list_row_content(parent, primary, secondary, None);
-    parent
-        .commands()
-        .entity(entity)
-        .insert(AccessibleLabel(primary.to_owned()));
     entity
 }
 
@@ -197,72 +166,6 @@ fn spawn_list_row_content(
     entity
 }
 
-pub(crate) struct ListSectionHeaderEntities {
-    pub(crate) root: Entity,
-    pub(crate) meta: Entity,
-}
-
-pub(crate) fn spawn_list_section_header(
-    parent: &mut ChildSpawnerCommands,
-    title: &str,
-    meta: &str,
-) -> ListSectionHeaderEntities {
-    let mut meta_entity = Entity::PLACEHOLDER;
-    let mut row = parent.spawn((
-        CompactListSectionHeader,
-        Node {
-            min_height: Val::Px(28.0),
-            width: Val::Percent(100.0),
-            min_width: Val::Px(0.0),
-            padding: UiRect::horizontal(Val::Px(9.0)),
-            align_items: AlignItems::Center,
-            overflow: Overflow::clip(),
-            ..default()
-        },
-    ));
-    let root = row.id();
-    row.with_children(|row| {
-        row.spawn((
-            Text::new(title),
-            TextFont {
-                font_size: FontSize::Px(9.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_MUTED),
-            TextLayout::no_wrap(),
-            Node {
-                min_width: Val::Px(0.0),
-                flex_shrink: 1.0,
-                overflow: Overflow::clip(),
-                ..default()
-            },
-        ));
-        row.spawn(Node {
-            flex_grow: 1.0,
-            ..default()
-        });
-        meta_entity = row
-            .spawn((
-                Text::new(meta),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-                TextLayout::no_wrap(),
-                Node {
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-            ))
-            .id();
-    });
-    ListSectionHeaderEntities {
-        root,
-        meta: meta_entity,
-    }
-}
-
 pub(crate) fn spawn_list_empty_state(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -325,17 +228,6 @@ mod tests {
                 "Open Prism Bloom",
                 TestAction,
             );
-            spawn_status_list_row(
-                parent,
-                "Broken Effect",
-                None,
-                ListRowStatus {
-                    label: "INVALID",
-                    color: theme::ACCENT,
-                },
-                "Broken Effect, invalid",
-            );
-            spawn_list_section_header(parent, "PROJECT EFFECTS", "2 FOUND");
             spawn_list_empty_state(
                 parent,
                 "No matching effects",
@@ -365,18 +257,12 @@ mod tests {
             let mut query = world.query_filtered::<Entity, With<CompactListRow>>();
             query.iter(world).count()
         };
-        let header_count = {
-            let world = app.world_mut();
-            let mut query = world.query_filtered::<Entity, With<CompactListSectionHeader>>();
-            query.iter(world).count()
-        };
         let empty_count = {
             let world = app.world_mut();
             let mut query = world.query_filtered::<Entity, With<CompactListEmptyState>>();
             query.iter(world).count()
         };
-        assert_eq!(row_count, 2);
-        assert_eq!(header_count, 1);
+        assert_eq!(row_count, 1);
         assert_eq!(empty_count, 1);
     }
 
@@ -406,18 +292,13 @@ mod tests {
                 .filter(|(text, _)| {
                     matches!(
                         text.0.as_str(),
-                        "Prism Bloom"
-                            | "assets/effects/prism_bloom.aestra.ron"
-                            | "Broken Effect"
-                            | "INVALID"
-                            | "PROJECT EFFECTS"
-                            | "2 FOUND"
+                        "Prism Bloom" | "assets/effects/prism_bloom.aestra.ron"
                     )
                 })
                 .map(|(_, layout)| layout.linebreak)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(text_layouts.len(), 6);
+        assert_eq!(text_layouts.len(), 2);
         assert!(
             text_layouts
                 .iter()

@@ -140,9 +140,6 @@ pub(super) struct BrowserUi {
 
 pub(crate) fn spawn_assets_panel(
     parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    catalog: &ProjectEffectCatalog,
-    library: &LibraryState,
     state: &AssetBrowserState,
     localizer: &Localizer,
 ) {
@@ -171,19 +168,11 @@ pub(crate) fn spawn_assets_panel(
                         bar,
                         &localizer.text(label),
                         BrowserAction::Scope(scope),
-                        !state.legacy && state.scope == scope,
+                        state.scope == scope,
                     );
                 }
-                spawn_feathers_action_button(
-                    bar,
-                    &localizer.text("browser-legacy"),
-                    BrowserAction::Legacy(true),
-                    state.legacy,
-                );
             });
-            if state.legacy {
-                spawn_library(root, session, catalog, library, localizer);
-            } else if state.scope == SourceScope::Project {
+            if state.scope == SourceScope::Project {
                 spawn_browser(root, state, localizer);
             } else {
                 super::virtual_sources::spawn(root, state, localizer);
@@ -305,7 +294,7 @@ fn spawn_browser(
                                 search,
                                 &state.query,
                                 &localizer.text("browser-search"),
-                                &localizer.text("library-search-clear"),
+                                &localizer.text("browser-search-clear"),
                                 BrowserSearch,
                             );
                         });
@@ -523,7 +512,7 @@ pub(super) fn sync_panel(
     mut focus: ResMut<bevy::input_focus::InputFocus>,
     mut last_locate: Local<u64>,
 ) {
-    if state.legacy || state.scope != SourceScope::Project {
+    if state.scope != SourceScope::Project {
         return;
     }
     let content = catalog.content();

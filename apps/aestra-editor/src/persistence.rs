@@ -497,7 +497,7 @@ fn handle_document_action_buttons(
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => background.0 = theme::PANEL_DARK,
             Interaction::Pressed => {
-                // Library list rows activate through the ListBox ValueChange contract so mouse
+                // List rows activate through the ListBox ValueChange contract so mouse
                 // and keyboard input take the same semantic route exactly once.
                 if list_item {
                     background.0 = theme::ACCENT_DIM;

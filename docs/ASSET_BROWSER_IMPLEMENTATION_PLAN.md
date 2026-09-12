@@ -766,11 +766,11 @@ revisions, including publication without Bevy change ticks. Current Document als
 legacy flipbook declarations as inspection-only entries and restores resource metadata
 in hover tooltips. These are parity fixes, not AB9's general thumbnail pipeline.
 
-**AB8b — ownership migration and removal (next, gated):** retain Library until the
-replacement workflows pass native acceptance. Move polling registration, texture-root
-sync and effect-specific extraction/relation actions to their real owners, then remove
-legacy UI/state and migrate settings. See the checklist for explicit ownership and
-acceptance gates; deleting the Library plugin alone would remove required services.
+**AB8b — ownership migration and removal (implemented; native acceptance pending):**
+Project services and shared authoring commands moved first (AB8b1/AB8b2). Following the
+explicit cutover implementation request, AB8b3 removes the legacy UI and adapters. This
+is not native acceptance: the mixed-project/restart/detached-window checks below remain
+the release gate. See the dated checklist for the implementation and verification record.
 
 AB8b1 service preparation is implemented: `EditorProjectContentPlugin` owns catalog/watch
 and I/O initialization/polling plus texture-root synchronization. `ProjectContentSet::Input`
@@ -786,8 +786,22 @@ Properties and Browser refresh target that owner directly; the shell and shortcu
 consume `AssetOperationState`. Shared workflow tests run without `EditorLibraryPlugin`.
 Library retains only browsing, legacy row/drag presentation and its own context-menu focus
 adapter. Existing command semantics, localizations, I/O/document guards and history routes
-are preserved. Settings cleanup and actual Library removal remain gated on AB7/AB8 native
-acceptance; the legacy row-drag adapter must be removed with the legacy panel in that step.
+were preserved in that ownership-only slice.
+
+AB8b3 removes the Library plugin/panel/filter/context-menu/row-drag adapter and transient
+Library scroll memory. Assets now offers only Project, Built-ins and Current Document.
+The Assets dock identity and browser preferences format are unchanged; the removed
+Library switch and filters were never serialized. Tests cover docked, closed and floating
+layout round trips and both supported locales. Nineteen catalog/watch/reload regressions
+move out of the retired panel into project-content tests.
+
+Library-only authored-name rename, move-dialog and permanent-delete adapters are retired;
+Browser keeps its shared inline filename rename, drag/drop move and recoverable deletion.
+The underlying project operation/dependency APIs remain in aestra-project. Extraction and
+explode retain their shared handlers, worker guards, rollback and Undo behavior. Asset
+Details' Used By rows now expose exact owning-clip navigation through the document
+coordinator; other dependency rows retain Locate in Assets. Current Document creation
+continues to use the explicitly selected texture, not the old first-texture shortcut.
 
 Complete AB0's parity inventory, including lesser-used extract/explode/repair/relation
 actions, preset workflows and keyboard shortcuts. Switch the existing Assets dock slot
@@ -852,7 +866,6 @@ drops. **Current step (P1):** manually verify AB7b preset creation/assignment, A
 function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
 AB7f picker filtering/selection/keyboard/Undo, and AB7g virtual browsing, creation and
 assignment, plus AB8a preset search/previews and Current Document resource inspection.
-The AB8a code audit and browsing parity fixes are implemented; AB8b service ownership
-migration and legacy removal remain gated on acceptance. AB7a native acceptance remains recorded
-separately; it has not been retroactively marked tested.
-Keep the transitional Library until its remaining capabilities have tested replacements.
+The AB8a code audit and AB8b service ownership/cutover implementation are complete.
+Native AB7/AB8 acceptance remains pending; AB7a acceptance is recorded separately and
+has not been retroactively extended. Validate the canonical Assets browser before AB9.

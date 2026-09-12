@@ -61,13 +61,10 @@ pub(crate) enum EditorAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ScrollMemoryKey {
-    Library,
     AssetBrowserSources,
     AssetBrowserItems,
     AssetBrowserBuiltIns,
     AssetBrowserDocument,
-    LibraryRelations,
-    LibraryDeletion,
     Properties,
     CompilerInspector,
     Profiler,
@@ -239,7 +236,7 @@ fn spawn_editor_ui(
             crate::persistence::recovery_dialog::spawn(root, protection, localizer);
             crate::asset_browser::relocation_recovery::spawn(root, localizer);
             crate::asset_browser::deletion::spawn(root);
-            spawn_asset_operation_overlay(root, asset_operation, catalog, localizer);
+            spawn_asset_operation_overlay(root, asset_operation, localizer);
         });
 }
 

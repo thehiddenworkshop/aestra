@@ -1,7 +1,6 @@
 use super::*;
 use crate::test_support;
 use aestra_authoring::SemanticTarget;
-use aestra_core::EffectClip;
 use bevy::ecs::system::RunSystemOnce;
 
 fn world(root: &std::path::Path) -> World {
@@ -33,76 +32,6 @@ fn start(world: &mut World, action: SourceAction) {
             },
         )
         .unwrap();
-}
-
-#[test]
-fn background_rename_keeps_properties_changed_before_publication() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut world = world(directory.path());
-    let source = world.resource::<ProjectEffectCatalog>().entries()[0].id;
-    start(
-        &mut world,
-        SourceAction::Rename {
-            rename: SourceRenameState {
-                source,
-                draft: "Renamed".into(),
-                error: None,
-            },
-            current: true,
-        },
-    );
-    let mut completion = io::prepared_completion(&mut world);
-    world
-        .resource_mut::<EditorSession>()
-        .adjust_effect_duration(0.5);
-    let edited_duration = world.resource::<EditorSession>().effect.duration;
-    completion.apply(&mut world);
-    let session = world.resource::<EditorSession>();
-    assert_eq!(session.effect.name, "Renamed");
-    assert_eq!(session.effect.duration, edited_duration);
-    assert!(session.dirty);
-    assert_eq!(
-        session.source_path.as_deref(),
-        Some(directory.path().join("renamed.aestra.ron").as_path())
-    );
-    world.resource_mut::<EditorSession>().save().unwrap();
-    assert_eq!(
-        EffectAsset::load_ron(directory.path().join("renamed.aestra.ron"))
-            .unwrap()
-            .duration,
-        edited_duration
-    );
-}
-
-#[test]
-fn background_move_updates_location_but_keeps_dirty_edits_and_preview() {
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("nested");
-    fs::create_dir(&destination).unwrap();
-    let mut world = world(directory.path());
-    let source = world.resource::<ProjectEffectCatalog>().entries()[0].id;
-    world
-        .resource_mut::<EditorSession>()
-        .adjust_effect_duration(0.5);
-    let effect = world.resource::<EditorSession>().effect.clone();
-    start(
-        &mut world,
-        SourceAction::Move {
-            source,
-            destination: destination.clone(),
-            current: true,
-        },
-    );
-    io::drain(&mut world);
-    let session = world.resource::<EditorSession>();
-    assert_eq!(session.effect, effect);
-    assert!(session.dirty);
-    assert!(session.preview.is_some());
-    assert_eq!(
-        session.source_path.as_deref(),
-        Some(destination.join("current.aestra.ron").as_path())
-    );
-    world.resource_mut::<EditorSession>().save().unwrap();
 }
 
 fn extract(world: &mut World, replace: bool) {
@@ -178,44 +107,4 @@ fn copying_a_reusable_source_does_not_replace_the_live_session() {
     assert_eq!(world.resource::<EditorSession>().effect, edited);
     assert!(world.resource::<EditorSession>().preview.is_some());
     assert!(directory.path().join("extracted.aestra.ron").exists());
-}
-
-#[test]
-fn deletion_rechecks_current_usages_before_removing_the_source() {
-    let directory = tempfile::tempdir().unwrap();
-    let child = EffectAsset::new("Child", 1.0);
-    let path = directory.path().join("child.aestra.ron");
-    child.save_ron(&path).unwrap();
-    let mut world = world(directory.path());
-    let catalog = world.resource::<ProjectEffectCatalog>();
-    let source = catalog
-        .entries()
-        .iter()
-        .find(|entry| entry.reference == Some(child.id.into()))
-        .unwrap()
-        .id;
-    let graph = catalog.effect_usage_graph(child.id.into()).unwrap();
-    let mut owner = EffectAsset::new("New owner", 1.0);
-    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
-    owner
-        .save_ron(directory.path().join("new_owner.aestra.ron"))
-        .unwrap();
-    let deletion = EffectDeletionState {
-        source,
-        graph,
-        error: None,
-    };
-    world.resource_mut::<AssetOperationState>().deletion = Some(deletion.clone());
-    start(&mut world, SourceAction::Delete(deletion));
-    io::drain(&mut world);
-    assert!(path.exists());
-    assert!(
-        world
-            .resource::<AssetOperationState>()
-            .deletion
-            .as_ref()
-            .unwrap()
-            .error
-            .is_some()
-    );
 }

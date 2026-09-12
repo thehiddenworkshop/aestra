@@ -1821,3 +1821,42 @@ persisted settings are removed in AB8b2; native restart/detached-window checks r
 Verification: 809 editor tests passed, two opt-in tests ignored. All-target editor checking,
 strict all-target Clippy with warnings denied, touched-file formatting and diff checks
 passed. No native acceptance or Library-removal verification is claimed by these tests.
+
+### AB8b3 — Canonical Assets browser cutover — 2026-09-12
+
+Implemented following the user's request to perform the cutover. This does not record
+a manual acceptance pass; native restart, floating/high-DPI interaction and the complete
+mixed-project workflow remain pending before release/AB9.
+
+- Removed `EditorLibraryPlugin`, its tab, filters, context menu, panel scroll state and
+  Timeline's `ProjectEffectRow` compatibility drag adapter. Timeline now accepts the
+  common `AssetPayload` exclusively. Existing drag preview, cancellation and Undo paths stay.
+- Kept the `Assets` dock identifier, existing browser preference format and dock model.
+  The legacy switch/filter state was transient, so no version bump or destructive settings
+  rewrite is required. New layout regressions preserve docked, closed and floating Assets;
+  toolbar coverage verifies Project/Built-ins/Current Document in English and French.
+- Retired unreachable Library-only authored-name rename, move-dialog, permanent-delete
+  and dependency popup adapters. Browser AB6 rename/move/recoverable-delete paths remain
+  canonical. Shared extraction/explode and guarded extraction publication remain, with
+  their existing rollback/history/concurrent-edit tests. Project-layer operation and
+  dependency services are retained; unused editor forwarding methods are removed.
+- Asset Details Used By retains exact owning-effect/clip navigation through protected
+  `DocumentAction` activation, with stale-snapshot rejection. Two clips in the same owner
+  stay individually actionable. Inspection remains snapshot-only and reports direct
+  authored references; Locate remains available for other relation types.
+- Moved nineteen catalog/material-resolution/watch/external-reload tests from Library
+  into `project_content/catalog_tests.rs`. Removed tests specific to the retired UI and
+  superseded legacy adapters, not their shared project-service coverage.
+- Removed obsolete Library translations and unused list-row wrappers; retained shared
+  extraction/explode/reload locale keys to avoid unnecessary translation churn. Search
+  clearing now uses an Assets-specific accessible label.
+
+Native checks to perform: browse → open → edit → save → move → locate usages → drop →
+Undo → restart; Built-ins and Current Document creation/assignment; extract/explode/repair;
+closed/reopened and detached Assets panels; keyboard-only and high-DPI input.
+
+Verification: 793 editor tests passed, two opt-in tests ignored; all 139 project tests
+passed. Strict all-target editor Clippy with warnings denied, touched-file formatting
+and diff checks passed. The reduced editor count reflects retired Library UI/adapter
+tests; shared catalog regressions were moved, and four cutover regressions were added.
+No native UI acceptance is claimed.

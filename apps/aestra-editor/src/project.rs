@@ -4,18 +4,6 @@ use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
 use crate::session::EditorSession;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn display_name(root: &Path) -> String {
-    let name = if root.file_name().is_some_and(|name| name == "assets") {
-        root.parent().unwrap_or(root)
-    } else {
-        root
-    };
-    name.file_name().map_or_else(
-        || name.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
 /// Accept either an asset directory or a conventional project containing `assets/`.
 pub(crate) fn catalog_for_folder(folder: &Path) -> Result<ProjectEffectCatalog, String> {
     aestra_project::ProjectSourceTree::validate_root(folder)?;
