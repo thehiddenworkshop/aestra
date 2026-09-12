@@ -862,6 +862,7 @@ profiler-unavailable-description = Les temps de simulation GPU et de préparatio
 
 browser-search-clear = Effacer la recherche des assets
 browser-thumbnail-ready = Aperçu de la texture
-browser-thumbnail-loading = Chargement de l’aperçu de la texture…
+browser-thumbnail-loading = Chargement de l’aperçu…
+browser-material-thumbnail-ready = Aperçu du matériau — valeurs enregistrées et entrées synthétiques, indépendant de l’effet actif.
 browser-thumbnail-error = Aperçu indisponible. Voir la raison ci-dessous.
 browser-open-usage = Ouvrir l’effet propriétaire et sélectionner ce clip

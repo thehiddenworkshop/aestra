@@ -1,7 +1,7 @@
 # Asset Browser delivery plan
 
 Status: updated 2026-09-12. AB8b3 canonical-browser cutover is implemented and
-user-accepted. AB9a texture thumbnails are implemented; verification and native acceptance
+user-accepted. AB9a texture thumbnails and AB9b saved-material thumbnails are implemented; verification and native acceptance
 are tracked below. The following historical delivery record retains its original caveats.
 
 AB0 contracts/inventory recorded and AB1
@@ -117,7 +117,7 @@ AB7f's shared Properties asset picker is implemented; native acceptance is pendi
 AB7g's Built-ins and Current Document virtual sources are implemented; native acceptance
 is pending in the historical per-flow record. AB8 parity review and Library removal are
 now implemented; the user accepted the cutover on 2026-09-12. AB9a thumbnails are the
-current slice, with remaining AB9 features deferred.
+previous slice. AB9b adds saved-material thumbnails; remaining AB9 features are deferred.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -843,6 +843,24 @@ budget (best-effort, not a hard process-memory guarantee). There is no disk cach
 source write. Native acceptance should check scrolling, transparency, error icons and
 project switching while previews load. This slice does not complete AB9.
 
+**AB9b — saved-material thumbnails (implemented; native acceptance pending):**
+Project material-program rows reuse the graph/preset CPU pixel renderer at 128×128.
+They join AB9a's two workers and 128-entry cache rather than creating another queue or
+memory budget. Saved, uniquely resolved source snapshots supply defaults; open drafts,
+active effects and material instances do not influence the image. A whole-cache reset
+on published root/content revision changes rejects stale jobs and releases old images.
+The tooltip identifies this as a saved-default preview with synthetic inputs, not a
+live scene render. Existing preset and graph preview semantics are unchanged.
+
+Work is capped at 256 expressions, 128 parameters and 64 dependency levels; cancellation
+is checked before validation and between scanlines. Cycles, missing/ambiguous/invalid
+sources and unevaluable outputs show a type icon with an error tooltip. Reachable texture
+samples, graph/custom function calls, derivatives and vertex displacement require a later
+bound-texture/compiled-scene preview path and explicitly fall back, never masquerading
+as a successful material thumbnail. Unreachable unsupported nodes do not block previews.
+Mesh/effect previews and virtual Current Document material-instance thumbnails remain
+separate work. No source writes, new asset registrations, or history entries are made.
+
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
 collections. Cache keys include source/content revision and rendering inputs, with
@@ -887,6 +905,6 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. On 2026-09-12, the user accepted the canonical browser with “everything is fine”
 and requested the next step. This records user acceptance of AB8b3, not an independently
-observed execution of every earlier native checklist item. **Current step (P2):** AB9a
-bounded asynchronous texture thumbnails; complete automated verification and native
-thumbnail acceptance before advancing to the remaining AB9 browsing features.
+observed execution of every earlier native checklist item. **Current step (P2):** AB9b
+saved-material thumbnails, following committed AB9a. Complete automated verification and
+native texture/material thumbnail acceptance before the remaining AB9 browsing features.

@@ -1900,3 +1900,45 @@ thumbnail system exposed implicit snapshot/panel ordering; reconciliation is exp
 scheduled before panel synchronization, and the existing preset-identity regression passes.
 Strict all-target editor Clippy with warnings denied, touched-file formatting and diff
 checks passed. Native thumbnail appearance/performance acceptance remains pending.
+
+### AB9b — Saved-material thumbnails — 2026-09-13
+
+Project material-program rows in grid/list view now share AB9a's bounded worker/cache
+service. The shared graph/preset pixel renderer produces 128×128 previews on background
+workers, from saved defaults and deterministic synthetic inputs. Surface-normal graphs
+use the existing sphere projection; other graphs use the existing flat projection.
+Hover text explicitly identifies the saved-default/synthetic context. Existing graph
+and preset previews retain their old sampling behavior; this is not a GPU scene render.
+
+- Texture and material jobs share two slots and 128 cached results (8 MiB per CPU/GPU
+  pixel copy, excluding engine overhead and per-job working data). Only the current
+  project page requests work. No additional scanner, disk cache or live draft dependency.
+- Material lookup uses the published source snapshot and unique semantic resolution.
+  Corrupt/ambiguous sources fail instead of displaying another material. All content/root
+  revisions conservatively invalidate the shared cache, including deleted/moved sources.
+- Graphs are bounded to 256 expressions, 128 parameters and 64 dependency levels.
+  Cancellation is checked before validation and per scanline. Cached failures do not
+  retry every frame. Source bytes remain capped at 16 MiB as in AB9a.
+- Reachable texture sampling, graph/custom function calls, screen derivatives and vertex
+  displacement explicitly require a later bound-texture/compiled-scene preview path.
+  Missing/cyclic/unevaluable outputs retain the material type icon and an error tooltip.
+  Disconnected unsupported nodes do not prevent a supported output preview.
+- Source bytes, effect state, open material drafts and Undo history are not modified.
+  Material instances in Current Document, effect/mesh previews, and existing preset-cache
+  migration to the bounded service remain separate follow-up scope.
+
+Native acceptance pending: inspect saved procedural materials in grid/list; edit a
+material draft and verify its thumbnail stays saved-state; save/refresh and verify it
+changes. Switch folders/projects while jobs run and inspect an unsupported/error asset.
+AB9a visual acceptance is not inferred merely from the request to implement AB9b.
+
+Verification: 805 editor tests passed, two opt-in tests ignored. Five new regressions
+cover shared raster output/source immutability; unsupported, missing and cyclic outputs;
+size/depth limits and mid-raster cancellation; saved-state lookup despite open drafts,
+square grid/list presentation and content-refresh image replacement; and cached
+corrupt/duplicate-identity error fallbacks. Existing AB9a cache/worker/root-switch tests
+continue to cover the common texture/material queue. The first run found an expression-
+ordering mismatch in the new fixture; normalizing the fixture to saved-source ordering
+resolved it, without a runtime behavior change.
+Strict all-target editor Clippy with warnings denied, touched-file formatting and diff
+checks passed. Native thumbnail appearance/performance acceptance remains pending.

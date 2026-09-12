@@ -862,6 +862,7 @@ profiler-unavailable-description = GPU simulation and trail-preparation timings 
 
 browser-search-clear = Clear asset search
 browser-thumbnail-ready = Texture preview
-browser-thumbnail-loading = Loading texture preview…
+browser-thumbnail-loading = Loading preview…
+browser-material-thumbnail-ready = Material preview — saved defaults and synthetic inputs, independent of the active effect.
 browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip

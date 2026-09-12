@@ -60,6 +60,8 @@ use std::{
 
 const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod asset_drop;
+mod asset_preview;
+pub(crate) use asset_preview::render_material_asset_preview;
 const CANVAS_PADDING: f32 = 34.0;
 const NODE_GAP: f32 = 22.0;
 const SNAP_RADIUS: f32 = 38.0;
@@ -3279,14 +3281,53 @@ fn render_material_graph_preview(
     target: MaterialGraphPreviewTarget,
     value_type: Option<MaterialValueType>,
 ) -> Image {
+    let rgba = render_material_preview_pixels(
+        program,
+        instance,
+        target,
+        value_type,
+        MATERIAL_PREVIEW_SIZE,
+        false,
+        || false,
+    )
+    .expect("unchecked previews cannot fail");
+    let mut image = Image::new(
+        Extent3d {
+            width: MATERIAL_PREVIEW_SIZE,
+            height: MATERIAL_PREVIEW_SIZE,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::linear();
+    image
+}
+
+// Shared pixel path: graph/preset previews keep their existing permissive semantics;
+// browser previews reject unsupported samples and can cancel between scanlines.
+fn render_material_preview_pixels(
+    program: &MaterialProgram,
+    instance: Option<&MaterialInstance>,
+    target: MaterialGraphPreviewTarget,
+    value_type: Option<MaterialValueType>,
+    size: u32,
+    strict: bool,
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<u8>, String> {
     let evaluator = MaterialPreviewEvaluator { program, instance };
     let uses_sphere = preview_uses_surface_normal(program, target);
-    let mut rgba = Vec::with_capacity((MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize);
-    for y in 0..MATERIAL_PREVIEW_SIZE {
-        for x in 0..MATERIAL_PREVIEW_SIZE {
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        if cancelled() {
+            return Err("Cancelled".into());
+        }
+        for x in 0..size {
             let uv = Vec2::new(
-                (x as f32 + 0.5) / MATERIAL_PREVIEW_SIZE as f32,
-                1.0 - (y as f32 + 0.5) / MATERIAL_PREVIEW_SIZE as f32,
+                (x as f32 + 0.5) / size as f32,
+                1.0 - (y as f32 + 0.5) / size as f32,
             );
             let sphere = uv * 2.0 - Vec2::ONE;
             let radius_squared = sphere.length_squared();
@@ -3309,6 +3350,9 @@ fn render_material_graph_preview(
             } else {
                 None
             };
+            if strict && inside && sample.is_none_or(|rgba| rgba.iter().any(|v| !v.is_finite())) {
+                return Err("Material output cannot be evaluated with saved defaults".into());
+            }
             let checker = if ((x / 10) + (y / 10)) & 1 == 0 {
                 0.10
             } else {
@@ -3327,19 +3371,7 @@ fn render_material_graph_preview(
             ]);
         }
     }
-    let mut image = Image::new(
-        Extent3d {
-            width: MATERIAL_PREVIEW_SIZE,
-            height: MATERIAL_PREVIEW_SIZE,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        rgba,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    image.sampler = ImageSampler::linear();
-    image
+    Ok(rgba)
 }
 
 fn preview_rgba(value: PreviewValue, value_type: Option<MaterialValueType>) -> Option<[f32; 4]> {

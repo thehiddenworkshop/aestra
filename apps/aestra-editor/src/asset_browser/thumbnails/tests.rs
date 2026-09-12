@@ -271,3 +271,136 @@ fn cancelled_workers_still_count_toward_the_global_worker_limit() {
             .all(|job| job.cancelled.load(Ordering::Relaxed))
     );
 }
+
+fn material() -> MaterialProgram {
+    crate::material_graph::material_preset_base(
+        "Thumbnail",
+        aestra_core::material::MaterialDomain::Sprite,
+    )
+    .normalized()
+}
+
+#[test]
+fn material_rows_use_saved_defaults_ignore_drafts_and_refresh_without_edits() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("preview.aestra.material.ron");
+    let original = material();
+    original.save_ron(&path).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    let mut app = super::super::tests::browser_app(root.path());
+    let before = app.world().resource::<EditorSession>().effect.clone();
+    let mut draft = original.clone();
+    draft.name = "Unsaved draft".into();
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .replace_material_program(&original, &draft)
+        .unwrap();
+    finish_jobs(&mut app);
+    let source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("preview.aestra.material.ron"))
+        .unwrap()
+        .id;
+    assert_eq!(
+        saved_material(
+            app.world().resource::<ProjectEffectCatalog>().content(),
+            source
+        )
+        .unwrap(),
+        original
+    );
+    let Preview::Ready(handle) = &app.world().resource::<ThumbnailCache>().entries[&source].preview
+    else {
+        panic!("material preview did not publish")
+    };
+    let old_handle = handle.clone();
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    for view in [
+        super::super::state::ViewMode::Grid,
+        super::super::state::ViewMode::List,
+    ] {
+        app.world_mut().resource_mut::<AssetBrowserState>().view = view;
+        app.update();
+        let world = app.world_mut();
+        let (thumbnail, node) = world.query::<(&Thumbnail, &Node)>().single(world).unwrap();
+        assert_eq!(thumbnail.kind, Kind::Material);
+        assert_eq!(node.width, node.height);
+        assert!(matches!(thumbnail.rendered, Some(Preview::Ready(_))));
+    }
+    let mut changed = original.clone();
+    changed
+        .expressions
+        .iter_mut()
+        .find(|e| e.id == changed.outputs.color)
+        .unwrap()
+        .kind = aestra_core::material::MaterialExpressionKind::Constant(
+        aestra_core::material::MaterialValue::ColorSrgb([1.0, 0.0, 0.0, 1.0]),
+    );
+    changed.save_ron(&path).unwrap();
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .refresh();
+    app.update();
+    finish_jobs(&mut app);
+    assert!(
+        !app.world()
+            .resource::<Assets<Image>>()
+            .contains(old_handle.id())
+    );
+    let Preview::Ready(handle) = &app.world().resource::<ThumbnailCache>().entries[&source].preview
+    else {
+        panic!("updated material preview did not publish")
+    };
+    let image = app.world().resource::<Assets<Image>>().get(handle).unwrap();
+    assert_eq!(
+        image.data.as_ref().unwrap(),
+        &crate::material_graph::render_material_asset_preview(&changed, EDGE, || false).unwrap()
+    );
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+    assert_eq!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_program(original.id)
+            .unwrap(),
+        draft
+    );
+}
+
+#[test]
+fn invalid_and_ambiguous_material_sources_have_cached_error_fallbacks() {
+    let root = tempfile::tempdir().unwrap();
+    let program = material();
+    program
+        .save_ron(root.path().join("a.aestra.material.ron"))
+        .unwrap();
+    program
+        .save_ron(root.path().join("b.aestra.material.ron"))
+        .unwrap();
+    fs::write(root.path().join("c.aestra.material.ron"), b"invalid").unwrap();
+    let mut app = super::super::tests::browser_app(root.path());
+    for _ in 0..4 {
+        finish_jobs(&mut app);
+    }
+    let cache = app.world().resource::<ThumbnailCache>();
+    assert_eq!(cache.entries.len(), 3);
+    assert!(
+        cache
+            .entries
+            .values()
+            .all(|e| matches!(e.preview, Preview::Failed(_)))
+    );
+    assert!(cache.jobs.is_empty());
+    app.update();
+    assert!(app.world().resource::<ThumbnailCache>().jobs.is_empty());
+    let world = app.world_mut();
+    for thumbnail in world.query::<&Thumbnail>().iter(world) {
+        assert!(world.get::<ImageNode>(thumbnail.image).is_none());
+        assert_ne!(
+            world.get::<Node>(thumbnail.fallback).unwrap().display,
+            Display::None
+        );
+    }
+}

@@ -4,6 +4,7 @@ use super::{
     state::{AssetBrowserState, Kind, SourceScope},
 };
 use crate::*;
+use aestra_core::material::MaterialProgram;
 use aestra_project::{ProjectContentVersion, ProjectSourceId};
 use bevy::{
     asset::RenderAssetUsages,
@@ -141,6 +142,7 @@ pub(super) struct ThumbnailBadge;
 #[derive(Component)]
 struct Thumbnail {
     source: ProjectSourceId,
+    kind: Kind,
     fallback: Entity,
     image: Entity,
     badge: Entity,
@@ -151,6 +153,7 @@ pub(super) fn spawn(
     parent: &mut ChildSpawnerCommands,
     assets: &AssetServer,
     source: ProjectSourceId,
+    kind: Kind,
 ) -> Entity {
     let mut host = parent.spawn((
         Node::default(),
@@ -162,20 +165,21 @@ pub(super) fn spawn(
     let entity = host.id();
     let mut thumbnail = Thumbnail {
         source,
+        kind,
         fallback: Entity::PLACEHOLDER,
         image: Entity::PLACEHOLDER,
         badge: Entity::PLACEHOLDER,
         rendered: None,
     };
     host.with_children(|root| {
-        thumbnail.fallback = panel::icon(root, assets, Kind::Texture.icon(), 22.0);
+        thumbnail.fallback = panel::icon(root, assets, kind.icon(), 22.0);
         root.commands().entity(thumbnail.fallback).insert((
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 ..default()
             },
-            bevy_resvg::prelude::SvgColor(panel::kind_color(Kind::Texture)),
+            bevy_resvg::prelude::SvgColor(panel::kind_color(kind)),
         ));
         thumbnail.image = root
             .spawn((
@@ -271,7 +275,7 @@ fn update(
         let Some(entry) = catalog
             .content()
             .source(*source)
-            .filter(|entry| Kind::of(entry) == Kind::Texture)
+            .filter(|entry| matches!(Kind::of(entry), Kind::Texture | Kind::Material))
         else {
             continue;
         };
@@ -279,7 +283,19 @@ fn update(
         let relative = entry.relative_path.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
-        let task = IoTaskPool::get().spawn(async move { decode(&root, &relative, &flag) });
+        let task = if Kind::of(entry) == Kind::Material {
+            // Resolve the saved snapshot, not working drafts or a second disk read. Ambiguous
+            // identities fail instead of previewing another source's material.
+            let program = saved_material(catalog.content(), *source);
+            IoTaskPool::get().spawn(async move {
+                let program = program?;
+                crate::material_graph::render_material_asset_preview(&program, EDGE, || {
+                    flag.load(Ordering::Relaxed)
+                })
+            })
+        } else {
+            IoTaskPool::get().spawn(async move { decode(&root, &relative, &flag) })
+        };
         cache.jobs.push(Job {
             source: *source,
             epoch: epoch.clone(),
@@ -325,7 +341,11 @@ fn update(
                 commands
                     .entity(thumbnail.image)
                     .insert(ImageNode::new(handle.clone()));
-                locale.text("browser-thumbnail-ready")
+                locale.text(if thumbnail.kind == Kind::Material {
+                    "browser-material-thumbnail-ready"
+                } else {
+                    "browser-thumbnail-ready"
+                })
             }
             Preview::Loading => locale.text("browser-thumbnail-loading"),
             Preview::Failed(error) => {
@@ -354,6 +374,27 @@ fn update(
             .insert(EditorTooltip::description(message));
         thumbnail.rendered = Some(preview);
     }
+}
+
+fn saved_material(
+    content: &aestra_project::ProjectContent,
+    source: ProjectSourceId,
+) -> Result<MaterialProgram, String> {
+    if content
+        .source(source)
+        .and_then(|entry| entry.metadata.as_ref())
+        .is_some_and(|metadata| metadata.bytes > FILE_LIMIT)
+    {
+        return Err("Preview limit: 16 MiB per source".into());
+    }
+    let Some(aestra_project::ProjectAssetId::MaterialProgram(id)) =
+        content.asset_for_source(source)
+    else {
+        return Err("Material source could not be parsed".into());
+    };
+    content
+        .cached_material_program(aestra_core::material::MaterialProgramRef::Project(id))
+        .map_err(|error| error.to_string())
 }
 
 fn linked(metadata: &fs::Metadata) -> bool {
