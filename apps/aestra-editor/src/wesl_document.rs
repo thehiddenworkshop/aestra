@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -352,8 +352,48 @@ fn strip_ansi(input: &str) -> String {
     out
 }
 
-/// Recompiles WESL modules whose buffer changed since their last compile, and drops entries for
-/// closed documents. Runs only when the document store changes, and only touches changed revisions.
+/// A snapshot of one open WESL module for a recompile pass: its identity, sanitized module name,
+/// buffer revision, the modules it imports, and its source.
+struct WeslModuleSnapshot {
+    id: WeslSourceId,
+    name: String,
+    revision: u64,
+    imports: Vec<String>,
+    source: String,
+}
+
+/// The set of module names to recompile: the `dirty` modules (own buffer changed) plus every module
+/// that transitively imports one of them, so a dependency's change re-validates its dependents.
+fn modules_needing_recompile<'a>(
+    modules: &'a [WeslModuleSnapshot],
+    dirty: &HashSet<&'a str>,
+) -> HashSet<&'a str> {
+    // Reverse dependency edges: a module name → the modules that import it.
+    let mut importers: HashMap<&str, Vec<&str>> = HashMap::new();
+    for module in modules {
+        for dependency in &module.imports {
+            importers
+                .entry(dependency.as_str())
+                .or_default()
+                .push(module.name.as_str());
+        }
+    }
+    let mut result: HashSet<&str> = HashSet::new();
+    let mut stack: Vec<&str> = dirty.iter().copied().collect();
+    while let Some(name) = stack.pop() {
+        if !result.insert(name) {
+            continue; // already visited (also breaks import cycles)
+        }
+        if let Some(dependents) = importers.get(name) {
+            stack.extend(dependents.iter().copied());
+        }
+    }
+    result
+}
+
+/// Recompiles WESL modules whose buffer changed since their last compile — and every module that
+/// transitively imports a changed one — and drops entries for closed documents. Runs only when the
+/// document store changes.
 pub(crate) fn recompile_changed_wesl(
     documents: Res<WeslDocuments>,
     mut diagnostics: ResMut<WeslDiagnostics>,
@@ -361,29 +401,47 @@ pub(crate) fn recompile_changed_wesl(
     if !documents.is_changed() {
         return;
     }
-    // Snapshot every open module's name and source so any module can import any other. Owned copies
-    // detach the borrow of `documents` before the diagnostics are written.
-    let modules: Vec<(WeslSourceId, String, u64, String)> = documents
+    // Snapshot every open module (name, revision, source, and its `import`ed module names) so any
+    // module can import any other. Owned copies detach the borrow of `documents` before the
+    // diagnostics are written.
+    let modules: Vec<WeslModuleSnapshot> = documents
         .iter()
-        .map(|(id, path, revision, text)| (id, module_name_for(path), revision, text.to_owned()))
+        .map(|(id, path, revision, text)| WeslModuleSnapshot {
+            id,
+            name: module_name_for(path),
+            revision,
+            imports: crate::wesl_syntax::imported_modules(text),
+            source: text.to_owned(),
+        })
         .collect();
-    for (id, module, revision, text) in &modules {
-        let up_to_date = diagnostics
-            .entries
-            .get(id)
-            .is_some_and(|(compiled, _)| compiled == revision);
-        if up_to_date {
+
+    // A module recompiles when its own buffer changed, or when a module it (transitively) imports
+    // changed — its composed WGSL and diagnostics depend on that dependency.
+    let dirty: HashSet<&str> = modules
+        .iter()
+        .filter(|module| {
+            diagnostics
+                .entries
+                .get(&module.id)
+                .is_none_or(|(compiled, _)| *compiled != module.revision)
+        })
+        .map(|module| module.name.as_str())
+        .collect();
+    let to_recompile = modules_needing_recompile(&modules, &dirty);
+
+    for module in &modules {
+        if !to_recompile.contains(module.name.as_str()) {
             continue;
         }
         // Every other open module is available for `import package::<name>::…;`. An unimported
         // module is simply never composed, so listing them all is safe.
         let imports: Vec<(&str, &str)> = modules
             .iter()
-            .filter(|(other, _, _, _)| other != id)
-            .map(|(_, name, _, src)| (name.as_str(), src.as_str()))
+            .filter(|other| other.id != module.id)
+            .map(|other| (other.name.as_str(), other.source.as_str()))
             .collect();
-        let state = compile_wesl_source(module, text, &imports);
-        diagnostics.entries.insert(*id, (*revision, state));
+        let state = compile_wesl_source(&module.name, &module.source, &imports);
+        diagnostics.entries.insert(module.id, (module.revision, state));
     }
     diagnostics
         .entries
@@ -502,6 +560,84 @@ mod tests {
             WeslCompileState::Error { .. } => {}
             WeslCompileState::Ok { .. } => panic!("expected an unresolved-import error"),
         }
+    }
+
+    #[test]
+    fn recompile_set_covers_transitive_dependents_and_terminates_on_cycles() {
+        fn snap(name: &str, imports: &[&str]) -> WeslModuleSnapshot {
+            WeslModuleSnapshot {
+                id: WeslSourceId::for_relative_path(Path::new(name)),
+                name: name.to_string(),
+                revision: 0,
+                imports: imports.iter().map(|import| import.to_string()).collect(),
+                source: String::new(),
+            }
+        }
+        // c imports b imports a; a change to `a` must recompile a, b and c. `x`/`y` import each
+        // other (a cycle) and are unaffected.
+        let modules = vec![
+            snap("a", &[]),
+            snap("b", &["a"]),
+            snap("c", &["b"]),
+            snap("x", &["y"]),
+            snap("y", &["x"]),
+        ];
+        let dirty: HashSet<&str> = ["a"].into_iter().collect();
+        let set = modules_needing_recompile(&modules, &dirty);
+        assert!(["a", "b", "c"].iter().all(|name| set.contains(name)));
+        assert!(!set.contains("x") && !set.contains("y"));
+
+        // A dirty module inside a cycle terminates and includes the whole cycle.
+        let dirty_cycle: HashSet<&str> = ["x"].into_iter().collect();
+        let set = modules_needing_recompile(&modules, &dirty_cycle);
+        assert!(set.contains("x") && set.contains("y"));
+    }
+
+    #[test]
+    fn editing_a_dependency_recompiles_its_dependents() {
+        use bevy::ecs::system::RunSystemOnce;
+
+        let mut app = App::new();
+        let mut documents = WeslDocuments::default();
+        let helpers = documents.open(
+            PathBuf::from("helpers.wesl"),
+            "fn scale(x: f32) -> f32 { return x * 2.0; }".into(),
+        );
+        let main = documents.open(
+            PathBuf::from("main.wesl"),
+            "import package::helpers::scale;\n\
+             @fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(scale(0.5)); }"
+                .into(),
+        );
+        app.insert_resource(documents);
+        app.init_resource::<WeslDiagnostics>();
+
+        app.world_mut()
+            .run_system_once(recompile_changed_wesl)
+            .unwrap();
+        assert!(
+            matches!(
+                app.world().resource::<WeslDiagnostics>().state(main),
+                Some(WeslCompileState::Ok { .. })
+            ),
+            "main imports helpers::scale and should compile"
+        );
+
+        // Remove `scale` from the dependency. `main`'s own buffer is untouched, but its import can no
+        // longer resolve, so recompiling only changed buffers would leave its diagnostic stale.
+        app.world_mut()
+            .resource_mut::<WeslDocuments>()
+            .set_text(helpers, "fn other(x: f32) -> f32 { return x; }".into());
+        app.world_mut()
+            .run_system_once(recompile_changed_wesl)
+            .unwrap();
+        assert!(
+            matches!(
+                app.world().resource::<WeslDiagnostics>().state(main),
+                Some(WeslCompileState::Error { .. })
+            ),
+            "editing the dependency must recompile the dependent and surface the broken import"
+        );
     }
 
     #[test]

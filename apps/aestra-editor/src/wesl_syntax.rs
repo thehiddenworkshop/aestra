@@ -204,6 +204,57 @@ pub(crate) fn declared_functions(source: &str) -> Vec<String> {
     names
 }
 
+/// The names of the modules this source imports, from `import package::<name>::…;` statements
+/// (each `<name>` is one dependency). Best-effort from the tokenizer, so `import` inside comments or
+/// strings is ignored; grouped and multi-target imports contribute every `package::<name>` they
+/// mention. Duplicates are removed, order preserved. Feeds the dependency graph that recompiles a
+/// module's dependents when it changes (Milestone 8).
+pub(crate) fn imported_modules(source: &str) -> Vec<String> {
+    let tokens: Vec<WeslToken> = tokenize(source)
+        .into_iter()
+        .filter(|token| {
+            !matches!(
+                token.kind,
+                WeslTokenKind::Whitespace | WeslTokenKind::Comment
+            )
+        })
+        .collect();
+    let mut modules = Vec::new();
+    let mut in_import = false;
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind == WeslTokenKind::Keyword && token.text == "import" {
+            in_import = true;
+            index += 1;
+            continue;
+        }
+        if in_import {
+            if token.text == ";" {
+                in_import = false;
+                index += 1;
+                continue;
+            }
+            // Match `package :: <name>` (the tokenizer emits each `:` separately).
+            let is_package = token.kind == WeslTokenKind::Ident && token.text == "package";
+            let colons = tokens.get(index + 1).map(|t| t.text.as_str()) == Some(":")
+                && tokens.get(index + 2).map(|t| t.text.as_str()) == Some(":");
+            if is_package
+                && colons
+                && let Some(name) = tokens.get(index + 3).filter(|t| t.kind == WeslTokenKind::Ident)
+            {
+                if !modules.contains(&name.text) {
+                    modules.push(name.text.clone());
+                }
+                index += 4;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    modules
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +264,21 @@ mod tests {
             .into_iter()
             .map(|token| (token.kind, token.text))
             .collect()
+    }
+
+    #[test]
+    fn imported_modules_lists_each_package_dependency_once() {
+        let source = "// import package::commented::out;\n\
+                      import package::noise::value_noise;\n\
+                      import package::color::{grade, tint};\n\
+                      import package::noise::fbm;\n\
+                      fn main() {}";
+        // Each distinct module named after `package::` is a dependency; `noise` appears once.
+        assert_eq!(
+            imported_modules(source),
+            vec!["noise".to_string(), "color".to_string()]
+        );
+        assert!(imported_modules("fn main() {}").is_empty());
     }
 
     #[test]
