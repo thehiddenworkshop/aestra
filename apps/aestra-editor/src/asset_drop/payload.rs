@@ -42,6 +42,45 @@ pub(crate) struct AssetPayload {
 }
 
 impl AssetPayload {
+    pub(crate) fn mesh_source<'a>(
+        &self,
+        catalog: &'a ProjectEffectCatalog,
+    ) -> Result<&'a aestra_project::ProjectSourceEntry, String> {
+        self.resolve(catalog)?;
+        let source = catalog
+            .content()
+            .source(self.source)
+            .ok_or("Mesh source disappeared")?;
+        if !matches!(&source.kind, aestra_project::ProjectSourceKind::File(info)
+            if info.classification == aestra_project::ProjectFileClassification::Mesh)
+            || source.error.is_some()
+        {
+            return Err("Drop a glTF or GLB mesh onto this input".into());
+        }
+        let path = source
+            .relative_path
+            .to_str()
+            .ok_or("Mesh path is not valid UTF-8")?;
+        if path.contains(['#', ':']) {
+            return Err("Mesh filename contains a loader-reserved character (# or :)".into());
+        }
+        let extension = source
+            .path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if !["gltf", "glb"]
+            .iter()
+            .any(|supported| extension.eq_ignore_ascii_case(supported))
+        {
+            return Err(
+                "Mesh drops support glTF and GLB; convert this file first (OBJ has no loader)"
+                    .into(),
+            );
+        }
+        Ok(source)
+    }
+
     /// File-backed texture intent; format support comes from the runtime loader, not icons.
     pub(crate) fn texture_source<'a>(
         &self,

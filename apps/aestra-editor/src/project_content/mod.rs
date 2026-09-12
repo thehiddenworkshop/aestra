@@ -169,6 +169,9 @@ impl EditorProjectContent {
                 instance.program,
                 aestra_core::material::MaterialProgramRef::BuiltIn(_)
             ) {
+                if let Some(program) = MaterialProgram::built_in(instance.program) {
+                    programs.push(program);
+                }
                 continue;
             }
             programs.push(

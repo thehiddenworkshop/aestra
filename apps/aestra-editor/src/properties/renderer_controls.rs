@@ -1262,6 +1262,7 @@ pub(super) fn properties_renderer_key(renderer: &aestra_core::RendererInstance) 
         RendererProperties::Trail { .. } => "renderer/trail",
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
+        RendererProperties::Mesh { .. } => "renderer/mesh",
         _ => "renderer/unknown",
     }
     .into()
@@ -2581,6 +2582,7 @@ pub(super) fn spawn_renderer_card(
         RendererProperties::Trail { .. } => "Trail Renderer",
         RendererProperties::Sprite => "Sprite Renderer",
         RendererProperties::Flipbook { .. } => "Flipbook Renderer",
+        RendererProperties::Mesh { .. } => "Mesh Renderer",
         _ => "Renderer",
     };
     let base_border = if session.selection.primary == SemanticTarget::Renderer(renderer.id) {
@@ -2752,6 +2754,7 @@ pub(super) fn spawn_renderer_card(
                     session,
                 );
             }
+            super::mesh_drop::spawn_input(card, session, renderer);
             match spawn_semantic_material_controls(
                 card,
                 renderer,

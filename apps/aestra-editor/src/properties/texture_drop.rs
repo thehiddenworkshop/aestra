@@ -1,7 +1,7 @@
 //! File-backed textures become effect-local references, never shared program defaults.
 use super::asset_drop::Assignment;
 use super::*;
-use crate::asset_drop::AssetPayload;
+use crate::asset_drop::{AssetPayload, resource::path_key};
 use aestra_core::{AssetDefinition, AssetId};
 
 #[derive(Clone, Copy)]
@@ -63,46 +63,12 @@ pub(super) fn row(
     target: TextureDropTarget,
     build: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
-    parent
-        .spawn((
-            target,
-            Node {
-                width: Val::Percent(100.0),
-                position_type: PositionType::Relative,
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            Pickable::default(),
-            EditorTooltip::description(
-                "Drop a texture from Assets to assign it. Undo restores the previous input.",
-            ),
-        ))
-        .with_children(build);
-}
-
-/// Compare lexical loader paths without converting case-sensitive file identities on Unix.
-fn path_key(path: &str) -> Option<String> {
-    let path = path.replace('\\', "/");
-    if path.starts_with('/') || path.contains([':', '#']) {
-        return None;
-    }
-    let mut parts = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => return None,
-            value => parts.push(value),
-        }
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    let key = parts.join("/");
-    Some(if cfg!(windows) {
-        key.to_lowercase()
-    } else {
-        key
-    })
+    crate::asset_drop::input_row(
+        parent,
+        target,
+        "Drop a texture from Assets to assign it. Undo restores the previous input.",
+        build,
+    );
 }
 
 pub(super) fn plan(
@@ -309,42 +275,11 @@ fn selected_asset(
     }
 }
 
-/// Check the disk entry again on release, without decoding images or doing I/O on hover.
-/// Image decoding stays with the asynchronous renderer loader and its diagnostics.
 pub(super) fn check_file(
     payload: &AssetPayload,
     catalog: &ProjectEffectCatalog,
 ) -> Result<(), String> {
-    let source = payload.texture_source(catalog)?;
-    let mut directory = source.path.parent().ok_or("Texture has no parent folder")?;
-    loop {
-        if !directory.starts_with(catalog.root()) {
-            return Err("Texture is outside the project".into());
-        }
-        aestra_project::ProjectSourceTree::validate_root(directory)?;
-        if directory == catalog.root() {
-            break;
-        }
-        directory = directory.parent().ok_or("Texture is outside the project")?;
-    }
-    let metadata = std::fs::symlink_metadata(&source.path)
-        .map_err(|error| format!("Texture unavailable: {error}"))?;
-    #[cfg(windows)]
-    let linked = {
-        use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & 0x400 != 0
-    };
-    #[cfg(not(windows))]
-    let linked = metadata.file_type().is_symlink();
-    if linked || !metadata.is_file() || metadata.len() == 0 {
-        return Err("Texture must be a non-empty regular file, not a link".into());
-    }
-    if source.metadata.as_ref().is_none_or(|saved| {
-        saved.bytes != metadata.len() || saved.modified != metadata.modified().ok()
-    }) {
-        return Err("Texture changed on disk; refresh Assets and drag it again".into());
-    }
-    Ok(())
+    crate::asset_drop::resource::check_file(payload.texture_source(catalog)?, catalog)
 }
 
 #[cfg(test)]

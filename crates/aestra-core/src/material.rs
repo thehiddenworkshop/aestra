@@ -2029,6 +2029,48 @@ pub struct MaterialResourceLayout {
 }
 
 impl MaterialProgram {
+    pub const DEFAULT_MESH_ID: MaterialProgramId =
+        MaterialProgramId::from_u128(0xa3574a00_0000_4000_8000_00000000f701);
+
+    /// Stable, source-free default for newly authored mesh renderers.
+    pub fn built_in(reference: MaterialProgramRef) -> Option<Self> {
+        if reference != MaterialProgramRef::BuiltIn(Self::DEFAULT_MESH_ID) {
+            return None;
+        }
+        let color = MaterialExpressionId::from_u128(0xa3574a00_0000_4000_8000_00000000f702);
+        let alpha = MaterialExpressionId::from_u128(0xa3574a00_0000_4000_8000_00000000f703);
+        Some(Self {
+            id: Self::DEFAULT_MESH_ID,
+            schema_version: MaterialSchemaVersion::CURRENT,
+            name: "Default Mesh".into(),
+            domain: MaterialDomain::Mesh,
+            render_state_policy: MaterialRenderStatePolicy::fixed(MaterialRenderState {
+                blend: BlendMode::Alpha,
+                depth_test: MaterialDepthTest::LessEqual,
+                depth_write: false,
+                cull_mode: MaterialCullMode::Back,
+            }),
+            parameters: Vec::new(),
+            expressions: vec![
+                MaterialExpression {
+                    id: color,
+                    kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+                },
+                MaterialExpression {
+                    id: alpha,
+                    kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+                },
+            ],
+            disabled_expressions: Vec::new(),
+            node_constants: Vec::new(),
+            outputs: MaterialOutputs {
+                color,
+                alpha,
+                vertex_offset: None,
+            },
+        })
+    }
+
     pub fn additive_sprite(name: impl Into<String>) -> Self {
         let color = MaterialExpressionId::new();
         let alpha = MaterialExpressionId::new();

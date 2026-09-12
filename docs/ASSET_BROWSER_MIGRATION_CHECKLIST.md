@@ -1595,3 +1595,43 @@ Verification: all 776 editor unit tests pass (two opt-in tests ignored). Strict 
 Clippy with all targets and warnings denied, touched-file formatting and diff checks pass.
 The refactor preserves existing material/preset, texture, function graph, timeline and
 folder-move regression coverage. Unrelated user changes remain untouched.
+
+### AB7e — Mesh → mesh renderer — 2026-09-12
+
+Follow-up: the Render add menu now includes **Mesh Renderer**, with a project mesh-source
+chooser followed by shared primitive inspection/selection. Creation registers geometry,
+adds a fresh local instance of the built-in unlit Default Mesh program and selects the renderer in one Undo/Redo transaction.
+Escape/Cancel creates nothing. The sample project now includes **Mesh Material Lab** /
+**Mesh Cubes**, so native acceptance does not require hand-authoring a renderer.
+Manually verify menu creation, source/primitive selection, and Undo/Redo as well as drops.
+
+Mesh renderer cards and a dedicated Mesh input now accept glTF/GLB drops through the
+shared asset-drop infrastructure. The input appears for semantic material renderers too.
+Source metadata is inspected on the background project I/O worker. One triangle primitive
+assigns directly; multiple primitives require an explicit selection in a scrollable
+in-app chooser. Cancel/Escape can dismiss the loading or selection stage; late completion
+does not revive a cancelled request or apply to a changed document.
+
+The assignment registers/reuses an effect-local mesh reference with its exact runtime
+primitive label and updates geometry in one history entry. Undo/Redo includes the new
+registration, with stable IDs. Material bindings, material drafts and disk files stay
+unchanged. Mesh and texture assignment share lexical path normalization and regular-file/
+metadata/link checks; no duplicate hover/release observer was introduced.
+
+Supported metadata: glTF/GLB triangle primitives with position attributes, up to 64 MiB
+per source and 256 eligible primitives. OBJ, scenes and animation import are outside
+this slice. External buffers and decoding are checked by the asynchronous runtime loader,
+not by the chooser. Native acceptance pending: list/grid origin, card/row targets,
+single/multiple primitives, chooser scrolling and keyboard navigation, Escape/Cancel,
+live geometry preview, unchanged material and one-step Undo/Redo.
+
+Verification: 785 editor unit tests pass (two opt-in tests ignored), and all core/compiler/project
+tests pass (327 tests). Strict editor/core/compiler/project Clippy with all targets and warnings denied, touched-file
+formatting and diff checks pass. New tests cover card/child-input routing, single and
+multiple primitives, explicit selection, source preservation, reuse/no-op assignment,
+Undo/Redo and RON roundtrip, cancellation and late document/project/lock changes,
+modified/missing/invalid/wrong-format sources, and GLB metadata/primitive labels.
+Creation tests additionally cover starting from a sprite-only effect, the source chooser,
+single/multiple primitives, built-in default material compilation in standalone/project
+contexts, renderer selection, atomic Undo/Redo and sample-project dependency validation.
+Native acceptance remains pending; unrelated user edits were left untouched.

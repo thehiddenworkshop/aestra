@@ -77,6 +77,9 @@ impl ProjectContent {
         &self,
         reference: MaterialProgramRef,
     ) -> Result<MaterialProgram, ResolveMaterialProgramError> {
+        if let Some(program) = MaterialProgram::built_in(reference) {
+            return Ok(program);
+        }
         let entry = self.asset_index.resolve_material_program(reference)?;
         let Some(ProjectSourceDocument::MaterialProgram(document)) = self.documents.get(&entry.id)
         else {

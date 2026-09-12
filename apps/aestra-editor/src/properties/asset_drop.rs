@@ -26,6 +26,7 @@ pub(super) struct Assignment {
 enum DropTarget {
     Renderer(RendererDropTarget),
     Texture(super::texture_drop::TextureDropTarget),
+    Mesh(super::mesh_drop::MeshDropTarget),
 }
 type DropTargets<'w, 's> = Query<
     'w,
@@ -33,6 +34,7 @@ type DropTargets<'w, 's> = Query<
     (
         Option<&'static RendererDropTarget>,
         Option<&'static super::texture_drop::TextureDropTarget>,
+        Option<&'static super::mesh_drop::MeshDropTarget>,
     ),
 >;
 
@@ -42,9 +44,28 @@ fn plan_target(
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
 ) -> Result<Assignment, String> {
+    if let Some(target) = mesh_target(payload, target, catalog, session)? {
+        return super::mesh_drop::prepare(payload, target, catalog, session);
+    }
     match target {
         DropTarget::Renderer(target) => plan(payload, target, catalog, session),
         DropTarget::Texture(target) => super::texture_drop::plan(payload, target, catalog, session),
+        DropTarget::Mesh(_) => unreachable!("mesh target handled above"),
+    }
+}
+
+fn mesh_target(
+    payload: &AssetPayload,
+    target: DropTarget,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Result<Option<super::mesh_drop::MeshDropTarget>, String> {
+    match target {
+        DropTarget::Mesh(target) => Ok(Some(target)),
+        DropTarget::Renderer(target) if payload.resolve(catalog)?.is_none() => {
+            super::mesh_drop::MeshDropTarget::capture(session, target).map(Some)
+        }
+        _ => Ok(None),
     }
 }
 
@@ -181,12 +202,16 @@ type DropFeedback = crate::asset_drop::Feedback<DropTarget>;
 
 pub(super) fn register(app: &mut App) {
     preset_drop::register(app);
+    super::mesh_drop::register(app);
     crate::asset_drop::register_feedback::<DropTarget>(app);
     app.add_observer(hover).add_observer(drop_asset);
 }
 
 fn target(entity: Entity, targets: &DropTargets) -> Option<DropTarget> {
-    let (renderer, texture) = targets.get(entity).ok()?;
+    let (renderer, texture, mesh) = targets.get(entity).ok()?;
+    if let Some(mesh) = mesh {
+        return Some(DropTarget::Mesh(*mesh));
+    }
     texture
         .copied()
         .map(DropTarget::Texture)
@@ -265,6 +290,10 @@ fn drop_asset(
         plan_target(&payload, target, &catalog, &session)
     }) {
         Ok(plan) => {
+            if let Ok(Some(target)) = mesh_target(&payload, target, &catalog, &session) {
+                commands.trigger(super::mesh_drop::OpenMeshDrop { payload, target });
+                return;
+            }
             if let DropTarget::Renderer(target) = target
                 && matches!(
                     payload.resolve(&catalog),

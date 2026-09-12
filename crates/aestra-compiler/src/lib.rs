@@ -300,7 +300,18 @@ impl EffectCompiler {
         self.validate_compiler_contracts(asset, &mut report);
         let mut expanded_programs = BTreeMap::new();
         let mut function_expansions = BTreeMap::new();
-        for (&id, program) in material_programs {
+        let built_ins: BTreeMap<_, _> = asset
+            .material_instances
+            .iter()
+            .filter_map(|instance| MaterialProgram::built_in(instance.program))
+            .map(|program| (program.id, program))
+            .collect();
+        for program in material_programs
+            .values()
+            .filter(|program| !built_ins.contains_key(&program.id))
+            .chain(built_ins.values())
+        {
+            let id = program.id;
             match material_function::inline_material_functions(program, functions) {
                 Ok(expansion) => {
                     expanded_programs.insert(id, expansion.program.clone());

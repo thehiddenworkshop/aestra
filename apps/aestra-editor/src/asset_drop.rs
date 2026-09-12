@@ -1,10 +1,32 @@
 //! Shared asset-drop transport and feedback. Target adapters own validation and edits.
 //! Filesystem operations deliberately retain their serialized I/O and recovery path.
 mod payload;
+pub(crate) mod resource;
 pub(crate) use payload::{AssetPayload, AuthoringDropGuard};
 
 use crate::*;
 use bevy::picking::{events::DragLeave, pointer::PointerButton};
+
+pub(crate) fn input_row<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    target: T,
+    help: &'static str,
+    build: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn((
+            target,
+            Node {
+                width: Val::Percent(100.0),
+                position_type: PositionType::Relative,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            Pickable::default(),
+            EditorTooltip::description(help),
+        ))
+        .with_children(build);
+}
 
 /// Resolve the nearest eligible ancestor, so nested input fields win over their cards.
 pub(crate) fn nearest<T>(

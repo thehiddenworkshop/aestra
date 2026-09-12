@@ -37,6 +37,7 @@ use fluent_bundle::FluentArgs;
 
 mod asset_drop;
 mod material_document;
+mod mesh_drop;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
@@ -196,6 +197,7 @@ pub(crate) enum PropertiesAction {
     CloseModulePalette,
     AddModule(usize),
     AddSpriteRenderer,
+    AddMeshRenderer,
     AddTrailRenderer,
     AddFlipbookRenderer,
     MoveModule(ModuleId, i8),
@@ -461,6 +463,11 @@ fn handle_properties_actions(
                     background.0 = theme::ACCENT_DIM;
                 }
                 menu.open = None;
+                if matches!(action, PropertiesAction::AddMeshRenderer) {
+                    palette.open = false;
+                    commands.trigger(mesh_drop::OpenMeshRenderer);
+                    continue;
+                }
                 menu.panels_open = false;
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
@@ -824,6 +831,7 @@ fn handle_properties_actions(
                     | PropertiesAction::ToggleModuleInputPublic { .. }
                     | PropertiesAction::SetModuleInputSource { .. } => unreachable!(),
                     PropertiesAction::AddSpriteRenderer
+                    | PropertiesAction::AddMeshRenderer
                     | PropertiesAction::AddTrailRenderer
                     | PropertiesAction::AddFlipbookRenderer
                     | PropertiesAction::SetRendererMaterial(_, _)
@@ -8366,6 +8374,17 @@ fn spawn_module_palette(
             ));
             let query = palette.query.to_lowercase();
             let mut results = 0;
+            if palette.stage == StackStage::Render
+                && (query.is_empty() || "mesh renderer gltf glb geometry render".contains(&query))
+            {
+                palette_result(
+                    popup,
+                    "Mesh Renderer",
+                    "Render · choose glTF/GLB particle geometry",
+                    PropertiesAction::AddMeshRenderer,
+                );
+                results += 1;
+            }
             if palette.stage == StackStage::Render
                 && (query.is_empty() || "trail renderer history render".contains(&query))
             {

@@ -108,7 +108,8 @@ AB7c function drops into material/function graphs are implemented; native accept
 is pending. Existing function sources are referenced, not copied or moved.
 AB7d texture drops onto Properties texture inputs are implemented; native acceptance
 is pending. Source files stay in place; registrations and bindings are effect-local.
-Remaining AB7 drops and AB8–AB9 are pending.
+AB7e mesh drops onto mesh renderers are implemented; native acceptance is pending.
+Reusable pickers/virtual-source migration and AB8–AB9 are pending.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -668,7 +669,34 @@ without disk I/O on hover; release rechecks regular-file/link status and saved m
 Decoding remains asynchronous with renderer diagnostics. Wrong types, stale/changed
 files and bindings, locks and pending/protected operations are rejected without an edit.
 Escape cancels. Dropping an image never invents flipbook/atlas metadata. Native acceptance
-is pending; mesh-renderer drops and reusable picker/virtual-source migration remain next.
+is pending; reusable picker/virtual-source migration remains next.
+
+**AB7e (mesh inputs):** Drop glTF/GLB files onto a mesh renderer card or its Mesh row.
+The row is present before material controls, including semantic-material renderers.
+The shared payload, target routing, feedback, guards and resource-file checks are reused.
+Metadata inspection runs on the serialized background I/O worker, never on hover.
+A single triangle primitive assigns automatically; multiple triangle primitives open
+a bounded, scrollable in-app chooser. The selected path uses the runtime loader's
+`#MeshN/PrimitiveN` label, not a scene or whole glTF document. Existing same-path local
+mesh references are reused, preferring the current identity; repeat assignment is a
+no-op. Registration and geometry assignment are one Undo/Redo transaction. Material
+bindings, shared sources and source files remain unchanged.
+
+The Render-stage add menu also exposes **Mesh Renderer**. It first presents a bounded
+project glTF/GLB source chooser, then uses the same background inspection and primitive
+chooser as drops. A local instance of the built-in Default Mesh program, mesh registration and renderer are added
+atomically, selected, and undoable together; cancellation creates nothing. No source file
+or existing renderer is modified. `sample-project/effects/mesh_material_lab.aestra.ron`
+provides a ready-made Mesh Cubes emitter using the sample project's mesh and material.
+The default program uses particle color/opacity, alpha blending and back-face culling;
+its stable built-in reference compiles without project material files or external textures.
+
+Escape/Cancel, stale project/document/renderer bindings, locks, changed/missing/link
+sources and unsupported or invalid files do not edit the effect. OBJ has no loader in
+this build and is rejected explicitly. Inspection is limited to 64 MiB and 256 triangle
+primitives; scenes, materials, animation, and non-triangle geometry are not imported.
+External buffers and actual geometry decoding remain the runtime loader's responsibility
+and may report diagnostics after assignment. Native acceptance remains pending.
 
 Use one source/project/generation-aware payload with optional typed semantic identity.
 Re-resolve on drop; reject stale/missing/ambiguous/out-of-project items with clear
@@ -749,7 +777,7 @@ user, followed by single-asset drops and drag-preview acceptance. Folder/resourc
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
-function graph drops and AB7d texture input drops, then extend typed consumers to mesh
-renderers. AB7a native acceptance remains recorded
+function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
+then continue reusable picker/virtual-source migration. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

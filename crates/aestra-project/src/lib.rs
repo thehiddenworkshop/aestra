@@ -8,9 +8,11 @@
 
 pub mod content;
 mod editor_layout;
+mod mesh;
 
 pub use content::*;
 pub use editor_layout::*;
+pub use mesh::*;
 
 pub use aestra_core::EffectAssetRef;
 use aestra_core::{
@@ -811,6 +813,9 @@ impl ProjectAssetIndex {
         &self,
         reference: MaterialProgramRef,
     ) -> Result<MaterialProgram, ResolveMaterialProgramError> {
+        if let Some(program) = MaterialProgram::built_in(reference) {
+            return Ok(program);
+        }
         let entry = self.resolve_material_program(reference)?;
         let program = MaterialProgram::load_ron(&entry.path).map_err(|error| {
             ResolveMaterialProgramError::SourceChanged {
