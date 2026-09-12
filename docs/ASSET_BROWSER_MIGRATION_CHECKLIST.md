@@ -1860,3 +1860,43 @@ passed. Strict all-target editor Clippy with warnings denied, touched-file forma
 and diff checks passed. The reduced editor count reflects retired Library UI/adapter
 tests; shared catalog regressions were moved, and four cutover regressions were added.
 No native UI acceptance is claimed.
+
+### AB8b3 user acceptance and AB9a texture thumbnails — 2026-09-12
+
+The user reported “everything is fine” and requested the next step after AB8b3. This
+records user acceptance to proceed, without retroactively claiming each earlier native
+restart/high-DPI/mixed-project scenario was independently observed.
+
+AB9a adds read-only asynchronous thumbnails for Project texture rows, in both list and
+grid presentation. PNG, JPEG, WebP, BMP and TGA are letterboxed into 128×128 squares with
+checkerboard transparency. Existing preset previews are unchanged. Type icons remain
+while loading or on error; a small badge and hover tooltip explain the state.
+
+- Requests cover only the displayed project page, not retained hidden rows or virtual
+  sources. The page is bounded to 96 items; this is not scroll-viewport virtualization.
+- Two workers and a 128-entry LRU cache bound concurrency and cached pixel storage
+  (8 MiB per CPU/GPU RGBA copy, excluding engine overhead/decoding working memory).
+- Root/content revision changes invalidate the in-memory cache. Cancellation is checked
+  between decoding stages; cancelled jobs still count toward the worker limit until
+  finished. Results from stale revisions/roots cannot publish.
+- Input files are capped at 16 MiB and 4096×4096 pixels; image decoding uses a 64 MiB
+  best-effort allocation limit. Linked/outside-root paths are rejected. Component checks
+  are not an OS-level guarantee against concurrent filesystem substitution.
+- No disk cache, full-size AssetServer texture loads, authored writes, or Undo entries.
+  Unsupported/corrupt/oversized images retain an error fallback instead of retrying every
+  frame. A published content revision or later cache eviction allows a fresh attempt.
+
+Native acceptance pending: inspect transparent/non-square images in grid/list, scroll
+and switch folders/projects while loading, and check unreadable/unsupported placeholders.
+Material/effect/mesh previews, favorites/recent, saved searches and collections remain
+separate AB9 work.
+
+Verification: 800 editor tests passed, two opt-in tests ignored. Seven new tests cover
+supported raster formats/aspect ratio/source-byte preservation, transparency, corrupt/
+missing/oversized/unsafe sources, LRU image release, root/revision stale-result rejection,
+row publication without effect changes, and cancelled-worker accounting. The existing
+caption-layout regression now distinguishes status badges from captions. Adding the
+thumbnail system exposed implicit snapshot/panel ordering; reconciliation is explicitly
+scheduled before panel synchronization, and the existing preset-identity regression passes.
+Strict all-target editor Clippy with warnings denied, touched-file formatting and diff
+checks passed. Native thumbnail appearance/performance acceptance remains pending.

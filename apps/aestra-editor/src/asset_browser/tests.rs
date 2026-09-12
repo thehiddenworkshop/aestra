@@ -448,7 +448,12 @@ fn folder_labels_have_visible_layout_inside_their_buttons() {
             if let Some(children) = world.get::<Children>(entity) {
                 descendants.extend(children.iter());
             }
-            if world.get::<Text>(entity).is_some() {
+            // Thumbnail status glyphs are intentionally narrower than asset captions.
+            if world.get::<Text>(entity).is_some()
+                && world
+                    .get::<super::thumbnails::ThumbnailBadge>(entity)
+                    .is_none()
+            {
                 let label = world.get::<ComputedNode>(entity).unwrap().size();
                 assert!(
                     label.x > 20.0 && label.y > 8.0,

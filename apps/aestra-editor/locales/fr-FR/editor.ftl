@@ -861,4 +861,7 @@ profiler-estimated-description = appels de dessin, dispatches et mémoire d’ex
 profiler-unavailable-description = Les temps de simulation GPU et de préparation des traînées nécessitent des requêtes d’horodatage et une mesure terminée ; la géométrie nécessite une lecture GPU native à jour. Le temps de dessin, le surdessin et les collisions restent distincts.
 
 browser-search-clear = Effacer la recherche des assets
+browser-thumbnail-ready = Aperçu de la texture
+browser-thumbnail-loading = Chargement de l’aperçu de la texture…
+browser-thumbnail-error = Aperçu indisponible. Voir la raison ci-dessous.
 browser-open-usage = Ouvrir l’effet propriétaire et sélectionner ce clip

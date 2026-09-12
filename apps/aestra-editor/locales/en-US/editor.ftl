@@ -861,4 +861,7 @@ profiler-estimated-description = draw calls, dispatches, and runtime buffer memo
 profiler-unavailable-description = GPU simulation and trail-preparation timings need timestamp-query support and a completed measurement; geometry needs a current native-GPU readback. Draw time, overdraw and collision costs are separate.
 
 browser-search-clear = Clear asset search
+browser-thumbnail-ready = Texture preview
+browser-thumbnail-loading = Loading texture preview…
+browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip

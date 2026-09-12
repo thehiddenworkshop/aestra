@@ -16,6 +16,7 @@ pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]
 mod tests;
+mod thumbnails;
 mod tree;
 mod virtual_sources;
 
@@ -31,6 +32,7 @@ pub(crate) struct EditorAssetBrowserPlugin;
 impl Plugin for EditorAssetBrowserPlugin {
     fn build(&self, app: &mut App) {
         virtual_sources::register(app);
+        thumbnails::register(app);
         operations::register(app);
         tree::register(app);
         drag_drop::register(app);
@@ -65,6 +67,7 @@ impl Plugin for EditorAssetBrowserPlugin {
                 Update,
                 reconcile_snapshot
                     .after(ProjectContentSet::Input)
+                    .before(panel::sync_panel)
                     .before(EditorSet::UiRebuild),
             )
             .add_systems(

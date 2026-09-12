@@ -19,7 +19,7 @@ bevy = { workspace = true, features = ["system_clipboard"] }
 bevy_resvg.workspace = true
 bevy_winit = "0.19.1"
 fluent-bundle.workspace = true
-image.workspace = true
+image = { workspace = true, features = ["jpeg", "webp", "bmp", "tga"] }
 rfd = "0.15"
 ron.workspace = true
 serde.workspace = true

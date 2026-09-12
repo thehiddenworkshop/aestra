@@ -1,6 +1,10 @@
 # Asset Browser delivery plan
 
-Status: updated 2026-09-08. AB0 contracts/inventory recorded and AB1
+Status: updated 2026-09-12. AB8b3 canonical-browser cutover is implemented and
+user-accepted. AB9a texture thumbnails are implemented; verification and native acceptance
+are tracked below. The following historical delivery record retains its original caveats.
+
+AB0 contracts/inventory recorded and AB1
 read-only content model implemented. AB2a background refresh/editor adapter and AB2b1
 cached semantic queries implemented. AB2b2 explicit-open/post-write background operations
 implemented. AB3a folder navigation and grid/list browsing are implemented in the existing
@@ -111,7 +115,9 @@ is pending. Source files stay in place; registrations and bindings are effect-lo
 AB7e mesh drops onto mesh renderers are implemented; native acceptance is pending.
 AB7f's shared Properties asset picker is implemented; native acceptance is pending.
 AB7g's Built-ins and Current Document virtual sources are implemented; native acceptance
-is pending. Remaining Library parity review and AB8–AB9 are pending.
+is pending in the historical per-flow record. AB8 parity review and Library removal are
+now implemented; the user accepted the cutover on 2026-09-12. AB9a thumbnails are the
+current slice, with remaining AB9 features deferred.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -766,7 +772,7 @@ revisions, including publication without Bevy change ticks. Current Document als
 legacy flipbook declarations as inspection-only entries and restores resource metadata
 in hover tooltips. These are parity fixes, not AB9's general thumbnail pipeline.
 
-**AB8b — ownership migration and removal (implemented; native acceptance pending):**
+**AB8b — ownership migration and removal (implemented; user-accepted 2026-09-12):**
 Project services and shared authoring commands moved first (AB8b1/AB8b2). Following the
 explicit cutover implementation request, AB8b3 removes the legacy UI and adapters. This
 is not native acceptance: the mixed-project/restart/detached-window checks below remain
@@ -820,6 +826,23 @@ The user can perform all supported Library workflows without Library.
 
 ### AB9 — Professional browsing after migration
 
+**AB9a — asynchronous texture thumbnails (implemented; native acceptance pending):**
+Project texture rows in list/grid view now request square 128×128 previews with preserved
+aspect ratio and a transparency checkerboard. PNG, JPEG, WebP, BMP and TGA are supported.
+Loading and failed previews retain their type icon and an explanatory hover tooltip.
+Preset previews keep their existing render path; material/effect/mesh previews are deferred.
+
+Only the displayed project page requests jobs (at most 96 rows, including rows outside
+the scroll viewport). Two background workers share a 128-entry LRU cache. Root/content
+revision changes conservatively invalidate the whole cache, cancel old requests and
+reject stale results; cancelled workers retain their slot until they actually finish.
+The thumbnail recipe is fixed for this in-memory cache. Cached RGBA pixels are bounded
+to 8 MiB per CPU/GPU copy, excluding engine overhead and transient decoding allocations.
+Sources are limited to 16 MiB and 4096×4096 pixels, with the decoder's 64 MiB allocation
+budget (best-effort, not a hard process-memory guarantee). There is no disk cache or
+source write. Native acceptance should check scrolling, transparency, error icons and
+project switching while previews load. This slice does not complete AB9.
+
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
 collections. Cache keys include source/content revision and rendering inputs, with
@@ -862,10 +885,8 @@ records its later slices and AB6a implementation. AB6a was subsequently accepted
 user, followed by single-asset drops and drag-preview acceptance. Folder/resource and
 tree relocation, recoverable deletion and open-draft Undo are now implemented; the
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
-drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
-function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
-AB7f picker filtering/selection/keyboard/Undo, and AB7g virtual browsing, creation and
-assignment, plus AB8a preset search/previews and Current Document resource inspection.
-The AB8a code audit and AB8b service ownership/cutover implementation are complete.
-Native AB7/AB8 acceptance remains pending; AB7a acceptance is recorded separately and
-has not been retroactively extended. Validate the canonical Assets browser before AB9.
+drops. On 2026-09-12, the user accepted the canonical browser with “everything is fine”
+and requested the next step. This records user acceptance of AB8b3, not an independently
+observed execution of every earlier native checklist item. **Current step (P2):** AB9a
+bounded asynchronous texture thumbnails; complete automated verification and native
+thumbnail acceptance before advancing to the remaining AB9 browsing features.
