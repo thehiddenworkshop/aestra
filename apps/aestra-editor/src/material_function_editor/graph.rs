@@ -613,6 +613,7 @@ pub(crate) fn spawn(
             key: graph_key.clone(),
             content_size: extent,
             selection_bounds: None,
+            initial_view: None,
         },
         (),
         |wires| {

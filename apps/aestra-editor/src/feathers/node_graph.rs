@@ -165,6 +165,9 @@ pub(crate) struct GraphViewportProps {
     pub(crate) key: String,
     pub(crate) content_size: Vec2,
     pub(crate) selection_bounds: Option<Rect>,
+    /// Seed pan/zoom for a viewport whose `key` has no remembered camera yet (a freshly opened or
+    /// split view seeded from the document camera). `None` leaves the viewport to auto-frame.
+    pub(crate) initial_view: Option<(Vec2, f32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -549,11 +552,15 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
         EntityCursor::System(SystemCursorIcon::Grab),
         FeathersGraphViewport {
             key: props.key,
-            pan: Vec2::ZERO,
-            zoom: 1.0,
+            pan: props.initial_view.map_or(Vec2::ZERO, |(pan, _)| pan),
+            zoom: props.initial_view.map_or(1.0, |(_, zoom)| zoom),
             content_size: props.content_size,
             selection_bounds: props.selection_bounds,
-            frame_request: Some(GraphFrameTarget::All),
+            // A seeded camera is honoured immediately; only an unseeded viewport auto-frames.
+            frame_request: props
+                .initial_view
+                .is_none()
+                .then_some(GraphFrameTarget::All),
         },
     ));
     let entity = viewport.id();

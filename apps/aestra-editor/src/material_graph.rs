@@ -158,6 +158,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_systems(
                 Last,
                 (
+                    mirror_material_graph_camera_to_document,
                     persist_material_graph_layout,
                     flush_material_graph_layout_on_exit,
                 )
@@ -198,9 +199,12 @@ struct MaterialGraphAction {
 #[derive(Component, Debug, Clone, Copy)]
 struct MaterialGraphCanvas;
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 pub(crate) struct MaterialGraphViewport {
     program: MaterialProgramId,
+    /// The pan/zoom memory key this viewport instance drives. Per editor view (so two views of one
+    /// program pan/zoom independently); equal to the per-program key for the effect tool panel.
+    viewport_key: String,
 }
 
 #[derive(Debug, Clone)]
@@ -464,6 +468,24 @@ fn load_material_graph_layout(
     persistence.document = document;
     persistence.changed_at = None;
     persistence.last_error = None;
+}
+
+/// Mirrors each open viewport's live per-view camera into its program's document-camera slot, so the
+/// saved layout (and the initial camera of the next view opened) tracks the most recent view. The
+/// effect tool panel already writes the document key directly, so it is skipped.
+fn mirror_material_graph_camera_to_document(
+    mut graph_memory: ResMut<GraphViewportMemory>,
+    viewports: Query<&MaterialGraphViewport>,
+) {
+    for viewport in &viewports {
+        let document_key = material_graph_view_key(viewport.program);
+        if viewport.viewport_key == document_key {
+            continue;
+        }
+        if let Some((pan, zoom)) = graph_memory.view(&viewport.viewport_key) {
+            graph_memory.set_view(document_key, pan, zoom);
+        }
+    }
 }
 
 fn persist_material_graph_layout(
@@ -3391,6 +3413,7 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
 pub(crate) fn spawn_material_graph_workspace(
     parent: &mut ChildSpawnerCommands,
     override_target: Option<&crate::material_document::MaterialEditingTarget>,
+    view: Option<crate::docking::EditorViewId>,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     palette: &MaterialGraphPaletteState,
@@ -3426,7 +3449,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     );
                     return;
                 }
-                spawn_header(panel, None, previews, true, localizer, asset_server);
+                spawn_header(panel, None, "", previews, true, localizer, asset_server);
                 let text = function_inspection_text(session, catalog);
                 spawn_vertical_scroll_area(
                     panel,
@@ -3490,12 +3513,19 @@ pub(crate) fn spawn_material_graph_workspace(
         })
         .with_children(|panel| {
             let projection = selected_projection_for(target, session, catalog);
+            // Pan/zoom is per-view (independent split cameras); node positions stay per-document.
+            let viewport_key = projection
+                .as_ref()
+                .ok()
+                .map(|(_, graph, _, _)| material_graph_viewport_key(graph.program, view))
+                .unwrap_or_default();
             spawn_header(
                 panel,
                 projection
                     .as_ref()
                     .ok()
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
+                &viewport_key,
                 previews,
                 target.program().is_some(),
                 localizer,
@@ -3522,12 +3552,19 @@ pub(crate) fn spawn_material_graph_workspace(
                 graph_memory,
                 &graph_key,
             );
+            // Seed this view's camera from its own remembered pan/zoom, else the document camera
+            // (the last-saved / tool-panel camera), so a reopened or split view starts where the
+            // document was left rather than always re-framing.
+            let initial_view = graph_memory
+                .view(&viewport_key)
+                .or_else(|| graph_memory.view(&graph_key));
             let viewport = spawn_graph_viewport(
                 panel,
                 GraphViewportProps {
-                    key: graph_key.clone(),
+                    key: viewport_key.clone(),
                     content_size: layout.size,
                     selection_bounds,
+                    initial_view,
                 },
                 MaterialGraphCanvas,
                 |overlay| spawn_graph_wires(overlay, &projection),
@@ -3570,6 +3607,7 @@ pub(crate) fn spawn_material_graph_workspace(
             panel.commands().entity(viewport).insert((
                 MaterialGraphViewport {
                     program: projection.program,
+                    viewport_key: viewport_key.clone(),
                 },
                 asset_drop::GraphDropTarget::program(session, projection.program),
             ));
@@ -4066,6 +4104,7 @@ fn selected_projection_for(
 fn spawn_header(
     parent: &mut ChildSpawnerCommands,
     projection: Option<(&str, &MaterialGraphProjection)>,
+    frame_key: &str,
     previews: &MaterialGraphPreviewState,
     standalone: bool,
     localizer: &Localizer,
@@ -4084,7 +4123,6 @@ fn spawn_header(
                 );
             }
             if let Some((name, graph)) = projection {
-                let key = material_graph_view_key(graph.program);
                 spawn_material_graph_toolbar_button(
                     header,
                     asset_server,
@@ -4097,14 +4135,14 @@ fn spawn_header(
                     asset_server,
                     "icons/frame-all.svg",
                     localizer.text("material-graph-frame-all"),
-                    GraphFrameAction::new(key.clone(), GraphFrameTarget::All),
+                    GraphFrameAction::new(frame_key.to_owned(), GraphFrameTarget::All),
                 );
                 spawn_graph_frame_button(
                     header,
                     asset_server,
                     "icons/frame-selection.svg",
                     localizer.text("material-graph-frame-selection"),
-                    GraphFrameAction::new(key, GraphFrameTarget::Selection),
+                    GraphFrameAction::new(frame_key.to_owned(), GraphFrameTarget::Selection),
                 );
                 let all_previews_visible = graph_preview_targets(graph)
                     .all(|target| previews.is_visible(graph.program, target));
@@ -4181,8 +4219,22 @@ fn graph_preview_targets(
         .chain(std::iter::once(MaterialGraphPreviewTarget::Output))
 }
 
+/// The per-document key for a program's node layout (node positions, and the saved "document
+/// camera"). Shared by every view of the program, so moving a node moves it in all of them.
 fn material_graph_view_key(program: MaterialProgramId) -> String {
     format!("material:{program}")
+}
+
+/// The per-view pan/zoom key. Editor views get a distinct key so two views of one program pan and
+/// zoom independently; the effect tool panel (no view) reuses the per-document key.
+fn material_graph_viewport_key(
+    program: MaterialProgramId,
+    view: Option<crate::docking::EditorViewId>,
+) -> String {
+    match view {
+        Some(view) => format!("material:{program}#view:{}", view.0),
+        None => material_graph_view_key(program),
+    }
 }
 
 fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
@@ -5419,6 +5471,45 @@ mod tests {
                 .into_iter()
                 .all(|target| !previews.is_visible(program, target))
         );
+    }
+
+    #[test]
+    fn viewport_key_is_per_view_while_node_key_is_shared() {
+        use crate::docking::EditorViewId;
+        let program = MaterialProgramId::new();
+        let node_key = material_graph_view_key(program);
+        // Two editor views of one program get distinct pan/zoom keys.
+        let left = material_graph_viewport_key(program, Some(EditorViewId(1)));
+        let right = material_graph_viewport_key(program, Some(EditorViewId(2)));
+        assert_ne!(left, right);
+        assert_ne!(left, node_key);
+        // The effect tool panel (no view) reuses the per-document key, preserving its behaviour.
+        assert_eq!(material_graph_viewport_key(program, None), node_key);
+    }
+
+    #[test]
+    fn camera_mirror_copies_the_active_view_camera_into_the_document_slot() {
+        use crate::docking::EditorViewId;
+        let program = MaterialProgramId::new();
+        let document_key = material_graph_view_key(program);
+        let viewport_key = material_graph_viewport_key(program, Some(EditorViewId(3)));
+
+        let mut memory = GraphViewportMemory::default();
+        memory.set_view(viewport_key.clone(), Vec2::new(30.0, -8.0), 1.5);
+
+        let mut app = App::new();
+        app.insert_resource(memory)
+            .add_systems(Update, mirror_material_graph_camera_to_document);
+        app.world_mut().spawn(MaterialGraphViewport {
+            program,
+            viewport_key,
+        });
+        app.update();
+
+        // The per-view camera is now the document camera, so the saved layout and the next view's
+        // initial camera follow the most recent view.
+        let memory = app.world().resource::<GraphViewportMemory>();
+        assert_eq!(memory.view(&document_key), Some((Vec2::new(30.0, -8.0), 1.5)));
     }
 
     #[test]

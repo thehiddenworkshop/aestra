@@ -523,6 +523,7 @@ fn spawn_editor_view_content(
             spawn_material_graph_workspace(
                 parent,
                 Some(&target),
+                Some(view),
                 sources.session,
                 sources.catalog,
                 sources.material_graph_palette,
@@ -623,6 +624,7 @@ fn spawn_panel_content(
         ToolPanel::MaterialGraph => spawn_material_graph_workspace(
             parent,
             Some(&crate::material_document::MaterialEditingTarget::EffectInstance),
+            None,
             sources.session,
             sources.catalog,
             sources.material_graph_palette,

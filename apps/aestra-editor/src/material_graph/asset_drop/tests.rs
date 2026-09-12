@@ -102,6 +102,7 @@ impl Fixture {
                         key,
                         content_size: Vec2::new(800.0, 600.0),
                         selection_bounds: None,
+                        initial_view: None,
                     },
                     (),
                     |_| {},
