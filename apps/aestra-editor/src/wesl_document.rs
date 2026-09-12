@@ -231,13 +231,9 @@ impl WeslDiagnostics {
     }
 }
 
-/// A WESL module name derived from a file stem, sanitized to a valid identifier for the compiler.
-pub(crate) fn module_name_for(path: &Path) -> String {
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("module");
-    let mut name: String = stem
+/// Sanitizes one path segment into a valid WESL/WGSL identifier (a module-path segment).
+fn sanitize_wesl_ident(segment: &str) -> String {
+    let mut name: String = segment
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
@@ -249,6 +245,30 @@ pub(crate) fn module_name_for(path: &Path) -> String {
         name.insert(0, '_');
     }
     name
+}
+
+/// The WESL module name for a project-relative path, built from its folder segments and file stem
+/// joined by `::` (each sanitized to an identifier). Encoding the whole path — not just the stem —
+/// keeps same-stem files in different folders distinct (`shaders/noise.wesl` → `shaders::noise`,
+/// `lib/noise.wesl` → `lib::noise`), so they never collide in import resolution or the dependency
+/// graph. A root-level file keeps its bare stem (`noise.wesl` → `noise`).
+pub(crate) fn module_name_for(path: &Path) -> String {
+    let mut segments: Vec<String> = Vec::new();
+    if let Some(parent) = path.parent() {
+        for component in parent.components() {
+            if let std::path::Component::Normal(text) = component
+                && let Some(text) = text.to_str()
+            {
+                segments.push(sanitize_wesl_ident(text));
+            }
+        }
+    }
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("module");
+    segments.push(sanitize_wesl_ident(stem));
+    segments.join("::")
 }
 
 /// The WESL compiler module path for a module of the given (sanitized) name. Modules live under the
@@ -283,7 +303,15 @@ pub(crate) fn compile_wesl_source(
             // The WESL compiler formats errors with ANSI colour codes for a terminal; strip them so
             // the diagnostics panel shows plain text.
             let message = strip_ansi(&error.to_string());
-            let line = error_line(&message);
+            // A validation error's line is a line of the *composed* WGSL. For a module with no
+            // imports that composed WGSL matches the source 1:1, so the line is the source line; but
+            // once imports prepend code the line shifts and no longer maps to the source, so it is
+            // suppressed rather than point at the wrong line.
+            let line = if crate::wesl_syntax::imported_modules(source).is_empty() {
+                error_line(&message)
+            } else {
+                None
+            };
             // Parse errors carry a `chars A..B` range; semantic errors (e.g. duplicate declaration)
             // do not, so fall back to the offending identifier's location.
             let span =
@@ -539,6 +567,62 @@ mod tests {
         match compile_wesl_source("noise", "fn broken( {", &[]) {
             WeslCompileState::Error { message, .. } => assert!(!message.is_empty()),
             WeslCompileState::Ok { .. } => panic!("expected a compile error for malformed WESL"),
+        }
+    }
+
+    #[test]
+    fn module_name_encodes_folders_so_same_stem_files_do_not_collide() {
+        assert_eq!(module_name_for(Path::new("noise.wesl")), "noise");
+        assert_eq!(module_name_for(Path::new("shaders/noise.wesl")), "shaders::noise");
+        assert_eq!(module_name_for(Path::new("lib/noise.wesl")), "lib::noise");
+        // Same stem, different folders → distinct module names.
+        assert_ne!(
+            module_name_for(Path::new("shaders/noise.wesl")),
+            module_name_for(Path::new("lib/noise.wesl"))
+        );
+        // Non-identifier segments are sanitized.
+        assert_eq!(
+            module_name_for(Path::new("fx-lib/2d/noise.wesl")),
+            "fx_lib::_2d::noise"
+        );
+    }
+
+    #[test]
+    fn error_line_is_reported_without_imports_but_suppressed_with_them() {
+        // A validation error (returning f32 where vec4<f32> is required) in a module with no imports
+        // reports a source line.
+        let bad = "@fragment fn main() -> @location(0) vec4<f32> { return 1.0; }";
+        match compile_wesl_source("main", bad, &[]) {
+            WeslCompileState::Error { line, .. } => {
+                assert!(line.is_some(), "a no-import module should report its source line")
+            }
+            WeslCompileState::Ok { .. } => panic!("expected a validation error"),
+        }
+        // The same error in a module that imports: its composed-WGSL line no longer maps to the
+        // source, so the line is suppressed (the message still shows).
+        let helper = "fn unused() -> f32 { return 0.0; }";
+        let importing = "import package::helpers::unused;\n\
+                         @fragment fn main() -> @location(0) vec4<f32> { return 1.0; }";
+        match compile_wesl_source("main", importing, &[("helpers", helper)]) {
+            WeslCompileState::Error { line, .. } => assert!(
+                line.is_none(),
+                "an importing module's composed line must be suppressed, not shown wrong"
+            ),
+            WeslCompileState::Ok { .. } => panic!("expected a validation error"),
+        }
+    }
+
+    #[test]
+    fn a_module_in_a_folder_can_be_imported_by_its_path() {
+        // A helper in a subfolder is imported by its folder-qualified path.
+        let helper = "fn scale(x: f32) -> f32 { return x * 2.0; }";
+        let main = "import package::shaders::noise::scale;\n\
+                    @fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(scale(0.5)); }";
+        match compile_wesl_source("main", main, &[("shaders::noise", helper)]) {
+            WeslCompileState::Ok { wgsl } => assert!(wgsl.contains("fn main")),
+            WeslCompileState::Error { message, .. } => {
+                panic!("expected a folder-qualified import to resolve, got: {message}")
+            }
         }
     }
 
