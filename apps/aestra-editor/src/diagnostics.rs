@@ -2,12 +2,12 @@
 
 use crate::feathers::context_menu::{
     pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu,
-    spawn_pointer_context_menu_item,
+    spawn_pointer_context_menu_custom_item,
 };
 use crate::feathers::panel::spawn_panel_empty_state;
 use crate::*;
 use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
-use bevy::input_focus::{FocusCause, InputFocus};
+use bevy::feathers::theme::ThemedText;
 use bevy::ui::RelativeCursorPosition;
 use bevy::ui_widgets::Activate;
 
@@ -31,7 +31,6 @@ impl Plugin for EditorDiagnosticsPlugin {
             )
             .add_observer(queue_diagnostics_action_activation)
             .add_observer(open_diagnostics_context_menu)
-            .add_observer(copy_diagnostic_to_clipboard)
             .add_systems(
                 Update,
                 (
@@ -71,9 +70,9 @@ struct DiagnosticsContextAnchor;
 #[derive(Component)]
 struct DiagnosticsContextMenu;
 
-/// A diagnostics context-menu item that copies `.0` to the clipboard.
+/// Marks the diagnostics context-menu "Copy" item.
 #[derive(Component)]
-struct DiagnosticCopyAction(String);
+struct DiagnosticCopyItem;
 
 #[derive(Resource, Default)]
 pub(crate) struct DiagnosticsPanelState {
@@ -146,7 +145,6 @@ fn open_diagnostics_context_menu(
     parents: Query<&ChildOf>,
     menus: Query<Entity, With<DiagnosticsContextAnchor>>,
     localizer: Res<Localizer>,
-    mut focus: ResMut<InputFocus>,
     mut commands: Commands,
 ) {
     if click.button != PointerButton::Secondary {
@@ -170,49 +168,51 @@ fn open_diagnostics_context_menu(
     for menu in &menus {
         commands.entity(menu).despawn();
     }
-    // Focus the row so the menu popup takes activation focus (its items fire `Activate` on click),
-    // and focus returns near the row when it closes.
-    focus.set(row, FocusCause::Navigated);
     let position = pointer_position_in_node(click.pointer_location.position, node, transform)
         * node.inverse_scale_factor();
     let label = localizer.text("diagnostics-copy");
-    commands.entity(host).with_children(|parent| {
+    commands.entity(host).with_children(move |parent| {
         spawn_pointer_context_menu(
             parent,
             position,
             DiagnosticsContextAnchor,
             DiagnosticsContextMenu,
-            |menu| {
-                spawn_pointer_context_menu_item(menu, &label, DiagnosticCopyAction(text));
+            move |menu| {
+                let text_label = label.clone();
+                let item = spawn_pointer_context_menu_custom_item(
+                    menu,
+                    &label,
+                    DiagnosticCopyItem,
+                    move |item| {
+                        item.spawn((
+                            Text::new(text_label),
+                            ThemedText,
+                            TextLayout::no_wrap(),
+                            Pickable::IGNORE,
+                        ));
+                    },
+                );
+                // A direct click handler copies and closes — it fires on click regardless of the
+                // menu's activation focus, which the `Activate` path did not.
+                menu.commands().entity(item).observe(
+                    move |mut click: On<Pointer<Click>>,
+                          anchors: Query<Entity, With<DiagnosticsContextAnchor>>,
+                          mut clipboard: ResMut<Clipboard>,
+                          mut commands: Commands| {
+                        if click.button != PointerButton::Primary {
+                            return;
+                        }
+                        let _ = clipboard.set_text(text.clone());
+                        for anchor in &anchors {
+                            commands.entity(anchor).despawn();
+                        }
+                        click.propagate(false);
+                    },
+                );
             },
         );
     });
     click.propagate(false);
-}
-
-/// Copies the diagnostic text to the clipboard when its context-menu item is activated, then closes
-/// the menu.
-fn copy_diagnostic_to_clipboard(
-    activate: On<Activate>,
-    items: Query<&DiagnosticCopyAction>,
-    menus: Query<Entity, With<DiagnosticsContextAnchor>>,
-    parents: Query<&ChildOf>,
-    mut clipboard: ResMut<Clipboard>,
-    mut commands: Commands,
-) {
-    let Ok(action) = items.get(activate.entity) else {
-        return;
-    };
-    let _ = clipboard.set_text(action.0.clone());
-    for menu in &menus {
-        if activate.entity == menu
-            || parents
-                .iter_ancestors(activate.entity)
-                .any(|entity| entity == menu)
-        {
-            commands.entity(menu).despawn();
-        }
-    }
 }
 
 /// Dismisses the diagnostics right-click menu on Escape or a primary click outside its surface.
