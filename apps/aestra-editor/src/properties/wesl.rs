@@ -169,7 +169,7 @@ fn active_wesl(active: &ActiveEditorContext, documents: &DocumentManager) -> Opt
 
 fn compile_status(state: Option<&WeslCompileState>, localizer: &Localizer) -> (String, Color) {
     match state {
-        Some(WeslCompileState::Ok) => (
+        Some(WeslCompileState::Ok { .. }) => (
             localizer.text("wesl-properties-status-ok"),
             Color::srgb(0.35, 0.88, 0.57),
         ),

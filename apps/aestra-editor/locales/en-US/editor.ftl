@@ -805,6 +805,16 @@ generated-wesl-description = The effect plan supplies typed buffers to these WES
 generated-gpu-attributes = Native GPU attributes (estimate)
 generated-gpu-attributes-summary = { $live } live · { $omitted } omitted emitter attributes · rendered mode; runtime overrides may differ · storage layout unchanged
 
+compiler-wesl-title = WESL COMPILER
+compiler-wesl-status-ok = COMPOSED WGSL  ·  LIVE
+compiler-wesl-status-error = COMPILE ERROR
+compiler-wesl-status-pending = NOT COMPILED
+compiler-wesl-error = Compilation failed
+compiler-wesl-pending = Not compiled yet
+compiler-wesl-pending-description = Edit the module to compile it; the generated WGSL appears here.
+compiler-wesl-empty = No reachable WGSL
+compiler-wesl-empty-description = The module compiled cleanly, but has no entry point, so nothing is emitted until it is imported by a module that uses it.
+
 changes-none-pending = NO TRANSACTION PENDING
 changes-summary = { $transaction }  ·  { $count } CHANGES
 changes-empty-description = No proposed changes. Structural deletions open here for review before they modify the effect.

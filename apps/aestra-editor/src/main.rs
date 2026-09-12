@@ -268,6 +268,7 @@ fn main() {
                 wesl_document::recompile_changed_wesl,
                 wesl_editor::sync_wesl_editor_markers,
                 properties::wesl::refresh_wesl_properties,
+                compiler_inspector::refresh_wesl_compiler_inspector,
             )
                 .chain(),
         )

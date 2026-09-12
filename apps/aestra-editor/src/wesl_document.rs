@@ -165,7 +165,8 @@ impl WeslDocuments {
 /// source line it points at (best-effort, parsed from the message) so the editor can mark it inline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum WeslCompileState {
-    Ok,
+    /// Compiled cleanly; carries the composed WGSL for the Compiler Inspector.
+    Ok { wgsl: String },
     Error {
         message: String,
         line: Option<usize>,
@@ -203,6 +204,14 @@ impl WeslDiagnostics {
         self.entries.get(&id).map(|(_, state)| state)
     }
 
+    /// The composed WGSL of a cleanly-compiled module, for the Compiler Inspector.
+    pub(crate) fn wgsl(&self, id: WeslSourceId) -> Option<&str> {
+        match self.state(id)? {
+            WeslCompileState::Ok { wgsl } => Some(wgsl),
+            WeslCompileState::Error { .. } => None,
+        }
+    }
+
     /// The current compile errors across open WESL buffers, as (source id, message, one-based line,
     /// failing char span), for the unified diagnostics panel.
     #[allow(clippy::type_complexity)]
@@ -217,7 +226,7 @@ impl WeslDiagnostics {
                     line,
                     span,
                 } => Some((*id, message.as_str(), *line, *span)),
-                WeslCompileState::Ok => None,
+                WeslCompileState::Ok { .. } => None,
             })
     }
 }
@@ -245,7 +254,9 @@ pub(crate) fn module_name_for(path: &Path) -> String {
 /// Compiles a WESL module (via the WESL compiler and Naga validation) to a clean/error state.
 pub(crate) fn compile_wesl_source(module_name: &str, source: &str) -> WeslCompileState {
     match aestra_gpu::shader::compile_wesl(module_name, source, &[]) {
-        Ok(_) => WeslCompileState::Ok,
+        Ok(compiled) => WeslCompileState::Ok {
+            wgsl: compiled.wgsl,
+        },
         Err(error) => {
             // The WESL compiler formats errors with ANSI colour codes for a terminal; strip them so
             // the diagnostics panel shows plain text.
@@ -413,13 +424,24 @@ mod tests {
 
     #[test]
     fn compile_reports_ok_for_valid_and_an_error_for_invalid_wesl() {
-        assert_eq!(
-            compile_wesl_source("noise", "fn add(a: f32, b: f32) -> f32 { return a + b; }"),
-            WeslCompileState::Ok
-        );
+        // A module with a reachable entry point composes to WGSL that carries it; the Compiler
+        // Inspector shows this text. (Pure library modules with no entry point tree-shake to empty
+        // WGSL, which still compiles cleanly.)
+        match compile_wesl_source(
+            "noise",
+            "@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+        ) {
+            WeslCompileState::Ok { wgsl } => assert!(wgsl.contains("fn main")),
+            WeslCompileState::Error { .. } => panic!("expected a clean compile for valid WESL"),
+        }
+        // Unused declarations are tree-shaken away, so a lone function composes to empty WGSL.
+        match compile_wesl_source("noise", "fn add(a: f32, b: f32) -> f32 { return a + b; }") {
+            WeslCompileState::Ok { wgsl } => assert!(wgsl.trim().is_empty()),
+            WeslCompileState::Error { .. } => panic!("expected a clean compile for valid WESL"),
+        }
         match compile_wesl_source("noise", "fn broken( {") {
             WeslCompileState::Error { message, .. } => assert!(!message.is_empty()),
-            WeslCompileState::Ok => panic!("expected a compile error for malformed WESL"),
+            WeslCompileState::Ok { .. } => panic!("expected a compile error for malformed WESL"),
         }
     }
 

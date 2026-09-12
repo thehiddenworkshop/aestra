@@ -68,7 +68,22 @@ pub(crate) fn spawn_compiler_inspector_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     localizer: &Localizer,
+    active: &crate::editor_view::ActiveEditorContext,
+    documents: &crate::document::DocumentManager,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
 ) {
+    // An active WESL editor tab inspects its composed WGSL instead of the effect's compiled program.
+    if spawn_wesl_compiler_view(
+        parent,
+        active,
+        documents,
+        wesl_documents,
+        wesl_diagnostics,
+        localizer,
+    ) {
+        return;
+    }
     let compiled = session
         .preview
         .as_ref()
@@ -191,6 +206,238 @@ pub(crate) fn spawn_compiler_inspector_workspace(
                         },
                     );
                 });
+        });
+}
+
+/// Renders the composed WGSL (or the compile error) for the active WESL editor tab, so the Compiler
+/// Inspector follows the active document instead of always showing the effect's compiled program.
+/// Returns whether it rendered, letting the caller skip the effect-centric view.
+fn spawn_wesl_compiler_view(
+    parent: &mut ChildSpawnerCommands,
+    active: &crate::editor_view::ActiveEditorContext,
+    documents: &crate::document::DocumentManager,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
+    localizer: &Localizer,
+) -> bool {
+    use crate::document::DocumentKey;
+
+    let Some(id) = active
+        .active_document
+        .and_then(|doc| documents.document(doc))
+        .and_then(|doc| match doc.key {
+            DocumentKey::WeslSource(id) => Some(id),
+            _ => None,
+        })
+    else {
+        return false;
+    };
+
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_width: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            WeslCompilerContent(id),
+        ))
+        .with_children(|content| {
+            render_wesl_compiler_content(content, id, wesl_documents, wesl_diagnostics, localizer);
+        });
+    true
+}
+
+/// Marks the WESL Compiler Inspector content wrapper (with its source id) so it can re-render in
+/// place as the module compiles, without a dock rebuild (which would recreate the editor's buffer).
+#[derive(Component)]
+pub(crate) struct WeslCompilerContent(crate::wesl_document::WeslSourceId);
+
+/// Re-renders each WESL Compiler Inspector panel in place when its source or diagnostics change, so
+/// the composed WGSL stays live as the module is edited.
+pub(crate) fn refresh_wesl_compiler_inspector(
+    wesl_documents: Res<crate::wesl_document::WeslDocuments>,
+    wesl_diagnostics: Res<crate::wesl_document::WeslDiagnostics>,
+    localizer: Res<Localizer>,
+    panels: Query<(Entity, &WeslCompilerContent, Option<&Children>)>,
+    mut commands: Commands,
+) {
+    if panels.is_empty()
+        || !(wesl_documents.is_changed() || wesl_diagnostics.is_changed() || localizer.is_changed())
+    {
+        return;
+    }
+    for (entity, content, children) in &panels {
+        if let Some(children) = children {
+            for &child in children {
+                commands.entity(child).despawn();
+            }
+        }
+        let id = content.0;
+        commands.entity(entity).with_children(|content| {
+            render_wesl_compiler_content(content, id, &wesl_documents, &wesl_diagnostics, &localizer);
+        });
+    }
+}
+
+fn render_wesl_compiler_content(
+    parent: &mut ChildSpawnerCommands,
+    id: crate::wesl_document::WeslSourceId,
+    wesl_documents: &crate::wesl_document::WeslDocuments,
+    wesl_diagnostics: &crate::wesl_document::WeslDiagnostics,
+    localizer: &Localizer,
+) {
+    use crate::wesl_document::{WeslCompileState, module_name_for};
+
+    let relative = wesl_documents.relative_path(id);
+    let module = relative.map(module_name_for).unwrap_or_default();
+    let state = wesl_diagnostics.state(id);
+    let (state_label, state_color) = match state {
+        Some(WeslCompileState::Ok { .. }) => (
+            localizer.text("compiler-wesl-status-ok"),
+            Color::srgb(0.35, 0.88, 0.57),
+        ),
+        Some(WeslCompileState::Error { .. }) => (
+            localizer.text("compiler-wesl-status-error"),
+            Color::srgb(1.0, 0.38, 0.32),
+        ),
+        None => (
+            localizer.text("compiler-wesl-status-pending"),
+            theme::TEXT_MUTED,
+        ),
+    };
+
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(38.0),
+                align_items: AlignItems::Center,
+                padding: UiRect::horizontal(Val::Px(14.0)),
+                column_gap: Val::Px(9.0),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT),
+        ))
+        .with_children(|header| {
+            header.spawn((
+                Text::new(localizer.text("compiler-wesl-title")),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+            ));
+            header.spawn((
+                Text::new(module),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+            header.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            header.spawn((
+                Node {
+                    width: Val::Px(6.0),
+                    height: Val::Px(6.0),
+                    border_radius: BorderRadius::MAX,
+                    ..default()
+                },
+                BackgroundColor(state_color),
+            ));
+            header.spawn((
+                Text::new(state_label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(state_color),
+            ));
+        });
+
+    match state {
+        Some(WeslCompileState::Ok { wgsl }) if !wgsl.trim().is_empty() => {
+            spawn_wesl_wgsl_view(parent, wgsl);
+        }
+        Some(WeslCompileState::Ok { .. }) => {
+            // Compiled cleanly, but tree-shaking left no reachable WGSL — a library module
+            // whose functions are only used once imported elsewhere.
+            spawn_panel_empty_state(
+                parent,
+                &localizer.text("compiler-wesl-empty"),
+                &localizer.text("compiler-wesl-empty-description"),
+                Color::srgb(0.35, 0.88, 0.57),
+            );
+        }
+        Some(WeslCompileState::Error { message, .. }) => {
+            spawn_panel_empty_state(
+                parent,
+                &localizer.text("compiler-wesl-error"),
+                message,
+                Color::srgb(1.0, 0.38, 0.32),
+            );
+        }
+        None => {
+            spawn_panel_empty_state(
+                parent,
+                &localizer.text("compiler-wesl-pending"),
+                &localizer.text("compiler-wesl-pending-description"),
+                theme::TEXT_MUTED,
+            );
+        }
+    }
+}
+
+/// Renders composed WGSL as monospace, non-wrapping lines in a two-axis scroll area.
+fn spawn_wesl_wgsl_view(parent: &mut ChildSpawnerCommands, wgsl: &str) {
+    let wgsl = wgsl.to_owned();
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            min_width: Val::Px(0.0),
+            ..default()
+        })
+        .with_children(|body| {
+            spawn_scroll_area_xy(
+                body,
+                ScrollMemoryKey::CompilerInspector,
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(10.0)),
+                    ..default()
+                },
+                |content| {
+                    content.spawn((
+                        Text::new(wgsl),
+                        TextFont {
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        bevy::text::TextLayout {
+                            linebreak: bevy::text::LineBreak::NoWrap,
+                            ..default()
+                        },
+                        Node {
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ));
+                },
+            );
         });
 }
 

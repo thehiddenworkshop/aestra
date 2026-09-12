@@ -607,9 +607,15 @@ fn spawn_panel_content(
                 sources.localizer,
             );
         }
-        ToolPanel::CompilerInspector => {
-            spawn_compiler_inspector_workspace(parent, sources.session, sources.localizer)
-        }
+        ToolPanel::CompilerInspector => spawn_compiler_inspector_workspace(
+            parent,
+            sources.session,
+            sources.localizer,
+            sources.active,
+            sources.documents,
+            sources.wesl_documents,
+            sources.wesl_diagnostics,
+        ),
         // The material-graph tool panel is the effect's own inline material; shared programs and
         // functions open as their own editor tabs (DockTab::Editor), so it renders the effect
         // instance explicitly rather than following the focused shared-document target.
