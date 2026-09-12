@@ -145,6 +145,7 @@ impl Plugin for FeathersNodeGraphPlugin {
                     remember_graph_viewports,
                     restore_graph_viewports,
                     restore_graph_nodes,
+                    sync_graph_nodes_from_memory,
                     handle_graph_frame_buttons,
                     handle_graph_collapse_buttons,
                     navigate_graph_viewports,
@@ -757,6 +758,36 @@ fn restore_graph_nodes(
     }
 }
 
+/// Keeps every node's position (and collapse) in step with the shared memory, so a second view of
+/// the same document reflects a node move or collapse live — not just when the pane rebuilds. Node
+/// layout is keyed per document, so both views resolve to the same memory entry; the node being
+/// dragged already matches and is skipped. Runs only when memory changed.
+fn sync_graph_nodes_from_memory(
+    memory: Res<GraphViewportMemory>,
+    mut nodes: Query<(Entity, &mut FeathersGraphNode, &mut Node)>,
+    mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
+    mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
+) {
+    if !memory.is_changed() {
+        return;
+    }
+    for (entity, mut graph_node, mut style) in &mut nodes {
+        let key = (graph_node.graph_key.clone(), graph_node.node_key.clone());
+        let Some(saved) = memory.nodes.get(&key) else {
+            continue;
+        };
+        if graph_node.position != saved.position {
+            graph_node.position = saved.position;
+            style.left = Val::Px(saved.position.x);
+            style.top = Val::Px(saved.position.y);
+        }
+        if graph_node.collapsed != saved.collapsed {
+            graph_node.collapsed = saved.collapsed;
+            apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
+        }
+    }
+}
+
 fn begin_graph_node_press(
     press: On<Pointer<Press>>,
     mut nodes: Query<&mut FeathersGraphNode>,
@@ -835,9 +866,11 @@ fn drag_graph_node(
     // Drag is emitted only after picking has recognized a real drag. Arm the guard here rather
     // than waiting for DragEnd: Click ordering differs by backend on pointer release.
     graph_node.note_drag_motion();
-    let zoom = viewports
-        .iter()
-        .find(|viewport| viewport.key == graph_node.graph_key)
+    // Scale the drag by the zoom of the node's own viewport. The viewport's memory key is per-view
+    // (and differs from the node's per-document graph key), so resolve it by hierarchy, not by key.
+    let zoom = std::iter::once(entity)
+        .chain(parents.iter_ancestors(entity))
+        .find_map(|ancestor| viewports.get(ancestor).ok())
         .map_or(1.0, |viewport| viewport.zoom.max(MIN_ZOOM));
     graph_node.position += graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
     style.left = Val::Px(graph_node.position.x);
@@ -1590,6 +1623,45 @@ mod tests {
             actual.distance(expected) < 0.001,
             "expected {expected:?}, got {actual:?}"
         );
+    }
+
+    #[test]
+    fn nodes_sync_from_shared_memory_across_views() {
+        use bevy::ecs::system::RunSystemOnce;
+        // Node layout is per document, so two views of one graph share a memory entry. Moving a
+        // node (writing memory) must update every view's node entity, not just the dragged one, so
+        // wires stay attached in the other view.
+        let mut app = App::new();
+        let mut memory = GraphViewportMemory::default();
+        memory.set_node("material:p", "expression:n", Vec2::new(120.0, 40.0), false);
+        app.insert_resource(memory);
+        let node = || {
+            (
+                FeathersGraphNode {
+                    graph_key: "material:p".into(),
+                    node_key: "expression:n".into(),
+                    position: Vec2::ZERO,
+                    selected: false,
+                    collapsed: false,
+                    dragging: false,
+                    suppress_release_click: false,
+                },
+                Node::default(),
+            )
+        };
+        let left = app.world_mut().spawn(node()).id();
+        let right = app.world_mut().spawn(node()).id();
+
+        app.world_mut()
+            .run_system_once(sync_graph_nodes_from_memory)
+            .unwrap();
+
+        for view in [left, right] {
+            assert_eq!(
+                app.world().get::<FeathersGraphNode>(view).unwrap().position,
+                Vec2::new(120.0, 40.0)
+            );
+        }
     }
 
     #[test]
