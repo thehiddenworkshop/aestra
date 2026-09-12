@@ -7,6 +7,7 @@ use crate::feathers::context_menu::{
 use crate::feathers::panel::spawn_panel_empty_state;
 use crate::*;
 use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
+use bevy::input_focus::{FocusCause, InputFocus};
 use bevy::ui::RelativeCursorPosition;
 use bevy::ui_widgets::Activate;
 
@@ -140,10 +141,12 @@ fn queue_diagnostics_action_activation(
 /// diagnostic's full text (severity, message, path) to the clipboard.
 fn open_diagnostics_context_menu(
     mut click: On<Pointer<Click>>,
-    rows: Query<(&DiagnosticCopyText, &ComputedNode, &UiGlobalTransform)>,
+    rows: Query<&DiagnosticCopyText>,
+    hosts: Query<(&ComputedNode, &UiGlobalTransform)>,
     parents: Query<&ChildOf>,
     menus: Query<Entity, With<DiagnosticsContextAnchor>>,
     localizer: Res<Localizer>,
+    mut focus: ResMut<InputFocus>,
     mut commands: Commands,
 ) {
     if click.button != PointerButton::Secondary {
@@ -155,15 +158,25 @@ fn open_diagnostics_context_menu(
     else {
         return;
     };
-    let (copy, node, transform) = rows.get(row).unwrap();
-    let text = copy.0.clone();
+    let text = rows.get(row).unwrap().0.clone();
+    // Parent the menu to the row's container, not the row itself: the row is a Button, and a menu
+    // spawned inside it would let the button capture the pointer instead of the menu item.
+    let Ok(host) = parents.get(row).map(|child_of| child_of.parent()) else {
+        return;
+    };
+    let Ok((node, transform)) = hosts.get(host) else {
+        return;
+    };
     for menu in &menus {
         commands.entity(menu).despawn();
     }
+    // Focus the row so the menu popup takes activation focus (its items fire `Activate` on click),
+    // and focus returns near the row when it closes.
+    focus.set(row, FocusCause::Navigated);
     let position = pointer_position_in_node(click.pointer_location.position, node, transform)
         * node.inverse_scale_factor();
     let label = localizer.text("diagnostics-copy");
-    commands.entity(row).with_children(|parent| {
+    commands.entity(host).with_children(|parent| {
         spawn_pointer_context_menu(
             parent,
             position,
