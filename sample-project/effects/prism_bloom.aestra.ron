@@ -637,7 +637,7 @@
     effect_clips: [
         (
             id: "1036430a-9863-4f21-9a2b-f3a2026c2271",
-            source: "2c4ebbb0-12cf-4e28-83fc-f6f19487fbd0",
+            source: "a3574a00-0000-4000-8000-00000000c001",
             start_time: 0.0,
             source_offset: 2.15,
             duration: 2.8,
