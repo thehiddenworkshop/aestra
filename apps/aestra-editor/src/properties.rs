@@ -40,7 +40,7 @@ mod material_drop;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
-mod wesl;
+pub(crate) mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;
 #[cfg(test)]

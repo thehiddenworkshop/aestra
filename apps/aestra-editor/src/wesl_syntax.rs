@@ -185,6 +185,25 @@ pub(crate) fn tokenize(source: &str) -> Vec<WeslToken> {
     tokens
 }
 
+/// The names of top-level functions declared in the source (`fn NAME(...)`), for the WESL properties
+/// view. Best-effort from the tokenizer (skips comments/whitespace), not a real parser.
+pub(crate) fn declared_functions(source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut expecting_name = false;
+    for token in tokenize(source) {
+        match token.kind {
+            WeslTokenKind::Whitespace | WeslTokenKind::Comment => {}
+            WeslTokenKind::Keyword if token.text == "fn" => expecting_name = true,
+            WeslTokenKind::Ident if expecting_name => {
+                names.push(token.text);
+                expecting_name = false;
+            }
+            _ => expecting_name = false,
+        }
+    }
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +213,14 @@ mod tests {
             .into_iter()
             .map(|token| (token.kind, token.text))
             .collect()
+    }
+
+    #[test]
+    fn declared_functions_lists_each_fn_name_in_order() {
+        let source =
+            "// noise\nfn hash2(p: vec2<f32>) -> f32 { }\nfn value_noise(p: vec2<f32>) -> f32 { }";
+        assert_eq!(declared_functions(source), vec!["hash2", "value_noise"]);
+        assert!(declared_functions("let x = 1;").is_empty());
     }
 
     #[test]
