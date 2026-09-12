@@ -1784,3 +1784,40 @@ publication without Library or Browser resources. Existing extraction/explode/wo
 regressions still pass after relocation. Editor all-target checking, strict all-target
 Clippy with warnings denied, touched-file formatting and diff checks passed. No native
 restart, detached-window or Library-removal acceptance is claimed for this slice.
+
+### AB8b2 — Shared action/dialog and worker ownership — 2026-09-12
+
+`EditorAssetActionsPlugin` now owns action activation/dispatch, `AssetOperationState`,
+source rename and extraction prompts, dependency/reverse-usage inspection, legacy source
+deletion confirmation, Escape dismissal and relation-overlay rebuild scheduling. Source
+operation workers and their regression tests moved from `library/background` to
+`asset_actions/background`. The existing I/O guard, latest-source preflight, rollback,
+draft preservation, stale-result reconciliation and history behavior are unchanged.
+
+Timeline extraction/explode and referenced-effect Properties now emit `AssetAction`
+directly; Browser refresh uses the same event. The shell hosts the shared operation
+overlay and `ShortcutContext` consults the shared modal state rather than Library.
+The `AssetActionsSet` action/sync phases preserve the existing app schedule. Library's
+only action observer restores its own context-menu focus; it does not execute commands.
+
+Ten action/dialog regressions moved into `asset_actions/tests` and run without the Library
+plugin, covering normal/context-menu activation, rename of clean/dirty open sources,
+extraction dialog synchronization, relation rebuild stability, explode/Undo, usage lookup,
+exact owner-clip navigation and deletion confirmation. New regressions exercise the complete
+extraction action → confirmation → worker → document Undo path, and modal shortcut blocking
+with Escape cancellation, again without Library resources. Core extraction/explode and
+background-operation tests remain separate from UI tests.
+
+This is an ownership refactor, not a redesign of legacy source operations: Browser's
+recoverable deletion and inline filename rename retain their existing AB6 routes; the
+transitional Library still exposes its older confirmed-delete/authored-name behaviors.
+Do not replace Browser commands with those compatibility actions during cutover.
+
+Next, after native parity acceptance, remove Library's tab/filter/list/context-menu/drag
+presentation and the Timeline legacy row-drag adapter, then clean up old settings without
+changing the Assets dock identity or losing closed/floating layouts. No Library UI or
+persisted settings are removed in AB8b2; native restart/detached-window checks remain pending.
+
+Verification: 809 editor tests passed, two opt-in tests ignored. All-target editor checking,
+strict all-target Clippy with warnings denied, touched-file formatting and diff checks
+passed. No native acceptance or Library-removal verification is claimed by these tests.

@@ -159,7 +159,7 @@ pub(super) fn handle_action(
         }
         BrowserAction::OpenProject => commands.trigger(DocumentAction::OpenProject),
         BrowserAction::Refresh => {
-            commands.trigger(crate::library::LibraryAction::RefreshProject);
+            commands.trigger(crate::asset_actions::AssetAction::RefreshProject);
             commands.trigger(super::relocation_recovery::CheckRecovery);
         }
         BrowserAction::NewFolder => {

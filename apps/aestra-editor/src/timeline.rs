@@ -7173,7 +7173,7 @@ fn spawn_emitter_context_menu(
             spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-create-reusable-effect"),
-                crate::library::LibraryAction::CreateReusableEffectFromSelection,
+                crate::asset_actions::AssetAction::CreateReusableEffectFromSelection,
             );
             spawn_pointer_context_menu_item(
                 menu,
@@ -7294,7 +7294,7 @@ fn spawn_effect_clip_context_menu(
             spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-explode-effect-clip"),
-                crate::library::LibraryAction::ExplodeEffectClip(clip),
+                crate::asset_actions::AssetAction::ExplodeEffectClip(clip),
             );
             spawn_pointer_context_menu_item(
                 menu,

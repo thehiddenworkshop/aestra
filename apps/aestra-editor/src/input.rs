@@ -124,7 +124,7 @@ pub(crate) struct ShortcutContext<'w, 's> {
     menu_items: Query<'w, 's, (), With<bevy::ui_widgets::MenuItem>>,
     asset_surfaces: Query<'w, 's, (), With<crate::asset_browser::BrowserSurface>>,
     protection: Option<Res<'w, crate::persistence::DocumentProtectionState>>,
-    library: Option<Res<'w, crate::library::LibraryAssetOperationState>>,
+    asset_operation: Option<Res<'w, crate::asset_actions::AssetOperationState>>,
     menus: Option<Res<'w, crate::menus::MenuState>>,
     material_palette: Option<Res<'w, crate::material_graph::MaterialGraphPaletteState>>,
     windows: Query<'w, 's, &'static Window>,
@@ -149,7 +149,10 @@ impl ShortcutContext<'_, '_> {
             .protection
             .as_ref()
             .is_some_and(|state| state.is_open())
-            || self.library.as_ref().is_some_and(|state| state.is_open())
+            || self
+                .asset_operation
+                .as_ref()
+                .is_some_and(|state| state.is_open())
             || self
                 .material_palette
                 .as_ref()

@@ -1,6 +1,7 @@
 use super::*;
 use crate::test_support;
 use aestra_authoring::SemanticTarget;
+use aestra_core::EffectClip;
 use bevy::ecs::system::RunSystemOnce;
 
 fn world(root: &std::path::Path) -> World {
@@ -9,7 +10,7 @@ fn world(root: &std::path::Path) -> World {
     let mut world = World::new();
     world.insert_resource(session);
     world.insert_resource(ProjectEffectCatalog::scan(root));
-    world.init_resource::<LibraryAssetOperationState>();
+    world.init_resource::<AssetOperationState>();
     world.insert_resource(Localizer::new("en-US").unwrap());
     world
 }
@@ -42,7 +43,7 @@ fn background_rename_keeps_properties_changed_before_publication() {
     start(
         &mut world,
         SourceAction::Rename {
-            rename: LibraryRenameState {
+            rename: SourceRenameState {
                 source,
                 draft: "Renamed".into(),
                 error: None,
@@ -117,9 +118,7 @@ fn extract(world: &mut World, replace: bool) {
         replace_selection: replace,
         error: None,
     };
-    world
-        .resource_mut::<LibraryAssetOperationState>()
-        .extraction = Some(extraction.clone());
+    world.resource_mut::<AssetOperationState>().extraction = Some(extraction.clone());
     start(world, SourceAction::Extract(extraction));
 }
 
@@ -162,12 +161,7 @@ fn extraction_never_replaces_a_newer_owner_edit() {
     assert_eq!(world.resource::<EditorSession>().effect, edited);
     assert!(world.resource::<EditorSession>().preview.is_some());
     assert!(directory.path().join("extracted.aestra.ron").exists());
-    assert!(
-        world
-            .resource::<LibraryAssetOperationState>()
-            .extraction
-            .is_none()
-    );
+    assert!(world.resource::<AssetOperationState>().extraction.is_none());
 }
 
 #[test]
@@ -206,18 +200,18 @@ fn deletion_rechecks_current_usages_before_removing_the_source() {
     owner
         .save_ron(directory.path().join("new_owner.aestra.ron"))
         .unwrap();
-    let deletion = LibraryEffectDeletionState {
+    let deletion = EffectDeletionState {
         source,
         graph,
         error: None,
     };
-    world.resource_mut::<LibraryAssetOperationState>().deletion = Some(deletion.clone());
+    world.resource_mut::<AssetOperationState>().deletion = Some(deletion.clone());
     start(&mut world, SourceAction::Delete(deletion));
     io::drain(&mut world);
     assert!(path.exists());
     assert!(
         world
-            .resource::<LibraryAssetOperationState>()
+            .resource::<AssetOperationState>()
             .deletion
             .as_ref()
             .unwrap()

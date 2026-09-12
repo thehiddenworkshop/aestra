@@ -188,7 +188,7 @@ pub(super) fn spawn_source_navigation_row(
                 spawn_feathers_action_button(
                     row,
                     label,
-                    crate::library::LibraryAction::ExplodeEffectClip(clip),
+                    crate::asset_actions::AssetAction::ExplodeEffectClip(clip),
                     false,
                 );
             }

@@ -777,9 +777,17 @@ and I/O initialization/polling plus texture-root synchronization. `ProjectConten
 preserves refresh-before-input/browser reconciliation ordering; Library only resets its
 own panel state on root changes. Reusable-effect extraction/explode algorithms and core
 regressions now live in `effect_authoring`, with UI-neutral extraction arguments. The
-legacy action/dialog adapters still delegate to these commands. Their remaining ownership
-migration, settings cleanup and actual Library removal are not yet complete and remain
-gated on AB7/AB8 native acceptance.
+legacy action/dialog adapters delegate to these commands.
+
+AB8b2 action/dialog migration is implemented: `EditorAssetActionsPlugin` owns shared
+`AssetAction` dispatch, operation state, extraction/rename/dependency/deletion dialogs,
+background source-operation workers and relation-overlay synchronization. Timeline,
+Properties and Browser refresh target that owner directly; the shell and shortcut guards
+consume `AssetOperationState`. Shared workflow tests run without `EditorLibraryPlugin`.
+Library retains only browsing, legacy row/drag presentation and its own context-menu focus
+adapter. Existing command semantics, localizations, I/O/document guards and history routes
+are preserved. Settings cleanup and actual Library removal remain gated on AB7/AB8 native
+acceptance; the legacy row-drag adapter must be removed with the legacy panel in that step.
 
 Complete AB0's parity inventory, including lesser-used extract/explode/repair/relation
 actions, preset workflows and keyboard shortcuts. Switch the existing Assets dock slot

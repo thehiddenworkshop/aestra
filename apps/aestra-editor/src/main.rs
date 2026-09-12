@@ -2,6 +2,7 @@
 // dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod asset_actions;
 mod asset_browser;
 mod asset_drop;
 mod changes;
@@ -53,6 +54,8 @@ use aestra_core::{
     RendererProperties, StageKind, Value,
 };
 pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};
+pub(crate) use asset_actions::{AssetAction, AssetOperationState, spawn_asset_operation_overlay};
+use asset_actions::{AssetActionsSet, EditorAssetActionsPlugin};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
 use bevy::{
@@ -127,9 +130,7 @@ use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
 use history::{EditorHistoryLedger, EditorHistoryPlugin, HistorySet, MaterialProgramEditHistory};
 use library::{EditorLibraryPlugin, LibrarySet};
-pub(crate) use library::{
-    LibraryAssetOperationState, LibraryState, spawn_library, spawn_library_asset_operation_overlay,
-};
+pub(crate) use library::{LibraryState, spawn_library};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 use material_graph::EditorMaterialGraphPlugin;
@@ -238,6 +239,7 @@ fn main() {
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorProjectContentPlugin)
+        .add_plugins(EditorAssetActionsPlugin)
         .add_plugins(EditorLibraryPlugin)
         .add_plugins(asset_browser::EditorAssetBrowserPlugin)
         .add_plugins(EditorMaterialGraphPlugin)
@@ -307,6 +309,7 @@ fn main() {
                 DockingSet::Input,
                 AestraFeathersSet::Input,
                 (
+                    AssetActionsSet::Actions,
                     LibrarySet::Actions,
                     ChangesSet::Actions,
                     CompilerInspectorSet::Actions,
@@ -332,6 +335,7 @@ fn main() {
                 EditorSet::UiRebuild,
                 TimelineSet::Visuals,
                 (
+                    AssetActionsSet::Sync,
                     LibrarySet::Sync,
                     DiagnosticsSet::Sync,
                     HistorySet::Sync,

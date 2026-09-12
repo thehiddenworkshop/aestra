@@ -140,7 +140,7 @@ fn setup_editor(
     layout: Res<WorkspaceLayout>,
     localizer: Res<Localizer>,
     protection: Res<DocumentProtectionState>,
-    library_asset_operation: Res<LibraryAssetOperationState>,
+    asset_operation: Res<AssetOperationState>,
     navigation: Res<SourceNavigationState>,
     timeline: Res<TimelineState>,
     catalog: Res<ProjectEffectCatalog>,
@@ -165,7 +165,7 @@ fn setup_editor(
         &localizer,
         &asset_server,
         &protection,
-        &library_asset_operation,
+        &asset_operation,
         &navigation,
         &timeline,
         &catalog,
@@ -211,7 +211,7 @@ fn spawn_editor_ui(
     localizer: &Localizer,
     asset_server: &AssetServer,
     protection: &DocumentProtectionState,
-    library_asset_operation: &LibraryAssetOperationState,
+    asset_operation: &AssetOperationState,
     navigation: &SourceNavigationState,
     timeline: &TimelineState,
     catalog: &ProjectEffectCatalog,
@@ -239,12 +239,7 @@ fn spawn_editor_ui(
             crate::persistence::recovery_dialog::spawn(root, protection, localizer);
             crate::asset_browser::relocation_recovery::spawn(root, localizer);
             crate::asset_browser::deletion::spawn(root);
-            spawn_library_asset_operation_overlay(
-                root,
-                library_asset_operation,
-                catalog,
-                localizer,
-            );
+            spawn_asset_operation_overlay(root, asset_operation, catalog, localizer);
         });
 }
 

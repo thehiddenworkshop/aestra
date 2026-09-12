@@ -13,11 +13,11 @@ pub(super) enum SourceAction {
         current: bool,
     },
     Rename {
-        rename: LibraryRenameState,
+        rename: SourceRenameState,
         current: bool,
     },
     InspectDeletion(ProjectEffectEntryId),
-    Delete(LibraryEffectDeletionState),
+    Delete(EffectDeletionState),
     Extract(ReusableEffectExtractionState),
 }
 
@@ -164,9 +164,7 @@ fn apply(world: &mut World, guard: IoGuard, previous_name: String, mut result: S
         SourceAction::Extract(extraction)
             if result.result.is_ok() && !extraction.replace_selection =>
         {
-            world
-                .resource_mut::<LibraryAssetOperationState>()
-                .extraction = None;
+            world.resource_mut::<AssetOperationState>().extraction = None;
             let mut session = world.resource_mut::<EditorSession>();
             session.status = result.session.status;
             session.ui_revision += 1;
@@ -177,9 +175,9 @@ fn apply(world: &mut World, guard: IoGuard, previous_name: String, mut result: S
                 return;
             }
             if let Some(graph) = result.graph.take() {
-                let mut state = world.resource_mut::<LibraryAssetOperationState>();
+                let mut state = world.resource_mut::<AssetOperationState>();
                 state.close_all();
-                state.deletion = Some(LibraryEffectDeletionState {
+                state.deletion = Some(EffectDeletionState {
                     source: *source,
                     graph,
                     error: None,
@@ -194,18 +192,14 @@ fn apply(world: &mut World, guard: IoGuard, previous_name: String, mut result: S
             result.session.speed = live.speed;
             result.session.ui_revision = live.ui_revision + 1;
             world.insert_resource(result.session);
-            world
-                .resource_mut::<LibraryAssetOperationState>()
-                .extraction = None;
+            world.resource_mut::<AssetOperationState>().extraction = None;
             if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
                 timeline.clear_emitter_selection();
             }
             return;
         }
         SourceAction::Extract(_) if result.result.is_ok() => {
-            world
-                .resource_mut::<LibraryAssetOperationState>()
-                .extraction = None;
+            world.resource_mut::<AssetOperationState>().extraction = None;
             io::set_status(world, "project-operation-extract-stale");
             return;
         }
@@ -222,7 +216,7 @@ fn apply(world: &mut World, guard: IoGuard, previous_name: String, mut result: S
         }
         _ => {}
     }
-    let mut state = world.resource_mut::<LibraryAssetOperationState>();
+    let mut state = world.resource_mut::<AssetOperationState>();
     match result.result {
         Ok(()) => {
             match result.action {
