@@ -1912,6 +1912,69 @@ fn opening_two_materials_docks_two_editor_tabs_side_by_side() {
 }
 
 #[test]
+fn open_in_new_tab_adds_a_second_view_while_plain_open_focuses_the_existing_one() {
+    use aestra_core::material::MaterialProgram;
+    let root = tempfile::tempdir().unwrap();
+    let program = MaterialProgram::additive_sprite("Solo").normalized();
+    program
+        .save_ron(root.path().join("solo.aestra.material.ron"))
+        .unwrap();
+    let mut app = browser_app(root.path());
+    let mut layout = WorkspaceLayout::default();
+    layout.show(ToolPanel::MaterialGraph); // Give the editor tabs a place to dock beside.
+    app.insert_resource(layout);
+
+    let source = app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .content()
+        .source_tree()
+        .at_relative_path(Path::new("solo.aestra.material.ron"))
+        .unwrap()
+        .id;
+
+    // Plain open docks one tab.
+    app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
+    app.world_mut().trigger(BrowserAction::OpenSelected);
+    app.update();
+    assert_eq!(
+        app.world().resource::<WorkspaceLayout>().editor_views().len(),
+        1
+    );
+
+    // Opening the same material again focuses that tab rather than duplicating it.
+    app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
+    app.world_mut().trigger(BrowserAction::OpenSelected);
+    app.update();
+    assert_eq!(
+        app.world().resource::<WorkspaceLayout>().editor_views().len(),
+        1,
+        "plain open of an already-open document must not add a second tab"
+    );
+
+    // "Open in New Tab" docks a second view of the same document (a shared draft, not a fork).
+    app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
+    app.world_mut()
+        .trigger(BrowserAction::OpenSelectedInNewTab);
+    app.update();
+    let views = app.world().resource::<WorkspaceLayout>().editor_views();
+    assert_eq!(
+        views.len(),
+        2,
+        "Open in New Tab should dock a second view of the document"
+    );
+    let manager = app
+        .world()
+        .resource::<crate::editor_view::EditorViewManager>();
+    assert_ne!(views[0], views[1]);
+    assert_eq!(
+        manager.document_of(views[0]),
+        manager.document_of(views[1]),
+        "both tabs must back the same document, so they share one draft and undo history"
+    );
+}
+
+#[test]
 fn effect_activation_uses_guarded_document_routing_once_and_rejects_duplicates() {
     let root = tempfile::tempdir().unwrap();
     let effect = test_support::session_with_timing_slack().effect;

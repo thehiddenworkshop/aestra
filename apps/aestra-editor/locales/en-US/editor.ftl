@@ -86,6 +86,7 @@ browser-relation-builtin = Built-in · no project source
 browser-relation-context = Texture binding · requires an effect instance
 browser-count = { $count } items
 browser-open-selected = Open
+browser-open-in-new-tab = Open in New Tab
 browser-open-hint = Double-click or press Enter to open.
 browser-material-context = Open to edit this material if used by the current effect. Standalone material editing is not available yet.
 browser-material-opened = Opened shared material. The active effect is unchanged.

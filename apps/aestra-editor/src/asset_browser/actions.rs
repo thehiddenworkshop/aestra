@@ -20,14 +20,25 @@ pub(super) struct BrowserClickState(
     )>,
 );
 
+/// `new_view` opens the asset in a fresh editor tab even when it is already open (the context menu's
+/// "Open in New Tab"); otherwise the open focuses an existing tab of the same document.
 #[derive(Event)]
-pub(super) struct OpenMaterial(pub(super) aestra_core::MaterialProgramId);
+pub(super) struct OpenMaterial {
+    pub(super) program: aestra_core::MaterialProgramId,
+    pub(super) new_view: bool,
+}
 
 #[derive(Event)]
-pub(super) struct OpenFunction(pub(super) aestra_core::MaterialFunctionId);
+pub(super) struct OpenFunction {
+    pub(super) function: aestra_core::MaterialFunctionId,
+    pub(super) new_view: bool,
+}
 
 #[derive(Event)]
-pub(super) struct OpenWeslSource(pub(super) std::path::PathBuf);
+pub(super) struct OpenWeslSource {
+    pub(super) relative: std::path::PathBuf,
+    pub(super) new_view: bool,
+}
 
 /// Shared semantic locate route for graph, property, and source-reference controls.
 #[derive(Component, Event, Clone, Copy)]
@@ -56,6 +67,7 @@ pub(super) enum BrowserAction {
     Delete(ProjectSourceId, ProjectContentVersion),
     DeletedItems,
     OpenSelected,
+    OpenSelectedInNewTab,
     LocateCurrentEffect,
     LocateSource(ProjectSourceId, ProjectContentVersion),
     InspectSource(ProjectSourceId, ProjectContentVersion, InspectionTab),
@@ -170,7 +182,12 @@ pub(super) fn handle_action(
         BrowserAction::DeletedItems => commands.trigger(super::deletion::Open(None)),
         BrowserAction::OpenSelected => {
             if let Some(id) = state.selected {
-                open_source(id, &catalog, &mut state, &mut commands);
+                open_source(id, false, &catalog, &mut state, &mut commands);
+            }
+        }
+        BrowserAction::OpenSelectedInNewTab => {
+            if let Some(id) = state.selected {
+                open_source(id, true, &catalog, &mut state, &mut commands);
             }
         }
         BrowserAction::LocateCurrentEffect => {
@@ -360,7 +377,7 @@ pub(super) fn click_row(
             ))
         };
         if double {
-            open_source(row.0, &catalog, &mut state, &mut commands);
+            open_source(row.0, false, &catalog, &mut state, &mut commands);
         }
         event.propagate(false);
     } else if lists.contains(event.entity) {
@@ -373,8 +390,26 @@ pub(super) fn click_row(
     }
 }
 
+/// Routes an open to a fresh view (split / "Open in New Tab") or to the shared default view (focus
+/// an existing tab of the document), sharing one helper across the three per-kind open systems.
+fn open_view_for(
+    new_view: bool,
+    documents: &mut crate::document::DocumentManager,
+    views: &mut crate::editor_view::EditorViewManager,
+    active: &mut crate::editor_view::ActiveEditorContext,
+    key: crate::document::DocumentKey,
+    kind: crate::editor_view::EditorViewKind,
+) -> crate::docking::EditorViewId {
+    if new_view {
+        crate::editor_view::open_document_view_in_new_tab(documents, views, active, key, kind)
+    } else {
+        crate::editor_view::open_document_view(documents, views, active, key, kind)
+    }
+}
+
 pub(super) fn open_source(
     id: ProjectSourceId,
+    new_view: bool,
     catalog: &ProjectEffectCatalog,
     state: &mut AssetBrowserState,
     commands: &mut Commands,
@@ -396,11 +431,11 @@ pub(super) fn open_source(
             .cached_material_program(aestra_core::material::MaterialProgramRef::Project(program))
             .is_ok()
     {
-        commands.trigger(OpenMaterial(program));
+        commands.trigger(OpenMaterial { program, new_view });
     } else if let Some(ProjectAssetId::MaterialFunction(function)) = content.asset_for_source(id) {
-        commands.trigger(OpenFunction(function));
+        commands.trigger(OpenFunction { function, new_view });
     } else if let Some(relative) = wesl_source_relative_path(content, id) {
-        commands.trigger(OpenWeslSource(relative));
+        commands.trigger(OpenWeslSource { relative, new_view });
     }
 }
 
@@ -441,13 +476,14 @@ pub(super) fn open_function(
     if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
         return;
     }
-    match session.open_material_function(&catalog, event.0) {
+    match session.open_material_function(&catalog, event.function) {
         Ok(()) => {
-            let view = crate::editor_view::open_document_view(
+            let view = open_view_for(
+                event.new_view,
                 &mut documents,
                 &mut views,
                 &mut active,
-                crate::document::DocumentKey::MaterialFunction(event.0),
+                crate::document::DocumentKey::MaterialFunction(event.function),
                 crate::editor_view::EditorViewKind::MaterialFunctionGraph,
             );
             session.status = if session
@@ -487,14 +523,15 @@ pub(super) fn open_material(
     }
     // This is a non-destructive target switch: retain all drafts and effect state.
     // Destructive effect/project navigation still uses the document coordinator.
-    if let Err(error) = session.open_material_program(&catalog, event.0) {
+    if let Err(error) = session.open_material_program(&catalog, event.program) {
         session.status = format!("Cannot open material: {error}");
     } else {
-        let view = crate::editor_view::open_document_view(
+        let view = open_view_for(
+            event.new_view,
             &mut documents,
             &mut views,
             &mut active,
-            crate::document::DocumentKey::MaterialProgram(event.0),
+            crate::document::DocumentKey::MaterialProgram(event.program),
             crate::editor_view::EditorViewKind::MaterialGraph,
         );
         session.status = localizer.text("browser-material-opened");
@@ -519,7 +556,7 @@ pub(super) fn open_wesl_source(
     if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
         return;
     }
-    let relative = &event.0;
+    let relative = &event.relative;
     let absolute = catalog.root().join(relative);
     let text = match std::fs::read_to_string(&absolute) {
         Ok(text) => text,
@@ -529,7 +566,8 @@ pub(super) fn open_wesl_source(
         }
     };
     let id = wesl_documents.open(relative.clone(), text);
-    let view = crate::editor_view::open_document_view(
+    let view = open_view_for(
+        event.new_view,
         &mut documents,
         &mut views,
         &mut active,
@@ -568,7 +606,7 @@ pub(super) fn keyboard(
         }
         KeyCode::Enter => {
             if let Some(row) = active.0.and_then(|id| rows.get(id).ok()) {
-                open_source(row.0, &catalog, &mut state, &mut commands);
+                open_source(row.0, false, &catalog, &mut state, &mut commands);
             }
         }
         KeyCode::Escape => state.selected = None,

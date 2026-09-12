@@ -86,6 +86,7 @@ browser-relation-builtin = Intégré · aucune source projet
 browser-relation-context = Texture · nécessite une instance d’effet
 browser-count = { $count } éléments
 browser-open-selected = Ouvrir
+browser-open-in-new-tab = Ouvrir dans un nouvel onglet
 browser-open-hint = Double-cliquez ou appuyez sur Entrée pour ouvrir.
 browser-material-context = Ouvrir permet de modifier ce matériau s'il est utilisé par l'effet courant. L'édition autonome n'est pas encore disponible.
 browser-material-opened = Matériau partagé ouvert. L'effet actif est inchangé.

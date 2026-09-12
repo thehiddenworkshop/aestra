@@ -39,17 +39,27 @@ fn spawn_menu(
             BrowserContextMenu,
             |menu| {
                 if let Some(source) = source {
-                    let openable = catalog.content().source(source).is_some_and(|entry| {
-                        matches!(
-                            Kind::of(entry),
-                            Kind::Folder | Kind::Effect | Kind::Material
-                        )
-                    });
+                    let kind = catalog.content().source(source).map(Kind::of);
+                    // Editor-backed documents (material programs, functions, WESL modules) open as
+                    // dockable editor tabs and so can open a second view in a new tab; folders and
+                    // effects only have the single focus-open action.
+                    let editor_backed =
+                        matches!(kind, Some(Kind::Material | Kind::Function | Kind::Shader));
+                    let openable = editor_backed
+                        || matches!(kind, Some(Kind::Folder | Kind::Effect));
                     if openable {
                         spawn_pointer_context_menu_item(
                             menu,
                             &localizer.text("browser-open-selected"),
                             BrowserAction::OpenSelected,
+                        );
+                    }
+                    // A second view of an already-open document; opening otherwise focuses its tab.
+                    if editor_backed {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text("browser-open-in-new-tab"),
+                            BrowserAction::OpenSelectedInNewTab,
                         );
                     }
                     if catalog.content().asset_operation_suffix(source).is_some() {

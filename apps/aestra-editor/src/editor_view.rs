@@ -159,6 +159,24 @@ pub(crate) fn open_document_view(
     view
 }
 
+/// Opens the document for `key` in a *new* editor view, always allocating a fresh view even when the
+/// document is already open elsewhere (the "Open in New Tab" / split path). The new view is made
+/// active. Both views share the document — its draft, dirty state, and buffer — so this never forks a
+/// second conflicting draft; only the per-view state (pan / zoom / caret) is independent.
+pub(crate) fn open_document_view_in_new_tab(
+    documents: &mut DocumentManager,
+    views: &mut EditorViewManager,
+    active: &mut ActiveEditorContext,
+    key: DocumentKey,
+    kind: EditorViewKind,
+) -> EditorViewId {
+    let document = documents.open(key);
+    let view = views.create_view(document, kind);
+    active.active_document = Some(document);
+    active.active_view = Some(view);
+    view
+}
+
 /// Resolves the editing target an editor view renders, by following view → document → asset key.
 /// Returns `None` for a stale view (e.g. a persisted editor tab whose view no longer exists), so
 /// the dock can drop it gracefully. `root` is the current project root the target is scoped to.
