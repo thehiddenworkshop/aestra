@@ -189,7 +189,9 @@ fn kind(asset: VirtualAsset) -> Kind {
     match asset {
         VirtualAsset::BuiltInPreset(_) => Kind::Preset,
         VirtualAsset::Material(_) => Kind::Material,
-        VirtualAsset::Texture(_) | VirtualAsset::Flipbook(_) => Kind::Texture,
+        VirtualAsset::Texture(_)
+        | VirtualAsset::Flipbook(_)
+        | VirtualAsset::FlipbookDeclaration(_) => Kind::Texture,
         VirtualAsset::Mesh(_) => Kind::Mesh,
     }
 }
@@ -371,12 +373,20 @@ fn sync(
                         EditorTooltip::titled(entry.name.clone(), entry.description.clone()),
                     ));
                     slot.commands().entity(entity).with_children(|button| {
-                        super::panel::icon(
-                            button,
-                            &assets,
-                            kind(entry.asset).icon(),
-                            if grid { 42.0 } else { 22.0 },
-                        );
+                        if let VirtualAsset::BuiltInPreset(preset) = entry.asset {
+                            crate::material_graph::spawn_material_preset_preview(
+                                button,
+                                preset,
+                                if grid { 64.0 } else { 22.0 },
+                            );
+                        } else {
+                            super::panel::icon(
+                                button,
+                                &assets,
+                                kind(entry.asset).icon(),
+                                if grid { 42.0 } else { 22.0 },
+                            );
+                        }
                         button
                             .spawn((column(), Pickable::IGNORE))
                             .with_children(|labels| {
@@ -481,7 +491,10 @@ fn begin_drag(
     else {
         return;
     };
-    if row.1.resolve(&catalog).is_err() || row.1.check_document(&session).is_err() {
+    if matches!(row.0.asset, VirtualAsset::FlipbookDeclaration(_))
+        || row.1.resolve(&catalog).is_err()
+        || row.1.check_document(&session).is_err()
+    {
         return;
     }
     if let Some(preview) = drag.preview.take() {

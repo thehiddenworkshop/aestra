@@ -101,6 +101,23 @@ struct CachedRow {
     entity: Entity,
     icon: Entity,
     kind: Kind,
+    preset: Option<aestra_core::MaterialPresetId>,
+}
+
+fn preview_preset(
+    content: &ProjectContent,
+    source: ProjectSourceId,
+) -> Option<aestra_core::MaterialPresetId> {
+    let aestra_project::ProjectAssetId::MaterialPreset(id) = content.asset_for_source(source)?
+    else {
+        return None;
+    };
+    content
+        .asset_index()
+        .resolve_material_preset(id)
+        .ok()
+        .filter(|entry| entry.id == source)
+        .map(|_| id)
 }
 
 #[derive(Component)]
@@ -586,7 +603,10 @@ pub(super) fn sync_panel(
             let stale = ui
                 .rows
                 .iter()
-                .filter(|(id, row)| content.source(**id).is_none_or(|e| Kind::of(e) != row.kind))
+                .filter(|(id, row)| {
+                    content.source(**id).is_none_or(|e| Kind::of(e) != row.kind)
+                        || preview_preset(content, **id) != row.preset
+                })
                 .map(|(id, _)| *id)
                 .collect::<Vec<_>>();
             for id in stale {
@@ -613,6 +633,7 @@ pub(super) fn sync_panel(
             }
             for entry in entries.iter().skip(state.page * PAGE_SIZE).take(PAGE_SIZE) {
                 let kind = Kind::of(entry);
+                let preset = preview_preset(content, entry.id);
                 if !ui.rows.contains_key(&entry.id) {
                     let mut cached = None;
                     commands.entity(ui.items).with_children(|parent| {
@@ -626,12 +647,19 @@ pub(super) fn sync_panel(
                         );
                         let mut image = Entity::PLACEHOLDER;
                         parent.commands().entity(entity).with_children(|row| {
-                            image = icon(row, &assets, kind.icon(), 22.0);
+                            image = if let Some(preset) = preset {
+                                crate::material_graph::spawn_material_preset_preview(
+                                    row, preset, 22.0,
+                                )
+                            } else {
+                                icon(row, &assets, kind.icon(), 22.0)
+                            };
                         });
                         cached = Some(CachedRow {
                             entity,
                             icon: image,
                             kind,
+                            preset,
                         });
                     });
                     ui.rows.insert(entry.id, cached.unwrap());
@@ -652,6 +680,18 @@ pub(super) fn sync_panel(
                 }
                 if let Some(error) = &entry.error {
                     description.push_str(&format!("\n{error}"));
+                }
+                if let Some(preset) = row
+                    .preset
+                    .and_then(|id| content.cached_material_preset(id).ok())
+                {
+                    description.push_str(&format!(
+                        "\n{} · {}\n{}\n{}",
+                        preset.display_name,
+                        preset.category.display_name(),
+                        preset.description,
+                        preset.tags.join(", ")
+                    ));
                 }
                 if kind != Kind::Folder && kind != Kind::Effect && kind != Kind::Material {
                     description.push_str(&format!("\n{}", localizer.text("browser-read-only")));
@@ -683,11 +723,16 @@ pub(super) fn sync_panel(
                 commands.entity(row.icon).insert(Node {
                     width: Val::Px(size),
                     height: Val::Px(size),
+                    min_width: Val::Px(size),
+                    min_height: Val::Px(size),
+                    overflow: Overflow::clip(),
                     flex_shrink: 0.0,
                     align_self: AlignSelf::Center,
                     ..default()
                 });
-                commands.entity(row.icon).insert(SvgColor(kind_color(kind)));
+                if row.preset.is_none() {
+                    commands.entity(row.icon).insert(SvgColor(kind_color(kind)));
+                }
             }
             for (id, row) in &ui.rows {
                 if !wanted.contains(id) {

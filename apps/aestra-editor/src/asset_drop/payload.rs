@@ -51,6 +51,8 @@ pub(crate) enum VirtualAsset {
     Texture(aestra_core::AssetId),
     Mesh(aestra_core::AssetId),
     Flipbook(aestra_core::AssetId),
+    /// Legacy declaration without atlas metadata: inspectable, not assignable.
+    FlipbookDeclaration(aestra_core::AssetId),
 }
 
 impl AssetPayload {

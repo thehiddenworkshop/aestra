@@ -16,6 +16,81 @@ fn fixture(scope: SourceScope) -> (tempfile::TempDir, App) {
 }
 
 #[test]
+fn built_in_rows_restore_previews_and_metadata_search() {
+    let (_root, mut app) = fixture(SourceScope::BuiltIns);
+    let catalog = aestra_compiler::MaterialCompiler.material_preset_catalog();
+    let count = app
+        .world_mut()
+        .query::<&crate::material_graph::MaterialPresetPreviewRaster>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, catalog.iter().count());
+    let preset = catalog
+        .iter()
+        .find(|preset| !preset.tags.is_empty())
+        .unwrap();
+    app.world_mut().resource_mut::<AssetBrowserState>().query = preset.tags[0].to_uppercase();
+    app.update();
+    assert!(
+        app.world_mut()
+            .query::<&VirtualRow>()
+            .iter(app.world())
+            .any(|row| row.0.asset == VirtualAsset::BuiltInPreset(preset.id))
+    );
+}
+
+#[test]
+fn legacy_flipbook_declarations_are_visible_but_do_not_start_assignment_drags() {
+    use bevy::picking::{
+        backend::HitData,
+        pointer::{Location, PointerId},
+    };
+    let (_root, mut app) = fixture(SourceScope::CurrentDocument);
+    let id = aestra_core::AssetId::new();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .effect
+        .assets
+        .push(aestra_core::AssetDefinition {
+            id,
+            name: "Legacy atlas".into(),
+            kind: AssetKind::Flipbook,
+            path: "legacy.png".into(),
+        });
+    app.update();
+    let (entity, row) = app
+        .world_mut()
+        .query::<(Entity, &VirtualRow)>()
+        .iter(app.world())
+        .find(|(_, row)| row.0.asset == VirtualAsset::FlipbookDeclaration(id))
+        .unwrap();
+    assert!(row.0.description.contains("no atlas metadata"));
+    app.world_mut().trigger(Activate { entity });
+    assert_eq!(
+        app.world().resource::<Selection>().asset,
+        Some(VirtualAsset::FlipbookDeclaration(id))
+    );
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        Location {
+            target: bevy::camera::NormalizedRenderTarget::None {
+                width: 800,
+                height: 600,
+            },
+            position: Vec2::new(100.0, 120.0),
+        },
+        DragStart {
+            button: PointerButton::Primary,
+            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        },
+        entity,
+    ));
+    app.world_mut().flush();
+    assert!(app.world().resource::<Drag>().origin.is_none());
+    assert!(app.world().get::<AssetPayload>(entity).is_none());
+}
+
+#[test]
 fn virtual_sources_are_not_files_and_filter_without_edits() {
     for scope in [SourceScope::BuiltIns, SourceScope::CurrentDocument] {
         let (_root, mut app) = fixture(scope);

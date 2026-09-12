@@ -363,7 +363,8 @@ impl AssetBrowserState {
                 in_scope
                     && (self.kinds.is_empty() || kind == Kind::Folder || self.kinds.contains(&kind))
                     && (query.is_empty()
-                        || entry.name.to_string_lossy().to_lowercase().contains(&query))
+                        || entry.name.to_string_lossy().to_lowercase().contains(&query)
+                        || content.source_metadata_matches(entry.id, &query))
             })
             .collect::<Vec<_>>();
         entries.sort_by_cached_key(|entry| {

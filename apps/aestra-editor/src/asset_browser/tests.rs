@@ -76,6 +76,76 @@ fn function_browser_activation_preserves_effect_and_reopens_same_target() {
 }
 
 #[test]
+fn authored_names_and_preset_metadata_are_searchable_without_disk_reads() {
+    let root = tempfile::tempdir().unwrap();
+    let mut effect = test_support::session_with_timing_slack().effect;
+    effect.name = "Authored display title".into();
+    effect
+        .save_ron(root.path().join("opaque.aestra.ron"))
+        .unwrap();
+    let presets = aestra_compiler::MaterialCompiler.material_preset_catalog();
+    let mut preset = presets.iter().next().unwrap().clone();
+    preset.id = aestra_core::MaterialPresetId::new();
+    preset.display_name = "Readable preset".into();
+    preset.description = "Atmospheric description".into();
+    preset.tags = vec!["CustomTag".into()];
+    preset
+        .save_ron(root.path().join("opaque.aestra.material-preset.ron"))
+        .unwrap();
+    let content = ProjectContent::scan(root.path());
+    root.close().unwrap();
+    let mut state = AssetBrowserState::default();
+    state.reconcile(&content, VERSION);
+    for query in [
+        "AUTHORED DISPLAY",
+        "Readable preset",
+        "atmospheric",
+        "customtag",
+        preset.category.display_name(),
+    ] {
+        state.query = query.into();
+        assert_eq!(state.filtered(&content).len(), 1, "query {query}");
+    }
+}
+
+#[test]
+fn project_preset_rows_use_shared_square_previews_and_refresh_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let presets = aestra_compiler::MaterialCompiler.material_preset_catalog();
+    let mut preset = presets.iter().next().unwrap().clone();
+    preset.id = aestra_core::MaterialPresetId::new();
+    let path = root.path().join("preview.aestra.material-preset.ron");
+    preset.save_ron(&path).unwrap();
+    let mut app = browser_app(root.path());
+    for view in [ViewMode::List, ViewMode::Grid] {
+        app.world_mut().resource_mut::<AssetBrowserState>().view = view;
+        app.update();
+        let (request, node) = app
+            .world_mut()
+            .query::<(&crate::material_graph::MaterialPresetPreviewRaster, &Node)>()
+            .single(app.world())
+            .unwrap();
+        assert_eq!(request.preset, preset.id);
+        assert_eq!(node.width, node.height);
+    }
+    preset.id = aestra_core::MaterialPresetId::new();
+    preset.save_ron(&path).unwrap();
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .refresh();
+    app.update();
+    let request = app
+        .world_mut()
+        .query::<&crate::material_graph::MaterialPresetPreviewRaster>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(
+        request.preset, preset.id,
+        "retained rows must not preview the old identity"
+    );
+}
+
+#[test]
 fn browser_reads_published_snapshot_even_when_sources_are_gone() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("textures")).unwrap();
@@ -1938,7 +2008,10 @@ fn open_in_new_tab_adds_a_second_view_while_plain_open_focuses_the_existing_one(
     app.world_mut().trigger(BrowserAction::OpenSelected);
     app.update();
     assert_eq!(
-        app.world().resource::<WorkspaceLayout>().editor_views().len(),
+        app.world()
+            .resource::<WorkspaceLayout>()
+            .editor_views()
+            .len(),
         1
     );
 
@@ -1947,15 +2020,17 @@ fn open_in_new_tab_adds_a_second_view_while_plain_open_focuses_the_existing_one(
     app.world_mut().trigger(BrowserAction::OpenSelected);
     app.update();
     assert_eq!(
-        app.world().resource::<WorkspaceLayout>().editor_views().len(),
+        app.world()
+            .resource::<WorkspaceLayout>()
+            .editor_views()
+            .len(),
         1,
         "plain open of an already-open document must not add a second tab"
     );
 
     // "Open in New Tab" docks a second view of the same document (a shared draft, not a fork).
     app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
-    app.world_mut()
-        .trigger(BrowserAction::OpenSelectedInNewTab);
+    app.world_mut().trigger(BrowserAction::OpenSelectedInNewTab);
     app.update();
     let views = app.world().resource::<WorkspaceLayout>().editor_views();
     assert_eq!(

@@ -756,6 +756,22 @@ appear as fake project files.
 
 ### AB8 — Cutover and legacy removal
 
+**AB8a — parity audit and browsing gaps (implemented; native acceptance pending):**
+The dated migration checklist maps Library workflows to their current Browser, Timeline,
+Properties or document-coordinator replacements. Project search now includes cached
+authored names and preset descriptions/categories/tags; Built-ins restores metadata search
+and the existing square preset previews. Project preset rows use that same renderer and
+refresh retained preview identities. Preview recipe changes follow published content
+revisions, including publication without Bevy change ticks. Current Document also lists
+legacy flipbook declarations as inspection-only entries and restores resource metadata
+in hover tooltips. These are parity fixes, not AB9's general thumbnail pipeline.
+
+**AB8b — ownership migration and removal (next, gated):** retain Library until the
+replacement workflows pass native acceptance. Move polling registration, texture-root
+sync and effect-specific extraction/relation actions to their real owners, then remove
+legacy UI/state and migrate settings. See the checklist for explicit ownership and
+acceptance gates; deleting the Library plugin alone would remove required services.
+
 Complete AB0's parity inventory, including lesser-used extract/explode/repair/relation
 actions, preset workflows and keyboard shortcuts. Switch the existing Assets dock slot
 to Asset Browser by default; preserve closed/floating/split layouts and localized View
@@ -818,6 +834,8 @@ user accepted the deletion P0 check on 2026-09-09 and subsequently accepted mate
 drops. **Current step (P1):** manually verify AB7b preset creation/assignment, AB7c
 function graph drops, AB7d texture input drops and AB7e mesh assignment/primitive selection,
 AB7f picker filtering/selection/keyboard/Undo, and AB7g virtual browsing, creation and
-assignment. Then complete the remaining Library parity audit before AB8. AB7a native acceptance remains recorded
+assignment, plus AB8a preset search/previews and Current Document resource inspection.
+The AB8a code audit and browsing parity fixes are implemented; AB8b service ownership
+migration and legacy removal remain gated on acceptance. AB7a native acceptance remains recorded
 separately; it has not been retroactively marked tested.
 Keep the transitional Library until its remaining capabilities have tested replacements.

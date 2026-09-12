@@ -60,6 +60,24 @@ impl ProjectRead for ProjectContent {
 }
 
 impl ProjectContent {
+    /// Searches authored names and preset metadata in this snapshot without I/O or document clones.
+    /// The caller supplies a lowercase query, as with source-name filtering.
+    pub fn source_metadata_matches(&self, source: ProjectSourceId, query: &str) -> bool {
+        let contains = |text: &str| text.to_lowercase().contains(query);
+        match self.documents.get(&source) {
+            Some(ProjectSourceDocument::Effect(document)) => contains(&document.name),
+            Some(ProjectSourceDocument::MaterialProgram(document)) => contains(&document.name),
+            Some(ProjectSourceDocument::MaterialFunction(document)) => contains(&document.name),
+            Some(ProjectSourceDocument::MaterialPreset(document)) => {
+                contains(&document.display_name)
+                    || contains(&document.description)
+                    || contains(document.category.display_name())
+                    || document.tags.iter().any(|tag| contains(tag))
+            }
+            _ => false,
+        }
+    }
+
     /// Reads the uniquely resolved document captured by this snapshot, never the latest disk bytes.
     pub fn cached_effect(
         &self,

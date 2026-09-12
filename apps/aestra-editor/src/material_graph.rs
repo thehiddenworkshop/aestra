@@ -302,7 +302,10 @@ impl MaterialGraphSelectionState {
     }
 
     /// The connection selected in a scope.
-    fn selected_connection(&self, scope: MaterialSelectionScope) -> Option<MaterialGraphConnection> {
+    fn selected_connection(
+        &self,
+        scope: MaterialSelectionScope,
+    ) -> Option<MaterialGraphConnection> {
         self.get(scope).and_then(|selection| selection.connection)
     }
 
@@ -914,15 +917,12 @@ fn handle_material_graph_actions(
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => {
                 let scope = scope.map(|scope| scope.0).unwrap_or(None);
-                background.0 = if selection.is_expression_selected(
-                    scope,
-                    action.program,
-                    action.expression,
-                ) {
-                    theme::SELECTION
-                } else {
-                    theme::PANEL
-                };
+                background.0 =
+                    if selection.is_expression_selected(scope, action.program, action.expression) {
+                        theme::SELECTION
+                    } else {
+                        theme::PANEL
+                    };
             }
             Interaction::Pressed => {
                 background.0 = theme::ACCENT_DIM;
@@ -974,7 +974,10 @@ fn select_material_graph_node(
         click.propagate(false);
         return;
     }
-    let scope = scopes.get(action_entity).map(|scope| scope.0).unwrap_or(None);
+    let scope = scopes
+        .get(action_entity)
+        .map(|scope| scope.0)
+        .unwrap_or(None);
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     inspector.selected = selection
@@ -2506,8 +2509,11 @@ fn rasterize_material_preset_previews(
     catalog: Res<ProjectEffectCatalog>,
     mut previews: ResMut<MaterialPresetPreviewState>,
     mut images: ResMut<Assets<Image>>,
+    mut previous_version: Local<Option<aestra_project::ProjectContentVersion>>,
 ) {
-    let catalog_changed = catalog.is_changed();
+    // Snapshot publication may bypass Bevy resource change detection.
+    let version = catalog.content_revision();
+    let catalog_changed = previous_version.replace(version) != Some(version);
     if !catalog_changed && !requests.iter().any(|(_, request)| request.is_added()) {
         return;
     }
@@ -5652,7 +5658,10 @@ mod tests {
         // The per-view camera is now the document camera, so the saved layout and the next view's
         // initial camera follow the most recent view.
         let memory = app.world().resource::<GraphViewportMemory>();
-        assert_eq!(memory.view(&document_key), Some((Vec2::new(30.0, -8.0), 1.5)));
+        assert_eq!(
+            memory.view(&document_key),
+            Some((Vec2::new(30.0, -8.0), 1.5))
+        );
     }
 
     #[test]
@@ -5831,6 +5840,47 @@ mod tests {
             curated.len(),
             "each curated material look should have a distinct preview"
         );
+    }
+
+    #[test]
+    fn preset_previews_refresh_on_published_revision_without_resource_change_ticks() {
+        let root = tempfile::tempdir().unwrap();
+        let presets = MaterialCompiler.material_preset_catalog();
+        let mut preset = presets
+            .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
+            .unwrap()
+            .clone();
+        preset.id = aestra_core::MaterialPresetId::new();
+        let path = root.path().join("preview.aestra.material-preset.ron");
+        preset.save_ron(&path).unwrap();
+        let mut app = App::new();
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()))
+            .init_resource::<MaterialPresetPreviewState>()
+            .init_resource::<Assets<Image>>()
+            .add_systems(Update, rasterize_material_preset_previews);
+        let label = app.world_mut().spawn(Text::default()).id();
+        let entity = app
+            .world_mut()
+            .spawn(MaterialPresetPreviewRaster {
+                preset: preset.id,
+                status_label: label,
+            })
+            .id();
+        app.update();
+        let first = app.world().get::<ImageNode>(entity).unwrap().image.clone();
+        let aestra_core::material::MaterialPresetRecipe::Stack { defaults, .. } =
+            &mut preset.recipe
+        else {
+            panic!("stack recipe");
+        };
+        defaults[0].value = MaterialValue::Float(0.123);
+        preset.save_ron(&path).unwrap();
+        app.world_mut()
+            .resource_mut::<ProjectEffectCatalog>()
+            .bypass_change_detection()
+            .refresh();
+        app.update();
+        assert_ne!(app.world().get::<ImageNode>(entity).unwrap().image, first);
     }
 
     #[test]

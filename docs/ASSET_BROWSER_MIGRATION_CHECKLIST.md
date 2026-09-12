@@ -1696,3 +1696,60 @@ acceptance remain pending. Verification: 800 editor tests passed, two opt-in tes
 strict editor Clippy (all targets, warnings denied), touched-file formatting and diff
 checks passed. The narrow list/grid layout regression at 1.5× scale confirms a bounded
 scrollable viewport; it does not substitute for native high-DPI input acceptance.
+
+### AB8a — Library parity audit and browsing gaps — 2026-09-12
+
+Code-level audit, not native acceptance or permission to remove Library:
+
+| Workflow | Current replacement / evidence | Cutover status |
+| --- | --- | --- |
+| Root selection, explicit effect activation and source navigation | Browser activation through persistence/document protection; existing guarded-open and source-navigation regressions | Retain coordinator/history services; no second scanner. |
+| Create, duplicate, inline rename, move, delete, restore and file Undo | AB6 Browser actions and common project-operation preflight/history | Native mixed-project workflow remains the removal gate. Browser rename changes filenames; authored effect names remain editable in Properties. |
+| Extract selected emitters | Timeline context menu → `LibraryAction::CreateReusableEffectFromSelection`; existing extraction/resource-remapping/Undo tests | Entry point already migrated; move handler and extraction dialog ownership in AB8b. |
+| Explode referenced clip | Timeline context menu and referenced-effect Properties → `LibraryAction::ExplodeEffectClip`; recursive/boundary-link tests | Entry point already migrated; move shared command ownership, do not duplicate it. |
+| Repair broken effect reference | Referenced-effect Properties candidate picker → `PropertiesAction::RepairEffectClipSource`; instance-state/Undo, cycle/window tests | Existing Properties route remains supported. |
+| Inspect usages and dependencies | Project row context menu → Asset Details / References; `asset_browser/inspection.rs` | Preserve dependency services and externally used relation overlays. |
+| Material/function/WESL editing and retained drafts | AB4/AB5 standalone editor targets and common document coordinator | Preserve protected navigation and conflicts; selection alone does not open. |
+| Preset discovery and application | Project preset sources + virtual Built-ins, compatible pickers/drop creation; shared preset rasterizer | AB8a restores previews and metadata search; native selection, creation, preview and Undo still need acceptance. |
+| Current Document resources and local creation | AB7g virtual catalog and shared session commands; renderer Properties edits assigned materials/atlas settings | AB8a restores legacy declarations and blend/frame-rate metadata in tooltips. Legacy declarations are inspection-only, not fake atlas definitions. |
+| Docking, keyboard and localization | Existing Assets dock identity, Browser controls and document coordinator | Native narrow/floating/high-DPI, keyboard-only and locale pass required before Library/settings removal. |
+
+The old Current Document section rendered **read-only resource summaries**, not a
+general editor for unassigned resources. Renderer Properties already edits the applicable
+material/texture/flipbook settings. Do not invent a new resource editor as a prerequisite
+for parity, or misrepresent a legacy Flipbook asset declaration as assignable atlas metadata.
+
+Changes in this slice:
+
+- Project search reads authored effect/material/function names and preset display names,
+  descriptions, categories and tags from the published snapshot, without I/O or cloning
+  complete documents during filtering. Built-in search includes category and tags too.
+- Built-in and uniquely resolved project preset rows reuse `spawn_material_preset_preview`.
+  Grid/list previews stay square. Retained rows refresh on preset identity changes; recipe
+  rerasterization follows content revision rather than only resource change detection.
+- Local sprite blend and atlas frame count/rate appear in hover metadata, not permanent
+  description panels. Legacy flipbook declarations are visible but cannot start assignment
+  drags or pass compatible-field planning.
+
+AB8b ownership/removal checklist:
+
+1. Move `ProjectIoTasks`, watch initialization and `io::poll`/catalog polling registration
+   from `EditorLibraryPlugin` to the project-content service, preserving system ordering.
+2. Move `sync_project_texture_root` to project/render integration; separate its Library UI
+   reset from the required renderer texture-root update.
+3. Move Timeline/Properties extraction/explode actions, extraction dialogs, and retained
+   relation/dependency services out of Library ownership. Preserve source history and
+   document-protection entry points, existing tests, and one-transaction Undo semantics.
+4. Only then remove legacy panel/filter/context-menu/drag state. Preserve Assets dock IDs,
+   closed/floating layouts, locale labels and tolerant persisted-setting migration.
+5. Accept browse → open → edit → save → move → locate usages → drop → Undo → restart,
+   including extract/explode/repair, Built-ins, Current Document and detached high-DPI UI.
+   AB7/AB8 native tests not yet performed remain pending; earlier acceptance is not extended
+   retroactively. No Library removal or general AB9 thumbnail work is included here.
+
+Verification: 805 editor tests passed (two opt-in tests ignored), including five new
+regressions for snapshot-only metadata search, square project previews/identity refresh,
+built-in preview/tag search, inspection-only legacy declarations and revision-driven
+preview rerasterization without resource change ticks. All 139 project tests passed.
+Strict editor Clippy (all targets, warnings denied), touched-file formatting and diff
+checks passed. Native acceptance remains pending.
