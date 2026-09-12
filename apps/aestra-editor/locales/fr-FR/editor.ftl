@@ -94,7 +94,6 @@ browser-wesl-opened = Source WESL ouverte. L'effet actif est inchangé.
 wesl-editor-read-only = WESL · lecture seule
 wesl-editor-edit = Modifier
 wesl-editor-preview = Aperçu
-wesl-editor-save = Enregistrer
 wesl-editor-saved = Module WESL enregistré sur le disque.
 wesl-editor-no-errors = Aucune erreur.
 wesl-editor-unavailable = Ce module WESL n'est pas chargé. Rouvrez-le depuis le navigateur d'assets.

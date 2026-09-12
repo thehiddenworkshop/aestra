@@ -177,45 +177,8 @@ pub(crate) fn spawn_wesl_editor_view(
                             BackgroundColor(theme::ACCENT),
                         ));
                     }
-                    header.spawn(Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    });
-                    header
-                        .spawn((
-                            Button,
-                            EditorNativeControl,
-                            Node {
-                                height: Val::Px(22.0),
-                                padding: UiRect::horizontal(Val::Px(10.0)),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                ..default()
-                            },
-                            BackgroundColor(if dirty {
-                                theme::ACCENT_DIM
-                            } else {
-                                theme::BUTTON
-                            }),
-                        ))
-                        .observe(
-                            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
-                                if click.button == PointerButton::Primary {
-                                    click.propagate(false);
-                                    commands.trigger(SaveWeslSource(id));
-                                }
-                            },
-                        )
-                        .with_child((
-                            Text::new(localizer.text("wesl-editor-save")),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                            Pickable::IGNORE,
-                        ));
+                    // Saving is via Ctrl+S / File ▸ Save All / the Changes panel, so the editor
+                    // header carries no Save button of its own.
                 });
 
             let Some(source) = documents.text(id).map(str::to_owned) else {
