@@ -1,6 +1,6 @@
 //! Project location and document-boundary operations, independent of file dialogs and widgets.
 
-use crate::library::ProjectEffectCatalog;
+use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
 use crate::session::EditorSession;
 use std::path::{Path, PathBuf};
 

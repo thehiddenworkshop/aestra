@@ -64,7 +64,7 @@ impl Plugin for EditorAssetBrowserPlugin {
             .add_systems(
                 Update,
                 reconcile_snapshot
-                    .after(LibrarySet::Input)
+                    .after(ProjectContentSet::Input)
                     .before(EditorSet::UiRebuild),
             )
             .add_systems(

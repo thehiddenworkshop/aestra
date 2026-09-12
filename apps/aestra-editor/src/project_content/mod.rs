@@ -1,5 +1,7 @@
 //! Editor adapter for one coherent project snapshot and unsaved shared-source drafts.
 pub(crate) mod io;
+mod plugin;
+pub(crate) use plugin::{EditorProjectContentPlugin, ProjectContentSet};
 mod refresh;
 use crate::*;
 use aestra_compiler::{

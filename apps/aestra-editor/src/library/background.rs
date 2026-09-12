@@ -118,7 +118,9 @@ fn prepare(
                 session.status = localizer.text_with("library-status-effect-deleted", &args);
             }
             SourceAction::Extract(extraction) => create_reusable_effect_from_emitters(
-                extraction,
+                &extraction.emitters,
+                &extraction.draft,
+                extraction.replace_selection,
                 &mut catalog,
                 &mut session,
                 localizer,

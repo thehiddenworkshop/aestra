@@ -12,6 +12,7 @@ mod dock_ui;
 mod docking;
 mod document;
 mod editor_view;
+mod effect_authoring;
 mod feathers;
 mod history;
 mod input;
@@ -127,8 +128,7 @@ pub(crate) use history::HistoryAction;
 use history::{EditorHistoryLedger, EditorHistoryPlugin, HistorySet, MaterialProgramEditHistory};
 use library::{EditorLibraryPlugin, LibrarySet};
 pub(crate) use library::{
-    LibraryAssetOperationState, LibraryState, ProjectEffectCatalog, spawn_library,
-    spawn_library_asset_operation_overlay,
+    LibraryAssetOperationState, LibraryState, spawn_library, spawn_library_asset_operation_overlay,
 };
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
@@ -146,6 +146,8 @@ use persistence::{
 };
 use profiler::{EditorProfilerPlugin, ProfilerSet};
 pub(crate) use profiler::{ProfilerState, spawn_profiler_workspace};
+pub(crate) use project_content::EditorProjectContent as ProjectEffectCatalog;
+use project_content::{EditorProjectContentPlugin, ProjectContentSet};
 use properties::*;
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
@@ -235,6 +237,7 @@ fn main() {
         .add_plugins(input::EditorKeyboardPlugin)
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
+        .add_plugins(EditorProjectContentPlugin)
         .add_plugins(EditorLibraryPlugin)
         .add_plugins(asset_browser::EditorAssetBrowserPlugin)
         .add_plugins(EditorMaterialGraphPlugin)
@@ -293,7 +296,7 @@ fn main() {
             Update,
             (
                 (
-                    LibrarySet::Input,
+                    ProjectContentSet::Input,
                     TransportSet::Input,
                     HistorySet::Input,
                     ViewportSet::Input,

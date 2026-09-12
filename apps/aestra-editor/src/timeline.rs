@@ -9,8 +9,9 @@ use crate::feathers::context_menu::{
 };
 use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
-use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
+use crate::library::ProjectEffectRow;
 use crate::material_graph::MaterialGraphViewport;
+use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
 use crate::{
     ComboOption, CurvesState, DocumentAction, EditorModuleRegistry, EditorNativeControl,
     EditorTooltip, FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow,

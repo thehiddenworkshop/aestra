@@ -772,6 +772,15 @@ sync and effect-specific extraction/relation actions to their real owners, then 
 legacy UI/state and migrate settings. See the checklist for explicit ownership and
 acceptance gates; deleting the Library plugin alone would remove required services.
 
+AB8b1 service preparation is implemented: `EditorProjectContentPlugin` owns catalog/watch
+and I/O initialization/polling plus texture-root synchronization. `ProjectContentSet::Input`
+preserves refresh-before-input/browser reconciliation ordering; Library only resets its
+own panel state on root changes. Reusable-effect extraction/explode algorithms and core
+regressions now live in `effect_authoring`, with UI-neutral extraction arguments. The
+legacy action/dialog adapters still delegate to these commands. Their remaining ownership
+migration, settings cleanup and actual Library removal are not yet complete and remain
+gated on AB7/AB8 native acceptance.
+
 Complete AB0's parity inventory, including lesser-used extract/explode/repair/relation
 actions, preset workflows and keyboard shortcuts. Switch the existing Assets dock slot
 to Asset Browser by default; preserve closed/floating/split layouts and localized View

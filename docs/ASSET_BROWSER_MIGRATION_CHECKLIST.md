@@ -1753,3 +1753,34 @@ built-in preview/tag search, inspection-only legacy declarations and revision-dr
 preview rerasterization without resource change ticks. All 139 project tests passed.
 Strict editor Clippy (all targets, warnings denied), touched-file formatting and diff
 checks passed. Native acceptance remains pending.
+
+### AB8b1 — Independent project services and reusable-effect command core — 2026-09-12
+
+AB8a was committed as `315ee5a` before this refactor. The Library tab remains available;
+manual parity acceptance was not supplied and is not inferred from an implementation request.
+
+- `project_content/plugin.rs` now registers the sole catalog/watch resources, background
+  I/O completion polling, snapshot refresh polling and renderer texture-root synchronization.
+  The app installs this plugin explicitly before Library. Browser reconciliation and the
+  app input chain depend on `ProjectContentSet::Input`, not on a Library scheduling set.
+- `ProjectEffectCatalog` remains a compatibility name for `EditorProjectContent`, exported
+  from the project-content owner rather than Library. No new catalog/scanner was introduced.
+- Library retains only its own root-change UI reset. Catalog refresh, root changes and
+  I/O completion publication are regression-tested in an app without Library or Browser.
+- Extraction planning, source creation/rollback, explode flattening, parameter baking,
+  resource remapping and transform composition moved unchanged into `effect_authoring.rs`.
+  Extraction accepts selected emitter IDs, a name and replacement choice, not a Library
+  dialog state. Four core regressions moved with the code; legacy interaction and worker
+  tests remain to characterize the adapter routes.
+
+This is the service/core portion of AB8b, not full cutover. The remaining Library action
+adapters, extraction/relationship dialogs, source-operation workers and their modal guards
+must move before the plugin can be removed. Keep the Assets dock identity and saved
+layouts/settings unchanged until the migration and native acceptance steps are complete.
+
+Verification: 807 editor tests passed, two opt-in tests ignored. The two new project-plugin
+regressions cover root/watch/renderer-path synchronization and real queued I/O completion
+publication without Library or Browser resources. Existing extraction/explode/worker/UI
+regressions still pass after relocation. Editor all-target checking, strict all-target
+Clippy with warnings denied, touched-file formatting and diff checks passed. No native
+restart, detached-window or Library-removal acceptance is claimed for this slice.
