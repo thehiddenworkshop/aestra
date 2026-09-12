@@ -550,8 +550,7 @@ fn spawn_children(
                 Pickable::IGNORE,
             ));
         }
-        let inline_left =
-            GUTTER_WIDTH + (line_length(source, l1) + 2) as f32 * CODE_CHAR_WIDTH;
+        let inline_left = GUTTER_WIDTH + (line_length(source, l1) + 2) as f32 * CODE_CHAR_WIDTH;
         surface.spawn((
             Node {
                 position_type: PositionType::Absolute,
@@ -733,7 +732,14 @@ fn render_code_editors(
             }
         }
         commands.entity(entity).with_children(|surface| {
-            spawn_children(surface, &editor, highlighter, &markers, &squiggle.0, focused);
+            spawn_children(
+                surface,
+                &editor,
+                highlighter,
+                &markers,
+                &squiggle.0,
+                focused,
+            );
         });
     }
 }

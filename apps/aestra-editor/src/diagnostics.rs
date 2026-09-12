@@ -687,7 +687,14 @@ fn spawn_wesl_diagnostic_section(
             Some(line) => format!("{name}:{line}"),
             None => name,
         };
-        spawn_wesl_diagnostic_row(parent, id, span.map(|(start, _)| start), message, &path, localizer);
+        spawn_wesl_diagnostic_row(
+            parent,
+            id,
+            span.map(|(start, _)| start),
+            message,
+            &path,
+            localizer,
+        );
     }
 }
 

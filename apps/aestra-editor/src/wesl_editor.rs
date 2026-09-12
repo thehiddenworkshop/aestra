@@ -102,7 +102,12 @@ fn concise_wesl_error(message: &str) -> String {
         .and_then(|(_, rest)| rest.split_once(": "))
         .map(|(_, description)| description)
         .unwrap_or(message);
-    description.lines().next().unwrap_or(description).trim().to_owned()
+    description
+        .lines()
+        .next()
+        .unwrap_or(description)
+        .trim()
+        .to_owned()
 }
 
 pub(crate) fn spawn_wesl_editor_view(
@@ -298,8 +303,7 @@ pub(crate) fn reveal_wesl_error(
         editor.set_caret(char);
         if let Ok((node, mut scroll)) = viewports.get_mut(child_of.parent()) {
             let viewport = node.size().y * node.inverse_scale_factor();
-            let line = editor.line_of(char) as f32
-                * crate::feathers::code_editor::CODE_LINE_HEIGHT;
+            let line = editor.line_of(char) as f32 * crate::feathers::code_editor::CODE_LINE_HEIGHT;
             // Keep the failing line a little below the top of the viewport.
             scroll.0.y = (line - viewport * 0.4).max(0.0);
         }
@@ -333,4 +337,3 @@ pub(crate) fn save_wesl_source(
         }
     }
 }
-
