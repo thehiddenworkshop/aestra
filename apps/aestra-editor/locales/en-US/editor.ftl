@@ -886,3 +886,4 @@ graph-layout-reload-saved = Reload saved layout
 graph-layout-overlap-conflict = Some nodes could not be spaced safely. Move a nearby node or close a preview to resolve the overlap.
 graph-snap-grid = Grid snapping (hold Alt for free movement)
 graph-snap-alignment = Alignment snapping and guides (hold Alt for free movement)
+graph-placement-unavailable = Local spacing unavailable; position the new node manually

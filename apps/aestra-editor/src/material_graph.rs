@@ -806,7 +806,7 @@ struct MaterialGraphPreviewToggle {
 enum MaterialGraphToolbarAction {
     EffectContext,
     LocateSource(MaterialProgramId),
-    AddNode(MaterialProgramId),
+    AddNode(MaterialProgramId, MaterialSelectionScope),
     ToggleAllPreviews(MaterialProgramId),
 }
 
@@ -878,6 +878,7 @@ enum MaterialGraphSelectionEdit {
 #[derive(Component, Debug, Clone)]
 struct MaterialGraphPaletteAction {
     program: MaterialProgramId,
+    scope: MaterialSelectionScope,
     kind: MaterialGraphCreateKind,
     source: Option<MaterialExpressionId>,
     target: Option<MaterialConnectionTarget>,
@@ -1325,14 +1326,14 @@ fn handle_material_graph_toolbar_actions(
                 ));
                 continue;
             }
-            MaterialGraphToolbarAction::AddNode(program) => {
+            MaterialGraphToolbarAction::AddNode(program, scope) => {
                 let Some((marker, viewport, computed)) = viewports
                     .iter()
-                    .find(|(marker, _, _)| marker.program == program)
+                    .find(|(marker, _, _)| marker.program == program && marker.scope == scope)
                 else {
                     continue;
                 };
-                let menu_position = computed.size() * 0.5;
+                let menu_position = computed.size() * computed.inverse_scale_factor * 0.5;
                 palette.open = Some(MaterialGraphPaletteOpen {
                     program,
                     scope: marker.scope,
@@ -1733,6 +1734,7 @@ fn handle_material_graph_palette_actions(
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
+    placement: crate::feathers::node_graph::placement::Context,
 ) {
     for (entity, interaction, action, pending) in &actions {
         if *interaction != Interaction::Pressed || pending.is_none() {
@@ -1754,6 +1756,14 @@ fn handle_material_graph_palette_actions(
         }
         let layout_before =
             presentation::Snapshot::capture(&action.graph_key, &catalog, &session, &graph_memory);
+        let view_key = GraphViewKey {
+            document: GraphDocumentKey {
+                project: catalog.root().to_owned(),
+                asset: crate::document::DocumentKey::MaterialProgram(action.program),
+            },
+            view: action.scope,
+        };
+        let mut area = placement.capture(&view_key, &graph_memory);
         let result = apply_material_tool_command(
             &mut session,
             &mut catalog,
@@ -1765,13 +1775,51 @@ fn handle_material_graph_palette_actions(
         match result {
             Ok(plan) => {
                 history_ledger.record_material_edit(&mut session);
+                placement.preserve_existing(&view_key, &mut graph_memory);
                 let position =
                     action.graph_position - Vec2::new(NODE_WIDTH * 0.5, NODE_HEADER_HEIGHT * 0.5);
+                let projection = plan
+                    .replacement_program(action.program)
+                    .and_then(|program| {
+                        catalog.material_function_library().ok().map(|functions| {
+                            MaterialCompiler.project_graph_with_functions(program, None, &functions)
+                        })
+                    });
+                use crate::feathers::node_graph::placement::Neighborhood;
+                let neighborhood = match action.target {
+                    Some(MaterialConnectionTarget::ExpressionInput { expression, .. }) => {
+                        Neighborhood::Before(GraphNodeKey::Expression(expression))
+                    }
+                    Some(MaterialConnectionTarget::ProgramOutput(_)) => {
+                        Neighborhood::Before(GraphNodeKey::MaterialOutputs)
+                    }
+                    None => action.source.map_or(Neighborhood::Cursor, |id| {
+                        Neighborhood::After(GraphNodeKey::Expression(id))
+                    }),
+                };
+                let mut unassisted = false;
                 for expression in &plan.created_expressions {
+                    let height = projection
+                        .as_ref()
+                        .and_then(|projection| {
+                            projection
+                                .nodes
+                                .iter()
+                                .find(|node| node.expression == *expression)
+                        })
+                        .map_or(160.0, |node| {
+                            node_height(
+                                material_graph_node_row_count(node),
+                                node.disabled || !node.reachable,
+                                false,
+                            )
+                        });
+                    let placed = area.place(position, Vec2::new(NODE_WIDTH, height), neighborhood);
+                    unassisted |= !placed.assisted;
                     graph_memory.place_node(
                         action.graph_key.clone(),
                         material_graph_expression_node_key(*expression),
-                        position,
+                        placed.position,
                     );
                 }
                 if let Some(before) = layout_before {
@@ -1779,10 +1827,14 @@ fn handle_material_graph_palette_actions(
                 }
                 if let Some(expression) = plan.created_expressions.last().copied() {
                     inspector.selected = Some((action.program, expression));
-                    let scope = palette.open.as_ref().and_then(|open| open.scope);
-                    selection.select_single(scope, action.program, expression);
+                    selection.select_single(action.scope, action.program, expression);
                 }
                 session.status = format!("Added {} node", action.label);
+                if unassisted {
+                    session
+                        .status
+                        .push_str(&format!(" · {}", placement.notice()));
+                }
             }
             Err(error) => session.status = format!("Could not add material node: {error}"),
         }
@@ -3721,7 +3773,16 @@ pub(crate) fn spawn_material_graph_workspace(
                     );
                     return;
                 }
-                spawn_header(panel, None, "", previews, true, localizer, asset_server);
+                spawn_header(
+                    panel,
+                    None,
+                    "",
+                    view,
+                    previews,
+                    true,
+                    localizer,
+                    asset_server,
+                );
                 let text = function_inspection_text(session, catalog);
                 spawn_vertical_scroll_area(
                     panel,
@@ -3798,6 +3859,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     .ok()
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
                 &viewport_key,
+                view,
                 previews,
                 target.program().is_some(),
                 localizer,
@@ -4204,6 +4266,7 @@ fn spawn_material_graph_palette_option(
         label,
         MaterialGraphPaletteAction {
             program: open.program,
+            scope: open.scope,
             kind: option.descriptor.kind,
             source: option.source,
             target: option.target,
@@ -4387,6 +4450,7 @@ fn spawn_header(
     parent: &mut ChildSpawnerCommands,
     projection: Option<(&str, &MaterialGraphProjection)>,
     frame_key: &str,
+    scope: MaterialSelectionScope,
     previews: &MaterialGraphPreviewState,
     standalone: bool,
     localizer: &Localizer,
@@ -4410,7 +4474,7 @@ fn spawn_header(
                     asset_server,
                     "icons/plus.svg",
                     localizer.text("material-graph-add-node"),
-                    MaterialGraphToolbarAction::AddNode(graph.program),
+                    MaterialGraphToolbarAction::AddNode(graph.program, scope),
                 );
                 spawn_graph_frame_button(
                     header,
@@ -5623,6 +5687,7 @@ mod tests {
             .spawn((
                 MaterialGraphPaletteAction {
                     program: MaterialProgramId::new(),
+                    scope: None,
                     kind: MaterialGraphCreateKind::Function(
                         aestra_compiler::MaterialGraphFunction::Remap,
                     ),
@@ -5653,7 +5718,7 @@ mod tests {
         let toolbar_action = app
             .world_mut()
             .spawn((
-                MaterialGraphToolbarAction::AddNode(MaterialProgramId::new()),
+                MaterialGraphToolbarAction::AddNode(MaterialProgramId::new(), None),
                 FeathersActionButton,
                 Interaction::None,
             ))

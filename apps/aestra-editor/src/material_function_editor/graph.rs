@@ -53,6 +53,7 @@ struct Wire {
 #[derive(Component, Clone, Copy)]
 struct BodyAction {
     owner: MaterialFunctionId,
+    scope: Option<crate::docking::EditorViewId>,
     kind: BodyActionKind,
 }
 #[derive(Clone, Copy)]
@@ -328,6 +329,7 @@ fn action(
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut commands: Commands,
     mut memory: Option<ResMut<GraphViewportMemory>>,
+    placement: placement::Context,
 ) {
     let Ok(action) = actions.get(event.entity) else {
         return;
@@ -346,18 +348,71 @@ fn action(
         return;
     }
     let graph_key = format!("function:{}:{}", catalog.root().display(), action.owner);
+    let view_key = GraphViewKey {
+        document: GraphDocumentKey {
+            project: catalog.root().to_owned(),
+            asset: crate::document::DocumentKey::MaterialFunction(action.owner),
+        },
+        view: action.scope,
+    };
+    let mut area = memory
+        .as_deref()
+        .map(|memory| placement.capture(&view_key, memory))
+        .unwrap_or_default();
+    let preferred = placement
+        .center(&view_key)
+        .map(|center| center - Vec2::new(NODE_WIDTH * 0.5, NODE_HEADER_HEIGHT * 0.5))
+        .unwrap_or(Vec2::new(34.0, 68.0));
     let layout_before = memory.as_deref().and_then(|memory| {
         crate::material_graph::presentation::Snapshot::capture(
             &graph_key, &catalog, &session, memory,
         )
     });
+    let mut created = Vec::new();
     let result = session.graph_function(&catalog).and_then(|function| {
         let library = catalog
             .material_function_library()
             .map_err(|error| error.to_string())?;
         let edits = create_edits(&function, action.kind, &library)?;
+        created = edits
+            .iter()
+            .filter_map(|edit| match edit {
+                Edit::Add { expression, .. } => Some(expression.id),
+                _ => None,
+            })
+            .collect();
         editor.edit_body(&mut session, &mut catalog, edits)
     });
+    if result.is_ok()
+        && !created.is_empty()
+        && let Some(memory) = memory.as_deref_mut()
+        && let Ok(function) = session.graph_function(&catalog)
+        && let Ok(library) = catalog.material_function_library()
+        && let MaterialFunctionBodyProjection::Graph { nodes, edges } = MaterialCompiler
+            .project_function_graph(&function, &library)
+            .body
+    {
+        let mut unassisted = false;
+        placement.preserve_existing(&view_key, memory);
+        for id in created {
+            let rows = nodes.iter().find(|node| node.id == id).map_or(1, |node| match &node.kind {
+                MaterialExpressionKind::Constant(value) => components(value).len(),
+                _ => edges.iter().filter(|edge| matches!(target(&edge.target), Some(Target::Input(expression,_)) if expression == id)).count(),
+            });
+            let placed = area.place(
+                preferred,
+                Vec2::new(NODE_WIDTH, 62.0 + rows.max(1) as f32 * 28.0),
+                placement::Neighborhood::Cursor,
+            );
+            memory.place_node(&graph_key, id.to_string(), placed.position);
+            unassisted |= !placed.assisted;
+        }
+        if unassisted {
+            session
+                .status
+                .push_str(&format!(" · {}", placement.notice()));
+        }
+    }
     if result.is_ok()
         && let Some(before) = layout_before
         && let Some(memory) = memory.as_deref_mut()
@@ -563,6 +618,7 @@ pub(crate) fn spawn(
                 BodyAction {
                     owner: function.id,
                     kind: BodyActionKind::Back,
+                    scope: view,
                 },
             );
             let descriptors = MaterialCompiler.function_graph_node_catalog(&function, &library);
@@ -579,6 +635,7 @@ pub(crate) fn spawn(
                     action: BodyAction {
                         owner: function.id,
                         kind: BodyActionKind::Create(descriptor.kind),
+                        scope: view,
                     },
                 })
                 .collect::<Vec<_>>();
@@ -588,6 +645,7 @@ pub(crate) fn spawn(
                 action: BodyAction {
                     owner: function.id,
                     kind: BodyActionKind::Input(input.id),
+                    scope: view,
                 },
             }));
             spawn_searchable_icon_action_menu(
@@ -614,6 +672,7 @@ pub(crate) fn spawn(
                 BodyAction {
                     owner: function.id,
                     kind: BodyActionKind::Locate,
+                    scope: view,
                 },
             );
             spawn_graph_drag_controls(toolbar, assets);
@@ -767,6 +826,7 @@ pub(crate) fn spawn(
                                 action: BodyAction {
                                     owner: function.id,
                                     kind: BodyActionKind::Boolean(expression.id, candidate),
+                                    scope: view,
                                 },
                             }),
                             170.0,
@@ -840,6 +900,7 @@ pub(crate) fn spawn(
                                     action: BodyAction {
                                         owner: function.id,
                                         kind: BodyActionKind::Remove(expression.id),
+                                        scope: view,
                                     },
                                 }],
                             )
@@ -1368,19 +1429,62 @@ mod tests {
         session
             .open_material_function(&catalog, function.id)
             .unwrap();
+        let original_function = session.graph_function(&catalog).unwrap();
         let mut app = App::new();
-        app.insert_resource(session).insert_resource(catalog);
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<GraphViewportMemory>()
+            .init_resource::<crate::history::MaterialProgramEditHistory>()
+            .init_resource::<crate::history::EditorHistoryLedger>()
+            .add_observer(crate::history::execute_history_action);
         super::super::register(&mut app);
         let button = app
             .world_mut()
             .spawn(BodyAction {
                 owner: function.id,
+                scope: None,
                 kind: BodyActionKind::Create(aestra_compiler::MaterialGraphCreateKind::Function(
                     aestra_compiler::MaterialGraphFunction::Multiply,
                 )),
             })
             .id();
         app.world_mut().trigger(Activate { entity: button });
+        let graph_key = crate::material_graph::function_graph_memory_key(root.path(), function.id);
+        let placed = app
+            .world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph_key);
+        assert!(!placed.is_empty());
+        let positions = placed
+            .values()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>();
+        for (index, position) in positions.iter().enumerate() {
+            assert!(!positions[index + 1..].contains(position));
+        }
+        app.world_mut().trigger(crate::history::HistoryAction::Undo);
+        app.world_mut().flush();
+        assert!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .base_nodes(&graph_key)
+                .is_empty()
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .graph_function(app.world().resource::<ProjectEffectCatalog>())
+                .unwrap(),
+            original_function
+        );
+        app.world_mut().trigger(crate::history::HistoryAction::Redo);
+        app.world_mut().flush();
+        assert_eq!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .base_nodes(&graph_key),
+            placed
+        );
         let source = app
             .world_mut()
             .spawn(Socket {

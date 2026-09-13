@@ -886,3 +886,4 @@ graph-layout-reload-saved = Recharger la disposition enregistrée
 graph-layout-overlap-conflict = Certains nœuds ne peuvent pas être espacés sans risque. Déplacez un nœud voisin ou fermez un aperçu pour résoudre le chevauchement.
 graph-snap-grid = Magnétisme de la grille (maintenir Alt pour déplacer librement)
 graph-snap-alignment = Magnétisme et guides d’alignement (maintenir Alt pour déplacer librement)
+graph-placement-unavailable = Espacement local indisponible ; positionnez le nouveau nœud manuellement

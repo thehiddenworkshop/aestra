@@ -556,3 +556,45 @@ Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **904 editor tests passe
 (7 existing opt-in tests ignored), including nine new pure/actual-widget drag tests.
 The architecture test, strict editor/project Clippy (`--all-targets -- -D warnings`),
 workspace formatting and `git diff --check` passed.
+
+## M7a implementation — bounded new-node placement
+
+- The shared `node_graph::placement` module consumes stable, mounted view geometry.
+  It rechecks current effective positions, dimensions, collapse and content metadata;
+  stale, unavailable, wrong-view or oversized snapshots do not drive automatic placement.
+- Interactive material palette creation and function toolbar creation use the same
+  bounded free-space search. A free cursor position remains exact, including fractional
+  or negative coordinates. Material socket creation constrains the new node to the
+  source's right or consumer's left. Toolbar requests use the originating view and
+  logical DPI-normalized center, not the first view of a document.
+- Existing effective rectangles (including previews) are fixed obstacles. The solver
+  tries nearby obstacle boundaries with 24 logical units of clearance, orders candidates
+  deterministically by distance and coordinates, and caps search at 512 obstacles,
+  256 tested candidates and 1024 logical units of travel. No global arrange or existing
+  neighbor displacement is invoked in this slice.
+- New nodes have no measured bounds yet: adapters use their bootstrap row-height
+  estimates. These are not persisted geometry or a guarantee about later content
+  resizing. A creation batch reserves each new rectangle before placing the next helper.
+- If measurements or local space are unavailable, creation keeps a local fallback and
+  displays a localized status advisory. Batch helpers still avoid one another when
+  possible. Users can position the nodes manually; semantic creation is not rolled back
+  solely because spacing cannot be established.
+- After successful creation only, unremembered existing bootstrap positions are frozen
+  as bases to prevent unrelated nodes moving during projection rebuild. Existing bases
+  and temporary offsets are never overwritten. New placements and any bootstrap seeds
+  attach to the existing compound semantic history entry: one Undo/Redo, not a second
+  placement action. Failed semantic commands leave memory untouched.
+
+M7 remains incomplete: wire-drop insertion, insertion conflict pushing, function
+socket-created nodes and non-interactive semantic insertion remain future slices.
+Native check: add into occupied space in material/function views; create from both
+material socket directions; repeat with an expanded preview and a split view at another
+zoom/DPI. Existing nodes must stay put, helper nodes should not stack, and one Undo/Redo
+must remove/restore the entire creation at the same positions. M5/M6 native gates also
+remain outstanding.
+
+M7a validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **911 editor tests passed**
+(7 existing opt-in tests ignored). Coverage includes bounded placement, helper batches,
+view/DPI isolation, stale geometry rejection, and creation Undo/Redo for both adapters.
+The architecture test, strict editor/project Clippy (`--all-targets -- -D warnings`),
+workspace formatting and `git diff --check` passed. Native acceptance is still pending.

@@ -38,6 +38,88 @@ fn fixture() -> (
     (root, app, program, function)
 }
 
+#[test]
+fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchanged() {
+    use bevy::ecs::system::RunSystemOnce;
+    let (_root, mut app, program, _) = fixture();
+    app.init_resource::<MaterialStackInspectorState>()
+        .init_resource::<MaterialGraphPaletteState>()
+        .init_resource::<MaterialGraphSelectionState>();
+    let graph = material_graph_view_key(program.id);
+    let effect = app.world().resource::<EditorSession>().effect.clone();
+    let action = MaterialGraphPaletteAction {
+        program: program.id,
+        scope: None,
+        kind: MaterialGraphCreateKind::Function(aestra_compiler::MaterialGraphFunction::Multiply),
+        source: None,
+        target: None,
+        label: "Multiply".into(),
+        graph_position: Vec2::new(300.0, 200.0),
+        graph_key: graph.clone(),
+        searchable: "multiply".into(),
+    };
+    app.world_mut().spawn((
+        action.clone(),
+        FeathersActionButton,
+        Interaction::Pressed,
+        PendingFeathersActivation,
+    ));
+    app.world_mut()
+        .run_system_once(handle_material_graph_palette_actions)
+        .unwrap();
+    let after = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .base_nodes(&graph);
+    assert!(!after.is_empty());
+    let positions = after
+        .values()
+        .map(|(position, _)| *position)
+        .collect::<Vec<_>>();
+    for (index, position) in positions.iter().enumerate() {
+        assert!(!positions[index + 1..].contains(position));
+    }
+    step(&mut app, true);
+    assert_eq!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_program(program.id)
+            .unwrap(),
+        program
+    );
+    assert!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph)
+            .is_empty()
+    );
+    step(&mut app, false);
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        after
+    );
+    let mut invalid = action;
+    invalid.program = MaterialProgramId::new();
+    app.world_mut().spawn((
+        invalid,
+        FeathersActionButton,
+        Interaction::Pressed,
+        PendingFeathersActivation,
+    ));
+    app.world_mut()
+        .run_system_once(handle_material_graph_palette_actions)
+        .unwrap();
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        after
+    );
+    assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+}
+
 fn step(app: &mut App, undo: bool) {
     app.world_mut().trigger(if undo {
         HistoryAction::Undo

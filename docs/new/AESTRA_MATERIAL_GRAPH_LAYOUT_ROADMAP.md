@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M6 implemented, 2026-09-13. M6 adds shared, optional drag snapping and alignment guides. Native M5 resize/Undo/multi-view acceptance remains pending alongside the M6 drag checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M6 and M7a implemented, 2026-09-13. M7a adds shared bounded placement for interactive node creation; M7 remains in progress. Native M5/M6 acceptance remains pending alongside the new creation checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1791,6 +1791,21 @@ Users retain arbitrary positioning while easily building clean rows and columns.
 
 ## Milestone 7 — Smart local node placement
 
+**In progress — M7a implemented; native acceptance pending.** Material palette creation
+and function toolbar creation now share a bounded free-space search. Disconnected nodes
+prefer the requested cursor position (the originating viewport center for toolbar adds).
+Existing material socket-to-palette creation keeps a new node downstream of its source
+or upstream of its consumer. Measured effective bounds include previews; new nodes use
+bootstrap extent estimates until first layout. Helper nodes reserve distinct positions
+inside the same compound creation/Undo transaction. Existing nodes are not pushed or
+rearranged. Missing/stale geometry or exhausted local space produces an advisory and
+retains a local fallback, without rejecting an otherwise valid semantic creation.
+
+Remaining M7 parts: drag-on-wire insertion with compatibility/cycle validation and
+visual feedback, bounded neighbor pushing when insertion needs room, function socket
+creation UX, and placement for non-interactive semantic commands. These are not shipped
+by M7a. Existing compiler connection validation remains unchanged.
+
 ### Goal
 
 Improve creation/insertion before introducing global layout.
@@ -2187,10 +2202,10 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next acceptance: the implemented M5 overlays and M6 drag assistance.** M0–M6 foundations
+**Next acceptance: M5 overlays, M6 drag assistance and M7a node creation.** These slices
 are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
-material/function views, plus snapping/Alt/guide behavior, before moving on to M7. Automated shared-widget tests are not
+material/function views, plus snapping/Alt/guides and creation/Undo, before M7b wire insertion. Automated shared-widget tests are not
 a substitute for native DPI, input and wire-alignment acceptance.
 
 Verify this complete M4–M5 flow before integrating `elkrs`:

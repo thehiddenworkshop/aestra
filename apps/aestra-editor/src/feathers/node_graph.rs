@@ -37,6 +37,7 @@ mod framing;
 pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
 pub(crate) mod geometry;
 mod overlay;
+pub(crate) mod placement;
 mod resize;
 
 pub(crate) const NODE_WIDTH: f32 = 224.0;
