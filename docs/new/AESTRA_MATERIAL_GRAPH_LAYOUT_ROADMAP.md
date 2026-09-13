@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M5 implemented, 2026-09-13. M5 now connects the bounded solver to reversible session offsets. Native move/collapse/preview Undo/Redo and multi-view acceptance remain to be checked before advancing to M6 drag assistance.
+> **Status:** M0–M6 implemented, 2026-09-13. M6 adds shared, optional drag snapping and alignment guides. Native M5 resize/Undo/multi-view acceptance remains pending alongside the M6 drag checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1732,8 +1732,8 @@ replaces temporary offsets atomically and preserves authored bases. Material pre
 and shared material/function collapse/expand use the same path. Conflicts keep safe
 existing offsets and show a compact localized notice. See the
 [M5 implementation record](../material-system/graph-layout-contract.md#m5-implementation--reversible-session-overlays).
-Do the native checks in section 37 before moving on to M6; function canvases still do
-not expose material-style image previews.
+The native checks in section 37 remain pending alongside M6 acceptance; function
+canvases still do not expose material-style image previews.
 
 ### Goal
 
@@ -1759,6 +1759,15 @@ Native acceptance includes different DPI/zoom, two views and wire alignment.
 ---
 
 ## Milestone 6 — Manual drag assistance
+
+**Implemented; native acceptance pending.** Both graph toolbars use shared icon
+toggles for grid snapping (off by default) and alignment (on by default), with Alt
+bypassing both. Soft attraction uses a six-logical-screen-pixel radius; grid candidates
+use the existing 32-unit lattice, with measured edge/center/port-row alignment taking
+priority. Settings and guides are session-only. Raw pointer placement stays separate
+from the snapped position so small deltas escape snap targets without drift. Only the
+dragged node moves, through the existing base-position and single-gesture Undo path.
+See the [M6 implementation record](../material-system/graph-layout-contract.md#m6-implementation--shared-manual-drag-assistance).
 
 ### Goal
 
@@ -2178,10 +2187,10 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next acceptance: the implemented M5 reversible resize overlays.** M0–M5 foundations
+**Next acceptance: the implemented M5 overlays and M6 drag assistance.** M0–M6 foundations
 are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
-material/function views before moving on to M6. Automated shared-widget tests are not
+material/function views, plus snapping/Alt/guide behavior, before moving on to M7. Automated shared-widget tests are not
 a substitute for native DPI, input and wire-alignment acceptance.
 
 Verify this complete M4–M5 flow before integrating `elkrs`:

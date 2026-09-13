@@ -4450,6 +4450,7 @@ fn spawn_header(
                     localizer.text("browser-locate"),
                     MaterialGraphToolbarAction::LocateSource(graph.program),
                 );
+                crate::feathers::node_graph::spawn_graph_drag_controls(header, asset_server);
                 header.spawn(Node {
                     flex_grow: 1.0,
                     ..default()

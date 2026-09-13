@@ -32,7 +32,9 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
 use std::collections::HashMap;
 
+mod drag_assist;
 mod framing;
+pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
 pub(crate) mod geometry;
 mod overlay;
 mod resize;
@@ -142,6 +144,7 @@ impl Plugin for FeathersNodeGraphPlugin {
             .add_plugins(UiMaterialPlugin::<GraphGridMaterial>::default())
             .init_resource::<GraphViewportMemory>()
             .init_resource::<overlay::GraphOverlays>()
+            .init_resource::<drag_assist::State>()
             .init_resource::<GraphPanGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
@@ -149,6 +152,7 @@ impl Plugin for FeathersNodeGraphPlugin {
             .add_observer(begin_graph_node_drag)
             .add_observer(drag_graph_node)
             .add_observer(end_graph_node_drag)
+            .add_observer(drag_assist::toggle)
             .add_systems(
                 Update,
                 (
@@ -164,6 +168,8 @@ impl Plugin for FeathersNodeGraphPlugin {
                     navigate_graph_viewports,
                     sync_graph_viewport_transforms,
                     update_socket_visuals,
+                    drag_assist::sync_controls,
+                    drag_assist::sync_guides,
                 )
                     .chain()
                     .in_set(GraphWidgetSync),
@@ -940,6 +946,7 @@ fn begin_graph_node_drag(
     controls: Query<(), GraphNodeControlFilter>,
     keys: Res<ButtonInput<KeyCode>>,
     memory: Res<GraphViewportMemory>,
+    mut assistance: drag_assist::Context,
 ) {
     if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
         return;
@@ -961,6 +968,7 @@ fn begin_graph_node_drag(
             .unwrap_or((node.position, node.collapsed)),
     );
     node.begin_drag();
+    assistance.begin(entity, &node, &parents, &memory);
     drag.propagate(false);
 }
 
@@ -969,7 +977,7 @@ fn drag_graph_node(
     mut nodes: Query<(&mut FeathersGraphNode, &mut Node, &ComputedNode)>,
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
-    viewports: Query<&FeathersGraphViewport>,
+    mut assistance: drag_assist::Context,
     mut memory: ResMut<GraphViewportMemory>,
     mut override_cursor: ResMut<OverrideCursor>,
 ) {
@@ -984,22 +992,44 @@ fn drag_graph_node(
     ) else {
         return;
     };
-    let Ok((mut graph_node, mut style, computed)) = nodes.get_mut(entity) else {
+    let Ok((graph_node, _, computed)) = nodes.get(entity) else {
         return;
     };
     if !graph_node.dragging {
         return;
     }
-    // Drag is emitted only after picking has recognized a real drag. Arm the guard here rather
-    // than waiting for DragEnd: Click ordering differs by backend on pointer release.
-    graph_node.note_drag_motion();
     // Scale the drag by the zoom of the node's own viewport. The viewport's memory key is per-view
     // (and differs from the node's per-document graph key), so resolve it by hierarchy, not by key.
-    let zoom = std::iter::once(entity)
-        .chain(parents.iter_ancestors(entity))
-        .find_map(|ancestor| viewports.get(ancestor).ok())
-        .map_or(1.0, |viewport| viewport.zoom.max(MIN_ZOOM));
-    graph_node.position += graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
+    let zoom = assistance
+        .viewport(entity, &parents)
+        .map_or(1.0, |(_, zoom)| zoom.max(MIN_ZOOM));
+    let delta = graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
+    let position = assistance.motion(
+        entity,
+        delta,
+        graph_node.position,
+        zoom,
+        &memory,
+        |id, rect, collapsed| {
+            nodes.get(id).is_ok_and(|(node, _, computed)| {
+                node.collapsed == collapsed
+                    && (computed.size() * computed.inverse_scale_factor - rect.size())
+                        .abs()
+                        .max_element()
+                        <= 0.5
+                    && (id == entity || node.position.distance(rect.min) <= 0.5)
+            })
+        },
+    );
+    if !position.is_finite() {
+        return;
+    }
+    let Ok((mut graph_node, mut style, _)) = nodes.get_mut(entity) else {
+        return;
+    };
+    // Drag is emitted only after picking recognizes real motion. Keep the release click guard.
+    graph_node.note_drag_motion();
+    graph_node.position = position;
     style.left = Val::Px(graph_node.position.x);
     style.top = Val::Px(graph_node.position.y);
     memory.set_node(
@@ -1024,6 +1054,7 @@ fn end_graph_node_drag(
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
     mut memory: ResMut<GraphViewportMemory>,
+    mut assistance: drag_assist::Context,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -1054,6 +1085,7 @@ fn end_graph_node_drag(
         }
     }
     node.end_drag();
+    assistance.end(entity);
     override_cursor.0 = None;
     drag.propagate(false);
 }

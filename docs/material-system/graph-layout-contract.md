@@ -506,7 +506,7 @@ and disk save/reopen with visible previews at a different DPI. The existing real
 and function adapter geometry tests now run with overlays and still assert unchanged
 effect state. Native pointer/visual acceptance is not claimed by these headless tests.
 
-Native check before M6: open a preview near another node, close it, then repeat with two
+Outstanding M5 native check: open a preview near another node, close it, then repeat with two
 previews closing in either order. Move a displaced neighbor manually before closing.
 Exercise mixed move/collapse/preview Undo/Redo in material/function tabs; confirm the
 dirty indicators stay unchanged for presentation-only actions. Save/reopen with a preview
@@ -517,3 +517,42 @@ Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **895 editor tests passe
 7 opt-in tests ignored (6 GPU tests and the M4 timing probe). The architecture test,
 strict editor/project Clippy (`--all-targets -- -D warnings`), workspace formatting
 and `git diff --check` passed. Changes remain subject to the native acceptance above.
+
+## M6 implementation — shared manual drag assistance
+
+- Material and function toolbars now call the same shared drag-control builder. Grid
+  snapping is off by default; alignment snapping/guides are on. Both are independently
+  switchable with icon buttons and localized tooltips. Hold either Alt key to bypass
+  snapping. These are application-session preferences, not asset or project metadata.
+- Drag capture reads the originating view's stable, mounted geometry snapshot, never
+  a different view's measurement owner. Nodes' measured edges, centers and socket rows
+  are candidates; grid alignment uses the existing 32-logical-unit lattice. The soft
+  radius is six logical screen pixels divided by the current canvas zoom. DPI conversion
+  remains at the existing physical-pointer to logical-graph boundary.
+- Alignment has priority over grid, with deterministic geometric tie breaking. Targets
+  more than 320 logical screen pixels away on the cross axis are excluded. Candidate
+  work is capped at 512 measured nodes and 32 port rows per node; missing/incomplete or
+  oversized geometry falls back to free movement (or the independent grid option).
+- The unsnapped position accumulates pointer deltas; the displayed snapped position
+  never becomes the next pointer origin. The user's displayed drop location becomes
+  the authored base through the existing one-gesture `GraphPresentationEdit`. Neighbor
+  bases, semantics, shader compilation and history are not modified by assistance.
+- Capture is session-only and discarded on release, node/view destruction or rebuild.
+  Changes to captured target position, size, collapse/preview/content, identity or the
+  history/reload epoch invalidate alignment for the rest of the gesture. This avoids
+  stale magnets while the moving graph no longer has a stable geometry snapshot.
+- At most two passive guide lines are projected into the originating viewport and
+  clipped by it. Lines remain one logical screen pixel thick at every zoom, ignore
+  picking and disappear on release, Alt bypass or view teardown. Other views follow
+  shared positions, without inheriting the originating view's guide overlay or camera.
+
+Native acceptance still required (including the outstanding M5 checks): in both graph
+types, drag near edges/centers/port rows; enable grid; move slowly out of a snap; hold Alt
+for arbitrary placement; release and Undo/Redo once. Repeat with a visible preview and
+a second view at a different zoom/DPI. Verify wires follow, guides never capture input,
+and no asset becomes semantically dirty. No native acceptance is claimed by unit tests.
+
+Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **904 editor tests passed**
+(7 existing opt-in tests ignored), including nine new pure/actual-widget drag tests.
+The architecture test, strict editor/project Clippy (`--all-targets -- -D warnings`),
+workspace formatting and `git diff --check` passed.

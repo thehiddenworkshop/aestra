@@ -616,6 +616,7 @@ pub(crate) fn spawn(
                     kind: BodyActionKind::Locate,
                 },
             );
+            spawn_graph_drag_controls(toolbar, assets);
             spawn_graph_toolbar_summary(
                 toolbar,
                 format!(

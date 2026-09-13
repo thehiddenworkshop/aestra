@@ -150,6 +150,7 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
             app.insert_resource(session)
                 .init_resource::<GraphViewportMemory>()
                 .init_resource::<OverrideCursor>()
+                .init_resource::<drag_assist::State>()
                 .add_observer(drag_graph_node);
             // The other view deliberately has a different zoom. The node key is per document,
             // so matching the key instead of walking the hierarchy would give the wrong scale.
@@ -225,6 +226,7 @@ fn drag_emits_one_base_placement_transaction_and_sibling_views_follow_undo() {
     let mut app = App::new();
     app.init_resource::<GraphViewportMemory>()
         .init_resource::<OverrideCursor>()
+        .init_resource::<drag_assist::State>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Edits>()
         .add_observer(begin_graph_node_drag)
