@@ -724,6 +724,8 @@ pub(crate) fn spawn(
                             source: edge.source,
                             target,
                         },
+                        crate::material_graph::insertion::function_wire(edge.source, &edge.target)
+                            .unwrap(),
                         Node {
                             position_type: PositionType::Absolute,
                             left: Val::Px(0.0),
@@ -1030,15 +1032,17 @@ fn attach_wires(
 }
 fn update_wires(
     materials: Option<ResMut<Assets<GraphWireMaterial>>>,
-    wires: Query<(&Wire, &MaterialNode<GraphWireMaterial>)>,
+    wires: Query<(Entity, &Wire, &MaterialNode<GraphWireMaterial>)>,
     mut sockets: Query<(&Socket, &UiGlobalTransform, &mut Anchor)>,
     nodes: Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
-    viewports: Query<(&View, &FeathersGraphViewport)>,
+    viewports: Query<(&View, &FeathersGraphViewport, &ComputedNode)>,
     previews: Query<(&PreviewWire, &MaterialNode<GraphWireMaterial>)>,
     mut preview: ResMut<ConnectionPreview>,
     preview_sockets: Query<(Entity, &Socket, &UiGlobalTransform)>,
     viewport_geometry: Query<(&View, &ComputedNode, &UiGlobalTransform)>,
     mut feedback: Query<(Entity, &mut BackgroundColor), With<Socket>>,
+    insertion: Option<Res<insertion::State>>,
+    parents: Query<&ChildOf>,
 ) {
     let Some(mut materials) = materials else {
         return;
@@ -1053,22 +1057,29 @@ fn update_wires(
         }
         let (_, _, world) = transform.to_scale_angle_translation();
         let offset = *anchor.0.get_or_insert_with(|| {
-            node_transform.try_inverse().map_or(Vec2::ZERO, |inverse| {
-                inverse.transform_point2(world) + computed.size() * 0.5
-            })
+            crate::material_graph::viewport_local_position(computed, node_transform, world)
         });
         positions.push((socket, node.position() + offset));
     }
-    for (wire, handle) in &wires {
-        let Some((_, viewport)) = viewports.iter().find(|(view, _)| view.0 == wire.owner) else {
+    for (entity, wire, handle) in &wires {
+        let Some((viewport_entity, (_, viewport, computed))) = parents
+            .iter_ancestors(entity)
+            .find_map(|id| viewports.get(id).ok().map(|view| (id, view)))
+        else {
             continue;
         };
         let source = positions.iter().find(|(socket, _)| {
             socket.owner == wire.owner
+                && parents
+                    .iter_ancestors(socket.node)
+                    .any(|id| id == viewport_entity)
                 && matches!(socket.kind, SocketKind::Source(id) if id == wire.source)
         });
         let target = positions.iter().find(|(socket, _)| {
             socket.owner == wire.owner
+                && parents
+                    .iter_ancestors(socket.node)
+                    .any(|id| id == viewport_entity)
                 && matches!(socket.kind, SocketKind::Target(target) if target == wire.target)
         });
         let (Some((_, source)), Some((_, target))) = (source, target) else {
@@ -1079,8 +1090,20 @@ fn update_wires(
             &handle.0,
             viewport.project_graph_point(*source),
             viewport.project_graph_point(*target),
-            Vec4::new(0.4, 0.8, 1.0, 1.0),
-            2.0,
+            insertion
+                .as_ref()
+                .and_then(|state| state.color(entity))
+                .unwrap_or(Vec4::new(0.4, 0.8, 1.0, 1.0)),
+            if insertion
+                .as_ref()
+                .and_then(|state| state.color(entity))
+                .is_some()
+            {
+                4.0
+            } else {
+                2.0
+            },
+            computed.inverse_scale_factor,
         );
     }
     if preview
@@ -1145,13 +1168,15 @@ fn update_wires(
                 computed,
                 viewport_transform,
             );
+            let start = start * computed.inverse_scale_factor;
+            let end = end * computed.inverse_scale_factor;
             Some(if matches!(socket.kind, SocketKind::Source(_)) {
-                (start, end)
+                (start, end, computed.inverse_scale_factor)
             } else {
-                (end, start)
+                (end, start, computed.inverse_scale_factor)
             })
         });
-        let (start, end) = endpoints.unwrap_or((Vec2::ZERO, Vec2::ZERO));
+        let (start, end, inverse_scale) = endpoints.unwrap_or((Vec2::ZERO, Vec2::ZERO, 1.0));
         crate::material_graph::update_wire_material(
             &mut materials,
             &handle.0,
@@ -1159,6 +1184,7 @@ fn update_wires(
             end,
             Vec4::new(0.4, 0.8, 1.0, if endpoints.is_some() { 1.0 } else { 0.0 }),
             2.0,
+            inverse_scale,
         );
     }
 }

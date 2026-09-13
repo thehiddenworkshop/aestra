@@ -598,3 +598,48 @@ M7a validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **911 editor tests p
 view/DPI isolation, stale geometry rejection, and creation Undo/Redo for both adapters.
 The architecture test, strict editor/project Clippy (`--all-targets -- -D warnings`),
 workspace formatting and `git diff --check` passed. Native acceptance is still pending.
+
+## M7b implementation — validated drag-on-wire insertion
+
+- The shared widget captures the originating view's mounted geometry at drag start,
+  including typed ports and entity identities. It checks current content, dimensions,
+  collapse/preview state and stationary node positions before hit testing. Rebuilds,
+  missing geometry and unrelated views cannot supply an insertion candidate.
+- The dragged node's center targets the rendered cubic wire within 14 logical viewport
+  units, excluding the 18-unit endpoint neighborhoods. Hit testing is bounded to 512
+  nodes/wires per view and uses the same cubic convention at all zoom/DPI values.
+- Both graph adapters expose typed wire endpoints to the widget. The common semantic
+  adapter tries at most 16 input choices on detached authoring documents. Exactly one
+  compiler-validated choice is required. Cycles and type/domain errors are rejected by
+  the existing transaction executor; outgoing connections and non-literal incoming
+  branches are not silently replaced. Ambiguous nodes require manual socket wiring.
+- Green/red wire feedback and a status explanation preview the operation. Holding Alt
+  suppresses insertion without disabling normal node movement. Leaving the wire or
+  tearing down the view clears feedback. Function wires now project through their own
+  viewport, including socket resolution, rather than the first function view found.
+- Port offsets and wire fragment coordinates are normalized from physical layout pixels
+  to logical units. A per-view inverse-scale uniform keeps the visible cubic and the
+  insertion hit test in the same coordinate system; stroke width retains screen-pixel
+  anti-aliasing. Regression checks compare rendered offsets with measured ports at
+  100%, 125% and 200% DPI and verify scale-only uniform updates.
+- Drop recomputes the target and revalidates current semantics, rather than trusting a
+  cached green result. A valid insertion replaces the original edge with source → node
+  → target, keeps the dropped position, and records a single compound Undo/Redo action.
+  Semantic rejection restores the authored base and original temporary display offset.
+  Missing or stale hit-test geometry falls back to an ordinary move without rewiring.
+- Existing neighbors are never pushed in this slice. New nodes from socket gestures,
+  explicit choice among ambiguous inputs, and bounded insertion conflict pushing remain
+  later M7 work. No full M7 completion or native acceptance is claimed.
+
+Native acceptance: in both graph types, drag an unused single-input node onto a wire;
+check green feedback, release, and Undo/Redo once. Repeat with incompatible and ambiguous
+nodes (red feedback, release restores position), an expanded preview, two views, and
+different zoom/DPI. Hold Alt to move without inserting. Confirm no other nodes move and
+that switching/closing views cannot commit an old insertion candidate.
+
+M7b validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **919 editor tests passed**
+(7 existing opt-in tests ignored). Eight new tests cover shared hit testing/scale,
+semantic compatibility and ambiguity, preserved branches/cycles, stale candidates,
+compound Undo/Redo and failed-drop offset restoration across both graph kinds. Strict
+editor/project Clippy (`--all-targets -- -D warnings`), the architecture test, workspace
+formatting and `git diff --check` passed. Native UI/GPU acceptance remains pending.

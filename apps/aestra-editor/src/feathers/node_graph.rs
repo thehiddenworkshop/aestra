@@ -36,6 +36,7 @@ mod drag_assist;
 mod framing;
 pub(crate) use drag_assist::spawn_controls as spawn_graph_drag_controls;
 pub(crate) mod geometry;
+pub(crate) mod insertion;
 mod overlay;
 pub(crate) mod placement;
 mod resize;
@@ -553,6 +554,8 @@ pub(crate) struct GraphWireMaterial {
     pub(crate) color: Vec4,
     #[uniform(0)]
     pub(crate) width: f32,
+    #[uniform(0)]
+    pub(crate) inverse_scale: f32,
 }
 
 impl Default for GraphWireMaterial {
@@ -564,6 +567,7 @@ impl Default for GraphWireMaterial {
             end: Vec2::ZERO,
             color: Vec4::new(0.61, 0.47, 1.0, 0.78),
             width: 2.0,
+            inverse_scale: 1.0,
         }
     }
 }
@@ -948,6 +952,7 @@ fn begin_graph_node_drag(
     keys: Res<ButtonInput<KeyCode>>,
     memory: Res<GraphViewportMemory>,
     mut assistance: drag_assist::Context,
+    mut commands: Commands,
 ) {
     if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
         return;
@@ -970,6 +975,7 @@ fn begin_graph_node_drag(
     );
     node.begin_drag();
     assistance.begin(entity, &node, &parents, &memory);
+    commands.queue(move |world: &mut World| insertion::begin(world, entity));
     drag.propagate(false);
 }
 
@@ -981,6 +987,7 @@ fn drag_graph_node(
     mut assistance: drag_assist::Context,
     mut memory: ResMut<GraphViewportMemory>,
     mut override_cursor: ResMut<OverrideCursor>,
+    mut commands: Commands,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -1040,6 +1047,7 @@ fn drag_graph_node(
         graph_node.collapsed,
     );
     override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+    commands.queue(move |world: &mut World| insertion::motion(world, entity));
     drag.propagate(false);
 }
 
@@ -1071,13 +1079,14 @@ fn end_graph_node_drag(
     let Ok(mut node) = nodes.get_mut(entity) else {
         return;
     };
+    let mut edit = None;
     if let Some(before) = node.drag_before.take() {
         let after = (node.position, node.collapsed);
         if before != after {
             // A displaced node's displayed drop location becomes its authored base,
             // including a drag-start/end with no intervening motion event.
             memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
-            commands.trigger(GraphPresentationEdit {
+            edit = Some(GraphPresentationEdit {
                 graph: node.graph_key.clone(),
                 node: node.node_key.clone(),
                 before,
@@ -1086,6 +1095,7 @@ fn end_graph_node_drag(
         }
     }
     node.end_drag();
+    commands.queue(move |world: &mut World| insertion::finish(world, entity, edit));
     assistance.end(entity);
     override_cursor.0 = None;
     drag.propagate(false);

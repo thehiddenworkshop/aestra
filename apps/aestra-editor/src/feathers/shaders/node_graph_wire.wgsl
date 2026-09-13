@@ -7,6 +7,7 @@ struct WireUniforms {
     end: vec2<f32>,
     color: vec4<f32>,
     width: f32,
+    inverse_scale: f32,
 };
 
 @group(1) @binding(0)
@@ -28,7 +29,7 @@ fn segment_distance(point: vec2<f32>, start: vec2<f32>, end: vec2<f32>) -> f32 {
 
 @fragment
 fn fragment(input: UiVertexOutput) -> @location(0) vec4<f32> {
-    let point = input.uv * input.size;
+    let point = input.uv * input.size * wire.inverse_scale;
     var distance = 100000.0;
     var previous = wire.start;
     for (var index = 1u; index <= 32u; index += 1u) {

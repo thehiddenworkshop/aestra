@@ -67,6 +67,7 @@ const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod asset_drop;
 mod asset_preview;
 mod function_layout;
+pub(crate) mod insertion;
 mod layout_lifecycle;
 pub(crate) mod presentation;
 pub(crate) use asset_preview::render_material_asset_preview;
@@ -114,6 +115,7 @@ fn reset_graph_document_transients(
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
+        insertion::register(app);
         layout_lifecycle::register_notice(app);
         app.configure_sets(
             Update,
@@ -2316,6 +2318,7 @@ fn update_material_graph_wires(
     catalog: Res<ProjectEffectCatalog>,
     selection: Res<MaterialGraphSelectionState>,
     mut gesture: ResMut<MaterialGraphGesture>,
+    insertion: Option<Res<crate::feathers::node_graph::insertion::State>>,
 ) {
     // Socket offsets are graph-local and invariant under pan and zoom. Cache them after layout,
     // then project from graph state directly so a render frame can never mix UI transforms from
@@ -2361,7 +2364,7 @@ fn update_material_graph_wires(
         };
         // Project through the viewport that owns this wire, not the first one for the program, so
         // both views of a program place their wires with their own pan/zoom.
-        let Some((marker, viewport, _, _)) = wire_viewport(entity, &parents, &wire_layers)
+        let Some((marker, viewport, computed, _)) = wire_viewport(entity, &parents, &wire_layers)
             .and_then(|viewport_entity| viewports.get(viewport_entity).ok())
         else {
             continue;
@@ -2382,6 +2385,8 @@ fn update_material_graph_wires(
             end,
             if detached {
                 Vec4::ZERO
+            } else if let Some(color) = insertion.as_ref().and_then(|state| state.color(entity)) {
+                color
             } else if selected {
                 Vec4::new(0.70, 0.50, 1.0, 1.0)
             } else {
@@ -2389,11 +2394,17 @@ fn update_material_graph_wires(
             },
             if detached {
                 0.0
-            } else if selected {
+            } else if selected
+                || insertion
+                    .as_ref()
+                    .and_then(|state| state.color(entity))
+                    .is_some()
+            {
                 4.0
             } else {
                 2.0
             },
+            computed.inverse_scale_factor,
         );
     }
 
@@ -2467,18 +2478,26 @@ fn update_material_graph_wires(
         } else {
             Vec4::new(0.76, 0.70, 0.92, 0.72)
         };
-        update_wire_material(&mut materials, &material.0, start, end, color, 2.5);
+        update_wire_material(
+            &mut materials,
+            &material.0,
+            start,
+            end,
+            color,
+            2.5,
+            computed.inverse_scale_factor,
+        );
     }
 }
 
-fn viewport_local_position(
+pub(crate) fn viewport_local_position(
     computed: &ComputedNode,
     transform: &UiGlobalTransform,
     world_position: Vec2,
 ) -> Vec2 {
     transform.try_inverse().map_or(world_position, |inverse| {
         inverse.transform_point2(world_position) + computed.size() * 0.5
-    })
+    }) * computed.inverse_scale_factor
 }
 
 /// The viewport entity that owns a wire (or ghost wire): the wire is a child of a graph wire layer,
@@ -2530,32 +2549,7 @@ fn collect_socket_positions(
 }
 
 fn distance_to_graph_wire(point: Vec2, start: Vec2, end: Vec2) -> f32 {
-    let control = (end.x - start.x).abs().mul_add(0.5, 54.0).min(220.0);
-    let control_start = start + Vec2::new(control, 0.0);
-    let control_end = end - Vec2::new(control, 0.0);
-    let mut distance = f32::INFINITY;
-    let mut previous = start;
-    for index in 1..=32 {
-        let t = index as f32 / 32.0;
-        let inverse = 1.0 - t;
-        let sample = start * inverse.powi(3)
-            + control_start * (3.0 * inverse.powi(2) * t)
-            + control_end * (3.0 * inverse * t.powi(2))
-            + end * t.powi(3);
-        distance = distance.min(distance_to_segment(point, previous, sample));
-        previous = sample;
-    }
-    distance
-}
-
-fn distance_to_segment(point: Vec2, start: Vec2, end: Vec2) -> f32 {
-    let segment = end - start;
-    let length_squared = segment.length_squared();
-    if length_squared <= f32::EPSILON {
-        return point.distance(start);
-    }
-    let t = ((point - start).dot(segment) / length_squared).clamp(0.0, 1.0);
-    point.distance(start + segment * t)
+    crate::feathers::node_graph::insertion::distance_to_wire(point, start, end)
 }
 
 fn set_wire_points(material: &mut GraphWireMaterial, start: Vec2, end: Vec2) {
@@ -2573,6 +2567,7 @@ pub(crate) fn update_wire_material(
     end: Vec2,
     color: Vec4,
     width: f32,
+    inverse_scale: f32,
 ) {
     const POSITION_EPSILON_SQUARED: f32 = 0.0001;
     let unchanged = materials.get(handle).is_some_and(|material| {
@@ -2580,6 +2575,7 @@ pub(crate) fn update_wire_material(
             && material.end.distance_squared(end) <= POSITION_EPSILON_SQUARED
             && material.color == color
             && material.width == width
+            && material.inverse_scale == inverse_scale
     });
     if unchanged {
         return;
@@ -2588,6 +2584,7 @@ pub(crate) fn update_wire_material(
         set_wire_points(&mut material, start, end);
         material.color = color;
         material.width = width;
+        material.inverse_scale = inverse_scale;
     }
 }
 
@@ -4600,6 +4597,7 @@ fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphPro
                 target,
                 color: wire_color(edge.value_type),
             },
+            crate::feathers::node_graph::insertion::Wire::material(edge.source, target),
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
