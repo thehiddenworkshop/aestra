@@ -1989,3 +1989,54 @@ budget without effect changes. All-target editor checking, strict all-target Cli
 warnings denied, full-workspace `cargo fmt --all -- --check` and diff checks passed using
 the supported 1.98.1 MSVC toolchain. No dependency versions changed; the editor directly
 reuses existing glTF/base64 packages and serde_json for fixtures.
+
+### AB9d — static saved-effect thumbnails — 2026-09-13
+
+Project effect rows now request a deterministic native-GPU capture through the bounded
+thumbnail service. This is a static saved-state preview, not animated hover or playback
+of an open draft. The root sample is half its duration, capped at two seconds, with a
+fixed seed. Nested instance timing/overrides and inherited host motion use the runtime
+scheduler. A 60 Hz history-prefix bound includes trail tails instead of framing only heads.
+
+- One offscreen capture slot counts within the shared two-work-item budget. Results
+  join the existing 128-entry LRU; page/root/content changes cancel work and reject
+  stale task and screenshot completions. Hidden browser pages do not keep rendering.
+- A separate 128×128 camera and player entities use layer 30 (viewport 0, gizmos 15,
+  UI 31). Native GPU observations must reach the seek target, textures must be uploaded,
+  and pipelines must settle before capture. A 30-second timeout retains the type icon
+  with diagnostic feedback. Global pipeline readiness is intentionally conservative.
+- Textures are bounded, root-confined worker decodes, supplied through instance-owned
+  `PresentedEffect` texture overrides. Neither shared texture loads/reloads nor changes
+  to active editor playback are needed. This also prevents stale shared texture handles
+  from hiding a newly published source revision. CPU and semantic/legacy GPU binding
+  paths honor the optional overrides; ordinary players retain their existing behavior.
+- Temporary players, camera, render target and decoded texture assets are released after
+  capture/cancellation. No source writes, draft changes, selection changes, history
+  entries or thumbnail disk cache are introduced.
+- Work limits: 16 expanded effect instances, 4096 scheduled particles, four seconds of
+  local history, 32768 trail points, eight textures, 16 million aggregate texture pixels,
+  4096 per texture edge and 16 MiB per texture/root-effect source. Materials are limited to 256 expressions.
+  Sprite/flipbook/ribbon/trail effects are supported. Mesh-rendered and vertex-displaced
+  effects, material function/custom-WESL calls and unsupported/oversized inputs explicitly
+  fall back. Unrelated function-library entries do not block an otherwise supported effect.
+  Compiler/decoder allocations, temporary textures and renderer/shader-cache storage are
+  additional to the cached-thumbnail pixel budget; it is not a hard process-memory cap.
+
+The opt-in `native_gpu_trail_thumbnail_captures_pixels_and_cleans_up` test ran successfully
+on this host with no window. It captured visible Trail Lab shading, checked dimensions
+and image variation, and verified that temporary entities/images were removed. The
+generated `target/asset-thumbnail-smoke/trail.png` was inspected. GPU readback shutdown
+warnings were emitted after the test; no capture or cleanup assertion failed.
+
+Native ergonomic acceptance remains pending: inspect grid/list thumbnails, compare the
+saved sampled effect with its image, change/save a texture and refresh, and switch pages
+or projects during capture while checking that playback, camera and drafts are unchanged.
+The offscreen test does not establish responsiveness under a large active GPU workload.
+
+Final verification: 818 editor unit tests and the architecture test passed (three opt-in
+tests skipped in the ordinary run; the new GPU capture test was also run explicitly and
+passed). All 88 renderer unit/conformance tests passed. Strict all-target Clippy for both
+editor and renderer, full-workspace formatting and diff checks passed on Rust 1.98.1 MSVC.
+Regression coverage includes deterministic sampling/framing, cancellation/limits, no-GPU
+fallback without document changes, real trail history, fresh isolated texture pixels and
+unsafe paths, per-instance texture override ownership, and native capture/cleanup.

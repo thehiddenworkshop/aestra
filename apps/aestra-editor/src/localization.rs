@@ -96,6 +96,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "browser-thumbnail-loading",
     "browser-material-thumbnail-ready",
     "browser-mesh-thumbnail-ready",
+    "browser-effect-thumbnail-ready",
     "browser-thumbnail-error",
     "browser-open-usage",
     "browser-recovery-title",

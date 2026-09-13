@@ -865,5 +865,6 @@ browser-thumbnail-ready = Texture preview
 browser-thumbnail-loading = Loading preview…
 browser-material-thumbnail-ready = Material preview — saved defaults and synthetic inputs, independent of the active effect.
 browser-mesh-thumbnail-ready = Static mesh geometry — automatically framed with neutral lighting. Materials and animation are not shown.
+browser-effect-thumbnail-ready = Saved effect — fixed seed, sampled halfway through its duration (up to 2 seconds). Automatically framed particle/trail history; no live edits or animation.
 browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip

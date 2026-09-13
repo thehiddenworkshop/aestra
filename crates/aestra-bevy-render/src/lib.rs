@@ -22,14 +22,14 @@ pub use capabilities::{
 use crate::material::{
     MaterialBindingContext, MaterialBindingError, MaterialRuntimeBinding, compile_material_program,
 };
-use aestra_core::{EmitterId, MaterialId, MaterialProgramId};
+use aestra_core::{AssetId, EmitterId, MaterialId, MaterialProgramId};
 use aestra_gpu::material::CompiledMaterialProgram;
 use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
 use bevy::{
     ecs::schedule::IntoScheduleConfigs,
     prelude::{
-        App, AssetServer, Component, Entity, Image, Plugin, Res, Resource, Transform, Update,
-        Visibility, Without,
+        App, AssetServer, Component, Entity, Handle, Image, Plugin, Res, Resource, Transform,
+        Update, Visibility, Without,
     },
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
@@ -78,6 +78,7 @@ impl Default for AestraRenderSettings {
 pub struct PresentedEffect {
     pub instance: EffectInstance,
     render_mode: EffectRenderMode,
+    texture_overrides: BTreeMap<AssetId, Handle<Image>>,
     material_bindings: BTreeMap<MaterialId, MaterialRuntimeBinding>,
     compiled_material_programs: BTreeMap<MaterialProgramId, Arc<CompiledMaterialProgram>>,
     automatic_material_bindings: BTreeMap<(EmitterId, MaterialId), MaterialRuntimeBinding>,
@@ -91,6 +92,7 @@ impl PresentedEffect {
         let mut presented = Self {
             instance: EffectInstance::new(effect),
             render_mode: EffectRenderMode::Rendered,
+            texture_overrides: BTreeMap::new(),
             material_bindings: BTreeMap::new(),
             compiled_material_programs: BTreeMap::new(),
             automatic_material_bindings: BTreeMap::new(),
@@ -104,6 +106,17 @@ impl PresentedEffect {
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
         self.instance.effect()
+    }
+
+    /// Supplies an instance-owned image instead of loading its registry path. Configure before
+    /// spawning/preparing the player. Useful for isolated previews without replacing shared assets.
+    pub fn with_texture_overrides(mut self, textures: BTreeMap<AssetId, Handle<Image>>) -> Self {
+        self.texture_overrides = textures;
+        self
+    }
+
+    pub(crate) fn texture_override(&self, asset: AssetId) -> Option<&Handle<Image>> {
+        self.texture_overrides.get(&asset)
     }
 
     pub fn simulation_time(&self) -> f32 {
@@ -339,6 +352,25 @@ mod texture_root_tests {
         asset::{AssetApp, AssetPlugin},
         prelude::*,
     };
+
+    #[test]
+    fn texture_overrides_are_owned_by_one_presentation_not_the_shared_effect() {
+        let effect = Arc::new(
+            aestra_compiler::EffectCompiler::default()
+                .compile(&aestra_core::EffectAsset::new("Preview", 3.0))
+                .unwrap(),
+        );
+        let asset = aestra_core::AssetId::from_u128(123);
+        let mut images = Assets::<Image>::default();
+        let handle = images.add(Image::default());
+        let active = PresentedEffect::new(effect.clone());
+        let preview = PresentedEffect::new(effect.clone())
+            .with_texture_overrides(BTreeMap::from([(asset, handle.clone())]));
+        assert!(active.texture_override(asset).is_none());
+        assert_eq!(preview.texture_override(asset), Some(&handle));
+        assert!(Arc::ptr_eq(active.effect(), preview.effect()));
+        assert!(effect.assets.is_empty());
+    }
 
     #[test]
     fn switching_projects_does_not_reuse_the_previous_texture_handle() {

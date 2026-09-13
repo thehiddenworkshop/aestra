@@ -162,7 +162,7 @@ fn content_refresh_and_root_switch_reject_stale_completions_and_release_images()
     assert!(cache.entries.is_empty());
 }
 
-fn finish_jobs(app: &mut App) {
+pub(super) fn finish_jobs(app: &mut App) {
     let jobs = std::mem::take(&mut app.world_mut().resource_mut::<ThumbnailCache>().jobs);
     for job in jobs {
         let result = future::block_on(job.task);
@@ -171,7 +171,10 @@ fn finish_jobs(app: &mut App) {
                 cache.accept(
                     job.source,
                     &job.epoch,
-                    result,
+                    result.and_then(|work| match work {
+                        Work::Pixels(bytes) => Ok(bytes),
+                        Work::Effect(_) => Err("No GPU in this test".into()),
+                    }),
                     &mut world.resource_mut::<Assets<Image>>(),
                 );
             });
@@ -256,6 +259,7 @@ fn cancelled_workers_still_count_toward_the_global_worker_limit() {
                 epoch: epoch.clone(),
                 cancelled: flag,
                 task: IoTaskPool::get().spawn(future::pending()),
+                effect: false,
             });
     }
     app.world_mut()

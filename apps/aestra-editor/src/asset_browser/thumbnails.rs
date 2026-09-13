@@ -1,4 +1,5 @@
 //! Read-only, bounded previews of the current project page. No AssetServer full-size loads.
+mod effect;
 mod mesh;
 use super::{
     panel,
@@ -32,6 +33,7 @@ const DECODE_LIMIT: u64 = 64 * 1024 * 1024;
 type Epoch = (PathBuf, ProjectContentVersion);
 
 pub(super) fn register(app: &mut App) {
+    effect::register(app);
     app.init_resource::<ThumbnailCache>().add_systems(
         Update,
         update
@@ -54,13 +56,19 @@ struct Job {
     source: ProjectSourceId,
     epoch: Epoch,
     cancelled: Arc<AtomicBool>,
-    task: Task<Result<Vec<u8>, String>>,
+    task: Task<Result<Work, String>>,
+    effect: bool,
+}
+enum Work {
+    Pixels(Vec<u8>),
+    Effect(Box<effect::Prepared>),
 }
 #[derive(Resource, Default)]
 struct ThumbnailCache {
     epoch: Option<Epoch>,
     entries: BTreeMap<ProjectSourceId, Entry>,
     jobs: Vec<Job>,
+    gpu: Option<effect::GpuJob>,
     tick: u64,
 }
 impl ThumbnailCache {
@@ -228,11 +236,19 @@ fn update(
     nodes: Query<&Node>,
     parents: Query<&ChildOf>,
     locale: Res<Localizer>,
+    render: effect::Context,
 ) {
     let Some(mut images) = images else {
         return;
     };
     let epoch = (catalog.root().to_owned(), catalog.content_revision());
+    if cache.gpu.as_ref().is_some_and(|job| job.epoch != epoch) {
+        cache
+            .gpu
+            .take()
+            .unwrap()
+            .cleanup(&mut commands, &mut images);
+    }
     cache.reset(epoch.clone(), &mut images);
     cache.tick = cache.tick.wrapping_add(1);
     let wanted = thumbnails
@@ -249,6 +265,17 @@ fn update(
         })
         .map(|(_, thumbnail)| thumbnail.source)
         .collect::<BTreeSet<_>>();
+    if let Some(mut job) = cache.gpu.take() {
+        if !wanted.contains(&job.source) {
+            cache.entries.remove(&job.source);
+            job.cleanup(&mut commands, &mut images);
+        } else if let Some(result) = job.poll(&mut commands, &render) {
+            cache.accept(job.source, &job.epoch, result, &mut images);
+            job.cleanup(&mut commands, &mut images);
+        } else {
+            cache.gpu = Some(job);
+        }
+    }
     for job in &cache.jobs {
         if !wanted.contains(&job.source) {
             job.cancelled.store(true, Ordering::Relaxed);
@@ -258,7 +285,27 @@ fn update(
         if let Some(result) = future::block_on(future::poll_once(&mut cache.jobs[index].task)) {
             let job = cache.jobs.swap_remove(index);
             if !job.cancelled.load(Ordering::Relaxed) && wanted.contains(&job.source) {
-                cache.accept(job.source, &job.epoch, result, &mut images);
+                match result {
+                    Ok(Work::Effect(prepared)) => {
+                        cache.gpu = Some(effect::GpuJob::start(
+                            *prepared,
+                            job.source,
+                            job.epoch,
+                            &mut commands,
+                            &mut images,
+                            &render,
+                        ));
+                    }
+                    result => cache.accept(
+                        job.source,
+                        &job.epoch,
+                        result.and_then(|work| match work {
+                            Work::Pixels(bytes) => Ok(bytes),
+                            Work::Effect(_) => unreachable!(),
+                        }),
+                        &mut images,
+                    ),
+                }
             } else if cache.epoch.as_ref() == Some(&job.epoch) {
                 cache.entries.remove(&job.source);
             }
@@ -270,21 +317,38 @@ fn update(
             entry.touched = tick;
             continue;
         }
-        if cache.jobs.len() >= WORKERS || !cache.room(&wanted, &mut images) {
+        if cache.jobs.len() + usize::from(cache.gpu.is_some()) >= WORKERS
+            || !cache.room(&wanted, &mut images)
+        {
             continue;
         }
-        let Some(entry) = catalog
-            .content()
-            .source(*source)
-            .filter(|entry| matches!(Kind::of(entry), Kind::Texture | Kind::Material | Kind::Mesh))
-        else {
+        let Some(entry) = catalog.content().source(*source).filter(|entry| {
+            matches!(
+                Kind::of(entry),
+                Kind::Texture | Kind::Material | Kind::Mesh | Kind::Effect
+            )
+        }) else {
             continue;
         };
+        let is_effect = Kind::of(entry) == Kind::Effect;
+        if is_effect && (cache.gpu.is_some() || cache.jobs.iter().any(|job| job.effect)) {
+            continue;
+        }
         let root = catalog.root().to_owned();
         let relative = entry.relative_path.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
-        let task = if Kind::of(entry) == Kind::Material {
+        let task = if is_effect {
+            let saved = if render.enabled() {
+                effect::saved(catalog.content(), *source)
+            } else {
+                Err("Effect thumbnails require the native GPU renderer".into())
+            };
+            IoTaskPool::get().spawn(async move {
+                effect::prepare(saved?, &root, &flag)
+                    .map(|prepared| Work::Effect(Box::new(prepared)))
+            })
+        } else if Kind::of(entry) == Kind::Material {
             // Resolve the saved snapshot, not working drafts or a second disk read. Ambiguous
             // identities fail instead of previewing another source's material.
             let program = saved_material(catalog.content(), *source);
@@ -293,17 +357,21 @@ fn update(
                 crate::material_graph::render_material_asset_preview(&program, EDGE, || {
                     flag.load(Ordering::Relaxed)
                 })
+                .map(Work::Pixels)
             })
         } else if Kind::of(entry) == Kind::Mesh {
-            IoTaskPool::get().spawn(async move { mesh::render(&root, &relative, &flag) })
+            IoTaskPool::get()
+                .spawn(async move { mesh::render(&root, &relative, &flag).map(Work::Pixels) })
         } else {
-            IoTaskPool::get().spawn(async move { decode(&root, &relative, &flag) })
+            IoTaskPool::get()
+                .spawn(async move { decode(&root, &relative, &flag).map(Work::Pixels) })
         };
         cache.jobs.push(Job {
             source: *source,
             epoch: epoch.clone(),
             cancelled,
             task,
+            effect: is_effect,
         });
         cache.entries.insert(
             *source,
@@ -347,6 +415,7 @@ fn update(
                 locale.text(match thumbnail.kind {
                     Kind::Material => "browser-material-thumbnail-ready",
                     Kind::Mesh => "browser-mesh-thumbnail-ready",
+                    Kind::Effect => "browser-effect-thumbnail-ready",
                     _ => "browser-thumbnail-ready",
                 })
             }

@@ -176,9 +176,14 @@ pub(crate) fn present_cpu_effects(
                     .iter()
                     .find(|asset| asset.source == texture)
             {
-                let handle = textures
-                    .texture_cache
-                    .load(&textures.asset_server, &asset.path);
+                let handle = effect
+                    .texture_override(texture)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        textures
+                            .texture_cache
+                            .load(&textures.asset_server, &asset.path)
+                    });
                 if let Some(image) = textures.images.get(&handle) {
                     let image_size = image.size_f32();
                     sprite.rect = Some(Rect::from_corners(

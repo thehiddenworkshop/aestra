@@ -865,5 +865,6 @@ browser-thumbnail-ready = Aperçu de la texture
 browser-thumbnail-loading = Chargement de l’aperçu…
 browser-material-thumbnail-ready = Aperçu du matériau — valeurs enregistrées et entrées synthétiques, indépendant de l’effet actif.
 browser-mesh-thumbnail-ready = Géométrie statique — cadrage automatique et éclairage neutre. Matériaux et animations non affichés.
+browser-effect-thumbnail-ready = Effet enregistré — graine fixe, échantillonné à mi-durée (2 secondes maximum). Cadrage automatique des particules et traînées ; sans modifications en cours ni animation.
 browser-thumbnail-error = Aperçu indisponible. Voir la raison ci-dessous.
 browser-open-usage = Ouvrir l’effet propriétaire et sélectionner ce clip

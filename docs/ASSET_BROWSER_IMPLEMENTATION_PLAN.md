@@ -1,7 +1,7 @@
 # Asset Browser delivery plan
 
 Status: updated 2026-09-13. AB8b3 canonical-browser cutover is implemented and
-user-accepted. AB9a texture, AB9b saved-material and AB9c static-mesh thumbnails are implemented; verification and native acceptance
+user-accepted. AB9a texture, AB9b saved-material, AB9c static-mesh and AB9d static-effect thumbnails are implemented; verification and native acceptance
 are tracked below. The following historical delivery record retains its original caveats.
 
 AB0 contracts/inventory recorded and AB1
@@ -117,7 +117,7 @@ AB7f's shared Properties asset picker is implemented; native acceptance is pendi
 AB7g's Built-ins and Current Document virtual sources are implemented; native acceptance
 is pending in the historical per-flow record. AB8 parity review and Library removal are
 now implemented; the user accepted the cutover on 2026-09-12. AB9a thumbnails are the
-previous slice. AB9b adds saved-material thumbnails and AB9c adds static-mesh thumbnails;
+previous slice. AB9b adds saved-material, AB9c static-mesh and AB9d static-effect thumbnails;
 remaining AB9 features are deferred.
 Do not count unavailable platform tests as verified.
 
@@ -880,7 +880,41 @@ cancel between loading, traversal and raster stages; old root/revision results c
 publish. Any published content revision, including an external buffer update, invalidates
 cached previews. Bad offsets/indices, non-finite data, unsupported primitive types,
 sparse/compressed geometry, skins/morphs and oversized sources use error fallbacks.
-Effect previews and richer scene/material previews remain separate AB9 work.
+Richer scene/material previews remain separate AB9 work.
+
+**AB9d — static saved-effect thumbnails (implemented; native acceptance pending):**
+Project effect rows use the shared 128-entry cache, with one native GPU capture slot
+counted within the two-work-item budget. The worker resolves/compiles saved snapshots,
+uses a fixed seed, and samples half the root duration capped at two seconds. A dedicated
+128×128 offscreen camera and effect players use render layer 30, separate from viewport,
+gizmos and UI. Playback, drafts, documents, source files and Undo history are not edited.
+After capture, all temporary players/camera/target are released; only the square RGBA
+thumbnail remains. Root/revision/page cancellation removes temporary scenes and rejects
+late screenshot callbacks. There is no disk cache or animated-hover preview.
+
+Sprite, flipbook, ribbon and trail rendering uses the existing native renderer. Framing
+includes a sampled 60 Hz history prefix and inherited host transforms, not just live
+particle heads. GPU statistics must reach the exact target time (including seek replay),
+textures must load, and shader pipelines must settle before capture. A 30-second timeout
+produces an explained fallback. Pipeline readiness is conservative/global: unrelated
+shader compilation may delay a capture. CPU-reference mode does not silently substitute
+an incomplete trail/mesh render.
+
+Limits include 16 expanded effect instances, 4096 scheduled particles, four seconds of
+local history, 32768 trail points, eight raster textures (4096 per edge, 16 million total
+pixels, 16 MiB per texture/root-effect source), and 256 expressions per material. Local texture paths
+are read/decoded on the worker with the bounded root-confined reader. Job-owned image
+handles override textures only on the thumbnail's players; shared AssetServer textures
+are neither loaded nor replaced. Mesh-rendered or vertex-displaced effects and material
+function/custom-WESL calls currently retain an explained type-icon
+fallback. Static glTF/GLB asset thumbnails from AB9c are unaffected. Input parsing/compiler
+allocations, temporary decoded textures, shared shader caches and GPU renderer working storage are additional
+to the shared thumbnail-pixel budget; this is not a hard total-memory guarantee.
+
+Native acceptance: compare static thumbnails with the sampled saved effect (including
+Trail Lab), verify square framing in list/grid, and browse/switch projects while capturing.
+Check that active playback, camera, drafts and selection do not change. Automated native
+GPU capture is opt-in and does not replace this ergonomic/visual acceptance gate.
 
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
@@ -926,6 +960,6 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. On 2026-09-12, the user accepted the canonical browser with “everything is fine”
 and requested the next step. This records user acceptance of AB8b3, not an independently
-observed execution of every earlier native checklist item. **Current step (P2):** AB9c
-static-mesh thumbnails, following committed AB9a/AB9b. Complete automated verification and
+observed execution of every earlier native checklist item. **Current step (P2):** AB9d
+static saved-effect thumbnails, following committed AB9a–AB9c. Complete automated verification and
 native thumbnail acceptance before the remaining AB9 browsing features.

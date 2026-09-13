@@ -246,7 +246,7 @@ impl MaterialPreparationParams<'_> {
     fn prepare(
         &mut self,
         binding: &MaterialRuntimeBinding,
-        effect: &aestra_runtime::CompiledEffect,
+        effect: &PresentedEffect,
     ) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
         let _span = tracing::info_span!("aestra::gpu::material_prepare").entered();
         prepare_semantic_material(
@@ -459,7 +459,7 @@ pub(crate) fn prepare_gpu_effects(
                 let runtime_binding =
                     player.material_binding_for_emitter(plan.material, emitter.source);
                 let semantic_material = runtime_binding
-                    .map(|binding| material_resources.prepare(binding, player.effect()))
+                    .map(|binding| material_resources.prepare(binding, &player))
                     .transpose()
                     .map_err(|error| {
                         warn!(
@@ -489,22 +489,29 @@ pub(crate) fn prepare_gpu_effects(
                         .find(|asset| asset.source == texture)
                         .map(|asset| asset.path.clone())
                 });
-                let (texture, fallback_texture) = texture_path.map_or_else(
-                    || {
-                        (
-                            material_resources.fallback_textures.white.clone(),
-                            material_resources.fallback_textures.white.clone(),
+                let overridden = texture
+                    .and_then(|asset| player.texture_override(asset))
+                    .cloned();
+                let (texture, fallback_texture) = overridden
+                    .map(|image| (image, material_resources.fallback_textures.missing.clone()))
+                    .unwrap_or_else(|| {
+                        texture_path.map_or_else(
+                            || {
+                                (
+                                    material_resources.fallback_textures.white.clone(),
+                                    material_resources.fallback_textures.white.clone(),
+                                )
+                            },
+                            |path| {
+                                (
+                                    material_resources
+                                        .texture_cache
+                                        .load(&material_resources.asset_server, &path),
+                                    material_resources.fallback_textures.missing.clone(),
+                                )
+                            },
                         )
-                    },
-                    |path| {
-                        (
-                            material_resources
-                                .texture_cache
-                                .load(&material_resources.asset_server, &path),
-                            material_resources.fallback_textures.missing.clone(),
-                        )
-                    },
-                );
+                    });
                 (
                     index as u32,
                     renderer.emitter_index,
@@ -987,7 +994,7 @@ fn update_gpu_inputs(
                     if let Some(binding) = emitter.and_then(|emitter| {
                         player.material_binding_for_emitter(draw.material, emitter)
                     }) {
-                        match material_resources.prepare(binding, player.effect()) {
+                        match material_resources.prepare(binding, &player) {
                             Ok(prepared) => {
                                 draw.blend = gpu_blend(binding.render_state().blend);
                                 draw.semantic_material = Some(prepared);
@@ -1279,7 +1286,7 @@ fn sync_gpu_render_transforms(
 
 fn prepare_semantic_material(
     binding: &MaterialRuntimeBinding,
-    effect: &aestra_runtime::CompiledEffect,
+    effect: &PresentedEffect,
     asset_server: &AssetServer,
     texture_cache: &mut TextureAssetCache,
     fallback_textures: &GpuFallbackTextures,
@@ -1320,12 +1327,15 @@ fn prepare_semantic_material(
         .textures
         .into_iter()
         .map(|(_, asset)| {
-            effect
-                .assets
-                .iter()
-                .find(|candidate| candidate.source == asset)
-                .map(|asset| texture_cache.load(asset_server, &asset.path))
-                .unwrap_or_else(|| fallback_textures.missing.clone())
+            effect.texture_override(asset).cloned().unwrap_or_else(|| {
+                effect
+                    .effect()
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.source == asset)
+                    .map(|asset| texture_cache.load(asset_server, &asset.path))
+                    .unwrap_or_else(|| fallback_textures.missing.clone())
+            })
         })
         .collect();
     Ok(GpuSemanticMaterialBinding {
