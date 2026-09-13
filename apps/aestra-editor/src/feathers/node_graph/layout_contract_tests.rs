@@ -5,6 +5,51 @@ use bevy::{
     picking::pointer::{Location, PointerId},
 };
 
+#[test]
+fn effective_offsets_survive_ui_rebuild_without_becoming_base_positions() {
+    let key = "function:project:f";
+    let base = Vec2::new(70.0, 30.0);
+    let offset = Vec2::new(90.0, 140.0);
+    let mut app = App::new();
+    let mut memory = GraphViewportMemory::default();
+    memory.set_node(key, "n", base, false);
+    assert!(memory.set_temporary_offset(key, "n", offset));
+    // Replacing the same derived offset must not compound it.
+    assert!(memory.set_temporary_offset(key, "n", offset));
+    app.insert_resource(memory);
+    for _ in 0..2 {
+        let entity = app
+            .world_mut()
+            .spawn((node(key, "n"), Node::default()))
+            .id();
+        app.world_mut()
+            .run_system_once(restore_graph_nodes)
+            .unwrap();
+        assert_eq!(
+            app.world()
+                .get::<FeathersGraphNode>(entity)
+                .unwrap()
+                .position,
+            base + offset
+        );
+        let mut memory = app.world_mut().resource_mut::<GraphViewportMemory>();
+        memory.set_collapsed(key, "n", base + offset, true);
+        assert_eq!(memory.node(key, "n"), Some((base, true)));
+        assert_eq!(memory.node_position(key, "n"), Some(base + offset));
+        app.world_mut().despawn(entity);
+    }
+    let mut memory = app.world_mut().resource_mut::<GraphViewportMemory>();
+    assert!(!memory.set_temporary_offset(key, "missing", offset));
+    assert!(!memory.set_temporary_offset(key, "n", Vec2::splat(f32::NAN)));
+    // A manual placement becomes the new base and supersedes old temporary placement.
+    memory.set_node(key, "n", Vec2::new(250.0, 60.0), false);
+    assert_eq!(memory.node_position(key, "n"), Some(Vec2::new(250.0, 60.0)));
+    memory.set_temporary_offset(key, "n", offset);
+    memory.remove_node(key, "n");
+    memory.set_node(key, "n", base, false);
+    assert_eq!(memory.node_position(key, "n"), Some(base));
+}
+
 fn node(graph_key: &str, node_key: &str) -> FeathersGraphNode {
     FeathersGraphNode {
         graph_key: graph_key.into(),

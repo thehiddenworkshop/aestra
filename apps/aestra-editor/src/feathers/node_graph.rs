@@ -248,6 +248,7 @@ struct GraphView {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GraphNodeView {
+    /// Authored base position. Temporary display offsets must never be stored here.
     position: Vec2,
     collapsed: bool,
 }
@@ -256,6 +257,7 @@ struct GraphNodeView {
 pub(crate) struct GraphViewportMemory {
     views: HashMap<String, GraphView>,
     nodes: HashMap<(String, String), GraphNodeView>,
+    offsets: HashMap<(String, String), Vec2>,
 }
 
 impl GraphViewportMemory {
@@ -268,11 +270,13 @@ impl GraphViewportMemory {
     }
 
     pub(crate) fn node_position(&self, graph_key: &str, node_key: &str) -> Option<Vec2> {
+        let key = (graph_key.to_owned(), node_key.to_owned());
         self.nodes
-            .get(&(graph_key.to_owned(), node_key.to_owned()))
-            .map(|node| node.position)
+            .get(&key)
+            .map(|node| node.position + self.offsets.get(&key).copied().unwrap_or(Vec2::ZERO))
     }
 
+    /// Persistent base position and collapse state, never the displayed/effective position.
     pub(crate) fn node(&self, graph_key: &str, node_key: &str) -> Option<(Vec2, bool)> {
         self.nodes
             .get(&(graph_key.to_owned(), node_key.to_owned()))
@@ -286,8 +290,10 @@ impl GraphViewportMemory {
         position: Vec2,
         collapsed: bool,
     ) {
+        let key = (graph_key.into(), node_key.into());
+        self.offsets.remove(&key);
         self.nodes.insert(
-            (graph_key.into(), node_key.into()),
+            key,
             GraphNodeView {
                 position,
                 collapsed,
@@ -305,8 +311,45 @@ impl GraphViewportMemory {
     }
 
     pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
+        let key = (graph_key.to_owned(), node_key.to_owned());
+        self.nodes.remove(&key);
+        self.offsets.remove(&key);
+    }
+
+    /// Internal seam for M4/M5. No production solver writes offsets yet. Replacement rather than
+    /// accumulation keeps rebuild/remeasurement idempotent; cause composition belongs to M5.
+    #[allow(dead_code)]
+    pub(crate) fn set_temporary_offset(
+        &mut self,
+        graph_key: &str,
+        node_key: &str,
+        offset: Vec2,
+    ) -> bool {
+        let key = (graph_key.to_owned(), node_key.to_owned());
+        let Some(node) = self.nodes.get(&key) else {
+            return false;
+        };
+        if !offset.is_finite() || !(node.position + offset).is_finite() {
+            return false;
+        }
+        if offset == Vec2::ZERO {
+            self.offsets.remove(&key);
+        } else {
+            self.offsets.insert(key, offset);
+        }
+        true
+    }
+
+    fn set_collapsed(&mut self, graph_key: &str, node_key: &str, fallback: Vec2, collapsed: bool) {
+        // Collapse changes presentation, not placement: preserve the base even while displaced.
+        let key = (graph_key.to_owned(), node_key.to_owned());
         self.nodes
-            .remove(&(graph_key.to_owned(), node_key.to_owned()));
+            .entry(key)
+            .or_insert(GraphNodeView {
+                position: fallback,
+                collapsed,
+            })
+            .collapsed = collapsed;
     }
 }
 
@@ -756,10 +799,13 @@ fn restore_graph_nodes(
         let Some(saved) = memory.nodes.get(&key) else {
             continue;
         };
-        graph_node.position = saved.position;
+        let position = memory
+            .node_position(&graph_node.graph_key, &graph_node.node_key)
+            .unwrap();
+        graph_node.position = position;
         graph_node.collapsed = saved.collapsed;
-        style.left = Val::Px(saved.position.x);
-        style.top = Val::Px(saved.position.y);
+        style.left = Val::Px(position.x);
+        style.top = Val::Px(position.y);
         apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
     }
 }
@@ -782,10 +828,13 @@ fn sync_graph_nodes_from_memory(
         let Some(saved) = memory.nodes.get(&key) else {
             continue;
         };
-        if graph_node.position != saved.position {
-            graph_node.position = saved.position;
-            style.left = Val::Px(saved.position.x);
-            style.top = Val::Px(saved.position.y);
+        let position = memory
+            .node_position(&graph_node.graph_key, &graph_node.node_key)
+            .unwrap();
+        if graph_node.position != position {
+            graph_node.position = position;
+            style.left = Val::Px(position.x);
+            style.top = Val::Px(position.y);
         }
         if graph_node.collapsed != saved.collapsed {
             graph_node.collapsed = saved.collapsed;
@@ -881,12 +930,11 @@ fn drag_graph_node(
     graph_node.position += graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
     style.left = Val::Px(graph_node.position.x);
     style.top = Val::Px(graph_node.position.y);
-    memory.nodes.insert(
-        (graph_node.graph_key.clone(), graph_node.node_key.clone()),
-        GraphNodeView {
-            position: graph_node.position,
-            collapsed: graph_node.collapsed,
-        },
+    memory.set_node(
+        graph_node.graph_key.clone(),
+        graph_node.node_key.clone(),
+        graph_node.position,
+        graph_node.collapsed,
     );
     override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
     drag.propagate(false);
@@ -980,13 +1028,7 @@ fn handle_graph_collapse_buttons(
         };
         node.collapsed = !node.collapsed;
         let collapsed = node.collapsed;
-        memory.nodes.insert(
-            (node.graph_key.clone(), node.node_key.clone()),
-            GraphNodeView {
-                position: node.position,
-                collapsed,
-            },
-        );
+        memory.set_collapsed(&node.graph_key, &node.node_key, node.position, collapsed);
         apply_graph_node_collapse(action.node, collapsed, &mut bodies, &mut icons);
         commands
             .entity(entity)

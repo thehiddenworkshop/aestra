@@ -1,6 +1,6 @@
 //! Optional project-local editor metadata kept separate from semantic assets.
 
-use aestra_core::{MaterialExpressionId, MaterialProgramId};
+use aestra_core::{MaterialExpressionId, MaterialFunctionId, MaterialProgramId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -10,7 +10,7 @@ use std::{
 };
 use tempfile::Builder as TempFileBuilder;
 
-pub const PROJECT_EDITOR_LAYOUT_FORMAT_VERSION: u32 = 1;
+pub const PROJECT_EDITOR_LAYOUT_FORMAT_VERSION: u32 = 2;
 pub const PROJECT_EDITOR_LAYOUT_DIRECTORY: &str = ".aestra";
 pub const PROJECT_EDITOR_LAYOUT_FILE: &str = "editor-layout.ron";
 
@@ -80,6 +80,9 @@ impl MaterialGraphLayoutMetadata {
 pub struct ProjectEditorLayout {
     pub format_version: u32,
     pub material_graphs: BTreeMap<MaterialProgramId, MaterialGraphLayoutMetadata>,
+    /// Function-input nodes use expression IDs; the synthetic signature output uses `output`.
+    /// Reuses the shared presentation schema; functions do not expose previews yet.
+    pub function_graphs: BTreeMap<MaterialFunctionId, MaterialGraphLayoutMetadata>,
 }
 
 impl Default for ProjectEditorLayout {
@@ -87,6 +90,7 @@ impl Default for ProjectEditorLayout {
         Self {
             format_version: PROJECT_EDITOR_LAYOUT_FORMAT_VERSION,
             material_graphs: BTreeMap::new(),
+            function_graphs: BTreeMap::new(),
         }
     }
 }
@@ -113,6 +117,12 @@ impl ProjectEditorLayout {
     }
 
     pub fn save(&self, project_root: impl AsRef<Path>) -> io::Result<()> {
+        if self.format_version > PROJECT_EDITOR_LAYOUT_FORMAT_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "cannot save a newer editor layout format",
+            ));
+        }
         let path = project_editor_layout_path(project_root);
         let parent = path.parent().expect("editor layout path has a parent");
         fs::create_dir_all(parent)?;
@@ -137,6 +147,11 @@ impl ProjectEditorLayout {
             .into_iter()
             .map(|(program, layout)| (program, layout.normalized()))
             .collect();
+        self.function_graphs = self
+            .function_graphs
+            .into_iter()
+            .map(|(function, layout)| (function, layout.normalized()))
+            .collect();
         self
     }
 }
@@ -152,6 +167,65 @@ pub fn project_editor_layout_path(project_root: impl AsRef<Path>) -> PathBuf {
 mod tests {
     use super::*;
     use crate::ProjectAssetIndex;
+
+    #[test]
+    fn version_one_material_layout_migrates_and_coexists_with_function_layout() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgramId::from_u128(1);
+        let function = MaterialFunctionId::from_u128(1);
+        let expression = MaterialExpressionId::from_u128(2);
+        let mut old = ProjectEditorLayout::default();
+        old.material_graphs
+            .entry(program)
+            .or_default()
+            .nodes
+            .insert(
+                expression,
+                MaterialGraphNodeLayout {
+                    position: [80.0, 35.0],
+                    collapsed: true,
+                },
+            );
+        let source = format!(
+            "(format_version: 1, material_graphs: {})",
+            ron::to_string(&old.material_graphs).unwrap()
+        );
+        let path = project_editor_layout_path(root.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, source.as_bytes()).unwrap();
+        let mut migrated = ProjectEditorLayout::load(root.path()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+        assert_eq!(migrated.material_graphs, old.material_graphs);
+        assert!(migrated.function_graphs.is_empty());
+        assert_eq!(
+            migrated.format_version,
+            PROJECT_EDITOR_LAYOUT_FORMAT_VERSION
+        );
+        let mut graph = migrated.material_graphs[&program].clone();
+        graph.output = Some(MaterialGraphNodeLayout {
+            position: [900.0, -25.0],
+            collapsed: false,
+        });
+        graph.viewport = Some(MaterialGraphViewportLayout {
+            pan: [24.0, -12.0],
+            zoom: 1.25,
+        });
+        migrated.function_graphs.insert(function, graph);
+        migrated.save(root.path()).unwrap();
+        assert_eq!(ProjectEditorLayout::load(root.path()).unwrap(), migrated);
+    }
+
+    #[test]
+    fn newer_in_memory_layout_cannot_be_downgraded_by_save() {
+        let root = tempfile::tempdir().unwrap();
+        let mut layout = ProjectEditorLayout::default();
+        layout.save(root.path()).unwrap();
+        let path = project_editor_layout_path(root.path());
+        let before = fs::read(&path).unwrap();
+        layout.format_version += 1;
+        assert!(layout.save(root.path()).is_err());
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
 
     #[test]
     fn project_editor_layout_round_trips_stable_material_ids() {

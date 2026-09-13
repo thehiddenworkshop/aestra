@@ -264,3 +264,51 @@ Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **850 editor tests passe
 Native-window visual acceptance remains separate from these headless tests. Next is
 **M3 — Base placement, persistence and presentation Undo**; GL03–GL08's placement,
 camera persistence, project-isolation and history work is not claimed by M2.
+
+## M3a implementation — Base placement and safe function persistence
+
+M3 is split into persistence foundations (M3a), project placement lifecycle (M3b), and
+focused presentation history (M3c). This entry does not claim the full M3 gate is done.
+
+- `GraphViewportMemory` keeps authored positions separately from an internal offset
+  map. `node()` returns persistent base state; `node_position()` returns effective display
+  placement. UI restore/synchronization uses effective positions, while persistence
+  reads only base state. Collapse preserves base and offset. A manual placement clears
+  the old offset; removal clears both. Offsets require an existing base, reject invalid
+  values, replace rather than accumulate, and are never serialized. No production
+  caller sets offsets; cause composition and displacement remain M4/M5 work.
+- `ProjectEditorLayout` format 2 adds `function_graphs`, reusing the material graph
+  metadata structure. Expressions (including signature-input expressions) retain stable
+  IDs; the synthetic output node has a separate entry. Position, collapse and camera
+  round-trip for graph-bodied functions. Custom WESL stays outside this canvas metadata.
+  Function preview fields are currently unused. Version-1 material data reads with an
+  empty function map and migrates on the next successful save, not on read.
+- Function restore uses the same project-qualified memory key as the canvas. Saving
+  visits catalog functions including retained drafts, independent of the active editor
+  target; removed expression IDs are pruned from metadata. Semantic function/material
+  source and effect state remain unchanged.
+- Function next-open cameras mirror only the registry's visible owner (focused, retained,
+  stable fallback). Sibling view cameras remain independent. Material camera mirroring
+  still has the baseline multi-view limitation and is assigned to M3b.
+- Failed/corrupt/newer layout loads latch a write block and retain an error. Debounced
+  saves, direct editor saves and exit flush cannot overwrite that file. Editor save also
+  rechecks disk readability/version in case it changed since startup. A newer in-memory
+  format cannot be silently downgraded by the project writer.
+- A catalog-root mismatch blocks automatic persistence and exit flush. This is a safety
+  guard, **not hot project-switch support**: reloading/clearing placement and previews for
+  a changed project is M3b. Explicit recovery for blocked metadata is also still pending;
+  repairing the file and restarting the editor lets it load normally.
+
+Tests cover base/effective separation through UI rebuild/collapse and material/function
+disk round-trips, the real function canvas after restart, inactive-function persistence,
+signature-label stability, stale expression pruning, focused/hidden camera owners,
+version-1 migration, and byte preservation after load errors, external newer metadata,
+root changes and exit flush. Native-window acceptance remains separate.
+
+Validation: **856 editor tests passed, 6 existing GPU tests ignored**; **9 project layout
+tests passed**. The architecture test, strict editor/project Clippy (`--all-targets --
+-D warnings`), workspace formatting and `git diff --check` pass with
+`cargo +1.98.1-x86_64-pc-windows-msvc`.
+
+Next: **M3b — Project placement lifecycle**, then **M3c — Focused presentation Undo**.
+No automatic movement or layout Undo is enabled by M3a.

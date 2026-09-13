@@ -494,7 +494,7 @@ pub(crate) fn spawn(
     let MaterialFunctionBodyProjection::Graph { nodes, edges } = projection.body else {
         return;
     };
-    let graph_key = format!("function:{}:{}", catalog.root().display(), function.id);
+    let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), function.id);
     // Placement stays document-scoped, but a toolbar frame action must target only its view.
     let viewport_key = view.map_or_else(
         || graph_key.clone(),

@@ -66,7 +66,9 @@ use std::{
 const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod asset_drop;
 mod asset_preview;
+mod function_layout;
 pub(crate) use asset_preview::render_material_asset_preview;
+pub(crate) use function_layout::function_graph_memory_key;
 const CANVAS_PADDING: f32 = 34.0;
 const NODE_GAP: f32 = 22.0;
 const SNAP_RADIUS: f32 = 38.0;
@@ -166,6 +168,7 @@ impl Plugin for EditorMaterialGraphPlugin {
                 Last,
                 (
                     mirror_material_graph_camera_to_document,
+                    function_layout::mirror_function_camera,
                     persist_material_graph_layout,
                     flush_material_graph_layout_on_exit,
                 )
@@ -527,6 +530,8 @@ struct MaterialGraphLayoutPersistence {
     persisted: ProjectEditorLayout,
     changed_at: Option<Instant>,
     last_error: Option<String>,
+    /// A failed load must not turn a future/corrupt file into a writable empty layout.
+    write_blocked: bool,
 }
 
 fn load_material_graph_layout(
@@ -536,22 +541,24 @@ fn load_material_graph_layout(
     mut previews: ResMut<MaterialGraphPreviewState>,
 ) {
     let root = catalog.root().to_owned();
-    let document = match ProjectEditorLayout::load(&root) {
-        Ok(document) => document,
+    let (document, load_error) = match ProjectEditorLayout::load(&root) {
+        Ok(document) => (document, None),
         Err(error) => {
             warn!(
                 "failed to load project material graph layout from {}: {error}",
                 root.display()
             );
-            ProjectEditorLayout::default()
+            (ProjectEditorLayout::default(), Some(error.to_string()))
         }
     };
     restore_material_graph_layouts(&document, &mut graph_memory, &mut previews);
+    function_layout::restore(&root, &document, &mut graph_memory);
     persistence.root = Some(root);
     persistence.persisted = document.clone();
     persistence.document = document;
     persistence.changed_at = None;
-    persistence.last_error = None;
+    persistence.write_blocked = load_error.is_some();
+    persistence.last_error = load_error;
 }
 
 /// Mirrors each open viewport's live per-view camera into its program's document-camera slot, so the
@@ -584,20 +591,34 @@ fn persist_material_graph_layout(
     previews: Res<MaterialGraphPreviewState>,
     mut persistence: ResMut<MaterialGraphLayoutPersistence>,
 ) {
+    // Do not combine another project's catalog/drafts with this session's loaded layout.
+    // Project memory/lifecycle migration is the next M3 slice; fail closed on root changes now.
+    if persistence.write_blocked || persistence.root.as_deref() != Some(catalog.root()) {
+        return;
+    }
     // Rebuild the layout document only when an input that feeds it changed. An idle graph (no edit,
     // pan, or node move) leaves all of these unchanged, so it does no per-frame work here.
-    if (graph_memory.is_changed()
+    if graph_memory.is_changed()
         || session.is_changed()
         || catalog.is_changed()
-        || previews.is_changed())
-        && let Ok(programs) = session.graph_material_programs(&catalog)
+        || previews.is_changed()
     {
-        update_material_graph_layout_document(
-            &mut persistence.document,
-            &programs,
-            &graph_memory,
-            &previews,
-        );
+        if let Ok(programs) = session.graph_material_programs(&catalog) {
+            update_material_graph_layout_document(
+                &mut persistence.document,
+                &programs,
+                &graph_memory,
+                &previews,
+            );
+        }
+        if let Ok(functions) = catalog.material_functions() {
+            function_layout::update(
+                catalog.root(),
+                &mut persistence.document,
+                &functions,
+                &graph_memory,
+            );
+        }
         if persistence.document == persistence.persisted {
             persistence.changed_at = None;
         } else {
@@ -614,17 +635,33 @@ fn persist_material_graph_layout(
 
 fn flush_material_graph_layout_on_exit(
     mut exits: MessageReader<AppExit>,
+    catalog: Res<ProjectEffectCatalog>,
     mut persistence: ResMut<MaterialGraphLayoutPersistence>,
 ) {
-    if exits.read().next().is_some() && persistence.document != persistence.persisted {
+    if exits.read().next().is_some()
+        && persistence.root.as_deref() == Some(catalog.root())
+        && persistence.document != persistence.persisted
+    {
         save_material_graph_layout(&mut persistence);
     }
 }
 
 fn save_material_graph_layout(persistence: &mut MaterialGraphLayoutPersistence) {
+    if persistence.write_blocked {
+        return;
+    }
     let Some(root) = persistence.root.clone() else {
         return;
     };
+    // Recheck format/readability in case another editor replaced the file since startup.
+    if let Err(error) = ProjectEditorLayout::load(&root) {
+        let message = format!("layout saving disabled: {error}");
+        warn!("{}: {message}", root.display());
+        persistence.last_error = Some(message);
+        persistence.write_blocked = true;
+        persistence.changed_at = None;
+        return;
+    }
     match persistence.document.save(&root) {
         Ok(()) => {
             persistence.persisted = persistence.document.clone();

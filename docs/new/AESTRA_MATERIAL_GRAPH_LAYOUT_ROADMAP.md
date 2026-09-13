@@ -1,14 +1,15 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0 contracts, M1 live geometry and M2 measured framing implemented, 2026-09-13; M3 is next. No automatic movement implemented.
+> **Status:** M0–M2 complete; M3a persistence foundation implemented, 2026-09-13. M3 remains in progress; M3b project lifecycle is next. No automatic movement implemented.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
 **Review outcome:** retain the hybrid interaction model. Before automatic movement is
 exposed, establish coordinate units, document/view ownership, base-position persistence,
 temporary-offset composition, and presentation Undo. M0 contract coverage, M1 live
-geometry and M2 measured framing are implemented; the next task is M3 base placement,
-persistence and presentation Undo.
+geometry and M2 measured framing are implemented. M3a adds the base/effective memory
+boundary and safe function persistence; M3b project lifecycle and M3c presentation Undo
+remain before the complete M3 gate can pass.
 The first automatic-movement feature
 is the bounded preview-resize flow through M5. No layout dependency or automatic
 movement is introduced by M0–M2.
@@ -1618,6 +1619,27 @@ estimates are used only while live measurements are unavailable.
 
 ## Milestone 3 — Base placement, persistence and presentation Undo
 
+### Reviewable implementation slices
+
+- **M3a — Persistence foundation (implemented 2026-09-13):** saved base positions are
+  separate from session-only effective offsets; collapse/rebuild cannot save offsets.
+  Version-2 metadata adds function layouts using the shared node/camera schema and reads
+  version-1 material layouts. Function cameras use the registry's visible owner. Failed
+  or newer-file loads block writes, including exit flush; save rechecks file readability.
+  Catalog-root changes fail closed instead of writing another project's metadata.
+- **M3b — Project placement lifecycle (next):** qualify/reset placement and preview
+  memory on project switches, reload the right metadata, prune stale identities and
+  handle document reload/removal. Bring material camera-save ownership onto the same
+  focused/retained policy. Specify explicit recovery for blocked layout metadata.
+- **M3c — Focused presentation history:** integrate chronological Undo/Redo, drag and
+  preview/collapse transactions, compound semantic/insertion placement, and revision
+  guards. Preserve text Undo and existing document/asset history routing.
+
+M3a's offset API is internal and has no production solver caller. It is not a cause
+composition engine, automatic layout feature or presentation Undo implementation.
+Full milestone acceptance below remains open until M3b/M3c are finished. See the
+[M3a implementation record](../material-system/graph-layout-contract.md#m3a-implementation--base-placement-and-safe-function-persistence).
+
 ### Goal
 
 Make layout changes reversible and prevent temporary positions from entering saved metadata.
@@ -2131,10 +2153,10 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Immediate task: M3 base placement, persistence and presentation Undo.** M0–M2 are
-implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
-as the baseline. Establish document-scoped base positions, function persistence,
-project isolation and focused presentation history before enabling automatic movement.
+**Immediate task: M3b project placement lifecycle.** M0–M2 and the M3a persistence
+foundation are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
+as the baseline. Complete project isolation/lifecycle and focused presentation history
+in M3b/M3c before enabling automatic movement.
 
 After those prerequisites, implement this complete M4–M5 flow before integrating
 `elkrs`:
