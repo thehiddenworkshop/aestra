@@ -2072,3 +2072,61 @@ failed activation, legacy/unsafe preferences, restart and root isolation. Existi
 effect/material-open and delete/Undo/Redo tests now also assert bookmark behavior.
 Strict all-target editor Clippy (`-D warnings`), full-workspace formatting and diff checks
 passed on the supported 1.98.1 MSVC toolchain. Native UI acceptance was not performed.
+
+### Thumbnail retention and mesh-effect correction — 2026-09-13
+
+Opening a saved effect republishes the project catalog even when files are unchanged.
+The thumbnail cache now compares published source fingerprints rather than treating
+every catalog version as a content change. Ready images and in-flight captures retain
+their epoch across unchanged republications. Metadata-only saves and directory timestamp
+changes from excluded `.aestra` preferences do not invalidate previews. Actual source
+changes and project-root switches still invalidate them; no UI-thread disk scan is added.
+
+Mesh Material Lab was excluded by the original mesh/displacement thumbnail guards.
+Static mesh effects now load their exact glTF/GLB renderer primitive using the existing
+bounded worker-side reader, preserving normal/UV/tangent inputs. Up to eight primitives,
+20,000 triangles per primitive, 100,000 accessor vertices and 32 MiB of buffers per
+document are allowed. Geometry is owned by the preview player, like its private textures,
+and GPU readiness includes uploaded meshes. The active viewport's mesh handles are not
+replaced. Capture/cancellation releases temporary meshes as well as images and entities.
+Conservative expression bounds support the saved breathing displacement in Mesh Material
+Lab; other unbounded displacement and unsupported geometry still use explained fallbacks.
+
+Regression coverage includes unchanged catalog generations, retained row image handles,
+late-result acceptance, actual-content invalidation, metadata-only changes, mesh attributes,
+fresh geometry reads, unsafe/missing primitive references, bounded displacement and private
+renderer ownership. The opt-in native mesh GPU capture produced visible pixels and passed
+temporary resource cleanup checks; its image was inspected. As with the earlier trail
+capture, a readback shutdown warning did not fail capture or cleanup. Interactive browser
+acceptance remains a separate manual check.
+
+Verification: 829 editor unit tests plus the architecture test passed; four opt-in tests
+were ignored in the regular suite. The native mesh and trail capture tests also passed
+when explicitly enabled. Strict all-target editor/renderer Clippy (`-D warnings`),
+workspace formatting and diff checks passed on the 1.98.1 MSVC toolchain.
+The targeted renderer resource-override isolation test passed as well.
+
+### Effect thumbnail framing and project mesh loading — 2026-09-13
+
+Thumbnail history/displacement bounds were safe but left the rendered effects too small.
+The capture now measures visible pixel coverage, recenters its private orthographic
+camera and rerenders (at most two refinements within the existing timeout/work slot).
+An approximately 84% target with soft-edge padding leaves room around the effect. It
+does not upscale the original tiny capture, change the live camera or write source assets.
+
+The empty Mesh Material Lab viewport had a separate cause: ordinary mesh loads still
+used the engine asset source rather than the selected project root. Textures and meshes
+now share root-aware path loading and cache invalidation, preserving glTF subasset labels
+such as `#Mesh0/Primitive0`. The public root resource retains its existing name for
+compatibility. Engine/UI assets and explicit thumbnail-owned handles remain unchanged.
+Native regression coverage exercises the ordinary path with no thumbnail resource
+overrides, as well as the three thumbnail fixtures and their visible pixel coverage.
+
+Verification: 831 editor unit tests and the architecture test passed (six opt-in tests
+excluded from the regular suite). All four native GPU checks passed individually:
+Mesh Material Lab, Trail Lab and Prism Bloom thumbnails, plus ordinary project-root mesh
+loading without private overrides. Captures were inspected and fill at least 70 pixels
+along their major axis in a 128-pixel tile. Clippy with `-D warnings`, formatting and diff
+checks passed. Native GPU shutdown still emits the existing readback-channel warning;
+no capture, coverage or cleanup assertion failed. Interactive editor acceptance remains
+separate from these offscreen checks.

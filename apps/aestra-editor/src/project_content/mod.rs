@@ -501,6 +501,11 @@ impl EditorProjectContent {
         self.version
     }
 
+    /// Already-published disk fingerprints; consumers must not rescan on the UI thread.
+    pub(crate) fn content_stamp(&self) -> &ProjectTreeStamp {
+        &self.snapshot.stamp
+    }
+
     /// Published discovery and semantic index; browsing must never scan the filesystem.
     pub(crate) fn content(&self) -> &aestra_project::ProjectContent {
         &self.snapshot.content

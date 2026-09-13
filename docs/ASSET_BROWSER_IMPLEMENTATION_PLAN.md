@@ -890,12 +890,15 @@ uses a fixed seed, and samples half the root duration capped at two seconds. A d
 128×128 offscreen camera and effect players use render layer 30, separate from viewport,
 gizmos and UI. Playback, drafts, documents, source files and Undo history are not edited.
 After capture, all temporary players/camera/target are released; only the square RGBA
-thumbnail remains. Root/revision/page cancellation removes temporary scenes and rejects
+thumbnail remains. Root/content/page cancellation removes temporary scenes and rejects
 late screenshot callbacks. There is no disk cache or animated-hover preview.
 
 Sprite, flipbook, ribbon and trail rendering uses the existing native renderer. Framing
 includes a sampled 60 Hz history prefix and inherited host transforms, not just live
-particle heads. GPU statistics must reach the exact target time (including seek replay),
+particle heads. These conservative bounds initialize the camera; up to two bounded
+pixel-coverage refinements then recenter and rerender the visible effect at thumbnail
+resolution, targeting roughly 84% coverage with soft-edge padding. This avoids tiny
+effects without magnifying a low-resolution bitmap. GPU statistics must reach the exact target time (including seek replay),
 textures must load, and shader pipelines must settle before capture. A 30-second timeout
 produces an explained fallback. Pipeline readiness is conservative/global: unrelated
 shader compilation may delay a capture. CPU-reference mode does not silently substitute
@@ -906,9 +909,14 @@ local history, 32768 trail points, eight raster textures (4096 per edge, 16 mill
 pixels, 16 MiB per texture/root-effect source), and 256 expressions per material. Local texture paths
 are read/decoded on the worker with the bounded root-confined reader. Job-owned image
 handles override textures only on the thumbnail's players; shared AssetServer textures
-are neither loaded nor replaced. Mesh-rendered or vertex-displaced effects and material
-function/custom-WESL calls currently retain an explained type-icon
-fallback. Static glTF/GLB asset thumbnails from AB9c are unaffected. Input parsing/compiler
+are neither loaded nor replaced. Mesh effects also use job-owned, root-confined glTF/GLB
+primitives (up to eight, 20,000 triangles each), preserving normals, UV sets and tangents.
+Bounded saved mesh displacement supports constants/parameters, local position, normalized
+age and add/subtract/multiply expressions, including Mesh Material Lab's breathing effect.
+Other displacement, material function/custom-WESL calls and unsupported geometry retain
+an explained type-icon fallback. Unchanged catalog republications (such as opening an
+effect) retain ready and in-flight thumbnails; actual saved-content changes invalidate
+them. Static glTF/GLB asset thumbnails from AB9c are unaffected. Input parsing/compiler
 allocations, temporary decoded textures, shared shader caches and GPU renderer working storage are additional
 to the shared thumbnail-pixel budget; this is not a hard total-memory guarantee.
 

@@ -66,12 +66,35 @@ enum Work {
 #[derive(Resource, Default)]
 struct ThumbnailCache {
     epoch: Option<Epoch>,
+    observed: Option<(Epoch, aestra_project::ProjectTreeStamp)>,
     entries: BTreeMap<ProjectSourceId, Entry>,
     jobs: Vec<Job>,
     gpu: Option<effect::GpuJob>,
     tick: u64,
 }
 impl ThumbnailCache {
+    fn content_epoch(&mut self, catalog: &ProjectEffectCatalog) -> Epoch {
+        let publication = (catalog.root().to_owned(), catalog.content_revision());
+        if self
+            .observed
+            .as_ref()
+            .is_some_and(|(previous, _)| *previous == publication)
+        {
+            return self.epoch.clone().unwrap_or(publication);
+        }
+        let stamp = catalog.content_stamp();
+        let unchanged = self
+            .observed
+            .as_ref()
+            .is_some_and(|(_, previous)| same_thumbnail_content(previous, stamp));
+        self.observed = Some((publication.clone(), stamp.clone()));
+        if unchanged {
+            self.epoch.clone().unwrap_or(publication)
+        } else {
+            publication
+        }
+    }
+
     fn reset(&mut self, epoch: Epoch, images: &mut Assets<Image>) {
         if self.epoch.as_ref() == Some(&epoch) {
             return;
@@ -143,6 +166,27 @@ impl ThumbnailCache {
             Err(error) => Preview::Failed(error),
         };
     }
+}
+
+fn same_thumbnail_content(
+    a: &aestra_project::ProjectTreeStamp,
+    b: &aestra_project::ProjectTreeStamp,
+) -> bool {
+    a.root == b.root
+        && a.availability == b.availability
+        && a.sources.len() == b.sources.len()
+        && a.sources.iter().all(|(path, old)| {
+            b.sources.get(path).is_some_and(|new| {
+                old.kind == new.kind
+                    && old.error == new.error
+                    && old.fingerprint == new.fingerprint
+                    // Preferences/recovery can touch directory timestamps without changing assets.
+                    // Identical file bytes also need no rerender after a metadata-only save.
+                    && (matches!(old.kind, aestra_project::ProjectSourceKind::Directory)
+                        || matches!(old.fingerprint, Some(Ok(_)))
+                        || old.metadata == new.metadata)
+            })
+        })
 }
 
 #[derive(Component)]
@@ -236,18 +280,20 @@ fn update(
     nodes: Query<&Node>,
     parents: Query<&ChildOf>,
     locale: Res<Localizer>,
-    render: effect::Context,
+    mut render: effect::Context,
 ) {
     let Some(mut images) = images else {
         return;
     };
-    let epoch = (catalog.root().to_owned(), catalog.content_revision());
+    // Opening/reselecting an effect can publish a new catalog generation without changing
+    // any source bytes. Keep completed images AND in-flight captures in that case.
+    let epoch = cache.content_epoch(&catalog);
     if cache.gpu.as_ref().is_some_and(|job| job.epoch != epoch) {
         cache
             .gpu
             .take()
             .unwrap()
-            .cleanup(&mut commands, &mut images);
+            .cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
     }
     cache.reset(epoch.clone(), &mut images);
     cache.tick = cache.tick.wrapping_add(1);
@@ -268,10 +314,10 @@ fn update(
     if let Some(mut job) = cache.gpu.take() {
         if !wanted.contains(&job.source) {
             cache.entries.remove(&job.source);
-            job.cleanup(&mut commands, &mut images);
+            job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else if let Some(result) = job.poll(&mut commands, &render) {
             cache.accept(job.source, &job.epoch, result, &mut images);
-            job.cleanup(&mut commands, &mut images);
+            job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else {
             cache.gpu = Some(job);
         }
@@ -293,7 +339,7 @@ fn update(
                             job.epoch,
                             &mut commands,
                             &mut images,
-                            &render,
+                            &mut render,
                         ));
                     }
                     result => cache.accept(

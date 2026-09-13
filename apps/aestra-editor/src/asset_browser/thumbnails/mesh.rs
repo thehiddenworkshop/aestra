@@ -1,7 +1,9 @@
 //! Bounded static geometry previews. Reuses glTF's parser without its unbounded import
 //! path or AssetServer scene spawning; no external images/materials are loaded.
 use super::*;
+mod primitive;
 use base64::{Engine, engine::general_purpose::STANDARD};
+pub(super) use primitive::load as load_primitive;
 
 const TRIANGLES: usize = 20_000;
 const VERTICES: usize = 100_000;
@@ -9,7 +11,11 @@ const BUFFER_BYTES: usize = 32 * 1024 * 1024;
 const PIXEL_TESTS: usize = 4_000_000;
 const BACKGROUND: [u8; 4] = [24, 26, 33, 255];
 
-pub(super) fn render(root: &Path, relative: &Path, flag: &AtomicBool) -> Result<Vec<u8>, String> {
+fn load_document(
+    root: &Path,
+    relative: &Path,
+    flag: &AtomicBool,
+) -> Result<(gltf::Gltf, Vec<Vec<u8>>), String> {
     if !relative
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gltf") || ext.eq_ignore_ascii_case("glb"))
@@ -65,6 +71,11 @@ pub(super) fn render(root: &Path, relative: &Path, flag: &AtomicBool) -> Result<
         }
         buffers.push(data);
     }
+    Ok((document, buffers))
+}
+
+pub(super) fn render(root: &Path, relative: &Path, flag: &AtomicBool) -> Result<Vec<u8>, String> {
+    let (document, buffers) = load_document(root, relative, flag)?;
     let mut geometry = Geometry {
         triangles: Vec::new(),
         vertices: 0,

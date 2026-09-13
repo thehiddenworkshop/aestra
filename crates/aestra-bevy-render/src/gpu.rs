@@ -17,7 +17,7 @@ mod wireframe;
 use crate::{
     ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, CompatibilityIssue,
     CompatibilityIssueCode, CompatibilityReport, EffectRenderMode, EffectRuntimeStatus,
-    GpuCapabilities, GpuPresentationPrepared, PresentedEffect, TextureAssetCache,
+    GpuCapabilities, GpuPresentationPrepared, PresentedEffect, ProjectAssetCache,
     capabilities::select_backend,
     material::{MaterialBindingError, MaterialRuntimeBinding},
 };
@@ -237,7 +237,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
 pub(crate) struct MaterialPreparationParams<'w> {
     shaders: ResMut<'w, Assets<Shader>>,
     asset_server: Res<'w, AssetServer>,
-    texture_cache: ResMut<'w, TextureAssetCache>,
+    texture_cache: ResMut<'w, ProjectAssetCache>,
     fallback_textures: Res<'w, GpuFallbackTextures>,
     shader_cache: ResMut<'w, MaterialShaderCache>,
 }
@@ -529,16 +529,21 @@ pub(crate) fn prepare_gpu_effects(
                     plan.material,
                     semantic_material,
                     match plan.kind {
-                        RendererPlanKind::Mesh { asset } => player
-                            .effect()
-                            .assets
-                            .iter()
-                            .find(|entry| entry.source == asset)
-                            .map(|entry| {
-                                material_resources
-                                    .asset_server
-                                    .load::<Mesh>(entry.path.clone())
-                            }),
+                        RendererPlanKind::Mesh { asset } => {
+                            player.mesh_override(asset).cloned().or_else(|| {
+                                player
+                                    .effect()
+                                    .assets
+                                    .iter()
+                                    .find(|entry| entry.source == asset)
+                                    .map(|entry| {
+                                        material_resources.texture_cache.load_mesh(
+                                            &material_resources.asset_server,
+                                            &entry.path,
+                                        )
+                                    })
+                            })
+                        }
                         _ => None,
                     },
                 )
@@ -1288,7 +1293,7 @@ fn prepare_semantic_material(
     binding: &MaterialRuntimeBinding,
     effect: &PresentedEffect,
     asset_server: &AssetServer,
-    texture_cache: &mut TextureAssetCache,
+    texture_cache: &mut ProjectAssetCache,
     fallback_textures: &GpuFallbackTextures,
     shaders: &mut Assets<Shader>,
     shader_cache: &mut MaterialShaderCache,

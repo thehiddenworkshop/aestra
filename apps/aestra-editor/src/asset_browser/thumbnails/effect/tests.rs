@@ -67,11 +67,63 @@ fn empty_effect_uses_an_explained_fallback() {
 }
 
 fn trail_project(root: &Path) -> ResolvedEffectProject {
+    fixture_project(root, "trail_lab")
+}
+
+fn fixture_project(root: &Path, name: &str) -> ResolvedEffectProject {
     let content = ProjectContent::scan(root);
-    let asset = EffectAsset::load_ron(root.join("effects/trail_lab.aestra.ron")).unwrap();
+    let asset = EffectAsset::load_ron(root.join(format!("effects/{name}.aestra.ron"))).unwrap();
     content
         .cached_effect_project_with_materials(&asset, BTreeMap::new())
         .unwrap()
+}
+
+#[test]
+fn mesh_effect_preserves_geometry_attributes_and_bounds_displacement() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
+    let saved = fixture_project(&root, "mesh_material_lab");
+    let prepared = prepare(saved.clone(), &root, &AtomicBool::new(false)).unwrap();
+    assert_eq!(prepared.meshes.len(), 1);
+    let mesh = &prepared.meshes[0].1;
+    for attribute in [
+        Mesh::ATTRIBUTE_NORMAL,
+        Mesh::ATTRIBUTE_UV_0,
+        Mesh::ATTRIBUTE_UV_1,
+        Mesh::ATTRIBUTE_TANGENT,
+    ] {
+        assert!(mesh.contains_attribute(attribute));
+    }
+    assert!(prepared.radius.is_finite() && prepared.radius > 0.0);
+    let effect = prepared.players[0].effect();
+    let program = effect
+        .material_programs
+        .iter()
+        .find(|p| p.outputs.vertex_offset.is_some())
+        .unwrap();
+    let instance = effect
+        .material_instances
+        .iter()
+        .find(|i| i.program.id() == program.id)
+        .unwrap();
+    assert!(displacement::radius(program, instance, 1.0).unwrap() > 1.0);
+    let mut unsupported = program.clone();
+    let output = unsupported.outputs.vertex_offset.unwrap();
+    unsupported
+        .expressions
+        .iter_mut()
+        .find(|e| e.id == output)
+        .unwrap()
+        .kind = MaterialExpressionKind::Input(aestra_core::material::MaterialInput::WorldPosition);
+    assert!(displacement::radius(&unsupported, instance, 1.0).is_err());
+    let again = prepare(saved, &root, &AtomicBool::new(false)).unwrap();
+    assert_eq!(prepared.radius, again.radius);
+    for reference in [
+        "meshes/lab_cube.gltf#Mesh99/Primitive0",
+        "../outside.gltf#Mesh0/Primitive0",
+        "meshes/lab_cube.gltf#Scene0",
+    ] {
+        assert!(mesh::load_primitive(&root, reference, &AtomicBool::new(false)).is_err());
+    }
 }
 
 #[test]
@@ -142,15 +194,46 @@ fn effects_without_a_renderer_show_fallback_without_touching_the_active_document
 #[test]
 #[ignore = "requires native GPU and shader compilation"]
 fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
+    capture_fixture("trail_lab", true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_mesh_thumbnail_captures_pixels_and_cleans_up() {
+    capture_fixture("mesh_material_lab", true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_prism_thumbnail_fills_the_tile() {
+    capture_fixture("prism_bloom", true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_project_mesh_uses_project_root_without_thumbnail_overrides() {
+    capture_fixture("mesh_material_lab", false);
+}
+
+fn capture_fixture(name: &str, private_assets: bool) {
     use bevy::{app::PluginsState, ecs::system::RunSystemOnce, window::ExitCondition};
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../assets/test")
         .canonicalize()
         .unwrap();
-    let prepared = prepare(trail_project(&root), &root, &AtomicBool::new(false)).unwrap();
+    let mut prepared =
+        prepare(fixture_project(&root, name), &root, &AtomicBool::new(false)).unwrap();
+    if !private_assets {
+        prepared.meshes.clear();
+        prepared.textures.clear();
+    }
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
+            .set(bevy::asset::AssetPlugin {
+                unapproved_path_mode: bevy::asset::UnapprovedPathMode::Deny,
+                ..default()
+            })
             .set(WindowPlugin {
                 primary_window: None,
                 exit_condition: ExitCondition::DontExit,
@@ -186,7 +269,7 @@ fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
             move |mut commands: Commands,
                   mut images: ResMut<Assets<Image>>,
                   mut cache: ResMut<ThumbnailCache>,
-                  context: Context| {
+                  mut context: Context| {
                 cache.epoch = Some(epoch.clone());
                 cache.gpu = Some(GpuJob::start(
                     prepared.take().unwrap(),
@@ -194,12 +277,12 @@ fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
                     epoch.clone(),
                     &mut commands,
                     &mut images,
-                    &context,
+                    &mut context,
                 ));
             },
         )
         .unwrap();
-    let (entities, target, textures) = {
+    let (entities, target, textures, meshes) = {
         let job = app
             .world()
             .resource::<ThumbnailCache>()
@@ -210,6 +293,7 @@ fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
             job.entities.clone(),
             job.target.id(),
             job.textures.iter().map(Handle::id).collect::<Vec<_>>(),
+            job.meshes.iter().map(Handle::id).collect::<Vec<_>>(),
         )
     };
     loop {
@@ -228,14 +312,32 @@ fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
             let colors: BTreeSet<_> = bytes.as_chunks::<4>().0.iter().copied().collect();
             assert!(
                 colors.len() > 16,
-                "capture must contain visible trail shading, not just clear color"
+                "capture must contain visible effect shading, not just clear color"
+            );
+            // The result is rerendered with tighter camera framing, not a magnified tiny bitmap.
+            let background = &bytes[..3];
+            let mut min = UVec2::splat(EDGE);
+            let mut max = UVec2::ZERO;
+            for (i, pixel) in bytes.as_chunks::<4>().0.iter().enumerate() {
+                if (0..3).any(|c| pixel[c].abs_diff(background[c]) > 3) {
+                    let p = UVec2::new(i as u32 % EDGE, i as u32 / EDGE);
+                    min = min.min(p);
+                    max = max.max(p);
+                }
+            }
+            assert!(
+                (max - min).max_element() >= 70,
+                "effect should occupy most of the thumbnail: {min:?}..{max:?}"
             );
             let output =
                 Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/asset-thumbnail-smoke");
             fs::create_dir_all(&output).unwrap();
             image::RgbaImage::from_raw(EDGE, EDGE, bytes)
                 .unwrap()
-                .save(output.join("trail.png"))
+                .save(output.join(format!(
+                    "{name}{}.png",
+                    if private_assets { "" } else { "_project_root" }
+                )))
                 .unwrap();
             break;
         }
@@ -245,17 +347,23 @@ fn native_gpu_trail_thumbnail_captures_pixels_and_cleans_up() {
         .run_system_once(
             |mut commands: Commands,
              mut images: ResMut<Assets<Image>>,
+             mut meshes: ResMut<Assets<Mesh>>,
              mut cache: ResMut<ThumbnailCache>| {
                 cache
                     .gpu
                     .take()
                     .unwrap()
-                    .cleanup(&mut commands, &mut images);
+                    .cleanup(&mut commands, &mut images, Some(&mut meshes));
             },
         )
         .unwrap();
     assert!(entities.iter().all(|e| app.world().get_entity(*e).is_err()));
     assert!(!app.world().resource::<Assets<Image>>().contains(target));
+    assert!(
+        meshes
+            .iter()
+            .all(|id| !app.world().resource::<Assets<Mesh>>().contains(*id))
+    );
     assert!(
         textures
             .iter()

@@ -1,5 +1,7 @@
 //! One isolated native-renderer capture at a time. Never touches EditorSession or viewport entities.
 use super::*;
+mod displacement;
+mod framing;
 use aestra_bevy_render::{
     ActiveBackend, EffectRuntimeStatus, PresentedEffect, gpu::GpuParticleStatistics,
 };
@@ -41,6 +43,7 @@ pub(super) fn register(app: &mut App) {
 fn publish_readiness(
     pipelines: Res<PipelineCache>,
     images: Res<RenderAssets<GpuImage>>,
+    meshes: Res<RenderAssets<bevy::render::mesh::RenderMesh>>,
     mut main: ResMut<MainWorld>,
 ) {
     if main
@@ -63,12 +66,14 @@ fn publish_readiness(
             job.textures
                 .iter()
                 .all(|handle| images.get(handle).is_some())
+                && job.meshes.iter().all(|handle| meshes.get(handle).is_some())
         });
     main.insert_resource(Readiness(ready && count > 0 && textures_ready));
 }
 
 #[derive(SystemParam)]
 pub(super) struct Context<'w, 's> {
+    pub(super) meshes: Option<ResMut<'w, Assets<Mesh>>>,
     enabled: Option<Res<'w, Enabled>>,
     readiness: Option<Res<'w, Readiness>>,
     players: Query<
@@ -114,6 +119,7 @@ pub(super) struct Prepared {
     center: Vec3,
     radius: f32,
     textures: Vec<(PathBuf, Image)>,
+    meshes: Vec<(PathBuf, Mesh)>,
 }
 
 fn sample_time(duration: f32) -> Result<f32, String> {
@@ -180,13 +186,6 @@ pub(super) fn prepare(
             );
         }
     }
-    if saved
-        .material_programs
-        .values()
-        .any(|p| p.outputs.vertex_offset.is_some())
-    {
-        return Err("Vertex-displaced effects require shader-aware thumbnail bounds".into());
-    }
     let project = EffectCompiler::default()
         .compile_resolved_project(&saved)
         .map_err(|e| e.to_string())?;
@@ -207,12 +206,14 @@ pub(super) fn prepare(
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     let mut trail_points = 0u64;
+    let mut meshes = BTreeMap::<PathBuf, (Mesh, f32)>::new();
     for instance in scheduled {
         check_cancelled(cancelled)?;
         if !instance.time.is_finite() || instance.time < 0.0 || instance.time > 4.0 {
             return Err("Preview limit: four seconds of local simulation history".into());
         }
         let mut width = 0.0f32;
+        let mut geometry_radius = 1.0f32;
         let mut has_renderer = false;
         for emitter in instance.effect.emitters.iter().filter(|e| e.enabled) {
             for renderer in &emitter.renderers {
@@ -233,11 +234,49 @@ pub(super) fn prepare(
                             });
                     }
                     RendererPlanKind::Ribbon { width: w, .. } => width = width.max(w),
-                    RendererPlanKind::Mesh { .. } => return Err(
-                        "Mesh-rendered effects are not yet supported by bounded effect thumbnails"
-                            .into(),
-                    ),
+                    RendererPlanKind::Mesh { asset } => {
+                        let asset = instance
+                            .effect
+                            .assets
+                            .iter()
+                            .find(|a| a.source == asset && a.kind == AssetKind::Mesh)
+                            .ok_or("Missing mesh resource")?;
+                        let path = root.join(&asset.path);
+                        if !meshes.contains_key(&path) {
+                            if meshes.len() >= 8 {
+                                return Err("Preview limit: eight mesh primitives".into());
+                            }
+                            meshes.insert(
+                                path.clone(),
+                                mesh::load_primitive(root, &asset.path, cancelled)?,
+                            );
+                        }
+                        let mut radius = meshes[&path].1;
+                        if let Some(material) = instance.effect.material_instance(renderer.material)
+                            && let Some(program) =
+                                instance.effect.material_program(material.program.id())
+                        {
+                            radius = displacement::radius(program, material, radius)?;
+                        }
+                        geometry_radius = geometry_radius.max(
+                            radius
+                                * Vec3::from_array(emitter.transform.scale)
+                                    .abs()
+                                    .max_element(),
+                        );
+                    }
                     _ => {}
+                }
+                if !matches!(renderer.kind, RendererPlanKind::Mesh { .. })
+                    && instance
+                        .effect
+                        .material_instance(renderer.material)
+                        .and_then(|material| {
+                            instance.effect.material_program(material.program.id())
+                        })
+                        .is_some_and(|program| program.outputs.vertex_offset.is_some())
+                {
+                    return Err("Non-mesh displacement needs shader-aware thumbnail bounds".into());
                 }
             }
         }
@@ -280,7 +319,8 @@ pub(super) fn prepare(
                 .max(matrix.z_axis.truncate().length());
             for sample in &samples {
                 let p = matrix.transform_point3(Vec3::from_array(sample.position));
-                let extent = Vec3::splat((sample.size.abs() + width.abs()) * scale);
+                let extent =
+                    Vec3::splat((sample.size.abs() * geometry_radius + width.abs()) * scale);
                 if !p.is_finite() || !extent.is_finite() {
                     return Err("Non-finite particle bounds".into());
                 }
@@ -358,6 +398,10 @@ pub(super) fn prepare(
         center,
         radius,
         textures: decoded,
+        meshes: meshes
+            .into_iter()
+            .map(|(path, (mesh, _))| (path, mesh))
+            .collect(),
     })
 }
 
@@ -368,10 +412,14 @@ pub(super) struct GpuJob {
     players: Vec<Entity>,
     target: Handle<Image>,
     textures: Vec<Handle<Image>>,
+    meshes: Vec<Handle<Mesh>>,
     started: Instant,
     settled: u8,
     capture: Option<Entity>,
     result: Option<Result<Vec<u8>, String>>,
+    camera_transform: Transform,
+    projection: OrthographicProjection,
+    refinements: u8,
 }
 
 impl GpuJob {
@@ -381,11 +429,23 @@ impl GpuJob {
         epoch: Epoch,
         commands: &mut Commands,
         images: &mut Assets<Image>,
-        _context: &Context,
+        context: &mut Context,
     ) -> Self {
         let mut image = Image::new_target_texture(EDGE, EDGE, TextureFormat::Rgba8UnormSrgb, None);
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         let target = images.add(image);
+        let projection = OrthographicProjection {
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: prepared.radius * 2.0,
+            },
+            near: 0.01,
+            far: prepared.radius * 8.0 + 1.0,
+            ..OrthographicProjection::default_3d()
+        };
+        let camera_transform = Transform::from_translation(
+            prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
+        )
+        .looking_at(prepared.center, Vec3::Y);
         let camera = commands
             .spawn((
                 Camera3d::default(),
@@ -395,18 +455,8 @@ impl GpuJob {
                     ..default()
                 },
                 RenderTarget::Image(target.clone().into()),
-                Projection::Orthographic(OrthographicProjection {
-                    scaling_mode: ScalingMode::FixedVertical {
-                        viewport_height: prepared.radius * 2.0,
-                    },
-                    near: 0.01,
-                    far: prepared.radius * 8.0 + 1.0,
-                    ..OrthographicProjection::default_3d()
-                }),
-                Transform::from_translation(
-                    prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
-                )
-                .looking_at(prepared.center, Vec3::Y),
+                Projection::Orthographic(projection.clone()),
+                camera_transform,
                 RenderLayers::layer(LAYER),
                 Msaa::Off,
             ))
@@ -416,8 +466,22 @@ impl GpuJob {
             .into_iter()
             .map(|(path, image)| (path, images.add(image)))
             .collect();
-        let players: Vec<_> = prepared
-            .players
+        let players = prepared.players;
+        let meshes: BTreeMap<_, _> = prepared
+            .meshes
+            .into_iter()
+            .map(|(path, mesh)| {
+                (
+                    path,
+                    context
+                        .meshes
+                        .as_deref_mut()
+                        .expect("native renderer provides mesh assets")
+                        .add(mesh),
+                )
+            })
+            .collect();
+        let players: Vec<_> = players
             .into_iter()
             .map(|player| {
                 let overrides = player
@@ -432,7 +496,21 @@ impl GpuJob {
                     .collect();
                 commands
                     .spawn((
-                        player.with_texture_overrides(overrides),
+                        {
+                            let mesh_overrides = player
+                                .effect()
+                                .assets
+                                .iter()
+                                .filter_map(|asset| {
+                                    meshes
+                                        .get(&epoch.0.join(&asset.path))
+                                        .map(|handle| (asset.source, handle.clone()))
+                                })
+                                .collect();
+                            player
+                                .with_texture_overrides(overrides)
+                                .with_mesh_overrides(mesh_overrides)
+                        },
                         RenderLayers::layer(LAYER),
                     ))
                     .id()
@@ -448,10 +526,14 @@ impl GpuJob {
             players,
             target,
             textures,
+            meshes: meshes.into_values().collect(),
             started: Instant::now(),
             settled: 0,
             capture: None,
             result: None,
+            camera_transform,
+            projection,
+            refinements: 0,
         }
     }
 
@@ -461,6 +543,26 @@ impl GpuJob {
         context: &Context,
     ) -> Option<Result<Vec<u8>, String>> {
         if let Some(result) = self.result.take() {
+            if self.refinements < 2
+                && let Ok(bytes) = &result
+                && let Some((offset, scale)) = framing::fit(bytes)
+                && let ScalingMode::FixedVertical { viewport_height } =
+                    &mut self.projection.scaling_mode
+            {
+                self.camera_transform.translation +=
+                    self.camera_transform.rotation * (offset * *viewport_height).extend(0.0);
+                *viewport_height *= scale;
+                commands.entity(self.entities[0]).insert((
+                    self.camera_transform,
+                    Projection::Orthographic(self.projection.clone()),
+                ));
+                if let Some(capture) = self.capture.take() {
+                    commands.entity(capture).try_despawn();
+                }
+                self.refinements += 1;
+                self.settled = 0;
+                return None;
+            }
             return Some(result);
         }
         if self.started.elapsed() >= TIMEOUT {
@@ -525,7 +627,12 @@ impl GpuJob {
         None
     }
 
-    pub fn cleanup(self, commands: &mut Commands, images: &mut Assets<Image>) {
+    pub fn cleanup(
+        self,
+        commands: &mut Commands,
+        images: &mut Assets<Image>,
+        meshes: Option<&mut Assets<Mesh>>,
+    ) {
         for entity in self.entities {
             commands.entity(entity).try_despawn();
         }
@@ -535,6 +642,11 @@ impl GpuJob {
         images.remove(self.target.id());
         for handle in self.textures {
             images.remove(handle.id());
+        }
+        if let Some(meshes) = meshes {
+            for handle in self.meshes {
+                meshes.remove(handle.id());
+            }
         }
     }
 }

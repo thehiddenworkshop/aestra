@@ -1,5 +1,5 @@
 use crate::{
-    ActiveBackend, EffectRuntimeStatus, PresentedEffect, TextureAssetCache,
+    ActiveBackend, EffectRuntimeStatus, PresentedEffect, ProjectAssetCache,
     gpu::GpuFallbackTextures,
 };
 use aestra_runtime::{
@@ -73,7 +73,7 @@ pub(crate) fn prepare_cpu_effects(
 pub(crate) struct TexturePresentationAssets<'w> {
     asset_server: Res<'w, AssetServer>,
     images: Res<'w, Assets<Image>>,
-    texture_cache: ResMut<'w, TextureAssetCache>,
+    texture_cache: ResMut<'w, ProjectAssetCache>,
     fallback_textures: Res<'w, GpuFallbackTextures>,
 }
 

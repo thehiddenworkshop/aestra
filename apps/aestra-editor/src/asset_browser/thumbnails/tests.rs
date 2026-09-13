@@ -23,6 +23,56 @@ fn texture(path: &Path) {
 }
 
 #[test]
+fn unchanged_catalog_republication_keeps_ready_and_in_flight_thumbnails() {
+    let root = tempfile::tempdir().unwrap();
+    texture(&root.path().join("sample.png"));
+    let catalog = ProjectEffectCatalog::scan(root.path());
+    let mut cache = ThumbnailCache::default();
+    let mut images = Assets::<Image>::default();
+    let original = cache.content_epoch(&catalog);
+    cache.reset(original.clone(), &mut images);
+    let ready = ProjectSourceId::from_u64(1);
+    let pending = ProjectSourceId::from_u64(2);
+    for id in [ready, pending] {
+        cache.entries.insert(
+            id,
+            Entry {
+                preview: Preview::Loading,
+                touched: 0,
+            },
+        );
+    }
+    cache.accept(ready, &original, Ok(pixels()), &mut images);
+    let handle = cache.entries[&ready].preview.clone();
+    // Opening an effect publishes a fresh catalog generation even without disk changes.
+    let reopened = ProjectEffectCatalog::scan(root.path());
+    assert_ne!(catalog.content_revision(), reopened.content_revision());
+    let next = cache.content_epoch(&reopened);
+    assert_eq!(next, original);
+    cache.reset(next, &mut images);
+    assert_eq!(cache.entries[&ready].preview, handle);
+    assert_eq!(images.len(), 1);
+    cache.accept(pending, &original, Ok(pixels()), &mut images);
+    assert!(matches!(cache.entries[&pending].preview, Preview::Ready(_)));
+    assert_eq!(images.len(), 2);
+
+    fs::create_dir(root.path().join(".aestra")).unwrap();
+    texture(&root.path().join("sample.png")); // Same bytes, new file metadata.
+    let preferences_saved = ProjectEffectCatalog::scan(root.path());
+    assert_eq!(cache.content_epoch(&preferences_saved), original);
+
+    image::RgbImage::from_pixel(64, 16, image::Rgb([0, 255, 0]))
+        .save(root.path().join("sample.png"))
+        .unwrap();
+    let changed = ProjectEffectCatalog::scan(root.path());
+    let next = cache.content_epoch(&changed);
+    assert_ne!(next, original);
+    cache.reset(next, &mut images);
+    assert!(images.is_empty());
+    assert!(cache.entries.is_empty());
+}
+
+#[test]
 fn supported_rasters_preserve_aspect_and_sources() {
     let root = tempfile::tempdir().unwrap();
     for extension in ["png", "jpg", "webp", "bmp", "tga"] {
@@ -230,13 +280,33 @@ fn browser_texture_rows_publish_previews_without_editing_or_loading_hidden_rows(
         app.world().resource::<ThumbnailCache>().entries.len(),
         entries
     );
+    let cached: BTreeMap<_, _> = app
+        .world()
+        .resource::<ThumbnailCache>()
+        .entries
+        .iter()
+        .map(|(id, entry)| (*id, entry.preview.clone()))
+        .collect();
+    app.world_mut()
+        .insert_resource(ProjectEffectCatalog::scan(root.path()));
+    app.update();
+    assert!(app.world().resource::<ThumbnailCache>().jobs.is_empty());
+    for (id, preview) in &cached {
+        assert_eq!(
+            &app.world().resource::<ThumbnailCache>().entries[id].preview,
+            preview
+        );
+    }
     app.world_mut().resource_mut::<AssetBrowserState>().scope = SourceScope::BuiltIns;
     app.world_mut()
         .resource_mut::<ProjectEffectCatalog>()
         .refresh();
     app.update();
     assert!(app.world().resource::<ThumbnailCache>().jobs.is_empty());
-    assert!(app.world().resource::<ThumbnailCache>().entries.is_empty());
+    assert_eq!(
+        app.world().resource::<ThumbnailCache>().entries.len(),
+        entries
+    );
 }
 
 #[test]
@@ -262,6 +332,7 @@ fn cancelled_workers_still_count_toward_the_global_worker_limit() {
                 effect: false,
             });
     }
+    texture(&root.path().join("changed.png"));
     app.world_mut()
         .resource_mut::<ProjectEffectCatalog>()
         .refresh();

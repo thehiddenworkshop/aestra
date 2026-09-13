@@ -79,6 +79,7 @@ pub struct PresentedEffect {
     pub instance: EffectInstance,
     render_mode: EffectRenderMode,
     texture_overrides: BTreeMap<AssetId, Handle<Image>>,
+    mesh_overrides: BTreeMap<AssetId, Handle<bevy::prelude::Mesh>>,
     material_bindings: BTreeMap<MaterialId, MaterialRuntimeBinding>,
     compiled_material_programs: BTreeMap<MaterialProgramId, Arc<CompiledMaterialProgram>>,
     automatic_material_bindings: BTreeMap<(EmitterId, MaterialId), MaterialRuntimeBinding>,
@@ -93,6 +94,7 @@ impl PresentedEffect {
             instance: EffectInstance::new(effect),
             render_mode: EffectRenderMode::Rendered,
             texture_overrides: BTreeMap::new(),
+            mesh_overrides: BTreeMap::new(),
             material_bindings: BTreeMap::new(),
             compiled_material_programs: BTreeMap::new(),
             automatic_material_bindings: BTreeMap::new(),
@@ -117,6 +119,19 @@ impl PresentedEffect {
 
     pub(crate) fn texture_override(&self, asset: AssetId) -> Option<&Handle<Image>> {
         self.texture_overrides.get(&asset)
+    }
+
+    /// Instance-owned geometry for isolated previews; shared path-loaded meshes are unchanged.
+    pub fn with_mesh_overrides(
+        mut self,
+        meshes: BTreeMap<AssetId, Handle<bevy::prelude::Mesh>>,
+    ) -> Self {
+        self.mesh_overrides = meshes;
+        self
+    }
+
+    pub(crate) fn mesh_override(&self, asset: AssetId) -> Option<&Handle<bevy::prelude::Mesh>> {
+        self.mesh_overrides.get(&asset)
     }
 
     pub fn simulation_time(&self) -> f32 {
@@ -283,7 +298,7 @@ impl Plugin for AestraRenderPlugin {
             .init_resource::<AestraTextureRoot>()
             .init_resource::<GpuCapabilities>()
             .init_resource::<AestraRuntimeStatus>()
-            .init_resource::<TextureAssetCache>()
+            .init_resource::<ProjectAssetCache>()
             .add_observer(gpu::receive_readback);
         gpu::install(app);
         app.add_systems(
@@ -322,7 +337,7 @@ fn ensure_aestra_depth_prepass(
     }
 }
 
-/// Optional filesystem root for authored effect textures. Engine/UI assets keep their own source.
+/// Optional filesystem root for authored effect textures and meshes. Engine/UI assets keep their own source.
 /// Applications that change this root must also replace their presented effect instances.
 /// Filesystem roots require `AssetPlugin::unapproved_path_mode` to be `Deny`, allowing the
 /// renderer's explicit path override while ordinary asset loads remain restricted.
@@ -330,17 +345,19 @@ fn ensure_aestra_depth_prepass(
 pub struct AestraTextureRoot(pub Option<PathBuf>);
 
 #[derive(Resource, Default)]
-pub(crate) struct TextureAssetCache {
+pub(crate) struct ProjectAssetCache {
     handles: BTreeMap<String, bevy::prelude::Handle<Image>>,
+    meshes: BTreeMap<String, bevy::prelude::Handle<bevy::prelude::Mesh>>,
     root: Option<PathBuf>,
 }
 
 fn sync_texture_root(
     root: Res<AestraTextureRoot>,
-    mut cache: bevy::prelude::ResMut<TextureAssetCache>,
+    mut cache: bevy::prelude::ResMut<ProjectAssetCache>,
 ) {
     if cache.root != root.0 {
         cache.handles.clear();
+        cache.meshes.clear();
         cache.root.clone_from(&root.0);
     }
 }
@@ -354,7 +371,7 @@ mod texture_root_tests {
     };
 
     #[test]
-    fn texture_overrides_are_owned_by_one_presentation_not_the_shared_effect() {
+    fn resource_overrides_are_owned_by_one_presentation_not_the_shared_effect() {
         let effect = Arc::new(
             aestra_compiler::EffectCompiler::default()
                 .compile(&aestra_core::EffectAsset::new("Preview", 3.0))
@@ -363,17 +380,22 @@ mod texture_root_tests {
         let asset = aestra_core::AssetId::from_u128(123);
         let mut images = Assets::<Image>::default();
         let handle = images.add(Image::default());
+        let mut meshes = Assets::<Mesh>::default();
+        let mesh = meshes.add(Cuboid::default());
         let active = PresentedEffect::new(effect.clone());
         let preview = PresentedEffect::new(effect.clone())
-            .with_texture_overrides(BTreeMap::from([(asset, handle.clone())]));
+            .with_texture_overrides(BTreeMap::from([(asset, handle.clone())]))
+            .with_mesh_overrides(BTreeMap::from([(asset, mesh.clone())]));
         assert!(active.texture_override(asset).is_none());
         assert_eq!(preview.texture_override(asset), Some(&handle));
+        assert!(active.mesh_override(asset).is_none());
+        assert_eq!(preview.mesh_override(asset), Some(&mesh));
         assert!(Arc::ptr_eq(active.effect(), preview.effect()));
         assert!(effect.assets.is_empty());
     }
 
     #[test]
-    fn switching_projects_does_not_reuse_the_previous_texture_handle() {
+    fn switching_projects_keeps_texture_and_labeled_mesh_handles_root_scoped() {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -383,7 +405,8 @@ mod texture_root_tests {
             },
         ))
         .init_asset::<Image>()
-        .init_resource::<TextureAssetCache>()
+        .init_asset::<Mesh>()
+        .init_resource::<ProjectAssetCache>()
         .init_resource::<AestraTextureRoot>()
         .add_systems(Update, sync_texture_root);
         let first = std::env::current_dir().unwrap().join("project-one");
@@ -393,8 +416,15 @@ mod texture_root_tests {
         app.update();
         let a = app
             .world_mut()
-            .resource_mut::<TextureAssetCache>()
+            .resource_mut::<ProjectAssetCache>()
             .load(&server, "textures/sprite.png");
+        let mesh_a = app
+            .world_mut()
+            .resource_mut::<ProjectAssetCache>()
+            .load_mesh(&server, "meshes/cube.gltf#Mesh0/Primitive0");
+        let mesh_path = server.get_path(mesh_a.id()).unwrap();
+        assert_eq!(mesh_path.path(), first.join("meshes/cube.gltf"));
+        assert_eq!(mesh_path.label(), Some("Mesh0/Primitive0"));
         assert_eq!(
             server.get_path(a.id()).unwrap().path(),
             first.join("textures/sprite.png")
@@ -403,8 +433,16 @@ mod texture_root_tests {
         app.update();
         let b = app
             .world_mut()
-            .resource_mut::<TextureAssetCache>()
+            .resource_mut::<ProjectAssetCache>()
             .load(&server, "textures/sprite.png");
+        let mesh_b = app
+            .world_mut()
+            .resource_mut::<ProjectAssetCache>()
+            .load_mesh(&server, "meshes/cube.gltf#Mesh0/Primitive0");
+        assert_ne!(mesh_a.id(), mesh_b.id());
+        let mesh_path = server.get_path(mesh_b.id()).unwrap();
+        assert_eq!(mesh_path.path(), second.join("meshes/cube.gltf"));
+        assert_eq!(mesh_path.label(), Some("Mesh0/Primitive0"));
         assert_ne!(a.id(), b.id());
         assert_eq!(
             server.get_path(b.id()).unwrap().path(),
@@ -413,7 +451,7 @@ mod texture_root_tests {
     }
 }
 
-impl TextureAssetCache {
+impl ProjectAssetCache {
     pub(crate) fn load(
         &mut self,
         asset_server: &AssetServer,
@@ -421,26 +459,50 @@ impl TextureAssetCache {
     ) -> bevy::prelude::Handle<Image> {
         self.handles
             .entry(path.to_owned())
-            .or_insert_with(|| {
-                let relative = std::path::Path::new(path);
-                if let Some(root) = &self.root
-                    && !path.contains("://")
-                    && relative.components().all(|part| {
-                        matches!(
-                            part,
-                            std::path::Component::Normal(_) | std::path::Component::CurDir
-                        )
-                    })
-                {
-                    return asset_server
-                        .load_builder()
-                        .override_unapproved()
-                        .load(bevy::asset::AssetPath::from_path_buf(root.join(relative)));
-                }
-                asset_server.load(path.to_owned())
-            })
+            .or_insert_with(|| load_project_asset(asset_server, self.root.as_deref(), path))
             .clone()
     }
+
+    pub(crate) fn load_mesh(
+        &mut self,
+        asset_server: &AssetServer,
+        path: &str,
+    ) -> bevy::prelude::Handle<bevy::prelude::Mesh> {
+        self.meshes
+            .entry(path.to_owned())
+            .or_insert_with(|| load_project_asset(asset_server, self.root.as_deref(), path))
+            .clone()
+    }
+}
+
+fn load_project_asset<A: bevy::asset::Asset>(
+    asset_server: &AssetServer,
+    root: Option<&std::path::Path>,
+    path: &str,
+) -> bevy::prelude::Handle<A> {
+    let (file, label) = path
+        .split_once('#')
+        .map_or((path, None), |(file, label)| (file, Some(label)));
+    let relative = std::path::Path::new(file);
+    if let Some(root) = root
+        && !file.contains("://")
+        && relative.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+    {
+        let mut resolved = bevy::asset::AssetPath::from_path_buf(root.join(relative));
+        if let Some(label) = label {
+            resolved = resolved.with_label(label.to_owned());
+        }
+        return asset_server
+            .load_builder()
+            .override_unapproved()
+            .load(resolved);
+    }
+    asset_server.load(path.to_owned())
 }
 
 #[derive(Component)]

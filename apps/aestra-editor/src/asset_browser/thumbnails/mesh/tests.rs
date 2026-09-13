@@ -28,6 +28,44 @@ fn preview(root: &Path, name: &str) -> Result<Vec<u8>, String> {
 }
 
 #[test]
+fn renderer_primitive_reads_fresh_geometry_and_preserves_optional_inputs() {
+    let root = tempfile::tempdir().unwrap();
+    let mut document = cube();
+    write(root.path(), "cube.gltf", &document);
+    let reference = "cube.gltf#Mesh0/Primitive0";
+    let flag = AtomicBool::new(false);
+    let (original, radius) = load_primitive(root.path(), reference, &flag).unwrap();
+    assert_eq!(original.count_vertices(), 36);
+    assert!(original.contains_attribute(Mesh::ATTRIBUTE_UV_1));
+    assert!(original.contains_attribute(Mesh::ATTRIBUTE_TANGENT));
+    let mut data = blob(&document);
+    let stride = document["bufferViews"][0]["byteStride"].as_u64().unwrap() as usize;
+    for vertex in data.chunks_exact_mut(stride) {
+        for component in vertex[..12].as_chunks_mut::<4>().0 {
+            *component = (f32::from_le_bytes(*component) * 2.0).to_le_bytes();
+        }
+    }
+    document["buffers"][0]["uri"] = json!(format!(
+        "data:application/octet-stream;base64,{}",
+        STANDARD.encode(data)
+    ));
+    document["meshes"][0]["primitives"][0]["attributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("TEXCOORD_1");
+    document["meshes"][0]["primitives"][0]["attributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("TANGENT");
+    write(root.path(), "cube.gltf", &document);
+    let (changed, changed_radius) = load_primitive(root.path(), reference, &flag).unwrap();
+    assert_eq!(changed_radius, radius * 2.0);
+    assert!(!changed.contains_attribute(Mesh::ATTRIBUTE_UV_1));
+    assert!(!changed.contains_attribute(Mesh::ATTRIBUTE_TANGENT));
+    assert!(load_primitive(root.path(), reference, &AtomicBool::new(true)).is_err());
+}
+
+#[test]
 fn embedded_external_and_binary_meshes_render_the_same_static_geometry() {
     let root = tempfile::tempdir().unwrap();
     let mut document = cube();
