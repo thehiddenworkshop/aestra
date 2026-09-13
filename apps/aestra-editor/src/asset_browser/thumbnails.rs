@@ -1,4 +1,5 @@
 //! Read-only, bounded previews of the current project page. No AssetServer full-size loads.
+mod mesh;
 use super::{
     panel,
     state::{AssetBrowserState, Kind, SourceScope},
@@ -275,7 +276,7 @@ fn update(
         let Some(entry) = catalog
             .content()
             .source(*source)
-            .filter(|entry| matches!(Kind::of(entry), Kind::Texture | Kind::Material))
+            .filter(|entry| matches!(Kind::of(entry), Kind::Texture | Kind::Material | Kind::Mesh))
         else {
             continue;
         };
@@ -293,6 +294,8 @@ fn update(
                     flag.load(Ordering::Relaxed)
                 })
             })
+        } else if Kind::of(entry) == Kind::Mesh {
+            IoTaskPool::get().spawn(async move { mesh::render(&root, &relative, &flag) })
         } else {
             IoTaskPool::get().spawn(async move { decode(&root, &relative, &flag) })
         };
@@ -341,10 +344,10 @@ fn update(
                 commands
                     .entity(thumbnail.image)
                     .insert(ImageNode::new(handle.clone()));
-                locale.text(if thumbnail.kind == Kind::Material {
-                    "browser-material-thumbnail-ready"
-                } else {
-                    "browser-thumbnail-ready"
+                locale.text(match thumbnail.kind {
+                    Kind::Material => "browser-material-thumbnail-ready",
+                    Kind::Mesh => "browser-mesh-thumbnail-ready",
+                    _ => "browser-thumbnail-ready",
                 })
             }
             Preview::Loading => locale.text("browser-thumbnail-loading"),
@@ -409,26 +412,28 @@ fn linked(metadata: &fs::Metadata) -> bool {
     }
 }
 
-fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8>, String> {
-    let check = || {
-        if cancelled.load(Ordering::Relaxed) {
-            Err("Cancelled".to_owned())
-        } else {
-            Ok(())
-        }
-    };
-    check()?;
+fn check_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
+    if cancelled.load(Ordering::Relaxed) {
+        Err("Cancelled".into())
+    } else {
+        Ok(())
+    }
+}
+
+// Shared bounded, root-confined file access for texture and mesh preview workers.
+fn read_source(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8>, String> {
+    check_cancelled(cancelled)?;
     // Validate each component on the worker, including links replaced since discovery.
     // These checks are not an OS-level guarantee against concurrent filesystem substitution.
     aestra_project::ProjectSourceTree::validate_root(root)?;
     let mut path = root.to_owned();
     for part in relative.components() {
         let PathComponent::Normal(part) = part else {
-            return Err("Invalid texture path".into());
+            return Err("Invalid preview source path".into());
         };
         path.push(part);
         if linked(&fs::symlink_metadata(&path).map_err(|e| e.to_string())?) {
-            return Err("Linked textures are not previewed".into());
+            return Err("Linked sources are not previewed".into());
         }
     }
     if !path
@@ -436,7 +441,7 @@ fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8
         .map_err(|e| e.to_string())?
         .starts_with(root.canonicalize().map_err(|e| e.to_string())?)
     {
-        return Err("Texture is outside the project".into());
+        return Err("Preview source is outside the project".into());
     }
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
@@ -450,7 +455,12 @@ fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8
     if bytes.len() as u64 > FILE_LIMIT {
         return Err("Preview limit: 16 MiB per source".into());
     }
-    check()?;
+    check_cancelled(cancelled)?;
+    Ok(bytes)
+}
+
+fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8>, String> {
+    let bytes = read_source(root, relative, cancelled)?;
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
@@ -468,7 +478,7 @@ fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8
     limits.max_alloc = Some(DECODE_LIMIT);
     reader.limits(limits);
     let decoded = reader.decode().map_err(|e| e.to_string())?;
-    check()?;
+    check_cancelled(cancelled)?;
     let small = decoded.thumbnail(EDGE, EDGE).to_rgba8();
     let mut rgba = vec![0; (EDGE * EDGE * 4) as usize];
     let left = (EDGE - small.width()) / 2;
@@ -495,7 +505,7 @@ fn decode(root: &Path, relative: &Path, cancelled: &AtomicBool) -> Result<Vec<u8
             rgba[offset + 3] = 255;
         }
     }
-    check()?;
+    check_cancelled(cancelled)?;
     Ok(rgba)
 }
 

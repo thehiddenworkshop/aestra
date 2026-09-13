@@ -864,5 +864,6 @@ browser-search-clear = Clear asset search
 browser-thumbnail-ready = Texture preview
 browser-thumbnail-loading = Loading preview…
 browser-material-thumbnail-ready = Material preview — saved defaults and synthetic inputs, independent of the active effect.
+browser-mesh-thumbnail-ready = Static mesh geometry — automatically framed with neutral lighting. Materials and animation are not shown.
 browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip

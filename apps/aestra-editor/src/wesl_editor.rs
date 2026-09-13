@@ -218,10 +218,7 @@ pub(crate) fn spawn_wesl_editor_view(
                         editor,
                         wesl_highlighter(),
                         error_marker(diagnostics, id),
-                        WeslEditorSurface {
-                            source: id,
-                            view,
-                        },
+                        WeslEditorSurface { source: id, view },
                     );
                     spawn_code_gutter(body, code);
                 },

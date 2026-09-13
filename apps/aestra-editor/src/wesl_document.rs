@@ -469,7 +469,9 @@ pub(crate) fn recompile_changed_wesl(
             .map(|other| (other.name.as_str(), other.source.as_str()))
             .collect();
         let state = compile_wesl_source(&module.name, &module.source, &imports);
-        diagnostics.entries.insert(module.id, (module.revision, state));
+        diagnostics
+            .entries
+            .insert(module.id, (module.revision, state));
     }
     diagnostics
         .entries
@@ -573,7 +575,10 @@ mod tests {
     #[test]
     fn module_name_encodes_folders_so_same_stem_files_do_not_collide() {
         assert_eq!(module_name_for(Path::new("noise.wesl")), "noise");
-        assert_eq!(module_name_for(Path::new("shaders/noise.wesl")), "shaders::noise");
+        assert_eq!(
+            module_name_for(Path::new("shaders/noise.wesl")),
+            "shaders::noise"
+        );
         assert_eq!(module_name_for(Path::new("lib/noise.wesl")), "lib::noise");
         // Same stem, different folders → distinct module names.
         assert_ne!(
@@ -594,7 +599,10 @@ mod tests {
         let bad = "@fragment fn main() -> @location(0) vec4<f32> { return 1.0; }";
         match compile_wesl_source("main", bad, &[]) {
             WeslCompileState::Error { line, .. } => {
-                assert!(line.is_some(), "a no-import module should report its source line")
+                assert!(
+                    line.is_some(),
+                    "a no-import module should report its source line"
+                )
             }
             WeslCompileState::Ok { .. } => panic!("expected a validation error"),
         }

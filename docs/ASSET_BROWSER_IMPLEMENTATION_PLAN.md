@@ -1,7 +1,7 @@
 # Asset Browser delivery plan
 
-Status: updated 2026-09-12. AB8b3 canonical-browser cutover is implemented and
-user-accepted. AB9a texture thumbnails and AB9b saved-material thumbnails are implemented; verification and native acceptance
+Status: updated 2026-09-13. AB8b3 canonical-browser cutover is implemented and
+user-accepted. AB9a texture, AB9b saved-material and AB9c static-mesh thumbnails are implemented; verification and native acceptance
 are tracked below. The following historical delivery record retains its original caveats.
 
 AB0 contracts/inventory recorded and AB1
@@ -117,7 +117,8 @@ AB7f's shared Properties asset picker is implemented; native acceptance is pendi
 AB7g's Built-ins and Current Document virtual sources are implemented; native acceptance
 is pending in the historical per-flow record. AB8 parity review and Library removal are
 now implemented; the user accepted the cutover on 2026-09-12. AB9a thumbnails are the
-previous slice. AB9b adds saved-material thumbnails; remaining AB9 features are deferred.
+previous slice. AB9b adds saved-material thumbnails and AB9c adds static-mesh thumbnails;
+remaining AB9 features are deferred.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -861,6 +862,26 @@ as a successful material thumbnail. Unreachable unsupported nodes do not block p
 Mesh/effect previews and virtual Current Document material-instance thumbnails remain
 separate work. No source writes, new asset registrations, or history entries are made.
 
+**AB9c — static mesh thumbnails (implemented; native acceptance pending):**
+Project glTF/GLB rows now share the existing two-worker, 128-entry thumbnail service.
+A deterministic CPU depth-buffered geometry raster frames the default (or first) scene
+with node transforms and neutral lighting. Mesh-only files preview their mesh definitions
+at identity. This is a geometry thumbnail, not a material/animation render, and is labeled
+accordingly. No renderer entities or runtime mesh assets enter the active scene.
+
+Embedded base64, GLB binary and local relative external buffers are supported. External
+URIs are decoded once and normalized within the project root; network/absolute/escaping
+paths and links are rejected using the shared bounded preview reader. Input files are
+capped at 16 MiB and aggregate loaded buffers at 32 MiB (a final failing buffer may be
+transiently allocated before this total is checked). Parser/job overhead is additional.
+Limits also cover 512 node visits, 64 levels, 256 mesh definitions, 2,048 accessors/views,
+100,000 vertices, 20,000 triangles and four million raster pixel tests per job. Jobs
+cancel between loading, traversal and raster stages; old root/revision results cannot
+publish. Any published content revision, including an external buffer update, invalidates
+cached previews. Bad offsets/indices, non-finite data, unsupported primitive types,
+sparse/compressed geometry, skins/morphs and oversized sources use error fallbacks.
+Effect previews and richer scene/material previews remain separate AB9 work.
+
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
 collections. Cache keys include source/content revision and rendering inputs, with
@@ -905,6 +926,6 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. On 2026-09-12, the user accepted the canonical browser with “everything is fine”
 and requested the next step. This records user acceptance of AB8b3, not an independently
-observed execution of every earlier native checklist item. **Current step (P2):** AB9b
-saved-material thumbnails, following committed AB9a. Complete automated verification and
-native texture/material thumbnail acceptance before the remaining AB9 browsing features.
+observed execution of every earlier native checklist item. **Current step (P2):** AB9c
+static-mesh thumbnails, following committed AB9a/AB9b. Complete automated verification and
+native thumbnail acceptance before the remaining AB9 browsing features.

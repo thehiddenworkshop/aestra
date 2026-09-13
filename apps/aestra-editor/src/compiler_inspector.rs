@@ -278,7 +278,13 @@ pub(crate) fn refresh_wesl_compiler_inspector(
         }
         let id = content.0;
         commands.entity(entity).with_children(|content| {
-            render_wesl_compiler_content(content, id, &wesl_documents, &wesl_diagnostics, &localizer);
+            render_wesl_compiler_content(
+                content,
+                id,
+                &wesl_documents,
+                &wesl_diagnostics,
+                &localizer,
+            );
         });
     }
 }

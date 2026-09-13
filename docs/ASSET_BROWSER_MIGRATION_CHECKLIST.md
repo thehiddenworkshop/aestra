@@ -1942,3 +1942,50 @@ ordering mismatch in the new fixture; normalizing the fixture to saved-source or
 resolved it, without a runtime behavior change.
 Strict all-target editor Clippy with warnings denied, touched-file formatting and diff
 checks passed. Native thumbnail appearance/performance acceptance remains pending.
+
+### Workspace formatting correction and AB9c — 2026-09-13
+
+Reproduced the reported full-workspace rustfmt failure and applied `cargo fmt --all`.
+The changes in `asset_browser/context_menu.rs`, `compiler_inspector.rs`, `wesl_document.rs`,
+`wesl_editor.rs` and `wesl_syntax.rs` are formatting-only. Full-workspace formatting,
+not just touched-file formatting, is the verification gate for this slice.
+
+AB9c adds static glTF/GLB geometry thumbnails to Project mesh rows. They reuse the
+texture/material queue, LRU cache, cancellation and stale-revision rejection. The
+renderer uses glTF's existing parser dependency and a bounded CPU depth-buffer raster;
+it neither spawns a runtime scene nor loads imported materials/images into AssetServer.
+Neutral lighting and automatic isometric framing show mesh geometry independently of
+the active effect. The tooltip states that materials and animation are not shown.
+
+- Default/first-scene node transforms and multiple mesh instances are supported. Files
+  without scenes preview their mesh definitions at identity. Triangle primitives support
+  interleaved float3 positions and unindexed/U8/U16/U32 indexed geometry.
+- Buffers may be base64 data URIs, GLB binary chunks or project-relative external files.
+  Percent-encoded relative URIs are decoded once; safe parent segments within the root
+  are supported. Absolute/network/escaping paths and links are rejected. Texture and
+  mesh decoding now use the same bounded source reader. No image URI is fetched.
+- Limits: 16 MiB per source file/buffer, 32 MiB aggregate loaded buffers, 64 buffers,
+  512 node visits, 64 levels, 256 mesh definitions, 2,048 accessors/views, 100,000 vertices,
+  20,000 triangles and four million raster pixel tests. Aggregate buffer overflow is
+  detected after the last bounded buffer read; this and parser/job overhead mean 32 MiB
+  is not a hard total-memory guarantee. Cache pixels retain the shared 8 MiB per CPU/GPU
+  copy limit. Cancellation is cooperative between I/O, node/primitive and raster stages.
+- Bad accessors/indices, missing/truncated buffers, non-finite geometry, cycles, unsupported
+  primitive modes, sparse/compressed geometry, skins/morphs and exhausted budgets fall
+  back explicitly. Content revisions invalidate cached errors and successful images,
+  including external-buffer edits. No source bytes, drafts or Undo entries are changed.
+
+Native acceptance pending: browse glTF/GLB meshes in list/grid; check framing, transformed
+multi-mesh files, loading/error badges and folder/project switching. Geometry previews
+are not PBR/material/animation previews. Native link/junction capability and input/UI
+performance are not claimed by the fixture tests. Effect previews remain a later slice.
+
+Verification: 811 editor tests passed, two opt-in tests ignored. Six new tests cover
+equivalent embedded/external/GLB geometry, source-byte preservation, automatic framing
+and transformed instances, indexed versus unindexed geometry and invalid indices,
+unsafe/missing/truncated buffers, malformed/oversized/cyclic/non-finite/cancelled inputs
+and raster-budget exhaustion, plus mesh/texture row publication under the shared worker
+budget without effect changes. All-target editor checking, strict all-target Clippy with
+warnings denied, full-workspace `cargo fmt --all -- --check` and diff checks passed using
+the supported 1.98.1 MSVC toolchain. No dependency versions changed; the editor directly
+reuses existing glTF/base64 packages and serde_json for fixtures.

@@ -45,8 +45,8 @@ fn spawn_menu(
                     // effects only have the single focus-open action.
                     let editor_backed =
                         matches!(kind, Some(Kind::Material | Kind::Function | Kind::Shader));
-                    let openable = editor_backed
-                        || matches!(kind, Some(Kind::Folder | Kind::Effect));
+                    let openable =
+                        editor_backed || matches!(kind, Some(Kind::Folder | Kind::Effect));
                     if openable {
                         spawn_pointer_context_menu_item(
                             menu,

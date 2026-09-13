@@ -640,7 +640,7 @@ pub(super) fn sync_panel(
                                 crate::material_graph::spawn_material_preset_preview(
                                     row, preset, 22.0,
                                 )
-                            } else if matches!(kind, Kind::Texture | Kind::Material) {
+                            } else if matches!(kind, Kind::Texture | Kind::Material | Kind::Mesh) {
                                 super::thumbnails::spawn(row, &assets, entry.id, kind)
                             } else {
                                 icon(row, &assets, kind.icon(), 22.0)

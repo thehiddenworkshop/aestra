@@ -241,7 +241,9 @@ pub(crate) fn imported_modules(source: &str) -> Vec<String> {
                 && tokens.get(index + 2).map(|t| t.text.as_str()) == Some(":");
             if is_package
                 && colons
-                && let Some(name) = tokens.get(index + 3).filter(|t| t.kind == WeslTokenKind::Ident)
+                && let Some(name) = tokens
+                    .get(index + 3)
+                    .filter(|t| t.kind == WeslTokenKind::Ident)
             {
                 if !modules.contains(&name.text) {
                     modules.push(name.text.clone());

@@ -404,3 +404,43 @@ fn invalid_and_ambiguous_material_sources_have_cached_error_fallbacks() {
         );
     }
 }
+
+#[test]
+fn mesh_rows_share_thumbnail_budget_and_do_not_change_the_effect() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("cube.gltf"),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/test/meshes/lab_cube.gltf"
+        )),
+    )
+    .unwrap();
+    texture(&root.path().join("texture.png"));
+    fs::write(root.path().join("broken.glb"), b"broken").unwrap();
+    let mut app = super::super::tests::browser_app(root.path());
+    let before = app.world().resource::<EditorSession>().effect.clone();
+    for _ in 0..5 {
+        assert!(app.world().resource::<ThumbnailCache>().jobs.len() <= WORKERS);
+        finish_jobs(&mut app);
+    }
+    let cache = app.world().resource::<ThumbnailCache>();
+    assert_eq!(cache.entries.len(), 3);
+    assert_eq!(
+        cache
+            .entries
+            .values()
+            .filter(|e| matches!(e.preview, Preview::Ready(_)))
+            .count(),
+        2
+    );
+    assert_eq!(
+        cache
+            .entries
+            .values()
+            .filter(|e| matches!(e.preview, Preview::Failed(_)))
+            .count(),
+        1
+    );
+    assert_eq!(app.world().resource::<EditorSession>().effect, before);
+}
