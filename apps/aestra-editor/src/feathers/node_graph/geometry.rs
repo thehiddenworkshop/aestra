@@ -1,6 +1,6 @@
 //! Observations only: no writes to placement memory, semantic assets, or history.
-//! M2 consumes the snapshots; M4 consumes changes after presentation Undo exists.
-#![allow(dead_code)] // Public observation API is collected now, consumed by M2/M4.
+//! Framing and the reversible overlay controller consume these stable snapshots.
+#![allow(dead_code)] // Shared observation API includes future port-layout consumers.
 
 use crate::{
     docking::EditorViewId,
@@ -70,6 +70,12 @@ pub(crate) struct GraphGeometryNode {
 }
 
 impl GraphGeometryNode {
+    pub(super) fn is_preview(&self) -> bool {
+        self.preview
+    }
+    pub(super) fn content_stamp(&self) -> u64 {
+        self.content
+    }
     pub(crate) fn new(key: GraphNodeKey, content: &impl std::fmt::Debug, preview: bool) -> Self {
         // Session-only presentation fingerprint; never an asset identity or persisted hash.
         let mut hash = DefaultHasher::new();
@@ -110,6 +116,11 @@ pub(crate) struct GraphPortGeometry {
 pub(crate) struct GraphNodeGeometry {
     pub effective_position: Vec2,
     pub size: Vec2,
+    /// Measured extent with the optional preview block removed, in logical units.
+    pub compact_size: Vec2,
+    pub preview: bool,
+    pub collapsed: bool,
+    pub content: u64,
     pub ports: Vec<GraphPortGeometry>,
     pub geometry_revision: u64,
 }
@@ -221,6 +232,7 @@ fn close(a: Vec2, b: Vec2) -> bool {
 fn geometry_close(a: &GraphNodeGeometry, b: &GraphNodeGeometry) -> bool {
     close(a.effective_position, b.effective_position)
         && close(a.size, b.size)
+        && close(a.compact_size, b.compact_size)
         && a.ports.len() == b.ports.len()
         && a.ports.iter().all(|port| {
             b.ports
@@ -253,6 +265,11 @@ pub(crate) struct GraphGeometryRegistry {
 }
 
 impl GraphGeometryRegistry {
+    pub(crate) fn snapshots(&self) -> impl Iterator<Item = &GraphGeometrySnapshot> {
+        self.documents
+            .values()
+            .filter_map(|state| state.current.as_ref())
+    }
     pub(crate) fn snapshot(&self, document: &GraphDocumentKey) -> Option<&GraphGeometrySnapshot> {
         self.documents.get(document)?.current.as_ref()
     }

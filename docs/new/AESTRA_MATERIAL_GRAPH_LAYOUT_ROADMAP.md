@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M3c foundations and M4's test-only bounded resize solver implemented, 2026-09-13. Native M3 acceptance remains to be checked. Next: M5's reversible resize overlays. No automatic movement enabled.
+> **Status:** M0–M5 implemented, 2026-09-13. M5 now connects the bounded solver to reversible session offsets. Native move/collapse/preview Undo/Redo and multi-view acceptance remain to be checked before advancing to M6 drag assistance.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1673,13 +1673,13 @@ tests preserve chronological user intent and reject stale document/node identiti
 
 ## Milestone 4 — Local resize collision resolver
 
-**Implemented (internal/test-only):** the shared graph widget's `resize` module plans
+**Implemented:** the shared graph widget's `resize` module plans
 deterministic candidates on detached logical-geometry snapshots. It has hard anchors,
 spacing and work/displacement budgets, atomic snapshot application and stale-input
-rejection. It is compiled only for tests: no observer/system calls it in the editor.
+rejection. M4 shipped test-only; M5 now consumes it through the reversible overlay controller.
 See the [M4 implementation record](../material-system/graph-layout-contract.md#m4-implementation--internal-bounded-resize-solver)
 and `benchmarks/graph-layout/` for contract tests and focused performance probes.
-M5 still owns live geometry adaptation, reversible cause composition and UI conflicts.
+M5 owns live geometry adaptation, reversible cause composition and UI conflicts.
 
 ### Goal
 
@@ -1725,6 +1725,15 @@ Identical inputs produce deterministic candidates independent of ECS/container o
 ---
 
 ## Milestone 5 — Reversible preview displacement
+
+**Implemented; native acceptance pending.** The shared widget consumes stable owner
+measurements before the following UI layout, composes active expansions in key order,
+replaces temporary offsets atomically and preserves authored bases. Material previews
+and shared material/function collapse/expand use the same path. Conflicts keep safe
+existing offsets and show a compact localized notice. See the
+[M5 implementation record](../material-system/graph-layout-contract.md#m5-implementation--reversible-session-overlays).
+Do the native checks in section 37 before moving on to M6; function canvases still do
+not expose material-style image previews.
 
 ### Goal
 
@@ -2169,14 +2178,13 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next implementation: M5's reversible resize overlays.** M0–M4 foundations are
-implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
-as the baseline. First check native move/collapse/preview Undo/Redo and mixed graph edits
-in material/function views. M4 remains internal/test-only; do not enable visible automatic
-movement until M5's reversible overlay and the combined acceptance gate are complete.
+**Next acceptance: the implemented M5 reversible resize overlays.** M0–M5 foundations
+are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
+as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
+material/function views before moving on to M6. Automated shared-widget tests are not
+a substitute for native DPI, input and wire-alignment acceptance.
 
-After those prerequisites, implement this complete M4–M5 flow before integrating
-`elkrs`:
+Verify this complete M4–M5 flow before integrating `elkrs`:
 
 ```text
 1. Open a graph with two manually positioned neighboring nodes.
@@ -2197,7 +2205,7 @@ and restart with previews visible. No intermediate build should ship non-undoabl
 Arrange or permanently saved preview offsets.
 
 Only after this flow is stable should full arrangement be integrated. These are proposed
-acceptance gates; M5 integration and native verification have not yet occurred.
+acceptance gates; M5 integration is implemented but native verification is still pending.
 
 ---
 

@@ -883,3 +883,4 @@ browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip
 graph-layout-saving-blocked = Graph layout saving is paused. Repair .aestra/editor-layout.ron, then reload saved placement. Reload replaces unsaved placement only; material edits are preserved.
 graph-layout-reload-saved = Reload saved layout
+graph-layout-overlap-conflict = Some nodes could not be spaced safely. Move a nearby node or close a preview to resolve the overlap.

@@ -34,8 +34,7 @@ use std::collections::HashMap;
 
 mod framing;
 pub(crate) mod geometry;
-// M4 stays test-only until M5 owns reversible offsets and resize-cause lifetimes.
-#[cfg(test)]
+mod overlay;
 mod resize;
 
 pub(crate) const NODE_WIDTH: f32 = 224.0;
@@ -142,6 +141,7 @@ impl Plugin for FeathersNodeGraphPlugin {
         app.add_plugins(UiMaterialPlugin::<GraphWireMaterial>::default())
             .add_plugins(UiMaterialPlugin::<GraphGridMaterial>::default())
             .init_resource::<GraphViewportMemory>()
+            .init_resource::<overlay::GraphOverlays>()
             .init_resource::<GraphPanGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
@@ -156,6 +156,8 @@ impl Plugin for FeathersNodeGraphPlugin {
                     remember_graph_viewports,
                     restore_graph_viewports,
                     restore_graph_nodes,
+                    overlay::reconcile,
+                    overlay::sync_notice,
                     sync_graph_nodes_from_memory,
                     handle_graph_frame_buttons,
                     handle_graph_collapse_buttons,
@@ -266,6 +268,9 @@ pub(crate) struct GraphViewportMemory {
     views: HashMap<String, GraphView>,
     nodes: HashMap<(String, String), GraphNodeView>,
     offsets: HashMap<(String, String), Vec2>,
+    placement_revisions: HashMap<(String, String), u64>,
+    offset_epochs: HashMap<String, u64>,
+    serial: u64,
 }
 
 impl GraphViewportMemory {
@@ -284,6 +289,8 @@ impl GraphViewportMemory {
         self.views.retain(|key, _| keep(key));
         self.nodes.retain(|(key, _), _| keep(key));
         self.offsets.retain(|(key, _), _| keep(key));
+        self.placement_revisions.retain(|(key, _), _| keep(key));
+        self.offset_epochs.retain(|key, _| keep(key));
     }
 
     pub(crate) fn retain_nodes(&mut self, graph: &str, keep: impl Fn(&str) -> bool) {
@@ -291,11 +298,15 @@ impl GraphViewportMemory {
             .retain(|(key, node), _| key != graph || keep(node));
         self.offsets
             .retain(|(key, node), _| key != graph || keep(node));
+        self.placement_revisions
+            .retain(|(key, node), _| key != graph || keep(node));
     }
 
     /// Semantic reload/edit invalidates session displacement, not authored base placement.
     pub(crate) fn clear_offsets(&mut self, graph: &str) {
         self.offsets.retain(|(key, _), _| key != graph);
+        self.serial += 1;
+        self.offset_epochs.insert(graph.to_owned(), self.serial);
     }
 
     pub(crate) fn view(&self, graph_key: &str) -> Option<(Vec2, f32)> {
@@ -328,6 +339,14 @@ impl GraphViewportMemory {
         collapsed: bool,
     ) {
         let key = (graph_key.into(), node_key.into());
+        if self
+            .nodes
+            .get(&key)
+            .is_none_or(|node| node.position != position)
+        {
+            self.serial += 1;
+            self.placement_revisions.insert(key.clone(), self.serial);
+        }
         self.offsets.remove(&key);
         self.nodes.insert(
             key,
@@ -351,10 +370,10 @@ impl GraphViewportMemory {
         let key = (graph_key.to_owned(), node_key.to_owned());
         self.nodes.remove(&key);
         self.offsets.remove(&key);
+        self.placement_revisions.remove(&key);
     }
 
-    /// Internal seam for M4/M5. No production solver writes offsets yet. Replacement rather than
-    /// accumulation keeps rebuild/remeasurement idempotent; cause composition belongs to M5.
+    /// Replacement rather than accumulation keeps rebuild/remeasurement idempotent.
     #[allow(dead_code)]
     pub(crate) fn set_temporary_offset(
         &mut self,
@@ -1004,6 +1023,7 @@ fn end_graph_node_drag(
     controls: Query<(), GraphNodeControlFilter>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
+    mut memory: ResMut<GraphViewportMemory>,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -1022,6 +1042,9 @@ fn end_graph_node_drag(
     if let Some(before) = node.drag_before.take() {
         let after = (node.position, node.collapsed);
         if before != after {
+            // A displaced node's displayed drop location becomes its authored base,
+            // including a drag-start/end with no intervening motion event.
+            memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
             commands.trigger(GraphPresentationEdit {
                 graph: node.graph_key.clone(),
                 node: node.node_key.clone(),

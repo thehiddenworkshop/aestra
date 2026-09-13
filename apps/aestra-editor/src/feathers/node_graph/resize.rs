@@ -1,6 +1,6 @@
 //! Pure, bounded local resize planning in unzoomed logical graph units.
-//! No ECS, material semantics, persistence, history, or UI registration. M5 will adapt
-//! owner-elected geometry into this input and consume candidates as temporary offsets.
+//! No ECS, material semantics, persistence, history, or UI registration. The overlay
+//! controller adapts owner-elected geometry and consumes candidates as temporary offsets.
 //! This is a directional heuristic, not a global minimum-displacement solver.
 
 use bevy::math::Vec2;
@@ -106,6 +106,7 @@ pub(super) struct Candidate<K: Ord, D> {
 }
 
 impl<K: Ord + Clone, D: PartialEq> Candidate<K, D> {
+    #[cfg(test)]
     pub(super) fn positions(&self) -> &BTreeMap<K, Vec2> {
         &self.positions
     }
@@ -146,7 +147,7 @@ fn valid_node(node: &Node, spacing: Vec2) -> bool {
         && (node.position + node.size + spacing).is_finite()
 }
 
-fn overlaps(a: &Node, b: &Node, limits: Limits) -> bool {
+pub(super) fn overlaps(a: &Node, b: &Node, limits: Limits) -> bool {
     let end_a = a.position + a.size + limits.spacing;
     let end_b = b.position + b.size + limits.spacing;
     a.position.x < end_b.x - limits.epsilon

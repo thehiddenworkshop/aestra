@@ -29,6 +29,10 @@ fn raw() -> ViewObservation {
                 geometry: GraphNodeGeometry {
                     effective_position: Vec2::new(50.0, 30.0),
                     size: Vec2::new(224.0, 80.0),
+                    compact_size: Vec2::new(224.0, 80.0),
+                    preview: false,
+                    collapsed: false,
+                    content: 1,
                     ports: vec![],
                     geometry_revision: 0,
                 },
@@ -270,6 +274,15 @@ fn transient_sizes_and_rounding_noise_do_not_emit_resizes() {
 }
 
 /// Uses Bevy's real UI layout and text systems, without a window event loop or GPU.
+pub(crate) fn enable_overlays(app: &mut App) {
+    app.init_resource::<overlay::GraphOverlays>().add_systems(
+        Update,
+        overlay::reconcile
+            .after(restore_graph_nodes)
+            .before(sync_graph_nodes_from_memory),
+    );
+}
+
 pub(crate) fn layout_app(scale: f32) -> (App, Entity) {
     use bevy::{
         app::{HierarchyPropagatePlugin, PropagateSet},

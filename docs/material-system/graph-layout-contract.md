@@ -459,3 +459,61 @@ and explicit resize causes, compose temporary offsets, validate against current 
 placements/history and remaining causes, restore safely, and surface compact conflicts.
 Native M3 Undo/Redo acceptance and the combined M4/M5 DPI/multi-view/restart gates remain
 required before enabling automatic movement. These pure tests do not claim native UI QA.
+
+## M5 implementation — Reversible session overlays
+
+- M4's pure planner is now consumed by the shared graph widget. The geometry collector
+  also measures compact node bounds by removing the actual preview block height and its
+  logical margins, so already-visible previews reconstruct after restart without relying
+  on estimated material node heights. Collapsed bodies have no visible preview extent.
+- `GraphWidgetSync` restores nodes, reconciles the last stable owner snapshot, and then
+  synchronizes effective positions to all views before UI layout. Both material and
+  function wires explicitly update after UI PostLayout. Stale/missing/rebuilt geometry
+  waits; active dragging suspends reconciliation for that document. Owner/DPI-only
+  remeasurement, camera navigation and passive rebuilds do not create a resize cause.
+- Each document has a session-only composition model. It starts from bases and compact
+  measured sizes, grows active causes in stable node-key order, and anchors each root at
+  its already-composed position. Earlier causes may have displaced a later root. Closing
+  either of two previews recomputes the remaining composition; it never subtracts an old
+  delta. Iteration/pair-check and aggregate movement/affected-node budgets apply across
+  all causes, not independently with unlimited work per preview.
+- Initial ordinary body measurements are baselines, not a request to tidy a manual
+  graph. A measured collapse followed by expansion establishes a reversible body cause;
+  genuine stable content growth is also local. Preview causes are reconstructed from
+  measured compact bounds and saved visibility. Body/content baselines are session-only;
+  ordinary already-expanded bodies are not treated as new expansions on first opening.
+- Placement revisions protect manual moves for the active cause period. The displayed
+  drop position becomes the new authored base, removes that node's temporary offset, and
+  older causes cannot move it again. Protection is not persistent pinning. History clears
+  offsets through an epoch boundary and recomputes them against restored bases/visibility;
+  this adds no second Undo entry and does not execute a semantic command or compilation.
+- Returning nodes are validated against current geometry and inserted/manual obstacles.
+  A failed solve or unsafe restoration keeps the remaining safe offsets, publishes no
+  partial new movement, and displays a localized in-canvas conflict notice. Moving an
+  obstacle or changing visibility retries against the new state. No silent global Arrange,
+  unpinning, file mutation or native alert is used as a fallback.
+- Project/document identities, input revisions and live UI incarnation are checked.
+  Project switches discard journals even when material IDs and memory keys match. Node
+  removal prunes claims; document generation changes rebaseline. Closed/rebuilt views
+  consume shared placement while retaining independent cameras. Persistence still writes
+  only base/collapse/visibility metadata; the schema stays at version 2.
+
+Coverage includes both preview-closing orders, repeated composition, manual protection,
+unsafe restoration after insertion, frozen conflicts, removed nodes, aggregate budgets,
+history epoch replay, actual shared-widget preview geometry at three DPIs/two zooms,
+two-view synchronization and owner hiding, real function collapse/expand, project A/B/A,
+and disk save/reopen with visible previews at a different DPI. The existing real material
+and function adapter geometry tests now run with overlays and still assert unchanged
+effect state. Native pointer/visual acceptance is not claimed by these headless tests.
+
+Native check before M6: open a preview near another node, close it, then repeat with two
+previews closing in either order. Move a displaced neighbor manually before closing.
+Exercise mixed move/collapse/preview Undo/Redo in material/function tabs; confirm the
+dirty indicators stay unchanged for presentation-only actions. Save/reopen with a preview
+visible, then close it. Repeat with two views and different zoom/DPI; wires must remain
+attached and cameras independent. Confirm the compact notice appears for blocked cases.
+
+Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **895 editor tests passed**,
+7 opt-in tests ignored (6 GPU tests and the M4 timing probe). The architecture test,
+strict editor/project Clippy (`--all-targets -- -D warnings`), workspace formatting
+and `git diff --check` passed. Changes remain subject to the native acceptance above.

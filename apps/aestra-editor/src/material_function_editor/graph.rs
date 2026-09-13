@@ -81,7 +81,10 @@ pub(super) fn register(app: &mut App) {
         .add_observer(constant_text)
         .add_observer(constant_number)
         .add_systems(Update, attach_wires)
-        .add_systems(PostUpdate, update_wires.after(bevy::ui::UiSystems::Layout));
+        .add_systems(
+            PostUpdate,
+            update_wires.after(bevy::ui::UiSystems::PostLayout),
+        );
 }
 
 // Picking may target a child of the socket hit area (for example its visual dot).
@@ -1136,6 +1139,7 @@ mod tests {
             })
             .collect::<BTreeMap<_, _>>();
         let (mut app, ui_root) = geometry::tests::layout_app(1.25);
+        geometry::tests::enable_overlays(&mut app);
         app.insert_resource(session)
             .insert_resource(catalog)
             .insert_resource(memory);

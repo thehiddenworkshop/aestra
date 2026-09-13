@@ -169,7 +169,8 @@ impl Plugin for EditorMaterialGraphPlugin {
                     update_material_graph_wires,
                 )
                     .chain()
-                    .after(bevy::transform::TransformSystems::Propagate),
+                    .after(bevy::transform::TransformSystems::Propagate)
+                    .after(bevy::ui::UiSystems::PostLayout),
             )
             .add_systems(Startup, load_material_graph_layout)
             .add_systems(
@@ -5839,6 +5840,7 @@ mod tests {
         session.open_material_program(&catalog, program.id).unwrap();
         let effect_before = session.effect.clone();
         let (mut app, ui_root) = geometry::tests::layout_app(1.25);
+        geometry::tests::enable_overlays(&mut app);
         app.insert_resource(session)
             .insert_resource(catalog)
             .init_resource::<MaterialGraphPreviewState>();

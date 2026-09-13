@@ -25,6 +25,7 @@ pub(super) fn collect_graph_geometry(
         &ComputedNode,
         &UiGlobalTransform,
     )>,
+    previews: Query<(Entity, &ComputedNode, &Node), With<super::super::FeathersGraphNodePreview>>,
     parents: Query<&ChildOf>,
     styles: Query<(&Node, Option<&Visibility>)>,
     catalog: Option<Res<ProjectEffectCatalog>>,
@@ -115,6 +116,10 @@ pub(super) fn collect_graph_geometry(
                     geometry: GraphNodeGeometry {
                         effective_position: node.position,
                         size,
+                        compact_size: size,
+                        preview: marker.preview,
+                        collapsed: node.collapsed,
+                        content: marker.content,
                         ports: Vec::new(),
                         geometry_revision: 0,
                     },
@@ -125,6 +130,35 @@ pub(super) fn collect_graph_geometry(
                 },
             )
             .is_some()
+        {
+            observation.complete = false;
+        }
+    }
+    // Preview blocks are the final children of the body. Use their actual computed
+    // height, not the material adapter's bootstrap estimate. Margins are logical Px.
+    for (entity, computed, style) in &previews {
+        if !visible(entity) {
+            continue;
+        }
+        let Some((view, key)) = parents
+            .iter_ancestors(entity)
+            .find_map(|id| node_entities.get(&id))
+        else {
+            continue;
+        };
+        let observation = observations.get_mut(view).unwrap();
+        let (Val::Px(top), Val::Px(bottom)) = (style.margin.top, style.margin.bottom) else {
+            observation.complete = false;
+            continue;
+        };
+        let Some(size) = logical_size(computed) else {
+            observation.complete = false;
+            continue;
+        };
+        let node = observation.nodes.get_mut(key).unwrap();
+        node.geometry.compact_size.y -= size.y + top + bottom;
+        if !node.geometry.compact_size.is_finite()
+            || node.geometry.compact_size.min_element() <= 0.0
         {
             observation.complete = false;
         }
