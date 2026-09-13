@@ -26,7 +26,12 @@ const STABLE_FRAMES: u8 = 2;
 pub(super) fn register(app: &mut App) {
     app.init_resource::<GraphGeometryRegistry>().add_systems(
         PostUpdate,
-        collect::collect_graph_geometry.after(bevy::ui::UiSystems::PostLayout),
+        (
+            collect::collect_graph_geometry,
+            super::framing::frame_graph_viewports,
+        )
+            .chain()
+            .after(bevy::ui::UiSystems::PostLayout),
     );
 }
 
@@ -115,6 +120,19 @@ pub(crate) struct GraphGeometrySnapshot {
     pub document_generation: Option<DocumentId>,
     pub geometry_revision: u64,
     pub nodes: BTreeMap<GraphNodeKey, GraphNodeGeometry>,
+}
+
+impl GraphGeometrySnapshot {
+    /// A view-local union in logical graph units. An empty selection has no bounds.
+    pub(crate) fn bounds(&self, include: impl Fn(&GraphNodeKey) -> bool) -> Option<Rect> {
+        self.nodes
+            .iter()
+            .filter(|(key, _)| include(key))
+            .map(|(_, node)| {
+                Rect::from_corners(node.effective_position, node.effective_position + node.size)
+            })
+            .reduce(|a, b| Rect::from_corners(a.min.min(b.min), a.max.max(b.max)))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,6 +259,18 @@ impl GraphGeometryRegistry {
 
     pub(crate) fn view_snapshot(&self, view: &GraphViewKey) -> Option<&GraphGeometrySnapshot> {
         self.views.get(view)?.snapshot.as_ref()
+    }
+
+    /// Interactive consumers must not reuse a previous UI incarnation of the same view key.
+    pub(crate) fn mounted_view_snapshot(
+        &self,
+        view: &GraphViewKey,
+        entity: Entity,
+    ) -> Option<&GraphGeometrySnapshot> {
+        let state = self.views.get(view)?;
+        (state.sample.entity == entity)
+            .then_some(state.snapshot.as_ref())
+            .flatten()
     }
 
     pub(crate) fn changes(&self) -> &[GraphGeometryEvent] {

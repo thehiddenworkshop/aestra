@@ -32,6 +32,7 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
 use std::collections::HashMap;
 
+mod framing;
 pub(crate) mod geometry;
 
 pub(crate) const NODE_WIDTH: f32 = 224.0;
@@ -210,6 +211,7 @@ pub(crate) struct FeathersGraphViewport {
     content_size: Vec2,
     selection_bounds: Option<Rect>,
     frame_request: Option<GraphFrameTarget>,
+    measured_frame: Option<(GraphFrameTarget, GraphView)>,
 }
 
 impl FeathersGraphViewport {
@@ -560,6 +562,7 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
             zoom: props.initial_view.map_or(1.0, |(_, zoom)| zoom),
             content_size: props.content_size,
             selection_bounds: props.selection_bounds,
+            measured_frame: None,
             // A seeded camera is honoured immediately; only an unseeded viewport auto-frames.
             frame_request: props
                 .initial_view
@@ -1135,7 +1138,7 @@ fn navigate_graph_viewports(
     let Some(normalized) = cursor.normalized else {
         return;
     };
-    let cursor = (normalized + Vec2::splat(0.5)) * computed.size();
+    let cursor = (normalized + Vec2::splat(0.5)) * computed.size() * computed.inverse_scale_factor;
     let view = zoomed_graph_view_at(
         GraphView {
             pan: viewport.pan,
@@ -1150,32 +1153,13 @@ fn navigate_graph_viewports(
 }
 
 fn sync_graph_viewport_transforms(
-    mut viewports: Query<(Entity, &ComputedNode, &mut FeathersGraphViewport)>,
+    mut viewports: Query<(Entity, &mut FeathersGraphViewport)>,
     mut canvases: Query<(&FeathersGraphCanvas, &mut UiTransform)>,
-    graph_nodes: Query<(&FeathersGraphNode, &ComputedNode)>,
 ) {
-    for (entity, computed, mut viewport) in &mut viewports {
-        let viewport_size = computed.size();
-        if viewport_size.min_element() > 0.0
-            && let Some(target) = viewport.frame_request
+    for (entity, mut viewport) in &mut viewports {
+        if let Some((target, view)) = viewport.measured_frame.take()
+            && viewport.frame_request == Some(target)
         {
-            let live_bounds = graph_node_bounds(
-                &graph_nodes,
-                &viewport.key,
-                target == GraphFrameTarget::Selection,
-            );
-            let bounds = live_bounds.unwrap_or_else(|| match target {
-                GraphFrameTarget::All => Rect::from_corners(Vec2::ZERO, viewport.content_size),
-                GraphFrameTarget::Selection => viewport
-                    .selection_bounds
-                    .unwrap_or_else(|| Rect::from_corners(Vec2::ZERO, viewport.content_size)),
-            });
-            let maximum_zoom = if target == GraphFrameTarget::All {
-                1.0
-            } else {
-                MAX_ZOOM
-            };
-            let view = framed_graph_view(bounds, viewport_size, maximum_zoom);
             viewport.pan = view.pan;
             viewport.zoom = view.zoom;
             viewport.frame_request = None;
@@ -1187,22 +1171,6 @@ fn sync_graph_viewport_transforms(
             }
         }
     }
-}
-
-fn graph_node_bounds(
-    nodes: &Query<(&FeathersGraphNode, &ComputedNode)>,
-    graph_key: &str,
-    selection_only: bool,
-) -> Option<Rect> {
-    nodes
-        .iter()
-        .filter(|(node, computed)| {
-            node.graph_key == graph_key
-                && (!selection_only || node.selected)
-                && computed.size().min_element() > 0.0
-        })
-        .map(|(node, computed)| Rect::from_corners(node.position, node.position + computed.size()))
-        .reduce(|left, right| Rect::from_corners(left.min.min(right.min), left.max.max(right.max)))
 }
 
 fn zoomed_graph_view_at(mut view: GraphView, cursor: Vec2, scroll_delta: f32) -> GraphView {
@@ -1731,6 +1699,7 @@ mod tests {
                 content_size,
                 selection_bounds: None,
                 frame_request: None,
+                measured_frame: None,
             };
             let wire_endpoint_screen = viewport.project_graph_point(graph_point);
 

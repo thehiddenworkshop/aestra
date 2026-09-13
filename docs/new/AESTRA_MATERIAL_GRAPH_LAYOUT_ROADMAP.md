@@ -1,16 +1,17 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0 contracts and M1 live geometry complete, 2026-09-13; M2 is next. No automatic movement implemented.
+> **Status:** M0 contracts, M1 live geometry and M2 measured framing implemented, 2026-09-13; M3 is next. No automatic movement implemented.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
 **Review outcome:** retain the hybrid interaction model. Before automatic movement is
 exposed, establish coordinate units, document/view ownership, base-position persistence,
-temporary-offset composition, and presentation Undo. M0 contract coverage and M1 live
-geometry are complete; the next implementation task is M2 measured interactive bounds.
+temporary-offset composition, and presentation Undo. M0 contract coverage, M1 live
+geometry and M2 measured framing are implemented; the next task is M3 base placement,
+persistence and presentation Undo.
 The first automatic-movement feature
 is the bounded preview-resize flow through M5. No layout dependency or automatic
-movement is introduced by M0–M1.
+movement is introduced by M0–M2.
 
 The [M0 graph-layout contract audit](../material-system/graph-layout-contract.md) records
 current material/function behavior, regression coverage and gaps GL01–GL08 with milestone
@@ -1585,6 +1586,16 @@ cannot schedule reconciliation. No node moves automatically.
 
 ## Milestone 2 — Use measured geometry for interactive bounds
 
+**Implemented 2026-09-13.** Frame All/Selection now consumes the exact mounted view's
+stable normalized geometry, including expanded content and collapsed nodes. New,
+hidden or rebuilding graph views defer framing until measurements are ready. Camera
+results apply before the next UI layout, keeping canvas, grid and wires in sync.
+Selection bounds are no longer guessed by the material adapter; no selection falls
+back to the measured whole graph. Function graphs share this path (their current
+adapter has no node-selection UI, so Selection frames all). Bootstrap estimates remain
+for initial placement and empty/unadapted widget content. See the
+[M2 implementation record](../material-system/graph-layout-contract.md#m2-implementation--measured-interactive-bounds).
+
 ### Goal
 
 Remove duplicated guessed geometry from runtime interaction decisions.
@@ -2120,11 +2131,10 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Immediate task: M2 measured interactive bounds.** M0–M1 are complete; use the
-[contract audit and M1 implementation record](../material-system/graph-layout-contract.md)
-as the baseline. Replace estimated/mixed-unit runtime bounds with the correct view's
-measured geometry for framing and selection. Keep estimates for bootstrap only. Deliver
-M2–M3 without enabling automatic movement.
+**Immediate task: M3 base placement, persistence and presentation Undo.** M0–M2 are
+implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
+as the baseline. Establish document-scoped base positions, function persistence,
+project isolation and focused presentation history before enabling automatic movement.
 
 After those prerequisites, implement this complete M4–M5 flow before integrating
 `elkrs`:

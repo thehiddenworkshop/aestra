@@ -495,6 +495,11 @@ pub(crate) fn spawn(
         return;
     };
     let graph_key = format!("function:{}:{}", catalog.root().display(), function.id);
+    // Placement stays document-scoped, but a toolbar frame action must target only its view.
+    let viewport_key = view.map_or_else(
+        || graph_key.clone(),
+        |view| format!("{graph_key}#view:{}", view.0),
+    );
     let mut inputs = nodes
         .iter()
         .map(|node| (node.id, Vec::new()))
@@ -583,7 +588,7 @@ pub(crate) fn spawn(
                 assets,
                 "icons/frame-all.svg",
                 "Frame all".into(),
-                GraphFrameAction::new(&graph_key, GraphFrameTarget::All),
+                GraphFrameAction::new(&viewport_key, GraphFrameTarget::All),
             );
             spawn_graph_tool_button(
                 toolbar,
@@ -616,10 +621,12 @@ pub(crate) fn spawn(
     let viewport = spawn_graph_viewport(
         parent,
         GraphViewportProps {
-            key: graph_key.clone(),
+            key: viewport_key.clone(),
             content_size: extent,
             selection_bounds: None,
-            initial_view: None,
+            initial_view: memory
+                .view(&viewport_key)
+                .or_else(|| memory.view(&graph_key)),
         },
         (),
         |wires| {
@@ -1162,6 +1169,7 @@ mod tests {
             for _ in 0..4 {
                 app.update();
             }
+            geometry::tests::assert_frame_all(app.world_mut());
             let world = app.world_mut();
             let document = GraphDocumentKey {
                 project: world.resource::<ProjectEffectCatalog>().root().to_owned(),

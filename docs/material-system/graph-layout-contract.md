@@ -222,3 +222,45 @@ test, strict editor Clippy (`--all-targets -- -D warnings`), workspace formattin
 layout/ECS coverage. Next is
 **M2 — Use measured geometry for interactive bounds**; M1 does not change framing or
 enable automatic node movement.
+
+## M2 implementation — Measured interactive bounds
+
+The shared framing path now unions `GraphGeometrySnapshot` node rectangles from the
+exact mounted `GraphViewKey` and viewport entity, rather than matching document memory
+strings against camera strings or adding physical dimensions to logical positions.
+Both the node bounds and viewport size use logical units. Cursor-centered wheel zoom
+also normalizes the viewport size by inverse UI scale.
+
+- Frame All uses every measured node, including synthetic material/function outputs.
+  Frame Selection uses selected nodes under that viewport only; an empty selection
+  frames its measured whole graph. Function graphs use the same widget behavior, but
+  this milestone does not add a function-node selection UI.
+- Material selection height estimates have been removed. Preview expansion, diagnostic
+  content, collapsed bodies and manually moved nodes are included by measurement.
+  Depth/height estimates remain initial placement inputs, not live interaction bounds.
+- Function camera/toolbar keys now include the editor-view ID, while node placement
+  remains document-scoped. This small part of GL03 is brought forward so Frame All in
+  one function view cannot also frame its sibling. Camera disk persistence and focused
+  camera-save ownership still belong to M3.
+- New, hidden, resizing and rebuilt graph views retain their frame request until their
+  own stable, complete snapshot exists. Other views and old same-key entities cannot
+  supply a substitute. Empty graphs/unadapted widget clients retain bootstrap bounds.
+- Post-layout framing stages only a camera result. The next Update applies it with the
+  canvas transform, before UI layout and wire/grid rendering. Wheel/pan navigation can
+  cancel a pending frame. There is no node movement, semantic edit, new layout history
+  entry or persisted measured size. Existing zoom limits are unchanged.
+
+Regression coverage uses real Bevy layout for both typed graph kinds at 100%, 125% and
+200% DPI, each at 0.5, 1.0 and 1.75 initial zoom. It covers All/Selection, negative/manual
+positions, expanded content, collapse, separate views, rebuilds, hidden views and empty
+selection. Actual material-preview and function-body adapter tests now assert measured
+initial framing as well as geometry and semantic isolation. A wheel-navigation system
+test checks DPI-normalized anchoring and cancellation of a staged frame.
+
+Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **850 editor tests passed,
+6 existing GPU tests ignored**; architecture test, strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` pass.
+
+Native-window visual acceptance remains separate from these headless tests. Next is
+**M3 — Base placement, persistence and presentation Undo**; GL03–GL08's placement,
+camera persistence, project-isolation and history work is not claimed by M2.

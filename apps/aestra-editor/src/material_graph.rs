@@ -3725,15 +3725,6 @@ pub(crate) fn spawn_material_graph_workspace(
             };
             let layout = layout_graph(&projection, previews);
             let graph_key = material_graph_view_key(projection.program);
-            let selection_bounds = selected_graph_node_bounds(
-                &layout,
-                &projection,
-                selection,
-                view,
-                previews,
-                graph_memory,
-                &graph_key,
-            );
             // Seed this view's camera from its own remembered pan/zoom, else the document camera
             // (the last-saved / tool-panel camera), so a reopened or split view starts where the
             // document was left rather than always re-framing.
@@ -3745,7 +3736,7 @@ pub(crate) fn spawn_material_graph_workspace(
                 GraphViewportProps {
                     key: viewport_key.clone(),
                     content_size: layout.size,
-                    selection_bounds,
+                    selection_bounds: None,
                     initial_view,
                 },
                 MaterialGraphCanvas,
@@ -4440,49 +4431,6 @@ fn material_graph_viewport_key(
 
 fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
     format!("expression:{expression}")
-}
-
-fn selected_graph_node_bounds(
-    layout: &MaterialGraphLayout,
-    graph: &MaterialGraphProjection,
-    selection: &MaterialGraphSelectionState,
-    scope: MaterialSelectionScope,
-    previews: &MaterialGraphPreviewState,
-    graph_memory: &GraphViewportMemory,
-    graph_key: &str,
-) -> Option<Rect> {
-    let selected = selection.get(scope)?;
-    if selected.program != Some(graph.program) || selected.expressions.is_empty() {
-        return None;
-    }
-    graph
-        .nodes
-        .iter()
-        .filter(|node| selected.expressions.contains(&node.expression))
-        .filter_map(|node| {
-            let node_key = material_graph_expression_node_key(node.expression);
-            let position = graph_memory
-                .node_position(graph_key, &node_key)
-                .or_else(|| layout.nodes.get(&node.expression).copied())?;
-            Some(Rect::from_corners(
-                position,
-                position
-                    + Vec2::new(
-                        NODE_WIDTH,
-                        node_height(
-                            node.inputs.len(),
-                            node.disabled || !node.reachable,
-                            previews.is_visible(
-                                graph.program,
-                                MaterialGraphPreviewTarget::Expression(node.expression),
-                            ),
-                        ),
-                    ),
-            ))
-        })
-        .reduce(|bounds, node| {
-            Rect::from_corners(bounds.min.min(node.min), bounds.max.max(node.max))
-        })
 }
 
 fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphProjection) {
@@ -5931,6 +5879,7 @@ mod tests {
                 changes
                     .extend_from_slice(app.world().resource::<GraphGeometryRegistry>().changes());
             }
+            geometry::tests::assert_frame_all(app.world_mut());
             let registry = app.world().resource::<GraphGeometryRegistry>();
             let snapshot = registry.snapshot(&document).unwrap();
             let output = &snapshot.nodes[&GraphNodeKey::MaterialOutputs];

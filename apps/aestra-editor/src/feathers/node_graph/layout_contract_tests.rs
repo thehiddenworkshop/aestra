@@ -25,6 +25,7 @@ fn viewport(key: &str, zoom: f32) -> FeathersGraphViewport {
         content_size: Vec2::new(720.0, 420.0),
         selection_bounds: None,
         frame_request: Some(GraphFrameTarget::All),
+        measured_frame: None,
     }
 }
 

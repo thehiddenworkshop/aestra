@@ -297,7 +297,12 @@ pub(crate) fn layout_app(scale: f32) -> (App, Entity) {
     .init_resource::<GraphViewportMemory>()
     .add_systems(
         Update,
-        (restore_graph_nodes, sync_graph_nodes_from_memory).chain(),
+        (
+            restore_graph_nodes,
+            sync_graph_nodes_from_memory,
+            sync_graph_viewport_transforms,
+        )
+            .chain(),
     )
     .add_systems(
         PostUpdate,
@@ -368,6 +373,38 @@ fn advance(app: &mut App) -> Vec<GraphGeometryEvent> {
         events.extend_from_slice(app.world().resource::<GraphGeometryRegistry>().changes());
     }
     events
+}
+
+/// Verify the actual adapters' initial frame uses measured content, including restored positions.
+pub(crate) fn assert_frame_all(world: &mut World) {
+    let toolbar_keys = world
+        .query::<&GraphFrameAction>()
+        .iter(world)
+        .map(|action| action.key.clone())
+        .collect::<BTreeSet<_>>();
+    let mut query = world.query::<(
+        Entity,
+        &GraphGeometryView,
+        &FeathersGraphViewport,
+        &ComputedNode,
+    )>();
+    let registry = world.resource::<GraphGeometryRegistry>();
+    let mut count = 0;
+    for (entity, marker, viewport, computed) in query.iter(world) {
+        assert!(toolbar_keys.contains(&viewport.key));
+        if let Some(view) = marker.key.view {
+            assert!(viewport.key.ends_with(&format!("#view:{}", view.0)));
+        }
+        let snapshot = registry.mounted_view_snapshot(&marker.key, entity).unwrap();
+        let bounds = snapshot.bounds(|_| true).unwrap();
+        let expected =
+            framed_graph_view(bounds, computed.size() * computed.inverse_scale_factor, 1.0);
+        assert!(viewport.frame_request.is_none());
+        assert!((viewport.pan - expected.pan).length() < 0.01);
+        assert!((viewport.zoom - expected.zoom).abs() < 0.0001);
+        count += 1;
+    }
+    assert!(count > 0);
 }
 
 #[test]
