@@ -1,7 +1,8 @@
 # Asset Browser delivery plan
 
 Status: updated 2026-09-13. AB8b3 canonical-browser cutover is implemented and
-user-accepted. AB9a texture, AB9b saved-material, AB9c static-mesh and AB9d static-effect thumbnails are implemented; verification and native acceptance
+user-accepted. AB9a texture, AB9b saved-material, AB9c static-mesh and AB9d static-effect thumbnails,
+plus AB9e Favorites/Recent, are implemented; verification and native acceptance
 are tracked below. The following historical delivery record retains its original caveats.
 
 AB0 contracts/inventory recorded and AB1
@@ -118,7 +119,7 @@ AB7g's Built-ins and Current Document virtual sources are implemented; native ac
 is pending in the historical per-flow record. AB8 parity review and Library removal are
 now implemented; the user accepted the cutover on 2026-09-12. AB9a thumbnails are the
 previous slice. AB9b adds saved-material, AB9c static-mesh and AB9d static-effect thumbnails;
-remaining AB9 features are deferred.
+AB9e adds Favorites and Recently Opened. Saved searches and collections remain deferred.
 Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
@@ -916,6 +917,31 @@ Trail Lab), verify square framing in list/grid, and browse/switch projects while
 Check that active playback, camera, drafts and selection do not change. Automated native
 GPU capture is opt-in and does not replace this ergonomic/visual acceptance gate.
 
+**AB9e — Favorites and Recently Opened (implemented; native acceptance pending):**
+The Project browser's Browse selector switches between Current Folder, Favorites and
+Recently Opened. These views reuse the same list/grid, selection, activation, thumbnail
+and drag/drop routes. Right-click an asset or a folder (including tree folders) to add
+or remove a favorite. Locate in Assets returns a shortcut to its containing folder.
+Recently Opened is newest-first, deduplicated, and records successful effect, material,
+function and WESL/WGSL opens—not selection, failed opens or cancelled navigation.
+New Folder is disabled in virtual collections; folder rows remain valid drop targets.
+
+The existing atomic, debounced `.aestra/asset-browser.ron` preferences store up to 256
+favorites and 64 recent entries per project. Older format-1 preferences load with empty
+shortcuts. Restoration rejects unsafe locations, deduplicates entries and applies limits.
+Project switching and restart preserve the respective lists without leaking virtual-source
+search text into the Project search. Authored asset bytes and dependency IDs are unchanged.
+
+Bookmarks use relative paths plus existing semantic IDs where available. Browser
+rename/move remaps all locations, including folder descendants. A unique semantic ID
+can resolve an externally moved typed asset; ambiguous moved IDs remain unavailable.
+Generic files/folders remain path bookmarks, so external moves are not automatically
+tracked. Missing entries stay dormant and are hidden, allowing deletion Undo/restore to
+revive them. Clear Recent and Clear Missing Favorites only remove browsing metadata.
+Native acceptance: pin/unpin in grid/list/tree, open from both collections, test folder
+navigation/Locate and drag/drop, rename/move, delete/Undo, then restart and switch projects.
+This does not close the outstanding AB9d visual-acceptance gate.
+
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
 collections. Cache keys include source/content revision and rendering inputs, with
@@ -960,6 +986,7 @@ tree relocation, recoverable deletion and open-draft Undo are now implemented; t
 user accepted the deletion P0 check on 2026-09-09 and subsequently accepted material
 drops. On 2026-09-12, the user accepted the canonical browser with “everything is fine”
 and requested the next step. This records user acceptance of AB8b3, not an independently
-observed execution of every earlier native checklist item. **Current step (P2):** AB9d
-static saved-effect thumbnails, following committed AB9a–AB9c. Complete automated verification and
-native thumbnail acceptance before the remaining AB9 browsing features.
+observed execution of every earlier native checklist item. **Current step (P2):** AB9e
+Favorites and Recently Opened, following committed AB9a–AB9d. Native acceptance of these
+browsing shortcuts and the preceding thumbnails remains pending. Saved searches and
+collections are subsequent AB9 slices, not part of AB9e.

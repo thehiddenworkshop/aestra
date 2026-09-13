@@ -1816,6 +1816,10 @@ fn material_activation_opens_shared_source_without_retargeting_the_effect() {
     click(&mut app, row, 2);
     assert_eq!(app.world().resource::<EditorSession>().status, expected);
     assert_eq!(
+        app.world().resource::<AssetBrowserState>().recent[0].path,
+        Path::new("test.aestra.material.ron")
+    );
+    assert_eq!(
         app.world()
             .resource::<EditorSession>()
             .standalone_material(),
@@ -2143,6 +2147,10 @@ fn browser_effect_activation_loads_documents_through_the_background_worker() {
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect, effect);
         assert!(session.preview.is_some());
+        assert_eq!(
+            app.world().resource::<AssetBrowserState>().recent[0].path,
+            path.strip_prefix(root.path()).unwrap()
+        );
     }
 }
 

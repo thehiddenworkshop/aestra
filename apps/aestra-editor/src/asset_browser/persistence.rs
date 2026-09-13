@@ -1,5 +1,6 @@
 //! Optional root-local UI preferences, separate from authored assets and graph layouts.
 //! No source handles, document selection, or activation requests are serialized.
+use super::bookmarks::{Bookmark, BrowserCollection, FAVORITES_LIMIT, RECENT_LIMIT};
 use super::state::*;
 use crate::*;
 use aestra_project::{ProjectContent, ProjectContentVersion};
@@ -19,6 +20,9 @@ const SAVE_DELAY: Duration = Duration::from_millis(500);
 #[serde(default, deny_unknown_fields)]
 pub(super) struct BrowserPreferences {
     format_version: u32,
+    collection: BrowserCollection,
+    favorites: Vec<Bookmark>,
+    recent: Vec<Bookmark>,
     folder: PathBuf,
     expanded: BTreeSet<PathBuf>,
     view: ViewMode,
@@ -35,6 +39,9 @@ impl Default for BrowserPreferences {
         let state = AssetBrowserState::default();
         Self {
             format_version: FORMAT,
+            collection: BrowserCollection::default(),
+            favorites: Vec::new(),
+            recent: Vec::new(),
             folder: PathBuf::new(),
             expanded: BTreeSet::new(),
             view: state.view,
@@ -58,6 +65,9 @@ impl BrowserPreferences {
     fn capture(state: &AssetBrowserState, content: &ProjectContent) -> Self {
         Self {
             format_version: FORMAT,
+            collection: state.collection,
+            favorites: state.favorites.clone(),
+            recent: state.recent.clone(),
             folder: state.folder.clone(),
             expanded: state
                 .expanded
@@ -83,6 +93,21 @@ impl BrowserPreferences {
         // Always start from defaults: a second project must not inherit the first one's filters.
         *state = AssetBrowserState::default();
         state.reconcile(content, version);
+        state.collection = self.collection;
+        let sanitize = |items: &[Bookmark], limit| {
+            let mut unique = Vec::new();
+            for item in items.iter().filter(|item| safe_relative(&item.path)) {
+                if !unique.contains(item) {
+                    unique.push(item.clone());
+                }
+                if unique.len() == limit {
+                    break;
+                }
+            }
+            unique
+        };
+        state.favorites = sanitize(&self.favorites, FAVORITES_LIMIT);
+        state.recent = sanitize(&self.recent, RECENT_LIMIT);
         let mut folder = if safe_relative(&self.folder) {
             self.folder.clone()
         } else {
@@ -259,7 +284,16 @@ impl BrowserPersistence {
         if self.root.as_deref() != Some(content.source_tree().root_path()) {
             return;
         }
-        let next = BrowserPreferences::capture(state, content);
+        let next = if state.scope == SourceScope::Project {
+            BrowserPreferences::capture(state, content)
+        } else {
+            // Virtual-source search is not the Project search. Successful document opens still
+            // update Recent even when the browser is showing Built-ins or Current Document.
+            let mut next = self.current.clone();
+            next.favorites = state.favorites.clone();
+            next.recent = state.recent.clone();
+            next
+        };
         if next != self.current {
             self.current = next;
             self.changed_at = Some(Instant::now());
@@ -301,7 +335,7 @@ pub(super) fn persist_preferences(
     exits: Option<Res<Messages<AppExit>>>,
 ) {
     // Selection/hover can mark the state changed, but identical preferences never write.
-    if state.is_changed() && state.scope == SourceScope::Project {
+    if state.is_changed() {
         persistence.capture(&state, catalog.content());
     }
     if exits.is_some_and(|exits| !exits.is_empty())
@@ -321,6 +355,74 @@ mod tests {
         generation: 1,
         revision: 1,
     };
+
+    #[test]
+    fn legacy_preferences_default_to_empty_shortcuts_and_validate_new_locations() {
+        let legacy: BrowserPreferences = ron::from_str("(format_version: 1, view: Grid)").unwrap();
+        assert!(legacy.favorites.is_empty() && legacy.recent.is_empty());
+        assert_eq!(legacy.collection, BrowserCollection::Folder);
+        let mut preferences: BrowserPreferences = ron::from_str(r#"(
+            favorites: [(path: "../outside", asset: None), (path: ".aestra/private", asset: None), (path: "missing", asset: None), (path: "missing", asset: None)],
+            recent: [(path: "/outside", asset: None), (path: "missing", asset: None)],
+            collection: Favorites,
+        )"#).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let content = ProjectContent::scan(root.path());
+        let mut state = AssetBrowserState::default();
+        preferences.restore(&mut state, &content, VERSION);
+        assert_eq!(state.favorites.len(), 1);
+        assert_eq!(state.recent.len(), 1);
+        assert!(state.filtered(&content).is_empty());
+        assert_eq!(state.collection, BrowserCollection::Favorites);
+        preferences.favorites = (0..FAVORITES_LIMIT + 10)
+            .map(|i| {
+                let mut item = state.favorites[0].clone();
+                item.path = format!("f{i}").into();
+                item
+            })
+            .collect();
+        preferences.recent = preferences.favorites.clone();
+        preferences.restore(&mut state, &content, VERSION);
+        assert_eq!(state.favorites.len(), FAVORITES_LIMIT);
+        assert_eq!(state.recent.len(), RECENT_LIMIT);
+    }
+
+    #[test]
+    fn shortcut_preferences_are_project_local_and_virtual_search_does_not_leak() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::create_dir(first.path().join("folder")).unwrap();
+        fs::create_dir(second.path().join("folder")).unwrap();
+        let a = ProjectContent::scan(first.path());
+        let b = ProjectContent::scan(second.path());
+        let id = a
+            .source_tree()
+            .at_relative_path(Path::new("folder"))
+            .unwrap()
+            .id;
+        let mut state = AssetBrowserState::default();
+        let mut persistence = BrowserPersistence::default();
+        persistence.restore_root(&mut state, &a, VERSION);
+        state.toggle_favorite(&a, id);
+        state.collection = BrowserCollection::Favorites;
+        state.query = "project query".into();
+        persistence.capture(&state, &a);
+        state.scope = SourceScope::BuiltIns;
+        state.query = "built-in query".into();
+        state.record_recent(&a, id);
+        persistence.capture(&state, &a);
+        persistence.restore_root(&mut state, &b, VERSION);
+        assert!(state.favorites.is_empty() && state.recent.is_empty());
+        persistence.restore_root(&mut state, &a, VERSION);
+        assert_eq!(state.query, "project query");
+        assert_eq!(state.collection, BrowserCollection::Favorites);
+        assert!(state.is_favorite(&a, id));
+        assert_eq!(state.recent.len(), 1);
+        let saved = BrowserPreferences::load(first.path()).unwrap();
+        saved.restore(&mut state, &a, VERSION);
+        assert_eq!(state.favorites.len(), 1);
+        assert_eq!(state.recent.len(), 1);
+    }
 
     #[test]
     fn restart_restores_preferences_but_never_selection_history_or_inspection() {
@@ -344,6 +446,8 @@ mod tests {
         state.kinds.insert(Kind::Texture);
         state.selected = Some(folder);
         state.inspected = Some(folder);
+        state.toggle_favorite(&content, folder);
+        state.record_recent(&content, folder);
         state.page = 3;
         let preferences = BrowserPreferences::capture(&state, &content);
         preferences.save(root.path()).unwrap();
@@ -357,6 +461,8 @@ mod tests {
         assert!(state.selected.is_none() && state.inspected.is_none());
         assert!(state.back.is_empty() && state.forward.is_empty());
         assert_eq!(state.page, 0);
+        assert!(state.is_favorite(&content, folder));
+        assert_eq!(state.recent.len(), 1);
         // The existing graph layout is a separate file, never rewritten by the browser.
         assert!(!root.path().join(".aestra/editor-layout.ron").exists());
     }

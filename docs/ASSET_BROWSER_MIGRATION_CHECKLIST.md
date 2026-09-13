@@ -2040,3 +2040,35 @@ editor and renderer, full-workspace formatting and diff checks passed on Rust 1.
 Regression coverage includes deterministic sampling/framing, cancellation/limits, no-GPU
 fallback without document changes, real trail history, fresh isolated texture pixels and
 unsafe paths, per-instance texture override ownership, and native capture/cleanup.
+
+### AB9e — Favorites and Recently Opened — 2026-09-13
+
+Added a Browse selector for Current Folder, Favorites and Recently Opened within the
+existing Project browser. All views share list/grid rows, thumbnails, open gestures,
+selection and drag/drop. Asset/folder context menus add/remove favorites; folder-tree
+menus use the same action. Locate returns to the containing folder. Recent entries are
+deduplicated/newest-first and only recorded after successful effect/material/function/
+WESL activation, including guarded effect-open completion. Empty views explain how to
+populate them. New Folder is disabled outside Current Folder.
+
+Root-local `.aestra/asset-browser.ron` preferences persist 256 favorites and 64 recent
+entries at most, with backward-compatible defaults for older preferences, validated
+relative paths, deduplication, atomic writes and existing debounce/exit flushing.
+Built-ins search changes do not overwrite saved Project filters when Recent updates.
+Bookmarks retain existing semantic identity where available; the shared relocation hook
+remaps files/folders and descendants. Missing entries are hidden but retained so Undo
+and Deleted Items restore revive shortcuts. Clear Recent and Clear Missing Favorites
+remove metadata only. Generic external moves still cannot be followed by identity.
+
+Native acceptance remains pending: pin/unpin assets and tree folders; open/locate/drag
+from each collection; verify rename/move and deletion Undo; restart and switch projects.
+AB9d thumbnail visual acceptance remains pending independently. Saved searches and
+collections are not included in this slice.
+
+Verification: 826 editor tests and the architecture test passed; three opt-in tests were
+ignored. Eight new tests cover collection filtering/order, stale actions and retained
+rows, bounded storage, semantic/generic relocation, delete/restore, successful versus
+failed activation, legacy/unsafe preferences, restart and root isolation. Existing
+effect/material-open and delete/Undo/Redo tests now also assert bookmark behavior.
+Strict all-target editor Clippy (`-D warnings`), full-workspace formatting and diff checks
+passed on the supported 1.98.1 MSVC toolchain. Native UI acceptance was not performed.

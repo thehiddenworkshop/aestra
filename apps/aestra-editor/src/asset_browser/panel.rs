@@ -1,3 +1,4 @@
+use super::bookmarks::BrowserCollection;
 use super::{actions::BrowserAction, state::*};
 use crate::{
     feathers::{
@@ -533,7 +534,10 @@ pub(super) fn sync_panel(
         }
         let content_changed = previous != Some(&layout_only) || localizer.is_changed();
         let navigation_changed = previous.is_none_or(|old| {
-            old.folder != state.folder || old.page != state.page || old.version != state.version
+            old.folder != state.folder
+                || old.collection != state.collection
+                || old.page != state.page
+                || old.version != state.version
         });
         if previous.is_some_and(|old| old.query != state.query) {
             for children in &search {
@@ -661,6 +665,9 @@ pub(super) fn sync_panel(
                 let row = &ui.rows[&entry.id];
                 let mut description =
                     format!("{}\n{}", localizer.text(kind.label()), entry.path.display());
+                if state.is_favorite(content, entry.id) {
+                    description.push_str(&format!("\n{}", localizer.text("browser-favorite")));
+                }
                 if let Some(metadata) = &entry.metadata {
                     description.push_str(&format!(
                         "\n{} B{}",
@@ -778,10 +785,20 @@ pub(super) fn sync_panel(
                 if let Some(error) = content
                     .source(state.folder_id(content))
                     .and_then(|e| e.error.as_deref())
+                    .filter(|_| state.collection == BrowserCollection::Folder)
                 {
                     text(parent, error);
                 } else if entries.is_empty() {
-                    text(parent, localizer.text("browser-empty"));
+                    let key = if state.query.is_empty() && state.kinds.is_empty() {
+                        match state.collection {
+                            BrowserCollection::Favorites => "browser-favorites-empty",
+                            BrowserCollection::Recent => "browser-recent-empty",
+                            BrowserCollection::Folder => "browser-empty",
+                        }
+                    } else {
+                        "browser-empty"
+                    };
+                    text(parent, localizer.text(key));
                 }
             });
         }
@@ -913,6 +930,7 @@ fn sync_chrome(
     // Keep keyboard focus on toolbar controls when navigating or switching layout.
     for (entity, action) in &ui.toolbar_actions {
         let disabled = match action {
+            BrowserAction::NewFolder => state.collection != BrowserCollection::Folder,
             BrowserAction::Back => state.back.is_empty(),
             BrowserAction::Forward => state.forward.is_empty(),
             BrowserAction::Up => state.folder.as_os_str().is_empty(),
@@ -944,9 +962,17 @@ fn sync_chrome(
             bevy::feathers::controls::ButtonVariant::Normal
         });
     }
-    if previous.is_none_or(|old| old.folder != state.folder || old.version != state.version) {
+    if previous.is_none_or(|old| {
+        old.folder != state.folder
+            || old.collection != state.collection
+            || old.version != state.version
+    }) {
         clear(commands, ui.breadcrumbs);
         commands.entity(ui.breadcrumbs).with_children(|parent| {
+            if state.collection != BrowserCollection::Folder {
+                text(parent, localizer.text(state.collection.label()));
+                return;
+            }
             let mut items = Vec::new();
             let mut current = content.source(state.folder_id(content));
             while let Some(entry) = current {
@@ -987,10 +1013,54 @@ fn sync_chrome(
         });
     }
     if previous.is_none_or(|old| {
-        old.kinds != state.kinds || old.sort != state.sort || old.recursive != state.recursive
+        old.kinds != state.kinds
+            || old.sort != state.sort
+            || old.recursive != state.recursive
+            || old.collection != state.collection
+            || old.favorites != state.favorites
+            || old.recent != state.recent
+            || old.version != state.version
     }) {
         clear(commands, ui.filters);
         commands.entity(ui.filters).with_children(|parent| {
+            let options = [
+                BrowserCollection::Folder,
+                BrowserCollection::Favorites,
+                BrowserCollection::Recent,
+            ]
+            .map(|collection| ComboOption {
+                label: localizer.text(collection.label()),
+                selected: state.collection == collection,
+                action: BrowserAction::Collection(collection),
+            });
+            spawn_combo_control(
+                parent,
+                &localizer.text(state.collection.label()),
+                &localizer.text("browser-collection"),
+                &options,
+                130.0,
+            );
+            if state.collection == BrowserCollection::Recent && !state.recent.is_empty() {
+                spawn_feathers_action_button(
+                    parent,
+                    &localizer.text("browser-clear-recent"),
+                    BrowserAction::ClearRecent,
+                    false,
+                );
+            }
+            if state.collection == BrowserCollection::Favorites
+                && state
+                    .favorites
+                    .iter()
+                    .any(|item| item.resolve(content).is_none())
+            {
+                spawn_feathers_action_button(
+                    parent,
+                    &localizer.text("browser-clear-missing-favorites"),
+                    BrowserAction::ClearMissingFavorites,
+                    false,
+                );
+            }
             let label = localizer.text(if state.kinds.is_empty() {
                 "browser-all-types"
             } else {
@@ -1013,33 +1083,38 @@ fn sync_chrome(
                 &options,
                 112.0,
             );
-            let options = [Sort::Name, Sort::Type].map(|sort| ComboOption {
-                label: localizer.text(if sort == Sort::Name {
-                    "browser-sort-name"
-                } else {
-                    "browser-sort-type"
-                }),
-                selected: state.sort == sort,
-                action: BrowserAction::Sort(sort),
-            });
-            let label = &options[usize::from(state.sort == Sort::Type)].label;
-            spawn_combo_control(
-                parent,
-                label,
-                &localizer.text("browser-sort"),
-                &options,
-                112.0,
-            );
-            spawn_feathers_action_button(
-                parent,
-                &localizer.text("browser-recursive"),
-                BrowserAction::Recursive,
-                state.recursive,
-            );
+            if state.collection != BrowserCollection::Recent {
+                let options = [Sort::Name, Sort::Type].map(|sort| ComboOption {
+                    label: localizer.text(if sort == Sort::Name {
+                        "browser-sort-name"
+                    } else {
+                        "browser-sort-type"
+                    }),
+                    selected: state.sort == sort,
+                    action: BrowserAction::Sort(sort),
+                });
+                let label = &options[usize::from(state.sort == Sort::Type)].label;
+                spawn_combo_control(
+                    parent,
+                    label,
+                    &localizer.text("browser-sort"),
+                    &options,
+                    112.0,
+                );
+            }
+            if state.collection == BrowserCollection::Folder {
+                spawn_feathers_action_button(
+                    parent,
+                    &localizer.text("browser-recursive"),
+                    BrowserAction::Recursive,
+                    state.recursive,
+                );
+            }
         });
     }
     if previous.is_none_or(|old| {
         old.expanded != state.expanded
+            || old.collection != state.collection
             || old.folder != state.folder
             || old.version != state.version
             || old.tree_page != state.tree_page
@@ -1139,7 +1214,9 @@ fn sync_chrome(
                                         },
                                     ));
                                 });
-                            if entry.relative_path == state.folder {
+                            if entry.relative_path == state.folder
+                                && state.collection == BrowserCollection::Folder
+                            {
                                 button.insert(bevy::feathers::controls::ButtonVariant::Primary);
                             }
                         });

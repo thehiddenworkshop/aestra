@@ -48,6 +48,14 @@ fn delete(app: &mut App, source: ProjectSourceId) {
 #[test]
 fn delete_is_immediate_after_preflight_and_undo_redo_restore_exact_folder_contents() {
     let (root, mut app, source) = fixture();
+    let catalog = app.world().resource::<ProjectEffectCatalog>().clone();
+    {
+        let mut browser = app
+            .world_mut()
+            .resource_mut::<super::super::AssetBrowserState>();
+        browser.reconcile(catalog.content(), catalog.content_revision());
+        browser.toggle_favorite(catalog.content(), source);
+    }
     let effect = app.world().resource::<EditorSession>().effect.clone();
     app.world_mut().trigger(Open(Some(source)));
     assert!(!app.world().resource::<State>().open);
@@ -55,8 +63,27 @@ fn delete_is_immediate_after_preflight_and_undo_redo_restore_exact_folder_conten
     assert!(root.path().join("folder").exists());
     io::drain(app.world_mut());
     assert!(!root.path().join("folder").exists());
+    assert_eq!(
+        app.world()
+            .resource::<super::super::AssetBrowserState>()
+            .favorites
+            .len(),
+        1
+    );
     for _ in 0..3 {
         history(&mut app, true);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        let restored = catalog
+            .content()
+            .source_tree()
+            .at_relative_path(std::path::Path::new("folder"))
+            .unwrap()
+            .id;
+        assert!(
+            app.world()
+                .resource::<super::super::AssetBrowserState>()
+                .is_favorite(catalog.content(), restored)
+        );
         assert!(root.path().join("folder/empty").is_dir());
         assert_eq!(
             std::fs::read(root.path().join("folder/image.png")).unwrap(),

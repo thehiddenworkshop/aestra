@@ -1,3 +1,4 @@
+use super::bookmarks::{BrowserCollection, FAVORITES_LIMIT};
 use super::{
     panel::{BrowserItems, BrowserRow, BrowserSearch, SourcesPane, SourcesSplitter},
     state::*,
@@ -46,6 +47,10 @@ pub(crate) struct LocateInAssets(pub(crate) ProjectAssetId);
 
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BrowserAction {
+    Collection(BrowserCollection),
+    ToggleFavorite(ProjectSourceId, ProjectContentVersion),
+    ClearRecent,
+    ClearMissingFavorites,
     Scope(SourceScope),
     Navigate(ProjectSourceId),
     Expand(ProjectSourceId),
@@ -101,10 +106,31 @@ pub(super) fn handle_action(
     mut commands: Commands,
     mut clicks: ResMut<BrowserClickState>,
     mut layout: Option<ResMut<WorkspaceLayout>>,
+    localizer: Res<Localizer>,
 ) {
     clicks.0 = None;
     let content = catalog.content();
     match *event {
+        BrowserAction::Collection(collection) => {
+            state.collection = collection;
+            state.query.clear();
+            state.kinds.clear();
+            state.page = 0;
+            state.selected = None;
+        }
+        BrowserAction::ToggleFavorite(source, version) => {
+            if version == catalog.content_revision() {
+                if state.favorites.len() >= FAVORITES_LIMIT && !state.is_favorite(content, source) {
+                    session.status = localizer.text("browser-favorites-full");
+                } else {
+                    state.toggle_favorite(content, source);
+                }
+            }
+        }
+        BrowserAction::ClearRecent => state.recent.clear(),
+        BrowserAction::ClearMissingFavorites => state
+            .favorites
+            .retain(|item| item.resolve(content).is_some()),
         BrowserAction::Scope(scope) => {
             state.scope = scope;
             state.query.clear();
@@ -165,7 +191,9 @@ pub(super) fn handle_action(
             }
         }
         BrowserAction::NewFolder => {
-            commands.trigger(super::operations::OpenFolderPrompt(None, false, None))
+            if state.collection == BrowserCollection::Folder {
+                commands.trigger(super::operations::OpenFolderPrompt(None, false, None));
+            }
         }
         BrowserAction::Duplicate(source, version) => {
             if version == catalog.content_revision() {
@@ -483,12 +511,18 @@ pub(super) fn open_function(
     mut documents: ResMut<crate::document::DocumentManager>,
     mut views: ResMut<crate::editor_view::EditorViewManager>,
     mut active: ResMut<crate::editor_view::ActiveEditorContext>,
+    mut commands: Commands,
 ) {
     if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
         return;
     }
     match session.open_material_function(&catalog, event.function) {
         Ok(()) => {
+            super::bookmarks::opened_asset(
+                &mut commands,
+                &catalog,
+                ProjectAssetId::MaterialFunction(event.function),
+            );
             let view = open_view_for(
                 event.new_view,
                 &mut documents,
@@ -526,6 +560,7 @@ pub(super) fn open_material(
     mut documents: ResMut<crate::document::DocumentManager>,
     mut views: ResMut<crate::editor_view::EditorViewManager>,
     mut active: ResMut<crate::editor_view::ActiveEditorContext>,
+    mut commands: Commands,
 ) {
     if !crate::project_content::io::idle(io)
         || protection.is_some_and(|protection| protection.is_open())
@@ -537,6 +572,11 @@ pub(super) fn open_material(
     if let Err(error) = session.open_material_program(&catalog, event.program) {
         session.status = format!("Cannot open material: {error}");
     } else {
+        super::bookmarks::opened_asset(
+            &mut commands,
+            &catalog,
+            ProjectAssetId::MaterialProgram(event.program),
+        );
         let view = open_view_for(
             event.new_view,
             &mut documents,
@@ -563,6 +603,7 @@ pub(super) fn open_wesl_source(
     mut documents: ResMut<crate::document::DocumentManager>,
     mut views: ResMut<crate::editor_view::EditorViewManager>,
     mut active: ResMut<crate::editor_view::ActiveEditorContext>,
+    mut commands: Commands,
 ) {
     if !crate::project_content::io::idle(io) || protection.is_some_and(|value| value.is_open()) {
         return;
@@ -577,6 +618,10 @@ pub(super) fn open_wesl_source(
         }
     };
     let id = wesl_documents.open(relative.clone(), text);
+    commands.trigger(super::AssetOpened {
+        root: catalog.root().to_owned(),
+        relative: relative.clone(),
+    });
     let view = open_view_for(
         event.new_view,
         &mut documents,

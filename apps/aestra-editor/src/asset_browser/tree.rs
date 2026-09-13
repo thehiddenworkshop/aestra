@@ -42,6 +42,7 @@ fn click(
     mut tree: ResMut<TreeFocus>,
     menus: Query<Entity, With<Menu>>,
     localizer: Res<Localizer>,
+    state: Res<super::AssetBrowserState>,
     mut commands: Commands,
 ) {
     let ancestors: Vec<_> = std::iter::once(event.entity)
@@ -83,6 +84,15 @@ fn click(
                     Menu,
                     super::panel::BrowserSurface,
                     |menu| {
+                        crate::feathers::context_menu::spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text(if state.is_favorite(catalog.content(), source) {
+                                "browser-unfavorite"
+                            } else {
+                                "browser-add-favorite"
+                            }),
+                            BrowserAction::ToggleFavorite(source, catalog.content_revision()),
+                        );
                         crate::feathers::context_menu::spawn_pointer_context_menu_item(
                             menu,
                             &localizer.text("browser-rename"),

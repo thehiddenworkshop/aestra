@@ -139,6 +139,15 @@ fn queue_plan(
             // Successful document switches deliberately discard the approved old drafts.
             world.resource_mut::<ProjectEffectCatalog>().material_drafts = default();
             io::publish_catalog(world, prepared_catalog);
+            if let OpenTarget::Effect(path) = &plan.target {
+                let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
+                if let Ok(relative) = path.strip_prefix(&root) {
+                    world.trigger(crate::asset_browser::AssetOpened {
+                        root: root.clone(),
+                        relative: relative.to_owned(),
+                    });
+                }
+            }
             world.insert_resource(plan.navigation);
             if let Some(mut workspace) = world.get_resource_mut::<CurvesState>() {
                 workspace.clear();

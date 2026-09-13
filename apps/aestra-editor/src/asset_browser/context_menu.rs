@@ -19,6 +19,7 @@ pub(super) struct BrowserContextAnchor {
 #[derive(Component)]
 pub(super) struct BrowserContextMenu;
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_menu(
     commands: &mut Commands,
     parent: Entity,
@@ -27,6 +28,7 @@ fn spawn_menu(
     source: Option<ProjectSourceId>,
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
+    state: &AssetBrowserState,
 ) {
     commands.entity(parent).with_children(|host| {
         spawn_pointer_context_menu(
@@ -39,6 +41,20 @@ fn spawn_menu(
             BrowserContextMenu,
             |menu| {
                 if let Some(source) = source {
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        &localizer.text(if state.is_favorite(catalog.content(), source) {
+                            "browser-unfavorite"
+                        } else {
+                            "browser-add-favorite"
+                        }),
+                        BrowserAction::ToggleFavorite(source, catalog.content_revision()),
+                    );
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        &localizer.text("browser-locate"),
+                        BrowserAction::LocateSource(source, catalog.content_revision()),
+                    );
                     let kind = catalog.content().source(source).map(Kind::of);
                     // Editor-backed documents (material programs, functions, WESL modules) open as
                     // dockable editor tabs and so can open a second view in a new tab; folders and
@@ -155,6 +171,7 @@ pub(super) fn pointer_menu(
         source,
         &catalog,
         &localizer,
+        &state,
     );
     event.propagate(false);
 }
@@ -204,6 +221,7 @@ pub(super) fn keyboard_menu(
         Some(source.0),
         &catalog,
         &localizer,
+        &state,
     );
     event.propagate(false);
 }

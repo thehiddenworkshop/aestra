@@ -3,6 +3,7 @@ mod actions;
 #[cfg(test)]
 #[path = "../../../../benchmarks/asset-browser/harness.rs"]
 mod benchmark;
+mod bookmarks;
 mod context_menu;
 pub(crate) mod deletion;
 mod drag_drop;
@@ -22,6 +23,7 @@ mod virtual_sources;
 
 use crate::*;
 pub(crate) use actions::LocateInAssets;
+pub(crate) use bookmarks::AssetOpened;
 pub(crate) use inspection::spawn_asset_inspector;
 pub(crate) use panel::BrowserSurface;
 pub(crate) use panel::spawn_assets_panel;
@@ -42,6 +44,7 @@ impl Plugin for EditorAssetBrowserPlugin {
             .init_resource::<persistence::BrowserPersistence>()
             .init_resource::<actions::BrowserClickState>()
             .add_observer(actions::activate_button)
+            .add_observer(bookmarks::record_open)
             .add_observer(actions::handle_action)
             .add_observer(actions::change_search)
             .add_observer(actions::select_row)

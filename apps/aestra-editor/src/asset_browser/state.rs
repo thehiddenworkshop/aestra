@@ -1,4 +1,5 @@
 //! Snapshot-only browsing. Source IDs are UI identities, never authored dependencies.
+use super::bookmarks::{Bookmark, BrowserCollection};
 use aestra_project::{
     ProjectContent, ProjectContentVersion, ProjectFileClassification, ProjectSourceEntry,
     ProjectSourceId, ProjectSourceKind,
@@ -120,6 +121,9 @@ impl Kind {
 
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub(crate) struct AssetBrowserState {
+    pub(super) collection: BrowserCollection,
+    pub(super) favorites: Vec<Bookmark>,
+    pub(super) recent: Vec<Bookmark>,
     pub(super) scope: SourceScope,
     pub(super) view: ViewMode,
     pub(super) sort: Sort,
@@ -146,6 +150,9 @@ pub(crate) struct AssetBrowserState {
 impl Default for AssetBrowserState {
     fn default() -> Self {
         Self {
+            collection: BrowserCollection::default(),
+            favorites: Vec::new(),
+            recent: Vec::new(),
             scope: SourceScope::Project,
             view: ViewMode::List,
             sort: Sort::Name,
@@ -214,6 +221,9 @@ impl AssetBrowserState {
                 .map(|entry| entry.id)
         };
         self.folder = map(&self.folder);
+        for bookmark in self.favorites.iter_mut().chain(self.recent.iter_mut()) {
+            bookmark.path = map(&bookmark.path);
+        }
         self.back = self.back.iter().map(|path| map(path)).collect();
         self.forward = self.forward.iter().map(|path| map(path)).collect();
         self.expanded = self.expanded.iter().filter_map(|id| map_id(*id)).collect();
@@ -231,6 +241,9 @@ impl AssetBrowserState {
                 .is_some_and(|previous| previous.generation != version.generation)
         {
             self.folder.clear();
+            self.collection = BrowserCollection::Folder;
+            self.favorites.clear();
+            self.recent.clear();
             self.back.clear();
             self.forward.clear();
             self.expanded.clear();
@@ -244,6 +257,11 @@ impl AssetBrowserState {
         }
         self.root = content.source_tree().root_path().to_owned();
         self.version = Some(version);
+        for bookmark in self.favorites.iter_mut().chain(self.recent.iter_mut()) {
+            if let Some(entry) = bookmark.resolve(content) {
+                bookmark.path = entry.relative_path.clone();
+            }
+        }
         while !self.folder.as_os_str().is_empty() && !is_folder(content, &self.folder) {
             self.folder.pop();
             self.selected = None;
@@ -273,7 +291,7 @@ impl AssetBrowserState {
         let Some(entry) = content.source(id).filter(|e| Kind::of(e) == Kind::Folder) else {
             return;
         };
-        if self.folder == entry.relative_path {
+        if self.folder == entry.relative_path && self.collection == BrowserCollection::Folder {
             return;
         }
         self.back.push(self.folder.clone());
@@ -334,6 +352,7 @@ impl AssetBrowserState {
     }
 
     fn set_folder(&mut self, content: &ProjectContent, path: PathBuf) {
+        self.collection = BrowserCollection::Folder;
         self.folder = path;
         self.page = 0;
         self.tree_page = 0;
@@ -348,17 +367,34 @@ impl AssetBrowserState {
     pub(super) fn filtered<'a>(&self, content: &'a ProjectContent) -> Vec<&'a ProjectSourceEntry> {
         let folder = self.folder_id(content);
         let query = self.query.trim().to_lowercase();
-        let mut entries = content
-            .source_tree()
-            .entries()
+        let shortcuts = match self.collection {
+            BrowserCollection::Folder => &[][..],
+            BrowserCollection::Favorites => self.favorites.as_slice(),
+            BrowserCollection::Recent => self.recent.as_slice(),
+        };
+        let shortcut_ids = shortcuts
+            .iter()
+            .filter_map(|item| item.resolve(content).map(|entry| entry.id))
+            .collect::<Vec<_>>();
+        let candidates: Box<dyn Iterator<Item = &ProjectSourceEntry> + '_> =
+            if self.collection == BrowserCollection::Folder {
+                Box::new(content.source_tree().entries())
+            } else {
+                Box::new(shortcut_ids.iter().filter_map(|id| content.source(*id)))
+            };
+        let mut seen = BTreeSet::new();
+        let mut entries = candidates
             .filter(|entry| {
-                let in_scope = if self.recursive {
+                let in_scope = if self.collection != BrowserCollection::Folder {
+                    shortcut_ids.contains(&entry.id)
+                } else if self.recursive {
                     entry.id != folder && entry.relative_path.starts_with(&self.folder)
                 } else {
                     entry.parent == Some(folder)
                 };
                 let kind = Kind::of(entry);
                 in_scope
+                    && seen.insert(entry.id)
                     && (self.kinds.is_empty() || kind == Kind::Folder || self.kinds.contains(&kind))
                     && (query.is_empty()
                         || entry.name.to_string_lossy().to_lowercase().contains(&query)
@@ -373,6 +409,9 @@ impl AssetBrowserState {
                 entry.relative_path.clone(),
             )
         });
+        if self.collection == BrowserCollection::Recent {
+            entries.sort_by_key(|entry| shortcut_ids.iter().position(|id| *id == entry.id));
+        }
         entries
     }
 
