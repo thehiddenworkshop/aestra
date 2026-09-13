@@ -324,6 +324,7 @@ fn action(
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut commands: Commands,
+    mut memory: Option<ResMut<GraphViewportMemory>>,
 ) {
     let Ok(action) = actions.get(event.entity) else {
         return;
@@ -341,6 +342,12 @@ fn action(
         ));
         return;
     }
+    let graph_key = format!("function:{}:{}", catalog.root().display(), action.owner);
+    let layout_before = memory.as_deref().and_then(|memory| {
+        crate::material_graph::presentation::Snapshot::capture(
+            &graph_key, &catalog, &session, memory,
+        )
+    });
     let result = session.graph_function(&catalog).and_then(|function| {
         let library = catalog
             .material_function_library()
@@ -348,6 +355,12 @@ fn action(
         let edits = create_edits(&function, action.kind, &library)?;
         editor.edit_body(&mut session, &mut catalog, edits)
     });
+    if result.is_ok()
+        && let Some(before) = layout_before
+        && let Some(memory) = memory.as_deref_mut()
+    {
+        before.attach(&catalog, &mut session, memory);
+    }
     finish(&mut session, result);
 }
 

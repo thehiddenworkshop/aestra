@@ -58,6 +58,7 @@ fn node(graph_key: &str, node_key: &str) -> FeathersGraphNode {
         selected: false,
         collapsed: false,
         dragging: false,
+        drag_before: None,
         suppress_release_click: false,
     }
 }
@@ -213,5 +214,116 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
             assert_eq!(session.document_revision(), revision);
             assert_eq!(session.effect_undo_len(), undo_len);
         }
+    }
+}
+
+#[derive(Resource, Default)]
+struct Edits(Vec<GraphPresentationEdit>);
+
+#[test]
+fn drag_emits_one_base_placement_transaction_and_sibling_views_follow_undo() {
+    let mut app = App::new();
+    app.init_resource::<GraphViewportMemory>()
+        .init_resource::<OverrideCursor>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<Edits>()
+        .add_observer(begin_graph_node_drag)
+        .add_observer(drag_graph_node)
+        .add_observer(end_graph_node_drag)
+        .add_observer(
+            |event: On<GraphPresentationEdit>, mut edits: ResMut<Edits>| {
+                edits.0.push(event.event().clone());
+            },
+        );
+    let base = Vec2::new(100.0, 20.0);
+    let graph = "function:test:f";
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(graph, "outputs", base, false);
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_temporary_offset(graph, "outputs", Vec2::splat(50.0));
+    let owner = app
+        .world_mut()
+        .spawn(viewport("function:test:f#view:2", 2.0))
+        .id();
+    let entity = app
+        .world_mut()
+        .spawn((
+            node(graph, "outputs"),
+            Node::default(),
+            ComputedNode::default(),
+            ChildOf(owner),
+        ))
+        .id();
+    let sibling = app
+        .world_mut()
+        .spawn((node(graph, "outputs"), Node::default()))
+        .id();
+    app.world_mut()
+        .run_system_once(restore_graph_nodes)
+        .unwrap();
+    let location = Location {
+        target: bevy::camera::NormalizedRenderTarget::None {
+            width: 800,
+            height: 600,
+        },
+        position: Vec2::ZERO,
+    };
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        location.clone(),
+        DragStart {
+            button: PointerButton::Primary,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        },
+        entity,
+    ));
+    for _ in 0..20 {
+        app.world_mut().trigger(Pointer::new(
+            PointerId::Mouse,
+            location.clone(),
+            Drag {
+                button: PointerButton::Primary,
+                distance: Vec2::splat(10.0),
+                delta: Vec2::splat(10.0),
+            },
+            entity,
+        ));
+    }
+    assert!(app.world().resource::<Edits>().0.is_empty());
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        location,
+        DragEnd {
+            button: PointerButton::Primary,
+            distance: Vec2::splat(200.0),
+        },
+        entity,
+    ));
+    app.world_mut().flush();
+    let edits = &app.world().resource::<Edits>().0;
+    assert_eq!(edits.len(), 1);
+    assert_eq!(
+        edits[0].before,
+        (base, false),
+        "Undo stores base, not temporary displacement"
+    );
+    assert_eq!(edits[0].after, (base + Vec2::splat(150.0), false));
+    // The same shared memory path used by Undo updates both views without changing cameras.
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(graph, "outputs", base, false);
+    app.world_mut()
+        .run_system_once(sync_graph_nodes_from_memory)
+        .unwrap();
+    for entity in [entity, sibling] {
+        assert_eq!(
+            app.world()
+                .get::<FeathersGraphNode>(entity)
+                .unwrap()
+                .position(),
+            base
+        );
     }
 }

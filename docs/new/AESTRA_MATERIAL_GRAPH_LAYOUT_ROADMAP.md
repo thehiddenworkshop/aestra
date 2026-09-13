@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M2 complete; M3a persistence and M3b project placement lifecycle implemented, 2026-09-13. M3 remains in progress; M3c presentation history is next. No automatic movement implemented.
+> **Status:** M0–M2 complete; M3a–M3c persistence, project lifecycle and presentation history implemented, 2026-09-13. Native M3 acceptance remains to be checked. Next: M4's internal bounded resize solver. No automatic movement enabled.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -9,7 +9,8 @@ exposed, establish coordinate units, document/view ownership, base-position pers
 temporary-offset composition, and presentation Undo. M0 contract coverage, M1 live
 geometry and M2 measured framing are implemented. M3a adds the base/effective memory
 boundary and safe function persistence; M3b isolates project lifetimes and camera ownership.
-M3c presentation Undo remains before the complete M3 gate can pass.
+M3c adds presentation Undo to the existing document chronology and compound graph edits.
+Native acceptance remains separate from automated verification.
 The first automatic-movement feature
 is the bounded preview-resize flow through M5. No layout dependency or automatic
 movement is introduced by M0–M2.
@@ -1635,14 +1636,17 @@ estimates are used only while live measurements are unavailable.
   invalidate temporary offsets, not retained base positions. Material and function
   camera saving now share focused/retained ownership, with a separate tool-panel camera.
   Blocked metadata has an in-graph repair explanation and explicit saved-layout reload.
-- **M3c — Focused presentation history:** integrate chronological Undo/Redo, drag and
-  preview/collapse transactions, compound semantic/insertion placement, and revision
-  guards. Preserve text Undo and existing document/asset history routing.
+- **M3c — Focused presentation history (implemented):** completed drags, collapse and
+  material preview visibility use the existing focused Undo/Redo chronology. Material
+  creation/duplication/extraction/deletion and function insertion/body actions attach
+  base-placement deltas to their semantic edit. Project/source, semantic-snapshot and
+  expected-placement guards reject stale history. Discard/reload clears the affected
+  document order. Text Undo and asset-deletion ordering remain on their existing routes.
 
-M3a's offset API is internal and has no production solver caller. It is not a cause
-composition engine, automatic layout feature or presentation Undo implementation.
-Full milestone acceptance below remains open until M3b/M3c are finished. See the
-[M3a implementation record](../material-system/graph-layout-contract.md#m3a-implementation--base-placement-and-safe-function-persistence).
+The offset API remains internal and has no production solver caller. M3c clears derived
+offsets when replaying presentation; reconstruction/cause composition belongs to M5.
+See the [M3c implementation record](../material-system/graph-layout-contract.md#m3c-implementation--focused-presentation-history)
+and perform the native acceptance check before enabling automatic displacement.
 
 ### Goal
 
@@ -2157,10 +2161,11 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Immediate task: M3c focused presentation history.** M0–M2 and M3a/M3b persistence/lifecycle
-foundation are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
-as the baseline. Complete chronological, document-scoped presentation transactions
-and stale-history guards in M3c before enabling automatic movement.
+**Next implementation: M4's internal bounded resize solver.** M0–M3c foundations are
+implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
+as the baseline. First check native move/collapse/preview Undo/Redo and mixed graph edits
+in material/function views. M4 remains internal/test-only; do not enable visible automatic
+movement until M5's reversible overlay and the combined acceptance gate are complete.
 
 After those prerequisites, implement this complete M4–M5 flow before integrating
 `elkrs`:

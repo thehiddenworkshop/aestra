@@ -40,12 +40,40 @@ impl Context {
 pub(crate) struct EditOrder {
     serial: u64,
     edits: VecDeque<(u64, Context)>,
-    applied: VecDeque<Context>,
+    applied: VecDeque<OrderedEdit>,
+    redo: Vec<OrderedEdit>,
+}
+#[derive(Clone)]
+struct OrderedEdit {
+    context: Context,
+    layout: Option<crate::material_graph::presentation::Transaction>,
+    semantic: bool,
 }
 impl EditOrder {
+    pub(crate) fn edit_serial(&self) -> u64 {
+        self.serial
+    }
+    pub(crate) fn clear_context(&mut self, context: &Context) {
+        self.applied.retain(|entry| &entry.context != context);
+        self.redo.retain(|entry| &entry.context != context);
+        self.edits.retain(|(_, entry)| entry != context);
+    }
     pub(crate) fn record(&mut self, context: Context) {
+        self.record_entry(context, None, true);
+    }
+    fn record_entry(
+        &mut self,
+        context: Context,
+        layout: Option<crate::material_graph::presentation::Transaction>,
+        semantic: bool,
+    ) {
         self.serial += 1;
-        self.applied.push_back(context.clone());
+        self.applied.push_back(OrderedEdit {
+            context: context.clone(),
+            layout,
+            semantic,
+        });
+        self.redo.retain(|entry| entry.context != context);
         self.edits.push_back((self.serial, context));
         while self.edits.len() > LIMIT {
             self.edits.pop_front();
@@ -56,13 +84,67 @@ impl EditOrder {
     }
     pub(crate) fn step(&mut self, context: Context, undo: bool) {
         if undo {
-            if let Some(index) = self.applied.iter().rposition(|entry| *entry == context) {
-                self.applied.remove(index);
+            if let Some(index) = self
+                .applied
+                .iter()
+                .rposition(|entry| entry.context == context)
+            {
+                self.redo.push(self.applied.remove(index).unwrap());
             }
         } else {
-            self.applied.push_back(context);
+            if let Some(index) = self.redo.iter().rposition(|entry| entry.context == context) {
+                self.applied.push_back(self.redo.remove(index));
+            }
             while self.applied.len() > LIMIT {
                 self.applied.pop_front();
+            }
+        }
+    }
+    pub(crate) fn record_layout(
+        &mut self,
+        context: Context,
+        transaction: crate::material_graph::presentation::Transaction,
+    ) {
+        self.record_entry(context, Some(transaction), false);
+    }
+    pub(crate) fn attach_layout(
+        &mut self,
+        context: Context,
+        transaction: crate::material_graph::presentation::Transaction,
+    ) {
+        if let Some(entry) = self
+            .applied
+            .back_mut()
+            .filter(|entry| entry.context == context && entry.semantic)
+        {
+            entry.layout = Some(transaction);
+        }
+    }
+    pub(crate) fn layout(
+        &self,
+        context: &Context,
+        undo: bool,
+    ) -> Option<(&crate::material_graph::presentation::Transaction, bool)> {
+        let entry = if undo {
+            self.applied
+                .iter()
+                .rev()
+                .find(|entry| &entry.context == context)
+        } else {
+            self.redo
+                .iter()
+                .rev()
+                .find(|entry| &entry.context == context)
+        }?;
+        entry.layout.as_ref().map(|layout| (layout, entry.semantic))
+    }
+    pub(crate) fn clear_redo(&mut self) {
+        self.redo.clear();
+    }
+    pub(crate) fn invalidate_layouts(&mut self, graph: Option<&str>) {
+        for entry in self.applied.iter_mut().chain(self.redo.iter_mut()) {
+            if let Some(layout) = &mut entry.layout {
+                layout.invalidate(graph);
             }
         }
     }
@@ -85,6 +167,13 @@ pub(crate) struct AssetOrder {
     redo: Vec<Entry>,
 }
 impl AssetOrder {
+    pub(crate) fn clear_context(&mut self, context: &Context) {
+        self.undo
+            .retain(|entry| !matches!(entry, Entry::Document(candidate) if candidate == context));
+        self.redo
+            .retain(|entry| !matches!(entry, Entry::Document(candidate) if candidate == context));
+        self.revision += 1;
+    }
     /// Returns true when a new document edit invalidates the global redo branch.
     pub(crate) fn sync(&mut self, session: &EditorSession, catalog: &ProjectEffectCatalog) -> bool {
         let Some((root, generation)) = &self.root else {
@@ -160,7 +249,7 @@ impl AssetOrder {
                     .operation_order
                     .applied
                     .iter()
-                    .cloned()
+                    .map(|entry| entry.context.clone())
                     .map(Entry::Document),
             );
         }
@@ -217,6 +306,10 @@ pub(crate) fn record_delete(world: &mut World, item: DeletedSource) {
 
 pub(crate) fn clear_redo(world: &mut World) {
     world.resource_mut::<EditorSession>().clear_effect_redo();
+    world
+        .resource_mut::<EditorSession>()
+        .operation_order
+        .clear_redo();
     if let Some(mut ledger) = world.get_resource_mut::<EditorHistoryLedger>() {
         ledger.redo.clear();
     }

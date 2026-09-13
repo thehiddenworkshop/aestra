@@ -75,6 +75,7 @@ pub(super) fn reconcile(
             }
         };
     if switched || reload {
+        session.operation_order.invalidate_layouts(None);
         load_graph_layout(catalog.root(), &mut persistence, &mut memory, &mut previews);
         // Stale UI cannot write an old camera/drag back into the new project's memory.
         for (entity, _) in &views {
@@ -145,6 +146,7 @@ pub(super) fn reconcile(
         }
     }
     for (document, key) in removed {
+        session.operation_order.invalidate_layouts(Some(&key));
         let prefix = format!("{key}#view:");
         let tool = format!("{key}#tool");
         memory.retain_graphs(|candidate| {

@@ -266,6 +266,16 @@ pub(crate) struct GraphViewportMemory {
 }
 
 impl GraphViewportMemory {
+    pub(crate) fn base_nodes(
+        &self,
+        graph: &str,
+    ) -> std::collections::BTreeMap<String, (Vec2, bool)> {
+        self.nodes
+            .iter()
+            .filter(|((key, _), _)| key == graph)
+            .map(|((_, key), node)| (key.clone(), (node.position, node.collapsed)))
+            .collect()
+    }
     /// Remove a document and all of its independent view cameras without touching other widgets.
     pub(crate) fn retain_graphs(&mut self, keep: impl Fn(&str) -> bool) {
         self.views.retain(|key, _| keep(key));
@@ -435,7 +445,17 @@ pub(crate) struct FeathersGraphNode {
     selected: bool,
     collapsed: bool,
     dragging: bool,
+    drag_before: Option<(Vec2, bool)>,
     suppress_release_click: bool,
+}
+
+/// One completed user gesture, never camera motion or passive memory synchronization.
+#[derive(Event, Clone)]
+pub(crate) struct GraphPresentationEdit {
+    pub(crate) graph: String,
+    pub(crate) node: String,
+    pub(crate) before: (Vec2, bool),
+    pub(crate) after: (Vec2, bool),
 }
 
 impl FeathersGraphNode {
@@ -897,6 +917,7 @@ fn begin_graph_node_drag(
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
     keys: Res<ButtonInput<KeyCode>>,
+    memory: Res<GraphViewportMemory>,
 ) {
     if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
         return;
@@ -912,6 +933,11 @@ fn begin_graph_node_drag(
     let Ok(mut node) = nodes.get_mut(entity) else {
         return;
     };
+    node.drag_before = Some(
+        memory
+            .node(&node.graph_key, &node.node_key)
+            .unwrap_or((node.position, node.collapsed)),
+    );
     node.begin_drag();
     drag.propagate(false);
 }
@@ -974,6 +1000,7 @@ fn end_graph_node_drag(
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
     mut override_cursor: ResMut<OverrideCursor>,
+    mut commands: Commands,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -989,6 +1016,17 @@ fn end_graph_node_drag(
     let Ok(mut node) = nodes.get_mut(entity) else {
         return;
     };
+    if let Some(before) = node.drag_before.take() {
+        let after = (node.position, node.collapsed);
+        if before != after {
+            commands.trigger(GraphPresentationEdit {
+                graph: node.graph_key.clone(),
+                node: node.node_key.clone(),
+                before,
+                after,
+            });
+        }
+    }
     node.end_drag();
     override_cursor.0 = None;
     drag.propagate(false);
@@ -1050,9 +1088,18 @@ fn handle_graph_collapse_buttons(
         let Ok(mut node) = nodes.get_mut(action.node) else {
             continue;
         };
+        let before = memory
+            .node(&node.graph_key, &node.node_key)
+            .unwrap_or((node.position, node.collapsed));
         node.collapsed = !node.collapsed;
         let collapsed = node.collapsed;
         memory.set_collapsed(&node.graph_key, &node.node_key, node.position, collapsed);
+        commands.trigger(GraphPresentationEdit {
+            graph: node.graph_key.clone(),
+            node: node.node_key.clone(),
+            before,
+            after: (before.0, collapsed),
+        });
         apply_graph_node_collapse(action.node, collapsed, &mut bodies, &mut icons);
         commands
             .entity(entity)
@@ -1306,6 +1353,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             selected: props.selected,
             collapsed: false,
             dragging: false,
+            drag_before: None,
             suppress_release_click: false,
         },
         Pickable {
@@ -1684,6 +1732,7 @@ mod tests {
                     selected: false,
                     collapsed: false,
                     dragging: false,
+                    drag_before: None,
                     suppress_release_click: false,
                 },
                 Node::default(),
@@ -1798,6 +1847,7 @@ mod tests {
             selected: false,
             collapsed: false,
             dragging: false,
+            drag_before: None,
             suppress_release_click: false,
         };
 

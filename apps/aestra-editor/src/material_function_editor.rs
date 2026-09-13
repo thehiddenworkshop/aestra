@@ -42,6 +42,11 @@ fn key(session: &EditorSession) -> Result<Key, String> {
 }
 
 impl FunctionEditor {
+    pub(crate) fn clear_function_redo(&mut self, root: &std::path::Path, id: MaterialFunctionId) {
+        if let Some(history) = self.histories.get_mut(&(root.to_owned(), id)) {
+            history.redo.clear();
+        }
+    }
     pub(crate) fn clear_redo(&mut self) {
         for history in self.histories.values_mut() {
             history.redo.clear();
@@ -346,6 +351,7 @@ fn activate(
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
+    mut memory: Option<ResMut<crate::feathers::node_graph::GraphViewportMemory>>,
 ) {
     let Ok(action) = controls.get(event.entity) else {
         return;
@@ -353,11 +359,20 @@ fn activate(
     if session.standalone_function() != Some(action.owner) {
         return;
     }
+    let graph = format!("function:{}:{}", catalog.root().display(), action.owner);
+    let layout_before = memory.as_deref().and_then(|memory| {
+        crate::material_graph::presentation::Snapshot::capture(&graph, &catalog, &session, memory)
+    });
     let result = (|| {
         let mut function = session.graph_function(&catalog)?;
         mutate(&mut function, action.kind)?;
         editor.edit(&mut session, &mut catalog, function)
     })();
+    if result.is_ok()
+        && let (Some(before), Some(memory)) = (layout_before, memory.as_deref_mut())
+    {
+        before.attach(&catalog, &mut session, memory);
+    }
     finish(&mut session, result);
 }
 

@@ -653,6 +653,7 @@ pub(crate) fn execute_history_action(
     protection: Option<Res<crate::DocumentProtectionState>>,
     active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
     mut code_editors: Query<&mut crate::feathers::code_editor::CodeEditor>,
+    mut presentation: crate::material_graph::presentation::State,
     mut commands: Commands,
 ) {
     if !crate::project_content::io::idle(tasks) || protection.is_some_and(|state| state.is_open()) {
@@ -677,6 +678,7 @@ pub(crate) fn execute_history_action(
         && order.sync(&session, &catalog)
     {
         session.clear_effect_redo();
+        session.operation_order.clear_redo();
         ledger.redo.clear();
         asset_order::clear_material_redo(&mut material_history);
         functions.clear_redo();
@@ -706,14 +708,41 @@ pub(crate) fn execute_history_action(
         context.select(&mut session);
     }
     let context = asset_order::Context::current(&session);
-    let succeeded = execute_document_history(
-        *action,
-        &mut session,
-        &mut catalog,
-        &mut material_history,
-        &mut ledger,
-        &mut functions,
-    );
+    let layout = session
+        .operation_order
+        .layout(&context, undo)
+        .map(|(entry, semantic)| (entry.clone(), semantic));
+    if let Some((layout, _)) = &layout
+        && let Err(error) = presentation.validate(layout, undo, &catalog, &session)
+    {
+        session.status = error;
+        session.material_target = previous_target;
+        session.material_history_active = previous_active;
+        return;
+    }
+    let succeeded = if layout.as_ref().is_some_and(|(_, semantic)| !semantic) {
+        session.operation_order.step(context.clone(), undo);
+        true
+    } else {
+        execute_document_history(
+            *action,
+            &mut session,
+            &mut catalog,
+            &mut material_history,
+            &mut ledger,
+            &mut functions,
+        )
+    };
+    if succeeded && let Some((layout, _)) = &layout {
+        presentation.apply(layout, undo);
+        session.ui_revision += 1;
+        session.status = if undo {
+            "Undid graph edit"
+        } else {
+            "Redid graph edit"
+        }
+        .into();
+    }
     if succeeded && active {
         order.as_deref_mut().unwrap().finish_document(undo, context);
     } else if !succeeded {
@@ -894,6 +923,12 @@ fn update_history_availability(
             true
         } else if ordered.is_some() {
             false
+        } else if session
+            .operation_order
+            .layout(&asset_order::Context::current(&session), undo)
+            .is_some()
+        {
+            true
         } else if session.standalone_function().is_some() && session.material_history_active {
             (undo && functions.available(&session, true))
                 || (redo && functions.available(&session, false))
@@ -915,6 +950,54 @@ fn update_history_availability(
     }
 }
 
+/// Fork just the editing context's semantic redo branch for a presentation edit.
+pub(crate) fn clear_presentation_redo(world: &mut World, context: &asset_order::Context) {
+    match context {
+        asset_order::Context::Effect => {
+            world.resource_mut::<EditorSession>().clear_effect_redo();
+            if let Some(mut ledger) = world.get_resource_mut::<EditorHistoryLedger>() {
+                ledger.redo.clear();
+            }
+            if let Some(mut history) = world.get_resource_mut::<MaterialProgramEditHistory>() {
+                history.redo.clear();
+            }
+        }
+        asset_order::Context::Material(
+            crate::material_document::MaterialEditingTarget::Program { root, id },
+        ) => {
+            if let Some(mut history) = world.get_resource_mut::<MaterialProgramEditHistory>()
+                && let Some(history) = history.standalone.get_mut(&(root.clone(), *id))
+            {
+                history.redo.clear();
+            }
+        }
+        asset_order::Context::Material(
+            crate::material_document::MaterialEditingTarget::Function { root, id },
+        ) => {
+            if let Some(mut history) =
+                world.get_resource_mut::<crate::material_function_editor::FunctionEditor>()
+            {
+                history.clear_function_redo(root, *id);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn clear_document_order(
+    world: &mut World,
+    target: crate::material_document::MaterialEditingTarget,
+) {
+    let context = asset_order::Context::Material(target);
+    world
+        .resource_mut::<EditorSession>()
+        .operation_order
+        .clear_context(&context);
+    if let Some(mut order) = world.get_resource_mut::<asset_order::AssetOrder>() {
+        order.clear_context(&context);
+    }
+}
+
 fn sync_effect_history_ledger(
     mut session: ResMut<EditorSession>,
     mut ledger: ResMut<EditorHistoryLedger>,
@@ -932,6 +1015,7 @@ fn sync_effect_history_ledger(
         && order.sync(&session, &catalog)
     {
         session.clear_effect_redo();
+        session.operation_order.clear_redo();
         ledger.redo.clear();
         asset_order::clear_material_redo(&mut material_history);
         functions.clear_redo();

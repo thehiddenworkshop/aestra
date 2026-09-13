@@ -355,3 +355,55 @@ Next: **M3c — Focused presentation Undo**. Chronological presentation transact
 compound semantic/insertion placement, history-generation guards and safe Undo/Redo
 are still required before the complete M3 gate passes. No automatic node movement is
 enabled by M3b.
+
+## M3c implementation — Focused presentation history
+
+- The existing session edit-order journal now carries presentation transactions and
+  optional placement deltas on semantic actions. There is no second user-facing history
+  stack or separate layout Undo button. Shared program/function tabs use their existing
+  project/document context; embedded material edits keep the effect-history route.
+  Neutral panels preserve focus, code editors retain text Undo, and the asset-deletion
+  ordering bridge continues to sequence document actions and filesystem recovery.
+- The generic graph widget emits one completed drag transaction, not one per pointer
+  motion. It records the previous **base** position even when displayed with an offset.
+  Collapse emits the same shared node-presentation event. Individual and all-node material
+  preview toggles each record one visibility action. Camera pan/zoom/framing, passive UI
+  rebuilds and sibling-view synchronization create no history items.
+- Material add/duplicate/extract/delete and function body/signature/drop actions capture
+  the previous placement and attach the resulting delta to the successful semantic entry.
+  Insertion placement, connection changes and removed-node placement therefore undo/redo
+  together. Material node deletion also restores removed preview visibility. Invalid
+  insertion positions are rejected before semantic mutation. No-op function commands
+  cannot overwrite the preceding transaction. Replay validates first, executes semantic
+  history when needed, and only applies the presentation delta on success.
+- Transactions identify the project root/generation, graph and stable node keys. They
+  check the expected semantic fingerprint, base placement, collapse and relevant preview
+  visibility before applying; unknown/removed sources and stale state fail without
+  mutating either side. Explicit saved-layout reload and confirmed source removal
+  invalidate old layout entries. Source discard/reload clears only its document order.
+- Layout-only actions do not invoke authoring commands, compile shaders, mark material
+  drafts dirty or change content revisions. They update shared base memory and request
+  a UI refresh. Per-view cameras remain independent, and existing M3a/M3b persistence
+  serializes the restored base/collapse/visibility state without a schema change.
+  Undo clears derived offsets instead of replaying stale displacement. There is still no
+  production offset solver: M4 supplies bounded candidates; M5 supplies reversible causes.
+
+Regression coverage includes mixed semantic/move/collapse/preview order, material and
+function context isolation, redo branching, compound insertion/deletion, deleted preview
+restoration, no-op attachment, stale source/project/reload protection, and real shared
+widget drag coalescing with base-vs-effective state and sibling-view restoration.
+The full editor suite also exercises existing code-editor and asset-deletion history.
+
+Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **869 editor tests passed,
+6 existing GPU tests ignored**; **9 project layout tests** and the **architecture test**
+passed. Strict editor/project Clippy (`--all-targets -- -D warnings`), workspace
+formatting and `git diff --check` pass.
+
+Native acceptance (not claimed by headless tests): in material and function canvases,
+move and collapse a node, Undo/Redo, then create/delete and Undo/Redo. In a material
+canvas, also toggle an individual preview and all previews between shader edits. Repeat
+in two views: positions must agree while cameras stay independent; layout-only actions
+must leave material/effect dirty indicators unchanged. Verify save/reopen placement.
+
+Next: **M4 — Local resize collision resolver**, internal/test-only until M5 makes its
+temporary displacement reversible. No automatic layout or new Arrange action is enabled.

@@ -310,7 +310,16 @@ fn drop_function(
             computed,
             transform,
         ));
+        if !position.is_finite() {
+            return Err("Graph drop position is invalid".into());
+        }
         let plan = plan(&payload, &target, &session, &catalog)?;
+        let layout_before = super::presentation::Snapshot::capture(
+            &target.key(&catalog),
+            &catalog,
+            &session,
+            &memory,
+        );
         match plan.replacement {
             Replacement::Program { before, after } => {
                 if session.standalone_material().is_some() {
@@ -347,6 +356,9 @@ fn drop_function(
                 node_key,
                 position + offset - Vec2::new(NODE_WIDTH * 0.5, NODE_HEADER_HEIGHT * 0.5),
             );
+        }
+        if let Some(before) = layout_before {
+            before.attach(&catalog, &mut session, &mut memory);
         }
         Ok::<_, String>(format!("Added {} function call", plan.label))
     })();

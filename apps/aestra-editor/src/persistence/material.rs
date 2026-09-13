@@ -316,6 +316,7 @@ pub(super) fn queue_reload(
                 return;
             }
             // Discard only after successful fresh-source resolution; errors retain the draft.
+            crate::history::clear_document_order(world, target.clone());
             match &target {
                 MaterialEditingTarget::Program { id, .. } => {
                     world

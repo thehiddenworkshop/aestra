@@ -68,6 +68,7 @@ pub(crate) mod asset_drop;
 mod asset_preview;
 mod function_layout;
 mod layout_lifecycle;
+pub(crate) mod presentation;
 pub(crate) use asset_preview::render_material_asset_preview;
 pub(crate) use function_layout::function_graph_memory_key;
 const CANVAS_PADDING: f32 = 34.0;
@@ -124,6 +125,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphPreviewState>()
             .init_resource::<MaterialPresetPreviewState>()
             .init_resource::<MaterialGraphLayoutPersistence>()
+            .add_observer(presentation::node_edit)
             .add_systems(
                 Update,
                 reset_graph_document_transients.before(EditorSet::UiRebuild),
@@ -1268,7 +1270,14 @@ fn handle_material_graph_preview_actions(
             .entity(entity)
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
+        let before = presentation::visible(&previews, toggle.program);
         previews.toggle(toggle.program, toggle.target);
+        presentation::preview_edit(
+            &mut commands,
+            toggle.program,
+            before,
+            presentation::visible(&previews, toggle.program),
+        );
         session.ui_revision += 1;
     }
 }
@@ -1335,6 +1344,7 @@ fn handle_material_graph_toolbar_actions(
                 palette.query.clear();
             }
             MaterialGraphToolbarAction::ToggleAllPreviews(program) => {
+                let before = presentation::visible(&previews, program);
                 let targets = graph_nodes
                     .iter()
                     .filter(|node| node.program == program)
@@ -1345,6 +1355,12 @@ fn handle_material_graph_toolbar_actions(
                     .iter()
                     .any(|target| !previews.is_visible(program, *target));
                 previews.set_visible(program, targets, show);
+                presentation::preview_edit(
+                    &mut commands,
+                    program,
+                    before,
+                    presentation::visible(&previews, program),
+                );
             }
         }
         session.ui_revision += 1;
@@ -1731,6 +1747,12 @@ fn handle_material_graph_palette_actions(
             source: action.source,
             target: action.target,
         };
+        if !action.graph_position.is_finite() {
+            session.status = "Cannot insert a node at an invalid graph position".into();
+            continue;
+        }
+        let layout_before =
+            presentation::Snapshot::capture(&action.graph_key, &catalog, &session, &graph_memory);
         let result = apply_material_tool_command(
             &mut session,
             &mut catalog,
@@ -1750,6 +1772,9 @@ fn handle_material_graph_palette_actions(
                         material_graph_expression_node_key(*expression),
                         position,
                     );
+                }
+                if let Some(before) = layout_before {
+                    before.attach(&catalog, &mut session, &mut graph_memory);
                 }
                 if let Some(expression) = plan.created_expressions.last().copied() {
                     inspector.selected = Some((action.program, expression));
@@ -1786,6 +1811,7 @@ fn handle_material_graph_context_actions(
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
+    mut previews: ResMut<MaterialGraphPreviewState>,
 ) {
     for (entity, interaction, action, pending) in &actions {
         if *interaction != Interaction::Pressed || pending.is_none() {
@@ -1819,6 +1845,7 @@ fn handle_material_graph_context_actions(
             &mut graph_memory,
             &mut inspector,
             &mut selection,
+            &mut previews,
         );
         palette.node_menu = None;
         session.ui_revision += 1;
@@ -1840,6 +1867,7 @@ fn material_graph_keyboard_input(
     mut graph_memory: ResMut<GraphViewportMemory>,
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
+    mut previews: ResMut<MaterialGraphPreviewState>,
 ) {
     let editing_text = focus
         .as_ref()
@@ -1897,6 +1925,7 @@ fn material_graph_keyboard_input(
             &mut graph_memory,
             &mut inspector,
             &mut selection,
+            &mut previews,
         );
         session.ui_revision += 1;
     }
@@ -1951,6 +1980,7 @@ fn apply_material_graph_selection_edit(
     graph_memory: &mut GraphViewportMemory,
     inspector: &mut MaterialStackInspectorState,
     selection: &mut MaterialGraphSelectionState,
+    previews: &mut MaterialGraphPreviewState,
 ) {
     if selection.program(scope) != Some(program) {
         return;
@@ -1987,6 +2017,12 @@ fn apply_material_graph_selection_edit(
         .collect::<BTreeMap<_, _>>();
     let extraction_center = (!positions.is_empty())
         .then(|| positions.values().copied().sum::<Vec2>() / positions.len() as f32);
+    if positions.values().any(|position| !position.is_finite())
+        || extraction_center.is_some_and(|position| !position.is_finite())
+    {
+        session.status = "Cannot edit nodes with invalid graph positions".into();
+        return;
+    }
     let (label, command) = match edit {
         MaterialGraphSelectionEdit::ExtractFunction => (
             "Extract material function",
@@ -2024,6 +2060,12 @@ fn apply_material_graph_selection_edit(
             )
         }
     };
+    let layout_before = presentation::Snapshot::capture(
+        &material_graph_view_key(program),
+        catalog,
+        session,
+        graph_memory,
+    );
     match apply_material_tool_command(session, catalog, material_history, program, label, command) {
         Ok(plan) => {
             history_ledger.record_material_edit(session);
@@ -2114,6 +2156,9 @@ fn apply_material_graph_selection_edit(
                     inspector.selected = None;
                     session.status = "Reset material connection to its typed default".into();
                 }
+            }
+            if let Some(before) = layout_before {
+                before.attach_with_previews(catalog, session, graph_memory, previews, program);
             }
         }
         Err(error) => {

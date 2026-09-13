@@ -696,12 +696,26 @@ pub(crate) fn discard_and_close_editor_view(
         match key {
             DocumentKey::MaterialProgram(id) => {
                 catalog.material_drafts.programs.remove(&id);
+                let target = MaterialEditingTarget::Program {
+                    root: root.clone(),
+                    id,
+                };
+                commands.queue(move |world: &mut World| {
+                    crate::history::clear_document_order(world, target)
+                });
                 if let Some(history) = program_history.as_mut() {
                     history.clear_program(&root, id);
                 }
             }
             DocumentKey::MaterialFunction(id) => {
                 catalog.material_drafts.functions.remove(&id);
+                let target = MaterialEditingTarget::Function {
+                    root: root.clone(),
+                    id,
+                };
+                commands.queue(move |world: &mut World| {
+                    crate::history::clear_document_order(world, target)
+                });
                 if let Some(editor) = function_editor.as_mut() {
                     editor.clear_function(&root, id);
                 }
