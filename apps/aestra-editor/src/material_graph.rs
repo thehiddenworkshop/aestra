@@ -67,6 +67,7 @@ const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod asset_drop;
 mod asset_preview;
 mod function_layout;
+mod layout_lifecycle;
 pub(crate) use asset_preview::render_material_asset_preview;
 pub(crate) use function_layout::function_graph_memory_key;
 const CANVAS_PADDING: f32 = 34.0;
@@ -112,6 +113,11 @@ fn reset_graph_document_transients(
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
+        layout_lifecycle::register_notice(app);
+        app.configure_sets(
+            Update,
+            crate::feathers::node_graph::GraphWidgetSync.after(EditorSet::UiRebuild),
+        );
         app.init_resource::<MaterialGraphGesture>()
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<MaterialGraphSelectionState>()
@@ -165,10 +171,15 @@ impl Plugin for EditorMaterialGraphPlugin {
             )
             .add_systems(Startup, load_material_graph_layout)
             .add_systems(
+                Update,
+                layout_lifecycle::reconcile
+                    .after(PersistenceSet::Lifecycle)
+                    .before(EditorSet::UiRebuild),
+            )
+            .add_systems(
                 Last,
                 (
-                    mirror_material_graph_camera_to_document,
-                    function_layout::mirror_function_camera,
+                    function_layout::mirror_graph_camera,
                     persist_material_graph_layout,
                     flush_material_graph_layout_on_exit,
                 )
@@ -212,9 +223,6 @@ struct MaterialGraphCanvas;
 #[derive(Component, Debug, Clone)]
 pub(crate) struct MaterialGraphViewport {
     program: MaterialProgramId,
-    /// The pan/zoom memory key this viewport instance drives. Per editor view (so two views of one
-    /// program pan/zoom independently); equal to the per-program key for the effect tool panel.
-    viewport_key: String,
     /// The selection scope this viewport belongs to (the editor view, or `None` for the effect
     /// tool panel), so selection is independent per view.
     scope: MaterialSelectionScope,
@@ -532,6 +540,7 @@ struct MaterialGraphLayoutPersistence {
     last_error: Option<String>,
     /// A failed load must not turn a future/corrupt file into a writable empty layout.
     write_blocked: bool,
+    reload_requested: bool,
 }
 
 fn load_material_graph_layout(
@@ -540,7 +549,30 @@ fn load_material_graph_layout(
     mut graph_memory: ResMut<GraphViewportMemory>,
     mut previews: ResMut<MaterialGraphPreviewState>,
 ) {
-    let root = catalog.root().to_owned();
+    load_graph_layout(
+        catalog.root(),
+        &mut persistence,
+        &mut graph_memory,
+        &mut previews,
+    );
+}
+
+fn load_graph_layout(
+    root: &std::path::Path,
+    persistence: &mut MaterialGraphLayoutPersistence,
+    graph_memory: &mut GraphViewportMemory,
+    previews: &mut MaterialGraphPreviewState,
+) {
+    let root = root.to_owned();
+    // Capture the old project's last complete layout before replacing its namespace. Never
+    // combine the new catalog with the previous project's graph memory.
+    if persistence.root.as_deref().is_some_and(|old| old != root)
+        && persistence.document != persistence.persisted
+    {
+        save_material_graph_layout(persistence);
+    }
+    graph_memory.retain_graphs(|key| !layout_lifecycle::is_material_graph(key));
+    *previews = default();
     let (document, load_error) = match ProjectEditorLayout::load(&root) {
         Ok(document) => (document, None),
         Err(error) => {
@@ -551,37 +583,14 @@ fn load_material_graph_layout(
             (ProjectEditorLayout::default(), Some(error.to_string()))
         }
     };
-    restore_material_graph_layouts(&document, &mut graph_memory, &mut previews);
-    function_layout::restore(&root, &document, &mut graph_memory);
+    restore_material_graph_layouts(&document, graph_memory, previews);
+    function_layout::restore(&root, &document, graph_memory);
     persistence.root = Some(root);
     persistence.persisted = document.clone();
     persistence.document = document;
     persistence.changed_at = None;
     persistence.write_blocked = load_error.is_some();
     persistence.last_error = load_error;
-}
-
-/// Mirrors each open viewport's live per-view camera into its program's document-camera slot, so the
-/// saved layout (and the initial camera of the next view opened) tracks the most recent view. The
-/// effect tool panel already writes the document key directly, so it is skipped.
-fn mirror_material_graph_camera_to_document(
-    mut graph_memory: ResMut<GraphViewportMemory>,
-    viewports: Query<&MaterialGraphViewport>,
-) {
-    for viewport in &viewports {
-        let document_key = material_graph_view_key(viewport.program);
-        if viewport.viewport_key == document_key {
-            continue;
-        }
-        let Some(view) = graph_memory.view(&viewport.viewport_key) else {
-            continue;
-        };
-        // Only write when the document camera actually differs, so an idle open graph does not
-        // dirty the memory (and trigger a layout rebuild) every frame.
-        if graph_memory.view(&document_key) != Some(view) {
-            graph_memory.set_view(document_key, view.0, view.1);
-        }
-    }
 }
 
 fn persist_material_graph_layout(
@@ -592,7 +601,7 @@ fn persist_material_graph_layout(
     mut persistence: ResMut<MaterialGraphLayoutPersistence>,
 ) {
     // Do not combine another project's catalog/drafts with this session's loaded layout.
-    // Project memory/lifecycle migration is the next M3 slice; fail closed on root changes now.
+    // The lifecycle system reloads before UI rebuild; keep this guard for late root changes.
     if persistence.write_blocked || persistence.root.as_deref() != Some(catalog.root()) {
         return;
     }
@@ -603,14 +612,13 @@ fn persist_material_graph_layout(
         || catalog.is_changed()
         || previews.is_changed()
     {
-        if let Ok(programs) = session.graph_material_programs(&catalog) {
-            update_material_graph_layout_document(
-                &mut persistence.document,
-                &programs,
-                &graph_memory,
-                &previews,
-            );
-        }
+        let programs = layout_lifecycle::programs(&catalog, &session);
+        update_material_graph_layout_document(
+            &mut persistence.document,
+            &programs,
+            &graph_memory,
+            &previews,
+        );
         if let Ok(functions) = catalog.material_functions() {
             function_layout::update(
                 catalog.root(),
@@ -3835,7 +3843,6 @@ pub(crate) fn spawn_material_graph_workspace(
                 },
                 MaterialGraphViewport {
                     program: projection.program,
-                    viewport_key: viewport_key.clone(),
                     scope: view,
                 },
                 asset_drop::GraphDropTarget::program(session, projection.program),
@@ -4455,14 +4462,14 @@ fn material_graph_view_key(program: MaterialProgramId) -> String {
 }
 
 /// The per-view pan/zoom key. Editor views get a distinct key so two views of one program pan and
-/// zoom independently; the effect tool panel (no view) reuses the per-document key.
+/// zoom independently; the effect tool panel also has a distinct camera.
 fn material_graph_viewport_key(
     program: MaterialProgramId,
     view: Option<crate::docking::EditorViewId>,
 ) -> String {
     match view {
         Some(view) => format!("material:{program}#view:{}", view.0),
-        None => material_graph_view_key(program),
+        None => format!("material:{program}#tool"),
     }
 }
 
@@ -5680,80 +5687,9 @@ mod tests {
         let right = material_graph_viewport_key(program, Some(EditorViewId(2)));
         assert_ne!(left, right);
         assert_ne!(left, node_key);
-        // The effect tool panel (no view) reuses the per-document key, preserving its behaviour.
-        assert_eq!(material_graph_viewport_key(program, None), node_key);
-    }
-
-    #[test]
-    fn camera_mirror_copies_the_active_view_camera_into_the_document_slot() {
-        use crate::docking::EditorViewId;
-        let program = MaterialProgramId::new();
-        let document_key = material_graph_view_key(program);
-        let viewport_key = material_graph_viewport_key(program, Some(EditorViewId(3)));
-
-        let mut memory = GraphViewportMemory::default();
-        memory.set_view(viewport_key.clone(), Vec2::new(30.0, -8.0), 1.5);
-
-        let mut app = App::new();
-        app.insert_resource(memory)
-            .add_systems(Update, mirror_material_graph_camera_to_document);
-        app.world_mut().spawn(MaterialGraphViewport {
-            program,
-            viewport_key,
-            scope: Some(EditorViewId(3)),
-        });
-        app.update();
-
-        // The per-view camera is now the document camera, so the saved layout and the next view's
-        // initial camera follow the most recent view.
-        let memory = app.world().resource::<GraphViewportMemory>();
-        assert_eq!(
-            memory.view(&document_key),
-            Some((Vec2::new(30.0, -8.0), 1.5))
-        );
-    }
-
-    #[test]
-    fn camera_mirror_does_not_rewrite_an_already_synced_document_camera() {
-        use crate::docking::EditorViewId;
-        // An idle open graph must not dirty the viewport memory every frame (which would rebuild
-        // and re-persist the layout each tick). Once the document camera matches the view camera,
-        // the mirror writes nothing.
-        #[derive(Resource, Default)]
-        struct MemoryDirtied(bool);
-
-        let program = MaterialProgramId::new();
-        let viewport_key = material_graph_viewport_key(program, Some(EditorViewId(3)));
-        let document_key = material_graph_view_key(program);
-        let mut memory = GraphViewportMemory::default();
-        memory.set_view(viewport_key.clone(), Vec2::new(30.0, -8.0), 1.5);
-        memory.set_view(document_key, Vec2::new(30.0, -8.0), 1.5);
-
-        let mut app = App::new();
-        app.insert_resource(memory).init_resource::<MemoryDirtied>();
-        app.add_systems(
-            Update,
-            (
-                mirror_material_graph_camera_to_document,
-                |memory: Res<GraphViewportMemory>, mut dirtied: ResMut<MemoryDirtied>| {
-                    dirtied.0 = memory.is_changed();
-                },
-            )
-                .chain(),
-        );
-        app.world_mut().spawn(MaterialGraphViewport {
-            program,
-            viewport_key,
-            scope: Some(EditorViewId(3)),
-        });
-        // First tick: a freshly inserted resource always reads as changed, so ignore it.
-        app.update();
-        // Second idle tick: nothing touched the memory, and the mirror leaves it alone.
-        app.update();
-        assert!(
-            !app.world().resource::<MemoryDirtied>().0,
-            "the camera mirror rewrote an already-synced document camera"
-        );
+        // The tool panel must not fight the elected view for the persisted document camera.
+        assert_ne!(material_graph_viewport_key(program, None), node_key);
+        assert_ne!(material_graph_viewport_key(program, None), left);
     }
 
     #[test]

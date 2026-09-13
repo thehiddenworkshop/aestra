@@ -881,3 +881,5 @@ browser-mesh-thumbnail-ready = Géométrie statique — cadrage automatique et �
 browser-effect-thumbnail-ready = Effet enregistré — graine fixe, échantillonné à mi-durée (2 secondes maximum). Cadrage automatique des particules et traînées ; sans modifications en cours ni animation.
 browser-thumbnail-error = Aperçu indisponible. Voir la raison ci-dessous.
 browser-open-usage = Ouvrir l’effet propriétaire et sélectionner ce clip
+graph-layout-saving-blocked = L’enregistrement de la disposition est suspendu. Réparez .aestra/editor-layout.ron, puis rechargez la disposition enregistrée. Seule la disposition non enregistrée sera remplacée ; les modifications du matériau seront conservées.
+graph-layout-reload-saved = Recharger la disposition enregistrée

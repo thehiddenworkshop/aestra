@@ -10,14 +10,26 @@ fn function() -> MaterialFunction {
 
 #[test]
 fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
+    camera_owner(DocumentKey::MaterialFunction(MaterialFunctionId::new()));
+}
+
+#[test]
+fn material_camera_persistence_uses_focused_visible_owner_not_query_order() {
+    camera_owner(DocumentKey::MaterialProgram(MaterialProgramId::new()));
+}
+
+fn camera_owner(asset: DocumentKey) {
     use crate::{docking::EditorViewId, editor_view::ActiveEditorContext};
     let root = tempfile::tempdir().unwrap();
     let catalog = ProjectEffectCatalog::scan(root.path());
-    let function = MaterialFunctionId::new();
-    let key = function_graph_memory_key(catalog.root(), function);
+    let key = match asset {
+        DocumentKey::MaterialFunction(id) => function_graph_memory_key(catalog.root(), id),
+        DocumentKey::MaterialProgram(id) => material_graph_view_key(id),
+        _ => unreachable!(),
+    };
     let document = GraphDocumentKey {
         project: catalog.root().to_owned(),
-        asset: DocumentKey::MaterialFunction(function),
+        asset,
     };
     let (mut app, ui_root) = crate::feathers::node_graph::geometry::tests::layout_app(1.25);
     app.insert_resource(catalog)
@@ -28,11 +40,16 @@ fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
     let cameras = [
         (Vec2::new(20.0, 40.0), 0.5),
         (Vec2::new(120.0, -60.0), 1.25),
+        (Vec2::new(-300.0, 250.0), 0.75),
     ];
     let mut entities = Vec::new();
-    for id in [1, 2] {
+    for id in [1, 2, 3] {
         let camera = cameras[(id - 1) as usize];
-        let viewport_key = format!("{key}#view:{id}");
+        let viewport_key = if id == 3 {
+            format!("{key}#tool")
+        } else {
+            format!("{key}#view:{id}")
+        };
         app.world_mut()
             .resource_mut::<GraphViewportMemory>()
             .set_view(&viewport_key, camera.0, camera.1);
@@ -55,7 +72,7 @@ fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
                 parent.commands().entity(entity).insert(GraphGeometryView {
                     key: GraphViewKey {
                         document: document.clone(),
-                        view: Some(EditorViewId(id)),
+                        view: (id != 3).then_some(EditorViewId(id)),
                     },
                     nodes: BTreeSet::new(),
                 });
@@ -70,7 +87,7 @@ fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
         app.update();
     }
     app.world_mut()
-        .run_system_once(mirror_function_camera)
+        .run_system_once(mirror_graph_camera)
         .unwrap();
     assert_eq!(
         app.world().resource::<GraphViewportMemory>().view(&key),
@@ -83,7 +100,7 @@ fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
         app.update();
     }
     app.world_mut()
-        .run_system_once(mirror_function_camera)
+        .run_system_once(mirror_graph_camera)
         .unwrap();
     assert_eq!(
         app.world().resource::<GraphViewportMemory>().view(&key),
@@ -97,16 +114,52 @@ fn function_camera_persistence_uses_focused_visible_owner_not_query_order() {
         app.update();
     }
     app.world_mut()
-        .run_system_once(mirror_function_camera)
+        .run_system_once(mirror_graph_camera)
         .unwrap();
     let memory = app.world().resource::<GraphViewportMemory>();
-    assert_eq!(memory.view(&key), Some(cameras[1]));
-    for (index, camera) in cameras.into_iter().enumerate() {
+    // The retained owner was hidden: stable fallback prefers the tool panel (None).
+    assert_eq!(memory.view(&key), Some(cameras[2]));
+    for (index, camera) in cameras[..2].iter().copied().enumerate() {
         assert_eq!(
             memory.view(&format!("{key}#view:{}", index + 1)),
             Some(camera)
         );
     }
+    assert_eq!(memory.view(&format!("{key}#tool")), Some(cameras[2]));
+    app.world_mut()
+        .resource_mut::<ActiveEditorContext>()
+        .active_view = Some(EditorViewId(2));
+    // A live tool panel and split view must not alternate writes to the document slot when idle.
+    #[derive(Resource, Default)]
+    struct Dirtied(bool);
+    app.init_resource::<Dirtied>().add_systems(
+        Last,
+        (
+            mirror_graph_camera,
+            |memory: Res<GraphViewportMemory>, mut dirty: ResMut<Dirtied>| {
+                dirty.0 = memory.is_changed();
+            },
+        )
+            .chain(),
+    );
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world().resource::<GraphViewportMemory>().view(&key),
+        Some(cameras[1])
+    );
+    assert!(!app.world().resource::<Dirtied>().0);
+    app.world_mut()
+        .get_mut::<Node>(entities[1])
+        .unwrap()
+        .display = Display::None;
+    for _ in 0..4 {
+        app.update();
+    }
+    assert_eq!(
+        app.world().resource::<GraphViewportMemory>().view(&key),
+        Some(cameras[2])
+    );
 }
 
 #[test]

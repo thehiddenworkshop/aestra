@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M2 complete; M3a persistence foundation implemented, 2026-09-13. M3 remains in progress; M3b project lifecycle is next. No automatic movement implemented.
+> **Status:** M0–M2 complete; M3a persistence and M3b project placement lifecycle implemented, 2026-09-13. M3 remains in progress; M3c presentation history is next. No automatic movement implemented.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -8,8 +8,8 @@
 exposed, establish coordinate units, document/view ownership, base-position persistence,
 temporary-offset composition, and presentation Undo. M0 contract coverage, M1 live
 geometry and M2 measured framing are implemented. M3a adds the base/effective memory
-boundary and safe function persistence; M3b project lifecycle and M3c presentation Undo
-remain before the complete M3 gate can pass.
+boundary and safe function persistence; M3b isolates project lifetimes and camera ownership.
+M3c presentation Undo remains before the complete M3 gate can pass.
 The first automatic-movement feature
 is the bounded preview-resize flow through M5. No layout dependency or automatic
 movement is introduced by M0–M2.
@@ -1627,10 +1627,14 @@ estimates are used only while live measurements are unavailable.
   version-1 material layouts. Function cameras use the registry's visible owner. Failed
   or newer-file loads block writes, including exit flush; save rechecks file readability.
   Catalog-root changes fail closed instead of writing another project's metadata.
-- **M3b — Project placement lifecycle (next):** qualify/reset placement and preview
-  memory on project switches, reload the right metadata, prune stale identities and
-  handle document reload/removal. Bring material camera-save ownership onto the same
-  focused/retained policy. Specify explicit recovery for blocked layout metadata.
+- **M3b — Project placement lifecycle (implemented):** reset the active project’s
+  material/function placement, preview/cache and per-view camera namespace on project
+  switches; flush the old metadata snapshot and load the new one before graph UI sync.
+  Persist inactive shared materials too. Prune confirmed removed documents/nodes while
+  preserving placement on ambiguous/unreadable inventories. Semantic content changes
+  invalidate temporary offsets, not retained base positions. Material and function
+  camera saving now share focused/retained ownership, with a separate tool-panel camera.
+  Blocked metadata has an in-graph repair explanation and explicit saved-layout reload.
 - **M3c — Focused presentation history:** integrate chronological Undo/Redo, drag and
   preview/collapse transactions, compound semantic/insertion placement, and revision
   guards. Preserve text Undo and existing document/asset history routing.
@@ -2153,10 +2157,10 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Immediate task: M3b project placement lifecycle.** M0–M2 and the M3a persistence
+**Immediate task: M3c focused presentation history.** M0–M2 and M3a/M3b persistence/lifecycle
 foundation are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
-as the baseline. Complete project isolation/lifecycle and focused presentation history
-in M3b/M3c before enabling automatic movement.
+as the baseline. Complete chronological, document-scoped presentation transactions
+and stale-history guards in M3c before enabling automatic movement.
 
 After those prerequisites, implement this complete M4–M5 flow before integrating
 `elkrs`:

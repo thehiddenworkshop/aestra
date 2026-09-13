@@ -91,7 +91,7 @@ pub(super) fn update(
 
 /// The registry elects one visible measurement owner (focused, retained, stable fallback). Only
 /// that view supplies the next-open camera; sibling views keep independent live cameras.
-pub(super) fn mirror_function_camera(
+pub(super) fn mirror_graph_camera(
     catalog: Res<ProjectEffectCatalog>,
     registry: Res<GraphGeometryRegistry>,
     views: Query<&GraphGeometryView>,
@@ -102,20 +102,21 @@ pub(super) fn mirror_function_camera(
         .map(|view| &view.key.document)
         .collect::<BTreeSet<_>>();
     for document in documents {
-        let DocumentKey::MaterialFunction(id) = document.asset else {
-            continue;
-        };
         if document.project != catalog.root() {
             continue;
         }
         let Some(snapshot) = registry.snapshot(document) else {
             continue;
         };
-        let key = function_graph_memory_key(catalog.root(), id);
-        let viewport_key = snapshot
-            .measured_in
-            .view
-            .map_or_else(|| key.clone(), |view| format!("{key}#view:{}", view.0));
+        let key = match document.asset {
+            DocumentKey::MaterialFunction(id) => function_graph_memory_key(catalog.root(), id),
+            DocumentKey::MaterialProgram(id) => material_graph_view_key(id),
+            DocumentKey::WeslSource(_) => continue,
+        };
+        let viewport_key = snapshot.measured_in.view.map_or_else(
+            || format!("{key}#tool"),
+            |view| format!("{key}#view:{}", view.0),
+        );
         let Some(camera) = memory.view(&viewport_key) else {
             continue;
         };

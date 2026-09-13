@@ -497,7 +497,7 @@ pub(crate) fn spawn(
     let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), function.id);
     // Placement stays document-scoped, but a toolbar frame action must target only its view.
     let viewport_key = view.map_or_else(
-        || graph_key.clone(),
+        || format!("{graph_key}#tool"),
         |view| format!("{graph_key}#view:{}", view.0),
     );
     let mut inputs = nodes

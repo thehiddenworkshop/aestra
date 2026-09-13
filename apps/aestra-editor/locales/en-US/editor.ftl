@@ -881,3 +881,5 @@ browser-mesh-thumbnail-ready = Static mesh geometry — automatically framed wit
 browser-effect-thumbnail-ready = Saved effect — fixed seed, sampled halfway through its duration (up to 2 seconds). Automatically framed particle/trail history; no live edits or animation.
 browser-thumbnail-error = Preview unavailable. See the reason below.
 browser-open-usage = Open owning effect and select this clip
+graph-layout-saving-blocked = Graph layout saving is paused. Repair .aestra/editor-layout.ron, then reload saved placement. Reload replaces unsaved placement only; material edits are preserved.
+graph-layout-reload-saved = Reload saved layout

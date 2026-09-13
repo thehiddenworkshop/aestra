@@ -57,6 +57,10 @@ type GraphNodeControlFilter = Or<(
 
 pub(crate) struct FeathersNodeGraphPlugin;
 
+/// Hosts order graph restoration/navigation after their own document lifecycle and UI rebuild.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct GraphWidgetSync;
+
 /// Shared toolbar chrome for material programs and function bodies.
 pub(crate) fn graph_toolbar_bundle() -> impl Bundle {
     (
@@ -156,7 +160,8 @@ impl Plugin for FeathersNodeGraphPlugin {
                     sync_graph_viewport_transforms,
                     update_socket_visuals,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(GraphWidgetSync),
             )
             .add_systems(
                 PostUpdate,
@@ -261,6 +266,25 @@ pub(crate) struct GraphViewportMemory {
 }
 
 impl GraphViewportMemory {
+    /// Remove a document and all of its independent view cameras without touching other widgets.
+    pub(crate) fn retain_graphs(&mut self, keep: impl Fn(&str) -> bool) {
+        self.views.retain(|key, _| keep(key));
+        self.nodes.retain(|(key, _), _| keep(key));
+        self.offsets.retain(|(key, _), _| keep(key));
+    }
+
+    pub(crate) fn retain_nodes(&mut self, graph: &str, keep: impl Fn(&str) -> bool) {
+        self.nodes
+            .retain(|(key, node), _| key != graph || keep(node));
+        self.offsets
+            .retain(|(key, node), _| key != graph || keep(node));
+    }
+
+    /// Semantic reload/edit invalidates session displacement, not authored base placement.
+    pub(crate) fn clear_offsets(&mut self, graph: &str) {
+        self.offsets.retain(|(key, _), _| key != graph);
+    }
+
     pub(crate) fn view(&self, graph_key: &str) -> Option<(Vec2, f32)> {
         self.views.get(graph_key).map(|view| (view.pan, view.zoom))
     }

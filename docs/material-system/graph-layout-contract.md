@@ -312,3 +312,46 @@ tests passed**. The architecture test, strict editor/project Clippy (`--all-targ
 
 Next: **M3b — Project placement lifecycle**, then **M3c — Focused presentation Undo**.
 No automatic movement or layout Undo is enabled by M3a.
+
+## M3b implementation — Project placement lifecycle
+
+- A catalog-root change flushes the last captured old-project layout to its own root,
+  then clears the material/function memory namespace, including per-view cameras and
+  temporary offsets, preview visibility and preview caches. Other graph widgets keep
+  their memory. The new project's metadata loads before graph UI rebuild/sync; old
+  graph viewport entities and geometry observations are discarded. Same-ID assets in
+  another project cannot inherit placements. Failed writes still follow the existing
+  error/overwrite protection; this does not create a recovery copy of unsaved layout.
+- Persistence visits all resolvable project materials and retained drafts, independent
+  of the focused tab. Function persistence retains the same behavior. Source reloads
+  preserve base positions for retained expression IDs, prune removed node/preview IDs,
+  and clear obsolete temporary offsets when semantic content changes. Confirmed asset
+  removal clears its document and view memory plus metadata; closing a tab alone does
+  not erase layout. Incomplete/invalid inventories are not evidence of removal.
+- Both graph kinds now use the same registry-elected camera owner: focused visible
+  view, retained valid owner, then stable fallback. The graph tool panel has its own
+  `#tool` camera, separate from the saved document camera and `#view` cameras. All
+  views seed from the document camera on first opening; idle siblings do not fight
+  for the saved camera. Existing on-disk camera metadata needs no schema migration.
+- A blocked metadata load/save displays an in-graph notice (English/French). Repair
+  `.aestra/editor-layout.ron`, then choose **Reload saved layout**. The button retries
+  reading, never overwrites an unsupported/corrupt file. A failed retry preserves live
+  placement; a successful explicit retry replaces unsaved placement with the saved
+  layout while leaving material/function/effect semantics untouched. It is not a
+  reset-to-default or file-deletion action.
+
+Coverage includes project A/B/A with identical material/function IDs, inactive material
+persistence, base-vs-offset round-trip, stale view removal, unrelated-widget preservation,
+reload/node removal, invalid inventory vs confirmed asset removal, real multi-view/tool
+camera ownership and idle stability, and recovery activation with file-byte/semantic
+preservation. Native-window visual acceptance remains separate from headless coverage.
+
+Validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **860 editor tests passed,
+6 existing GPU tests ignored**; **9 project layout tests passed**. Strict editor/project
+Clippy (`--all-targets -- -D warnings`), architecture, workspace formatting and
+`git diff --check` pass.
+
+Next: **M3c — Focused presentation Undo**. Chronological presentation transactions,
+compound semantic/insertion placement, history-generation guards and safe Undo/Redo
+are still required before the complete M3 gate passes. No automatic node movement is
+enabled by M3b.
