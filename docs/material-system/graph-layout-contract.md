@@ -683,3 +683,41 @@ values; both semantic adapters cover rejected spacing, stale neighbor bases and 
 compound neighbor Undo/Redo for stored and bootstrap positions. Strict editor/project
 Clippy (`--all-targets -- -D warnings`), the architecture test, workspace formatting and
 `git diff --check` passed. Native acceptance remains pending.
+
+## M7d implementation — function socket-to-canvas creation
+
+- Releasing a function socket drag in empty space opens a pointer-anchored searchable
+  palette. Drops outside the originating viewport or over another node do not open it.
+  Pointer coordinates are normalized by that viewport's DPI and inverse camera transform.
+- The palette shares categorized, scrollable search results with the function toolbar,
+  and blocks graph wheel navigation behind it. The search field receives focus; Escape,
+  an outside click or view teardown dismisses the palette. Enter in search chooses the
+  first visible result. Empty compatible catalogs show an explanation.
+- Plans use the native function catalog, function-body commands and compiler transaction
+  validation, including dependent callers. Source drags name each compatible input using
+  canvas labels (for example Multiply — A / B); target drags connect the new node's output.
+  Signature-input nodes are available where compatible. No surrogate material/effect is
+  manufactured. Enumeration is bounded to 512 descriptors and 16 input choices each.
+- The menu stores the project generation, owning view, function snapshot and concrete
+  command choices. Activation rechecks ownership and function state, then revalidates the
+  entire edit through FunctionEditor. Cancelled/stale choices do not modify semantics or
+  placements. A successful creation plus connection and helper placement is one Undo/Redo.
+- Placement reuses measured obstacles, the source/target neighborhood policy, and the
+  same bootstrap size estimates as toolbar creation. Existing positions are preserved;
+  missing/stale geometry uses the established advisory fallback without global movement.
+- Function socket compatibility, snapping and ghost rendering are scoped to the source
+  viewport, not the first view of the function. Existing direct socket connections remain
+  available; the palette handles only unconnected empty-canvas releases.
+
+Native acceptance remains pending: create from a function source, an ordinary input and
+a function output; search and choose an explicit multi-input port; check one Undo/Redo,
+Escape/outside dismissal, scroll isolation, expanded nodes and split views at different
+zoom/DPI. Releasing on an incompatible node must not open a menu or edit the function.
+
+M7d validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **929 editor tests passed**
+(7 existing opt-in tests ignored), plus the architecture test. Seven new tests cover
+validated source/input/output choices, explicit input naming, cross-view drag isolation,
+filtered Enter activation, DPI/zoom coordinates, cancellation/teardown, stale choices
+and compound creation Undo/Redo. Strict editor/project Clippy (`--all-targets -- -D
+warnings`), workspace formatting and `git diff --check` passed. Native acceptance remains
+pending.

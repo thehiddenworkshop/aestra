@@ -16,6 +16,8 @@ use aestra_compiler::{
     MaterialCompiler, MaterialFunctionBodyProjection, MaterialFunctionGraphTarget,
 };
 
+mod socket_palette;
+
 #[derive(Component, Clone, Copy)]
 struct View(MaterialFunctionId);
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -73,6 +75,7 @@ struct Constant {
 }
 
 pub(super) fn register(app: &mut App) {
+    socket_palette::register(app);
     app.init_resource::<ConnectionPreview>()
         .add_observer(start_connection)
         .add_observer(move_connection)
@@ -110,6 +113,7 @@ fn start_connection(
     session: Option<Res<EditorSession>>,
     catalog: Option<Res<ProjectEffectCatalog>>,
     parents: Query<&ChildOf>,
+    views: Query<(), With<View>>,
 ) {
     if event.button == bevy::picking::pointer::PointerButton::Primary
         && let Some(entity) = socket_entity(event.entity, &sockets, &parents)
@@ -122,6 +126,15 @@ fn start_connection(
             && let Ok(document) = session.graph_authoring_document(&catalog)
         {
             for (entity, candidate) in &sockets {
+                if parents
+                    .iter_ancestors(origin.node)
+                    .find(|id| views.contains(*id))
+                    != parents
+                        .iter_ancestors(candidate.node)
+                        .find(|id| views.contains(*id))
+                {
+                    continue;
+                }
                 if let Some((source, target)) = socket_pair(origin, candidate) {
                     let mut candidate_document = document.clone();
                     let transaction = aestra_authoring::MaterialTransaction::new(
@@ -169,10 +182,20 @@ fn end_connection(
     editor: Option<ResMut<FunctionEditor>>,
     session: Option<ResMut<EditorSession>>,
     catalog: Option<ResMut<ProjectEffectCatalog>>,
+    mut commands: Commands,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
 ) {
     if let Some((entity, _)) = preview.0
         && Some(entity) == socket_entity(event.entity, &sockets, &parents)
     {
+        if keys
+            .as_ref()
+            .is_some_and(|keys| keys.pressed(KeyCode::Escape))
+        {
+            *preview = default();
+            event.propagate(false);
+            return;
+        }
         // Re-evaluate the release position; a fast last movement may precede PostUpdate.
         let snap = geometry
             .iter()
@@ -196,6 +219,9 @@ fn end_connection(
                 vec![connection_edit(source, target)],
             );
             finish(&mut session, result);
+        } else if snap.is_none() {
+            let pointer = event.pointer_location.position;
+            commands.queue(move |world: &mut World| socket_palette::open(world, entity, pointer));
         }
         *preview = ConnectionPreview::default();
         event.propagate(false);
@@ -250,6 +276,7 @@ fn drop_socket(
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut preview: ResMut<ConnectionPreview>,
+    views: Query<(), With<View>>,
 ) {
     if event.button != bevy::picking::pointer::PointerButton::Primary {
         return;
@@ -264,6 +291,15 @@ fn drop_socket(
         return;
     };
     if from.owner != to.owner || session.standalone_function() != Some(from.owner) {
+        return;
+    }
+    if parents
+        .iter_ancestors(from.node)
+        .find(|id| views.contains(*id))
+        != parents
+            .iter_ancestors(to.node)
+            .find(|id| views.contains(*id))
+    {
         return;
     }
     let pair = match (from.kind, to.kind) {
@@ -319,6 +355,18 @@ fn create_edits(
             index: function.expressions.len() + index,
         })
         .collect())
+}
+
+fn estimated_size(
+    id: MaterialExpressionId,
+    nodes: &[MaterialExpression],
+    edges: &[aestra_compiler::MaterialFunctionGraphEdge],
+) -> Vec2 {
+    let rows = nodes.iter().find(|node| node.id == id).map_or(1, |node| match &node.kind {
+        MaterialExpressionKind::Constant(value) => components(value).len(),
+        _ => edges.iter().filter(|edge| matches!(target(&edge.target), Some(Target::Input(expression, _)) if expression == id)).count(),
+    });
+    Vec2::new(NODE_WIDTH, 62.0 + rows.max(1) as f32 * 28.0)
 }
 
 fn action(
@@ -395,13 +443,9 @@ fn action(
         let mut unassisted = false;
         placement.preserve_existing(&view_key, memory);
         for id in created {
-            let rows = nodes.iter().find(|node| node.id == id).map_or(1, |node| match &node.kind {
-                MaterialExpressionKind::Constant(value) => components(value).len(),
-                _ => edges.iter().filter(|edge| matches!(target(&edge.target), Some(Target::Input(expression,_)) if expression == id)).count(),
-            });
             let placed = area.place(
                 preferred,
-                Vec2::new(NODE_WIDTH, 62.0 + rows.max(1) as f32 * 28.0),
+                estimated_size(id, &nodes, &edges),
                 placement::Neighborhood::Cursor,
             );
             memory.place_node(&graph_key, id.to_string(), placed.position);
@@ -1036,7 +1080,7 @@ fn update_wires(
     mut sockets: Query<(&Socket, &UiGlobalTransform, &mut Anchor)>,
     nodes: Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
     viewports: Query<(&View, &FeathersGraphViewport, &ComputedNode)>,
-    previews: Query<(&PreviewWire, &MaterialNode<GraphWireMaterial>)>,
+    previews: Query<(Entity, &PreviewWire, &MaterialNode<GraphWireMaterial>)>,
     mut preview: ResMut<ConnectionPreview>,
     preview_sockets: Query<(Entity, &Socket, &UiGlobalTransform)>,
     viewport_geometry: Query<(&View, &ComputedNode, &UiGlobalTransform)>,
@@ -1117,9 +1161,9 @@ fn update_wires(
             .iter()
             .filter(|(entity, _, _)| preview.1.contains(entity))
             .filter_map(|(entity, socket, transform)| {
-                let (_, computed, _) = viewport_geometry
-                    .iter()
-                    .find(|(view, _, _)| view.0 == socket.owner)?;
+                let (_, computed, _) = parents
+                    .iter_ancestors(socket.node)
+                    .find_map(|id| viewport_geometry.get(id).ok())?;
                 let position = transform.translation.trunc() * computed.inverse_scale_factor;
                 let distance = position.distance(cursor);
                 (distance <= 18.0).then_some((entity, distance))
@@ -1142,15 +1186,19 @@ fn update_wires(
             color.0 = next;
         }
     }
-    for (ghost, handle) in &previews {
+    for (ghost_entity, ghost, handle) in &previews {
         let endpoints = preview.0.and_then(|(entity, cursor)| {
             let (_, socket, transform) = preview_sockets.get(entity).ok()?;
             if socket.owner != ghost.0 {
                 return None;
             }
-            let (_, computed, viewport_transform) = viewport_geometry
-                .iter()
-                .find(|(view, _, _)| view.0 == ghost.0)?;
+            let owner = parents
+                .iter_ancestors(socket.node)
+                .find(|id| viewport_geometry.contains(*id))?;
+            if !parents.iter_ancestors(ghost_entity).any(|id| id == owner) {
+                return None;
+            }
+            let (_, computed, viewport_transform) = viewport_geometry.get(owner).ok()?;
             let (_, _, origin) = transform.to_scale_angle_translation();
             let start = crate::feathers::context_menu::pointer_position_in_node(
                 origin,

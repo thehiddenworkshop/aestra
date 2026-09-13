@@ -269,6 +269,89 @@ fn filter_actions(
     }
 }
 
+/// Shared categorized, scrollable search results for toolbar and pointer graph menus.
+pub(crate) fn spawn_searchable_action_list<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    input: Entity,
+    options: &[ComboOption<A>],
+    categories: &[String],
+) {
+    parent.commands().entity(input).observe(filter_actions);
+    parent
+        .spawn(Node {
+            width: Val::Px(280.0),
+            height: Val::Px(360.0),
+            flex_shrink: 0.0,
+            ..default()
+        })
+        .with_children(|body| {
+            super::scroll::spawn_vertical_scroll_area(
+                body,
+                crate::ScrollMemoryKey::MaterialGraphPalette,
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                |list| {
+                    let mut groups = Vec::<(&str, Vec<usize>)>::new();
+                    for (index, category) in categories.iter().enumerate() {
+                        if let Some((_, items)) =
+                            groups.iter_mut().find(|(name, _)| *name == category)
+                        {
+                            items.push(index);
+                        } else {
+                            groups.push((category, vec![index]));
+                        }
+                    }
+                    for (category, items) in groups {
+                        list.spawn((
+                            SearchableAction {
+                                input,
+                                text: items
+                                    .iter()
+                                    .map(|index| {
+                                        format!("{} {}", category, options[*index].label)
+                                            .to_lowercase()
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
+                            },
+                            Text::new(category.to_uppercase()),
+                            TextFont {
+                                font_size: FontSize::Px(9.0),
+                                ..default()
+                            },
+                            TextColor(theme::ACCENT),
+                            Node {
+                                padding: UiRect::all(Val::Px(8.0)),
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ));
+                        for index in items {
+                            let option = &options[index];
+                            list.spawn((
+                                SearchableAction {
+                                    input,
+                                    text: format!("{} {}", category, option.label).to_lowercase(),
+                                },
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Column,
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|row| spawn_combo_option(row, option));
+                        }
+                    }
+                },
+            );
+        });
+}
+
 fn spawn_icon_menu<A: Component + Copy>(
     parent: &mut ChildSpawnerCommands,
     asset_server: &AssetServer,
@@ -394,90 +477,7 @@ fn spawn_icon_menu<A: Component + Copy>(
                                     });
                                 },
                             );
-                        popup.commands().entity(input).observe(filter_actions);
-                        popup
-                            .spawn(Node {
-                                width: Val::Px(280.0),
-                                height: Val::Px(360.0),
-                                flex_shrink: 0.0,
-                                ..default()
-                            })
-                            .with_children(|body| {
-                                super::scroll::spawn_vertical_scroll_area(
-                                    body,
-                                    crate::ScrollMemoryKey::MaterialGraphPalette,
-                                    Node {
-                                        flex_grow: 1.0,
-                                        min_width: Val::Px(0.0),
-                                        height: Val::Percent(100.0),
-                                        flex_direction: FlexDirection::Column,
-                                        ..default()
-                                    },
-                                    |list| {
-                                        let mut groups = Vec::<(&str, Vec<usize>)>::new();
-                                        for (index, category) in categories.iter().enumerate() {
-                                            if let Some((_, items)) = groups
-                                                .iter_mut()
-                                                .find(|(name, _)| *name == category)
-                                            {
-                                                items.push(index);
-                                            } else {
-                                                groups.push((category, vec![index]));
-                                            }
-                                        }
-                                        for (category, items) in groups {
-                                            list.spawn((
-                                                SearchableAction {
-                                                    input,
-                                                    text: items
-                                                        .iter()
-                                                        .map(|index| {
-                                                            format!(
-                                                                "{} {}",
-                                                                category, options[*index].label
-                                                            )
-                                                            .to_lowercase()
-                                                        })
-                                                        .collect::<Vec<_>>()
-                                                        .join(" "),
-                                                },
-                                                Text::new(category.to_uppercase()),
-                                                TextFont {
-                                                    font_size: FontSize::Px(9.0),
-                                                    ..default()
-                                                },
-                                                TextColor(theme::ACCENT),
-                                                Node {
-                                                    padding: UiRect::all(Val::Px(8.0)),
-                                                    ..default()
-                                                },
-                                                Pickable::IGNORE,
-                                            ));
-                                            for index in items {
-                                                let option = &options[index];
-                                                list.spawn((
-                                                    SearchableAction {
-                                                        input,
-                                                        text: format!(
-                                                            "{} {}",
-                                                            category, option.label
-                                                        )
-                                                        .to_lowercase(),
-                                                    },
-                                                    Node {
-                                                        width: Val::Percent(100.0),
-                                                        flex_direction: FlexDirection::Column,
-                                                        ..default()
-                                                    },
-                                                ))
-                                                .with_children(|row| {
-                                                    spawn_combo_option(row, option)
-                                                });
-                                            }
-                                        }
-                                    },
-                                );
-                            });
+                        spawn_searchable_action_list(popup, input, options, categories);
                         return;
                     }
                     for option in options {

@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M6 and M7a–M7c implemented, 2026-09-13. M7c adds bounded local spacing to wire insertion in material and function graphs; M7 remains in progress. Native M5/M6 acceptance remains pending alongside creation/insertion checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M6 and M7a–M7d implemented, 2026-09-13. M7d adds function socket-to-canvas node creation; M7 remains in progress. Native M5/M6 acceptance remains pending alongside creation/insertion checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1821,9 +1821,19 @@ partial rewiring/movement. Alt still performs an ordinary move. The dropped posi
 neighbor base positions and rewiring share one Undo/Redo action in both graph types.
 This is a bounded directional heuristic, not a global minimum-displacement layout.
 
-Remaining M7 parts: function socket creation UX and placement for non-interactive semantic
-commands. Explicit input choice for ambiguous wire insertion is also deferred. These are
-not shipped by M7a–M7c.
+**M7d implemented; native acceptance pending.** Drag a function source/input/output socket
+into empty space in its own viewport to open a compatible-node palette. It reuses the
+toolbar's categorized, bounded searchable list. Source drags expose explicit input-port
+choices; target drags create a source and connect it to the selected target. Escape or
+an outside click cancels; Enter in search selects the first visible result. Creation,
+connection and bounded placement use one function-native transaction and compound Undo.
+Source-relative/target-relative placement, helper-node sizes and obstacle handling use
+the existing shared placement policy. Stale functions, projects and views cannot consume
+an old menu. Function socket snapping and connection ghosts now stay in their own view.
+
+Remaining M7 work: placement for non-interactive semantic commands. Explicit input choice
+for ambiguous existing-node wire insertion is also deferred; M7d's port choices apply to
+new nodes created from a socket, not M7b/M7c wire-drop insertion.
 
 ### Goal
 
@@ -2221,7 +2231,7 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next acceptance: M5 overlays, M6 drag assistance and M7a–M7c creation/insertion.** These slices
+**Next acceptance: M5 overlays, M6 drag assistance and M7a–M7d creation/insertion.** These slices
 are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
 material/function views, plus snapping/Alt/guides, creation/insertion Undo and local
