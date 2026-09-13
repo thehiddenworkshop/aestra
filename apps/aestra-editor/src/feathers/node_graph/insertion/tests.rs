@@ -164,6 +164,52 @@ fn wire_insertion_hit_testing_is_view_local_dpi_independent_and_alt_bypasses() {
             let found = app.world().resource::<State>().candidate.as_ref().unwrap();
             assert_eq!(found.entity, wire_entity);
             assert_eq!(found.view, identity);
+            // Drop closer to the consumer: the measured inserted rectangle needs room.
+            // The same logical cascade must be planned at every DPI and zoom.
+            app.world_mut()
+                .get_mut::<FeathersGraphNode>(moving)
+                .unwrap()
+                .position =
+                Vec2::new(450.0, (start.y + end.y) * 0.5) - snapshot.nodes[&keys[2]].size * 0.5;
+            motion(app.world_mut(), moving);
+            assert_eq!(
+                app.world()
+                    .resource::<State>()
+                    .candidate
+                    .as_ref()
+                    .unwrap()
+                    .spacing
+                    .as_ref()
+                    .unwrap()
+                    .count(),
+                1
+            );
+            let target_position = snapshot.nodes[&keys[1]].effective_position;
+            {
+                let mut memory = app.world_mut().resource_mut::<GraphViewportMemory>();
+                memory.set_node("graph", "1", target_position - Vec2::Y * 40.0, false);
+                memory.set_temporary_offset("graph", "1", Vec2::Y * 40.0);
+            }
+            motion(app.world_mut(), moving);
+            assert!(
+                app.world()
+                    .resource::<State>()
+                    .candidate
+                    .as_ref()
+                    .unwrap()
+                    .spacing
+                    .as_ref()
+                    .unwrap_err()
+                    .contains("protected node")
+            );
+            app.world_mut()
+                .resource_mut::<GraphViewportMemory>()
+                .remove_node("graph", "1");
+            app.world_mut()
+                .get_mut::<FeathersGraphNode>(moving)
+                .unwrap()
+                .position = position;
+            motion(app.world_mut(), moving);
             app.world_mut().resource_mut::<State>().allowed = true;
             assert_eq!(
                 app.world()

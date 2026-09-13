@@ -233,6 +233,7 @@ fn prepare(
     catalog: &ProjectEffectCatalog,
     candidate: &Candidate,
 ) -> Result<Replacement, String> {
+    candidate.spacing.as_ref().map_err(Clone::clone)?;
     if candidate.view.document.project != catalog.root() {
         return Err("Project changed".into());
     }
@@ -268,7 +269,12 @@ fn probe(
         .map(|candidate| match prepare(&session, &catalog, candidate) {
             Ok(_) => {
                 state.allowed = true;
-                "Release to insert node · Alt: move only".to_string()
+                let count = candidate.spacing.as_ref().unwrap().count();
+                if count == 0 {
+                    "Release to insert node · Alt: move only".to_string()
+                } else {
+                    format!("Release to insert and move {count} nearby nodes · Alt: move only")
+                }
             }
             Err(error) => {
                 state.allowed = false;
@@ -294,8 +300,13 @@ fn drop_node(
     // The widget has displayed the drag already. Restore its base before capturing the compound
     // transaction; failed semantic insertion therefore leaves both semantics and placement intact.
     memory.set_node(&edit.graph, &edit.node, edit.before.0, edit.before.1);
+    let mut preserved = false;
     let result = (|| {
         let replacement = prepare(&session, &catalog, &event.candidate)?;
+        let spacing = event.candidate.spacing.as_ref().map_err(Clone::clone)?;
+        spacing.validate(&edit.graph, &memory)?;
+        spacing.preserve(&edit.graph, &mut memory);
+        preserved = true;
         let before = presentation::Snapshot::capture(&edit.graph, &catalog, &session, &memory)
             .ok_or("Graph history is unavailable")?;
         match replacement {
@@ -314,10 +325,19 @@ fn drop_node(
                 .edit(&mut session, &mut catalog, after)?,
         }
         memory.set_node(&edit.graph, &edit.node, edit.after.0, edit.after.1);
+        spacing.apply(&edit.graph, &mut memory);
         before.attach(&catalog, &mut session, &mut memory);
         Ok::<_, String>(())
     })();
     if result.is_err() {
+        if preserved {
+            event
+                .candidate
+                .spacing
+                .as_ref()
+                .unwrap()
+                .rollback(&edit.graph, &mut memory);
+        }
         memory.set_temporary_offset(&edit.graph, &edit.node, event.before_offset);
     }
     session.status = match result {

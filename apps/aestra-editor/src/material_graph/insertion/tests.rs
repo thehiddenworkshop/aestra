@@ -54,6 +54,7 @@ fn fixture(function: bool) -> (MaterialAuthoringDocument, Candidate) {
         wire,
         entity: Entity::PLACEHOLDER,
         inputs: vec![MaterialExpressionInput::Value],
+        spacing: Ok(widget::Spacing::default()),
     };
     (
         MaterialAuthoringDocument::standalone(vec![program])
@@ -207,7 +208,8 @@ fn insertion_preserves_existing_input_branches_and_rejects_cycle_candidates() {
 
 #[test]
 fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
-    for function in [false, true] {
+    for (function, stored_neighbor) in [(false, false), (false, true), (true, false), (true, true)]
+    {
         let (document, mut candidate) = fixture(function);
         let root = tempfile::tempdir().unwrap();
         candidate.view.document.project = root.path().into();
@@ -253,9 +255,74 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
             .init_resource::<crate::material_function_editor::FunctionEditor>()
             .add_observer(crate::history::execute_history_action)
             .add_observer(drop_node);
+        let neighbor = if function {
+            "outputs"
+        } else {
+            MATERIAL_GRAPH_OUTPUT_NODE_KEY
+        };
+        let neighbor_before = Vec2::new(420.0, 70.0);
+        let neighbor_after = Vec2::new(508.0, 70.0);
+        candidate.spacing = Ok(widget::Spacing::test_move(
+            neighbor,
+            stored_neighbor.then_some((neighbor_before, false)),
+            neighbor_before,
+            neighbor_after,
+        ));
+        if stored_neighbor {
+            app.world_mut()
+                .resource_mut::<GraphViewportMemory>()
+                .set_node(&graph, neighbor, neighbor_before, false);
+        }
         app.world_mut()
             .resource_mut::<GraphViewportMemory>()
             .set_node(&graph, &edit.node, edit.after.0, false);
+        let before_document = app
+            .world()
+            .resource::<EditorSession>()
+            .graph_authoring_document(app.world().resource::<ProjectEffectCatalog>())
+            .unwrap();
+        for spacing in [
+            Err("No room beside a protected node".into()),
+            Ok(widget::Spacing::test_move(
+                neighbor,
+                Some((Vec2::splat(-500.0), false)),
+                neighbor_before,
+                neighbor_after,
+            )),
+        ] {
+            let mut blocked = candidate.clone();
+            blocked.spacing = spacing;
+            app.world_mut().trigger(widget::Drop {
+                candidate: blocked,
+                edit: edit.clone(),
+                before_offset: Vec2::ZERO,
+            });
+            assert!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .status
+                    .starts_with("Insertion cancelled:")
+            );
+            assert_eq!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .graph_authoring_document(app.world().resource::<ProjectEffectCatalog>())
+                    .unwrap(),
+                before_document
+            );
+            assert_eq!(
+                app.world()
+                    .resource::<GraphViewportMemory>()
+                    .node(&graph, neighbor),
+                stored_neighbor.then_some((neighbor_before, false))
+            );
+            assert_eq!(
+                app.world()
+                    .resource::<GraphViewportMemory>()
+                    .node(&graph, &edit.node),
+                Some(edit.before)
+            );
+        }
         app.world_mut().trigger(widget::Drop {
             candidate: candidate.clone(),
             edit: edit.clone(),
@@ -265,6 +332,12 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
             app.world().resource::<EditorSession>().status,
             "Inserted node on wire"
         );
+        assert_eq!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .node(&graph, neighbor),
+            Some((neighbor_after, false))
+        );
         app.world_mut().trigger(crate::history::HistoryAction::Undo);
         app.world_mut().flush();
         assert_eq!(
@@ -272,6 +345,12 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
                 .resource::<GraphViewportMemory>()
                 .node(&graph, &edit.node),
             Some(edit.before)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .node(&graph, neighbor),
+            Some((neighbor_before, false))
         );
         if function {
             assert_eq!(
@@ -298,6 +377,12 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
                 .resource::<GraphViewportMemory>()
                 .node(&graph, &edit.node),
             Some(edit.after)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .node(&graph, neighbor),
+            Some((neighbor_after, false))
         );
         let before_failed = app
             .world()
@@ -344,5 +429,11 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
             before_failed
         );
         assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+        assert_eq!(
+            app.world()
+                .resource::<GraphViewportMemory>()
+                .node(&graph, neighbor),
+            Some((neighbor_after, false))
+        );
     }
 }

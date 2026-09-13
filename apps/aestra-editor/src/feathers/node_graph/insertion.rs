@@ -2,6 +2,9 @@
 use super::{geometry::*, *};
 use std::collections::BTreeMap;
 
+mod spacing;
+pub(crate) use spacing::Spacing;
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Wire {
     pub source: GraphNodeKey,
@@ -26,13 +29,14 @@ impl Wire {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Candidate {
     pub view: GraphViewKey,
     pub node: GraphNodeKey,
     pub wire: Wire,
     pub entity: Entity,
     pub inputs: Vec<aestra_authoring::MaterialExpressionInput>,
+    pub spacing: Result<Spacing, String>,
 }
 
 #[derive(Event)]
@@ -208,6 +212,7 @@ fn candidate(world: &mut World, entity: Entity) -> Option<Candidate> {
         node: key,
         wire,
         entity: wire_entity,
+        spacing: spacing::capture(world, gesture, key, wire),
         inputs: shape
             .ports
             .iter()

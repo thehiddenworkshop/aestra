@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M6 and M7a/M7b implemented, 2026-09-13. M7b adds validated drag-on-wire insertion to material and function graphs; M7 remains in progress. Native M5/M6 acceptance remains pending alongside creation/insertion checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M6 and M7a–M7c implemented, 2026-09-13. M7c adds bounded local spacing to wire insertion in material and function graphs; M7 remains in progress. Native M5/M6 acceptance remains pending alongside creation/insertion checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1811,9 +1811,19 @@ against current semantics and commits rewiring plus the dropped position in one 
 action. A rejected semantic insertion restores the original position and temporary
 offset. Existing neighbors stay fixed.
 
-Remaining M7 parts: bounded neighbor pushing when insertion needs room, function socket
-creation UX, and placement for non-interactive semantic commands. Explicit input choice
-for ambiguous wire insertion is also deferred. These are not shipped by M7a/M7b.
+**M7c implemented; native acceptance pending.** Wire insertion now uses the shared bounded
+collision solver to make room to the right of the dropped node. The inserted node and
+wire source stay fixed, as do nodes left of the drop, active drags, temporarily displaced
+preview neighbors and nodes beyond the local radius. Only conflicting neighbors move;
+unrelated intentional overlaps are preserved. Green feedback includes the neighbor count;
+protected conflicts or exceeded budgets produce red feedback and reject insertion without
+partial rewiring/movement. Alt still performs an ordinary move. The dropped position,
+neighbor base positions and rewiring share one Undo/Redo action in both graph types.
+This is a bounded directional heuristic, not a global minimum-displacement layout.
+
+Remaining M7 parts: function socket creation UX and placement for non-interactive semantic
+commands. Explicit input choice for ambiguous wire insertion is also deferred. These are
+not shipped by M7a–M7c.
 
 ### Goal
 
@@ -2211,11 +2221,11 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next acceptance: M5 overlays, M6 drag assistance and M7a/M7b creation/insertion.** These slices
+**Next acceptance: M5 overlays, M6 drag assistance and M7a–M7c creation/insertion.** These slices
 are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
-material/function views, plus snapping/Alt/guides and creation/insertion Undo, before
-adding insertion conflict pushing. Automated shared-widget tests are not
+material/function views, plus snapping/Alt/guides, creation/insertion Undo and local
+conflict pushing before advancing to global arrangement. Automated shared-widget tests are not
 a substitute for native DPI, input and wire-alignment acceptance.
 
 Verify this complete M4–M5 flow before integrating `elkrs`:

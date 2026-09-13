@@ -182,8 +182,32 @@ pub(super) fn solve<K: Ord + Clone, D: Clone>(
     limits: Limits,
 ) -> Result<Candidate<K, D>, Failure<K>> {
     let mut stats = Stats::default();
-    let result = plan(snapshot, old_sizes, limits, &mut stats);
+    let result = plan(snapshot, old_sizes, None, limits, &mut stats);
     match result {
+        Ok(positions) => Ok(Candidate {
+            before: snapshot.clone(),
+            positions,
+            stats,
+        }),
+        Err(conflict) => Err(Failure { conflict, stats }),
+    }
+}
+
+/// An explicit insertion anchors its dropped rectangle and seeds a rightward local cascade.
+/// Uses the same budgets, frozen constraints and atomic candidate validation as resize.
+pub(super) fn solve_insertion<K: Ord + Clone, D: Clone>(
+    snapshot: &Snapshot<K, D>,
+    inserted: &K,
+    limits: Limits,
+) -> Result<Candidate<K, D>, Failure<K>> {
+    let mut stats = Stats::default();
+    match plan(
+        snapshot,
+        &BTreeMap::new(),
+        Some(inserted),
+        limits,
+        &mut stats,
+    ) {
         Ok(positions) => Ok(Candidate {
             before: snapshot.clone(),
             positions,
@@ -196,6 +220,7 @@ pub(super) fn solve<K: Ord + Clone, D: Clone>(
 fn plan<K: Ord + Clone, D>(
     snapshot: &Snapshot<K, D>,
     old_sizes: &BTreeMap<K, Vec2>,
+    inserted: Option<&K>,
     limits: Limits,
     stats: &mut Stats,
 ) -> Result<BTreeMap<K, Vec2>, Conflict<K>> {
@@ -219,6 +244,12 @@ fn plan<K: Ord + Clone, D>(
         }
     }
     let mut active = BTreeMap::new();
+    if let Some(key) = inserted {
+        if !snapshot.nodes.contains_key(key) {
+            return Err(Conflict::MissingRoot(key.clone()));
+        }
+        active.insert(key.clone(), Axis::Right);
+    }
     for (key, old_size) in old_sizes {
         let node = snapshot
             .nodes
@@ -263,7 +294,8 @@ fn plan<K: Ord + Clone, D>(
         let Some((source, other, axis)) = collision else {
             return Ok(positions);
         };
-        let fixed = |key: &K| old_sizes.contains_key(key) || nodes[key].frozen;
+        let fixed =
+            |key: &K| inserted == Some(key) || old_sizes.contains_key(key) || nodes[key].frozen;
         let (obstacle, mover) = if fixed(&other) {
             if fixed(&source) {
                 return Err(Conflict::Anchors(source, other));

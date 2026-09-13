@@ -643,3 +643,43 @@ semantic compatibility and ambiguity, preserved branches/cycles, stale candidate
 compound Undo/Redo and failed-drop offset restoration across both graph kinds. Strict
 editor/project Clippy (`--all-targets -- -D warnings`), the architecture test, workspace
 formatting and `git diff --check` passed. Native UI/GPU acceptance remains pending.
+
+## M7c implementation — bounded spacing on wire insertion
+
+- Wire insertion shares M4's deterministic collision solver with an explicit anchored
+  insertion seed, rather than manufacturing a resize or invoking a global arrangement.
+  Measured effective rectangles use logical graph units, including expanded previews.
+- The drop remains fixed; conflicts cascade rightward only. The wire source, nodes left
+  of the drop, other active drags, nodes beyond a 1024-unit local radius and nodes with
+  temporary offsets are frozen. Preview offsets are never baked into permanent placement.
+  Explicit pin UI remains future work; the pure solver already enforces frozen constraints.
+- Insertion uses 24-unit spacing and limits of 512 measured nodes, 16 moved neighbors,
+  256 iterations, 200,000 pair checks, 1024 units of movement per node and 4096 total.
+  Only the conflict chain moves. Untouched pairs keep intentional overlaps; this is a
+  bounded directional heuristic, not a global minimum-displacement guarantee.
+- Planning does not move neighbors during hover. Green/red wire feedback reflects both
+  semantic validity and local space; status includes how many neighbors will move.
+  Alt bypasses both rewiring and spacing. Release recomputes the candidate using the
+  originating view and revalidates stored neighbor bases before any semantic change.
+- Successful rewiring, the dropped base and all neighbor bases form one compound history
+  action for material and function graphs. Bootstrap neighbors acquire a before-base
+  for exact Undo and to prevent unrelated fallback-column jumps after rewiring. A failed
+  commit removes those seeded entries again. Conflicts and stale
+  candidates restore the dragged base/offset and never apply partial neighbor movement.
+- Missing/stale hit-test geometry still falls back to an ordinary move without rewiring.
+  A valid wire hit with an unsatisfied spacing plan is rejected, not silently arranged.
+
+Native acceptance (pending): insert beside a consumer with a second neighbor behind it;
+verify rightward local movement, fixed source/drop and one-step Undo/Redo in both graph
+types. Repeat with expanded previews, protected displaced neighbors, two views and varied
+DPI/zoom. Red insertion must restore the original drop position; Alt must remain a plain
+move. M5/M6 and M7a/M7b native gates are still pending, not implicitly passed by this slice.
+
+M7c validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **922 editor tests passed**
+(7 existing opt-in tests ignored). Three new tests cover deterministic conflict chains,
+frozen/budget failures, stale solver candidates and bootstrap preservation. Extended
+shared-widget tests cover spacing and preview-offset protection at multiple DPI/zoom
+values; both semantic adapters cover rejected spacing, stale neighbor bases and exact
+compound neighbor Undo/Redo for stored and bootstrap positions. Strict editor/project
+Clippy (`--all-targets -- -D warnings`), the architecture test, workspace formatting and
+`git diff --check` passed. Native acceptance remains pending.
