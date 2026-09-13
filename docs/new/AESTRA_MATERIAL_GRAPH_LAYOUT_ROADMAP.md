@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M2 complete; M3a–M3c persistence, project lifecycle and presentation history implemented, 2026-09-13. Native M3 acceptance remains to be checked. Next: M4's internal bounded resize solver. No automatic movement enabled.
+> **Status:** M0–M3c foundations and M4's test-only bounded resize solver implemented, 2026-09-13. Native M3 acceptance remains to be checked. Next: M5's reversible resize overlays. No automatic movement enabled.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1673,6 +1673,14 @@ tests preserve chronological user intent and reject stale document/node identiti
 
 ## Milestone 4 — Local resize collision resolver
 
+**Implemented (internal/test-only):** the shared graph widget's `resize` module plans
+deterministic candidates on detached logical-geometry snapshots. It has hard anchors,
+spacing and work/displacement budgets, atomic snapshot application and stale-input
+rejection. It is compiled only for tests: no observer/system calls it in the editor.
+See the [M4 implementation record](../material-system/graph-layout-contract.md#m4-implementation--internal-bounded-resize-solver)
+and `benchmarks/graph-layout/` for contract tests and focused performance probes.
+M5 still owns live geometry adaptation, reversible cause composition and UI conflicts.
+
 ### Goal
 
 Handle preview/collapse resizing without global re-layout.
@@ -2161,7 +2169,7 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next implementation: M4's internal bounded resize solver.** M0–M3c foundations are
+**Next implementation: M5's reversible resize overlays.** M0–M4 foundations are
 implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. First check native move/collapse/preview Undo/Redo and mixed graph edits
 in material/function views. M4 remains internal/test-only; do not enable visible automatic
@@ -2189,7 +2197,7 @@ and restart with previews visible. No intermediate build should ship non-undoabl
 Arrange or permanently saved preview offsets.
 
 Only after this flow is stable should full arrangement be integrated. These are proposed
-acceptance gates; implementation and native verification have not yet occurred.
+acceptance gates; M5 integration and native verification have not yet occurred.
 
 ---
 

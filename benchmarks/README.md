@@ -8,6 +8,8 @@ This directory contains benchmark scenarios, focused runners and captured baseli
 - `sweep-scenarios/`: effects used by GPU workload sweeps.
 - `asset-browser/`: opt-in 10,000-source editor browsing benchmark. Its harness is
   included in the editor test binary to exercise the real private UI implementation.
+- `graph-layout/`: internal local-resize solver operation-count gates and opt-in timings,
+  included in the editor test binary; no renderer or automatic UI movement.
 
 ## Headless trail experiments
 

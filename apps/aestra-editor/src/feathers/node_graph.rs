@@ -34,6 +34,9 @@ use std::collections::HashMap;
 
 mod framing;
 pub(crate) mod geometry;
+// M4 stays test-only until M5 owns reversible offsets and resize-cause lifetimes.
+#[cfg(test)]
+mod resize;
 
 pub(crate) const NODE_WIDTH: f32 = 224.0;
 pub(crate) const NODE_HEADER_HEIGHT: f32 = 30.0;

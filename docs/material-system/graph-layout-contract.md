@@ -407,3 +407,55 @@ must leave material/effect dirty indicators unchanged. Verify save/reopen placem
 
 Next: **M4 — Local resize collision resolver**, internal/test-only until M5 makes its
 temporary displacement reversible. No automatic layout or new Arrange action is enabled.
+
+## M4 implementation — Internal bounded resize solver
+
+The shared graph widget now has a pure `resize` planner, compiled **only for tests**.
+It has no ECS systems, material/function semantics, history or persistence dependencies.
+There is no live preview pushing, new Arrange action, or layout file/schema change.
+
+- Inputs use stable ordered node keys, an adapter-supplied project/document/view identity,
+  generation/topology/geometry/placement revisions, effective logical positions, measured
+  positive sizes and frozen flags. Explicit resize roots include previous sizes; the
+  snapshot holds current sizes. Missing/invalid measurements reject the request.
+- All resize roots, including coalesced shrinking roots, remain anchored. Frozen nodes
+  include pins, current drags and protected manual placements. Width growth pushes right;
+  height growth pushes down; growth on both axes chooses the smaller separation (right
+  wins ties). Cascades inherit that direction. A movable node can clear a frozen obstacle
+  along its push axis; two conflicting hard anchors fail. This monotonic heuristic may
+  reject a scene another algorithm could solve; it never silently relaxes constraints.
+- Only growing roots seed work. Shrinking/no-change/sub-tolerance requests do not tidy
+  manual overlaps. Cascades inspect changed nodes against all obstacles, leaving unrelated
+  overlapping pairs untouched. BTree key order makes candidates and failures independent
+  of container/ECS insertion order. Spacing is 22 logical units on each axis; separation
+  tolerance is 0.01 logical units (not the geometry collector's stability tolerance).
+- Default limits are 4,096 input nodes, 256 translations, 64 affected nodes, 200,000 pair
+  checks, 2,048 logical units per-node L1 displacement, and 8,192 total L1 displacement.
+  Failures return a structured conflict and operation counts, never partial candidates.
+  Pair-check bounds include the final affected-region constraint scan. The maximum
+  affected count intentionally rejects long cascades rather than rearranging a graph.
+- Candidates keep private validated positions and the exact input. Atomic application
+  affects only a detached effective snapshot; no base-memory API is called. It rejects
+  changed identity, any revision, node membership, positions, sizes or frozen flags before
+  any write, even if an adapter failed to increment a revision. Placement-generation
+  overflow also rejects without mutation. No-op application does not bump revisions.
+
+Regression cases cover width/height/two-axis resize, multi-root anchoring, shrinking,
+fractional/negative coordinates, intentional unrelated overlap, frozen obstacles, every
+budget, invalid measurements, stale inputs, deterministic ordering and a seeded dense
+stress corpus. The benchmark fixture lives in `benchmarks/graph-layout/` and is included
+by the private solver test module, like the Asset Browser benchmark. Operation-count
+gates run normally; wall-clock profiling is opt-in and does not assert flaky time limits.
+
+Validation: **882 editor tests passed**, with 6 existing GPU tests and the opt-in
+timing probe ignored in the normal run. The timing probe was run separately and passed:
+25/50-node cascades averaged 0.105/0.874 ms; 100–500-node full-row cascades stopped at
+200,000 pair checks in about 3.2 ms with no candidate. See the recorded benchmark for
+scope and toolchain. The architecture test, strict editor Clippy (`--all-targets --
+-D warnings`), workspace formatting and whitespace checks pass.
+
+Next: **M5 — Reversible preview displacement**. Adapt the authoritative stable geometry
+and explicit resize causes, compose temporary offsets, validate against current manual
+placements/history and remaining causes, restore safely, and surface compact conflicts.
+Native M3 Undo/Redo acceptance and the combined M4/M5 DPI/multi-view/restart gates remain
+required before enabling automatic movement. These pure tests do not claim native UI QA.
