@@ -1,5 +1,10 @@
 //! Projectional material graph workspace backed by semantic material commands.
 
+use crate::feathers::node_graph::geometry::{
+    GraphDocumentKey, GraphGeometryNode, GraphGeometryPort, GraphGeometryView, GraphNodeKey,
+    GraphViewKey,
+};
+
 use crate::{
     feathers::{
         context_menu::{
@@ -3620,6 +3625,8 @@ pub(crate) fn spawn_material_graph_workspace(
                         catalog,
                         asset_server,
                         graph_memory,
+                        target,
+                        view,
                     );
                     return;
                 }
@@ -3781,6 +3788,23 @@ pub(crate) fn spawn_material_graph_workspace(
                 },
             );
             panel.commands().entity(viewport).insert((
+                GraphGeometryView {
+                    key: GraphViewKey {
+                        document: GraphDocumentKey {
+                            project: catalog.root().to_owned(),
+                            asset: crate::document::DocumentKey::MaterialProgram(
+                                projection.program,
+                            ),
+                        },
+                        view,
+                    },
+                    nodes: projection
+                        .nodes
+                        .iter()
+                        .map(|node| GraphNodeKey::Expression(node.expression))
+                        .chain([GraphNodeKey::MaterialOutputs])
+                        .collect(),
+                },
                 MaterialGraphViewport {
                     program: projection.program,
                     viewport_key: viewport_key.clone(),
@@ -4904,6 +4928,11 @@ fn spawn_expression_node(
         },
         (
             Button,
+            GraphGeometryNode::new(
+                GraphNodeKey::Expression(node.expression),
+                node,
+                preview_visible,
+            ),
             MaterialGraphAction {
                 program,
                 expression: node.expression,
@@ -4985,6 +5014,7 @@ fn spawn_expression_node(
                         color: socket_color(port.value_type),
                     },
                     (
+                        GraphGeometryPort::from(target),
                         MaterialGraphSocket {
                             program,
                             kind: MaterialGraphSocketKind::ConnectionInput(target),
@@ -5014,6 +5044,7 @@ fn spawn_expression_node(
                     color: socket_color(node.value_type),
                 },
                 (
+                    GraphGeometryPort::Output,
                     MaterialGraphSocket {
                         program,
                         kind: MaterialGraphSocketKind::ExpressionOutput(node.expression),
@@ -5076,7 +5107,7 @@ fn spawn_output_node(
             collapse_label: localizer.text("material-graph-collapse-node"),
             expand_label: localizer.text("material-graph-expand-node"),
         },
-        (),
+        GraphGeometryNode::new(GraphNodeKey::MaterialOutputs, &outputs, preview_visible),
         |graph_node, body| {
             for output in outputs {
                 let (label, description) = match output.kind {
@@ -5112,6 +5143,7 @@ fn spawn_output_node(
                         color: socket_color(output.value_type),
                     },
                     (
+                        GraphGeometryPort::from(target),
                         MaterialGraphSocket {
                             program,
                             kind: MaterialGraphSocketKind::ConnectionInput(target),
@@ -5819,6 +5851,121 @@ mod tests {
             (MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize
         );
         assert!(pixels.windows(4).any(|pixel| pixel[0] != pixel[1]));
+    }
+
+    #[test]
+    fn material_canvas_publishes_measured_preview_changes_across_ui_rebuilds() {
+        use crate::feathers::node_graph::geometry::{
+            self, GraphGeometryChange, GraphGeometryRegistry, GraphResizeReason,
+        };
+        use bevy::ecs::system::RunSystemOnce;
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Measured material").normalized();
+        program
+            .save_ron(root.path().join("measured.aestra.material.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let document = GraphDocumentKey {
+            project: catalog.root().to_owned(),
+            asset: crate::document::DocumentKey::MaterialProgram(program.id),
+        };
+        let mut session = test_support::session_with_timing_slack();
+        session.open_material_program(&catalog, program.id).unwrap();
+        let effect_before = session.effect.clone();
+        let (mut app, ui_root) = geometry::tests::layout_app(1.25);
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<MaterialGraphPreviewState>();
+        let mut previous_host = None;
+        let mut original_positions = None;
+        for step in 0..3 {
+            if step > 0 {
+                app.world_mut()
+                    .resource_mut::<MaterialGraphPreviewState>()
+                    .toggle(program.id, MaterialGraphPreviewTarget::Output);
+            }
+            if let Some(host) = previous_host {
+                app.world_mut().despawn(host);
+            }
+            let host = app
+                .world_mut()
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    ChildOf(ui_root),
+                ))
+                .id();
+            previous_host = Some(host);
+            app.world_mut()
+                .run_system_once(
+                    move |mut commands: Commands,
+                          session: Res<EditorSession>,
+                          catalog: Res<ProjectEffectCatalog>,
+                          previews: Res<MaterialGraphPreviewState>,
+                          memory: Res<GraphViewportMemory>,
+                          assets: Res<AssetServer>| {
+                        commands.entity(host).with_children(|parent| {
+                            spawn_material_graph_workspace(
+                                parent,
+                                None,
+                                Some(crate::docking::EditorViewId(1)),
+                                &session,
+                                &catalog,
+                                &MaterialGraphPaletteState::default(),
+                                &MaterialGraphSelectionState::default(),
+                                &previews,
+                                &memory,
+                                &Localizer::new("en-US").unwrap(),
+                                &assets,
+                            );
+                        });
+                    },
+                )
+                .unwrap();
+            let mut changes = Vec::new();
+            for _ in 0..4 {
+                app.update();
+                changes
+                    .extend_from_slice(app.world().resource::<GraphGeometryRegistry>().changes());
+            }
+            let registry = app.world().resource::<GraphGeometryRegistry>();
+            let snapshot = registry.snapshot(&document).unwrap();
+            let output = &snapshot.nodes[&GraphNodeKey::MaterialOutputs];
+            assert!(!output.ports.is_empty());
+            assert!(
+                snapshot
+                    .nodes
+                    .values()
+                    .all(|node| node.size.min_element() > 0.0)
+            );
+            let positions = snapshot
+                .nodes
+                .iter()
+                .map(|(key, node)| (*key, node.effective_position))
+                .collect::<BTreeMap<_, _>>();
+            if step == 0 {
+                assert!(changes.is_empty());
+                original_positions = Some(positions);
+            } else {
+                assert_eq!(Some(positions), original_positions);
+                let reason = if step == 1 {
+                    GraphResizeReason::PreviewOpened
+                } else {
+                    GraphResizeReason::PreviewClosed
+                };
+                assert!(
+                    matches!(&changes[..], [geometry::GraphGeometryEvent { change: GraphGeometryChange::Resized { node: GraphNodeKey::MaterialOutputs, reason: actual, .. }, .. }] if *actual == reason),
+                    "{changes:?}"
+                );
+            }
+            assert_eq!(
+                app.world().resource::<EditorSession>().effect,
+                effect_before
+            );
+        }
     }
 
     #[test]

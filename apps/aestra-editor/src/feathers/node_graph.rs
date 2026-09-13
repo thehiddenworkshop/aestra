@@ -32,6 +32,8 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
 use std::collections::HashMap;
 
+pub(crate) mod geometry;
+
 pub(crate) const NODE_WIDTH: f32 = 224.0;
 pub(crate) const NODE_HEADER_HEIGHT: f32 = 30.0;
 pub(crate) const PORT_ROW_HEIGHT: f32 = 24.0;
@@ -126,6 +128,7 @@ pub(crate) fn spawn_graph_tool_button<A: Component>(
 
 impl Plugin for FeathersNodeGraphPlugin {
     fn build(&self, app: &mut App) {
+        geometry::register(app);
         embedded_asset!(app, "shaders/node_graph_wire.wgsl");
         embedded_asset!(app, "shaders/node_graph_grid.wgsl");
         app.add_plugins(UiMaterialPlugin::<GraphWireMaterial>::default())

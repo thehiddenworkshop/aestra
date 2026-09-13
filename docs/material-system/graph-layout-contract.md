@@ -7,7 +7,7 @@ This is the baseline for the [layout roadmap](../new/AESTRA_MATERIAL_GRAPH_LAYOU
 M0 adds regression tests and this audit only. It does not add a layout engine, move
 nodes automatically, change the persistence format, or implement the gaps below.
 
-## Current implementation
+## M0 implementation baseline
 
 | Concern | Material graph | Function graph |
 | --- | --- | --- |
@@ -166,5 +166,59 @@ Validation completed with `cargo +1.98.1-x86_64-pc-windows-msvc`:
 - `fmt --all -- --check` and `git diff --check`: passed.
 
 Native-window visual acceptance is not claimed by headless ECS tests; exercise it when
-M1/M2 introduce live measurement and interactive bounds. **Next: M1 — Live Graph
-Geometry Registry**, without automatic movement.
+M1/M2 introduce live measurement and interactive bounds.
+
+## M1 implementation — Live Graph Geometry Registry
+
+The baseline audit above describes the state before M1. The shared widget now registers
+an observational collector in `feathers/node_graph/geometry`, ordered after
+`UiSystems::PostLayout`. Both material and function adapters provide typed document,
+node and socket markers. Function rendering uses the requested view's editing target,
+not the unrelated active session target.
+
+- `GraphDocumentKey` combines the catalog's project root with `DocumentKey`.
+  `GraphViewKey` adds the editor-view ID (or the graph tool panel). Expressions and
+  synthetic material/function outputs have separate `GraphNodeKey` variants.
+- Node sizes are physical `ComputedNode.size()` multiplied by inverse UI scale.
+  Port centers are transformed back through the node's inverse global transform,
+  shifted from center to top-left, then normalized by inverse UI scale. They are not
+  divided by canvas zoom twice.
+- Each visible view gets an independent snapshot after two stable PostUpdate samples.
+  A 0.5-logical-unit tolerance absorbs rounding; the comparison anchor is retained so
+  cumulative drift cannot hide forever. An incomplete view exposes no usable snapshot.
+- Focused valid view wins; otherwise a valid previous owner is retained, then a stable
+  view-key fallback is used. A newly measured/reopened document or owner handoff sets
+  a baseline without insertion/resize requests. Hidden/closed/project-mismatched views
+  are removed; unavailable measurements do not count as deleted semantic nodes.
+- Changes are coalesced into moved, resized, inserted and removed observations for
+  consumption in the following Update. Snapshots/events carry a monotonic geometry
+  revision and open-document generation. Preview and collapse flags classify resize
+  observations; UI rebuild/DPI changes alone do not manufacture preview actions.
+- No collector writes graph memory, semantic assets, persistence or Undo. No solver
+  consumes events yet, so no automatic movement can occur. Explicit resize-cause
+  journals and layout transactions still belong to M3–M5.
+
+This resolves measurement/identity collection in GL01–GL04, not every item in those
+rows. M2 still needs to replace estimated/mixed-unit interactive bounds. M3 still owns
+project-scoped placement memory, camera persistence/independent function cameras,
+function layout serialization, unsupported-file protection and presentation Undo.
+
+M1 regression coverage includes:
+
+- Real Bevy UI layout at 100%, 125% and 200% DPI, each with 0.5, 1.0 and 1.75 canvas
+  zoom: normalized node/socket measurements, preview growth/shrinkage once per toggle,
+  unchanged placement memory and cleanup when hidden.
+- The actual material canvas rebuilding for preview open/close: one correctly classified
+  resize, stable positions and unchanged effect content.
+- The actual function canvas: measured expression/output nodes and signature ports,
+  stable manual positions, explicit non-active document target, and separate view keys.
+- Registry ownership/fallback, document generation changes, same-ID project isolation,
+  insertion/removal vs missing measurements, collapse/move detection, transient sizes,
+  rounding noise, and invalid/non-finite measurement rejection.
+
+Validation: **847 editor tests passed, 6 existing GPU tests ignored**; the architecture
+test, strict editor Clippy (`--all-targets -- -D warnings`), workspace formatting and
+`git diff --check` pass. Native-window visual acceptance remains separate from headless
+layout/ECS coverage. Next is
+**M2 — Use measured geometry for interactive bounds**; M1 does not change framing or
+enable automatic node movement.

@@ -1,15 +1,16 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0 contract audit and regression coverage complete, 2026-09-13; M1 is next. No automatic movement implemented.  
+> **Status:** M0 contracts and M1 live geometry complete, 2026-09-13; M2 is next. No automatic movement implemented.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
 **Review outcome:** retain the hybrid interaction model. Before automatic movement is
 exposed, establish coordinate units, document/view ownership, base-position persistence,
-temporary-offset composition, and presentation Undo. M0 contract coverage is complete;
-the next implementation task is M1 live geometry. The first automatic-movement feature
+temporary-offset composition, and presentation Undo. M0 contract coverage and M1 live
+geometry are complete; the next implementation task is M2 measured interactive bounds.
+The first automatic-movement feature
 is the bounded preview-resize flow through M5. No layout dependency or automatic
-movement is introduced by M0.
+movement is introduced by M0–M1.
 
 The [M0 graph-layout contract audit](../material-system/graph-layout-contract.md) records
 current material/function behavior, regression coverage and gaps GL01–GL08 with milestone
@@ -1537,6 +1538,14 @@ are assigned to M1–M3, not reported as existing guarantees.
 
 ## Milestone 1 — Live Graph Geometry Registry
 
+**Complete — 2026-09-13.** The shared collector observes post-layout logical node sizes
+and socket offsets for material/function views. Typed project/document/view/node keys,
+two-frame stability, deterministic measurement ownership, generation/revision tags and
+cleanup are covered by regression tests. Preview open/close across UI rebuilds generates
+one resize observation, with no position or persistence writes. See the
+[M1 implementation record](../material-system/graph-layout-contract.md#m1-implementation--live-graph-geometry-registry).
+Interactive bounds, placement memory and camera persistence remain M2/M3 work.
+
 ### Goal
 
 Make actual UI-measured node geometry available to layout code.
@@ -2111,11 +2120,11 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Immediate task: M1 live graph geometry registry.** M0 is complete; use its
-[contract audit](../material-system/graph-layout-contract.md) as the baseline. Collect
-post-layout logical geometry for material/function views with explicit identity,
-measurement ownership and stale-observation cleanup. Deliver M1–M3 without enabling
-automatic movement.
+**Immediate task: M2 measured interactive bounds.** M0–M1 are complete; use the
+[contract audit and M1 implementation record](../material-system/graph-layout-contract.md)
+as the baseline. Replace estimated/mixed-unit runtime bounds with the correct view's
+measured geometry for framing and selection. Keep estimates for bootstrap only. Deliver
+M2–M3 without enabling automatic movement.
 
 After those prerequisites, implement this complete M4–M5 flow before integrating
 `elkrs`:

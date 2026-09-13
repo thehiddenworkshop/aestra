@@ -1,5 +1,9 @@
 //! Function-native canvas: no surrogate material program or effect is created.
 use super::*;
+use crate::feathers::node_graph::geometry::{
+    GraphDocumentKey, GraphGeometryNode, GraphGeometryPort, GraphGeometryView, GraphNodeKey,
+    GraphViewKey,
+};
 use crate::feathers::{
     combo_box::{spawn_compact_action_menu, spawn_searchable_icon_action_menu},
     icon::load_svg_icon,
@@ -474,8 +478,10 @@ pub(crate) fn spawn(
     catalog: &ProjectEffectCatalog,
     assets: &AssetServer,
     memory: &GraphViewportMemory,
+    editing_target: &crate::material_document::MaterialEditingTarget,
+    view: Option<crate::docking::EditorViewId>,
 ) {
-    let Ok(function) = session.graph_function(catalog) else {
+    let Ok(function) = session.graph_function_for(editing_target, catalog) else {
         return;
     };
     if function.custom_wesl.is_some() {
@@ -657,7 +663,12 @@ pub(crate) fn spawn(
                     positions[&expression.id],
                     assets,
                 );
-                spawn_graph_node(canvas, props, (), |node, body| {
+                let geometry = GraphGeometryNode::new(
+                    GraphNodeKey::Expression(expression.id),
+                    expression,
+                    false,
+                );
+                spawn_graph_node(canvas, props, geometry, |node, body| {
                     socket(
                         body,
                         function.id,
@@ -821,7 +832,7 @@ pub(crate) fn spawn(
                     output_position,
                     assets,
                 ),
-                (),
+                GraphGeometryNode::new(GraphNodeKey::FunctionOutputs, &function.outputs, false),
                 |node, body| {
                     for output in &function.outputs {
                         socket(
@@ -837,6 +848,20 @@ pub(crate) fn spawn(
         },
     );
     parent.commands().entity(viewport).insert((
+        GraphGeometryView {
+            key: GraphViewKey {
+                document: GraphDocumentKey {
+                    project: catalog.root().to_owned(),
+                    asset: crate::document::DocumentKey::MaterialFunction(function.id),
+                },
+                view,
+            },
+            nodes: nodes
+                .iter()
+                .map(|expression| GraphNodeKey::Expression(expression.id))
+                .chain([GraphNodeKey::FunctionOutputs])
+                .collect(),
+        },
         View(function.id),
         crate::material_graph::asset_drop::GraphDropTarget::function(session, function.id),
     ));
@@ -885,7 +910,17 @@ fn socket(
             side,
             color: Color::srgb(0.4, 0.8, 1.0),
         },
-        (Socket { owner, kind, node }, Anchor::default()),
+        (
+            Socket { owner, kind, node },
+            Anchor::default(),
+            match kind {
+                SocketKind::Source(_) => GraphGeometryPort::Output,
+                SocketKind::Target(Target::Input(_, input)) => GraphGeometryPort::Input(input),
+                SocketKind::Target(Target::Output(output)) => {
+                    GraphGeometryPort::FunctionOutput(output)
+                }
+            },
+        ),
     );
 }
 fn attach_wires(
@@ -1051,9 +1086,7 @@ mod tests {
     #[test]
     fn function_graph_rebuild_uses_expression_ids_for_manual_placement_and_output_ids_for_sockets()
     {
-        use bevy::{
-            asset::AssetPlugin, ecs::system::RunSystemOnce, scene::ScenePlugin, text::TextPlugin,
-        };
+        use bevy::ecs::system::RunSystemOnce;
         let root = tempfile::tempdir().unwrap();
         let function = MaterialFunction::from_ron(include_str!(
             "../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
@@ -1069,6 +1102,7 @@ mod tests {
             .unwrap();
         let effect_before = session.effect.clone();
         let function_before = session.graph_function(&catalog).unwrap();
+        let editing_target = session.material_target.clone();
         let graph_key = format!("function:{}:{}", catalog.root().display(), function.id);
         let mut memory = GraphViewportMemory::default();
         let positions = function
@@ -1081,21 +1115,29 @@ mod tests {
                 (expression.id, position)
             })
             .collect::<BTreeMap<_, _>>();
-        let mut app = App::new();
-        app.add_plugins((
-            MinimalPlugins,
-            AssetPlugin::default(),
-            ScenePlugin,
-            TextPlugin,
-        ))
-        .init_asset::<Image>()
-        .init_asset::<bevy_resvg::prelude::SvgFile>()
-        .insert_resource(session)
-        .insert_resource(catalog)
-        .insert_resource(memory);
+        let (mut app, ui_root) = geometry::tests::layout_app(1.25);
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .insert_resource(memory);
 
-        for _ in 0..2 {
-            let host = app.world_mut().spawn(Node::default()).id();
+        for index in 0..2 {
+            // The explicitly rendered function need not be the session's current target.
+            app.world_mut()
+                .resource_mut::<EditorSession>()
+                .material_target = crate::material_document::MaterialEditingTarget::EffectInstance;
+            let target = editing_target.clone();
+            let host = app
+                .world_mut()
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                    ChildOf(ui_root),
+                ))
+                .id();
             app.world_mut()
                 .run_system_once(
                     move |mut commands: Commands,
@@ -1104,12 +1146,45 @@ mod tests {
                           assets: Res<AssetServer>,
                           memory: Res<GraphViewportMemory>| {
                         commands.entity(host).with_children(|parent| {
-                            spawn(parent, &session, &catalog, &assets, &memory)
+                            spawn(
+                                parent,
+                                &session,
+                                &catalog,
+                                &assets,
+                                &memory,
+                                &target,
+                                Some(crate::docking::EditorViewId(index)),
+                            )
                         });
                     },
                 )
                 .unwrap();
+            for _ in 0..4 {
+                app.update();
+            }
             let world = app.world_mut();
+            let document = GraphDocumentKey {
+                project: world.resource::<ProjectEffectCatalog>().root().to_owned(),
+                asset: crate::document::DocumentKey::MaterialFunction(function.id),
+            };
+            let measured = world
+                .resource::<geometry::GraphGeometryRegistry>()
+                .snapshot(&document)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Missing function geometry on rebuild {index}: {:#?}",
+                        world.resource::<geometry::GraphGeometryRegistry>()
+                    )
+                });
+            assert_eq!(
+                measured.measured_in.view,
+                Some(crate::docking::EditorViewId(index))
+            );
+            assert_eq!(measured.nodes.len(), positions.len() + 1);
+            assert_eq!(
+                measured.nodes[&GraphNodeKey::FunctionOutputs].ports.len(),
+                function.outputs.len()
+            );
             let mut sources = BTreeMap::new();
             let mut outputs = BTreeSet::new();
             for socket in world.query::<&Socket>().iter(world) {
@@ -1138,7 +1213,7 @@ mod tests {
             assert_eq!(
                 world
                     .resource::<EditorSession>()
-                    .graph_function(world.resource::<ProjectEffectCatalog>())
+                    .graph_function_for(&editing_target, world.resource::<ProjectEffectCatalog>())
                     .unwrap(),
                 function_before
             );
