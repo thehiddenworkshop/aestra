@@ -1046,6 +1046,105 @@ fn update_wires(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn function_graph_rebuild_uses_expression_ids_for_manual_placement_and_output_ids_for_sockets()
+    {
+        use bevy::{
+            asset::AssetPlugin, ecs::system::RunSystemOnce, scene::ScenePlugin, text::TextPlugin,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let function = MaterialFunction::from_ron(include_str!(
+            "../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
+        ))
+        .unwrap();
+        function
+            .save_ron(root.path().join("body.aestra.material-function.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let mut session = crate::test_support::session_with_timing_slack();
+        session
+            .open_material_function(&catalog, function.id)
+            .unwrap();
+        let effect_before = session.effect.clone();
+        let function_before = session.graph_function(&catalog).unwrap();
+        let graph_key = format!("function:{}:{}", catalog.root().display(), function.id);
+        let mut memory = GraphViewportMemory::default();
+        let positions = function
+            .expressions
+            .iter()
+            .enumerate()
+            .map(|(index, expression)| {
+                let position = Vec2::new(-400.0 + index as f32 * 17.0, 700.0 + index as f32 * 23.0);
+                memory.set_node(&graph_key, expression.id.to_string(), position, false);
+                (expression.id, position)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .init_asset::<bevy_resvg::prelude::SvgFile>()
+        .insert_resource(session)
+        .insert_resource(catalog)
+        .insert_resource(memory);
+
+        for _ in 0..2 {
+            let host = app.world_mut().spawn(Node::default()).id();
+            app.world_mut()
+                .run_system_once(
+                    move |mut commands: Commands,
+                          session: Res<EditorSession>,
+                          catalog: Res<ProjectEffectCatalog>,
+                          assets: Res<AssetServer>,
+                          memory: Res<GraphViewportMemory>| {
+                        commands.entity(host).with_children(|parent| {
+                            spawn(parent, &session, &catalog, &assets, &memory)
+                        });
+                    },
+                )
+                .unwrap();
+            let world = app.world_mut();
+            let mut sources = BTreeMap::new();
+            let mut outputs = BTreeSet::new();
+            for socket in world.query::<&Socket>().iter(world) {
+                assert_eq!(socket.owner, function.id);
+                match socket.kind {
+                    SocketKind::Source(expression) => {
+                        let node = world.get::<FeathersGraphNode>(socket.node).unwrap();
+                        sources.insert(expression, node.position());
+                    }
+                    SocketKind::Target(Target::Output(output)) => {
+                        outputs.insert(output);
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(sources, positions);
+            assert_eq!(
+                outputs,
+                function.outputs.iter().map(|output| output.id).collect()
+            );
+            assert_eq!(
+                world.query::<&FeathersGraphNode>().iter(world).count(),
+                positions.len() + 1
+            );
+            assert_eq!(world.resource::<EditorSession>().effect, effect_before);
+            assert_eq!(
+                world
+                    .resource::<EditorSession>()
+                    .graph_function(world.resource::<ProjectEffectCatalog>())
+                    .unwrap(),
+                function_before
+            );
+            world.despawn(host);
+        }
+    }
 
     #[test]
     fn connection_preview_starts_at_pointer_and_clears_on_release() {

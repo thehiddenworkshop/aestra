@@ -1601,6 +1601,9 @@ fn update_socket_visuals(
 }
 
 #[cfg(test)]
+mod layout_contract_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

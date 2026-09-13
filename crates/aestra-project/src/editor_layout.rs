@@ -212,6 +212,67 @@ mod tests {
     }
 
     #[test]
+    fn identical_material_ids_have_independent_project_layout_files() {
+        let first_root = tempfile::tempdir().unwrap();
+        let second_root = tempfile::tempdir().unwrap();
+        let program = MaterialProgramId::from_u128(0xA001);
+        let expression = MaterialExpressionId::from_u128(0xE001);
+        let mut first = ProjectEditorLayout::default();
+        first
+            .material_graphs
+            .entry(program)
+            .or_default()
+            .nodes
+            .insert(
+                expression,
+                MaterialGraphNodeLayout {
+                    position: [80.0, -40.0],
+                    collapsed: true,
+                },
+            );
+        let mut second = first.clone();
+        second
+            .material_graphs
+            .get_mut(&program)
+            .unwrap()
+            .nodes
+            .get_mut(&expression)
+            .unwrap()
+            .position = [900.0, 150.0];
+
+        first.save(first_root.path()).unwrap();
+        second.save(second_root.path()).unwrap();
+        assert_eq!(ProjectEditorLayout::load(first_root.path()).unwrap(), first);
+        assert_eq!(
+            ProjectEditorLayout::load(second_root.path()).unwrap(),
+            second
+        );
+    }
+
+    #[test]
+    fn legacy_metadata_without_optional_node_fields_loads_with_defaults() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgramId::from_u128(0xA001);
+        let expression = MaterialExpressionId::from_u128(0xE001);
+        let path = project_editor_layout_path(root.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let program_key = ron::to_string(&program).unwrap();
+        let expression_key = ron::to_string(&expression).unwrap();
+        fs::write(&path, format!(
+            "(material_graphs: {{{program_key}: (nodes: {{{expression_key}: (position: (32.0, 64.0))}})}})"
+        )).unwrap();
+
+        let restored = ProjectEditorLayout::load(root.path()).unwrap();
+        let graph = &restored.material_graphs[&program];
+        assert_eq!(graph.nodes[&expression].position, [32.0, 64.0]);
+        assert!(!graph.nodes[&expression].collapsed);
+        assert!(graph.viewport.is_none());
+        assert!(graph.output.is_none());
+        assert!(graph.visible_previews.is_empty());
+        assert!(!graph.output_preview_visible);
+    }
+
+    #[test]
     fn future_layout_versions_are_rejected_without_affecting_project_assets() {
         let temporary = tempfile::tempdir().unwrap();
         let path = project_editor_layout_path(temporary.path());
@@ -225,9 +286,11 @@ mod tests {
         )
         .unwrap();
 
+        let original = fs::read(&path).unwrap();
         let error = ProjectEditorLayout::load(temporary.path()).unwrap_err();
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(fs::read(&path).unwrap(), original);
         assert!(
             ProjectAssetIndex::scan(temporary.path())
                 .diagnostics()

@@ -5775,6 +5775,9 @@ mod tests {
         );
 
         assert_eq!(program.to_pretty_ron().unwrap(), semantic_source);
+        let root = tempfile::tempdir().unwrap();
+        document.save(root.path()).unwrap();
+        let document = ProjectEditorLayout::load(root.path()).unwrap();
         let mut restored_memory = GraphViewportMemory::default();
         let mut restored_previews = MaterialGraphPreviewState::default();
         restore_material_graph_layouts(&document, &mut restored_memory, &mut restored_previews);
@@ -5785,6 +5788,10 @@ mod tests {
         assert_eq!(
             restored_memory.node(&graph_key, &material_graph_expression_node_key(expression)),
             Some((Vec2::new(180.0, 96.0), true))
+        );
+        assert_eq!(
+            restored_memory.node(&graph_key, MATERIAL_GRAPH_OUTPUT_NODE_KEY),
+            Some((Vec2::new(520.0, 110.0), false))
         );
         assert!(restored_previews.is_visible(
             program.id,
@@ -6171,6 +6178,41 @@ mod tests {
         );
         assert_eq!(memo[&source], 0);
         assert_eq!(memo[&middle], 1);
+    }
+
+    #[test]
+    fn bootstrap_layout_is_deterministic_and_places_outputs_after_consumers() {
+        let program = MaterialProgram::from_ron(crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE).unwrap();
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let graph = MaterialCompiler.project_graph(&program, Some(&ir));
+        let previews = MaterialGraphPreviewState::default();
+        let first = layout_graph(&graph, &previews);
+        let second = layout_graph(&graph, &previews);
+
+        assert!(!first.nodes.is_empty());
+        assert_eq!(first.nodes, second.nodes);
+        assert_eq!(first.output, second.output);
+        assert_eq!(first.size, second.size);
+        let inline = program.inline_constants();
+        assert!(
+            inline
+                .iter()
+                .all(|expression| !first.nodes.contains_key(expression))
+        );
+        let mut visible_edges = 0;
+        for node in &graph.nodes {
+            for input in &node.inputs {
+                if let Some(source) = first.nodes.get(&input.source) {
+                    assert!(source.x < first.nodes[&node.expression].x);
+                    visible_edges += 1;
+                } else {
+                    // Inline constants remain semantic inputs, not independently placed nodes.
+                    assert!(inline.contains(&input.source));
+                }
+            }
+            assert!(first.nodes[&node.expression].x < first.output.x);
+        }
+        assert!(visible_edges > 0);
     }
 
     #[test]
