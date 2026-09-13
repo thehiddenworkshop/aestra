@@ -9,6 +9,7 @@ use crate::{
     *,
 };
 use bevy::ui_widgets::Activate;
+mod chrome;
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,7 @@ struct Selection {
 }
 #[derive(Component)]
 struct VirtualUi {
+    chrome: chrome::Ui,
     list: Entity,
     footer: Entity,
     previous: Option<(
@@ -37,6 +39,7 @@ struct VirtualUi {
         aestra_project::ProjectContentVersion,
         u64,
         u64,
+        Vec<String>,
     )>,
 }
 #[derive(Resource, Default)]
@@ -49,6 +52,8 @@ struct Drag {
 
 pub(super) fn register(app: &mut App) {
     app.init_resource::<Selection>()
+        .init_resource::<chrome::Navigation>()
+        .add_observer(chrome::navigate)
         .init_resource::<Drag>()
         .add_observer(select)
         .add_observer(create)
@@ -76,110 +81,7 @@ pub(super) fn spawn(
     state: &AssetBrowserState,
     localizer: &Localizer,
 ) {
-    let mut list = Entity::PLACEHOLDER;
-    let mut footer = Entity::PLACEHOLDER;
-    let mut host = parent.spawn(Node {
-        flex_grow: 1.0,
-        ..column()
-    });
-    host.with_children(|root| {
-        root.spawn(Node {
-            flex_wrap: FlexWrap::Wrap,
-            column_gap: Val::Px(4.0),
-            row_gap: Val::Px(4.0),
-            ..default()
-        })
-        .with_children(|bar| {
-            for (key, view) in [
-                ("browser-list", ViewMode::List),
-                ("browser-grid", ViewMode::Grid),
-            ] {
-                spawn_feathers_action_button(
-                    bar,
-                    &localizer.text(key),
-                    BrowserAction::View(view),
-                    state.view == view,
-                );
-            }
-            if state.scope == SourceScope::CurrentDocument {
-                spawn_feathers_action_button(
-                    bar,
-                    &localizer.text("browser-create-local-material"),
-                    Create::Material,
-                    false,
-                );
-                spawn_feathers_action_button(
-                    bar,
-                    &localizer.text("browser-create-local-flipbook"),
-                    Create::Flipbook,
-                    false,
-                );
-            }
-        });
-        spawn_search_field(
-            root,
-            &state.query,
-            &localizer.text("browser-search"),
-            &localizer.text("browser-search-clear"),
-            BrowserSearch,
-        );
-        root.spawn((
-            Text::new(localizer.text(if state.scope == SourceScope::BuiltIns {
-                "browser-builtins-help"
-            } else {
-                "browser-document-help"
-            })),
-            TextColor(theme::TEXT_MUTED),
-            TextFont {
-                font_size: FontSize::Px(11.0),
-                ..default()
-            },
-        ));
-        root.spawn(Node {
-            flex_grow: 1.0,
-            flex_basis: Val::Px(0.0),
-            flex_direction: FlexDirection::Row,
-            ..column()
-        })
-        .with_children(|scroll| {
-            list = spawn_vertical_scroll_area(
-                scroll,
-                if state.scope == SourceScope::BuiltIns {
-                    ScrollMemoryKey::AssetBrowserBuiltIns
-                } else {
-                    ScrollMemoryKey::AssetBrowserDocument
-                },
-                Node {
-                    flex_grow: 1.0,
-                    ..column()
-                },
-                |_| {},
-            );
-        });
-        root.spawn(Node {
-            column_gap: Val::Px(6.0),
-            ..default()
-        })
-        .with_children(|bar| {
-            spawn_feathers_action_button(bar, "‹", Page(false), false);
-            footer = bar
-                .spawn((
-                    Text::new(""),
-                    TextColor(theme::TEXT_MUTED),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                ))
-                .id();
-            spawn_feathers_action_button(bar, "›", Page(true), false);
-        });
-    });
-    host.insert(VirtualUi {
-        list,
-        footer,
-        previous: None,
-    });
+    chrome::spawn(parent, state, localizer);
 }
 
 #[derive(Component, Clone, Copy)]
@@ -209,6 +111,13 @@ fn filtered(entries: &[Entry], query: &str) -> Vec<Entry> {
         .collect()
 }
 
+fn filtered_folder(entries: &[Entry], query: &str, folder: &[String]) -> Vec<Entry> {
+    filtered(entries, query)
+        .into_iter()
+        .filter(|entry| entry.folder.starts_with(folder))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn sync(
     mut commands: Commands,
@@ -225,6 +134,8 @@ fn sync(
     protection: Res<DocumentProtectionState>,
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     view_buttons: Query<(Entity, &BrowserAction)>,
+    nav: Res<chrome::Navigation>,
+    locale: Res<Localizer>,
 ) {
     if state.scope == SourceScope::Project || panels.is_empty() {
         return;
@@ -241,15 +152,24 @@ fn sync(
     {
         selection.asset = None;
     }
-    let visible = filtered(&all, &state.query);
+    let folder = if state.scope == SourceScope::BuiltIns {
+        nav.folder.clone()
+    } else {
+        Vec::new()
+    };
+    let visible = filtered_folder(&all, &state.query, &folder);
     let page_count = visible.len().div_ceil(PAGE_SIZE).max(1);
     let page = state.page.min(page_count - 1);
     let disabled = protection.is_open()
         || session.pending_change.is_some()
         || !crate::project_content::io::idle(tasks);
     for (entity, action) in &view_buttons {
-        if let BrowserAction::View(view) = action {
-            commands.entity(entity).insert(if *view == state.view {
+        if let Some(selected) = match action {
+            BrowserAction::View(view) => Some(*view == state.view),
+            BrowserAction::Sources => Some(state.sources_visible),
+            _ => None,
+        } {
+            commands.entity(entity).insert(if selected {
                 bevy::feathers::controls::ButtonVariant::Primary
             } else {
                 bevy::feathers::controls::ButtonVariant::Normal
@@ -280,13 +200,15 @@ fn sync(
         }
     }
     for (entity, row) in &rows {
-        commands
-            .entity(entity)
-            .insert(if selection.asset == Some(row.0.asset) {
-                bevy::feathers::controls::ButtonVariant::Primary
+        let selected = selection.asset == Some(row.0.asset);
+        commands.entity(entity).insert((
+            BackgroundColor(if selected {
+                theme::SELECTION
             } else {
-                bevy::feathers::controls::ButtonVariant::Normal
-            });
+                theme::PANEL_DARK
+            }),
+            BorderColor::all(if selected { theme::ACCENT } else { Color::NONE }),
+        ));
     }
     for mut ui in &mut panels {
         let snapshot = (
@@ -297,116 +219,86 @@ fn sync(
             catalog.content_revision(),
             session.history_generation(),
             session.document_revision(),
+            folder.clone(),
         );
-        if ui.previous.as_ref() == Some(&snapshot) {
+        chrome::sync(
+            &mut commands,
+            &ui.chrome,
+            &state,
+            &nav,
+            &all,
+            &assets,
+            &locale,
+            ui.previous.is_none() || nav.is_changed() || locale.is_changed(),
+        );
+        if ui.previous.as_ref() == Some(&snapshot) && !locale.is_changed() {
             continue;
         }
         if ui
             .previous
             .as_ref()
-            .is_some_and(|old| old.1 != snapshot.1 || old.3 != snapshot.3)
+            .is_some_and(|old| old.1 != snapshot.1 || old.3 != snapshot.3 || old.7 != snapshot.7)
         {
             commands.entity(ui.list).insert(ScrollPosition::default());
         }
         ui.previous = Some(snapshot);
         commands.entity(ui.list).despawn_children();
-        commands.entity(ui.list).insert(Node {
-            flex_direction: if state.view == ViewMode::Grid {
-                FlexDirection::Row
-            } else {
-                FlexDirection::Column
-            },
-            flex_wrap: if state.view == ViewMode::Grid {
-                FlexWrap::Wrap
-            } else {
-                FlexWrap::NoWrap
-            },
-            flex_grow: 1.0,
-            overflow: Overflow::scroll_y(),
-            align_content: AlignContent::FlexStart,
-            align_items: AlignItems::FlexStart,
-            column_gap: Val::Px(6.0),
-            row_gap: Val::Px(4.0),
-            ..column()
-        });
+        commands
+            .entity(ui.list)
+            .insert(super::panel::items_node(state.view));
         commands.entity(ui.list).with_children(|list| {
             for entry in visible.iter().skip(page * PAGE_SIZE).take(PAGE_SIZE) {
-                let grid = state.view == ViewMode::Grid;
-                list.spawn(Node {
-                    flex_shrink: 0.0,
-                    width: if grid {
-                        Val::Px(136.0)
-                    } else {
-                        Val::Percent(100.0)
-                    },
-                    ..column()
-                })
-                .with_children(|slot| {
-                    // Actual button owns activation/focus. Its icon/label are non-pickable.
-                    let mut button = slot.spawn_empty();
-                    button.apply_scene(crate::feathers::scenes::feathers_button());
-                    let entity = button.id();
-                    button.insert((
-                        VirtualRow(
-                            entry.clone(),
-                            AssetPayload::capture_virtual(&catalog, &session, entry.asset),
-                        ),
-                        crate::feathers::button::FeathersActionButton,
-                        AccessibleLabel(entry.name.clone()),
-                    ));
-                    slot.commands().entity(entity).insert((
-                        Node {
-                            width: Val::Percent(100.0),
-                            min_height: Val::Px(if grid { 108.0 } else { 40.0 }),
-                            flex_direction: if grid {
-                                FlexDirection::Column
-                            } else {
-                                FlexDirection::Row
-                            },
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::FlexStart,
-                            padding: UiRect::all(Val::Px(6.0)),
-                            column_gap: Val::Px(8.0),
-                            row_gap: Val::Px(4.0),
-                            ..default()
-                        },
-                        EditorTooltip::titled(entry.name.clone(), entry.description.clone()),
-                    ));
-                    slot.commands().entity(entity).with_children(|button| {
-                        if let VirtualAsset::BuiltInPreset(preset) = entry.asset {
-                            crate::material_graph::spawn_material_preset_preview(
-                                button,
-                                preset,
-                                if grid { 64.0 } else { 22.0 },
-                            );
+                let entity = spawn_action_list_row(
+                    list,
+                    &entry.name,
+                    Some(entry.kind),
+                    None,
+                    &entry.name,
+                    VirtualRow(
+                        entry.clone(),
+                        AssetPayload::capture_virtual(&catalog, &session, entry.asset),
+                    ),
+                );
+                let selected = selection.asset == Some(entry.asset);
+                list.commands()
+                    .entity(entity)
+                    .insert((
+                        bevy::ui_widgets::Button,
+                        EntityCursor::System(SystemCursorIcon::Pointer),
+                        bevy::input_focus::tab_navigation::TabIndex(0),
+                        super::panel::item_node(state.view),
+                        BackgroundColor(if selected {
+                            theme::SELECTION
                         } else {
-                            super::panel::icon(
-                                button,
-                                &assets,
-                                kind(entry.asset).icon(),
-                                if grid { 42.0 } else { 22.0 },
+                            theme::PANEL_DARK
+                        }),
+                        BorderColor::all(if selected { theme::ACCENT } else { Color::NONE }),
+                        EditorTooltip::titled(entry.name.clone(), entry.description.clone()),
+                    ))
+                    .with_children(|row| {
+                        let size = if state.view == ViewMode::Grid {
+                            64.0
+                        } else {
+                            22.0
+                        };
+                        if let VirtualAsset::BuiltInPreset(preset) = entry.asset {
+                            let preview = crate::material_graph::spawn_material_preset_preview(
+                                row, preset, size,
                             );
-                        }
-                        button
-                            .spawn((column(), Pickable::IGNORE))
-                            .with_children(|labels| {
-                                for (text, size, color) in [
-                                    (&entry.name, 11.0, theme::TEXT),
-                                    (&entry.kind.to_owned(), 10.0, theme::TEXT_MUTED),
-                                ] {
-                                    labels.spawn((
-                                        Text::new(text),
-                                        TextFont {
-                                            font_size: FontSize::Px(size),
-                                            ..default()
-                                        },
-                                        TextColor(color),
-                                        Pickable::IGNORE,
-                                    ));
-                                }
+                            row.commands().entity(preview).insert(Node {
+                                width: Val::Px(size),
+                                height: Val::Px(size),
+                                min_width: Val::Px(size),
+                                min_height: Val::Px(size),
+                                flex_shrink: 0.0,
+                                align_self: AlignSelf::Center,
+                                overflow: Overflow::clip(),
+                                ..default()
                             });
+                        } else {
+                            super::panel::icon(row, &assets, kind(entry.asset).icon(), size);
+                        }
                     });
-                });
             }
         });
         if let Ok(mut text) = labels.get_mut(ui.footer) {
@@ -415,6 +307,7 @@ fn sync(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn select(
     event: On<Activate>,
     rows: Query<&VirtualRow>,
@@ -423,6 +316,7 @@ fn select(
     mut state: ResMut<AssetBrowserState>,
     catalog: Res<ProjectEffectCatalog>,
     session: Res<EditorSession>,
+    nav: Res<chrome::Navigation>,
 ) {
     if let Ok(row) = rows.get(event.entity)
         && row.1.resolve(&catalog).is_ok()
@@ -431,9 +325,14 @@ fn select(
         selection.asset = Some(row.0.asset);
     }
     if let Ok(Page(next)) = pages.get(event.entity) {
-        let count = filtered(
+        let count = filtered_folder(
             &entries(&catalog, &session, state.scope == SourceScope::BuiltIns),
             &state.query,
+            if state.scope == SourceScope::BuiltIns {
+                &nav.folder
+            } else {
+                &[]
+            },
         )
         .len()
         .div_ceil(PAGE_SIZE)

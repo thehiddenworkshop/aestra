@@ -45,6 +45,7 @@ pub(crate) struct LocalizedText(pub(crate) &'static str);
 
 #[cfg(test)]
 const EDITOR_MESSAGE_IDS: &[&str] = &[
+    "browser-read-only-badge",
     "project-operation-running",
     "project-operation-queued-cancelled",
     "project-operation-open-stale",

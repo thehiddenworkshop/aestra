@@ -1,4 +1,191 @@
 use super::*;
+use bevy_resvg::prelude::UiSvg;
+
+#[test]
+fn builtins_tree_uses_svg_disclosure_icons_and_nonshrinking_folder_icons() {
+    let (_root, mut app) = fixture(SourceScope::BuiltIns);
+    for expanded in [true, false] {
+        let world = app.world_mut();
+        let root = world.query::<(Entity, &chrome::FolderAction)>().iter(world)
+            .find(|(_, action)| matches!(action, chrome::FolderAction::Expand(path) if path.is_empty())).unwrap().0;
+        let children = world.get::<Children>(root).unwrap();
+        let svg = children
+            .iter()
+            .find_map(|child| world.get::<UiSvg>(child))
+            .expect("SVG disclosure arrow");
+        let path = world
+            .resource::<AssetServer>()
+            .get_path(svg.0.id())
+            .unwrap();
+        assert_eq!(
+            path.path().to_str().unwrap(),
+            if expanded {
+                "icons/chevron-down.svg"
+            } else {
+                "icons/chevron-right.svg"
+            }
+        );
+        assert!(!world.query::<&Text>().iter(world).any(|text| text.0 == "⌄"));
+        for (svg, node) in world.query::<(&UiSvg, &Node)>().iter(world) {
+            if world
+                .resource::<AssetServer>()
+                .get_path(svg.0.id())
+                .is_some_and(|path| path.path().ends_with("folder.svg"))
+            {
+                assert_eq!(node.width, node.height);
+                assert_eq!(node.flex_shrink, 0.0);
+            }
+        }
+        if expanded {
+            world.trigger(Activate { entity: root });
+            app.update();
+        }
+    }
+}
+
+#[test]
+fn builtins_share_project_controls_and_tiles_without_file_actions() {
+    let (_root, mut app) = fixture(SourceScope::BuiltIns);
+    assert_eq!(
+        Localizer::new("en-US")
+            .unwrap()
+            .text("browser-deleted-items"),
+        "Trash"
+    );
+    assert_eq!(
+        Localizer::new("fr-FR")
+            .unwrap()
+            .text("browser-deleted-items"),
+        "Corbeille"
+    );
+    assert_eq!(
+        app.world_mut().query::<&Create>().iter(app.world()).count(),
+        0
+    );
+    for view in [ViewMode::List, ViewMode::Grid] {
+        app.world_mut().trigger(BrowserAction::View(view));
+        app.update();
+        let world = app.world_mut();
+        let tool = world
+            .query::<(Entity, &BrowserAction)>()
+            .iter(world)
+            .find(|(_, action)| matches!(action, BrowserAction::View(v) if *v == view))
+            .unwrap()
+            .0;
+        assert!(world.get::<Children>(tool).is_some());
+        assert_eq!(
+            world.get::<AccessibleLabel>(tool).unwrap().0,
+            world
+                .resource::<Localizer>()
+                .text(if view == ViewMode::Grid {
+                    "browser-grid"
+                } else {
+                    "browser-list"
+                })
+        );
+        for (node, row, entity) in world.query::<(&Node, &VirtualRow, Entity)>().iter(world) {
+            assert_eq!(*node, super::super::panel::item_node(view));
+            assert!(matches!(row.0.asset, VirtualAsset::BuiltInPreset(_)));
+            assert!(world.get::<bevy::ui_widgets::Button>(entity).is_some());
+            assert!(
+                world
+                    .get::<super::super::panel::BrowserRow>(entity)
+                    .is_none()
+            );
+        }
+        assert!(
+            !world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| text.0 == "List view" || text.0 == "Grid view")
+        );
+    }
+}
+
+fn activate_folder(app: &mut App, action: chrome::FolderAction) {
+    let entity = app.world_mut().spawn(action).id();
+    app.world_mut().trigger(Activate { entity });
+    app.world_mut().despawn(entity);
+    app.update();
+}
+
+#[test]
+fn builtins_category_navigation_search_and_history_do_not_change_project_folder() {
+    let (_root, mut app) = fixture(SourceScope::BuiltIns);
+    let original = app.world().resource::<AssetBrowserState>().folder.clone();
+    let effect = app.world().resource::<EditorSession>().effect.clone();
+    let all: Vec<_> = app
+        .world_mut()
+        .query::<&VirtualRow>()
+        .iter(app.world())
+        .map(|r| r.0.clone())
+        .collect();
+    let folder = all[0].folder.clone();
+    activate_folder(&mut app, chrome::FolderAction::Go(folder.clone()));
+    let rows: Vec<_> = app
+        .world_mut()
+        .query::<&VirtualRow>()
+        .iter(app.world())
+        .map(|r| r.0.clone())
+        .collect();
+    assert!(!rows.is_empty());
+    assert!(rows.iter().all(|row| row.folder == folder));
+    assert_eq!(
+        rows.len(),
+        all.iter().filter(|e| e.folder == folder).count()
+    );
+    let other = all.iter().find(|e| e.folder != folder).unwrap();
+    app.world_mut().resource_mut::<AssetBrowserState>().query = other.name.clone();
+    app.update();
+    assert_eq!(
+        app.world_mut()
+            .query::<&VirtualRow>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    app.world_mut()
+        .resource_mut::<AssetBrowserState>()
+        .query
+        .clear();
+    activate_folder(&mut app, chrome::FolderAction::Back);
+    assert!(
+        app.world()
+            .resource::<chrome::Navigation>()
+            .folder
+            .is_empty()
+    );
+    assert_eq!(
+        app.world_mut()
+            .query::<&VirtualRow>()
+            .iter(app.world())
+            .count(),
+        all.len()
+    );
+    activate_folder(&mut app, chrome::FolderAction::Forward);
+    assert_eq!(app.world().resource::<chrome::Navigation>().folder, folder);
+    activate_folder(&mut app, chrome::FolderAction::Up);
+    assert_eq!(
+        app.world().resource::<chrome::Navigation>().folder,
+        vec!["Materials"]
+    );
+    assert_eq!(app.world().resource::<AssetBrowserState>().folder, original);
+    assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+    app.world_mut().trigger(BrowserAction::Sources);
+    app.update();
+    let sources = app
+        .world_mut()
+        .query::<&VirtualUi>()
+        .single(app.world())
+        .unwrap()
+        .chrome
+        .sources
+        .unwrap();
+    assert_eq!(
+        app.world().get::<Node>(sources).unwrap().display,
+        Display::None
+    );
+}
 
 fn fixture(scope: SourceScope) -> (tempfile::TempDir, App) {
     let root = tempfile::tempdir().unwrap();

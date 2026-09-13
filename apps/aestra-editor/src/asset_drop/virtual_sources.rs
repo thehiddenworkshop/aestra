@@ -9,6 +9,8 @@ pub(crate) struct Entry {
     pub name: String,
     pub kind: &'static str,
     pub description: String,
+    /// Virtual hierarchy only; never a filesystem path or mutation target.
+    pub folder: Vec<String>,
 }
 
 pub(crate) fn entries(
@@ -23,6 +25,7 @@ pub(crate) fn entries(
                 asset: VirtualAsset::BuiltInPreset(preset.id),
                 name: preset.display_name.clone(),
                 kind: "Built-in preset",
+                folder: vec!["Materials".into(), preset.category.display_name().into()],
                 description: format!(
                     "{}\n{}\n{}",
                     preset.category.display_name(),
@@ -34,7 +37,7 @@ pub(crate) fn entries(
     } else {
         for material in &session.effect.materials {
             entries.push(Entry {
-                asset: VirtualAsset::Material(material.id), name: material.name.clone(),
+                asset: VirtualAsset::Material(material.id), name: material.name.clone(), folder: Vec::new(),
                 kind: "Local material", description: format!("Sprite · {:?}\nMaterial stored in this effect. Drop onto a compatible renderer or Material field.", material.blend),
             });
         }
@@ -47,7 +50,7 @@ pub(crate) fn entries(
                 .find(|p| p.id == instance.program.id())
                 .map_or("Material", |p| p.name.as_str());
             entries.push(Entry {
-                asset: VirtualAsset::Material(instance.id), name: format!("{name} · Local instance {}", index + 1),
+                asset: VirtualAsset::Material(instance.id), name: format!("{name} · Local instance {}", index + 1), folder: Vec::new(),
                 kind: "Local instance", description: "Material instance stored in this effect. Drop onto a compatible Material field.".into(),
             });
         }
@@ -62,6 +65,7 @@ pub(crate) fn entries(
             };
             entries.push(Entry {
                 asset: value,
+                folder: Vec::new(),
                 name: asset.name.clone(),
                 kind,
                 description: if matches!(value, VirtualAsset::FlipbookDeclaration(_)) {
@@ -73,7 +77,7 @@ pub(crate) fn entries(
         }
         for flipbook in &session.effect.flipbooks {
             entries.push(Entry {
-                asset: VirtualAsset::Flipbook(flipbook.id), name: flipbook.name.clone(), kind: "Local flipbook",
+                asset: VirtualAsset::Flipbook(flipbook.id), name: flipbook.name.clone(), kind: "Local flipbook", folder: Vec::new(),
                 description: format!("{} frames · {} fps\nAtlas metadata stored in this effect. Drop onto a Flipbook renderer. Creating an atlas does not change the texture file.", flipbook.frames.len(), flipbook.frame_rate),
             });
         }

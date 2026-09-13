@@ -2130,3 +2130,21 @@ along their major axis in a 128-pixel tile. Clippy with `-D warnings`, formattin
 checks passed. Native GPU shutdown still emits the existing readback-channel warning;
 no capture, coverage or cleanup assertion failed. Interactive editor acceptance remains
 separate from these offscreen checks.
+
+### Built-ins browser consistency and Trash — 2026-09-13
+
+- Recovery UI uses Trash / Corbeille; storage, Undo and restoration remain unchanged.
+- Built-ins shares Project's List/Grid icon buttons and list/tile layout. Descriptions
+  remain in tooltips, with a compact read-only indicator beside search.
+- Virtual Materials/category folders are generated from preset metadata, never indexed
+  as project files. Breadcrumbs, Back/Forward/Up, scoped search, expansion and the
+  resizable/hideable tree do not change the Project folder or authored assets.
+- Built-in presets retain selection and drag-to-use; file creation, rename, move and
+  delete are not exposed. Current Document retains its existing local creation controls.
+- Manual acceptance pending: both views at narrow/wide dock sizes, tree navigation and
+  resizing, category search, preset drag/drop, and Trash opening/restoration.
+
+Verification: 833 editor unit tests and the architecture test passed (six opt-in GPU
+checks excluded). Regression coverage includes shared view controls/tile geometry,
+virtual category search/history, read-only source isolation, drag cancellation, local
+creation and narrow-panel scrolling. Formatting and diff checks passed.

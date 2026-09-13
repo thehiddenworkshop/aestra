@@ -339,7 +339,7 @@ fn spawn_browser(
     host.insert(ui);
 }
 
-fn row_node() -> Node {
+pub(super) fn row_node() -> Node {
     Node {
         width: Val::Percent(100.0),
         min_width: Val::Px(0.0),
@@ -365,7 +365,7 @@ fn column_node() -> Node {
     }
 }
 
-fn items_node(view: ViewMode) -> Node {
+pub(super) fn items_node(view: ViewMode) -> Node {
     Node {
         flex_direction: if view == ViewMode::Grid {
             FlexDirection::Row
@@ -387,7 +387,7 @@ fn items_node(view: ViewMode) -> Node {
     }
 }
 
-fn item_node(view: ViewMode) -> Node {
+pub(super) fn item_node(view: ViewMode) -> Node {
     let grid = view == ViewMode::Grid;
     Node {
         width: if grid {
@@ -441,12 +441,12 @@ pub(super) fn icon(
         .id()
 }
 
-pub(super) fn tool(
+pub(super) fn tool<A: Component>(
     parent: &mut ChildSpawnerCommands,
     assets: &AssetServer,
     label: String,
     path: &'static str,
-    action: BrowserAction,
+    action: A,
     disabled: bool,
     selected: bool,
 ) -> Entity {

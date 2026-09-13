@@ -950,6 +950,16 @@ Native acceptance: pin/unpin in grid/list/tree, open from both collections, test
 navigation/Locate and drag/drop, rename/move, delete/Undo, then restart and switch projects.
 This does not close the outstanding AB9d visual-acceptance gate.
 
+**Built-ins browser consistency follow-up:** Built-ins uses the Project browser's
+shared list/grid icon controls, row/tile geometry and selection styling. Its read-only
+folder tree is derived from preset metadata (Materials / category), with breadcrumbs,
+Back/Forward/Up and a resizable, hideable sources pane. Search stays within the chosen
+category, including descendants. Built-ins retain drag-to-use but expose no filesystem
+mutation actions. Current Document retains its local creation controls. The recovery
+browser is labeled **Trash** (Corbeille in French); recovery behavior is unchanged.
+Native acceptance: compare both views, navigate/search categories, resize/hide the tree,
+and drag a preset onto a compatible renderer. This is polish, not AB9f saved searches.
+
 Deliver separately: bounded asynchronous texture thumbnails; cached material/effect/
 mesh previews through existing render services; favorites/recent; saved filters/searches;
 collections. Cache keys include source/content revision and rendering inputs, with

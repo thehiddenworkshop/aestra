@@ -62,6 +62,7 @@ pub(crate) enum EditorAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ScrollMemoryKey {
     AssetBrowserSources,
+    AssetBrowserBuiltInSources,
     AssetBrowserItems,
     AssetBrowserBuiltIns,
     AssetBrowserDocument,
