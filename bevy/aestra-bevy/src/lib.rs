@@ -272,6 +272,27 @@ impl EffectPlayer {
         self.playing = true;
     }
 
+    /// Swaps in a freshly compiled version of the effect (e.g. after a live edit),
+    /// keeping the current seed. With `preserve_position` the new effect is
+    /// replayed forward to the current frame so the playhead does not jump;
+    /// otherwise playback restarts at zero. The running/paused state is untouched.
+    pub fn replace_effect(&mut self, effect: Arc<CompiledEffect>, preserve_position: bool) {
+        let seed = self.instance.seed();
+        let target = if preserve_position {
+            self.clock.frame()
+        } else {
+            0
+        };
+        self.silence_choreography_events();
+        self.choreography_started = false;
+        self.instance = EffectInstance::with_seed(effect, seed);
+        self.clock.restart();
+        if target > 0 {
+            // Replays the new instance from zero up to the retained frame.
+            self.seek_frame(target);
+        }
+    }
+
     pub fn seek(&mut self, time: f32) {
         let duration = self.effect().duration;
         let mut target = self.clock;

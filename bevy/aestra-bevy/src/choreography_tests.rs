@@ -32,6 +32,28 @@ fn compile(root: &EffectAsset, children: &[EffectAsset]) -> Arc<CompiledEffectPr
 }
 
 #[test]
+fn replace_effect_preserves_or_resets_the_frame() {
+    let compiler = EffectCompiler::default();
+    let first = Arc::new(compiler.compile(&EffectAsset::new("First", 4.0)).unwrap());
+    let second = Arc::new(compiler.compile(&EffectAsset::new("Second", 4.0)).unwrap());
+
+    let mut player = EffectPlayer::from_compiled(first.clone());
+    player.seek_frame(30);
+    let frame = player.frame();
+    assert!(frame > 0);
+
+    // Preserve: the playhead stays put across the swap, on the new effect.
+    player.replace_effect(second.clone(), true);
+    assert_eq!(player.frame(), frame);
+    assert!(Arc::ptr_eq(player.effect(), &second));
+
+    // Reset: the playhead returns to zero.
+    player.replace_effect(first.clone(), false);
+    assert_eq!(player.frame(), 0);
+    assert!(Arc::ptr_eq(player.effect(), &first));
+}
+
+#[test]
 fn nested_windows_cover_offsets_short_clips_and_expiry() {
     let leaf = notified("Leaf", 2.0, &[0.0, 0.25, 0.5, 0.75, 1.0]);
     let mut carrier = notified("Carrier", 2.0, &[0.0, 0.5]);
