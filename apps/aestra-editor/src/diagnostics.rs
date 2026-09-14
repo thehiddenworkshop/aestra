@@ -2,12 +2,10 @@
 
 use crate::feathers::context_menu::{
     pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu,
-    spawn_pointer_context_menu_custom_item,
 };
 use crate::feathers::panel::spawn_panel_empty_state;
 use crate::*;
 use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
-use bevy::feathers::theme::ThemedText;
 use bevy::ui::RelativeCursorPosition;
 use bevy::ui_widgets::Activate;
 
@@ -35,6 +33,7 @@ impl Plugin for EditorDiagnosticsPlugin {
                 Update,
                 (
                     handle_diagnostics_actions.in_set(DiagnosticsSet::Actions),
+                    handle_diagnostics_copy.in_set(DiagnosticsSet::Actions),
                     dismiss_diagnostics_context_menu,
                     update_compile_status.in_set(DiagnosticsSet::Sync),
                     refresh_diagnostics_panel.in_set(DiagnosticsSet::Sync),
@@ -70,9 +69,9 @@ struct DiagnosticsContextAnchor;
 #[derive(Component)]
 struct DiagnosticsContextMenu;
 
-/// Marks the diagnostics context-menu "Copy" item.
+/// The diagnostics context-menu "Copy" button, carrying the text it copies to the clipboard.
 #[derive(Component)]
-struct DiagnosticCopyItem;
+struct DiagnosticCopyButton(String);
 
 #[derive(Resource, Default)]
 pub(crate) struct DiagnosticsPanelState {
@@ -141,7 +140,7 @@ fn queue_diagnostics_action_activation(
 fn open_diagnostics_context_menu(
     mut click: On<Pointer<Click>>,
     rows: Query<&DiagnosticCopyText>,
-    hosts: Query<(&ComputedNode, &UiGlobalTransform)>,
+    content: Query<(&ComputedNode, &UiGlobalTransform), With<DiagnosticsPanelContent>>,
     parents: Query<&ChildOf>,
     menus: Query<Entity, With<DiagnosticsContextAnchor>>,
     localizer: Res<Localizer>,
@@ -157,22 +156,22 @@ fn open_diagnostics_context_menu(
         return;
     };
     let text = rows.get(row).unwrap().0.clone();
-    // Parent the menu to the row's container, not the row itself: the row is a Button, and a menu
-    // spawned inside it would let the button capture the pointer instead of the menu item.
-    let Ok(host) = parents.get(row).map(|child_of| child_of.parent()) else {
+    // Host the menu on the panel's content wrapper, which sits outside the diagnostics scroll area.
+    // A menu parented inside the scroll area is clipped for picking, so its item never receives the
+    // click. The wrapper is not clipped, so the item is clickable.
+    let Some(host) = std::iter::once(row)
+        .chain(parents.iter_ancestors(row))
+        .find(|entity| content.contains(*entity))
+    else {
         return;
     };
-    let Ok((node, transform)) = hosts.get(host) else {
-        return;
-    };
+    let (node, transform) = content.get(host).unwrap();
+    let position = pointer_position_in_node(click.pointer_location.position, node, transform)
+        * node.inverse_scale_factor();
     for menu in &menus {
         commands.entity(menu).despawn();
     }
-    let position = pointer_position_in_node(click.pointer_location.position, node, transform)
-        * node.inverse_scale_factor();
     let label = localizer.text("diagnostics-copy");
-    let copied_status = localizer.text("diagnostics-copied");
-    let failed_status = localizer.text("diagnostics-copy-failed");
     commands.entity(host).with_children(move |parent| {
         spawn_pointer_context_menu(
             parent,
@@ -180,47 +179,66 @@ fn open_diagnostics_context_menu(
             DiagnosticsContextAnchor,
             DiagnosticsContextMenu,
             move |menu| {
-                let text_label = label.clone();
-                let item = spawn_pointer_context_menu_custom_item(
-                    menu,
-                    &label,
-                    DiagnosticCopyItem,
-                    move |item| {
-                        item.spawn((
-                            Text::new(text_label),
-                            ThemedText,
-                            TextLayout::no_wrap(),
-                            Pickable::IGNORE,
-                        ));
+                // A plain Button (like the diagnostic rows), handled by a `Changed<Interaction>`
+                // system — the mechanism the rows already use to respond to clicks.
+                menu.spawn((
+                    Button,
+                    EditorNativeControl,
+                    DiagnosticCopyButton(text),
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(26.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                        ..default()
                     },
-                );
-                // A direct click handler copies and closes — it fires on click regardless of the
-                // menu's activation focus, which the `Activate` path did not. The outcome is
-                // reported in the status bar so a failed clipboard write is visible.
-                menu.commands().entity(item).observe(
-                    move |mut click: On<Pointer<Click>>,
-                          anchors: Query<Entity, With<DiagnosticsContextAnchor>>,
-                          mut clipboard: ResMut<Clipboard>,
-                          mut session: ResMut<EditorSession>,
-                          mut commands: Commands| {
-                        if click.button != PointerButton::Primary {
-                            return;
-                        }
-                        session.status = match clipboard.set_text(text.clone()) {
-                            Ok(()) => copied_status.clone(),
-                            Err(error) => format!("{failed_status}: {error}"),
-                        };
-                        session.ui_revision += 1;
-                        for anchor in &anchors {
-                            commands.entity(anchor).despawn();
-                        }
-                        click.propagate(false);
+                    BackgroundColor(theme::MENU),
+                ))
+                .with_child((
+                    Text::new(label),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
                     },
-                );
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
             },
         );
     });
     click.propagate(false);
+}
+
+/// Copies the diagnostic to the clipboard when its menu Copy button is pressed, reports the outcome
+/// in the status bar, and closes the menu. Uses the same Button + `Interaction` mechanism as the
+/// diagnostic rows.
+fn handle_diagnostics_copy(
+    mut items: Query<
+        (&Interaction, &DiagnosticCopyButton, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
+    >,
+    menus: Query<Entity, With<DiagnosticsContextAnchor>>,
+    localizer: Res<Localizer>,
+    mut clipboard: ResMut<Clipboard>,
+    mut session: ResMut<EditorSession>,
+    mut commands: Commands,
+) {
+    for (interaction, item, mut background) in &mut items {
+        match *interaction {
+            Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
+            Interaction::None => background.0 = theme::MENU,
+            Interaction::Pressed => {
+                session.status = match clipboard.set_text(item.0.clone()) {
+                    Ok(()) => localizer.text("diagnostics-copied"),
+                    Err(error) => format!("{}: {error}", localizer.text("diagnostics-copy-failed")),
+                };
+                session.ui_revision += 1;
+                for menu in &menus {
+                    commands.entity(menu).despawn();
+                }
+            }
+        }
+    }
 }
 
 /// Dismisses the diagnostics right-click menu on Escape or a primary click outside its surface.
