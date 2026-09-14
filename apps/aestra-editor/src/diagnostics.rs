@@ -228,11 +228,12 @@ fn handle_diagnostics_copy(
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => background.0 = theme::MENU,
             Interaction::Pressed => {
+                // Setting the status marks the session changed, which live-updates the status bar
+                // without a dock rebuild (which would wipe the WESL editor's undo).
                 session.status = match clipboard.set_text(item.0.clone()) {
                     Ok(()) => localizer.text("diagnostics-copied"),
                     Err(error) => format!("{}: {error}", localizer.text("diagnostics-copy-failed")),
                 };
-                session.ui_revision += 1;
                 for menu in &menus {
                     commands.entity(menu).despawn();
                 }
