@@ -129,6 +129,7 @@ impl Plugin for ViewportPlugin {
                     .chain()
                     .in_set(ViewportSet::Update),
             )
+            .add_systems(First, deactivate_preview_cameras_while_minimized)
             .add_systems(
                 PostUpdate,
                 (
@@ -623,6 +624,28 @@ fn configure_transform_gizmo_overlay_materials(
     }
 }
 
+/// While the window is minimized its physical size is 0x0. Bevy clamps the 3D
+/// preview camera's viewport to the render-target size, so a 0-width window
+/// produces a zero-dimension PBR cluster grid ("clustering dummy texture:
+/// Dimension X is zero") that aborts the renderer on the very first bad frame.
+///
+/// This runs in `First` — before PBR's `PostUpdate` cluster assignment — so the
+/// camera is guaranteed inactive by the time clustering looks at it, regardless
+/// of `PostUpdate` system ordering. [`sync_preview_camera_viewport`] re-activates
+/// it (in `PostUpdate`, after layout) once the window has real dimensions again.
+fn deactivate_preview_cameras_while_minimized(
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut preview_camera: Single<&mut Camera, With<PreviewRenderCamera>>,
+    mut overlay_cameras: Query<
+        (&RenderLayers, &mut Camera),
+        (With<Camera3d>, Without<PreviewRenderCamera>),
+    >,
+) {
+    if window.physical_width() == 0 || window.physical_height() == 0 {
+        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
+    }
+}
+
 fn sync_preview_camera_viewport(
     canvas: Query<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -632,12 +655,9 @@ fn sync_preview_camera_viewport(
         (With<Camera3d>, Without<PreviewRenderCamera>),
     >,
 ) {
-    // While the window is minimized its physical size is 0x0. Bevy clamps the
-    // camera's viewport to the render-target size, so a 0-width window produces a
-    // zero-dimension PBR cluster grid ("clustering dummy texture: Dimension X is
-    // zero") that aborts the renderer. Deactivate the 3D cameras until the window
-    // has real dimensions again. (The canvas ComputedNode guard below misses this
-    // because UI layout does not recompute the canvas to <16px while minimized.)
+    // Belt-and-suspenders: also skip viewport sizing while minimized (the
+    // `First`-schedule `deactivate_preview_cameras_while_minimized` does the
+    // load-bearing deactivation ahead of PBR clustering).
     if window.physical_width() == 0 || window.physical_height() == 0 {
         set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
         return;
