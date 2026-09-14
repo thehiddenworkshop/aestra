@@ -41,6 +41,7 @@ pub(super) fn register(app: &mut App) {
         .init_resource::<HoveredThumbnail>()
         .add_observer(on_thumbnail_over)
         .add_observer(on_thumbnail_out)
+        .add_systems(Startup, sweep_thumbnail_cache)
         .add_systems(
             Update,
             (update, hover_preview)
@@ -55,6 +56,11 @@ pub(super) fn register(app: &mut App) {
 /// `Out`) and thumbnail rebuilds (the entity is re-resolved from the source).
 #[derive(Resource, Default)]
 struct HoveredThumbnail(Option<ProjectSourceId>);
+
+/// Evicts stale/overflowing on-disk thumbnails once at startup, off the main thread.
+fn sweep_thumbnail_cache() {
+    IoTaskPool::get().spawn(async { disk_cache::sweep() }).detach();
+}
 
 fn on_thumbnail_over(
     over: On<Pointer<Over>>,
@@ -402,10 +408,11 @@ fn update(
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else if let Some(result) = job.poll(&mut commands, &render) {
             if let Ok(bytes) = &result {
-                cache.effect_framing.insert(job.source, job.framing());
+                let framing = job.framing();
                 if let Some(key) = cache.pending_thumbnail_keys.remove(&job.source) {
-                    disk_cache::write(&key, bytes);
+                    disk_cache::write(&key, bytes, Some(&framing));
                 }
+                cache.effect_framing.insert(job.source, framing);
             }
             cache.accept(job.source, &job.epoch, result, &mut images);
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
@@ -488,6 +495,9 @@ fn update(
                     },
                 );
                 cache.accept(*source, &epoch, Ok(bytes), &mut images);
+                if let Some(framing) = disk_cache::read_framing(&key) {
+                    cache.effect_framing.insert(*source, framing);
+                }
                 continue;
             }
             cache.pending_thumbnail_keys.insert(*source, key);

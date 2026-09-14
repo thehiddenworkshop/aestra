@@ -7,12 +7,26 @@
 //!
 use super::EDGE;
 use aestra_project::ResolvedEffectProject;
+use bevy::{
+    camera::{OrthographicProjection, ScalingMode},
+    math::{Quat, Vec3},
+    transform::components::Transform,
+};
 use std::{
     fs,
     hash::{Hash, Hasher},
     io::Cursor,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
+
+/// Maximum number of cached thumbnails kept on disk; the startup sweep evicts the
+/// oldest beyond this.
+const MAX_ENTRIES: usize = 4096;
+
+/// The refined camera framing stored alongside a cached thumbnail so a
+/// cache-loaded effect's hover preview matches the static image's size.
+pub(super) type Framing = (Transform, OrthographicProjection);
 
 /// Bump to invalidate every cached entry when the on-disk schema changes.
 const CACHE_FORMAT_VERSION: u32 = 1;
@@ -97,10 +111,62 @@ pub(super) fn read(key: &str) -> Option<Vec<u8>> {
     (image.width() == EDGE && image.height() == EDGE).then(|| image.into_raw())
 }
 
-/// Persists a rendered thumbnail's RGBA pixels as PNG, best-effort. Writes to a
-/// temp file and renames so a reader never sees a torn file; any error is
-/// ignored (the in-memory cache still holds the pixels this session).
-pub(super) fn write(key: &str, rgba: &[u8]) {
+/// The refined camera framing, stored as compact primitives (the other
+/// projection fields are reconstructed from `OrthographicProjection::default_3d`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedFraming {
+    translation: [f32; 3],
+    rotation: [f32; 4],
+    viewport_height: f32,
+    near: f32,
+    far: f32,
+}
+
+impl CachedFraming {
+    fn from_framing((transform, projection): &Framing) -> Option<Self> {
+        let ScalingMode::FixedVertical { viewport_height } = projection.scaling_mode else {
+            return None;
+        };
+        Some(Self {
+            translation: transform.translation.to_array(),
+            rotation: transform.rotation.to_array(),
+            viewport_height,
+            near: projection.near,
+            far: projection.far,
+        })
+    }
+
+    fn into_framing(self) -> Framing {
+        (
+            Transform {
+                translation: Vec3::from_array(self.translation),
+                rotation: Quat::from_array(self.rotation),
+                scale: Vec3::ONE,
+            },
+            OrthographicProjection {
+                scaling_mode: ScalingMode::FixedVertical {
+                    viewport_height: self.viewport_height,
+                },
+                near: self.near,
+                far: self.far,
+                ..OrthographicProjection::default_3d()
+            },
+        )
+    }
+}
+
+/// Loads the framing stored beside a cached thumbnail, or `None` if absent.
+pub(super) fn read_framing(key: &str) -> Option<Framing> {
+    let path = cache_root()?.join(format!("{key}.ron"));
+    let cached: CachedFraming = ron::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+    Some(cached.into_framing())
+}
+
+/// Persists a rendered thumbnail's RGBA pixels as PNG (plus its framing as a
+/// `.ron` sidecar), best-effort. Writes each via a temp file + rename so a reader
+/// never sees a torn file; any error is ignored (the in-memory cache still holds
+/// the pixels this session).
+pub(super) fn write(key: &str, rgba: &[u8], framing: Option<&Framing>) {
     if rgba.len() != (EDGE * EDGE * 4) as usize {
         return;
     }
@@ -120,9 +186,56 @@ pub(super) fn write(key: &str, rgba: &[u8]) {
     {
         return;
     }
-    let temp = dir.join(format!("{key}.png.tmp"));
-    if fs::write(&temp, &png).is_ok() {
-        let _ = fs::rename(&temp, dir.join(format!("{key}.png")));
+    write_atomic(&dir, key, "png", &png);
+
+    if let Some(cached) = framing.and_then(CachedFraming::from_framing)
+        && let Ok(ron) = ron::to_string(&cached)
+    {
+        write_atomic(&dir, key, "ron", ron.as_bytes());
+    }
+}
+
+fn write_atomic(dir: &Path, key: &str, extension: &str, bytes: &[u8]) {
+    let temp = dir.join(format!("{key}.{extension}.tmp"));
+    if fs::write(&temp, bytes).is_ok() {
+        let _ = fs::rename(&temp, dir.join(format!("{key}.{extension}")));
+    }
+}
+
+/// Evicts the oldest cached thumbnails beyond `MAX_ENTRIES` and clears any stale
+/// temp files. Best-effort; intended to run once at startup on a worker thread.
+pub(super) fn sweep() {
+    let Some(dir) = cache_root() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return;
+    };
+    let mut pngs: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("tmp") => {
+                let _ = fs::remove_file(&path);
+            }
+            Some("png") => {
+                let mtime = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .unwrap_or(UNIX_EPOCH);
+                pngs.push((path, mtime));
+            }
+            _ => {}
+        }
+    }
+    if pngs.len() <= MAX_ENTRIES {
+        return;
+    }
+    pngs.sort_by_key(|(_, mtime)| *mtime);
+    let excess = pngs.len() - MAX_ENTRIES;
+    for (path, _) in pngs.into_iter().take(excess) {
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("ron"));
     }
 }
 
@@ -186,5 +299,34 @@ mod tests {
     fn version_bump_is_folded_into_the_key() {
         // Different content fingerprints must not collide through the key.
         assert_ne!(cache_key(1), cache_key(2));
+    }
+
+    #[test]
+    fn framing_round_trips_through_ron() {
+        let framing = (
+            Transform {
+                translation: Vec3::new(1.0, 2.0, 3.0),
+                rotation: Quat::from_array([0.1, 0.2, 0.3, 0.4]),
+                scale: Vec3::ONE,
+            },
+            OrthographicProjection {
+                scaling_mode: ScalingMode::FixedVertical {
+                    viewport_height: 4.5,
+                },
+                near: 0.01,
+                far: 12.0,
+                ..OrthographicProjection::default_3d()
+            },
+        );
+        let ron = ron::to_string(&CachedFraming::from_framing(&framing).unwrap()).unwrap();
+        let (transform, projection) = ron::from_str::<CachedFraming>(&ron).unwrap().into_framing();
+        assert_eq!(transform.translation.to_array(), [1.0, 2.0, 3.0]);
+        assert_eq!(transform.rotation.to_array(), [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(projection.near, 0.01);
+        assert_eq!(projection.far, 12.0);
+        assert!(matches!(
+            projection.scaling_mode,
+            ScalingMode::FixedVertical { viewport_height } if viewport_height == 4.5
+        ));
     }
 }
