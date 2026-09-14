@@ -663,58 +663,13 @@ pub(super) fn sync_panel(
                     ui.rows.insert(entry.id, cached.unwrap());
                 }
                 let row = &ui.rows[&entry.id];
-                let mut description =
-                    format!("{}\n{}", localizer.text(kind.label()), entry.path.display());
-                if state.is_favorite(content, entry.id) {
-                    description.push_str(&format!("\n{}", localizer.text("browser-favorite")));
-                }
-                if let Some(metadata) = &entry.metadata {
-                    description.push_str(&format!(
-                        "\n{} B{}",
-                        metadata.bytes,
-                        if metadata.readonly {
-                            localizer.text("browser-readonly-flag")
-                        } else {
-                            String::new()
-                        }
-                    ));
-                }
-                if let Some(error) = &entry.error {
-                    description.push_str(&format!("\n{error}"));
-                }
-                if let Some(preset) = row
-                    .preset
-                    .and_then(|id| content.cached_material_preset(id).ok())
-                {
-                    description.push_str(&format!(
-                        "\n{} · {}\n{}\n{}",
-                        preset.display_name,
-                        preset.category.display_name(),
-                        preset.description,
-                        preset.tags.join(", ")
-                    ));
-                }
-                if kind != Kind::Folder && kind != Kind::Effect && kind != Kind::Material {
-                    description.push_str(&format!("\n{}", localizer.text("browser-read-only")));
-                }
-                if kind == Kind::Effect
-                    && catalog.entry(entry.id).is_none_or(|effect| {
-                        effect
-                            .reference
-                            .is_none_or(|reference| catalog.openable_path(reference).is_none())
-                    })
-                {
-                    description.push_str(&format!(
-                        "\n{}",
-                        localizer.text("browser-effect-unavailable")
-                    ));
-                }
+                // No hover tooltip on asset rows — the Asset Details panel carries
+                // the path, size, and other metadata.
                 commands.entity(row.entity).insert((
                     item_node(state.view),
                     ListItem,
                     KeyboardNavigableListRow,
                     EntityCursor::System(SystemCursorIcon::Pointer),
-                    EditorTooltip::titled(entry.name.to_string_lossy(), description),
                 ));
                 let size = if state.view == ViewMode::Grid {
                     64.0
