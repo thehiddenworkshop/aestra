@@ -108,12 +108,31 @@ all editor playback tests green.
   compiled effect under the player.
 - **G5 — confirmed.** `EffectPlayer::set_playback_time` already exists ("synchronize sequential
   playback driven by an external clock") — the path the editor timeline drives. No code needed.
-- **Remaining (the risky part).** Replacing `EditorSession.clock` (`PlaybackClock`) + `.preview`
-  (`EffectInstance`) with an owned `EffectPlayer` touches ~48 `.clock` refs across 9 files plus the
-  `.preview` reads, and the presentation path (`session.preview` → `PresentedEffect`). This is the
-  fragile editor core; it needs build-and-scrub verification between steps, so it should land as its
-  own carefully-staged effort (introduce the owned player → migrate one method at a time → remove the
-  old fields), not a single blind rewrite.
+- **Remaining — and a course correction.** Reading the actual editor playback code shows the
+  delegation is **not** a mechanical field swap: `EditorSession`'s playback is a *superset* of
+  `EffectPlayer`, so delegating as-is would *remove* working features. Specifically the editor has:
+  1. **Checkpoint-restore scrubbing** — `seek_frame` uses `CheckpointStore<EffectInstance>` +
+     `plan_seek` (Direct/Current/Checkpoint/Restart origins) for fast backward seeks. `EffectPlayer`
+     only does restart-replay. Delegating now would regress scrub performance — this *is* G3/M-CR3.
+  2. **Pending-edit-aware duration/mode** — `playback_duration()`/`playback_mode()` read the
+     uncommitted `pending_change` candidate so playback previews an in-progress edit before commit.
+     `EffectPlayer` uses the committed `effect().duration`. Delegating would break live-edit preview
+     timing during edits.
+  3. **Seek-status UI** (`last_seek: SeekPlan`, `SeekOrigin` labels) and **solo-emitter** preview,
+     which `EffectPlayer` has no notion of.
+
+  **Therefore the milestone order is wrong.** The delegation must come *after* `EffectPlayer` grows
+  these capabilities, not before:
+  - **M-CR3 first** — give `EffectPlayer` the optional checkpoint cache (it already depends on
+    `aestra_runtime`, where `CheckpointStore` lives), so delegating does not regress scrubbing.
+  - Then extend `EffectPlayer` (or wrap it) with an external **candidate-duration** hook for
+    live-edit preview and **seek introspection** for the status UI.
+  - **Only then** does the editor delegate, keeping a thin editor-specific layer (solo, status,
+    pending edits) on top — the ~48 `.clock` / `.preview` refs migrate at that point.
+
+  **Landed regardless:** G4 (`replace_effect`) is a clean, reusable prerequisite that ships now. The
+  representation swap itself is deferred behind M-CR3 to avoid shipping a scrubbing/live-edit
+  regression.
 
 ### M-CR3 — Preserve scrub performance
 *Addresses G3.* Extend `EffectPlayer` with an optional checkpoint cache (behind the same
