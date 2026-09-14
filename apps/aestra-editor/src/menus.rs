@@ -772,6 +772,7 @@ pub(crate) fn spawn_about_overlay(
     parent: &mut ChildSpawnerCommands,
     visible: bool,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn((
@@ -812,12 +813,11 @@ pub(crate) fn spawn_about_overlay(
                 ))
                 .with_children(|dialog| {
                     dialog.spawn((
-                        Text::new("AESTRA"),
-                        TextFont {
-                            font_size: FontSize::Px(24.0),
+                        ImageNode::new(asset_server.load("project/title.png")),
+                        Node {
+                            width: Val::Px(240.0),
                             ..default()
                         },
-                        TextColor(theme::ACCENT),
                     ));
                     let mut args = FluentArgs::new();
                     args.set("version", env!("CARGO_PKG_VERSION"));

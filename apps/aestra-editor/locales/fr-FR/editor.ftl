@@ -38,7 +38,7 @@ view-frame-effect = Centrer l’effet
 view-restart-preview = Relancer l’aperçu
 view-panels = Panneaux
 view-reset-workspace = Réinitialiser l’espace de travail
-help-about = À propos d’Aestra
+help-about = À propos
 
 toolbar-play = Lecture
 toolbar-pause = Pause

@@ -232,7 +232,7 @@ fn spawn_editor_ui(
                 .apply_scene(ui_shell::editor_content_host())
                 .with_children(|host| spawn_editor_content(host, menu, localizer, None));
             spawn_status_bar(root, session, localizer);
-            spawn_about_overlay(root, menu.show_about, localizer);
+            spawn_about_overlay(root, menu.show_about, localizer, asset_server);
             spawn_document_protection_overlay(root, protection, localizer);
             crate::persistence::recovery_dialog::spawn(root, protection, localizer);
             crate::asset_browser::relocation_recovery::spawn(root, localizer);

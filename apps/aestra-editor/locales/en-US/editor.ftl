@@ -38,7 +38,7 @@ view-frame-effect = Frame Effect
 view-restart-preview = Restart Preview
 view-panels = Panels
 view-reset-workspace = Reset Workspace
-help-about = About Aestra
+help-about = About
 
 toolbar-play = Play
 toolbar-pause = Pause
