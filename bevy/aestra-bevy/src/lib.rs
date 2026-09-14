@@ -174,6 +174,14 @@ pub struct EffectPlayer {
     project_choreography_events: Vec<ProjectChoreographyEvent>,
     choreography_started: bool,
     project: Option<Arc<CompiledEffectProject>>,
+    /// Optional scrub cache: when enabled (and the effect uses
+    /// `CheckpointRestore`), backward seeks restore the nearest checkpoint and
+    /// replay a short remainder instead of restarting from zero. `None` keeps
+    /// the memory-free restart-replay behavior (the default).
+    scrub_checkpoints: Option<CheckpointStore<EffectInstance>>,
+    /// Bumped whenever the compiled effect is replaced, so cached checkpoints
+    /// from a previous version are never restored.
+    revision: u64,
 }
 
 impl EffectPlayer {
@@ -197,6 +205,8 @@ impl EffectPlayer {
             project_choreography_events: Vec::new(),
             choreography_started: false,
             project: None,
+            scrub_checkpoints: None,
+            revision: 0,
         }
     }
 
@@ -286,6 +296,12 @@ impl EffectPlayer {
         self.silence_choreography_events();
         self.choreography_started = false;
         self.instance = EffectInstance::with_seed(effect, seed);
+        // Old checkpoints describe the previous effect; drop them and bump the
+        // revision so any that linger are never restored.
+        self.revision += 1;
+        if let Some(store) = &mut self.scrub_checkpoints {
+            store.clear();
+        }
         self.clock.restart();
         if target > 0 {
             // Replays the new instance from zero up to the retained frame.
@@ -332,23 +348,107 @@ impl EffectPlayer {
         self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         let target = frame.min(self.clock.maximum_frame(duration));
-        if self.seek_mode() == SimulationSeekMode::StatelessDirect {
+        let mode = self.seek_mode();
+        if mode == SimulationSeekMode::StatelessDirect {
             self.clock.seek_frame(target, duration);
             self.sync_instance_time();
             return;
         }
-        if target < self.frame() {
-            self.clock.restart();
-            self.instance.restart();
-        }
-        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
-        while self.frame() < target {
-            self.clock.step_forward(duration);
-            self.instance.advance(tick_seconds);
+        let context = self.scrub_context();
+        let plan = self
+            .scrub_checkpoints
+            .as_ref()
+            .map(|store| store.plan_seek(mode, &context, self.frame(), target));
+        match plan.map(|plan| plan.origin) {
+            // Restore the nearest cached checkpoint, then replay the remainder.
+            Some(SeekOrigin::Checkpoint { frame: checkpoint }) => {
+                let restored = self
+                    .scrub_checkpoints
+                    .as_ref()
+                    .and_then(|store| store.nearest_at_or_before(&context, checkpoint))
+                    .map(|entry| entry.state.clone());
+                if let Some(state) = restored {
+                    self.instance = state;
+                    self.clock.seek_frame(checkpoint, duration);
+                    self.replay_ticks(target - checkpoint);
+                } else {
+                    self.clock.restart();
+                    self.instance.restart();
+                    self.replay_ticks(target);
+                }
+            }
+            // No cache, or a forward/restart plan: restart on a backward jump,
+            // then replay forward to the target (the original behavior).
+            _ => {
+                if target < self.frame() {
+                    self.clock.restart();
+                    self.instance.restart();
+                }
+                self.replay_ticks(target - self.frame());
+            }
         }
         // Replay is silent, including a backward seek to zero. Mark the source
         // event cursor as positioned without disturbing replayed state.
         self.instance.set_playback_time(self.instance.time());
+    }
+
+    /// Advances the clock and instance `ticks` steps, recording scrub checkpoints
+    /// at the policy cadence as it goes.
+    fn replay_ticks(&mut self, ticks: u64) {
+        let duration = self.effect().duration;
+        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+        for _ in 0..ticks {
+            self.clock.step_forward(duration);
+            self.instance.advance(tick_seconds);
+            self.record_checkpoint_at(self.clock.frame());
+        }
+    }
+
+    fn scrub_context(&self) -> CheckpointContext {
+        CheckpointContext {
+            effect: self.effect().source,
+            revision: self.revision,
+            seed: self.instance.seed(),
+            backend: CheckpointBackendId::new("cpu-reference"),
+        }
+    }
+
+    /// Captures the current instance state at `frame` when the scrub cache is
+    /// enabled, the effect uses `CheckpointRestore`, and the policy is due.
+    fn record_checkpoint_at(&mut self, frame: u64) {
+        if self.seek_mode() != SimulationSeekMode::CheckpointRestore {
+            return;
+        }
+        let due = self
+            .scrub_checkpoints
+            .as_ref()
+            .is_some_and(|store| store.policy().should_capture(frame));
+        if !due {
+            return;
+        }
+        let context = self.scrub_context();
+        let state = self.instance.clone();
+        let estimated_bytes = std::mem::size_of::<EffectInstance>()
+            + std::mem::size_of_val(state.parameter_values());
+        if let Some(store) = self.scrub_checkpoints.as_mut() {
+            store.insert(context, frame, state, estimated_bytes);
+        }
+    }
+
+    /// Enables the backward-scrub checkpoint cache with the given policy. Off by
+    /// default; hosts that scrub (e.g. an editor timeline) opt in.
+    pub fn enable_scrub_cache(&mut self, policy: CheckpointPolicy) {
+        self.scrub_checkpoints = Some(CheckpointStore::new(policy));
+    }
+
+    /// Disables and drops the scrub cache.
+    pub fn disable_scrub_cache(&mut self) {
+        self.scrub_checkpoints = None;
+    }
+
+    /// The scrub cache, if enabled (for status/introspection).
+    pub fn scrub_cache(&self) -> Option<&CheckpointStore<EffectInstance>> {
+        self.scrub_checkpoints.as_ref()
     }
 
     pub fn step_forward(&mut self) {
@@ -462,6 +562,9 @@ impl EffectPlayer {
                 .map(|event| event.event.clone())
                 .collect();
         }
+        // Capture a scrub checkpoint at the new position so later backward seeks
+        // can restore instead of replaying from zero.
+        self.record_checkpoint_at(self.clock.frame());
         result
     }
 

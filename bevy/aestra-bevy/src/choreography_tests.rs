@@ -31,6 +31,55 @@ fn compile(root: &EffectAsset, children: &[EffectAsset]) -> Arc<CompiledEffectPr
     })
 }
 
+/// The compiler currently only emits `StatelessDirect`; force `CheckpointRestore`
+/// so the scrub-cache path can be exercised (matching the editor's dormant
+/// checkpoint machinery, ready for when the compiler emits it).
+fn checkpoint_effect(name: &str, duration: f32) -> Arc<CompiledEffect> {
+    let mut compiled = EffectCompiler::default()
+        .compile(&EffectAsset::new(name, duration))
+        .unwrap();
+    compiled.seek_mode = SimulationSeekMode::CheckpointRestore;
+    Arc::new(compiled)
+}
+
+#[test]
+fn scrub_cache_records_during_play_and_restores_on_backward_seek() {
+    let mut player = EffectPlayer::from_compiled(checkpoint_effect("Scrub", 4.0));
+    player.enable_scrub_cache(CheckpointPolicy::default());
+
+    // Forward past two cadence points (default cadence is 30 frames).
+    for _ in 0..90 {
+        player.advance_clock(1.0 / 60.0);
+    }
+    assert!(
+        player.scrub_cache().unwrap().len() >= 2,
+        "checkpoints should accumulate during forward play"
+    );
+    assert!(player.frame() >= 88);
+
+    // Backward seek lands exactly (restored from the nearest checkpoint).
+    player.seek_frame(45);
+    assert_eq!(player.frame(), 45);
+
+    // A player without the cache reaches the same position via restart-replay.
+    let mut plain = EffectPlayer::from_compiled(checkpoint_effect("Scrub", 4.0));
+    plain.seek_frame(45);
+    assert_eq!(plain.frame(), 45);
+    assert_eq!(player.simulation_time(), plain.simulation_time());
+}
+
+#[test]
+fn replace_effect_clears_the_scrub_cache() {
+    let mut player = EffectPlayer::from_compiled(checkpoint_effect("A", 4.0));
+    player.enable_scrub_cache(CheckpointPolicy::default());
+    for _ in 0..60 {
+        player.advance_clock(1.0 / 60.0);
+    }
+    assert!(!player.scrub_cache().unwrap().is_empty());
+    player.replace_effect(checkpoint_effect("B", 4.0), false);
+    assert!(player.scrub_cache().unwrap().is_empty());
+}
+
 #[test]
 fn replace_effect_preserves_or_resets_the_frame() {
     let compiler = EffectCompiler::default();
