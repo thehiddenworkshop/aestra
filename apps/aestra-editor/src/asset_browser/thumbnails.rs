@@ -6,6 +6,7 @@ use super::{
     state::{AssetBrowserState, Kind, SourceScope},
 };
 use crate::*;
+use aestra_bevy_render::{EffectRuntimeStatus, PresentedEffect, gpu::GpuParticleStatistics};
 use aestra_core::material::MaterialProgram;
 use aestra_project::{ProjectContentVersion, ProjectSourceId};
 use bevy::{
@@ -13,6 +14,7 @@ use bevy::{
     image::ImageSampler,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     tasks::{IoTaskPool, Task, futures_lite::future},
+    ui::RelativeCursorPosition,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -36,7 +38,8 @@ pub(super) fn register(app: &mut App) {
     effect::register(app);
     app.init_resource::<ThumbnailCache>().add_systems(
         Update,
-        update
+        (update, hover_preview)
+            .chain()
             .after(panel::sync_panel)
             .before(AestraFeathersSet::Sync),
     );
@@ -63,6 +66,27 @@ enum Work {
     Pixels(Vec<u8>),
     Effect(Box<effect::Prepared>),
 }
+/// One live hover preview at a time. Starts as an async `prepare` task, then
+/// becomes a continuously-rendered `LivePreview` displayed over the static image.
+struct Hover {
+    source: ProjectSourceId,
+    /// The thumbnail host entity currently showing (or fading) the preview.
+    entity: Entity,
+    epoch: Epoch,
+    /// Crossfade level, 0.0 (static image) .. 1.0 (live animation).
+    fade: f32,
+    /// The pointer has left; fade out and then tear down.
+    fading_out: bool,
+    stage: HoverStage,
+}
+enum HoverStage {
+    Preparing {
+        cancelled: Arc<AtomicBool>,
+        task: Task<Result<effect::Prepared, String>>,
+    },
+    Live(effect::LivePreview),
+}
+
 #[derive(Resource, Default)]
 struct ThumbnailCache {
     epoch: Option<Epoch>,
@@ -70,6 +94,7 @@ struct ThumbnailCache {
     entries: BTreeMap<ProjectSourceId, Entry>,
     jobs: Vec<Job>,
     gpu: Option<effect::GpuJob>,
+    hover: Option<Hover>,
     tick: u64,
 }
 impl ThumbnailCache {
@@ -198,6 +223,9 @@ struct Thumbnail {
     kind: Kind,
     fallback: Entity,
     image: Entity,
+    /// Overlay `ImageNode` used to crossfade the live hover animation over the
+    /// static preview. Alpha driven by the active [`Hover`].
+    live_image: Entity,
     badge: Entity,
     rendered: Option<Preview>,
 }
@@ -214,6 +242,8 @@ pub(super) fn spawn(
             should_block_lower: false,
             is_hoverable: true,
         },
+        // Tracks whether the pointer is over this thumbnail, for the hover preview.
+        RelativeCursorPosition::default(),
     ));
     let entity = host.id();
     let mut thumbnail = Thumbnail {
@@ -221,6 +251,7 @@ pub(super) fn spawn(
         kind,
         fallback: Entity::PLACEHOLDER,
         image: Entity::PLACEHOLDER,
+        live_image: Entity::PLACEHOLDER,
         badge: Entity::PLACEHOLDER,
         rendered: None,
     };
@@ -238,6 +269,21 @@ pub(super) fn spawn(
             .spawn((
                 Node {
                     display: Display::None,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .id();
+        // Live hover-preview overlay: sits on top of the static image and fades in.
+        thumbnail.live_image = root
+            .spawn((
+                Node {
+                    display: Display::None,
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(0.0),
+                    left: Val::Px(0.0),
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..default()
@@ -491,6 +537,191 @@ fn update(
             .entity(entity)
             .insert(EditorTooltip::description(message));
         thumbnail.rendered = Some(preview);
+    }
+}
+
+const HOVER_FADE_RATE: f32 = 6.0; // Full static<->live crossfade in ~0.17s.
+
+fn overlay_node(display: Display) -> Node {
+    Node {
+        display,
+        position_type: PositionType::Absolute,
+        top: Val::Px(0.0),
+        left: Val::Px(0.0),
+        width: Val::Percent(100.0),
+        height: Val::Percent(100.0),
+        ..default()
+    }
+}
+
+fn reset_overlay(
+    commands: &mut Commands,
+    thumbnails: &Query<(Entity, &Thumbnail, &RelativeCursorPosition)>,
+    entity: Entity,
+) {
+    if let Ok((_, thumb, _)) = thumbnails.get(entity) {
+        commands
+            .entity(thumb.live_image)
+            .insert(overlay_node(Display::None))
+            .remove::<ImageNode>();
+    }
+}
+
+fn teardown_stage(
+    stage: HoverStage,
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+    meshes: &mut Assets<Mesh>,
+) {
+    match stage {
+        HoverStage::Preparing { cancelled, .. } => cancelled.store(true, Ordering::Relaxed),
+        HoverStage::Live(live) => live.cleanup(commands, images, meshes),
+    }
+}
+
+/// Plays the hovered effect thumbnail live and crossfades it over the static
+/// image, reverting on mouse-out. One preview at a time; isolated from the
+/// static capture pipeline.
+#[allow(clippy::too_many_arguments)]
+fn hover_preview(
+    mut commands: Commands,
+    mut cache: ResMut<ThumbnailCache>,
+    catalog: Res<ProjectEffectCatalog>,
+    state: Res<AssetBrowserState>,
+    enabled: Option<Res<effect::Enabled>>,
+    images: Option<ResMut<Assets<Image>>>,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+    time: Res<Time>,
+    thumbnails: Query<(Entity, &Thumbnail, &RelativeCursorPosition)>,
+    mut players: Query<(
+        &mut PresentedEffect,
+        Option<&EffectRuntimeStatus>,
+        Option<&GpuParticleStatistics>,
+    )>,
+) {
+    let (Some(mut images), Some(mut meshes)) = (images, meshes) else {
+        return;
+    };
+    let dt = time.delta_secs();
+    let current_epoch = cache.epoch.clone();
+
+    // The effect thumbnail under the pointer whose static preview is ready.
+    let hovered: Option<(Entity, ProjectSourceId)> =
+        if enabled.is_some() && state.scope == SourceScope::Project {
+            thumbnails.iter().find_map(|(entity, thumb, cursor)| {
+                (thumb.kind == Kind::Effect
+                    && cursor.cursor_over()
+                    && matches!(
+                        cache.entries.get(&thumb.source).map(|entry| &entry.preview),
+                        Some(Preview::Ready(_))
+                    ))
+                .then_some((entity, thumb.source))
+            })
+        } else {
+            None
+        };
+
+    let mut hover = cache.hover.take();
+
+    // Snap away when the epoch changed or the pointer moved to a different
+    // thumbnail (a live→static crossfade only applies when leaving to empty space).
+    if let Some(h) = &hover {
+        let switch = Some(&h.epoch) != current_epoch.as_ref()
+            || matches!(hovered, Some((_, source)) if source != h.source);
+        if switch {
+            let h = hover.take().unwrap();
+            reset_overlay(&mut commands, &thumbnails, h.entity);
+            teardown_stage(h.stage, &mut commands, &mut images, &mut meshes);
+        }
+    }
+
+    // Start a preview when pointing at a ready effect and none is active.
+    if hover.is_none()
+        && let Some((entity, source)) = hovered
+        && let Some(epoch) = current_epoch.clone()
+    {
+        let saved = effect::saved(catalog.content(), source);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = cancelled.clone();
+        let root = catalog.root().to_owned();
+        let task = IoTaskPool::get()
+            .spawn(async move { effect::prepare(saved?, &root, &flag) });
+        hover = Some(Hover {
+            source,
+            entity,
+            epoch,
+            fade: 0.0,
+            fading_out: false,
+            stage: HoverStage::Preparing { cancelled, task },
+        });
+    }
+
+    if let Some(mut h) = hover.take() {
+        h.fading_out = hovered.map(|(_, source)| source) != Some(h.source);
+        // Advance the stage: finish preparing, or drive the live simulation.
+        let mut abandon = false;
+        match &mut h.stage {
+            HoverStage::Preparing { task, .. } => {
+                if let Some(result) = future::block_on(future::poll_once(task)) {
+                    match result {
+                        Ok(prepared) => {
+                            h.stage = HoverStage::Live(effect::LivePreview::start(
+                                prepared,
+                                &h.epoch,
+                                &mut commands,
+                                &mut images,
+                                &mut meshes,
+                            ));
+                        }
+                        // Unpreviewable effect: give up quietly, keep the static image.
+                        Err(_) => abandon = true,
+                    }
+                }
+            }
+            HoverStage::Live(live) => live.advance(&mut players, dt),
+        }
+        if abandon {
+            reset_overlay(&mut commands, &thumbnails, h.entity);
+            cache.hover = None;
+            return;
+        }
+
+        // Crossfade toward live once the render has settled, or back to static.
+        let live_ready = matches!(&h.stage, HoverStage::Live(live) if live.ready);
+        let target = if h.fading_out || !live_ready { 0.0 } else { 1.0 };
+        h.fade = if h.fade < target {
+            (h.fade + dt * HOVER_FADE_RATE).min(target)
+        } else {
+            (h.fade - dt * HOVER_FADE_RATE).max(target)
+        };
+
+        if let Ok((_, thumb, _)) = thumbnails.get(h.entity) {
+            match &h.stage {
+                HoverStage::Live(live) if h.fade > 0.001 => {
+                    commands.entity(thumb.live_image).insert((
+                        ImageNode {
+                            color: Color::srgba(1.0, 1.0, 1.0, h.fade),
+                            ..ImageNode::new(live.target.clone())
+                        },
+                        overlay_node(Display::Flex),
+                    ));
+                }
+                _ => {
+                    commands
+                        .entity(thumb.live_image)
+                        .insert(overlay_node(Display::None))
+                        .remove::<ImageNode>();
+                }
+            }
+        }
+
+        // Fully faded out after leaving: tear the preview down.
+        if h.fading_out && h.fade <= 0.001 {
+            reset_overlay(&mut commands, &thumbnails, h.entity);
+            teardown_stage(h.stage, &mut commands, &mut images, &mut meshes);
+        } else {
+            cache.hover = Some(h);
+        }
     }
 }
 

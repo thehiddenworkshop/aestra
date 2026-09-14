@@ -23,6 +23,7 @@ use bevy::{
 use std::time::{Duration, Instant};
 
 const LAYER: usize = 30; // Viewport = 0, gizmos = 15, editor UI = 31.
+const LIVE_LAYER: usize = 29; // Hover live-preview render, isolated from the static capture layer.
 const SEED: u64 = 0xAE57_0009;
 const PARTICLES: u64 = 4096;
 const INSTANCES: usize = 16;
@@ -647,6 +648,185 @@ impl GpuJob {
             for handle in self.meshes {
                 meshes.remove(handle.id());
             }
+        }
+    }
+}
+
+/// A continuously-rendered effect preview for the hovered thumbnail. Unlike
+/// [`GpuJob`], it is never screenshotted: its render target image is displayed
+/// live and its instances are advanced every frame. Isolated on [`LIVE_LAYER`]
+/// so it never interferes with the static capture on [`LAYER`].
+pub(super) struct LivePreview {
+    pub target: Handle<Image>,
+    entities: Vec<Entity>,
+    players: Vec<Entity>,
+    textures: Vec<Handle<Image>>,
+    meshes: Vec<Handle<Mesh>>,
+    duration: f32,
+    settled: u8,
+    /// The GPU has presented at least a few settled frames — safe to crossfade in.
+    pub ready: bool,
+}
+
+impl LivePreview {
+    pub fn start(
+        prepared: Prepared,
+        epoch: &Epoch,
+        commands: &mut Commands,
+        images: &mut Assets<Image>,
+        meshes_assets: &mut Assets<Mesh>,
+    ) -> Self {
+        let target = images.add(Image::new_target_texture(
+            EDGE,
+            EDGE,
+            TextureFormat::Rgba8UnormSrgb,
+            None,
+        ));
+        let projection = OrthographicProjection {
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: prepared.radius * 2.0,
+            },
+            near: 0.01,
+            far: prepared.radius * 8.0 + 1.0,
+            ..OrthographicProjection::default_3d()
+        };
+        let camera_transform = Transform::from_translation(
+            prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
+        )
+        .looking_at(prepared.center, Vec3::Y);
+        let camera = commands
+            .spawn((
+                Camera3d::default(),
+                Camera {
+                    order: -9,
+                    clear_color: ClearColorConfig::Custom(Color::srgb(0.025, 0.028, 0.035)),
+                    ..default()
+                },
+                RenderTarget::Image(target.clone().into()),
+                Projection::Orthographic(projection),
+                camera_transform,
+                RenderLayers::layer(LIVE_LAYER),
+                Msaa::Off,
+            ))
+            .id();
+        let textures: BTreeMap<_, _> = prepared
+            .textures
+            .into_iter()
+            .map(|(path, image)| (path, images.add(image)))
+            .collect();
+        let meshes: BTreeMap<_, _> = prepared
+            .meshes
+            .into_iter()
+            .map(|(path, mesh)| (path, meshes_assets.add(mesh)))
+            .collect();
+        let duration = prepared
+            .players
+            .iter()
+            .map(|player| player.effect().duration)
+            .fold(0.0f32, f32::max)
+            .max(0.1);
+        let players: Vec<_> = prepared
+            .players
+            .into_iter()
+            .map(|mut player| {
+                let overrides = player
+                    .effect()
+                    .assets
+                    .iter()
+                    .filter_map(|asset| {
+                        textures
+                            .get(&epoch.0.join(&asset.path))
+                            .map(|handle| (asset.source, handle.clone()))
+                    })
+                    .collect();
+                let mesh_overrides = player
+                    .effect()
+                    .assets
+                    .iter()
+                    .filter_map(|asset| {
+                        meshes
+                            .get(&epoch.0.join(&asset.path))
+                            .map(|handle| (asset.source, handle.clone()))
+                    })
+                    .collect();
+                // Restart the timeline so the preview loops from the beginning.
+                player.instance.set_playback_time(0.0);
+                commands
+                    .spawn((
+                        player
+                            .with_texture_overrides(overrides)
+                            .with_mesh_overrides(mesh_overrides),
+                        RenderLayers::layer(LIVE_LAYER),
+                    ))
+                    .id()
+            })
+            .collect();
+        Self {
+            target,
+            entities: std::iter::once(camera).chain(players.iter().copied()).collect(),
+            players,
+            textures: textures.into_values().collect(),
+            meshes: meshes.into_values().collect(),
+            duration,
+            settled: 0,
+            ready: false,
+        }
+    }
+
+    /// Advances every instance by `dt`, looping over the effect duration, and
+    /// tracks when the GPU presentation has caught up (so the crossfade can start).
+    pub fn advance(
+        &mut self,
+        players: &mut Query<(
+            &mut PresentedEffect,
+            Option<&EffectRuntimeStatus>,
+            Option<&GpuParticleStatistics>,
+        )>,
+        dt: f32,
+    ) {
+        let mut all_settled = !self.players.is_empty();
+        for entity in &self.players {
+            let Ok((mut player, status, stats)) = players.get_mut(*entity) else {
+                all_settled = false;
+                continue;
+            };
+            let mut time = player.instance.time() + dt.clamp(0.0, 0.1);
+            if time >= self.duration {
+                player.instance.restart();
+                time = 0.0;
+            }
+            player.instance.set_playback_time(time);
+            let presenting = matches!(status.map(|s| s.active), Some(ActiveBackend::Gpu));
+            let observed = stats
+                .and_then(|s| s.observation(&player.instance))
+                .is_some();
+            all_settled &= presenting && observed;
+        }
+        self.settled = if all_settled {
+            self.settled.saturating_add(1)
+        } else {
+            0
+        };
+        if self.settled >= 3 {
+            self.ready = true;
+        }
+    }
+
+    pub fn cleanup(
+        self,
+        commands: &mut Commands,
+        images: &mut Assets<Image>,
+        meshes: &mut Assets<Mesh>,
+    ) {
+        for entity in self.entities {
+            commands.entity(entity).try_despawn();
+        }
+        images.remove(self.target.id());
+        for handle in self.textures {
+            images.remove(handle.id());
+        }
+        for handle in self.meshes {
+            meshes.remove(handle.id());
         }
     }
 }
