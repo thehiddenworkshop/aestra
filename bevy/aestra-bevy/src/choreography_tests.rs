@@ -43,6 +43,49 @@ fn checkpoint_effect(name: &str, duration: f32) -> Arc<CompiledEffect> {
 }
 
 #[test]
+fn playback_driver_seek_scrub_and_advance() {
+    use aestra_runtime::PlaybackDriver;
+    let ctx = CheckpointContext {
+        effect: EffectId::from_u128(1),
+        revision: 0,
+        seed: 0,
+        backend: CheckpointBackendId::new("test"),
+    };
+    let effect = checkpoint_effect("Driver", 4.0);
+
+    // Cached backward seek restores from a checkpoint and lands exactly.
+    let mut cached = PlaybackDriver::new(EffectInstance::new(effect.clone()));
+    cached.enable_checkpoints(CheckpointPolicy::default());
+    cached.seek_frame(90, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
+    assert_eq!(cached.frame(), 90);
+    assert!(cached.checkpoints().unwrap().len() >= 2);
+    cached.seek_frame(45, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
+    assert_eq!(cached.frame(), 45);
+
+    // Cache-less restart-replay reaches the same state.
+    let mut plain = PlaybackDriver::new(EffectInstance::new(effect.clone()));
+    plain.seek_frame(45, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
+    assert_eq!(plain.frame(), 45);
+    assert_eq!(cached.instance.time(), plain.instance.time());
+
+    // Forward advance records checkpoints and moves the frame.
+    let mut forward = PlaybackDriver::new(EffectInstance::new(effect));
+    forward.enable_checkpoints(CheckpointPolicy::default());
+    for _ in 0..60 {
+        forward.advance(
+            1.0 / 60.0,
+            1.0,
+            4.0,
+            false,
+            SimulationSeekMode::CheckpointRestore,
+            &ctx,
+        );
+    }
+    assert!(forward.frame() >= 58);
+    assert!(!forward.checkpoints().unwrap().is_empty());
+}
+
+#[test]
 fn scrub_cache_records_during_play_and_restores_on_backward_seek() {
     let mut player = EffectPlayer::from_compiled(checkpoint_effect("Scrub", 4.0));
     player.enable_scrub_cache(CheckpointPolicy::default());

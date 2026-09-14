@@ -3,6 +3,8 @@
 mod checkpoint;
 mod compatibility;
 mod host_transform;
+mod playback;
+pub use playback::PlaybackDriver;
 mod project;
 mod project_profile;
 pub use project_profile::{ProjectInstanceProfile, ProjectProfile};
