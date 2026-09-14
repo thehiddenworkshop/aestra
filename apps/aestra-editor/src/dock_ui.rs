@@ -14,6 +14,9 @@ use crate::*;
 use bevy::{
     ecs::system::SystemParam,
     feathers::cursor::{EntityCursor, OverrideCursor},
+    input::mouse::MouseScrollUnit,
+    picking::events::Scroll,
+    ui::{Overflow, ScrollPosition},
 };
 use fluent_bundle::FluentArgs;
 
@@ -883,6 +886,35 @@ fn editor_view_dirty(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The scrollable dock tab strip. Carries a `ScrollPosition` so overflowing tabs can be reached.
+#[derive(Component)]
+pub(crate) struct DockTabScroll;
+
+/// Scrolls the dock tab strip horizontally on a mouse wheel — mapping both wheel axes to the
+/// horizontal position, so a normal vertical wheel reaches tabs hidden off either edge. The tab
+/// strip only overflows on X, so the built-in `ScrollArea` (which maps wheel-X to scroll-X) would
+/// not respond to a vertical wheel.
+pub(crate) fn scroll_dock_tabs(
+    mut scroll: On<Pointer<Scroll>>,
+    mut strips: Query<(&ComputedNode, &mut ScrollPosition), With<DockTabScroll>>,
+) {
+    let Ok((computed, mut position)) = strips.get_mut(scroll.entity) else {
+        return;
+    };
+    let inverse = computed.inverse_scale_factor();
+    let overflow = (computed.content_size().x - computed.size().x).max(0.0) * inverse;
+    if overflow <= 0.0 {
+        return;
+    }
+    scroll.propagate(false);
+    let delta = (scroll.x + scroll.y)
+        * match scroll.unit {
+            MouseScrollUnit::Line => 20.0,
+            MouseScrollUnit::Pixel => 1.0,
+        };
+    position.x = (position.x - delta).clamp(0.0, overflow);
+}
+
 fn spawn_dock_tab_bar(
     parent: &mut ChildSpawnerCommands,
     node: DockNodeId,
@@ -904,8 +936,13 @@ fn spawn_dock_tab_bar(
                 column_gap: Val::Px(2.0),
                 border: UiRect::bottom(Val::Px(1.0)),
                 flex_shrink: 0.0,
+                // Tabs keep their width and scroll horizontally when they overflow the strip, so
+                // hidden tabs on either side stay reachable (see `scroll_dock_tabs`).
+                overflow: Overflow::scroll_x(),
                 ..default()
             },
+            ScrollPosition::default(),
+            DockTabScroll,
             BackgroundColor(theme::MENU),
             BorderColor::all(theme::BORDER_BRIGHT),
         ))

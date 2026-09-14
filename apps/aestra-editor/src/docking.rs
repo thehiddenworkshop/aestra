@@ -40,6 +40,7 @@ impl Plugin for DockingPlugin {
             .init_resource::<MaximizedPanel>()
             .insert_resource(WorkspaceLayout::load())
             .add_observer(queue_docking_action_activation)
+            .add_observer(crate::dock_ui::scroll_dock_tabs)
             .add_systems(First, crate::dock_ui::activate_staged_native_floating_ui)
             .add_systems(Update, handle_docking_actions.in_set(DockingSet::Actions))
             .add_systems(
