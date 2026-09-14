@@ -1,4 +1,5 @@
 //! Read-only, bounded previews of the current project page. No AssetServer full-size loads.
+mod disk_cache;
 mod effect;
 mod mesh;
 use super::{
