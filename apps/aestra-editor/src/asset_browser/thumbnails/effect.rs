@@ -775,7 +775,9 @@ impl LivePreview {
             .collect();
         Self {
             target,
-            entities: std::iter::once(camera).chain(players.iter().copied()).collect(),
+            entities: std::iter::once(camera)
+                .chain(players.iter().copied())
+                .collect(),
             players,
             textures: textures.into_values().collect(),
             meshes: meshes.into_values().collect(),

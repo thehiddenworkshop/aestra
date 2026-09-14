@@ -143,6 +143,7 @@ dependencies = [
  "aestra-bevy-render",
  "aestra-compiler",
  "aestra-core",
+ "aestra-project",
  "aestra-runtime",
  "bevy",
  "thiserror 2.0.20",

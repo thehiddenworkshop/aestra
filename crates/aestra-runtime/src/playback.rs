@@ -138,7 +138,9 @@ impl PlaybackDriver {
                 self.clock.seek_frame(target, duration);
                 self.instance.set_playback_time(self.clock.time(duration));
             }
-            SeekOrigin::Current => self.replay_ticks(plan.replay_ticks, duration, seek_mode, context),
+            SeekOrigin::Current => {
+                self.replay_ticks(plan.replay_ticks, duration, seek_mode, context)
+            }
             SeekOrigin::Checkpoint { frame } => {
                 let restored = self
                     .checkpoints
@@ -198,8 +200,8 @@ impl PlaybackDriver {
             return;
         }
         let state = self.instance.clone();
-        let estimated_bytes = std::mem::size_of::<EffectInstance>()
-            + std::mem::size_of_val(state.parameter_values());
+        let estimated_bytes =
+            std::mem::size_of::<EffectInstance>() + std::mem::size_of_val(state.parameter_values());
         if let Some(store) = self.checkpoints.as_mut() {
             store.insert(context.clone(), frame, state, estimated_bytes);
         }

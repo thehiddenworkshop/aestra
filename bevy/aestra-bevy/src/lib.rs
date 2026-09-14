@@ -57,8 +57,8 @@ pub use aestra_runtime::{
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
     PlaybackCheckpoint, PlaybackClock, PlaybackDriver, ProfileValue, ProfileValueSource,
-    ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind, RuntimeValue,
-    SeekOrigin, SeekPlan, SimulationSeekMode,
+    ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind,
+    RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -485,7 +485,8 @@ impl EffectPlayer {
                 };
                 let mut events = Vec::new();
                 for _ in 0..ticks {
-                    self.driver.instance
+                    self.driver
+                        .instance
                         .advance_with_choreography_events(tick_seconds, &mut events);
                     self.choreography_events.append(&mut events);
                 }
@@ -512,7 +513,9 @@ impl EffectPlayer {
         let time = if self.driver.instance.effect().playback_mode.is_continuous() {
             self.driver.clock.elapsed_time()
         } else {
-            self.driver.clock.time(self.driver.instance.effect().duration)
+            self.driver
+                .clock
+                .time(self.driver.instance.effect().duration)
         };
         self.driver.instance.set_playback_time(time);
     }
@@ -747,7 +750,10 @@ mod tests {
             player.seek_simulation_time(3.0);
             let expected_time = player.simulation_time();
             assert_eq!(
-                player.instance().host_transform_at(expected_time).translation[0],
+                player
+                    .instance()
+                    .host_transform_at(expected_time)
+                    .translation[0],
                 expected_time * 10.0
             );
             let mut app = App::new();

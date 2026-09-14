@@ -59,7 +59,9 @@ struct HoveredThumbnail(Option<ProjectSourceId>);
 
 /// Evicts stale/overflowing on-disk thumbnails once at startup, off the main thread.
 fn sweep_thumbnail_cache() {
-    IoTaskPool::get().spawn(async { disk_cache::sweep() }).detach();
+    IoTaskPool::get()
+        .spawn(async { disk_cache::sweep() })
+        .detach();
 }
 
 fn on_thumbnail_over(
@@ -717,8 +719,7 @@ fn hover_preview(
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
         let root = catalog.root().to_owned();
-        let task = IoTaskPool::get()
-            .spawn(async move { effect::prepare(saved?, &root, &flag) });
+        let task = IoTaskPool::get().spawn(async move { effect::prepare(saved?, &root, &flag) });
         hover = Some(Hover {
             source,
             entity,
@@ -771,7 +772,11 @@ fn hover_preview(
 
         // Crossfade toward live once the render has settled, or back to static.
         let live_ready = matches!(&h.stage, HoverStage::Live(live) if live.ready);
-        let target = if h.fading_out || !live_ready { 0.0 } else { 1.0 };
+        let target = if h.fading_out || !live_ready {
+            0.0
+        } else {
+            1.0
+        };
         h.fade = if h.fade < target {
             (h.fade + dt * HOVER_FADE_RATE).min(target)
         } else {

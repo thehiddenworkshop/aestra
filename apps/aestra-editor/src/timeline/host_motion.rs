@@ -1236,10 +1236,7 @@ mod tests {
             5.0
         );
         session.redo();
-        assert_eq!(
-            session.preview().unwrap().host_transform_at(0.5),
-            edited
-        );
+        assert_eq!(session.preview().unwrap().host_transform_at(0.5), edited);
     }
 
     #[test]
@@ -1273,11 +1270,7 @@ mod tests {
         assert_eq!(session.effect.host_transform_track, Some(track()));
         assert!(!session.can_undo());
         assert_eq!(
-            session
-                .preview()
-                .unwrap()
-                .host_transform_at(1.0)
-                .scale[0],
+            session.preview().unwrap().host_transform_at(1.0).scale[0],
             1.0
         );
         assert!(

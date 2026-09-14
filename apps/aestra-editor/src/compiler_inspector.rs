@@ -84,9 +84,7 @@ pub(crate) fn spawn_compiler_inspector_workspace(
     ) {
         return;
     }
-    let compiled = session
-        .preview()
-        .map(|preview| preview.effect().as_ref());
+    let compiled = session.preview().map(|preview| preview.effect().as_ref());
     let (state_label, state_color) = compiler_inspector_status(session, compiled.is_some());
 
     parent

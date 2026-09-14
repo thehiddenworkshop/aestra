@@ -978,13 +978,15 @@ impl EditorSession {
                 (preview.candidate().validation_report(), true)
             }
             Err(error) => {
-                self.set_preview_opt(compile_preview_with_solo_and_material_programs(
-                    &self.effect,
-                    self.preview_seed,
-                    self.solo_emitter,
-                    &material_programs,
-                )
-                .ok());
+                self.set_preview_opt(
+                    compile_preview_with_solo_and_material_programs(
+                        &self.effect,
+                        self.preview_seed,
+                        self.solo_emitter,
+                        &material_programs,
+                    )
+                    .ok(),
+                );
                 (error.report().clone(), false)
             }
         };
@@ -2660,9 +2662,7 @@ mod tests {
         session.restore_interaction_preview();
         assert!(session.execute("Moved semantic material emitter", command, true,));
 
-        let preview = session
-            .preview()
-            .expect("preview should remain valid");
+        let preview = session.preview().expect("preview should remain valid");
         assert!(preview.effect().material_program(program.id).is_some());
         assert!(session.diagnostics.is_valid());
     }

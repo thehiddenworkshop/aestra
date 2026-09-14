@@ -261,10 +261,7 @@ mod tests {
     #[test]
     fn identical_input_yields_identical_key() {
         let project = sample();
-        assert_eq!(
-            key(&project, |_| Some(0)),
-            key(&project, |_| Some(0)),
-        );
+        assert_eq!(key(&project, |_| Some(0)), key(&project, |_| Some(0)),);
     }
 
     #[test]

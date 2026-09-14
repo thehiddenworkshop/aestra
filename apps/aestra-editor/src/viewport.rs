@@ -2595,9 +2595,7 @@ fn sync_project_preview(
     catalog: Res<ProjectEffectCatalog>,
     mut preview: ResMut<EditorPreviewProject>,
 ) {
-    let source_root = session
-        .preview()
-        .map(|preview| preview.effect().clone());
+    let source_root = session.preview().map(|preview| preview.effect().clone());
     if source_root.is_none()
         && preview.failed_source_revision == Some(session.document_revision())
         && !catalog.is_changed()
@@ -3592,7 +3590,10 @@ mod tests {
     fn editor_preview_player_uses_the_compiled_effect_timeline_and_seed() {
         let mut session = test_support::session_with_timing_slack();
         session.preview_seed = 42;
-        session.driver.clock.seek_frame(37, session.playback_duration());
+        session
+            .driver
+            .clock
+            .seek_frame(37, session.playback_duration());
 
         let player = configured_preview_player(&session).unwrap();
 
