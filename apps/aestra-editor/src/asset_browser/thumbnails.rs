@@ -12,9 +12,9 @@ use aestra_project::{ProjectContentVersion, ProjectSourceId};
 use bevy::{
     asset::RenderAssetUsages,
     image::ImageSampler,
+    picking::events::{Out, Over, Pointer},
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     tasks::{IoTaskPool, Task, futures_lite::future},
-    ui::RelativeCursorPosition,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -36,13 +36,45 @@ type Epoch = (PathBuf, ProjectContentVersion);
 
 pub(super) fn register(app: &mut App) {
     effect::register(app);
-    app.init_resource::<ThumbnailCache>().add_systems(
-        Update,
-        (update, hover_preview)
-            .chain()
-            .after(panel::sync_panel)
-            .before(AestraFeathersSet::Sync),
-    );
+    app.init_resource::<ThumbnailCache>()
+        .init_resource::<HoveredThumbnail>()
+        .add_observer(on_thumbnail_over)
+        .add_observer(on_thumbnail_out)
+        .add_systems(
+            Update,
+            (update, hover_preview)
+                .chain()
+                .after(panel::sync_panel)
+                .before(AestraFeathersSet::Sync),
+        );
+}
+
+/// The source of the effect thumbnail the pointer is currently over. Maintained
+/// by picking `Over`/`Out` observers so it survives clicks (which never fire
+/// `Out`) and thumbnail rebuilds (the entity is re-resolved from the source).
+#[derive(Resource, Default)]
+struct HoveredThumbnail(Option<ProjectSourceId>);
+
+fn on_thumbnail_over(
+    over: On<Pointer<Over>>,
+    thumbnails: Query<&Thumbnail>,
+    mut hovered: ResMut<HoveredThumbnail>,
+) {
+    if let Ok(thumbnail) = thumbnails.get(over.entity) {
+        hovered.0 = Some(thumbnail.source);
+    }
+}
+
+fn on_thumbnail_out(
+    out: On<Pointer<Out>>,
+    thumbnails: Query<&Thumbnail>,
+    mut hovered: ResMut<HoveredThumbnail>,
+) {
+    if let Ok(thumbnail) = thumbnails.get(out.entity)
+        && hovered.0 == Some(thumbnail.source)
+    {
+        hovered.0 = None;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,8 +278,6 @@ pub(super) fn spawn(
             should_block_lower: false,
             is_hoverable: true,
         },
-        // Tracks whether the pointer is over this thumbnail, for the hover preview.
-        RelativeCursorPosition::default(),
     ));
     let entity = host.id();
     let mut thumbnail = Thumbnail {
@@ -480,7 +510,7 @@ fn update(
             },
         );
     }
-    for (entity, mut thumbnail) in &mut thumbnails {
+    for (_, mut thumbnail) in &mut thumbnails {
         let preview = if wanted.contains(&thumbnail.source) {
             cache
                 .entries
@@ -506,24 +536,11 @@ fn update(
             height: Val::Percent(100.0),
             ..default()
         });
-        let message = match &preview {
-            Preview::Ready(handle) => {
-                commands
-                    .entity(thumbnail.image)
-                    .insert(ImageNode::new(handle.clone()));
-                locale.text(match thumbnail.kind {
-                    Kind::Material => "browser-material-thumbnail-ready",
-                    Kind::Mesh => "browser-mesh-thumbnail-ready",
-                    Kind::Effect => "browser-effect-thumbnail-ready",
-                    _ => "browser-thumbnail-ready",
-                })
-            }
-            Preview::Loading => locale.text("browser-thumbnail-loading"),
-            Preview::Failed(error) => {
-                format!("{}\n{error}", locale.text("browser-thumbnail-error"))
-            }
-        };
-        if !ready {
+        if let Preview::Ready(handle) = &preview {
+            commands
+                .entity(thumbnail.image)
+                .insert(ImageNode::new(handle.clone()));
+        } else {
             commands.entity(thumbnail.image).remove::<ImageNode>();
         }
         commands.entity(thumbnail.badge).insert((
@@ -540,9 +557,6 @@ fn update(
                 Visibility::Inherited
             },
         ));
-        commands
-            .entity(entity)
-            .insert(EditorTooltip::description(message));
         thumbnail.rendered = Some(preview);
     }
 }
@@ -563,10 +577,10 @@ fn overlay_node(display: Display) -> Node {
 
 fn reset_overlay(
     commands: &mut Commands,
-    thumbnails: &Query<(Entity, &Thumbnail, &RelativeCursorPosition)>,
+    thumbnails: &Query<(Entity, &Thumbnail)>,
     entity: Entity,
 ) {
-    if let Ok((_, thumb, _)) = thumbnails.get(entity) {
+    if let Ok((_, thumb)) = thumbnails.get(entity) {
         commands
             .entity(thumb.live_image)
             .insert(overlay_node(Display::None))
@@ -596,10 +610,11 @@ fn hover_preview(
     catalog: Res<ProjectEffectCatalog>,
     state: Res<AssetBrowserState>,
     enabled: Option<Res<effect::Enabled>>,
+    hovered_source: Res<HoveredThumbnail>,
     images: Option<ResMut<Assets<Image>>>,
     meshes: Option<ResMut<Assets<Mesh>>>,
     time: Res<Time>,
-    thumbnails: Query<(Entity, &Thumbnail, &RelativeCursorPosition)>,
+    thumbnails: Query<(Entity, &Thumbnail)>,
     mut players: Query<(
         &mut PresentedEffect,
         Option<&EffectRuntimeStatus>,
@@ -612,21 +627,25 @@ fn hover_preview(
     let dt = time.delta_secs();
     let current_epoch = cache.epoch.clone();
 
-    // The effect thumbnail under the pointer whose static preview is ready.
-    let hovered: Option<(Entity, ProjectSourceId)> =
-        if enabled.is_some() && state.scope == SourceScope::Project {
-            thumbnails.iter().find_map(|(entity, thumb, cursor)| {
-                (thumb.kind == Kind::Effect
-                    && cursor.cursor_over()
-                    && matches!(
-                        cache.entries.get(&thumb.source).map(|entry| &entry.preview),
-                        Some(Preview::Ready(_))
-                    ))
-                .then_some((entity, thumb.source))
+    // Resolve the hovered source (from the picking observers) to a live effect
+    // thumbnail entity whose static preview is ready. Re-resolving by source each
+    // frame survives thumbnail rebuilds on click/selection.
+    let hovered: Option<(Entity, ProjectSourceId)> = hovered_source
+        .0
+        .filter(|_| enabled.is_some() && state.scope == SourceScope::Project)
+        .and_then(|source| {
+            (matches!(
+                cache.entries.get(&source).map(|entry| &entry.preview),
+                Some(Preview::Ready(_))
+            ))
+            .then(|| {
+                thumbnails.iter().find_map(|(entity, thumb)| {
+                    (thumb.source == source && thumb.kind == Kind::Effect)
+                        .then_some((entity, source))
+                })
             })
-        } else {
-            None
-        };
+            .flatten()
+        });
 
     let mut hover = cache.hover.take();
 
@@ -665,6 +684,14 @@ fn hover_preview(
 
     if let Some(mut h) = hover.take() {
         h.fading_out = hovered.map(|(_, source)| source) != Some(h.source);
+        // The thumbnail entity can be rebuilt (e.g. on selection); re-point the
+        // overlay at the current entity for this source so it keeps showing.
+        if let Some((entity, _)) = hovered
+            && entity != h.entity
+        {
+            reset_overlay(&mut commands, &thumbnails, h.entity);
+            h.entity = entity;
+        }
         // Advance the stage: finish preparing, or drive the live simulation.
         let mut abandon = false;
         match &mut h.stage {
@@ -704,7 +731,7 @@ fn hover_preview(
             (h.fade - dt * HOVER_FADE_RATE).max(target)
         };
 
-        if let Ok((_, thumb, _)) = thumbnails.get(h.entity) {
+        if let Ok((_, thumb)) = thumbnails.get(h.entity) {
             match &h.stage {
                 HoverStage::Live(live) if h.fade > 0.001 => {
                     commands.entity(thumb.live_image).insert((
