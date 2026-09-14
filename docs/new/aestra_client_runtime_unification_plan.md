@@ -98,10 +98,22 @@ crate docs alone.
 *Foundational dedup, moderate risk.* Make the editor's single preview delegate to `EffectPlayer`
 (as an owned field of the preview runtime, not necessarily a Bevy component yet), driven via
 `set_playback_time`/`seek_frame` from the editor's timeline. Delete `EditorSession`'s bespoke
-`advance_playback`/`seek_time`/`step_frame` clock math in favor of the player's. Fix **G4** by adding
-`EffectPlayer::replace_effect(Arc<CompiledEffect>, preserve_position: bool)` and **G5** by confirming
-the external-clock path. **Exit:** editing + scrubbing a single effect goes through `EffectPlayer`;
-`aestra-viewer` and editor share one driver; all editor playback tests green.
+`advance_playback`/`seek_time`/`step_frame` clock math in favor of the player's. **Exit:** editing +
+scrubbing a single effect goes through `EffectPlayer`; `aestra-viewer` and editor share one driver;
+all editor playback tests green.
+
+**Progress:**
+- **G4 — done.** `EffectPlayer::replace_effect(Arc<CompiledEffect>, preserve_position)` added +
+  tested (keeps seed; replays to the current frame or restarts). Live recompile can now swap the
+  compiled effect under the player.
+- **G5 — confirmed.** `EffectPlayer::set_playback_time` already exists ("synchronize sequential
+  playback driven by an external clock") — the path the editor timeline drives. No code needed.
+- **Remaining (the risky part).** Replacing `EditorSession.clock` (`PlaybackClock`) + `.preview`
+  (`EffectInstance`) with an owned `EffectPlayer` touches ~48 `.clock` refs across 9 files plus the
+  `.preview` reads, and the presentation path (`session.preview` → `PresentedEffect`). This is the
+  fragile editor core; it needs build-and-scrub verification between steps, so it should land as its
+  own carefully-staged effort (introduce the owned player → migrate one method at a time → remove the
+  old fields), not a single blind rewrite.
 
 ### M-CR3 — Preserve scrub performance
 *Addresses G3.* Extend `EffectPlayer` with an optional checkpoint cache (behind the same
