@@ -1,4 +1,40 @@
-//! Bevy integration for compiled Aestra effects.
+//! Bevy integration and reference playback runtime for compiled Aestra effects.
+//!
+//! This crate is the **canonical client** for Aestra. If you are embedding
+//! Aestra in an application — or writing an integration for another engine such
+//! as `aestra-godot` or `aestra-unity` — this is the one place to look: the ECS
+//! plumbing differs per host, but the pipeline below is identical everywhere.
+//!
+//! # The client pipeline
+//!
+//! 1. Load an authored [`EffectAsset`].
+//! 2. Resolve it against a project asset root (child clips + material programs)
+//!    with `aestra_project::ProjectAssetIndex`, producing a resolved project.
+//! 3. Compile the resolved project into a [`CompiledEffectProject`] with
+//!    [`EffectCompiler`]. In a shipping game this is done offline.
+//! 4. Spawn an [`EffectPlayer`] for the artifact and add [`AestraPlugin`]. The
+//!    plugin owns simulation advance, choreography dispatch, and rendering —
+//!    hosts never touch the render backend (`aestra-bevy-render`) directly.
+//!
+//! Everything a host drives at runtime — play/pause, [`EffectPlayer::seek`],
+//! [`EffectPlayer::set_parameter`], choreography events — goes through the
+//! `EffectPlayer` handle.
+//!
+//! # Minimal host
+//!
+//! ```rust,no_run
+//! use aestra_bevy::AestraPlugin;
+//! use bevy::prelude::*;
+//!
+//! let mut app = App::new();
+//! app.add_plugins((DefaultPlugins, AestraPlugin));
+//! // Spawn an `EffectPlayer::from_project(..)` in a startup system, then `app.run()`.
+//! ```
+//!
+//! See `examples/minimal_player.rs` for the full, runnable load-and-play path
+//! (`cargo run -p aestra-bevy --example minimal_player`). For a demanding
+//! real-world host, `apps/aestra-viewer` drives the same API with capture,
+//! diagnostics, and GPU benchmarking layered on top.
 #[cfg(test)]
 mod choreography_tests;
 mod project;

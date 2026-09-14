@@ -79,11 +79,20 @@ slice overlaps `EffectPlayer` — this plan touches that slice, not the document
 Sequenced low-risk → high-risk. The viewport is the riskiest code in the app, so every step stays
 green and reviewable, and nothing lands that regresses authoring feel.
 
-### M-CR1 — `aestra-viewer` becomes the canonical reference client
-*Goal 2, cheap, no editor risk.* Polish and document `aestra-viewer` as the minimal, exemplary
-`EffectPlayer` host: spawn a player, seek/step, feed parameters, consume choreography events. Add a
-doc comment / README pointing `aestra-godot` / `aestra-unity` authors here as *the* one place.
-**Exit:** an integrator can build a host by reading `aestra-viewer` alone.
+### M-CR1 — a canonical reference client — **done**
+*Goal 2, cheap, no editor risk.* Rather than shrink `aestra-viewer` (a 1.4k-line capture/regression
+harness — a poor first read), the reference lives with the crate that binding authors depend on:
+- `bevy/aestra-bevy/examples/minimal_player.rs` — the full load-and-play path in ~40 lines
+  (`cargo run -p aestra-bevy --example minimal_player`).
+- Crate-level rustdoc on `aestra-bevy` documenting the four-step client pipeline, with a `no_run`
+  minimal-host snippet and an explicit note that this is the one place for `aestra-godot` /
+  `aestra-unity` authors.
+- `bevy/aestra-bevy/README.md` — a "where to look" table pointing at the example, the docs, and
+  `aestra-viewer` as the advanced real-world host.
+
+`aestra-viewer` stays as the demanding real-world host (capture, diagnostics, GPU bench), referenced
+from the docs — not gutted. **Exit met:** an integrator can build a host by reading the example and
+crate docs alone.
 
 ### M-CR2 — Unify the single-effect driver
 *Foundational dedup, moderate risk.* Make the editor's single preview delegate to `EffectPlayer`

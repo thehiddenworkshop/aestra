@@ -18,4 +18,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 aestra-artifact = { path = "../../crates/aestra-artifact" }
+# Used by the `minimal_player` example to resolve an authored effect into a
+# compiled project. The crate itself plays an already-compiled project, so this
+# stays a dev-dependency: producing the artifact is the host application's job.
+aestra-project = { path = "../../crates/aestra-project" }
 wesl = "0.3.2"
