@@ -94,6 +94,9 @@ struct ThumbnailCache {
     entries: BTreeMap<ProjectSourceId, Entry>,
     jobs: Vec<Job>,
     gpu: Option<effect::GpuJob>,
+    /// Refined camera framing captured from each effect's static thumbnail, so the
+    /// hover live preview matches its size. Cleared with the rest on epoch change.
+    effect_framing: BTreeMap<ProjectSourceId, (Transform, bevy::camera::OrthographicProjection)>,
     hover: Option<Hover>,
     tick: u64,
 }
@@ -130,6 +133,7 @@ impl ThumbnailCache {
             }
         }
         self.entries.clear();
+        self.effect_framing.clear();
         for job in &self.jobs {
             job.cancelled.store(true, Ordering::Relaxed);
         }
@@ -362,6 +366,9 @@ fn update(
             cache.entries.remove(&job.source);
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else if let Some(result) = job.poll(&mut commands, &render) {
+            if result.is_ok() {
+                cache.effect_framing.insert(job.source, job.framing());
+            }
             cache.accept(job.source, &job.epoch, result, &mut images);
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else {
@@ -665,9 +672,11 @@ fn hover_preview(
                 if let Some(result) = future::block_on(future::poll_once(task)) {
                     match result {
                         Ok(prepared) => {
+                            let framing = cache.effect_framing.get(&h.source).cloned();
                             h.stage = HoverStage::Live(effect::LivePreview::start(
                                 prepared,
                                 &h.epoch,
+                                framing,
                                 &mut commands,
                                 &mut images,
                                 &mut meshes,

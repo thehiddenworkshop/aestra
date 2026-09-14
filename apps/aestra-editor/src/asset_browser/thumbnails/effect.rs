@@ -628,6 +628,12 @@ impl GpuJob {
         None
     }
 
+    /// The final refined camera framing, so a live hover preview can match the
+    /// static thumbnail's tight fit instead of the conservative history bounds.
+    pub fn framing(&self) -> (Transform, OrthographicProjection) {
+        (self.camera_transform, self.projection.clone())
+    }
+
     pub fn cleanup(
         self,
         commands: &mut Commands,
@@ -672,6 +678,7 @@ impl LivePreview {
     pub fn start(
         prepared: Prepared,
         epoch: &Epoch,
+        framing: Option<(Transform, OrthographicProjection)>,
         commands: &mut Commands,
         images: &mut Assets<Image>,
         meshes_assets: &mut Assets<Mesh>,
@@ -682,18 +689,23 @@ impl LivePreview {
             TextureFormat::Rgba8UnormSrgb,
             None,
         ));
-        let projection = OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: prepared.radius * 2.0,
-            },
-            near: 0.01,
-            far: prepared.radius * 8.0 + 1.0,
-            ..OrthographicProjection::default_3d()
-        };
-        let camera_transform = Transform::from_translation(
-            prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
-        )
-        .looking_at(prepared.center, Vec3::Y);
+        // Prefer the static capture's refined framing so the live animation lines
+        // up with the thumbnail; fall back to the conservative history bounds.
+        let (camera_transform, projection) = framing.unwrap_or_else(|| {
+            let projection = OrthographicProjection {
+                scaling_mode: ScalingMode::FixedVertical {
+                    viewport_height: prepared.radius * 2.0,
+                },
+                near: 0.01,
+                far: prepared.radius * 8.0 + 1.0,
+                ..OrthographicProjection::default_3d()
+            };
+            let transform = Transform::from_translation(
+                prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
+            )
+            .looking_at(prepared.center, Vec3::Y);
+            (transform, projection)
+        });
         let camera = commands
             .spawn((
                 Camera3d::default(),
