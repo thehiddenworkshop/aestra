@@ -90,7 +90,11 @@ impl Plugin for ViewportPlugin {
             .add_observer(execute_viewport_action)
             .add_systems(
                 Startup,
-                (setup_preview_scene, configure_preview_scene_gizmos)
+                (
+                    || info!("viewport: minimize-crash guard armed (rev viewport-collapse-2)"),
+                    setup_preview_scene,
+                    configure_preview_scene_gizmos,
+                )
                     .chain()
                     .in_set(ViewportSet::Setup),
             )
@@ -646,14 +650,23 @@ fn deactivate_cameras_with_collapsed_viewport(
     >,
     mut logged: Local<bool>,
 ) {
+    // `assign_objects_to_clusters` (bevy_light) clears a view's cluster grid to
+    // zero dimensions whenever the camera's viewport OR its render target has
+    // collapsed to zero; the render world then builds a zero-width "clustering
+    // dummy texture" and the validation error quits the app. Deactivate any such
+    // active 3D camera so extraction (which skips inactive cameras) never sees
+    // it. `physical_viewport_size()` honours an explicit `Camera::viewport`, so
+    // we also check `physical_target_size()` directly to catch cameras that let
+    // the target collapse under an explicit viewport.
     let mut any_collapsed = false;
     for (entity, mut camera, target, layers) in &mut cameras {
         if !camera.is_active {
             continue;
         }
-        let collapsed = camera
-            .physical_viewport_size()
-            .is_none_or(|size| size.x == 0 || size.y == 0);
+        let viewport = camera.physical_viewport_size();
+        let target_size = camera.physical_target_size();
+        let collapsed = viewport.is_none_or(|s| s.x == 0 || s.y == 0)
+            || target_size.is_none_or(|s| s.x == 0 || s.y == 0);
         if !collapsed {
             continue;
         }
@@ -661,17 +674,12 @@ fn deactivate_cameras_with_collapsed_viewport(
         if !*logged {
             info!(
                 "viewport: deactivating collapsed 3D camera {entity:?} \
-                 (viewport={:?}, target={target:?}, layers={layers:?}) to avoid \
-                 the zero-size PBR clustering texture crash",
-                camera.physical_viewport_size(),
+                 (viewport={viewport:?}, target_size={target_size:?}, \
+                 target={target:?}, layers={layers:?}) to avoid the zero-size \
+                 PBR clustering texture crash"
             );
         }
-        // Off-screen image targets (asset thumbnails) keep a fixed, nonzero size,
-        // so a collapse there is unexpected — log it, but only deactivate
-        // window-backed views, whose activation is restored elsewhere.
-        if !matches!(target, Some(RenderTarget::Image(_))) {
-            camera.is_active = false;
-        }
+        camera.is_active = false;
     }
     *logged = any_collapsed;
 }
