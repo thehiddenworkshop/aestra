@@ -171,6 +171,8 @@ fn open_diagnostics_context_menu(
     let position = pointer_position_in_node(click.pointer_location.position, node, transform)
         * node.inverse_scale_factor();
     let label = localizer.text("diagnostics-copy");
+    let copied_status = localizer.text("diagnostics-copied");
+    let failed_status = localizer.text("diagnostics-copy-failed");
     commands.entity(host).with_children(move |parent| {
         spawn_pointer_context_menu(
             parent,
@@ -193,16 +195,22 @@ fn open_diagnostics_context_menu(
                     },
                 );
                 // A direct click handler copies and closes — it fires on click regardless of the
-                // menu's activation focus, which the `Activate` path did not.
+                // menu's activation focus, which the `Activate` path did not. The outcome is
+                // reported in the status bar so a failed clipboard write is visible.
                 menu.commands().entity(item).observe(
                     move |mut click: On<Pointer<Click>>,
                           anchors: Query<Entity, With<DiagnosticsContextAnchor>>,
                           mut clipboard: ResMut<Clipboard>,
+                          mut session: ResMut<EditorSession>,
                           mut commands: Commands| {
                         if click.button != PointerButton::Primary {
                             return;
                         }
-                        let _ = clipboard.set_text(text.clone());
+                        session.status = match clipboard.set_text(text.clone()) {
+                            Ok(()) => copied_status.clone(),
+                            Err(error) => format!("{failed_status}: {error}"),
+                        };
+                        session.ui_revision += 1;
                         for anchor in &anchors {
                             commands.entity(anchor).despawn();
                         }
