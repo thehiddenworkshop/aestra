@@ -651,7 +651,7 @@ fn deactivate_cameras_with_collapsed_viewport(
         Option<&RenderLayers>,
         Has<Camera3d>,
     )>,
-    mut logged: Local<bool>,
+    mut logged: Local<String>,
 ) {
     // `assign_objects_to_clusters` (bevy_light) clears a 3D view's cluster grid
     // to zero dimensions whenever the camera's viewport OR its render target has
@@ -662,36 +662,39 @@ fn deactivate_cameras_with_collapsed_viewport(
     // we also check `physical_target_size()` to catch cameras whose target
     // collapses under an explicit viewport.
     let mut any_collapsed = false;
-    let mut dump = Vec::new();
+    let mut snapshot = Vec::new();
     for (entity, mut camera, target, layers, is_3d) in &mut cameras {
-        if !camera.is_active {
-            continue;
-        }
         let viewport = camera.physical_viewport_size();
         let target_size = camera.physical_target_size();
-        let collapsed = viewport.is_none_or(|s| s.x == 0 || s.y == 0)
-            || target_size.is_none_or(|s| s.x == 0 || s.y == 0);
-        if !*logged {
-            dump.push(format!(
-                "  cam {entity:?}: 3d={is_3d} active=true viewport={viewport:?} \
-                 target_size={target_size:?} collapsed={collapsed} target={target:?} \
-                 layers={layers:?}"
-            ));
-        }
+        let target_kind = match target {
+            Some(RenderTarget::Window(_)) | None => "window",
+            Some(RenderTarget::Image(_)) => "image",
+            Some(RenderTarget::TextureView(_)) => "textureview",
+            Some(RenderTarget::None { .. }) => "none",
+        };
+        snapshot.push(format!(
+            "  {entity:?}: 3d={is_3d} active={} viewport={viewport:?} \
+             target_size={target_size:?} target={target_kind} layers={layers:?}",
+            camera.is_active
+        ));
+        let collapsed = camera.is_active
+            && (viewport.is_none_or(|s| s.x == 0 || s.y == 0)
+                || target_size.is_none_or(|s| s.x == 0 || s.y == 0));
         if collapsed && is_3d {
             any_collapsed = true;
             camera.is_active = false;
         }
     }
-    if any_collapsed && !*logged {
-        // ERROR level so it lands next to the clustering crash in the log tail.
+    // DIAGNOSTIC: log the full camera set whenever it changes, at ERROR so it
+    // lands in the same log tail as the clustering crash. `logged` holds the last
+    // snapshot; only re-log on change to avoid per-frame spam.
+    let snapshot = snapshot.join("\n");
+    if *logged != snapshot {
         error!(
-            "viewport: collapsed 3D camera(s) detected; deactivating to avoid the \
-             zero-size PBR clustering texture crash. Active cameras this frame:\n{}",
-            dump.join("\n")
+            "viewport: camera set changed (collapsed_3d={any_collapsed}):\n{snapshot}"
         );
+        *logged = snapshot;
     }
-    *logged = any_collapsed;
 }
 
 fn sync_preview_camera_viewport(
