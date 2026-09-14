@@ -26,7 +26,7 @@ use aestra_runtime::{
 };
 use bevy::{
     app::TransformGizmoRenderStep,
-    camera::{RenderTarget, Viewport, visibility::RenderLayers},
+    camera::{Viewport, visibility::RenderLayers},
     gizmos::transform_gizmo::{
         TransformGizmoAxis, TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode,
         TransformGizmoPlugin, TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState,
@@ -90,11 +90,7 @@ impl Plugin for ViewportPlugin {
             .add_observer(execute_viewport_action)
             .add_systems(
                 Startup,
-                (
-                    || info!("viewport: minimize-crash guard armed (rev viewport-collapse-2)"),
-                    setup_preview_scene,
-                    configure_preview_scene_gizmos,
-                )
+                (setup_preview_scene, configure_preview_scene_gizmos)
                     .chain()
                     .in_set(ViewportSet::Setup),
             )
@@ -133,24 +129,12 @@ impl Plugin for ViewportPlugin {
                     .chain()
                     .in_set(ViewportSet::Update),
             )
-            .add_systems(Last, deactivate_cameras_with_collapsed_viewport)
             .add_systems(
                 PostUpdate,
                 (
                     sync_preview_camera_viewport
                         .after(UiSystems::Layout)
-                        .before(TransformGizmoSystems)
-                        // Must restore the preview camera's viewport BEFORE PBR
-                        // cluster assignment reads it. On the frame the window is
-                        // un-minimized, `camera_system` has clamped the explicit
-                        // viewport to the (0,0) surface; if `assign_objects_to_clusters`
-                        // runs first it clears the cluster grid to zero dimensions,
-                        // then this system re-activates the camera the same frame,
-                        // leaving an active view with a zero-size cluster grid that
-                        // makes the render world build a zero-width "clustering dummy
-                        // texture" and abort. Ordering the viewport restore first
-                        // means assignment sees the real size and never clears.
-                        .before(bevy::light::SimulationLightSystems::AssignLightsToClusters),
+                        .before(TransformGizmoSystems),
                     update_emitter_transform_gizmo
                         .after(TransformGizmoSystems)
                         .before(TransformGizmoRenderStep),
@@ -636,75 +620,6 @@ fn configure_transform_gizmo_overlay_materials(
             material.alpha_mode = AlphaMode::Blend;
             material.depth_bias = 10_000.0;
         }
-    }
-}
-
-/// Deactivates any 3D camera whose computed viewport has collapsed to zero,
-/// which happens when the window is minimized (its render surface goes 0x0).
-///
-/// PBR clustering clears such a view's cluster grid to zero dimensions
-/// (`bevy_light`'s `assign_objects_to_clusters`), and the render world then
-/// tries to build a zero-width "clustering dummy texture" — a validation error
-/// that aborts the app on the first bad frame. Extraction skips inactive
-/// cameras, so marking the collapsed view inactive avoids the crash.
-///
-/// Keying off the camera's *computed* viewport is reliable where the window's
-/// own reported size is not: on some platforms winit does not report a 0x0 size
-/// on minimize, so a `window.physical_size()` guard never fires. Runs in `Last`,
-/// after all viewport computation and before render extraction.
-/// [`sync_preview_camera_viewport`] re-activates the preview camera once the
-/// window has real dimensions again.
-fn deactivate_cameras_with_collapsed_viewport(
-    mut cameras: Query<(
-        Entity,
-        &mut Camera,
-        Option<&RenderTarget>,
-        Option<&RenderLayers>,
-        Has<Camera3d>,
-    )>,
-    mut logged: Local<String>,
-) {
-    // `assign_objects_to_clusters` (bevy_light) clears a 3D view's cluster grid
-    // to zero dimensions whenever the camera's viewport OR its render target has
-    // collapsed to zero; the render world then builds a zero-width "clustering
-    // dummy texture" and the validation error quits the app. Deactivate any such
-    // active 3D camera so extraction (which skips inactive cameras) never sees
-    // it. `physical_viewport_size()` honours an explicit `Camera::viewport`, so
-    // we also check `physical_target_size()` to catch cameras whose target
-    // collapses under an explicit viewport.
-    let mut any_collapsed = false;
-    let mut snapshot = Vec::new();
-    for (entity, mut camera, target, layers, is_3d) in &mut cameras {
-        let viewport = camera.physical_viewport_size();
-        let target_size = camera.physical_target_size();
-        let target_kind = match target {
-            Some(RenderTarget::Window(_)) | None => "window",
-            Some(RenderTarget::Image(_)) => "image",
-            Some(RenderTarget::TextureView(_)) => "textureview",
-            Some(RenderTarget::None { .. }) => "none",
-        };
-        snapshot.push(format!(
-            "  {entity:?}: 3d={is_3d} active={} viewport={viewport:?} \
-             target_size={target_size:?} target={target_kind} layers={layers:?}",
-            camera.is_active
-        ));
-        let collapsed = camera.is_active
-            && (viewport.is_none_or(|s| s.x == 0 || s.y == 0)
-                || target_size.is_none_or(|s| s.x == 0 || s.y == 0));
-        if collapsed && is_3d {
-            any_collapsed = true;
-            camera.is_active = false;
-        }
-    }
-    // DIAGNOSTIC: log the full camera set whenever it changes, at ERROR so it
-    // lands in the same log tail as the clustering crash. `logged` holds the last
-    // snapshot; only re-log on change to avoid per-frame spam.
-    let snapshot = snapshot.join("\n");
-    if *logged != snapshot {
-        error!(
-            "viewport: camera set changed (collapsed_3d={any_collapsed}):\n{snapshot}"
-        );
-        *logged = snapshot;
     }
 }
 
