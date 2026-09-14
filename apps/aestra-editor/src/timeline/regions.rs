@@ -104,7 +104,7 @@ pub(super) fn split_selected_region_at_playhead(
         session.status = "Move the playhead inside the selected emitter region".into();
         return false;
     };
-    let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+    let minimum_duration = (1.0 / session.tick_rate().max(1) as f32).max(0.001);
     if playhead < region.start_time + minimum_duration
         || playhead > region.end_time() - minimum_duration
     {
@@ -538,7 +538,7 @@ fn snap_timeline_boundary(
     match mode {
         TimelineSnapMode::None => (candidate, None),
         TimelineSnapMode::Frames => {
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let snapped = (candidate / frame).round() * frame;
             (snapped, Some(snapped))
         }
@@ -549,7 +549,7 @@ fn snap_timeline_boundary(
         }
         TimelineSnapMode::Smart => {
             let threshold = view.span() / canvas_width.max(1.0) * 9.0;
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let mut targets = vec![
                 0.0,
                 session.playback_duration(),
@@ -638,7 +638,7 @@ pub(super) fn update_timeline_drag(
     snap_guide: &mut Option<f32>,
 ) {
     let effect_duration = session.playback_duration();
-    let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+    let minimum_duration = (1.0 / session.tick_rate().max(1) as f32).max(0.001);
     let pointer_delta = pointer_time - drag.pointer_start;
     *snap_guide = None;
     match drag.kind {

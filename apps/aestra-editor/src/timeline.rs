@@ -4735,7 +4735,7 @@ fn snap_effect_clip_boundary(
     match mode {
         TimelineSnapMode::None => (candidate, None),
         TimelineSnapMode::Frames => {
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let snapped = (candidate / frame).round() * frame;
             (snapped, Some(snapped))
         }
@@ -4746,7 +4746,7 @@ fn snap_effect_clip_boundary(
         }
         TimelineSnapMode::Smart => {
             let threshold = view.span() / canvas_width.max(1.0) * 9.0;
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let mut targets = vec![
                 0.0,
                 session.playback_duration(),
@@ -4788,7 +4788,7 @@ fn snap_marker_time(
     match mode {
         TimelineSnapMode::None => (candidate, None),
         TimelineSnapMode::Frames => {
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let snapped = (candidate / frame).round() * frame;
             (snapped, Some(snapped))
         }
@@ -4799,7 +4799,7 @@ fn snap_marker_time(
         }
         TimelineSnapMode::Smart => {
             let threshold = view.span() / canvas_width.max(1.0) * 9.0;
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let mut targets = vec![
                 0.0,
                 session.playback_duration(),
@@ -4844,7 +4844,7 @@ fn snap_choreography_event_time(
     match mode {
         TimelineSnapMode::None => (candidate, None),
         TimelineSnapMode::Frames => {
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let snapped = (candidate / frame).round() * frame;
             (snapped, Some(snapped))
         }
@@ -4855,7 +4855,7 @@ fn snap_choreography_event_time(
         }
         TimelineSnapMode::Smart => {
             let threshold = view.span() / canvas_width.max(1.0) * 9.0;
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let mut targets = vec![
                 0.0,
                 session.playback_duration(),
@@ -5624,7 +5624,7 @@ pub(crate) fn spawn_timeline(
                     header.spawn((
                         Text::new(format!(
                             "{} {}",
-                            session.clock.tick_rate(),
+                            session.tick_rate(),
                             localizer.text("timeline-hertz")
                         )),
                         TextFont {
@@ -8006,7 +8006,7 @@ fn navigate_timeline(
                     anchor,
                     0.82_f32.powf(amount),
                     host_motion::timeline_duration(&session),
-                    session.clock.tick_rate(),
+                    session.tick_rate(),
                 );
             }
         }
@@ -9743,7 +9743,7 @@ fn update_effect_clip_timeline_drag(
     snap_guide: &mut Option<f32>,
 ) {
     let effect_duration = session.playback_duration();
-    let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+    let minimum_duration = (1.0 / session.tick_rate().max(1) as f32).max(0.001);
     let pointer_delta = pointer_time - drag.pointer_start;
     *snap_guide = None;
     match drag.kind {

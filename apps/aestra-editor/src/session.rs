@@ -240,6 +240,12 @@ impl EditorSession {
         self.clock.frame()
     }
 
+    /// The playback tick rate. Accessor so external code does not reach into the
+    /// clock representation (which is migrating behind `EffectPlayer`, M-CR2).
+    pub fn tick_rate(&self) -> u32 {
+        self.clock.tick_rate()
+    }
+
     pub fn playback_duration(&self) -> f32 {
         self.pending_change
             .as_ref()

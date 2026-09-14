@@ -578,7 +578,7 @@ fn snap_automation_key_time(
     match mode {
         TimelineSnapMode::None => (candidate, None),
         TimelineSnapMode::Frames => {
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let snapped = (candidate / frame).round() * frame;
             (snapped, Some(snapped))
         }
@@ -589,7 +589,7 @@ fn snap_automation_key_time(
         }
         TimelineSnapMode::Smart => {
             let threshold = view.span() / canvas_width.max(1.0) * 9.0;
-            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let frame = 1.0 / session.tick_rate().max(1) as f32;
             let mut targets = vec![
                 0.0,
                 session.playback_duration(),
