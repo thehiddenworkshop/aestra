@@ -645,6 +645,9 @@ fn spawn_feathers_menu_item<'a, A: Component>(
             action,
             FeathersActionButton,
             AccessibleLabel(label.clone()),
+            // The popup's modal TabGroup focuses its first TabIndex child on open;
+            // without this it logs "No focusable menu items ... NoFocusableEntities".
+            bevy::input_focus::tab_navigation::TabIndex(0),
         ))
         .with_children(|item| {
             spawn_menu_item_content(item, message_id, shortcut, label);
@@ -666,6 +669,7 @@ fn spawn_menu_action_item(
         action,
         FeathersActionButton,
         AccessibleLabel(label.clone()),
+        bevy::input_focus::tab_navigation::TabIndex(0),
     ));
     if matches!(action, MenuAction::TogglePanelsSubmenu) {
         item.insert(PanelsSubmenuTrigger);
@@ -715,6 +719,7 @@ fn spawn_checkable_menu_item<A: Component>(
             action,
             FeathersActionButton,
             AccessibleLabel(label.clone()),
+            bevy::input_focus::tab_navigation::TabIndex(0),
         ))
         .with_children(|item| {
             item.spawn((
