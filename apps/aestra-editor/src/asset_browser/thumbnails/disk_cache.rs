@@ -5,13 +5,13 @@
 //! rendered thumbnail would change. The read/write paths (M-TC2/M-TC3) supply
 //! the fingerprints and perform the actual disk access.
 //!
-//! Not wired in yet — the load-before-render path in M-TC2 will call these.
-#![allow(dead_code)]
-
+use super::EDGE;
 use aestra_project::ResolvedEffectProject;
 use std::{
+    fs,
     hash::{Hash, Hasher},
-    path::Path,
+    io::Cursor,
+    path::{Path, PathBuf},
 };
 
 /// Bump to invalidate every cached entry when the on-disk schema changes.
@@ -69,6 +69,61 @@ pub(super) fn cache_key(content_fingerprint: u64) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     (CACHE_FORMAT_VERSION, RENDERER_VERSION, content_fingerprint).hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+/// User-level cache directory for baked thumbnails (kept out of the project so
+/// it survives `git clean` and is shared across projects). `None` if the OS
+/// cache location cannot be resolved.
+fn cache_root() -> Option<PathBuf> {
+    let base = if cfg!(target_os = "windows") {
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Caches"))
+    } else {
+        std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+    }?;
+    Some(base.join("aestra").join("thumbnails"))
+}
+
+/// Loads a cached thumbnail's `EDGE`×`EDGE` RGBA pixels, or `None` on any miss,
+/// IO error, decode failure, or unexpected dimensions (all treated as a miss).
+pub(super) fn read(key: &str) -> Option<Vec<u8>> {
+    let path = cache_root()?.join(format!("{key}.png"));
+    let image = image::load_from_memory(&fs::read(&path).ok()?)
+        .ok()?
+        .to_rgba8();
+    (image.width() == EDGE && image.height() == EDGE).then(|| image.into_raw())
+}
+
+/// Persists a rendered thumbnail's RGBA pixels as PNG, best-effort. Writes to a
+/// temp file and renames so a reader never sees a torn file; any error is
+/// ignored (the in-memory cache still holds the pixels this session).
+pub(super) fn write(key: &str, rgba: &[u8]) {
+    if rgba.len() != (EDGE * EDGE * 4) as usize {
+        return;
+    }
+    let Some(dir) = cache_root() else {
+        return;
+    };
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let Some(image) = image::RgbaImage::from_raw(EDGE, EDGE, rgba.to_vec()) else {
+        return;
+    };
+    let mut png = Vec::new();
+    if image
+        .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+        .is_err()
+    {
+        return;
+    }
+    let temp = dir.join(format!("{key}.png.tmp"));
+    if fs::write(&temp, &png).is_ok() {
+        let _ = fs::rename(&temp, dir.join(format!("{key}.png")));
+    }
 }
 
 #[cfg(test)]

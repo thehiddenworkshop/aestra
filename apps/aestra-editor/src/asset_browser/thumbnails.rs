@@ -130,6 +130,9 @@ struct ThumbnailCache {
     /// Refined camera framing captured from each effect's static thumbnail, so the
     /// hover live preview matches its size. Cleared with the rest on epoch change.
     effect_framing: BTreeMap<ProjectSourceId, (Transform, bevy::camera::OrthographicProjection)>,
+    /// Disk-cache key for each in-flight effect render, so its result can be
+    /// persisted when the GPU job completes (M-TC2/M-TC3).
+    pending_thumbnail_keys: BTreeMap<ProjectSourceId, String>,
     hover: Option<Hover>,
     tick: u64,
 }
@@ -167,6 +170,7 @@ impl ThumbnailCache {
         }
         self.entries.clear();
         self.effect_framing.clear();
+        self.pending_thumbnail_keys.clear();
         for job in &self.jobs {
             job.cancelled.store(true, Ordering::Relaxed);
         }
@@ -397,8 +401,11 @@ fn update(
             cache.entries.remove(&job.source);
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
         } else if let Some(result) = job.poll(&mut commands, &render) {
-            if result.is_ok() {
+            if let Ok(bytes) = &result {
                 cache.effect_framing.insert(job.source, job.framing());
+                if let Some(key) = cache.pending_thumbnail_keys.remove(&job.source) {
+                    disk_cache::write(&key, bytes);
+                }
             }
             cache.accept(job.source, &job.epoch, result, &mut images);
             job.cleanup(&mut commands, &mut images, render.meshes.as_deref_mut());
@@ -441,15 +448,11 @@ fn update(
             }
         }
     }
+    let stamp = catalog.content_stamp();
     for source in &wanted {
         let tick = cache.tick;
         if let Some(entry) = cache.entries.get_mut(source) {
             entry.touched = tick;
-            continue;
-        }
-        if cache.jobs.len() + usize::from(cache.gpu.is_some()) >= WORKERS
-            || !cache.room(&wanted, &mut images)
-        {
             continue;
         }
         let Some(entry) = catalog.content().source(*source).filter(|entry| {
@@ -461,10 +464,43 @@ fn update(
             continue;
         };
         let is_effect = Kind::of(entry) == Kind::Effect;
+        let root = catalog.root().to_owned();
+        // Load an effect thumbnail from the on-disk cache before rendering: a hit
+        // needs no worker slot (just a PNG decode) and no live renderer. Recording
+        // the miss avoids re-reading disk every frame while it waits for a slot.
+        if is_effect
+            && !cache.pending_thumbnail_keys.contains_key(source)
+            && let Ok(resolved) = effect::saved(catalog.content(), *source)
+            && let Some(fingerprint) = disk_cache::resolved_fingerprint(&resolved, &root, |path| {
+                stamp
+                    .file(path)
+                    .and_then(|stamp| stamp.fingerprint.clone())
+                    .and_then(Result::ok)
+            })
+        {
+            let key = disk_cache::cache_key(fingerprint);
+            if let Some(bytes) = disk_cache::read(&key) {
+                cache.entries.insert(
+                    *source,
+                    Entry {
+                        preview: Preview::Loading,
+                        touched: tick,
+                    },
+                );
+                cache.accept(*source, &epoch, Ok(bytes), &mut images);
+                continue;
+            }
+            cache.pending_thumbnail_keys.insert(*source, key);
+        }
+        // A miss renders — bounded by the worker budget and the single effect slot.
+        if cache.jobs.len() + usize::from(cache.gpu.is_some()) >= WORKERS
+            || !cache.room(&wanted, &mut images)
+        {
+            continue;
+        }
         if is_effect && (cache.gpu.is_some() || cache.jobs.iter().any(|job| job.effect)) {
             continue;
         }
-        let root = catalog.root().to_owned();
         let relative = entry.relative_path.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
