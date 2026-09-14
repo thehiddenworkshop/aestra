@@ -26,7 +26,7 @@ use aestra_runtime::{
 };
 use bevy::{
     app::TransformGizmoRenderStep,
-    camera::{Viewport, visibility::RenderLayers},
+    camera::{RenderTarget, Viewport, visibility::RenderLayers},
     gizmos::transform_gizmo::{
         TransformGizmoAxis, TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode,
         TransformGizmoPlugin, TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState,
@@ -129,7 +129,7 @@ impl Plugin for ViewportPlugin {
                     .chain()
                     .in_set(ViewportSet::Update),
             )
-            .add_systems(First, deactivate_preview_cameras_while_minimized)
+            .add_systems(Last, deactivate_cameras_with_collapsed_viewport)
             .add_systems(
                 PostUpdate,
                 (
@@ -624,26 +624,56 @@ fn configure_transform_gizmo_overlay_materials(
     }
 }
 
-/// While the window is minimized its physical size is 0x0. Bevy clamps the 3D
-/// preview camera's viewport to the render-target size, so a 0-width window
-/// produces a zero-dimension PBR cluster grid ("clustering dummy texture:
-/// Dimension X is zero") that aborts the renderer on the very first bad frame.
+/// Deactivates any 3D camera whose computed viewport has collapsed to zero,
+/// which happens when the window is minimized (its render surface goes 0x0).
 ///
-/// This runs in `First` — before PBR's `PostUpdate` cluster assignment — so the
-/// camera is guaranteed inactive by the time clustering looks at it, regardless
-/// of `PostUpdate` system ordering. [`sync_preview_camera_viewport`] re-activates
-/// it (in `PostUpdate`, after layout) once the window has real dimensions again.
-fn deactivate_preview_cameras_while_minimized(
-    window: Single<&Window, With<PrimaryWindow>>,
-    mut preview_camera: Single<&mut Camera, With<PreviewRenderCamera>>,
-    mut overlay_cameras: Query<
-        (&RenderLayers, &mut Camera),
-        (With<Camera3d>, Without<PreviewRenderCamera>),
+/// PBR clustering clears such a view's cluster grid to zero dimensions
+/// (`bevy_light`'s `assign_objects_to_clusters`), and the render world then
+/// tries to build a zero-width "clustering dummy texture" — a validation error
+/// that aborts the app on the first bad frame. Extraction skips inactive
+/// cameras, so marking the collapsed view inactive avoids the crash.
+///
+/// Keying off the camera's *computed* viewport is reliable where the window's
+/// own reported size is not: on some platforms winit does not report a 0x0 size
+/// on minimize, so a `window.physical_size()` guard never fires. Runs in `Last`,
+/// after all viewport computation and before render extraction.
+/// [`sync_preview_camera_viewport`] re-activates the preview camera once the
+/// window has real dimensions again.
+fn deactivate_cameras_with_collapsed_viewport(
+    mut cameras: Query<
+        (Entity, &mut Camera, Option<&RenderTarget>, Option<&RenderLayers>),
+        With<Camera3d>,
     >,
+    mut logged: Local<bool>,
 ) {
-    if window.physical_width() == 0 || window.physical_height() == 0 {
-        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
+    let mut any_collapsed = false;
+    for (entity, mut camera, target, layers) in &mut cameras {
+        if !camera.is_active {
+            continue;
+        }
+        let collapsed = camera
+            .physical_viewport_size()
+            .is_none_or(|size| size.x == 0 || size.y == 0);
+        if !collapsed {
+            continue;
+        }
+        any_collapsed = true;
+        if !*logged {
+            info!(
+                "viewport: deactivating collapsed 3D camera {entity:?} \
+                 (viewport={:?}, target={target:?}, layers={layers:?}) to avoid \
+                 the zero-size PBR clustering texture crash",
+                camera.physical_viewport_size(),
+            );
+        }
+        // Off-screen image targets (asset thumbnails) keep a fixed, nonzero size,
+        // so a collapse there is unexpected — log it, but only deactivate
+        // window-backed views, whose activation is restored elsewhere.
+        if !matches!(target, Some(RenderTarget::Image(_))) {
+            camera.is_active = false;
+        }
     }
+    *logged = any_collapsed;
 }
 
 fn sync_preview_camera_viewport(
@@ -655,13 +685,6 @@ fn sync_preview_camera_viewport(
         (With<Camera3d>, Without<PreviewRenderCamera>),
     >,
 ) {
-    // Belt-and-suspenders: also skip viewport sizing while minimized (the
-    // `First`-schedule `deactivate_preview_cameras_while_minimized` does the
-    // load-bearing deactivation ahead of PBR clustering).
-    if window.physical_width() == 0 || window.physical_height() == 0 {
-        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
-        return;
-    }
     let Ok((computed, transform)) = canvas.single() else {
         set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
         return;
