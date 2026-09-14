@@ -632,6 +632,16 @@ fn sync_preview_camera_viewport(
         (With<Camera3d>, Without<PreviewRenderCamera>),
     >,
 ) {
+    // While the window is minimized its physical size is 0x0. Bevy clamps the
+    // camera's viewport to the render-target size, so a 0-width window produces a
+    // zero-dimension PBR cluster grid ("clustering dummy texture: Dimension X is
+    // zero") that aborts the renderer. Deactivate the 3D cameras until the window
+    // has real dimensions again. (The canvas ComputedNode guard below misses this
+    // because UI layout does not recompute the canvas to <16px while minimized.)
+    if window.physical_width() == 0 || window.physical_height() == 0 {
+        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
+        return;
+    }
     let Ok((computed, transform)) = canvas.single() else {
         set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
         return;
