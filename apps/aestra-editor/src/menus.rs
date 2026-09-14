@@ -799,7 +799,7 @@ pub(crate) fn spawn_about_overlay(
             overlay
                 .spawn((
                     Node {
-                        width: Val::Px(430.0),
+                        width: Val::Px(520.0),
                         padding: UiRect::all(Val::Px(24.0)),
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
@@ -815,7 +815,7 @@ pub(crate) fn spawn_about_overlay(
                     dialog.spawn((
                         ImageNode::new(asset_server.load("project/title.png")),
                         Node {
-                            width: Val::Px(240.0),
+                            width: Val::Px(460.0),
                             ..default()
                         },
                     ));
