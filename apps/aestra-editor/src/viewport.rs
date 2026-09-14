@@ -644,22 +644,26 @@ fn configure_transform_gizmo_overlay_materials(
 /// [`sync_preview_camera_viewport`] re-activates the preview camera once the
 /// window has real dimensions again.
 fn deactivate_cameras_with_collapsed_viewport(
-    mut cameras: Query<
-        (Entity, &mut Camera, Option<&RenderTarget>, Option<&RenderLayers>),
-        With<Camera3d>,
-    >,
+    mut cameras: Query<(
+        Entity,
+        &mut Camera,
+        Option<&RenderTarget>,
+        Option<&RenderLayers>,
+        Has<Camera3d>,
+    )>,
     mut logged: Local<bool>,
 ) {
-    // `assign_objects_to_clusters` (bevy_light) clears a view's cluster grid to
-    // zero dimensions whenever the camera's viewport OR its render target has
+    // `assign_objects_to_clusters` (bevy_light) clears a 3D view's cluster grid
+    // to zero dimensions whenever the camera's viewport OR its render target has
     // collapsed to zero; the render world then builds a zero-width "clustering
     // dummy texture" and the validation error quits the app. Deactivate any such
     // active 3D camera so extraction (which skips inactive cameras) never sees
     // it. `physical_viewport_size()` honours an explicit `Camera::viewport`, so
-    // we also check `physical_target_size()` directly to catch cameras that let
-    // the target collapse under an explicit viewport.
+    // we also check `physical_target_size()` to catch cameras whose target
+    // collapses under an explicit viewport.
     let mut any_collapsed = false;
-    for (entity, mut camera, target, layers) in &mut cameras {
+    let mut dump = Vec::new();
+    for (entity, mut camera, target, layers, is_3d) in &mut cameras {
         if !camera.is_active {
             continue;
         }
@@ -667,19 +671,25 @@ fn deactivate_cameras_with_collapsed_viewport(
         let target_size = camera.physical_target_size();
         let collapsed = viewport.is_none_or(|s| s.x == 0 || s.y == 0)
             || target_size.is_none_or(|s| s.x == 0 || s.y == 0);
-        if !collapsed {
-            continue;
-        }
-        any_collapsed = true;
         if !*logged {
-            info!(
-                "viewport: deactivating collapsed 3D camera {entity:?} \
-                 (viewport={viewport:?}, target_size={target_size:?}, \
-                 target={target:?}, layers={layers:?}) to avoid the zero-size \
-                 PBR clustering texture crash"
-            );
+            dump.push(format!(
+                "  cam {entity:?}: 3d={is_3d} active=true viewport={viewport:?} \
+                 target_size={target_size:?} collapsed={collapsed} target={target:?} \
+                 layers={layers:?}"
+            ));
         }
-        camera.is_active = false;
+        if collapsed && is_3d {
+            any_collapsed = true;
+            camera.is_active = false;
+        }
+    }
+    if any_collapsed && !*logged {
+        // ERROR level so it lands next to the clustering crash in the log tail.
+        error!(
+            "viewport: collapsed 3D camera(s) detected; deactivating to avoid the \
+             zero-size PBR clustering texture crash. Active cameras this frame:\n{}",
+            dump.join("\n")
+        );
     }
     *logged = any_collapsed;
 }
