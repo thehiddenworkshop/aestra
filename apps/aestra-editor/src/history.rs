@@ -1492,8 +1492,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_program(original.id)
@@ -1527,8 +1526,7 @@ mod tests {
         assert_eq!(
             app.world()
                 .resource::<EditorSession>()
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_program(original.id)
@@ -1543,8 +1541,7 @@ mod tests {
         assert_eq!(
             app.world()
                 .resource::<EditorSession>()
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_program(original.id)

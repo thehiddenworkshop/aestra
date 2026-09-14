@@ -6652,8 +6652,7 @@ mod tests {
         let wrapper = *added.created_expressions.last().unwrap();
         assert!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_program(program.id)
@@ -6677,8 +6676,7 @@ mod tests {
         .unwrap();
         assert!(
             !session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_program(program.id)

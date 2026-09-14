@@ -962,7 +962,7 @@ mod tests {
                 session.open(&original).unwrap();
                 session.seek_time(0.5);
                 session.playing = false;
-                let clock = session.clock;
+                let clock = session.driver.clock;
                 let catalog = ProjectEffectCatalog::scan(root.path());
                 let choice = DropChoice {
                     source: catalog
@@ -1000,7 +1000,7 @@ mod tests {
                 assert_eq!(destination.exists(), !edit);
                 assert_eq!(original.exists(), copy || edit);
                 let session = app.world().resource::<EditorSession>();
-                assert_eq!(session.clock, clock);
+                assert_eq!(session.driver.clock, clock);
                 assert_eq!(
                     session.source_path.as_ref().unwrap(),
                     if copy || edit {

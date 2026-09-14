@@ -3924,7 +3924,7 @@ mod tests {
         assert_eq!(session.solo_emitter, Some(target));
         assert_eq!(session.effect, original_effect);
         assert!(!session.dirty);
-        let preview = session.preview.as_ref().unwrap().effect();
+        let preview = session.preview().unwrap().effect();
         assert!(
             preview
                 .emitters

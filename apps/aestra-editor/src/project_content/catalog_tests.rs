@@ -197,8 +197,7 @@ fn clean_external_reload_resolves_project_materials() {
     assert_eq!(session.effect.name, effect.name);
     assert!(
         session
-            .preview
-            .as_ref()
+            .preview()
             .unwrap()
             .effect()
             .material_program(program.id)

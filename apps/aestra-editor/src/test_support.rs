@@ -134,7 +134,7 @@ mod tests {
 
         assert!(emitter.start_time > 0.0);
         assert!(emitter.start_time + emitter.duration < session.effect.duration);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
     }
 
     #[test]

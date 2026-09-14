@@ -30,8 +30,7 @@ fn displayed_keys(count: usize, selected: Option<usize>) -> Vec<usize> {
 
 fn displayed_track(session: &EditorSession) -> Option<&HostTransformTrack> {
     session
-        .preview
-        .as_ref()
+        .preview()
         .and_then(|preview| preview.host_transform_track())
         .map(|track| track.source())
         .or(session.effect.host_transform_track.as_ref())

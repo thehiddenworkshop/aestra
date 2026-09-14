@@ -826,7 +826,7 @@ mod tests {
             assert!(session.can_redo());
             session.seek_time(0.5);
             session.playing = false;
-            let clock = session.clock;
+            let clock = session.driver.clock;
             let generation = session.history_generation();
             if edit_phase == 1 {
                 session.execute(
@@ -881,7 +881,7 @@ mod tests {
                 assert_eq!(session.effect, effect);
                 assert_eq!(session.source_path.as_ref(), Some(&new));
                 assert_eq!(session.history_generation(), generation);
-                assert_eq!(session.clock, clock);
+                assert_eq!(session.driver.clock, clock);
                 assert!(!session.playing);
                 assert!(session.can_redo());
                 assert!(!session.effect_is_dirty());

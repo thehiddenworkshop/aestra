@@ -202,8 +202,7 @@ fn generic_refresh_publishes_tree_without_bevy_ui_or_playback_invalidation() {
     let content_revision = world.resource::<EditorProjectContent>().content_revision();
     let preview = world
         .resource::<EditorSession>()
-        .preview
-        .as_ref()
+        .preview()
         .unwrap()
         .effect()
         .clone();
@@ -229,7 +228,7 @@ fn generic_refresh_publishes_tree_without_bevy_ui_or_playback_invalidation() {
     assert_eq!(session.status, status);
     assert!(std::sync::Arc::ptr_eq(
         &preview,
-        session.preview.as_ref().unwrap().effect()
+        session.preview().unwrap().effect()
     ));
 }
 

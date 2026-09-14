@@ -68,7 +68,7 @@ fn extraction_publishes_a_compiled_preview_and_keeps_existing_undo_history() {
         SemanticTarget::EffectClip(_)
     ));
     assert!(session.effect.emitters.is_empty());
-    assert!(session.preview.is_some());
+    assert!(session.preview().is_some());
     assert!(directory.path().join("extracted.aestra.ron").exists());
     world.resource_mut::<EditorSession>().undo();
     assert_eq!(world.resource::<EditorSession>().effect, edited);
@@ -88,7 +88,7 @@ fn extraction_never_replaces_a_newer_owner_edit() {
     let edited = world.resource::<EditorSession>().effect.clone();
     completion.apply(&mut world);
     assert_eq!(world.resource::<EditorSession>().effect, edited);
-    assert!(world.resource::<EditorSession>().preview.is_some());
+    assert!(world.resource::<EditorSession>().preview().is_some());
     assert!(directory.path().join("extracted.aestra.ron").exists());
     assert!(world.resource::<AssetOperationState>().extraction.is_none());
 }
@@ -105,6 +105,6 @@ fn copying_a_reusable_source_does_not_replace_the_live_session() {
     let edited = world.resource::<EditorSession>().effect.clone();
     completion.apply(&mut world);
     assert_eq!(world.resource::<EditorSession>().effect, edited);
-    assert!(world.resource::<EditorSession>().preview.is_some());
+    assert!(world.resource::<EditorSession>().preview().is_some());
     assert!(directory.path().join("extracted.aestra.ron").exists());
 }

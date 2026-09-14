@@ -88,7 +88,7 @@ fn apply(world: &mut World, guard: IoGuard, mut result: SourceResult) {
             session.ui_revision += 1;
         } else if unchanged {
             let live = world.resource::<EditorSession>();
-            result.session.clock = live.clock;
+            result.session.driver.clock = live.driver.clock;
             result.session.playing = live.playing;
             result.session.speed = live.speed;
             result.session.ui_revision = live.ui_revision + 1;

@@ -85,8 +85,7 @@ pub(crate) fn spawn_compiler_inspector_workspace(
         return;
     }
     let compiled = session
-        .preview
-        .as_ref()
+        .preview()
         .map(|preview| preview.effect().as_ref());
     let (state_label, state_color) = compiler_inspector_status(session, compiled.is_some());
 
@@ -178,7 +177,7 @@ pub(crate) fn spawn_compiler_inspector_workspace(
                         },
                         |content| {
                             spawn_compiled_layout(content, compiled, localizer);
-                            if let Some(instance) = &session.preview
+                            if let Some(instance) = session.preview()
                                 && let Ok(summary) =
                                     aestra_bevy_render::gpu::estimate_particle_attributes(instance)
                             {
@@ -1017,7 +1016,7 @@ mod tests {
     #[test]
     fn compiler_inspector_uses_the_live_compiler_artifact() {
         let session = test_support::session_with_timing_slack();
-        let compiled = session.preview.as_ref().unwrap().effect();
+        let compiled = session.preview().unwrap().effect();
         let instruction_count = compiled
             .emitters
             .iter()

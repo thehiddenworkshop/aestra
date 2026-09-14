@@ -1212,8 +1212,7 @@ mod tests {
         assert_eq!(session.ui_revision, revision);
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .host_transform_at(1.0)
                 .translation[0],
@@ -1223,15 +1222,14 @@ mod tests {
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         assert!(session.dirty);
         session.seek_time(0.5);
-        let edited = session.preview.as_ref().unwrap().host_transform_at(0.5);
+        let edited = session.preview().unwrap().host_transform_at(0.5);
         assert_eq!(edited.translation[0], 9.0);
         session.undo();
         assert_eq!(session.effect.host_transform_track, Some(track()));
         assert!(!session.can_undo());
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .host_transform_at(0.5)
                 .translation[0],
@@ -1239,7 +1237,7 @@ mod tests {
         );
         session.redo();
         assert_eq!(
-            session.preview.as_ref().unwrap().host_transform_at(0.5),
+            session.preview().unwrap().host_transform_at(0.5),
             edited
         );
     }
@@ -1276,8 +1274,7 @@ mod tests {
         assert!(!session.can_undo());
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .host_transform_at(1.0)
                 .scale[0],
@@ -1309,8 +1306,7 @@ mod tests {
         assert!(!session.can_undo());
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .host_transform_at(1.0)
                 .translation[0],
@@ -1334,8 +1330,7 @@ mod tests {
         assert!(!session.can_undo());
         assert_eq!(
             session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .host_transform_at(1.0)
                 .translation[0],

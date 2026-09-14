@@ -1797,8 +1797,7 @@ mod tests {
         assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
         assert!(
             !session
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
                 .material_programs
@@ -1971,7 +1970,7 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Material Graph Lab");
         assert_eq!(session.source_path.as_deref(), Some(effect_path.as_path()));
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
     }
 
     #[test]

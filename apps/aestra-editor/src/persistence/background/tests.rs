@@ -222,7 +222,7 @@ fn prepared_open_is_atomic_and_publication_never_reopens_the_disk() {
     completion.apply(app.world_mut());
     let session = app.world().resource::<EditorSession>();
     assert_eq!(session.effect, target);
-    assert!(session.preview.is_some());
+    assert!(session.preview().is_some());
     assert_eq!(
         app.world()
             .resource::<ProjectEffectCatalog>()
@@ -282,7 +282,7 @@ fn prepared_open_rejects_newer_edits_and_preserves_preview_and_navigation() {
     let session = app.world().resource::<EditorSession>();
     assert_eq!(session.effect, edited);
     assert!(session.dirty);
-    assert!(session.preview.is_some());
+    assert!(session.preview().is_some());
     assert_eq!(
         app.world()
             .resource::<crate::project_content::ProjectEffectWatchState>()
@@ -334,7 +334,7 @@ fn failed_open_after_discard_keeps_the_original_dirty_document() {
     let session = app.world().resource::<EditorSession>();
     assert_eq!(session.effect, original);
     assert!(session.dirty);
-    assert!(session.preview.is_some());
+    assert!(session.preview().is_some());
     assert!(session.status.contains("failed"));
 }
 
@@ -359,7 +359,7 @@ fn save_completion_keeps_newer_edits_undo_and_transport() {
     let mut session = app.world_mut().resource_mut::<EditorSession>();
     assert_eq!(session.effect, edited);
     assert!(session.dirty);
-    assert_eq!(session.clock.time(session.playback_duration()), 0.7);
+    assert_eq!(session.driver.clock.time(session.playback_duration()), 0.7);
     assert!(!session.playing);
     assert_eq!(
         EffectAsset::load_ron(directory.path().join("current.aestra.ron")).unwrap(),
@@ -471,7 +471,7 @@ fn background_navigation_restores_parent_playhead_selection_and_forward_history(
         session.selection.primary,
         aestra_authoring::SemanticTarget::Emitter(id)
     );
-    assert_eq!(session.clock.time(session.playback_duration()), 0.6);
+    assert_eq!(session.driver.clock.time(session.playback_duration()), 0.6);
     assert!(!session.playing);
     assert!(
         app.world()

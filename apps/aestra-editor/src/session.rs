@@ -14,8 +14,8 @@ use aestra_core::{
     Value,
 };
 use aestra_runtime::{
-    CheckpointBackendId, CheckpointContext, CheckpointStore, CompiledEffect, EffectInstance,
-    PlaybackClock, SeekOrigin, SeekPlan, SimulationSeekMode,
+    CheckpointBackendId, CheckpointContext, CheckpointPolicy, CompiledEffect, EffectInstance,
+    PlaybackDriver, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 use bevy::prelude::Resource;
 use std::{
@@ -61,7 +61,13 @@ pub(crate) struct EditorSession {
     pub last_diff: EffectDiff,
     pub pending_change: Option<PendingChange>,
     interaction_source: Option<EffectAsset>,
-    pub clock: PlaybackClock,
+    /// Shared playhead clock + simulated instance + backward-scrub checkpoint cache
+    /// (client-runtime unification, M-CR2). The editor keeps its own seek/advance
+    /// orchestration and delegates the identical leaf primitives to the driver.
+    pub(crate) driver: PlaybackDriver,
+    /// False while the last preview compile failed: the driver still holds the previous
+    /// instance, but it must not be presented or evaluated. `preview()` gates on this.
+    preview_valid: bool,
     pub preview_seed: u64,
     pub solo_emitter: Option<EmitterId>,
     pub playing: bool,
@@ -70,14 +76,12 @@ pub(crate) struct EditorSession {
     pub(crate) material_drafts: crate::material_drafts::MaterialDrafts,
     pub status: String,
     pub samples: Vec<aestra_runtime::ParticleSample>,
-    pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
     pub(crate) operation_order: crate::history::asset_order::EditOrder,
     history_generation: u64,
     saved_effect: Option<EffectAsset>,
     saved_source_bytes: Option<Vec<u8>>,
-    checkpoints: CheckpointStore<EffectInstance>,
     effect_revision: u64,
     last_seek: SeekPlan,
 }
@@ -99,7 +103,13 @@ impl EditorSession {
             last_diff: self.last_diff.clone(),
             pending_change: None,
             interaction_source: None,
-            clock: self.clock,
+            // Detached for I/O: keep the playhead, drop particle history and checkpoints.
+            driver: {
+                let mut driver = new_playback_driver(self.driver.instance.clone());
+                driver.clock = self.driver.clock;
+                driver
+            },
+            preview_valid: false,
             preview_seed: self.preview_seed,
             solo_emitter: self.solo_emitter,
             playing: self.playing,
@@ -108,14 +118,12 @@ impl EditorSession {
             material_drafts: self.material_drafts.clone(),
             status: self.status.clone(),
             samples: Vec::new(),
-            preview: None,
             ui_revision: self.ui_revision,
             history: self.history.clone(),
             operation_order: self.operation_order.clone(),
             history_generation: self.history_generation,
             saved_effect: self.saved_effect.clone(),
             saved_source_bytes: self.saved_source_bytes.clone(),
-            checkpoints: CheckpointStore::default(),
             effect_revision: self.effect_revision,
             last_seek: self.last_seek,
         }
@@ -160,7 +168,8 @@ impl EditorSession {
             last_diff: EffectDiff::default(),
             pending_change: None,
             interaction_source: None,
-            clock: PlaybackClock::default(),
+            driver: new_playback_driver(preview),
+            preview_valid: true,
             preview_seed,
             solo_emitter: None,
             playing: true,
@@ -169,14 +178,12 @@ impl EditorSession {
             material_drafts: Default::default(),
             status,
             samples: Vec::with_capacity(384),
-            preview: Some(preview),
             ui_revision: 0,
             history: CommandHistory::default(),
             operation_order: Default::default(),
             history_generation: 0,
             saved_effect: Some(saved_effect),
             saved_source_bytes: None,
-            checkpoints: CheckpointStore::default(),
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
         }
@@ -194,12 +201,48 @@ impl EditorSession {
         )
     }
 
-    pub fn restart(&mut self) {
-        self.clock.restart();
-        if let Some(preview) = &mut self.preview {
-            preview.restart();
-            preview.set_seed(self.preview_seed);
+    /// The compiled preview instance, or `None` while the last compile failed.
+    pub fn preview(&self) -> Option<&EffectInstance> {
+        if self.preview_valid {
+            Some(&self.driver.instance)
+        } else {
+            None
         }
+    }
+
+    /// Mutable access to the compiled preview instance, or `None` while the last compile failed.
+    pub fn preview_mut(&mut self) -> Option<&mut EffectInstance> {
+        if self.preview_valid {
+            Some(&mut self.driver.instance)
+        } else {
+            None
+        }
+    }
+
+    /// Installs a freshly compiled preview instance and marks it presentable.
+    fn set_preview(&mut self, instance: EffectInstance) {
+        self.driver.instance = instance;
+        self.preview_valid = true;
+    }
+
+    /// Installs a compiled preview when `Some`, or marks the current instance stale when `None`.
+    /// The stale instance is retained (the driver owns one) but hidden behind [`Self::preview`].
+    fn set_preview_opt(&mut self, instance: Option<EffectInstance>) {
+        match instance {
+            Some(instance) => self.set_preview(instance),
+            None => self.preview_valid = false,
+        }
+    }
+
+    /// Restarts the playhead and the preview instance to frame zero, preserving the seed.
+    fn restart_playhead(&mut self) {
+        self.driver.clock.restart();
+        self.driver.instance.restart();
+        self.driver.instance.set_seed(self.preview_seed);
+    }
+
+    pub fn restart(&mut self) {
+        self.restart_playhead();
         self.last_seek = SeekPlan {
             target_frame: 0,
             origin: SeekOrigin::Restart,
@@ -210,11 +253,7 @@ impl EditorSession {
     }
 
     pub fn stop(&mut self) {
-        self.clock.restart();
-        if let Some(preview) = &mut self.preview {
-            preview.restart();
-            preview.set_seed(self.preview_seed);
-        }
+        self.restart_playhead();
         self.last_seek = SeekPlan {
             target_frame: 0,
             origin: SeekOrigin::Restart,
@@ -225,25 +264,25 @@ impl EditorSession {
     }
 
     pub fn time(&self) -> f32 {
-        self.clock.time(self.playback_duration())
+        self.driver.clock.time(self.playback_duration())
     }
 
     pub fn simulation_time(&self) -> f32 {
         if self.playback_mode().is_continuous() {
-            self.clock.elapsed_time()
+            self.driver.clock.elapsed_time()
         } else {
             self.time()
         }
     }
 
     pub fn frame(&self) -> u64 {
-        self.clock.frame()
+        self.driver.clock.frame()
     }
 
     /// The playback tick rate. Accessor so external code does not reach into the
-    /// clock representation (which is migrating behind `EffectPlayer`, M-CR2).
+    /// clock representation (now owned by the shared [`PlaybackDriver`], M-CR2).
     pub fn tick_rate(&self) -> u32 {
-        self.clock.tick_rate()
+        self.driver.tick_rate()
     }
 
     pub fn playback_duration(&self) -> f32 {
@@ -265,15 +304,14 @@ impl EditorSession {
     }
 
     pub fn seek_mode(&self) -> SimulationSeekMode {
-        self.preview
-            .as_ref()
+        self.preview()
             .map_or(SimulationSeekMode::RestartReplay, |preview| {
                 preview.effect().seek_mode
             })
     }
 
     pub fn seek_status(&self) -> String {
-        if self.preview.as_ref().is_some_and(|preview| {
+        if self.preview().is_some_and(|preview| {
             preview
                 .effect()
                 .emitters
@@ -292,12 +330,18 @@ impl EditorSession {
         }
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => "DIRECT SEEK · STATELESS".into(),
-            SimulationSeekMode::CheckpointRestore => format!(
-                "{} CHECKPOINTS · {} KB · {}",
-                self.checkpoints.len(),
-                self.checkpoints.estimated_bytes().div_ceil(1024),
-                seek_origin_label(self.last_seek.origin)
-            ),
+            SimulationSeekMode::CheckpointRestore => {
+                let (count, bytes) = self
+                    .driver
+                    .checkpoints()
+                    .map_or((0, 0), |store| (store.len(), store.estimated_bytes()));
+                format!(
+                    "{} CHECKPOINTS · {} KB · {}",
+                    count,
+                    bytes.div_ceil(1024),
+                    seek_origin_label(self.last_seek.origin)
+                )
+            }
             SimulationSeekMode::RestartReplay => format!(
                 "RESTART + REPLAY FALLBACK · {}",
                 seek_origin_label(self.last_seek.origin)
@@ -307,7 +351,7 @@ impl EditorSession {
 
     pub fn seek_time(&mut self, time: f32) {
         let duration = self.playback_duration();
-        let mut target = self.clock;
+        let mut target = self.driver.clock;
         target.seek_seconds(time, duration);
         self.seek_frame(target.frame());
     }
@@ -326,8 +370,8 @@ impl EditorSession {
             return false;
         }
         self.solo_emitter = (self.solo_emitter != Some(emitter)).then_some(emitter);
-        self.checkpoints.clear();
-        self.clock.restart();
+        self.driver.clear_checkpoints();
+        self.driver.clock.restart();
         self.refresh_preview();
         self.status = if self.solo_emitter.is_some() {
             "Soloing emitter in preview".into()
@@ -344,18 +388,19 @@ impl EditorSession {
         }
         let duration = self.playback_duration();
         let playback_mode = self.playback_mode();
-        let result = self.clock.advance(
+        let result = self.driver.clock.advance(
             delta_seconds,
             self.speed,
             duration,
             playback_mode.is_looping(),
         );
-        if self.seek_mode() != SimulationSeekMode::StatelessDirect
-            && let Some(preview) = &mut self.preview
-        {
-            let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+        // Live playback intentionally advances the instance without recording checkpoints;
+        // the editor only checkpoints during scrub-replay. (Seek/scrub delegates to the
+        // driver; this advance loop stays host-specific — M-CR2.)
+        if self.seek_mode() != SimulationSeekMode::StatelessDirect && self.preview_valid {
+            let tick_seconds = 1.0 / self.driver.clock.tick_rate() as f32;
             for _ in 0..result.ticks {
-                preview.advance(tick_seconds);
+                self.driver.instance.advance(tick_seconds);
             }
         }
         if result.reached_end {
@@ -367,7 +412,7 @@ impl EditorSession {
     pub fn evaluate_preview(&mut self, output: &mut Vec<aestra_runtime::ParticleSample>) {
         let time = self.simulation_time();
         let mode = self.seek_mode();
-        let Some(preview) = &mut self.preview else {
+        let Some(preview) = self.preview_mut() else {
             output.clear();
             return;
         };
@@ -378,17 +423,22 @@ impl EditorSession {
         self.record_checkpoint_if_due();
     }
 
+    /// Scrubs to a frame using the editor's discontinuity policy. The plan/restore/replay
+    /// primitives are shared with the runtime via the driver's checkpoint cache; the arm
+    /// dispatch (and its epoch handling) stays here so the editor keeps its exact scrub feel.
     fn seek_frame(&mut self, target_frame: u64) {
         let duration = self.playback_duration();
-        let target_frame = target_frame.min(self.clock.maximum_frame(duration));
+        let target_frame = target_frame.min(self.driver.clock.maximum_frame(duration));
         let context = self.checkpoint_context();
         let mode = self.seek_mode();
-        let plan = self
-            .checkpoints
-            .plan_seek(mode, &context, self.frame(), target_frame);
+        let current_frame = self.driver.clock.frame();
+        let store = self
+            .driver
+            .checkpoints()
+            .expect("the editor keeps the scrub checkpoint cache enabled");
+        let plan = store.plan_seek(mode, &context, current_frame, target_frame);
         let restored = match plan.origin {
-            SeekOrigin::Checkpoint { frame } => self
-                .checkpoints
+            SeekOrigin::Checkpoint { frame } => store
                 .nearest_at_or_before(&context, frame)
                 .map(|checkpoint| checkpoint.state.clone()),
             _ => None,
@@ -396,17 +446,17 @@ impl EditorSession {
 
         match plan.origin {
             SeekOrigin::Direct => {
-                self.clock.seek_frame(target_frame, duration);
+                self.driver.clock.seek_frame(target_frame, duration);
                 let time = self.time();
-                if let Some(preview) = &mut self.preview {
+                if let Some(preview) = self.preview_mut() {
                     preview.seek(time);
                 }
             }
             SeekOrigin::Current => self.replay_ticks(plan.replay_ticks),
             SeekOrigin::Checkpoint { frame } => {
                 if let Some(preview) = restored {
-                    self.preview = Some(preview);
-                    self.clock.seek_frame(frame, duration);
+                    self.set_preview(preview);
+                    self.driver.clock.seek_frame(frame, duration);
                     self.replay_ticks(plan.replay_ticks);
                 } else {
                     self.restart_for_replay();
@@ -428,34 +478,34 @@ impl EditorSession {
         );
     }
 
+    /// Steps the playhead forward `ticks`, replaying the simulation and recording checkpoints.
+    /// Delegates to the shared driver when a valid preview exists; otherwise steps the clock
+    /// only, matching the previous behavior when the preview failed to compile.
     fn replay_ticks(&mut self, ticks: u64) {
         let duration = self.playback_duration();
-        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
-        for _ in 0..ticks {
-            self.clock.step_forward(duration);
-            if let Some(preview) = &mut self.preview {
-                preview.advance(tick_seconds);
+        if self.preview_valid {
+            let mode = self.seek_mode();
+            let context = self.checkpoint_context();
+            self.driver.replay_ticks(ticks, duration, mode, &context);
+        } else {
+            for _ in 0..ticks {
+                self.driver.clock.step_forward(duration);
             }
-            self.record_checkpoint_if_due();
         }
     }
 
     fn restart_for_replay(&mut self) {
-        self.clock.restart();
-        if let Some(preview) = &mut self.preview {
-            preview.restart();
-            preview.set_seed(self.preview_seed);
-        }
+        self.restart_playhead();
     }
 
     fn restore_preview_frame(&mut self, frame: u64) {
         let duration = self.playback_duration();
-        let frame = frame.min(self.clock.maximum_frame(duration));
+        let frame = frame.min(self.driver.clock.maximum_frame(duration));
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => {
-                self.clock.seek_frame(frame, duration);
+                self.driver.clock.seek_frame(frame, duration);
                 let time = self.time();
-                if let Some(preview) = &mut self.preview {
+                if let Some(preview) = self.preview_mut() {
                     preview.seek(time);
                 }
                 self.last_seek = direct_seek_plan(frame);
@@ -472,23 +522,17 @@ impl EditorSession {
         }
     }
 
+    /// Records a scrub checkpoint at the current frame when due. Playback replay records
+    /// through the driver directly; this helper only backs the test-only `evaluate_preview`.
+    #[cfg(test)]
     fn record_checkpoint_if_due(&mut self) {
-        if self.seek_mode() != SimulationSeekMode::CheckpointRestore
-            || !self.checkpoints.policy().should_capture(self.frame())
-        {
+        if !self.preview_valid {
             return;
         }
-        let Some(preview) = self.preview.clone() else {
-            return;
-        };
-        let estimated_bytes = std::mem::size_of::<EffectInstance>()
-            + std::mem::size_of_val(preview.parameter_values());
-        self.checkpoints.insert(
-            self.checkpoint_context(),
-            self.frame(),
-            preview,
-            estimated_bytes,
-        );
+        let mode = self.seek_mode();
+        let context = self.checkpoint_context();
+        let frame = self.driver.clock.frame();
+        self.driver.record_checkpoint(mode, &context, frame);
     }
 
     fn checkpoint_context(&self) -> CheckpointContext {
@@ -517,7 +561,7 @@ impl EditorSession {
         self.effect = blank_effect();
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
-        self.preview = Some(
+        self.set_preview(
             compile_preview(&self.effect, self.preview_seed).expect("blank effect must compile"),
         );
         self.source_path = None;
@@ -528,7 +572,7 @@ impl EditorSession {
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
         self.pending_change = None;
-        self.clock.restart();
+        self.driver.clock.restart();
         self.playing = false;
         self.dirty = true;
         self.saved_effect = None;
@@ -585,7 +629,7 @@ impl EditorSession {
             )?
         };
         self.invalidate_effect_checkpoints();
-        self.preview = Some(preview);
+        self.set_preview(preview);
         self.samples.clear();
         self.diagnostics = self.effect.validation_report();
         Ok(())
@@ -626,7 +670,7 @@ impl EditorSession {
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
-        self.preview = Some(preview);
+        self.set_preview(preview);
         self.source_path = Some(path.to_owned());
         self.selection = Selection::for_effect(&self.effect);
         self.material_target = Default::default();
@@ -635,7 +679,7 @@ impl EditorSession {
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
         self.pending_change = None;
-        self.clock.restart();
+        self.driver.clock.restart();
         self.playing = false;
         self.dirty = false;
         self.history.clear();
@@ -657,7 +701,7 @@ impl EditorSession {
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
-        self.preview = preview;
+        self.set_preview_opt(preview);
         self.source_path = source_path;
         self.selection = Selection::for_effect(&self.effect);
         self.material_target = Default::default();
@@ -666,7 +710,7 @@ impl EditorSession {
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
         self.pending_change = None;
-        self.clock.restart();
+        self.driver.clock.restart();
         self.playing = false;
         self.saved_effect = saved_effect;
         self.update_dirty_state();
@@ -900,10 +944,10 @@ impl EditorSession {
         ) else {
             return false;
         };
-        self.preview = Some(runtime_preview);
+        self.set_preview(runtime_preview);
         self.interaction_source = Some(preview.candidate().clone());
         self.samples.clear();
-        self.checkpoints.clear();
+        self.driver.clear_checkpoints();
         true
     }
 
@@ -928,23 +972,23 @@ impl EditorSession {
             &material_programs,
         ) {
             Ok(runtime_preview) => {
-                self.preview = Some(runtime_preview);
+                self.set_preview(runtime_preview);
                 self.samples.clear();
-                self.clock.restart();
+                self.driver.clock.restart();
                 (preview.candidate().validation_report(), true)
             }
             Err(error) => {
-                self.preview = compile_preview_with_solo_and_material_programs(
+                self.set_preview_opt(compile_preview_with_solo_and_material_programs(
                     &self.effect,
                     self.preview_seed,
                     self.solo_emitter,
                     &material_programs,
                 )
-                .ok();
+                .ok());
                 (error.report().clone(), false)
             }
         };
-        self.checkpoints.clear();
+        self.driver.clear_checkpoints();
         let change_count = preview.diff().changes.len();
         self.pending_change = Some(PendingChange {
             preview,
@@ -1006,7 +1050,7 @@ impl EditorSession {
             return false;
         };
         let label = pending.preview.transaction().label.clone();
-        self.checkpoints.clear();
+        self.driver.clear_checkpoints();
         self.refresh_preview();
         self.clamp_clock();
         self.status = format!("Discarded {label}");
@@ -1016,7 +1060,7 @@ impl EditorSession {
 
     pub fn undo(&mut self) {
         if self.pending_change.take().is_some() {
-            self.checkpoints.clear();
+            self.driver.clear_checkpoints();
             self.refresh_preview();
         }
         match self.history.undo(&mut self.effect) {
@@ -1040,7 +1084,7 @@ impl EditorSession {
 
     pub fn redo(&mut self) {
         if self.pending_change.take().is_some() {
-            self.checkpoints.clear();
+            self.driver.clear_checkpoints();
             self.refresh_preview();
         }
         match self.history.redo(&mut self.effect) {
@@ -2389,13 +2433,13 @@ impl EditorSession {
     }
 
     fn clamp_clock(&mut self) {
-        self.clock
-            .seek_frame(self.clock.frame(), self.effect.duration);
+        let frame = self.driver.clock.frame();
+        self.driver.clock.seek_frame(frame, self.effect.duration);
     }
 
     fn invalidate_effect_checkpoints(&mut self) {
         self.effect_revision = self.effect_revision.wrapping_add(1);
-        self.checkpoints.clear();
+        self.driver.clear_checkpoints();
         self.last_seek = direct_seek_plan(self.frame());
     }
 
@@ -2418,11 +2462,11 @@ impl EditorSession {
             &material_programs,
         ) {
             Ok(preview) => {
-                self.preview = Some(preview);
+                self.set_preview(preview);
                 self.diagnostics = self.effect.validation_report();
             }
             Err(error) => {
-                self.preview = None;
+                self.preview_valid = false;
                 self.diagnostics = error.report().clone();
                 self.samples.clear();
             }
@@ -2430,8 +2474,7 @@ impl EditorSession {
     }
 
     fn preview_material_programs(&self) -> Vec<MaterialProgram> {
-        self.preview
-            .as_ref()
+        self.preview()
             .map(|preview| preview.effect().material_programs.clone())
             .unwrap_or_default()
     }
@@ -2455,6 +2498,14 @@ impl EditorSession {
             .as_ref()
             .is_none_or(|saved| saved != &self.effect)
     }
+}
+
+/// A playback driver for a freshly compiled preview, with the backward-scrub checkpoint
+/// cache enabled at the editor's default cadence (matching the previous `CheckpointStore::default`).
+fn new_playback_driver(instance: EffectInstance) -> PlaybackDriver {
+    let mut driver = PlaybackDriver::new(instance);
+    driver.enable_checkpoints(CheckpointPolicy::default());
+    driver
 }
 
 fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {
@@ -2610,8 +2661,7 @@ mod tests {
         assert!(session.execute("Moved semantic material emitter", command, true,));
 
         let preview = session
-            .preview
-            .as_ref()
+            .preview()
             .expect("preview should remain valid");
         assert!(preview.effect().material_program(program.id).is_some());
         assert!(session.diagnostics.is_valid());
@@ -2887,7 +2937,7 @@ mod tests {
         assert!(texture.is_none());
 
         session.set_renderer_texture(renderer, Some(texture_asset));
-        let compiled = session.preview.as_ref().unwrap().effect();
+        let compiled = session.preview().unwrap().effect();
         assert!(compiled.material(material).unwrap().texture.is_some());
 
         session.undo();
@@ -2960,7 +3010,7 @@ mod tests {
         let original = session.selected_layer().unwrap().modules[0].id;
         session.duplicate_module(original);
         assert_eq!(session.selected_layer().unwrap().modules.len(), 6);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
         session.undo();
         assert_eq!(session.selected_layer().unwrap().modules.len(), 5);
 
@@ -2974,11 +3024,11 @@ mod tests {
             true,
         );
         assert_eq!(session.selected_layer().unwrap().modules.len(), 4);
-        assert!(session.preview.is_none());
+        assert!(session.preview().is_none());
         assert!(!session.diagnostics.is_valid());
         session.undo();
         assert_eq!(session.selected_layer().unwrap().modules.len(), 5);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
     }
 
     #[test]
@@ -2991,10 +3041,10 @@ mod tests {
         let original = session.effect.emitters[0].size_curve().keys[1];
         session.set_curve_key(module, "size", 1, CurveKey::new(original.time, 18.0));
         assert_eq!(session.effect.emitters[0].size_curve().keys[1].value, 18.0);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
         session.undo();
         assert_eq!(session.effect.emitters[0].size_curve().keys[1], original);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
     }
 
     #[test]
@@ -3104,14 +3154,14 @@ mod tests {
     fn normal_preview_evaluation_preserves_history_but_scrubbing_invalidates_it() {
         let mut session = test_support::session_with_timing_slack();
         session.restart();
-        let epoch = session.preview.as_ref().unwrap().history_epoch();
+        let epoch = session.preview().unwrap().history_epoch();
         for _ in 0..20 {
             session.advance_playback(1.0 / 60.0);
             session.evaluate_preview(&mut Vec::new());
         }
-        assert_eq!(session.preview.as_ref().unwrap().history_epoch(), epoch);
+        assert_eq!(session.preview().unwrap().history_epoch(), epoch);
         session.seek_time(0.75);
-        assert_ne!(session.preview.as_ref().unwrap().history_epoch(), epoch);
+        assert_ne!(session.preview().unwrap().history_epoch(), epoch);
     }
 
     #[test]
@@ -3132,7 +3182,7 @@ mod tests {
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
         };
-        session.preview = Some(EffectInstance::new(Arc::new(compiled)));
+        session.set_preview(EffectInstance::new(Arc::new(compiled)));
         session.seek_time(0.75);
         assert_eq!(session.seek_status(), "DIRECT SEEK · GPU TRAIL REPLAY");
         assert_eq!(session.frame(), 45);
@@ -3145,7 +3195,7 @@ mod tests {
         set_seek_mode(&mut session, SimulationSeekMode::CheckpointRestore);
         session.seek_time(1.0);
         assert_eq!(session.frame(), 60);
-        assert_eq!(session.checkpoints.len(), 2);
+        assert_eq!(session.driver.checkpoints().unwrap().len(), 2);
 
         session.seek_time(0.75);
         assert_eq!(session.frame(), 45);
@@ -3165,13 +3215,13 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         set_seek_mode(&mut session, SimulationSeekMode::CheckpointRestore);
         session.seek_time(1.0);
-        assert!(!session.checkpoints.is_empty());
+        assert!(!session.driver.checkpoints().unwrap().is_empty());
         let module = session.effect.emitters[0]
             .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         session.set_module_parameter(module, "spawn_rate", Value::Scalar(25.0));
-        assert!(session.checkpoints.is_empty());
+        assert!(session.driver.checkpoints().unwrap().is_empty());
     }
 
     #[test]
@@ -3216,15 +3266,14 @@ mod tests {
         ));
         session.set_flipbook_frame_rate(renderer, 15.0);
         assert_eq!(session.effect.flipbooks[0].frame_rate, 15.0);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
         session.undo();
         assert_eq!(session.effect.flipbooks[0].frame_rate, 12.0);
     }
 
     fn preview_spawn_rate(session: &EditorSession) -> f32 {
         let instruction = &session
-            .preview
-            .as_ref()
+            .preview()
             .expect("valid editor effect has a compiled preview")
             .effect()
             .emitters[0]
@@ -3243,7 +3292,7 @@ mod tests {
 
     fn preview_samples(session: &mut EditorSession) -> Vec<aestra_runtime::ParticleSample> {
         let time = session.time();
-        let preview = session.preview.as_mut().unwrap();
+        let preview = session.preview_mut().unwrap();
         preview.seek(time);
         let mut samples = Vec::new();
         preview.evaluate(&mut samples);
@@ -3253,11 +3302,11 @@ mod tests {
     fn set_seek_mode(session: &mut EditorSession, mode: SimulationSeekMode) {
         let mut compiled = EffectCompiler::default().compile(&session.effect).unwrap();
         compiled.seek_mode = mode;
-        session.preview = Some(EffectInstance::with_seed(
+        session.set_preview(EffectInstance::with_seed(
             Arc::new(compiled),
             session.preview_seed,
         ));
-        session.clock.restart();
-        session.checkpoints.clear();
+        session.driver.clock.restart();
+        session.driver.clear_checkpoints();
     }
 }

@@ -927,7 +927,7 @@ mod tests {
     #[test]
     fn project_ingestion_tracks_active_paths_and_rebuilds_only_on_structure_changes() {
         let session = test_support::session_with_timing_slack();
-        let compiled = session.preview.as_ref().unwrap().effect();
+        let compiled = session.preview().unwrap().effect();
         let root = ProjectInstanceProfile {
             path: Vec::new(),
             effect: compiled.source,
@@ -987,7 +987,7 @@ mod tests {
     #[test]
     fn point_budget_warning_is_actionable_and_clears_with_telemetry() {
         let session = test_support::session_with_timing_slack();
-        let mut profile = EffectProfile::from_compiled(session.preview.as_ref().unwrap().effect());
+        let mut profile = EffectProfile::from_compiled(session.preview().unwrap().effect());
         for locale in ["en-US", "fr-FR"] {
             let localizer = Localizer::new(locale).unwrap();
             profile.record_trail_usage(Some(aestra_runtime::TrailUsage {
@@ -1020,7 +1020,7 @@ mod tests {
     #[test]
     fn frame_ingestion_preserves_preview_state_and_provenance() {
         let session = test_support::session_with_timing_slack();
-        let mut baseline = session.preview.as_ref().unwrap().clone();
+        let mut baseline = session.preview().unwrap().clone();
         let mut profiled = baseline.clone();
         baseline.seek(1.25);
         profiled.seek(1.25);
@@ -1079,7 +1079,7 @@ mod tests {
     #[test]
     fn history_is_bounded_and_resettable() {
         let session = test_support::session_with_timing_slack();
-        let compiled = session.preview.as_ref().unwrap().effect();
+        let compiled = session.preview().unwrap().effect();
         let mut profiler = ProfilerState::default();
         for frame in 0..(PROFILER_HISTORY_SAMPLES + 12) {
             profiler.ingest(ProfilerFrameSample::new(
@@ -1104,7 +1104,7 @@ mod tests {
     #[test]
     fn subsequent_frames_update_the_existing_profile() {
         let session = test_support::session_with_timing_slack();
-        let compiled = session.preview.as_ref().unwrap().effect();
+        let compiled = session.preview().unwrap().effect();
         let mut profiler = ProfilerState::default();
         profiler.ingest(ProfilerFrameSample::new(
             compiled,

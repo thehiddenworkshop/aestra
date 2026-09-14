@@ -2146,7 +2146,7 @@ fn browser_effect_activation_loads_documents_through_the_background_worker() {
         }
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect, effect);
-        assert!(session.preview.is_some());
+        assert!(session.preview().is_some());
         assert_eq!(
             app.world().resource::<AssetBrowserState>().recent[0].path,
             path.strip_prefix(root.path()).unwrap()

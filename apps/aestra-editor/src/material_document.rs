@@ -284,7 +284,7 @@ mod tests {
         let generation = session.history_generation();
         let guard = crate::project_content::io::IoGuard::capture(&catalog, &session);
         let history = session.effect_undo_len();
-        let clock = session.clock;
+        let clock = session.driver.clock;
         session.open_material_program(&catalog, program.id).unwrap();
         assert!(
             !guard.matches(&catalog, &session),
@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(session.effect, effect);
         assert_eq!(session.selection, selection);
         assert_eq!(session.source_path, path);
-        assert_eq!(session.clock, clock);
+        assert_eq!(session.driver.clock, clock);
         assert_eq!(session.document_revision(), revision);
         assert_eq!(session.history_generation(), generation);
         assert_eq!(session.effect_undo_len(), history);

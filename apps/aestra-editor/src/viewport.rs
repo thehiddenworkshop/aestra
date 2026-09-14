@@ -2126,7 +2126,7 @@ fn configure_preview_scene_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 }
 
 fn configured_preview_player(session: &EditorSession) -> Option<PresentedEffect> {
-    let preview = session.preview.as_ref()?;
+    let preview = session.preview()?;
     Some(configured_preview_instance(
         preview.effect().clone(),
         session.simulation_time(),
@@ -2596,8 +2596,7 @@ fn sync_project_preview(
     mut preview: ResMut<EditorPreviewProject>,
 ) {
     let source_root = session
-        .preview
-        .as_ref()
+        .preview()
         .map(|preview| preview.effect().clone());
     if source_root.is_none()
         && preview.failed_source_revision == Some(session.document_revision())
@@ -2629,8 +2628,7 @@ fn sync_project_preview(
             // root-emitter solo). Dependencies still come from the resolved project, while the
             // root must remain exactly the artifact owned by the session.
             project.root = session
-                .preview
-                .as_ref()
+                .preview()
                 .expect("preview was installed")
                 .effect()
                 .clone();
@@ -2735,7 +2733,7 @@ fn sync_rendered_preview(
         With<PreviewPresentedEffect>,
     >,
 ) {
-    let epoch = session.preview.as_ref().map(|p| p.history_epoch());
+    let epoch = session.preview().map(|p| p.history_epoch());
     let discontinuity = *previous_history_epoch != epoch;
     *previous_history_epoch = epoch;
     let mut desired = desired_preview_instances(
@@ -3564,7 +3562,7 @@ mod tests {
             EmitterTransform::default()
         );
         assert_eq!(
-            session.preview.as_ref().unwrap().effect().emitters[0]
+            session.preview().unwrap().effect().emitters[0]
                 .transform
                 .translation,
             [4.0, 5.0, 6.0],
@@ -3594,13 +3592,13 @@ mod tests {
     fn editor_preview_player_uses_the_compiled_effect_timeline_and_seed() {
         let mut session = test_support::session_with_timing_slack();
         session.preview_seed = 42;
-        session.clock.seek_frame(37, session.playback_duration());
+        session.driver.clock.seek_frame(37, session.playback_duration());
 
         let player = configured_preview_player(&session).unwrap();
 
         assert!(std::sync::Arc::ptr_eq(
             player.effect(),
-            session.preview.as_ref().unwrap().effect()
+            session.preview().unwrap().effect()
         ));
         assert_eq!(player.simulation_time(), session.simulation_time());
         assert_eq!(player.instance.seed(), 42);
@@ -3650,8 +3648,7 @@ mod tests {
             player.effect(),
             world
                 .resource::<EditorSession>()
-                .preview
-                .as_ref()
+                .preview()
                 .unwrap()
                 .effect()
         ));
@@ -3660,7 +3657,7 @@ mod tests {
     #[test]
     fn live_player_replacement_rejects_structural_compiler_changes() {
         let session = test_support::session_with_timing_slack();
-        let current = session.preview.as_ref().unwrap().effect();
+        let current = session.preview().unwrap().effect();
         let mut transformed = current.as_ref().clone();
         transformed.emitters[0].transform.translation[0] = 4.0;
         assert!(compiled_effects_differ_only_by_emitter_transforms(
@@ -4109,7 +4106,7 @@ mod tests {
             .refresh();
         app.update();
         let session = app.world().resource::<EditorSession>();
-        let root = session.preview.as_ref().unwrap().effect();
+        let root = session.preview().unwrap().effect();
         assert_eq!(
             root.material_program(program.id).unwrap().name,
             program.name
