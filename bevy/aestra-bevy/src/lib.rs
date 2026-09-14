@@ -56,9 +56,9 @@ pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
-    PlaybackCheckpoint, PlaybackClock, ProfileValue, ProfileValueSource, ProjectChoreographyEvent,
-    ProjectInstanceProfile, ProjectProfile, RendererPlanKind, RuntimeValue, SeekOrigin, SeekPlan,
-    SimulationSeekMode,
+    PlaybackCheckpoint, PlaybackClock, PlaybackDriver, ProfileValue, ProfileValueSource,
+    ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind, RuntimeValue,
+    SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -132,7 +132,7 @@ fn prepare_player_presentations(
 ) {
     for (entity, player) in &players {
         let mut presented = PresentedEffect::new(player.effect().clone());
-        presented.instance = player.instance.clone();
+        presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
         commands.entity(entity).insert(presented);
     }
@@ -140,7 +140,7 @@ fn prepare_player_presentations(
 
 fn sync_player_presentations(mut players: Query<(&EffectPlayer, &mut PresentedEffect)>) {
     for (player, mut presented) in &mut players {
-        presented.instance = player.instance.clone();
+        presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
     }
 }
@@ -165,20 +165,16 @@ impl TextureAssetCache {
 #[derive(Component)]
 #[require(Transform, Visibility)]
 pub struct EffectPlayer {
-    pub instance: EffectInstance,
+    /// Owns the playhead clock, the simulated instance, and the optional
+    /// backward-scrub checkpoint cache (shared with the editor via M-CR2).
+    driver: PlaybackDriver,
     pub speed: f32,
     pub playing: bool,
     render_mode: EffectRenderMode,
-    clock: PlaybackClock,
     choreography_events: Vec<DispatchedChoreographyEvent>,
     project_choreography_events: Vec<ProjectChoreographyEvent>,
     choreography_started: bool,
     project: Option<Arc<CompiledEffectProject>>,
-    /// Optional scrub cache: when enabled (and the effect uses
-    /// `CheckpointRestore`), backward seeks restore the nearest checkpoint and
-    /// replay a short remainder instead of restarting from zero. `None` keeps
-    /// the memory-free restart-replay behavior (the default).
-    scrub_checkpoints: Option<CheckpointStore<EffectInstance>>,
     /// Bumped whenever the compiled effect is replaced, so cached checkpoints
     /// from a previous version are never restored.
     revision: u64,
@@ -196,18 +192,26 @@ impl EffectPlayer {
 
     pub fn from_compiled(effect: Arc<CompiledEffect>) -> Self {
         Self {
-            instance: EffectInstance::new(effect),
+            driver: PlaybackDriver::new(EffectInstance::new(effect)),
             speed: 1.0,
             playing: true,
             render_mode: EffectRenderMode::Rendered,
-            clock: PlaybackClock::default(),
             choreography_events: Vec::new(),
             project_choreography_events: Vec::new(),
             choreography_started: false,
             project: None,
-            scrub_checkpoints: None,
             revision: 0,
         }
+    }
+
+    /// The simulated effect instance (read).
+    pub fn instance(&self) -> &EffectInstance {
+        &self.driver.instance
+    }
+
+    /// The simulated effect instance (mutable), for hosts driving parameters etc.
+    pub fn instance_mut(&mut self) -> &mut EffectInstance {
+        &mut self.driver.instance
     }
 
     /// Own one root clock; the plugin reconciles active child presentations.
@@ -222,7 +226,7 @@ impl EffectPlayer {
     }
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
-        self.instance.effect()
+        self.driver.instance.effect()
     }
 
     /// Motion relative to this entity's stable placement. Changes invalidate trail checkpoints.
@@ -230,7 +234,7 @@ impl EffectPlayer {
         &mut self,
         track: Option<Arc<aestra_runtime::CompiledHostTransformTrack>>,
     ) {
-        self.instance.set_host_transform_track(track);
+        self.driver.instance.set_host_transform_track(track);
     }
 
     /// Historical ancestor motion and clip placements, supplied by a project host.
@@ -238,7 +242,7 @@ impl EffectPlayer {
         &mut self,
         inherited: Arc<aestra_runtime::InheritedHostTransform>,
     ) {
-        self.instance.set_inherited_host_transform(inherited);
+        self.driver.instance.set_inherited_host_transform(inherited);
     }
 
     pub fn render_mode(&self) -> EffectRenderMode {
@@ -250,24 +254,24 @@ impl EffectPlayer {
     }
 
     pub fn elapsed(&self) -> f32 {
-        self.clock.time(self.effect().duration)
+        self.driver.clock.time(self.effect().duration)
     }
 
     /// Simulation time, which remains unwrapped for seamless continuous looping.
     pub fn simulation_time(&self) -> f32 {
         if self.effect().playback_mode.is_continuous() {
-            self.clock.elapsed_time()
+            self.driver.clock.elapsed_time()
         } else {
             self.elapsed()
         }
     }
 
     pub fn frame(&self) -> u64 {
-        self.clock.frame()
+        self.driver.clock.frame()
     }
 
     pub fn tick_rate(&self) -> u32 {
-        self.clock.tick_rate()
+        self.driver.clock.tick_rate()
     }
 
     pub fn seek_mode(&self) -> SimulationSeekMode {
@@ -277,8 +281,8 @@ impl EffectPlayer {
     pub fn restart(&mut self) {
         self.silence_choreography_events();
         self.choreography_started = false;
-        self.clock.restart();
-        self.instance.restart();
+        self.driver.clock.restart();
+        self.driver.instance.restart();
         self.playing = true;
     }
 
@@ -287,22 +291,20 @@ impl EffectPlayer {
     /// replayed forward to the current frame so the playhead does not jump;
     /// otherwise playback restarts at zero. The running/paused state is untouched.
     pub fn replace_effect(&mut self, effect: Arc<CompiledEffect>, preserve_position: bool) {
-        let seed = self.instance.seed();
+        let seed = self.driver.instance.seed();
         let target = if preserve_position {
-            self.clock.frame()
+            self.driver.clock.frame()
         } else {
             0
         };
         self.silence_choreography_events();
         self.choreography_started = false;
-        self.instance = EffectInstance::with_seed(effect, seed);
+        self.driver.instance = EffectInstance::with_seed(effect, seed);
         // Old checkpoints describe the previous effect; drop them and bump the
         // revision so any that linger are never restored.
         self.revision += 1;
-        if let Some(store) = &mut self.scrub_checkpoints {
-            store.clear();
-        }
-        self.clock.restart();
+        self.driver.clear_checkpoints();
+        self.driver.clock.restart();
         if target > 0 {
             // Replays the new instance from zero up to the retained frame.
             self.seek_frame(target);
@@ -311,7 +313,7 @@ impl EffectPlayer {
 
     pub fn seek(&mut self, time: f32) {
         let duration = self.effect().duration;
-        let mut target = self.clock;
+        let mut target = self.driver.clock;
         target.seek_seconds(time, duration);
         self.seek_frame(target.frame());
     }
@@ -320,10 +322,10 @@ impl EffectPlayer {
     /// wrapped to the authored effect duration.
     pub fn seek_simulation_time(&mut self, time: f32) {
         self.silence_choreography_events();
-        self.instance.mark_history_discontinuity();
+        self.driver.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
-            self.clock.seek_elapsed_seconds(time, duration);
+            self.driver.clock.seek_elapsed_seconds(time, duration);
             self.sync_instance_time();
         } else {
             self.seek(time);
@@ -336,119 +338,53 @@ impl EffectPlayer {
         self.silence_choreography_events();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
-            self.clock.seek_elapsed_seconds(time, duration);
+            self.driver.clock.seek_elapsed_seconds(time, duration);
         } else {
-            self.clock.seek_seconds(time, duration);
+            self.driver.clock.seek_seconds(time, duration);
         }
         self.sync_instance_time();
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
         self.silence_choreography_events();
-        self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
-        let target = frame.min(self.clock.maximum_frame(duration));
-        let mode = self.seek_mode();
-        if mode == SimulationSeekMode::StatelessDirect {
-            self.clock.seek_frame(target, duration);
+        let seek_mode = self.seek_mode();
+        if seek_mode == SimulationSeekMode::StatelessDirect {
+            // Stateless positioning is continuous-aware here (see sync_instance_time),
+            // which the shared driver does not do — keep it in the player.
+            let target = frame.min(self.driver.clock.maximum_frame(duration));
+            self.driver.instance.mark_history_discontinuity();
+            self.driver.clock.seek_frame(target, duration);
             self.sync_instance_time();
             return;
         }
         let context = self.scrub_context();
-        let plan = self
-            .scrub_checkpoints
-            .as_ref()
-            .map(|store| store.plan_seek(mode, &context, self.frame(), target));
-        match plan.map(|plan| plan.origin) {
-            // Restore the nearest cached checkpoint, then replay the remainder.
-            Some(SeekOrigin::Checkpoint { frame: checkpoint }) => {
-                let restored = self
-                    .scrub_checkpoints
-                    .as_ref()
-                    .and_then(|store| store.nearest_at_or_before(&context, checkpoint))
-                    .map(|entry| entry.state.clone());
-                if let Some(state) = restored {
-                    self.instance = state;
-                    self.clock.seek_frame(checkpoint, duration);
-                    self.replay_ticks(target - checkpoint);
-                } else {
-                    self.clock.restart();
-                    self.instance.restart();
-                    self.replay_ticks(target);
-                }
-            }
-            // No cache, or a forward/restart plan: restart on a backward jump,
-            // then replay forward to the target (the original behavior).
-            _ => {
-                if target < self.frame() {
-                    self.clock.restart();
-                    self.instance.restart();
-                }
-                self.replay_ticks(target - self.frame());
-            }
-        }
-        // Replay is silent, including a backward seek to zero. Mark the source
-        // event cursor as positioned without disturbing replayed state.
-        self.instance.set_playback_time(self.instance.time());
-    }
-
-    /// Advances the clock and instance `ticks` steps, recording scrub checkpoints
-    /// at the policy cadence as it goes.
-    fn replay_ticks(&mut self, ticks: u64) {
-        let duration = self.effect().duration;
-        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
-        for _ in 0..ticks {
-            self.clock.step_forward(duration);
-            self.instance.advance(tick_seconds);
-            self.record_checkpoint_at(self.clock.frame());
-        }
+        self.driver.seek_frame(frame, duration, seek_mode, &context);
     }
 
     fn scrub_context(&self) -> CheckpointContext {
         CheckpointContext {
             effect: self.effect().source,
             revision: self.revision,
-            seed: self.instance.seed(),
+            seed: self.driver.instance.seed(),
             backend: CheckpointBackendId::new("cpu-reference"),
-        }
-    }
-
-    /// Captures the current instance state at `frame` when the scrub cache is
-    /// enabled, the effect uses `CheckpointRestore`, and the policy is due.
-    fn record_checkpoint_at(&mut self, frame: u64) {
-        if self.seek_mode() != SimulationSeekMode::CheckpointRestore {
-            return;
-        }
-        let due = self
-            .scrub_checkpoints
-            .as_ref()
-            .is_some_and(|store| store.policy().should_capture(frame));
-        if !due {
-            return;
-        }
-        let context = self.scrub_context();
-        let state = self.instance.clone();
-        let estimated_bytes = std::mem::size_of::<EffectInstance>()
-            + std::mem::size_of_val(state.parameter_values());
-        if let Some(store) = self.scrub_checkpoints.as_mut() {
-            store.insert(context, frame, state, estimated_bytes);
         }
     }
 
     /// Enables the backward-scrub checkpoint cache with the given policy. Off by
     /// default; hosts that scrub (e.g. an editor timeline) opt in.
     pub fn enable_scrub_cache(&mut self, policy: CheckpointPolicy) {
-        self.scrub_checkpoints = Some(CheckpointStore::new(policy));
+        self.driver.enable_checkpoints(policy);
     }
 
     /// Disables and drops the scrub cache.
     pub fn disable_scrub_cache(&mut self) {
-        self.scrub_checkpoints = None;
+        self.driver.disable_checkpoints();
     }
 
     /// The scrub cache, if enabled (for status/introspection).
     pub fn scrub_cache(&self) -> Option<&CheckpointStore<EffectInstance>> {
-        self.scrub_checkpoints.as_ref()
+        self.driver.checkpoints()
     }
 
     pub fn step_forward(&mut self) {
@@ -462,27 +398,27 @@ impl EffectPlayer {
     }
 
     pub fn set_seed(&mut self, seed: u64) {
-        self.instance.set_seed(seed);
+        self.driver.instance.set_seed(seed);
     }
 
     pub fn checkpoint(&self) -> PlaybackCheckpoint {
-        self.clock.checkpoint()
+        self.driver.clock.checkpoint()
     }
 
     pub fn restore_checkpoint(&mut self, checkpoint: PlaybackCheckpoint) {
         let duration = self.effect().duration;
-        let mut target = self.clock;
+        let mut target = self.driver.clock;
         target.restore(checkpoint, duration);
         self.seek_frame(target.frame());
         self.playing = false;
     }
 
     pub fn set_parameter(&mut self, id: ParameterId, value: Value) -> Result<(), ParameterError> {
-        self.instance.set_parameter(id, value)
+        self.driver.instance.set_parameter(id, value)
     }
 
     pub fn clear_parameter(&mut self, id: ParameterId) -> Result<(), ParameterError> {
-        self.instance.clear_parameter(id)
+        self.driver.instance.clear_parameter(id)
     }
 
     /// Drains root choreography events produced by the most recent clock advance. The plugin drains
@@ -513,9 +449,10 @@ impl EffectPlayer {
         let duration = self.effect().duration;
         let playback_mode = self.effect().playback_mode;
         let looping = playback_mode.is_looping();
-        let previous_frame = self.clock.frame();
-        let previous_clock = self.clock;
+        let previous_frame = self.driver.clock.frame();
+        let previous_clock = self.driver.clock;
         let result = self
+            .driver
             .clock
             .advance(delta_seconds, self.speed, duration, looping);
         self.choreography_events.clear();
@@ -523,18 +460,18 @@ impl EffectPlayer {
         if result.ticks == 0 {
             return result;
         }
-        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+        let tick_seconds = 1.0 / self.driver.clock.tick_rate() as f32;
         if let Some(project) = &self.project {
             self.project_choreography_events = project.choreography_events_for_clock_advance(
                 previous_clock,
-                self.clock,
+                self.driver.clock,
                 !self.choreography_started,
             );
         }
         self.choreography_started = true;
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => {
-                self.instance.advance_with_choreography_events(
+                self.driver.instance.advance_with_choreography_events(
                     result.ticks as f32 * tick_seconds,
                     &mut self.choreography_events,
                 );
@@ -544,11 +481,11 @@ impl EffectPlayer {
                 let ticks = if looping {
                     result.ticks
                 } else {
-                    self.clock.frame().saturating_sub(previous_frame)
+                    self.driver.clock.frame().saturating_sub(previous_frame)
                 };
                 let mut events = Vec::new();
                 for _ in 0..ticks {
-                    self.instance
+                    self.driver.instance
                         .advance_with_choreography_events(tick_seconds, &mut events);
                     self.choreography_events.append(&mut events);
                 }
@@ -564,17 +501,20 @@ impl EffectPlayer {
         }
         // Capture a scrub checkpoint at the new position so later backward seeks
         // can restore instead of replaying from zero.
-        self.record_checkpoint_at(self.clock.frame());
+        let seek_mode = self.seek_mode();
+        let context = self.scrub_context();
+        self.driver
+            .record_checkpoint(seek_mode, &context, self.driver.clock.frame());
         result
     }
 
     fn sync_instance_time(&mut self) {
-        let time = if self.instance.effect().playback_mode.is_continuous() {
-            self.clock.elapsed_time()
+        let time = if self.driver.instance.effect().playback_mode.is_continuous() {
+            self.driver.clock.elapsed_time()
         } else {
-            self.clock.time(self.instance.effect().duration)
+            self.driver.clock.time(self.driver.instance.effect().duration)
         };
-        self.instance.set_playback_time(time);
+        self.driver.instance.set_playback_time(time);
     }
 }
 
@@ -807,7 +747,7 @@ mod tests {
             player.seek_simulation_time(3.0);
             let expected_time = player.simulation_time();
             assert_eq!(
-                player.instance.host_transform_at(expected_time).translation[0],
+                player.instance().host_transform_at(expected_time).translation[0],
                 expected_time * 10.0
             );
             let mut app = App::new();
@@ -871,7 +811,7 @@ mod tests {
 
         player.seek(0.75);
         let mut samples = Vec::new();
-        player.instance.evaluate(&mut samples);
+        player.instance().evaluate(&mut samples);
         assert_eq!(player.effect().source, effect.id);
         assert!(!samples.is_empty());
     }
@@ -982,7 +922,7 @@ mod tests {
             .set_parameter(parameter_id, Value::Scalar(40.0))
             .unwrap();
         assert!(matches!(
-            player.instance.parameter(parameter_id),
+            player.instance().parameter(parameter_id),
             Some(RuntimeValue::Scalar(40.0))
         ));
     }
@@ -1008,8 +948,8 @@ mod tests {
         assert_eq!(fine.elapsed(), coarse.elapsed());
         let mut fine_samples = Vec::new();
         let mut coarse_samples = Vec::new();
-        fine.instance.evaluate(&mut fine_samples);
-        coarse.instance.evaluate(&mut coarse_samples);
+        fine.instance().evaluate(&mut fine_samples);
+        coarse.instance().evaluate(&mut coarse_samples);
         assert_eq!(fine_samples, coarse_samples);
     }
 

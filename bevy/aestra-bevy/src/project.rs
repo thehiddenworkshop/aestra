@@ -51,9 +51,9 @@ pub(super) fn sync_project_instances(
         };
         // Instance time also supports hosts supplying an external simulation clock.
         for scheduled in project.instances_with(
-            player.instance.time(),
-            player.instance.seed(),
-            player.instance.host_transform_context(),
+            player.instance().time(),
+            player.instance().seed(),
+            player.instance().host_transform_context(),
             |_, clip| Some(clip.clone()),
         ) {
             if scheduled.path.is_empty() {
@@ -77,13 +77,13 @@ pub(super) fn sync_project_instances(
             commands.entity(entity).despawn();
             continue;
         }
-        if child.revision != player.instance.history_revision() {
+        if child.revision != player.instance().history_revision() {
             presented.instance.invalidate_history();
-        } else if child.epoch != player.instance.history_epoch() {
+        } else if child.epoch != player.instance().history_epoch() {
             presented.instance.mark_history_discontinuity();
         }
-        child.epoch = player.instance.history_epoch();
-        child.revision = player.instance.history_revision();
+        child.epoch = player.instance().history_epoch();
+        child.revision = player.instance().history_revision();
         if child.overrides != scheduled.parameter_overrides {
             for old in &child.overrides {
                 let _ = presented.instance.clear_parameter(old.source);
@@ -116,8 +116,8 @@ pub(super) fn sync_project_instances(
             EffectClipInstance {
                 root,
                 path,
-                epoch: player.instance.history_epoch(),
-                revision: player.instance.history_revision(),
+                epoch: player.instance().history_epoch(),
+                revision: player.instance().history_revision(),
                 overrides: scheduled.parameter_overrides.clone(),
             },
             presented,
@@ -282,11 +282,11 @@ mod tests {
         }
         {
             let mut player = app.world_mut().get_mut::<EffectPlayer>(root).unwrap();
-            let revision = player.instance.history_revision();
+            let revision = player.instance().history_revision();
             player.set_playback_time(1.25);
-            assert_eq!(player.simulation_time(), player.instance.time());
+            assert_eq!(player.simulation_time(), player.instance().time());
             assert_eq!(player.frame(), 75);
-            assert_eq!(player.instance.history_revision(), revision);
+            assert_eq!(player.instance().history_revision(), revision);
         }
         app.update();
         app.world_mut()

@@ -862,13 +862,13 @@ fn viewer_controls(
     }
     if keys.just_pressed(KeyCode::BracketLeft) {
         for mut player in &mut players {
-            let seed = player.instance.seed().wrapping_sub(1);
+            let seed = player.instance().seed().wrapping_sub(1);
             player.set_seed(seed);
         }
     }
     if keys.just_pressed(KeyCode::BracketRight) {
         for mut player in &mut players {
-            let seed = player.instance.seed().wrapping_add(1);
+            let seed = player.instance().seed().wrapping_add(1);
             player.set_seed(seed);
         }
     }
@@ -894,7 +894,7 @@ fn update_hud(
         player.tick_rate(),
         player.elapsed(),
         player.effect().duration,
-        player.instance.seed(),
+        player.instance().seed(),
         if player.playing { "PLAYING" } else { "PAUSED" },
         runtime.active,
     );
