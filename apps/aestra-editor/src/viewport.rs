@@ -139,7 +139,18 @@ impl Plugin for ViewportPlugin {
                 (
                     sync_preview_camera_viewport
                         .after(UiSystems::Layout)
-                        .before(TransformGizmoSystems),
+                        .before(TransformGizmoSystems)
+                        // Must restore the preview camera's viewport BEFORE PBR
+                        // cluster assignment reads it. On the frame the window is
+                        // un-minimized, `camera_system` has clamped the explicit
+                        // viewport to the (0,0) surface; if `assign_objects_to_clusters`
+                        // runs first it clears the cluster grid to zero dimensions,
+                        // then this system re-activates the camera the same frame,
+                        // leaving an active view with a zero-size cluster grid that
+                        // makes the render world build a zero-width "clustering dummy
+                        // texture" and abort. Ordering the viewport restore first
+                        // means assignment sees the real size and never clears.
+                        .before(bevy::light::SimulationLightSystems::AssignLightsToClusters),
                     update_emitter_transform_gizmo
                         .after(TransformGizmoSystems)
                         .before(TransformGizmoRenderStep),
