@@ -640,14 +640,15 @@ pub(super) fn sync_panel(
                         );
                         let mut image = Entity::PLACEHOLDER;
                         parent.commands().entity(entity).with_children(|row| {
-                            image = if let Some(preset) = preset {
-                                crate::material_graph::spawn_material_preset_preview(
-                                    row, preset, 22.0,
-                                )
-                            } else if matches!(
+                            image = if matches!(
                                 kind,
-                                Kind::Texture | Kind::Material | Kind::Mesh | Kind::Effect
+                                Kind::Texture
+                                    | Kind::Material
+                                    | Kind::Mesh
+                                    | Kind::Effect
+                                    | Kind::Preset
                             ) {
+                                // Presets now render through the shared GPU/CPU material path.
                                 super::thumbnails::spawn(row, &assets, entry.id, kind)
                             } else {
                                 icon(row, &assets, kind.icon(), 22.0)

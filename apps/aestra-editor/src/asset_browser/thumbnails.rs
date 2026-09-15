@@ -270,9 +270,9 @@ fn same_thumbnail_content(
 pub(super) struct ThumbnailBadge;
 
 #[derive(Component)]
-struct Thumbnail {
-    source: ProjectSourceId,
-    kind: Kind,
+pub(super) struct Thumbnail {
+    pub(super) source: ProjectSourceId,
+    pub(super) kind: Kind,
     fallback: Entity,
     image: Entity,
     /// Overlay `ImageNode` used to crossfade the live hover animation over the
@@ -470,19 +470,22 @@ fn update(
         let Some(entry) = catalog.content().source(*source).filter(|entry| {
             matches!(
                 Kind::of(entry),
-                Kind::Texture | Kind::Material | Kind::Mesh | Kind::Effect
+                Kind::Texture | Kind::Material | Kind::Mesh | Kind::Effect | Kind::Preset
             )
         }) else {
             continue;
         };
         let is_effect = Kind::of(entry) == Kind::Effect;
         let root = catalog.root().to_owned();
-        // Resolve a material up front so the single GPU slot gates both effect and
-        // GPU-material jobs. A Sprite material that samples a texture or uses screen
-        // derivatives renders a synthesized scene (M-MG2); simpler ones, and any material
-        // when the native renderer is unavailable, stay on the CPU rasterizer.
-        let material_program =
-            (Kind::of(entry) == Kind::Material).then(|| saved_material(catalog.content(), *source));
+        // Resolve a material (or the program a preset produces) up front so the single GPU slot
+        // gates both effect and GPU-material jobs. A material/preset that samples a texture, uses
+        // screen derivatives or functions, or (mesh) displaces renders a synthesized scene;
+        // simpler ones, and any material when the native renderer is unavailable, stay on the CPU.
+        let material_program = match Kind::of(entry) {
+            Kind::Material => Some(saved_material(catalog.content(), *source)),
+            Kind::Preset => Some(saved_preset(&catalog, *source)),
+            _ => None,
+        };
         let gpu_material = render.enabled()
             && material_program
                 .as_ref()
@@ -859,6 +862,24 @@ fn saved_material(
     content
         .cached_material_program(aestra_core::material::MaterialProgramRef::Project(id))
         .map_err(|error| error.to_string())
+}
+
+/// The material program a preset produces on the standard base, so a preset previews through the
+/// same GPU-or-CPU path as a shared material. Resolving needs the preset catalog (compiler work),
+/// so it runs on the main thread once per preset — the resolved program then routes like a material.
+fn saved_preset(
+    catalog: &ProjectEffectCatalog,
+    source: ProjectSourceId,
+) -> Result<MaterialProgram, String> {
+    let Some(aestra_project::ProjectAssetId::MaterialPreset(id)) =
+        catalog.content().asset_for_source(source)
+    else {
+        return Err("Preset source could not be parsed".into());
+    };
+    let presets = catalog
+        .material_preset_catalog()
+        .map_err(|error| error.to_string())?;
+    crate::material_graph::resolve_preset_program(&presets, id)
 }
 
 fn linked(metadata: &fs::Metadata) -> bool {

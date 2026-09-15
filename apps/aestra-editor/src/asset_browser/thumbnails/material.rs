@@ -18,7 +18,7 @@ use aestra_core::{
     ModuleInstance, ModuleParameters, RENDERER_MESH, RENDERER_RIBBON, RendererId, RendererInstance,
     RendererProperties, RendererTypeId, ScalarRange,
     material::{
-        MaterialDomain, MaterialExpressionKind, MaterialFunction, MaterialInstance,
+        MaterialDomain, MaterialExpressionKind, MaterialFunction, MaterialInput, MaterialInstance,
         MaterialProgram, MaterialProgramRef, MaterialTextureColorSpace, MaterialValue,
         MaterialValueType,
     },
@@ -58,6 +58,16 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
             | MaterialExpressionKind::SampleTextureGradient { .. }
             | MaterialExpressionKind::DerivativeX { .. }
             | MaterialExpressionKind::DerivativeY { .. } => needs_scene = true,
+            // Scene-dependent inputs (surface geometry, view direction, screen position) can't be
+            // synthesized faithfully by the CPU rasterizer — e.g. a fresnel over Normal/ViewDirection.
+            MaterialExpressionKind::Input(
+                MaterialInput::LocalPosition
+                | MaterialInput::WorldPosition
+                | MaterialInput::Normal
+                | MaterialInput::Tangent
+                | MaterialInput::ViewDirection
+                | MaterialInput::ScreenUv,
+            ) => needs_scene = true,
             _ => {}
         }
     }

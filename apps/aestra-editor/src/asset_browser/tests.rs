@@ -109,7 +109,9 @@ fn authored_names_and_preset_metadata_are_searchable_without_disk_reads() {
 }
 
 #[test]
-fn project_preset_rows_use_shared_square_previews_and_refresh_identity() {
+fn project_preset_rows_preview_through_the_shared_thumbnail_path() {
+    // Presets now render through the shared GPU/CPU material thumbnail path (a `Thumbnail`
+    // keyed by source), not the separate CPU preset raster.
     let root = tempfile::tempdir().unwrap();
     let presets = aestra_compiler::MaterialCompiler.material_preset_catalog();
     let mut preset = presets.iter().next().unwrap().clone();
@@ -120,29 +122,21 @@ fn project_preset_rows_use_shared_square_previews_and_refresh_identity() {
     for view in [ViewMode::List, ViewMode::Grid] {
         app.world_mut().resource_mut::<AssetBrowserState>().view = view;
         app.update();
-        let (request, node) = app
+        let thumbnail = app
             .world_mut()
-            .query::<(&crate::material_graph::MaterialPresetPreviewRaster, &Node)>()
+            .query::<&crate::asset_browser::thumbnails::Thumbnail>()
             .single(app.world())
             .unwrap();
-        assert_eq!(request.preset, preset.id);
-        assert_eq!(node.width, node.height);
+        assert_eq!(thumbnail.kind, Kind::Preset);
+        // The preset row no longer spawns the separate CPU raster component.
+        assert!(
+            app.world_mut()
+                .query::<&crate::material_graph::MaterialPresetPreviewRaster>()
+                .iter(app.world())
+                .next()
+                .is_none()
+        );
     }
-    preset.id = aestra_core::MaterialPresetId::new();
-    preset.save_ron(&path).unwrap();
-    app.world_mut()
-        .resource_mut::<ProjectEffectCatalog>()
-        .refresh();
-    app.update();
-    let request = app
-        .world_mut()
-        .query::<&crate::material_graph::MaterialPresetPreviewRaster>()
-        .single(app.world())
-        .unwrap();
-    assert_eq!(
-        request.preset, preset.id,
-        "retained rows must not preview the old identity"
-    );
 }
 
 #[test]

@@ -186,6 +186,52 @@ fn real_texture_mesh_and_function_materials_prepare_without_a_gpu() {
 }
 
 #[test]
+fn project_presets_resolve_and_prepare_through_the_material_path() {
+    use aestra_core::material::MaterialPresetDescriptor;
+    // Presets resolve to a material program (crate::material_graph::resolve_preset_program) and
+    // then route like any material. Verify the sample project's presets resolve, that a
+    // view-dependent one (hologram: fresnel over Normal/ViewDirection) routes to the GPU scene,
+    // and that the GPU ones compile — no GPU needed for the check.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
+    let names = [
+        "hologram",
+        "impact_flash",
+        "additive_flame",
+        "energy_beam",
+        "ghost",
+        "magic_shield",
+        "portal",
+        "soft_smoke",
+    ];
+    let descriptors: Vec<MaterialPresetDescriptor> = names
+        .iter()
+        .map(|n| {
+            MaterialPresetDescriptor::load_ron(
+                root.join(format!("materials/{n}.aestra.material-preset.ron")),
+            )
+            .unwrap_or_else(|e| panic!("load preset {n}: {e}"))
+        })
+        .collect();
+    let catalog =
+        aestra_compiler::MaterialPresetCatalog::with_project_presets(descriptors.clone()).unwrap();
+    let functions = BTreeMap::new();
+    let mut gpu_previews = 0;
+    for descriptor in &descriptors {
+        let program = crate::material_graph::resolve_preset_program(&catalog, descriptor.id)
+            .unwrap_or_else(|e| panic!("resolve preset {}: {e}", descriptor.display_name));
+        if wants_gpu(&program) {
+            gpu_previews += 1;
+            prepare(program, &functions, &root, &AtomicBool::new(false))
+                .unwrap_or_else(|e| panic!("prepare preset {}: {e}", descriptor.display_name));
+        }
+    }
+    assert!(
+        gpu_previews > 0,
+        "a view-dependent preset (hologram) should route to the GPU scene"
+    );
+}
+
+#[test]
 fn neutral_images_use_the_matching_color_space_format() {
     assert_eq!(
         neutral_image(MaterialTextureColorSpace::SrgbColor)

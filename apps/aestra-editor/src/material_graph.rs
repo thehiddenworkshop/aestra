@@ -2791,6 +2791,27 @@ fn build_material_preset_preview(
     MaterialPresetPreviewStatus::Ready(image)
 }
 
+/// Resolves a preset to the material program it produces on the standard sprite base, so a
+/// background thumbnail can render it through the shared material GPU path. Returns an error if
+/// the preset is not compatible with the preview base or fails to plan.
+pub(crate) fn resolve_preset_program(
+    catalog: &MaterialPresetCatalog,
+    preset: MaterialPresetId,
+) -> Result<MaterialProgram, String> {
+    let program = material_preset_base("Material preset preview", MaterialDomain::Sprite);
+    let target = MaterialCompiler
+        .stack_preset_targets_with_catalog(&program, catalog)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|target| target.preset == preset)
+        .max_by_key(|target| target.index)
+        .ok_or("Preset is not compatible with the preview base")?;
+    MaterialCompiler
+        .plan_stack_insert_preset_with_catalog(&program, catalog, preset, target.index)
+        .map(|plan| plan.replacement)
+        .map_err(|error| error.to_string())
+}
+
 /// Shared seed for preset thumbnails and creating a material from a preset.
 /// Preset insertion needs a primary stack source; constant-only outputs have none.
 pub(crate) fn material_preset_base(
