@@ -11,7 +11,7 @@
 
 use aestra_compiler::EffectCompiler;
 use aestra_core::{EffectAsset, material::MaterialProgram};
-use aestra_runtime::CompiledEffect;
+use aestra_runtime::{CompiledEffect, RuntimeStage};
 use std::collections::BTreeMap;
 
 fn compile_standalone(effect_ron: &str) -> CompiledEffect {
@@ -200,5 +200,81 @@ fn showcase_effects_have_deterministic_cpu_evaluation() {
     eprintln!("\n{report}");
 
     let expected = include_str!("foundation_cpu_baseline.txt");
+    assert_eq!(report.trim_end(), expected.trim_end());
+}
+
+fn stage_abbr(stage: RuntimeStage) -> &'static str {
+    match stage {
+        RuntimeStage::EmitterUpdate => "EU",
+        RuntimeStage::ParticleSpawn => "PS",
+        RuntimeStage::ParticleUpdate => "PU",
+    }
+}
+
+#[test]
+fn showcase_effects_have_valid_stable_source_maps() {
+    // S0-A6: every module's source-map entry points at a real instruction, and the set of mapped
+    // locations is pinned so lowering cannot silently re-target diagnostics/profiler navigation.
+    let cases = showcase();
+    let mut lines = Vec::new();
+    for (name, compiled) in &cases {
+        lines.push(format!("== {name} =="));
+        let mut locations = Vec::new();
+        for location in compiled.source_map.values() {
+            let emitter = compiled
+                .emitters
+                .get(location.emitter_index)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{name}: source-map emitter_index {} is out of range",
+                        location.emitter_index
+                    )
+                });
+            let plan_len = match location.stage {
+                RuntimeStage::EmitterUpdate => emitter.execution.emitter_update.len(),
+                RuntimeStage::ParticleSpawn => emitter.execution.particle_spawn.len(),
+                RuntimeStage::ParticleUpdate => emitter.execution.particle_update.len(),
+            };
+            assert!(
+                location.instruction_index < plan_len,
+                "{name}: source-map points past the {:?} plan ({} >= {plan_len})",
+                location.stage,
+                location.instruction_index
+            );
+            locations.push(format!(
+                "e{}/{}/{}",
+                location.emitter_index,
+                stage_abbr(location.stage),
+                location.instruction_index
+            ));
+        }
+        locations.sort();
+        lines.extend(locations.into_iter().map(|entry| format!("  {entry}")));
+    }
+    let report = lines.join("\n");
+    eprintln!("\n{report}");
+
+    let expected = include_str!("foundation_source_map_baseline.txt");
+    assert_eq!(report.trim_end(), expected.trim_end());
+}
+
+#[test]
+fn showcase_effects_have_stable_renderer_plans() {
+    // S0-A7: pin each renderer's full compiled plan (kind + parameters), not just its variant name,
+    // so a change in renderer lowering (widths, strand counts, flipbook settings, …) is caught.
+    let cases = showcase();
+    let mut lines = Vec::new();
+    for (name, compiled) in &cases {
+        lines.push(format!("== {name} =="));
+        for emitter in &compiled.emitters {
+            for renderer in &emitter.renderers {
+                lines.push(format!("  [{}] {:?}", emitter.name, renderer.kind));
+            }
+        }
+    }
+    let report = lines.join("\n");
+    eprintln!("\n{report}");
+
+    let expected = include_str!("foundation_renderer_baseline.txt");
     assert_eq!(report.trim_end(), expected.trim_end());
 }

@@ -1,0 +1,19 @@
+== prism_bloom ==
+  [Prism Core] Sprite
+  [Spectrum Shards] Sprite
+  [Floating Dust] Sprite
+  [Bloom Ring] Sprite
+== ember_sigil ==
+  [Kindled Motes] Sprite
+  [Emitter 2] Sprite
+  [Emitter 3] Sprite
+== plasma_burst ==
+  [Plasma Motes] Flipbook { flipbook: AssetId(63408936-cc9c-46ac-aa0e-858062129d48), time_source: ParticleAge, playback: Forward, random_start: true }
+== ribbon_lab ==
+  [Arc Strands] Ribbon { width: 0.35, strand_count: 3 }
+== trail_lab ==
+  [Comet Trails] Trail { width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0, curve_tolerance: 0.01, uv_mode: Tile, tile_length: 8.0, end_cap: Flat }
+== mesh_material_lab ==
+  [Mesh Cubes] Mesh { asset: AssetId(a3574a00-0000-4000-8000-00000000a401) }
+== material_graph_lab ==
+  [Graph Orb] Sprite

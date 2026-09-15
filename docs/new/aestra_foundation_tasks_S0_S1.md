@@ -55,10 +55,16 @@ performance, sparse and dense, with no architecture change landed.
   (`showcase_effects_match_the_cpu_reference_on_gpu`). **Done:** all 7 verified on a real adapter
   (`AESTRA_REQUIRE_GPU_CONFORMANCE=1`). *Skips cleanly on GPU-less CI (GitHub Actions) via the same
   adapter gate as the existing conformance test; the GPU is exercised in the `gpu-visual` workflow.*
-- [ ] **S0-A6 — Source-map assertions.** Pin current `RuntimeStage`-based source mapping for the
-  fixtures. *Where:* wherever source-map tests live today. **Done when** a mapping change is caught.
-- [ ] **S0-A7 — Renderer-plan fixtures.** Assert compiled `RendererPlanKind` for the fixtures'
-  renderers. *Where:* `crates/aestra-compiler/tests/`. **Done when** renderer lowering is pinned.
+- [x] **S0-A6 — Source-map assertions.** For each fixture, assert every `source_map` entry points at
+  a real instruction (emitter + stage plan in range) and pin the sorted set of `RuntimeStage`-based
+  locations (`foundation_source_map_baseline.txt`). *Where:*
+  `crates/aestra-compiler/tests/foundation_baseline_contract.rs`
+  (`showcase_effects_have_valid_stable_source_maps`). **Done:** a re-targeting of diagnostics/profiler
+  source mapping is caught.
+- [x] **S0-A7 — Renderer-plan fixtures.** Pin each renderer's *full* compiled `RendererPlanKind`
+  (kind + parameters — widths, strand counts, flipbook settings, mesh asset) to
+  `foundation_renderer_baseline.txt`, not just the variant name. *Where:* same file
+  (`showcase_effects_have_stable_renderer_plans`). **Done:** renderer lowering is pinned in detail.
 - [ ] **S0-A8 — Properties selection/action tests.** Editor tests around module/renderer
   select/add/reorder on a fixture emitter. *Where:* `apps/aestra-editor/src/properties*` test modules
   (`cargo test --bin aestra-editor`, editor exe is locked while running). **Done when** the current

@@ -1,0 +1,67 @@
+== prism_bloom ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+  e1/EU/0
+  e1/PS/0
+  e1/PS/1
+  e1/PU/0
+  e1/PU/1
+  e2/EU/0
+  e2/PS/0
+  e2/PS/1
+  e2/PU/0
+  e2/PU/1
+  e3/EU/0
+  e3/PS/0
+  e3/PS/1
+  e3/PU/0
+  e3/PU/1
+== ember_sigil ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+  e1/EU/0
+  e1/PS/0
+  e1/PS/1
+  e1/PU/0
+  e1/PU/1
+  e2/EU/0
+  e2/PS/0
+  e2/PS/1
+  e2/PU/0
+  e2/PU/1
+== plasma_burst ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+== ribbon_lab ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+== trail_lab ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+== mesh_material_lab ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
+== material_graph_lab ==
+  e0/EU/0
+  e0/PS/0
+  e0/PS/1
+  e0/PU/0
+  e0/PU/1
