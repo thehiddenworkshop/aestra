@@ -19,8 +19,8 @@ fn normal_maps_match_reference_across_mirrors_handedness_strength_and_convention
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let mut source = format!(
         "{}\n{}\n@group(0) @binding(0) var<storage, read_write> results: array<vec4<f32>>;\n@compute @workgroup_size(1) fn check() {{\n",
-        include_str!("../../aestra-gpu/src/shaders/aestra_normal_map.wesl"),
-        include_str!("../../aestra-gpu/src/shaders/aestra_mesh_tangent.wesl")
+        include_str!("../../../crates/aestra-gpu/src/shaders/aestra_normal_map.wesl"),
+        include_str!("../../../crates/aestra-gpu/src/shaders/aestra_mesh_tangent.wesl")
     );
     let mut expected = Vec::new();
     for sx in [-2.0_f32, 2.0] {

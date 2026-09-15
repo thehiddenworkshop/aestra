@@ -254,7 +254,7 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
     // rotation. A translation column must not affect a direction.
     let source = format!(
         "{}\n{}",
-        include_str!("../../aestra-gpu/src/shaders/aestra_mesh_tangent.wesl"),
+        include_str!("../../../crates/aestra-gpu/src/shaders/aestra_mesh_tangent.wesl"),
         r#"
         @group(0) @binding(0) var<storage, read_write> results: array<vec4<f32>>;
         @compute @workgroup_size(1)
