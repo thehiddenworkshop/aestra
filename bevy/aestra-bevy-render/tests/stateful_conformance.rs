@@ -15,6 +15,8 @@
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
+use aestra_gpu::STATEFUL_SPAWN_RNG_WGSL;
+use aestra_runtime::StatefulSimulation;
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 use wgpu::util::DeviceExt;
@@ -90,11 +92,28 @@ fn seed_particles(count: usize) -> Vec<f32> {
     state
 }
 
+const SPAWN_WGSL_ENTRY: &str = r#"
+@group(0) @binding(0) var<storage, read_write> out: array<f32>;
+@group(0) @binding(1) var<storage, read> seed: vec2<u32>;
+
+@compute @workgroup_size(64)
+fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let count = arrayLength(&out) / 3u;
+    let i = gid.x;
+    if (i >= count) { return; }
+    let dir = spawn_launch_direction(seed, vec2<u32>(i, 0u));
+    out[i * 3u + 0u] = dir.x;
+    out[i * 3u + 1u] = dir.y;
+    out[i * 3u + 2u] = dir.z;
+}
+"#;
+
 struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::ComputePipeline,
+    spawn_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -156,11 +175,28 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
+        // The spawn kernel shares the same (rw storage, ro storage) bind layout as integrate. Its
+        // WGSL is the production spawn RNG from aestra-gpu, so this conformance-checks that exact code.
+        let spawn_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra stateful spawn"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+                "{STATEFUL_SPAWN_RNG_WGSL}{SPAWN_WGSL_ENTRY}"
+            ))),
+        });
+        let spawn_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("spawn"),
+            layout: Some(&pipeline_layout),
+            module: &spawn_shader,
+            entry_point: Some("spawn"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Ok(Some(Self {
             device,
             queue,
             bind_group_layout,
             pipeline,
+            spawn_pipeline,
         }))
     }
 
@@ -265,6 +301,62 @@ impl Harness {
         StorageBuffer::new(&bytes)
             .create()
             .map_err(|error| error.to_string())
+    }
+
+    /// Runs the GPU spawn RNG for ordinals `0..count`, returning `count * 3` floats (the launch
+    /// direction per ordinal). Exercises the production `aestra_gpu::STATEFUL_SPAWN_RNG_WGSL`.
+    fn spawn_directions(&self, seed: u64, count: u32) -> Result<Vec<f32>, String> {
+        let out_bytes = encode(&vec![0.0_f32; count as usize * 3])?;
+        let out = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("spawn out"),
+                contents: &out_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let seed_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("spawn seed"),
+                contents: &encode(&[seed as u32, (seed >> 32) as u32])?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Aestra spawn bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: seed_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("spawn readback"),
+            size: out_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Aestra spawn commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Aestra spawn"),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_pipeline(&self.spawn_pipeline);
+            pass.dispatch_workgroups(count.div_ceil(WORKGROUP), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&out, 0, &staging, 0, out_bytes.len() as u64);
+        self.read_back(encoder, &staging)
     }
 
     /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
@@ -471,4 +563,39 @@ fn gpu_checkpoint_restore_and_replay_reaches_the_uninterrupted_state() {
         restored, overshot,
         "seeking back to 90 must not leave the state at the overshoot tick 150"
     );
+}
+
+#[test]
+fn gpu_spawn_rng_matches_the_cpu_reference() {
+    // Hybrid roadmap M6, the harder half: GPU spawn needs the same deterministic splitmix64 RNG as
+    // the CPU reference, but WGSL has no native u64 — it is emulated with u32 pairs
+    // (aestra_gpu::STATEFUL_SPAWN_RNG_WGSL). Prove the emulation is correct: for many seeds and
+    // ordinals, the GPU launch direction matches StatefulSimulation::launch_direction. Any error in
+    // the u64 math produces a wildly different hash, so a tight tolerance is a strong check.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let count = 1024_u32;
+    for &seed in &[
+        0_u64,
+        1,
+        42,
+        0x1234_5678_9abc_def0,
+        0xDEAD_BEEF_CAFE_F00D,
+        u64::MAX,
+    ] {
+        let gpu = harness.spawn_directions(seed, count).unwrap();
+        for ordinal in 0..count as u64 {
+            let cpu = StatefulSimulation::launch_direction(seed, ordinal);
+            for axis in 0..3 {
+                let actual = gpu[ordinal as usize * 3 + axis];
+                assert!(
+                    (actual - cpu[axis]).abs() <= 1e-6,
+                    "seed {seed:#018x} ordinal {ordinal} axis {axis}: CPU={:.7} GPU={:.7}",
+                    cpu[axis],
+                    actual
+                );
+            }
+        }
+    }
 }

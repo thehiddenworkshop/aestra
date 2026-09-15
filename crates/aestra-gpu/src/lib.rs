@@ -289,6 +289,65 @@ pub struct GpuSimulationState {
     pub records: u32,
 }
 
+/// The deterministic spawn RNG for the stateful GPU backend (hybrid roadmap M6), as reusable WGSL
+/// functions. WGSL has no native `u64`, so splitmix64 is emulated with `u32` pairs
+/// (`vec2<u32>` = `(lo, hi)`). This is the canonical GPU counterpart of
+/// `aestra_runtime::StatefulSimulation::{splitmix64, launch_direction}`, conformance-checked against
+/// it, and included by the GPU spawn shader. Prepend it to a shader module and call
+/// `spawn_launch_direction(seed, ordinal)`.
+pub const STATEFUL_SPAWN_RNG_WGSL: &str = r#"
+// u64 emulated as vec2<u32> = (lo, hi).
+fn aestra_mul_u32_full(a: u32, b: u32) -> vec2<u32> {
+    let a0 = a & 0xFFFFu; let a1 = a >> 16u;
+    let b0 = b & 0xFFFFu; let b1 = b >> 16u;
+    let p00 = a0 * b0;
+    let p01 = a0 * b1;
+    let p10 = a1 * b0;
+    let p11 = a1 * b1;
+    let mid = p01 + p10;
+    let mid_carry = select(0u, 1u, mid < p01);
+    let lo = p00 + (mid << 16u);
+    let lo_carry = select(0u, 1u, lo < p00);
+    let hi = p11 + (mid >> 16u) + (mid_carry << 16u) + lo_carry;
+    return vec2<u32>(lo, hi);
+}
+fn aestra_u64_add(a: vec2<u32>, b: vec2<u32>) -> vec2<u32> {
+    let lo = a.x + b.x;
+    let carry = select(0u, 1u, lo < a.x);
+    return vec2<u32>(lo, a.y + b.y + carry);
+}
+fn aestra_u64_mul(a: vec2<u32>, b: vec2<u32>) -> vec2<u32> {
+    let ll = aestra_mul_u32_full(a.x, b.x);
+    let cross = a.x * b.y + a.y * b.x;
+    return vec2<u32>(ll.x, ll.y + cross);
+}
+fn aestra_u64_shr(a: vec2<u32>, s: u32) -> vec2<u32> {
+    if (s == 0u) { return a; }
+    if (s < 32u) {
+        return vec2<u32>((a.x >> s) | (a.y << (32u - s)), a.y >> s);
+    }
+    return vec2<u32>(a.y >> (s - 32u), 0u);
+}
+fn aestra_splitmix64(input: vec2<u32>) -> vec2<u32> {
+    var z = aestra_u64_add(input, vec2<u32>(0x7F4A7C15u, 0x9E3779B9u));
+    z = aestra_u64_mul(z ^ aestra_u64_shr(z, 30u), vec2<u32>(0x1CE4E5B9u, 0xBF58476Du));
+    z = aestra_u64_mul(z ^ aestra_u64_shr(z, 27u), vec2<u32>(0x133111EBu, 0x94D049BBu));
+    return z ^ aestra_u64_shr(z, 31u);
+}
+fn aestra_unit_signed(h: vec2<u32>) -> f32 {
+    let v = aestra_u64_shr(h, 40u).x;
+    return f32(v) / f32(1u << 24u) * 2.0 - 1.0;
+}
+fn spawn_launch_direction(seed: vec2<u32>, ordinal: vec2<u32>) -> vec3<f32> {
+    let base = aestra_splitmix64(seed ^ aestra_u64_mul(ordinal, vec2<u32>(0x7F4A7C15u, 0x9E3779B9u)));
+    return vec3<f32>(
+        aestra_unit_signed(base),
+        aestra_unit_signed(aestra_splitmix64(base)),
+        aestra_unit_signed(aestra_splitmix64(base ^ vec2<u32>(0xD192ED03u, 0xD1B54A32u)))
+    );
+}
+"#;
+
 impl GpuEffectArtifact {
     /// Builds the full artifact including capacity-sized particle storage. Use this
     /// when persistent GPU particle buffers are first created or resized; the

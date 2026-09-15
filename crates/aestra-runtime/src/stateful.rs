@@ -75,6 +75,18 @@ impl StatefulSimulation {
         SimulationStateLayout::for_class(SimulationClass::Stateful)
     }
 
+    /// The deterministic 64-bit spawn hash (splitmix64). Exposed as the *canonical* definition so the
+    /// GPU spawn kernel (which emulates `u64` with `u32` pairs) can be conformance-checked against it.
+    pub fn splitmix64(input: u64) -> u64 {
+        splitmix64(input)
+    }
+
+    /// The deterministic launch direction (components in `[-1, 1]`) for a particle's spawn ordinal.
+    /// Canonical for both this CPU reference and the GPU spawn kernel.
+    pub fn launch_direction(seed: u64, ordinal: u64) -> [f32; 3] {
+        launch_direction(seed, ordinal)
+    }
+
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;

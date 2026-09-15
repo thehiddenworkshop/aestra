@@ -2622,10 +2622,20 @@ without collision complexity.
 > layout — the engine-neutral sizing the render backend allocates its persistent state buffer from.
 > Empty for analytic effects (every current effect), so nothing changes for them.
 >
-> **Still to do — the harder half:** allocate that state buffer and dispatch a stateful integrate
-> pipeline in `aestra-bevy-render/src/gpu.rs` (next), then GPU spawn/death with a free list / slot
-> compaction (spawn needs a u64 splitmix on GPU, which WGSL lacks natively — emulate with u32 pairs),
-> routing a compiled stateful island through the backend, and mixed analytic + stateful rendering.
+> **Spawn RNG — the u64 blocker is solved (in `src`).** GPU spawn needs the same deterministic
+> splitmix64 the CPU reference uses, but WGSL has no native `u64`. `aestra_gpu::STATEFUL_SPAWN_RNG_WGSL`
+> now emulates `u64` with `u32` pairs (`vec2<u32>`) — full 64-bit add/mul/shr and splitmix64 — and
+> `stateful_conformance.rs` proves the GPU `spawn_launch_direction` matches
+> `aestra_runtime::StatefulSimulation::launch_direction` across many seeds/ordinals within 1e-6 (a
+> tight bound: any error in the u64 math produces a wildly different hash). The runtime exposes
+> `StatefulSimulation::{splitmix64, launch_direction}` as the canonical definitions both sides conform
+> to. This is production shader code in `aestra-gpu`, reusable by the eventual spawn pipeline.
+>
+> **Still to do — the rest of the harder half:** the GPU spawn *kernel* that writes initial state
+> (position/velocity/lifetime) into the persistent buffer using this RNG, death + a free list / slot
+> compaction, presentation extraction (state → 48-byte `GpuParticle`), and finally wiring the
+> allocate + dispatch into `aestra-bevy-render/src/gpu.rs` — which then runs a real stateful effect
+> end-to-end, and is meaningful precisely because spawn/integrate/present exist.
 
 ### GPU passes
 
