@@ -45,21 +45,23 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
     {
         return false;
     }
-    let mut needs_scene = false;
+    // Split what needs the real renderer (textures, screen derivatives) from what the CPU sphere
+    // preview also renders faithfully (graph functions, view-dependent inputs like a fresnel).
+    let mut gpu_scene = false;
+    let mut cpu_scene = false;
     for expression in &program.expressions {
         match expression.kind {
-            // Inline custom WESL is never compiled in a background preview; calls to defined
-            // project functions are fine (their library is supplied to the synthesized scene).
+            // Inline custom WESL is never compiled in a background preview; a graph FunctionCall is
+            // fine (the CPU preview inlines it, and the GPU scene is given the library).
             MaterialExpressionKind::CustomWeslCall { .. }
             | MaterialExpressionKind::FunctionInput(_) => return false,
-            MaterialExpressionKind::FunctionCall { .. } => needs_scene = true,
             MaterialExpressionKind::SampleTexture { .. }
             | MaterialExpressionKind::SampleTextureLevel { .. }
             | MaterialExpressionKind::SampleTextureGradient { .. }
             | MaterialExpressionKind::DerivativeX { .. }
-            | MaterialExpressionKind::DerivativeY { .. } => needs_scene = true,
-            // Scene-dependent inputs (surface geometry, view direction, screen position) can't be
-            // synthesized faithfully by the CPU rasterizer — e.g. a fresnel over Normal/ViewDirection.
+            | MaterialExpressionKind::DerivativeY { .. } => gpu_scene = true,
+            MaterialExpressionKind::FunctionCall { .. } => cpu_scene = true,
+            // Scene-dependent inputs — surface geometry, view direction, screen position.
             MaterialExpressionKind::Input(
                 MaterialInput::LocalPosition
                 | MaterialInput::WorldPosition
@@ -67,17 +69,20 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
                 | MaterialInput::Tangent
                 | MaterialInput::ViewDirection
                 | MaterialInput::ScreenUv,
-            ) => needs_scene = true,
+            ) => cpu_scene = true,
             _ => {}
         }
     }
     let displaces = program.outputs.vertex_offset.is_some();
     match program.domain {
-        // A mesh surface shows both texture sampling and displacement.
-        MaterialDomain::Mesh => needs_scene || displaces,
-        // A camera-facing sprite / a ribbon strip cannot show vertex displacement (the shared
-        // bounds path rejects non-mesh displacement anyway); leave those to the icon.
-        MaterialDomain::Sprite | MaterialDomain::Ribbon => needs_scene && !displaces,
+        // A mesh needs real geometry for any scene-dependent shading, and for displacement.
+        MaterialDomain::Mesh => gpu_scene || cpu_scene || displaces,
+        // A ribbon needs real strand geometry the CPU can't synthesize.
+        MaterialDomain::Ribbon => (gpu_scene || cpu_scene) && !displaces,
+        // A sprite is a flat billboard: only real textures/derivatives need the GPU. Fresnel,
+        // graph functions and other view-dependent shading render better (a curved surface) and
+        // faster on the CPU sphere preview, so they stay off the GPU.
+        MaterialDomain::Sprite => gpu_scene && !displaces,
         _ => false,
     }
 }

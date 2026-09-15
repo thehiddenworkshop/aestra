@@ -594,11 +594,23 @@ fn update(
                         .map(|prepared| Work::Effect(Box::new(prepared)))
                 })
             } else {
+                // The CPU sphere preview inlines graph functions (fresnel, etc.), so pass the
+                // built-in + project function library.
+                let library = aestra_compiler::MaterialFunctionLibrary::new(
+                    catalog
+                        .content()
+                        .cached_material_functions()
+                        .unwrap_or_default()
+                        .into_values(),
+                );
                 IoTaskPool::get().spawn(async move {
                     let program = program?;
-                    crate::material_graph::render_material_asset_preview(&program, EDGE, || {
-                        flag.load(Ordering::Relaxed)
-                    })
+                    crate::material_graph::render_material_asset_preview(
+                        &program,
+                        &library,
+                        EDGE,
+                        || flag.load(Ordering::Relaxed),
+                    )
                     .map(Work::Pixels)
                 })
             }

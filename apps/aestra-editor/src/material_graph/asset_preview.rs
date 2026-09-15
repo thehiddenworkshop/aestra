@@ -3,6 +3,7 @@ use super::*;
 
 pub(crate) fn render_material_asset_preview(
     program: &MaterialProgram,
+    functions: &aestra_compiler::MaterialFunctionLibrary,
     size: u32,
     cancelled: impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
@@ -43,10 +44,11 @@ pub(crate) fn render_material_asset_preview(
             vec![source]
         } else {
             match expression.kind {
+                // Graph FunctionCalls are inlined by the evaluator below; only raw WESL and bare
+                // function inputs stay unrenderable on the CPU.
                 MaterialExpressionKind::FunctionInput(_)
-                | MaterialExpressionKind::FunctionCall { .. }
                 | MaterialExpressionKind::CustomWeslCall { .. } => {
-                    return Err("Function calls need a compiled scene preview".into());
+                    return Err("Custom WESL functions need a compiled scene preview".into());
                 }
                 MaterialExpressionKind::SampleTexture { .. }
                 | MaterialExpressionKind::SampleTextureLevel { .. }
@@ -82,11 +84,11 @@ pub(crate) fn render_material_asset_preview(
             &mut depths,
         )?;
     }
-    // Function calls are rejected above, so the library is unused here; pass built-ins for the type.
+    // Graph functions are inlined here (e.g. a fresnel-rim material), so pass the library.
     render_material_preview_pixels(
         program,
         None,
-        &aestra_compiler::MaterialFunctionLibrary::default(),
+        functions,
         MaterialGraphPreviewTarget::Output,
         None,
         size,
@@ -107,7 +109,13 @@ mod tests {
     fn material_thumbnail_reuses_graph_pixels_without_mutation() {
         let program = material();
         let before = program.clone();
-        let pixels = render_material_asset_preview(&program, 128, || false).unwrap();
+        let pixels = render_material_asset_preview(
+            &program,
+            &aestra_compiler::MaterialFunctionLibrary::default(),
+            128,
+            || false,
+        )
+        .unwrap();
         assert_eq!(
             pixels,
             render_material_preview_pixels(
@@ -145,13 +153,26 @@ mod tests {
             uv: alpha,
         };
         assert!(
-            render_material_asset_preview(&program, 32, || false)
-                .unwrap_err()
-                .contains("Texture sampling")
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .unwrap_err()
+            .contains("Texture sampling")
         );
         // A disconnected unsupported node must not prevent a supported output preview.
         program.outputs.color = alpha;
-        assert!(render_material_asset_preview(&program, 32, || false).is_ok());
+        assert!(
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .is_ok()
+        );
         program.outputs.color = color;
         program
             .expressions
@@ -160,29 +181,60 @@ mod tests {
             .unwrap()
             .kind = MaterialExpressionKind::Add(color, alpha);
         assert!(
-            render_material_asset_preview(&program, 32, || false)
-                .unwrap_err()
-                .contains("cycle")
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .unwrap_err()
+            .contains("cycle")
         );
         program.outputs.color = MaterialExpressionId::new();
         assert!(
-            render_material_asset_preview(&program, 32, || false)
-                .unwrap_err()
-                .contains("Missing")
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .unwrap_err()
+            .contains("Missing")
         );
     }
 
     #[test]
     fn material_preview_limits_depth_size_and_cancels_between_rows() {
         let mut program = material();
-        assert!(render_material_asset_preview(&program, 129, || false).is_err());
-        assert!(render_material_asset_preview(&program, 0, || false).is_err());
+        assert!(
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                129,
+                || false
+            )
+            .is_err()
+        );
+        assert!(
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                0,
+                || false
+            )
+            .is_err()
+        );
         let checks = std::cell::Cell::new(0);
         assert_eq!(
-            render_material_asset_preview(&program, 128, || {
-                checks.set(checks.get() + 1);
-                checks.get() > 3
-            })
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                128,
+                || {
+                    checks.set(checks.get() + 1);
+                    checks.get() > 3
+                }
+            )
             .unwrap_err(),
             "Cancelled"
         );
@@ -195,17 +247,27 @@ mod tests {
             program.outputs.color = id;
         }
         assert!(
-            render_material_asset_preview(&program, 32, || false)
-                .unwrap_err()
-                .contains("64")
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .unwrap_err()
+            .contains("64")
         );
         while program.expressions.len() <= 256 {
             program.expressions.push(program.expressions[0].clone());
         }
         assert!(
-            render_material_asset_preview(&program, 32, || false)
-                .unwrap_err()
-                .contains("256")
+            render_material_asset_preview(
+                &program,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
+                32,
+                || false
+            )
+            .unwrap_err()
+            .contains("256")
         );
     }
 }

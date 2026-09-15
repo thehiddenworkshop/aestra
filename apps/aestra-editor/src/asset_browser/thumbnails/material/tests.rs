@@ -156,23 +156,13 @@ fn synthesize_binds_a_neutral_texture_for_each_referenced_texture() {
 }
 
 #[test]
-fn real_texture_mesh_and_function_materials_prepare_without_a_gpu() {
+fn real_texture_and_mesh_materials_prepare_without_a_gpu() {
     // prepare() compiles the synthesized scene and assembles it (no GPU), so a synthesis or
     // compile failure reproduces here even though the capture itself needs a native GPU.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
-    // The project's function library, so material_graph_lab's graph FunctionCalls resolve.
-    let functions: BTreeMap<_, _> = ["dissolve_edge", "pulse_wave"]
-        .iter()
-        .map(|f| {
-            let function = aestra_core::material::MaterialFunction::load_ron(
-                root.join(format!("materials/{f}.aestra.material-function.ron")),
-            )
-            .unwrap_or_else(|e| panic!("load function {f}: {e}"));
-            (function.id, function)
-        })
-        .collect();
-    // mesh (texture + displacement), trail (ribbon texture), graph (function calls).
-    for name in ["mesh_material_lab", "trail_lab", "material_graph_lab"] {
+    let functions = BTreeMap::new();
+    // mesh (texture + displacement) and trail (ribbon texture) genuinely need the GPU.
+    for name in ["mesh_material_lab", "trail_lab"] {
         let program =
             MaterialProgram::load_ron(root.join(format!("materials/{name}.aestra.material.ron")))
                 .unwrap_or_else(|e| panic!("load {name}: {e}"));
@@ -183,6 +173,15 @@ fn real_texture_mesh_and_function_materials_prepare_without_a_gpu() {
         prepare(program, &functions, &root, &AtomicBool::new(false))
             .unwrap_or_else(|e| panic!("prepare {name}: {e}"));
     }
+    // A function/view-dependent Sprite material (material_graph_lab: fresnel over functions, no
+    // texture) renders on the faster CPU sphere preview instead — it does not need the GPU.
+    let sprite_fresnel =
+        MaterialProgram::load_ron(root.join("materials/material_graph_lab.aestra.material.ron"))
+            .unwrap();
+    assert!(
+        !wants_gpu(&sprite_fresnel),
+        "a fresnel/function sprite material should render on the CPU, not the GPU"
+    );
 }
 
 #[test]
@@ -214,20 +213,22 @@ fn project_presets_resolve_and_prepare_through_the_material_path() {
         .collect();
     let catalog =
         aestra_compiler::MaterialPresetCatalog::with_project_presets(descriptors.clone()).unwrap();
-    let functions = BTreeMap::new();
-    let mut gpu_previews = 0;
+    // The sample presets are view-dependent sprite materials (fresnel), which render on the CPU
+    // sphere with built-in functions inlined — not the GPU flat quad.
+    let library = aestra_compiler::MaterialFunctionLibrary::default();
+    let mut cpu_rendered = 0;
     for descriptor in &descriptors {
         let program = crate::material_graph::resolve_preset_program(&catalog, descriptor.id)
             .unwrap_or_else(|e| panic!("resolve preset {}: {e}", descriptor.display_name));
-        if wants_gpu(&program) {
-            gpu_previews += 1;
-            prepare(program, &functions, &root, &AtomicBool::new(false))
-                .unwrap_or_else(|e| panic!("prepare preset {}: {e}", descriptor.display_name));
+        if !wants_gpu(&program) {
+            crate::material_graph::render_material_asset_preview(&program, &library, 64, || false)
+                .unwrap_or_else(|e| panic!("render preset {}: {e}", descriptor.display_name));
+            cpu_rendered += 1;
         }
     }
     assert!(
-        gpu_previews > 0,
-        "a view-dependent preset (hologram) should route to the GPU scene"
+        cpu_rendered > 0,
+        "view-dependent presets should render on the CPU sphere preview"
     );
 }
 

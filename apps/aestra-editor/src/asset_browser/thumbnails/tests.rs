@@ -432,7 +432,13 @@ fn material_rows_use_saved_defaults_ignore_drafts_and_refresh_without_edits() {
     let image = app.world().resource::<Assets<Image>>().get(handle).unwrap();
     assert_eq!(
         image.data.as_ref().unwrap(),
-        &crate::material_graph::render_material_asset_preview(&changed, EDGE, || false).unwrap()
+        &crate::material_graph::render_material_asset_preview(
+            &changed,
+            &aestra_compiler::MaterialFunctionLibrary::default(),
+            EDGE,
+            || false
+        )
+        .unwrap()
     );
     assert_eq!(app.world().resource::<EditorSession>().effect, before);
     assert_eq!(
