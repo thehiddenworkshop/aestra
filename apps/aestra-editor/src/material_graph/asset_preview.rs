@@ -82,9 +82,11 @@ pub(crate) fn render_material_asset_preview(
             &mut depths,
         )?;
     }
+    // Function calls are rejected above, so the library is unused here; pass built-ins for the type.
     render_material_preview_pixels(
         program,
         None,
+        &aestra_compiler::MaterialFunctionLibrary::default(),
         MaterialGraphPreviewTarget::Output,
         None,
         size,
@@ -111,6 +113,7 @@ mod tests {
             render_material_preview_pixels(
                 &program,
                 None,
+                &aestra_compiler::MaterialFunctionLibrary::default(),
                 MaterialGraphPreviewTarget::Output,
                 None,
                 128,

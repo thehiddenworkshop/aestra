@@ -2605,6 +2605,10 @@ fn rasterize_material_graph_previews(
     let Ok(programs) = session.graph_material_programs(&catalog) else {
         return;
     };
+    // Built-in + project functions, so graph FunctionCall nodes preview instead of showing checkers.
+    let functions = aestra_compiler::MaterialFunctionLibrary::new(
+        catalog.material_functions().unwrap_or_default(),
+    );
     for (entity, request) in &requests {
         let key = (request.program, request.target);
         let Some(program) = programs
@@ -2631,6 +2635,7 @@ fn rasterize_material_graph_previews(
         let image = images.add(render_material_graph_preview(
             program,
             instance,
+            &functions,
             request.target,
             request.value_type,
         ));
@@ -2782,9 +2787,11 @@ fn build_material_preset_preview(
         Ok(plan) => plan.replacement,
         Err(error) => return MaterialPresetPreviewStatus::Failed(error.to_string()),
     };
+    // Presets use built-in functions (fresnel, etc.); the default library resolves them.
     let image = images.add(render_material_graph_preview(
         &replacement,
         None,
+        &aestra_compiler::MaterialFunctionLibrary::default(),
         MaterialGraphPreviewTarget::Output,
         None,
     ));
@@ -2911,6 +2918,9 @@ struct MaterialPreviewContext {
 struct MaterialPreviewEvaluator<'a> {
     program: &'a MaterialProgram,
     instance: Option<&'a MaterialInstance>,
+    /// The function library, so graph `FunctionCall` nodes can be inlined and previewed rather
+    /// than showing as unrenderable. Custom-WESL functions still can't be interpreted on the CPU.
+    functions: &'a aestra_compiler::MaterialFunctionLibrary,
 }
 
 impl MaterialPreviewEvaluator<'_> {
@@ -2921,15 +2931,21 @@ impl MaterialPreviewEvaluator<'_> {
     ) -> Option<PreviewValue> {
         self.evaluate_inner(
             expression,
+            &self.program.expressions,
+            &BTreeMap::new(),
             context,
             &mut BTreeMap::new(),
             &mut BTreeSet::new(),
         )
     }
 
+    /// Evaluates `expression` within a scope: the `expressions` being interpreted (the program or a
+    /// function body) and `bindings` for that scope's `FunctionInput`s.
     fn evaluate_inner(
         &self,
         expression: MaterialExpressionId,
+        expressions: &[MaterialExpression],
+        bindings: &BTreeMap<aestra_core::MaterialFunctionInputId, PreviewValue>,
         context: MaterialPreviewContext,
         memo: &mut BTreeMap<MaterialExpressionId, PreviewValue>,
         visiting: &mut BTreeSet<MaterialExpressionId>,
@@ -2940,25 +2956,60 @@ impl MaterialPreviewEvaluator<'_> {
         if !visiting.insert(expression) {
             return None;
         }
-        let expression_value = self
-            .program
-            .expressions
+        let expression_value = expressions
             .iter()
             .find(|candidate| candidate.id == expression)?;
         if self.program.disabled_expressions.contains(&expression)
             && let Some(source) = expression_value.kind.bypass_input()
         {
             visiting.remove(&expression);
-            return self.evaluate_inner(source, context, memo, visiting);
+            return self.evaluate_inner(source, expressions, bindings, context, memo, visiting);
         }
-        let mut read = |source| self.evaluate_inner(source, context, memo, visiting);
+        let mut read =
+            |source| self.evaluate_inner(source, expressions, bindings, context, memo, visiting);
         let value = match &expression_value.kind {
             MaterialExpressionKind::Constant(value) => preview_value(value),
             MaterialExpressionKind::Input(input) => Some(preview_input(*input, context)),
             MaterialExpressionKind::Parameter(parameter) => self.parameter(*parameter),
-            MaterialExpressionKind::FunctionInput(_)
-            | MaterialExpressionKind::FunctionCall { .. }
-            | MaterialExpressionKind::CustomWeslCall { .. } => None,
+            // A function body's input reads the value bound for it by the enclosing call.
+            MaterialExpressionKind::FunctionInput(input) => bindings.get(input).copied(),
+            // Inline a graph function: bind each input to its argument (or default), then
+            // evaluate the selected output in the function's own scope with a fresh memo.
+            MaterialExpressionKind::FunctionCall {
+                function,
+                arguments,
+                output,
+            } => {
+                let function = self.functions.get(*function)?;
+                if function.custom_wesl.is_some() {
+                    // Raw WESL can't be interpreted on the CPU; leave it unrenderable.
+                    None
+                } else {
+                    let mut argument_values = BTreeMap::new();
+                    for input in &function.inputs {
+                        let value = match arguments.get(&input.id) {
+                            Some(argument) => read(*argument)?,
+                            None => input.default.as_ref().and_then(preview_value)?,
+                        };
+                        argument_values.insert(input.id, value);
+                    }
+                    let output_expression = function
+                        .outputs
+                        .iter()
+                        .find(|candidate| candidate.id == *output)?
+                        .expression;
+                    self.evaluate_inner(
+                        output_expression,
+                        &function.expressions,
+                        &argument_values,
+                        context,
+                        &mut BTreeMap::new(),
+                        &mut BTreeSet::new(),
+                    )
+                }
+            }
+            // Compiler-only form; never authored, and not interpretable here.
+            MaterialExpressionKind::CustomWeslCall { .. } => None,
             MaterialExpressionKind::Add(left, right) => {
                 preview_binary(read(*left)?, read(*right)?, |left, right| left + right)
             }
@@ -3444,12 +3495,14 @@ fn preview_depth_fade(
 fn render_material_graph_preview(
     program: &MaterialProgram,
     instance: Option<&MaterialInstance>,
+    functions: &aestra_compiler::MaterialFunctionLibrary,
     target: MaterialGraphPreviewTarget,
     value_type: Option<MaterialValueType>,
 ) -> Image {
     let rgba = render_material_preview_pixels(
         program,
         instance,
+        functions,
         target,
         value_type,
         MATERIAL_PREVIEW_SIZE,
@@ -3477,13 +3530,18 @@ fn render_material_graph_preview(
 fn render_material_preview_pixels(
     program: &MaterialProgram,
     instance: Option<&MaterialInstance>,
+    functions: &aestra_compiler::MaterialFunctionLibrary,
     target: MaterialGraphPreviewTarget,
     value_type: Option<MaterialValueType>,
     size: u32,
     strict: bool,
     cancelled: impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
-    let evaluator = MaterialPreviewEvaluator { program, instance };
+    let evaluator = MaterialPreviewEvaluator {
+        program,
+        instance,
+        functions,
+    };
     let uses_sphere = preview_uses_surface_normal(program, target);
     let mut rgba = Vec::with_capacity((size * size * 4) as usize);
     for y in 0..size {
@@ -5891,6 +5949,7 @@ mod tests {
         let image = render_material_graph_preview(
             &program,
             None,
+            &aestra_compiler::MaterialFunctionLibrary::default(),
             MaterialGraphPreviewTarget::Output,
             Some(MaterialValueType::Color),
         );
@@ -5903,6 +5962,83 @@ mod tests {
             (MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize
         );
         assert!(pixels.windows(4).any(|pixel| pixel[0] != pixel[1]));
+    }
+
+    #[test]
+    fn graph_function_calls_are_inlined_in_previews() {
+        use aestra_core::material::{
+            MaterialFunction, MaterialFunctionInput, MaterialFunctionOutput, MaterialFunctionRef,
+            MaterialSchemaVersion,
+        };
+        use aestra_core::{MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId};
+
+        // A passthrough function: its single output is its single input.
+        let input_id = MaterialFunctionInputId::new();
+        let output_id = MaterialFunctionOutputId::new();
+        let body = MaterialExpressionId::new();
+        let function = MaterialFunction {
+            id: MaterialFunctionId::new(),
+            schema_version: MaterialSchemaVersion::CURRENT,
+            name: "Passthrough".into(),
+            inputs: vec![MaterialFunctionInput {
+                id: input_id,
+                name: "In".into(),
+                value_type: MaterialValueType::Float,
+                default: None,
+            }],
+            outputs: vec![MaterialFunctionOutput {
+                id: output_id,
+                name: "Out".into(),
+                value_type: MaterialValueType::Float,
+                expression: body,
+            }],
+            expressions: vec![MaterialExpression {
+                id: body,
+                kind: MaterialExpressionKind::FunctionInput(input_id),
+            }],
+            custom_wesl: None,
+        };
+        let library = aestra_compiler::MaterialFunctionLibrary::new([function.clone()]);
+
+        let mut program = material_preset_base("Fn", MaterialDomain::Sprite);
+        let argument = MaterialExpressionId::new();
+        program.expressions.push(MaterialExpression {
+            id: argument,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.42)),
+        });
+        let call = MaterialExpressionId::new();
+        program.expressions.push(MaterialExpression {
+            id: call,
+            kind: MaterialExpressionKind::FunctionCall {
+                function: MaterialFunctionRef::Project(function.id),
+                arguments: std::collections::BTreeMap::from([(input_id, argument)]),
+                output: output_id,
+            },
+        });
+        let context = MaterialPreviewContext {
+            uv: Vec2::ZERO,
+            normal: Vec3::Z,
+        };
+
+        // With the library, the call inlines to its argument value.
+        let evaluator = MaterialPreviewEvaluator {
+            program: &program,
+            instance: None,
+            functions: &library,
+        };
+        assert!(
+            matches!(evaluator.evaluate(call, context), Some(PreviewValue::Numeric(value, 1)) if (value[0] - 0.42).abs() < 1e-6),
+            "a graph function call should preview as its inlined result"
+        );
+
+        // Without the function in the library (e.g. an unresolved/custom-WESL call), it stays
+        // unrenderable rather than guessing.
+        let evaluator = MaterialPreviewEvaluator {
+            program: &program,
+            instance: None,
+            functions: &aestra_compiler::MaterialFunctionLibrary::default(),
+        };
+        assert!(evaluator.evaluate(call, context).is_none());
     }
 
     #[test]
@@ -6285,9 +6421,11 @@ mod tests {
                 .find(|node| node.id == flip_y)
                 .unwrap()
                 .kind = MaterialExpressionKind::Constant(MaterialValue::Bool(flipped));
+            let functions = aestra_compiler::MaterialFunctionLibrary::default();
             let evaluator = MaterialPreviewEvaluator {
                 program: &program,
                 instance: None,
+                functions: &functions,
             };
             let Some(PreviewValue::Numeric(value, 3)) = evaluator.evaluate(
                 plan.expression,
