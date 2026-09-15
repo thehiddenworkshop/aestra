@@ -105,6 +105,31 @@ impl SimulationStateLayout {
     pub fn requires_state_buffer(&self) -> bool {
         !self.persistent.is_empty()
     }
+
+    /// The number of `f32` components in one persistent state record — the GPU/CPU state stride. The
+    /// prototype stateful layout (position, velocity, age, lifetime) is 8 floats.
+    pub fn stride_floats(&self) -> u32 {
+        self.persistent
+            .iter()
+            .map(|attribute| attribute.component_count())
+            .sum()
+    }
+}
+
+impl ParticleAttribute {
+    /// The number of `f32` components this attribute occupies in a packed state buffer.
+    pub fn component_count(self) -> u32 {
+        match self {
+            ParticleAttribute::Position | ParticleAttribute::Velocity => 3,
+            ParticleAttribute::Color => 4,
+            ParticleAttribute::Age
+            | ParticleAttribute::Lifetime
+            | ParticleAttribute::NormalizedAge
+            | ParticleAttribute::Rotation
+            | ParticleAttribute::AngularVelocity
+            | ParticleAttribute::Size => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -16,7 +16,8 @@ use aestra_core::{
 };
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, CompiledVec3Curve, EffectInstance, ExecutionPlan, Instruction,
-    MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, VectorSource,
+    MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, SimulationClass,
+    SimulationStateLayout, VectorSource,
 };
 use encase::ShaderType;
 use glam::{Mat4, Quat, UVec2, UVec3, Vec2, Vec3, Vec4};
@@ -268,6 +269,21 @@ pub struct GpuEffectDynamics {
     pub total_slots: u32,
     pub storage_records: u32,
     pub bounds_half_extents: Vec3,
+    /// Persistent simulation-state storage required by stateful/staged emitters (hybrid roadmap
+    /// M4/M6), kept separate from the presentation particle buffer. Empty for analytic effects.
+    pub simulation_state: GpuSimulationState,
+}
+
+/// The persistent simulation-state storage a stateful/staged effect needs on the GPU, kept separate
+/// from the 48-byte presentation particle buffer (hybrid roadmap M4/M6). `records == 0` for a fully
+/// analytic effect, so analytic effects allocate no simulation-state buffer. The render backend
+/// allocates `records * stride` `f32`s of persistent storage from this.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GpuSimulationState {
+    /// `f32` components of persistent state per stateful slot (0 when the effect is analytic).
+    pub stride: u32,
+    /// Total persistent-state records — the combined slot capacity of the enabled stateful emitters.
+    pub records: u32,
 }
 
 impl GpuEffectArtifact {
@@ -694,6 +710,26 @@ impl GpuEffectArtifact {
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
+        // Persistent simulation-state sizing (hybrid M4/M6): the combined slot capacity of the
+        // enabled stateful/staged emitters. Every current effect is analytic, so this is empty.
+        let stateful_records = instance
+            .effect()
+            .emitters
+            .iter()
+            .filter(|emitter| {
+                emitter.enabled && emitter.simulation_class != SimulationClass::Analytic
+            })
+            .fold(0u32, |total, emitter| {
+                total.saturating_add(emitter.max_particles)
+            });
+        let simulation_state = if stateful_records > 0 {
+            GpuSimulationState {
+                stride: SimulationStateLayout::for_class(SimulationClass::Stateful).stride_floats(),
+                records: stateful_records,
+            }
+        } else {
+            GpuSimulationState::default()
+        };
         Ok(GpuEffectDynamics {
             mesh_bounds,
             ribbon_bounds,
@@ -702,6 +738,7 @@ impl GpuEffectArtifact {
             total_slots: slot_offset,
             storage_records: history_offset,
             bounds_half_extents,
+            simulation_state,
         })
     }
 }

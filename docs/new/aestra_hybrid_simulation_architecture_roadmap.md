@@ -2616,10 +2616,16 @@ without collision complexity.
 > tick). Verified on a real adapter; skips on GPU-less CI, and is wired into the `gpu-visual`
 > workflow so it runs with `AESTRA_REQUIRE_GPU_CONFORMANCE=1`.
 >
-> **Still to do — the harder half:** GPU spawn and death with a free list / slot compaction (spawn
-> needs a u64 splitmix on GPU, which WGSL lacks natively — emulate with u32 pairs), routing a compiled
-> stateful island through this backend, and mixed analytic + stateful rendering in one effect. This
-> increment fixes the particle set to isolate and prove the integration + persistence.
+> **Real-backend integration — started in `src`.** Beyond the conformance proofs, the production path
+> has begun: `aestra-gpu`'s artifact now carries a `GpuSimulationState { stride, records }` descriptor
+> on `GpuEffectDynamics`, computed from the enabled stateful emitters' capacity and the M4 state
+> layout — the engine-neutral sizing the render backend allocates its persistent state buffer from.
+> Empty for analytic effects (every current effect), so nothing changes for them.
+>
+> **Still to do — the harder half:** allocate that state buffer and dispatch a stateful integrate
+> pipeline in `aestra-bevy-render/src/gpu.rs` (next), then GPU spawn/death with a free list / slot
+> compaction (spawn needs a u64 splitmix on GPU, which WGSL lacks natively — emulate with u32 pairs),
+> routing a compiled stateful island through the backend, and mixed analytic + stateful rendering.
 
 ### GPU passes
 
