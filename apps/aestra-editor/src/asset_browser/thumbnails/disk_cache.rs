@@ -7,7 +7,9 @@
 //!
 use super::EDGE;
 use aestra_core::MaterialFunctionId;
-use aestra_core::material::{MaterialExpressionKind, MaterialFunction, MaterialProgram};
+use aestra_core::material::{
+    MaterialExpressionKind, MaterialFunction, MaterialPresetDescriptor, MaterialProgram,
+};
 use aestra_project::ResolvedEffectProject;
 use bevy::{
     camera::{OrthographicProjection, ScalingMode},
@@ -89,8 +91,8 @@ fn serialize_hash<T: serde::Serialize>(value: &T, hasher: &mut impl Hasher) -> O
 /// Only function-using materials also depend on the function library, so it is folded in only
 /// then — otherwise every material's cache would churn whenever any unrelated function changed.
 ///
-/// Materials load from `.ron` with stable expression ids, so this is reproducible. Presets are
-/// resolved onto a fresh base with random ids and are intentionally not disk-cached here.
+/// Materials load from `.ron` with stable expression ids, so this is reproducible.
+/// (Presets key on their descriptor instead — see [`preset_fingerprint`].)
 pub(super) fn material_fingerprint(
     program: &MaterialProgram,
     functions: &BTreeMap<MaterialFunctionId, MaterialFunction>,
@@ -104,6 +106,17 @@ pub(super) fn material_fingerprint(
     {
         serialize_hash(functions, &mut hasher)?;
     }
+    Some(hasher.finish())
+}
+
+/// Content identity of a *preset* thumbnail. A preset resolves onto a fresh base with random
+/// expression ids, so its resolved program is not reproducible — but the preset descriptor is
+/// (loaded from `.ron` with stable ids) and fully determines the resolution. Key on the
+/// descriptor; the `RENDERER_VERSION` folded into [`cache_key`] covers changes to the base or the
+/// resolution logic.
+pub(super) fn preset_fingerprint(descriptor: &MaterialPresetDescriptor) -> Option<u64> {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serialize_hash(descriptor, &mut hasher)?;
     Some(hasher.finish())
 }
 
@@ -367,6 +380,27 @@ mod tests {
         changed.domain = MaterialDomain::Mesh;
         assert_ne!(
             material_fingerprint(&changed, &functions),
+            key,
+            "a content change must re-key"
+        );
+    }
+
+    #[test]
+    fn preset_fingerprint_is_stable_and_content_sensitive() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/test/materials/hologram.aestra.material-preset.ron");
+        let descriptor = aestra_core::material::MaterialPresetDescriptor::load_ron(&path).unwrap();
+        let key = preset_fingerprint(&descriptor);
+        assert!(key.is_some());
+        assert_eq!(
+            preset_fingerprint(&descriptor),
+            key,
+            "the same descriptor hashes the same across loads"
+        );
+        let mut changed = descriptor.clone();
+        changed.display_name = "Different".into();
+        assert_ne!(
+            preset_fingerprint(&changed),
             key,
             "a content change must re-key"
         );

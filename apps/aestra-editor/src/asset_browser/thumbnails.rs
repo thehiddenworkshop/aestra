@@ -9,7 +9,7 @@ use super::{
 };
 use crate::*;
 use aestra_bevy_render::{EffectRuntimeStatus, PresentedEffect, gpu::GpuParticleStatistics};
-use aestra_core::material::MaterialProgram;
+use aestra_core::material::{MaterialPresetDescriptor, MaterialProgram};
 use aestra_project::{ProjectContentVersion, ProjectSourceId};
 use bevy::{
     asset::RenderAssetUsages,
@@ -521,21 +521,28 @@ fn update(
             }
             cache.pending_thumbnail_keys.insert(*source, key);
         }
-        // Persist material thumbnails too (M-MG4): the program determines the render, so a hit
-        // skips the GPU work. Presets resolve onto a random-id base and are not cached here.
-        if gpu_material
-            && Kind::of(entry) == Kind::Material
-            && !cache.pending_thumbnail_keys.contains_key(source)
-            && let Some(Ok(program)) = material_program.as_ref()
-            && let Some(fingerprint) = disk_cache::material_fingerprint(
-                program,
-                &catalog
-                    .content()
-                    .cached_material_functions()
-                    .unwrap_or_default(),
-            )
-        {
-            let key = disk_cache::cache_key(fingerprint);
+        // Persist material and preset thumbnails too (M-MG4): the render is reproducible from the
+        // material program (bound to fixed neutral textures) or the preset descriptor, so a hit
+        // skips the GPU work. A material keys on its program (+ library for function materials); a
+        // preset keys on its descriptor, since its resolved program has non-reproducible ids.
+        let content_key = if !gpu_material || cache.pending_thumbnail_keys.contains_key(source) {
+            None
+        } else {
+            match Kind::of(entry) {
+                Kind::Material => material_program.as_ref().and_then(|program| {
+                    let functions = catalog
+                        .content()
+                        .cached_material_functions()
+                        .unwrap_or_default();
+                    disk_cache::material_fingerprint(program.as_ref().ok()?, &functions)
+                }),
+                Kind::Preset => preset_descriptor(&catalog, *source)
+                    .and_then(|descriptor| disk_cache::preset_fingerprint(&descriptor)),
+                _ => None,
+            }
+            .map(disk_cache::cache_key)
+        };
+        if let Some(key) = content_key {
             if let Some(bytes) = disk_cache::read(&key) {
                 cache.entries.insert(
                     *source,
@@ -908,6 +915,19 @@ fn saved_preset(
         .material_preset_catalog()
         .map_err(|error| error.to_string())?;
     crate::material_graph::resolve_preset_program(&presets, id)
+}
+
+/// The descriptor for a preset source, cloned out of the catalog for disk-cache keying.
+fn preset_descriptor(
+    catalog: &ProjectEffectCatalog,
+    source: ProjectSourceId,
+) -> Option<MaterialPresetDescriptor> {
+    let aestra_project::ProjectAssetId::MaterialPreset(id) =
+        catalog.content().asset_for_source(source)?
+    else {
+        return None;
+    };
+    catalog.material_preset_catalog().ok()?.get(id).cloned()
 }
 
 fn linked(metadata: &fs::Metadata) -> bool {
