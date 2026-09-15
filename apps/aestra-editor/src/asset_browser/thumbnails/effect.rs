@@ -152,11 +152,19 @@ pub(super) fn assemble(
     root: &Path,
     cancelled: &AtomicBool,
     injected_meshes: &BTreeMap<PathBuf, (Mesh, f32)>,
+    // When false (effects), the function library is dropped and any material function call is
+    // rejected. A material preview passes true and supplies a bounded library so graph
+    // `FunctionCall`s resolve; the material's own inline custom WESL stays rejected either way.
+    keep_functions: bool,
 ) -> Result<Assembled, String> {
     check_cancelled(cancelled)?;
-    // The project resolver includes the entire function library, including unrelated WESL.
-    // Calls are rejected below for this slice, so none of those definitions are required.
-    saved.material_functions.clear();
+    if !keep_functions {
+        // The project resolver includes the entire function library, including unrelated WESL.
+        // Calls are rejected below for this slice, so none of those definitions are required.
+        saved.material_functions.clear();
+    } else if saved.material_functions.len() > 64 {
+        return Err("Preview limit: 64 material functions".into());
+    }
     if saved.dependencies.len() >= INSTANCES || saved.material_programs.len() > 32 {
         return Err("Preview limit: 16 effects and 32 materials".into());
     }
@@ -190,19 +198,21 @@ pub(super) fn assemble(
         }
     }
     for expressions in saved.material_programs.values().map(|p| &p.expressions) {
-        if expressions.len() > 256
-            || expressions.iter().any(|e| {
-                matches!(
-                    e.kind,
-                    MaterialExpressionKind::CustomWeslCall { .. }
-                        | MaterialExpressionKind::FunctionCall { .. }
-                )
-            })
-        {
-            return Err(
-                "Preview limit: 256 expressions; material function calls are not yet previewed"
-                    .into(),
-            );
+        if expressions.len() > 256 {
+            return Err("Preview limit: 256 material expressions".into());
+        }
+        for expression in expressions {
+            match expression.kind {
+                // Inline custom WESL in the material graph is never compiled in a background preview.
+                MaterialExpressionKind::CustomWeslCall { .. } => {
+                    return Err("Inline custom WESL is not previewed in the background".into());
+                }
+                // Calls to defined project functions resolve only when the library is kept (materials).
+                MaterialExpressionKind::FunctionCall { .. } if !keep_functions => {
+                    return Err("Material function calls are not previewed for effects".into());
+                }
+                _ => {}
+            }
         }
     }
     let project = EffectCompiler::default()
@@ -384,7 +394,7 @@ pub(super) fn prepare(
     root: &Path,
     cancelled: &AtomicBool,
 ) -> Result<Prepared, String> {
-    let assembled = assemble(saved, root, cancelled, &BTreeMap::new())?;
+    let assembled = assemble(saved, root, cancelled, &BTreeMap::new(), false)?;
     let mut pixels = 0u64;
     let mut decoded = Vec::new();
     for path in &assembled.texture_paths {

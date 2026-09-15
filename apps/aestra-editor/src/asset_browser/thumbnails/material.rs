@@ -14,12 +14,13 @@ use super::effect::{self, Assembled, Prepared};
 use super::*;
 use aestra_core::{
     AssetDefinition, AssetId, AssetKind, ColorKey, Curve, CurveKey, EffectAsset,
-    EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialId, ModuleInstance,
-    ModuleParameters, RENDERER_MESH, RENDERER_RIBBON, RendererId, RendererInstance,
+    EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialFunctionId, MaterialId,
+    ModuleInstance, ModuleParameters, RENDERER_MESH, RENDERER_RIBBON, RendererId, RendererInstance,
     RendererProperties, RendererTypeId, ScalarRange,
     material::{
-        MaterialDomain, MaterialExpressionKind, MaterialInstance, MaterialProgram,
-        MaterialProgramRef, MaterialTextureColorSpace, MaterialValue, MaterialValueType,
+        MaterialDomain, MaterialExpressionKind, MaterialFunction, MaterialInstance,
+        MaterialProgram, MaterialProgramRef, MaterialTextureColorSpace, MaterialValue,
+        MaterialValueType,
     },
 };
 use aestra_project::ResolvedEffectProject;
@@ -47,9 +48,11 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
     let mut needs_scene = false;
     for expression in &program.expressions {
         match expression.kind {
-            MaterialExpressionKind::FunctionCall { .. }
-            | MaterialExpressionKind::CustomWeslCall { .. }
+            // Inline custom WESL is never compiled in a background preview; calls to defined
+            // project functions are fine (their library is supplied to the synthesized scene).
+            MaterialExpressionKind::CustomWeslCall { .. }
             | MaterialExpressionKind::FunctionInput(_) => return false,
+            MaterialExpressionKind::FunctionCall { .. } => needs_scene = true,
             MaterialExpressionKind::SampleTexture { .. }
             | MaterialExpressionKind::SampleTextureLevel { .. }
             | MaterialExpressionKind::SampleTextureGradient { .. }
@@ -74,6 +77,7 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
 /// every texture the material references. Returns the same [`Prepared`] the effect `GpuJob` consumes.
 pub(super) fn prepare(
     program: MaterialProgram,
+    functions: &BTreeMap<MaterialFunctionId, MaterialFunction>,
     root: &Path,
     cancelled: &AtomicBool,
 ) -> Result<Prepared, String> {
@@ -84,8 +88,8 @@ pub(super) fn prepare(
     ) {
         return Err("Only Sprite, Mesh, and Ribbon materials preview in the background".into());
     }
-    let (resolved, neutrals, injected_meshes) = synthesize(program, root);
-    let assembled: Assembled = effect::assemble(resolved, root, cancelled, &injected_meshes)?;
+    let (resolved, neutrals, injected_meshes) = synthesize(program, functions, root);
+    let assembled: Assembled = effect::assemble(resolved, root, cancelled, &injected_meshes, true)?;
     let textures = assembled
         .texture_paths
         .iter()
@@ -112,6 +116,7 @@ pub(super) fn prepare(
 /// procedural meshes to inject into [`effect::assemble`].
 fn synthesize(
     program: MaterialProgram,
+    functions: &BTreeMap<MaterialFunctionId, MaterialFunction>,
     root: &Path,
 ) -> (
     ResolvedEffectProject,
@@ -214,7 +219,8 @@ fn synthesize(
             root: effect,
             dependencies: BTreeMap::new(),
             material_programs,
-            material_functions: BTreeMap::new(),
+            // The project's function library, so the material's graph FunctionCalls resolve.
+            material_functions: functions.clone(),
         },
         neutrals,
         injected_meshes,

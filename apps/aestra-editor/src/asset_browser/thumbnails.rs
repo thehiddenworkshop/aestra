@@ -546,8 +546,13 @@ fn update(
             // that needs a bound-texture/derivative scene renders synthesized on the GPU;
             // everything else uses the CPU rasterizer.
             if gpu_material {
+                // The saved function library, so a material's graph FunctionCalls resolve.
+                let functions = catalog
+                    .content()
+                    .cached_material_functions()
+                    .unwrap_or_default();
                 IoTaskPool::get().spawn(async move {
-                    material::prepare(program?, &root, &flag)
+                    material::prepare(program?, &functions, &root, &flag)
                         .map(|prepared| Work::Effect(Box::new(prepared)))
                 })
             } else {

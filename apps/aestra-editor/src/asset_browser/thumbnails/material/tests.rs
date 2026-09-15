@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialParameter, MaterialTextureDescriptor,
 };
@@ -27,7 +27,7 @@ fn wants_gpu_routes_texture_derivative_and_mesh_displacement_materials() {
     textured_mesh.domain = MaterialDomain::Mesh;
     assert!(wants_gpu(&textured_mesh));
 
-    // Vertex displacement is not representable on a camera-facing sprite, but a mesh shows it —
+    // Vertex displacement is not representable on a camera-facing sprite, but a mesh shows it â€”
     // even without a texture sample.
     let mut sprite_displaced = sampling(sprite("Displaced Sprite"));
     sprite_displaced.outputs.vertex_offset = Some(sprite_displaced.outputs.color);
@@ -56,7 +56,7 @@ fn ribbon_synthesis_traces_a_single_strand_with_moving_particles() {
     let mut program = sampling(sprite("Ribbon Material"));
     program.domain = MaterialDomain::Ribbon;
 
-    let (resolved, _neutrals, injected) = synthesize(program, Path::new("/root"));
+    let (resolved, _neutrals, injected) = synthesize(program, &BTreeMap::new(), Path::new("/root"));
     assert!(injected.is_empty(), "a ribbon material injects no mesh");
 
     let emitter = &resolved.root.emitters[0];
@@ -80,7 +80,7 @@ fn mesh_synthesis_injects_a_unit_sphere_with_the_expected_attributes() {
     let mut program = sampling(sprite("Mesh Material"));
     program.domain = MaterialDomain::Mesh;
 
-    let (resolved, _neutrals, injected) = synthesize(program, Path::new("/root"));
+    let (resolved, _neutrals, injected) = synthesize(program, &BTreeMap::new(), Path::new("/root"));
 
     // A mesh renderer over the injected procedural sphere, bound to the material instance.
     let renderer = &resolved.root.emitters[0].renderers[0];
@@ -129,7 +129,7 @@ fn synthesize_binds_a_neutral_texture_for_each_referenced_texture() {
     });
     let program_id = program.id;
 
-    let (resolved, neutrals, injected) = synthesize(program, Path::new("/root"));
+    let (resolved, neutrals, injected) = synthesize(program, &BTreeMap::new(), Path::new("/root"));
     assert!(
         injected.is_empty(),
         "a sprite material injects no procedural mesh"
@@ -156,11 +156,23 @@ fn synthesize_binds_a_neutral_texture_for_each_referenced_texture() {
 }
 
 #[test]
-fn real_texture_and_mesh_materials_prepare_without_a_gpu() {
+fn real_texture_mesh_and_function_materials_prepare_without_a_gpu() {
     // prepare() compiles the synthesized scene and assembles it (no GPU), so a synthesis or
     // compile failure reproduces here even though the capture itself needs a native GPU.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
-    for name in ["mesh_material_lab", "trail_lab"] {
+    // The project's function library, so material_graph_lab's graph FunctionCalls resolve.
+    let functions: BTreeMap<_, _> = ["dissolve_edge", "pulse_wave"]
+        .iter()
+        .map(|f| {
+            let function = aestra_core::material::MaterialFunction::load_ron(
+                root.join(format!("materials/{f}.aestra.material-function.ron")),
+            )
+            .unwrap_or_else(|e| panic!("load function {f}: {e}"));
+            (function.id, function)
+        })
+        .collect();
+    // mesh (texture + displacement), trail (ribbon texture), graph (function calls).
+    for name in ["mesh_material_lab", "trail_lab", "material_graph_lab"] {
         let program =
             MaterialProgram::load_ron(root.join(format!("materials/{name}.aestra.material.ron")))
                 .unwrap_or_else(|e| panic!("load {name}: {e}"));
@@ -168,7 +180,7 @@ fn real_texture_and_mesh_materials_prepare_without_a_gpu() {
             wants_gpu(&program),
             "{name} should route to the GPU preview"
         );
-        prepare(program, &root, &AtomicBool::new(false))
+        prepare(program, &functions, &root, &AtomicBool::new(false))
             .unwrap_or_else(|e| panic!("prepare {name}: {e}"));
     }
 }
