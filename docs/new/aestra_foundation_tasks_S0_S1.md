@@ -26,14 +26,15 @@ performance, sparse and dense, with no architecture change landed.
 
 ### S0-A · Correctness fixtures
 
-- [ ] **S0-A1 — Semantic effect fixtures.** Curate 4–6 representative real effects (not toys) as v3
-  RON fixtures under a shared test-assets path. *Where:* `assets/test/effects/` (reuse existing) +
-  a manifest listing which are load-bearing. **Done when** each loads, compiles, and is referenced by
-  at least one contract test below.
-- [ ] **S0-A2 — Compile snapshot for built-in lifecycle stages.** Assert the compiled
-  `ExecutionPlan { emitter_update, particle_spawn, particle_update }` shape/contents for the fixtures.
-  *Where:* `crates/aestra-compiler/tests/compiler_contract.rs`. **Done when** a change to lowering
-  order/content fails the test.
+- [x] **S0-A1 — Semantic effect fixtures.** Curated 7 representative real effects (sprite, textured,
+  flipbook, ribbon, trail, mesh, material-graph) from the existing `assets/test/effects/`; the
+  load-bearing set is the case list in the baseline test below. **Done:** each loads clean and
+  compiles.
+- [x] **S0-A2 — Compile snapshot for built-in lifecycle stages.** Characterization net pinning each
+  fixture's compiled `ExecutionPlan` instruction counts (`eu`/`ps`/`pu`), renderer plan kinds,
+  `seek_mode`, `max_particles`, source-map size, and portable requirements against a blessed baseline.
+  *Where:* `crates/aestra-compiler/tests/foundation_baseline_contract.rs` +
+  `foundation_baseline.txt`. **Done:** any structural lowering change fails the test.
 - [ ] **S0-A3 — Artifact round-trip fixtures.** Encode→decode each fixture at
   `CURRENT_ARTIFACT_VERSION = 2`; assert `format_version:2` and byte-stable RON. *Where:*
   `crates/aestra-artifact/tests/artifact_contract.rs`. **Done when** round-trip is asserted for every

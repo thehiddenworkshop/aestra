@@ -1,0 +1,33 @@
+== prism_bloom ==
+seek=StatelessDirect max_particles=360 emitters=4 source_map=20
+req: gpu_sim=true native_present=true renderers={SpriteParticles}
+  [Prism Core] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+  [Spectrum Shards] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+  [Floating Dust] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+  [Bloom Ring] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+== ember_sigil ==
+seek=StatelessDirect max_particles=384 emitters=3 source_map=15
+req: gpu_sim=true native_present=true renderers={SpriteParticles}
+  [Kindled Motes] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+  [Emitter 2] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+  [Emitter 3] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
+== plasma_burst ==
+seek=StatelessDirect max_particles=96 emitters=1 source_map=5
+req: gpu_sim=true native_present=true renderers={FlipbookParticles}
+  [Plasma Motes] enabled=true eu=1 ps=2 pu=2 renderers=["Flipbook"]
+== ribbon_lab ==
+seek=StatelessDirect max_particles=128 emitters=1 source_map=5
+req: gpu_sim=true native_present=true renderers={RibbonParticles}
+  [Arc Strands] enabled=true eu=1 ps=2 pu=2 renderers=["Ribbon"]
+== trail_lab ==
+seek=StatelessDirect max_particles=32 emitters=1 source_map=5
+req: gpu_sim=true native_present=true renderers={RibbonParticles}
+  [Comet Trails] enabled=true eu=1 ps=2 pu=2 renderers=["Trail"]
+== mesh_material_lab ==
+seek=StatelessDirect max_particles=32 emitters=1 source_map=5
+req: gpu_sim=true native_present=true renderers={MeshParticles}
+  [Mesh Cubes] enabled=true eu=1 ps=2 pu=2 renderers=["Mesh"]
+== material_graph_lab ==
+seek=StatelessDirect max_particles=128 emitters=1 source_map=5
+req: gpu_sim=true native_present=true renderers={SpriteParticles}
+  [Graph Orb] enabled=true eu=1 ps=2 pu=2 renderers=["Sprite"]
