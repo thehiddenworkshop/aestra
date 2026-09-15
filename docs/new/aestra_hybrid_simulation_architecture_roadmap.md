@@ -2653,6 +2653,19 @@ Compare stateful CPU reference and native GPU output at canonical frames.
 
 **Goal:** Generalize the existing trail checkpoint approach to simulation state.
 
+> **Status — core seek model proven on GPU (unified M7, first increment).**
+> `stateful_conformance.rs` now proves the backward-seek contract on real GPU compute: a snapshot of
+> the persistent state buffer (GPU→GPU copy), an overshoot forward, then a restore (GPU→GPU copy) and
+> forward replay reaches the *same* state as an uninterrupted forward run to the seek target — with no
+> CPU readback except the final check (§4.4/§19), and the simulation never run with negative `dt`
+> (§16). Verified on a real adapter and wired into the `gpu-visual` CI.
+>
+> **Still to do:** a generic runtime-owned checkpoint *store* (cadence, byte budget, nearest-checkpoint
+> lookup, invalidation) around this GPU-resident snapshot — i.e. generalizing `CheckpointStore` /
+> `CheckpointContext` to simulation state and driving snapshot/restore from the seek planner, rather
+> than the hand-scheduled snapshot in the test. This increment proves the GPU mechanism; the policy
+> layer is the follow-up.
+
 ### Reuse trail design principles
 
 - GPU-resident snapshots;

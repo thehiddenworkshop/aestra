@@ -1,10 +1,12 @@
-//! Minimal stateful GPU backend conformance (hybrid roadmap M6, first increment).
+//! Stateful GPU backend conformance (hybrid roadmap M6 + M7, first increments).
 //!
-//! Proves the core stateful claim on real GPU compute: persistent per-particle state that advances
-//! *incrementally* across fixed ticks and matches the CPU reference's semi-implicit Euler
-//! integration (the same integration `aestra_runtime::StatefulSimulation` performs). The GPU keeps
-//! its state in a storage buffer across dispatches — no readback happens during simulation, only for
-//! the final conformance check.
+//! Proves the core stateful claims on real GPU compute:
+//! - **M6** — persistent per-particle state that advances *incrementally* across fixed ticks and
+//!   matches the CPU reference's semi-implicit Euler integration (the same integration
+//!   `aestra_runtime::StatefulSimulation` performs). The GPU keeps its state in a storage buffer
+//!   across dispatches — no readback during simulation, only for the final conformance check.
+//! - **M7** — a backward seek done as a GPU-resident checkpoint restore plus forward replay
+//!   (snapshot and restore entirely GPU→GPU) reaches the same state as an uninterrupted forward run.
 //!
 //! Spawn, death, and the free list are the harder half of M6 (they need a u64 splitmix on GPU and
 //! slot compaction) and are a deliberate follow-up; this increment fixes the particle set and proves
@@ -211,18 +213,37 @@ impl Harness {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Aestra stateful commands"),
             });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Aestra stateful integration"),
-                ..Default::default()
-            });
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.set_pipeline(&self.pipeline);
-            for _ in 0..ticks {
-                pass.dispatch_workgroups(count.div_ceil(WORKGROUP), 1, 1);
-            }
-        }
+        self.dispatch_ticks(&mut encoder, &bind_group, count, ticks);
         encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+        self.read_back(encoder, &staging)
+    }
+
+    /// Runs `ticks` integrate dispatches over `count` particles in one pass. WebGPU orders dispatches
+    /// within a pass, so the persistent state accumulates across ticks.
+    fn dispatch_ticks(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        bind_group: &wgpu::BindGroup,
+        count: u32,
+        ticks: u32,
+    ) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Aestra stateful integration"),
+            ..Default::default()
+        });
+        pass.set_bind_group(0, bind_group, &[]);
+        pass.set_pipeline(&self.pipeline);
+        for _ in 0..ticks {
+            pass.dispatch_workgroups(count.div_ceil(WORKGROUP), 1, 1);
+        }
+    }
+
+    /// Submits the encoder, waits, and reads the mapped staging buffer back as floats.
+    fn read_back(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        staging: &wgpu::Buffer,
+    ) -> Result<Vec<f32>, String> {
         let submission = self.queue.submit([encoder.finish()]);
         let slice = staging.slice(..);
         let (sender, receiver) = mpsc::channel();
@@ -244,6 +265,88 @@ impl Harness {
         StorageBuffer::new(&bytes)
             .create()
             .map_err(|error| error.to_string())
+    }
+
+    /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
+    /// `overshoot_to`, then restores the checkpoint (a backward seek) and replays forward to
+    /// `seek_target` — all in GPU commands, no readback until the final state (§4.4/§19). Proves a
+    /// backward seek via a GPU-resident checkpoint reaches the uninterrupted forward state.
+    fn checkpoint_restore_replay(
+        &self,
+        initial: &[f32],
+        gravity: [f32; 3],
+        checkpoint_at: u32,
+        overshoot_to: u32,
+        seek_target: u32,
+    ) -> Result<Vec<f32>, String> {
+        assert!(checkpoint_at <= seek_target && seek_target <= overshoot_to);
+        let count = (initial.len() / STRIDE) as u32;
+        let state_bytes = encode(&initial.to_vec())?;
+        let byte_len = state_bytes.len() as u64;
+        let state = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("state"),
+                contents: &state_bytes,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let params = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: &encode(&[gravity[0], gravity[1], gravity[2], TICK_DT])?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let checkpoint = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("checkpoint"),
+            size: byte_len,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback"),
+            size: byte_len,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Aestra stateful bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Aestra stateful checkpoint commands"),
+            });
+        self.dispatch_ticks(&mut encoder, &bind_group, count, checkpoint_at);
+        encoder.copy_buffer_to_buffer(&state, 0, &checkpoint, 0, byte_len);
+        self.dispatch_ticks(
+            &mut encoder,
+            &bind_group,
+            count,
+            overshoot_to - checkpoint_at,
+        );
+        encoder.copy_buffer_to_buffer(&checkpoint, 0, &state, 0, byte_len);
+        self.dispatch_ticks(
+            &mut encoder,
+            &bind_group,
+            count,
+            seek_target - checkpoint_at,
+        );
+        encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, byte_len);
+        self.read_back(encoder, &staging)
     }
 }
 
@@ -332,4 +435,40 @@ fn gpu_state_persists_and_advances_incrementally_between_ticks() {
             "age accrues one dt per tick"
         );
     }
+}
+
+#[test]
+fn gpu_checkpoint_restore_and_replay_reaches_the_uninterrupted_state() {
+    // Hybrid roadmap M7: a backward seek is a GPU-resident checkpoint restore plus forward replay,
+    // never a reverse integration (§16). Prove the restored+replayed state equals the uninterrupted
+    // forward run to the same tick — with the snapshot and restore done entirely GPU→GPU (§4.4/§19).
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let gravity = [0.0, -9.81, 0.0];
+    let initial = seed_particles(128);
+
+    let uninterrupted = harness.integrate(&initial, gravity, 90).unwrap();
+    // Checkpoint at tick 30, run the playhead forward to 150, then seek back: restore the checkpoint
+    // (<= target) and replay forward to tick 90.
+    let restored = harness
+        .checkpoint_restore_replay(&initial, gravity, 30, 150, 90)
+        .unwrap();
+
+    assert_eq!(uninterrupted.len(), restored.len());
+    // The full persistent state matches — position, velocity, and age — not just positions.
+    for (index, (expected, actual)) in uninterrupted.iter().zip(&restored).enumerate() {
+        let tolerance = 1e-3 + 1e-4 * expected.abs().max(actual.abs());
+        assert!(
+            (expected - actual).abs() <= tolerance,
+            "state float {index} diverged after checkpoint/replay: uninterrupted={expected:.6} \
+             restored={actual:.6}"
+        );
+    }
+    // Sanity: the seek actually moved backward from the overshoot (state at 90 != state at 150).
+    let overshot = harness.integrate(&initial, gravity, 150).unwrap();
+    assert_ne!(
+        restored, overshot,
+        "seeking back to 90 must not leave the state at the overshoot tick 150"
+    );
 }
