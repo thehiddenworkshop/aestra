@@ -8,15 +8,15 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-aestra-compiler = { path = "../aestra-compiler" }
-aestra-core = { path = "../aestra-core" }
-aestra-gpu = { path = "../aestra-gpu" }
-aestra-runtime = { path = "../aestra-runtime" }
+aestra-compiler = { path = "../../crates/aestra-compiler" }
+aestra-core = { path = "../../crates/aestra-core" }
+aestra-gpu = { path = "../../crates/aestra-gpu" }
+aestra-runtime = { path = "../../crates/aestra-runtime" }
 bevy.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
-aestra-core = { path = "../aestra-core" }
+aestra-core = { path = "../../crates/aestra-core" }
 encase.workspace = true
 pollster.workspace = true
