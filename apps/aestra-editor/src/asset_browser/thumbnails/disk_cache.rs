@@ -6,6 +6,8 @@
 //! the fingerprints and perform the actual disk access.
 //!
 use super::EDGE;
+use aestra_core::MaterialFunctionId;
+use aestra_core::material::{MaterialExpressionKind, MaterialFunction, MaterialProgram};
 use aestra_project::ResolvedEffectProject;
 use bevy::{
     camera::{OrthographicProjection, ScalingMode},
@@ -13,6 +15,7 @@ use bevy::{
     transform::components::Transform,
 };
 use std::{
+    collections::BTreeMap,
     fs,
     hash::{Hash, Hasher},
     io::Cursor,
@@ -79,6 +82,29 @@ pub(super) fn resolved_fingerprint(
 fn serialize_hash<T: serde::Serialize>(value: &T, hasher: &mut impl Hasher) -> Option<()> {
     ron::to_string(value).ok()?.hash(hasher);
     Some(())
+}
+
+/// Content identity of a *material* thumbnail: the material program determines the rendered
+/// pixels (its textures are bound as fixed neutrals, so their files never affect the render).
+/// Only function-using materials also depend on the function library, so it is folded in only
+/// then — otherwise every material's cache would churn whenever any unrelated function changed.
+///
+/// Materials load from `.ron` with stable expression ids, so this is reproducible. Presets are
+/// resolved onto a fresh base with random ids and are intentionally not disk-cached here.
+pub(super) fn material_fingerprint(
+    program: &MaterialProgram,
+    functions: &BTreeMap<MaterialFunctionId, MaterialFunction>,
+) -> Option<u64> {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serialize_hash(program, &mut hasher)?;
+    if program
+        .expressions
+        .iter()
+        .any(|expression| matches!(expression.kind, MaterialExpressionKind::FunctionCall { .. }))
+    {
+        serialize_hash(functions, &mut hasher)?;
+    }
+    Some(hasher.finish())
 }
 
 /// The on-disk filename stem for an effect thumbnail. Combines the content
@@ -322,6 +348,28 @@ mod tests {
             .assets
             .push(AssetDefinition::texture("spark", "textures/spark.png"));
         assert!(key(&project, |_| None).is_none());
+    }
+
+    #[test]
+    fn material_fingerprint_is_stable_and_content_sensitive() {
+        use aestra_core::material::MaterialDomain;
+        let program =
+            crate::material_graph::material_preset_base("Fingerprint", MaterialDomain::Sprite);
+        let functions = BTreeMap::new();
+        let key = material_fingerprint(&program, &functions);
+        assert!(key.is_some());
+        assert_eq!(
+            material_fingerprint(&program, &functions),
+            key,
+            "the same program hashes the same across loads"
+        );
+        let mut changed = program.clone();
+        changed.domain = MaterialDomain::Mesh;
+        assert_ne!(
+            material_fingerprint(&changed, &functions),
+            key,
+            "a content change must re-key"
+        );
     }
 
     #[test]

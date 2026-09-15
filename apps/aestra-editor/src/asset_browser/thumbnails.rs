@@ -521,6 +521,34 @@ fn update(
             }
             cache.pending_thumbnail_keys.insert(*source, key);
         }
+        // Persist material thumbnails too (M-MG4): the program determines the render, so a hit
+        // skips the GPU work. Presets resolve onto a random-id base and are not cached here.
+        if gpu_material
+            && Kind::of(entry) == Kind::Material
+            && !cache.pending_thumbnail_keys.contains_key(source)
+            && let Some(Ok(program)) = material_program.as_ref()
+            && let Some(fingerprint) = disk_cache::material_fingerprint(
+                program,
+                &catalog
+                    .content()
+                    .cached_material_functions()
+                    .unwrap_or_default(),
+            )
+        {
+            let key = disk_cache::cache_key(fingerprint);
+            if let Some(bytes) = disk_cache::read(&key) {
+                cache.entries.insert(
+                    *source,
+                    Entry {
+                        preview: Preview::Loading,
+                        touched: tick,
+                    },
+                );
+                cache.accept(*source, &epoch, Ok(bytes), &mut images);
+                continue;
+            }
+            cache.pending_thumbnail_keys.insert(*source, key);
+        }
         // A miss renders — bounded by the worker budget and the single effect slot.
         if cache.jobs.len() + usize::from(cache.gpu.is_some()) >= WORKERS
             || !cache.room(&wanted, &mut images)
