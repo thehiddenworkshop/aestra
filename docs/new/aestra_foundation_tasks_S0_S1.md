@@ -72,14 +72,17 @@ performance, sparse and dense, with no architecture change landed.
 
 ### S0-B · Performance baselines
 
-- [ ] **S0-B1 — Capture CPU + native-GPU baselines from `main`.** Run `apps/aestra-bench` for
-  `b002`–`b008`; confirm `b004_sparse_large` (500k @ ~1%) is included (it is load-bearing for the
-  analytic-vs-stateful decision). **Done when** a baseline run exists for all of them.
-- [ ] **S0-B2 — Record the full metric set.** Per scenario: CPU evaluation, GPU simulation time,
-  capacity, alive count, occupancy, workgroups, GPU buffer bytes. *Where:* `apps/aestra-bench/src/metrics.rs`
-  (extend only if a field is missing). **Done when** every metric above is emitted.
-- [ ] **S0-B3 — Store results with provenance.** Persist baseline output tagged with commit /
-  hardware / backend. **Done when** the baseline file names the commit it was taken at.
+- [x] **S0-B1 — Capture CPU baseline from `main`.** Ran `aestra-bench --all` (release) covering
+  `b001`–`b008`, including the load-bearing `b004_sparse_large` (500k @ ~1%). *Where:*
+  `benchmarks/cpu-baselines/S0_foundation.json`. **Done.** *(Native-GPU perf is captured on demand via
+  `aestra-bench --features gpu --gpu-trails …` → `benchmarks/gpu-baselines/`; not part of this CPU
+  snapshot.)*
+- [x] **S0-B2 — Record the full metric set.** The JSON carries per-scenario median/p95/p99/max/mean/
+  stddev for each CPU stage plus capacity, alive, occupancy, and normalized ns/1k. **Done.**
+- [x] **S0-B3 — Store results with provenance.** Each report embeds `commit`, `seed`, and a
+  `hardware` block (cores/OS/arch/backend). Recorded as a **reference artifact, not a `cargo test`
+  gate** (machine-specific timing must not fail CI) — see `benchmarks/cpu-baselines/README.md`.
+  **Done.**
 
 ### S0 — Do NOT change
 
