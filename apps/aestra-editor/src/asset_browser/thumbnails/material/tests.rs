@@ -156,6 +156,24 @@ fn synthesize_binds_a_neutral_texture_for_each_referenced_texture() {
 }
 
 #[test]
+fn real_texture_and_mesh_materials_prepare_without_a_gpu() {
+    // prepare() compiles the synthesized scene and assembles it (no GPU), so a synthesis or
+    // compile failure reproduces here even though the capture itself needs a native GPU.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
+    for name in ["mesh_material_lab", "trail_lab"] {
+        let program =
+            MaterialProgram::load_ron(root.join(format!("materials/{name}.aestra.material.ron")))
+                .unwrap_or_else(|e| panic!("load {name}: {e}"));
+        assert!(
+            wants_gpu(&program),
+            "{name} should route to the GPU preview"
+        );
+        prepare(program, &root, &AtomicBool::new(false))
+            .unwrap_or_else(|e| panic!("prepare {name}: {e}"));
+    }
+}
+
+#[test]
 fn neutral_images_use_the_matching_color_space_format() {
     assert_eq!(
         neutral_image(MaterialTextureColorSpace::SrgbColor)

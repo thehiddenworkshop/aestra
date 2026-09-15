@@ -13,13 +13,13 @@
 use super::effect::{self, Assembled, Prepared};
 use super::*;
 use aestra_core::{
-    AssetDefinition, AssetId, AssetKind, BlendMode, ColorKey, Curve, CurveKey, EffectAsset,
-    EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialId, ModuleInstance, RENDERER_MESH,
-    RENDERER_RIBBON, RendererId, RendererInstance, RendererProperties, RendererTypeId, ScalarRange,
+    AssetDefinition, AssetId, AssetKind, ColorKey, Curve, CurveKey, EffectAsset,
+    EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialId, ModuleInstance,
+    ModuleParameters, RENDERER_MESH, RENDERER_RIBBON, RendererId, RendererInstance,
+    RendererProperties, RendererTypeId, ScalarRange,
     material::{
-        MaterialCullMode, MaterialDepthTest, MaterialDomain, MaterialExpressionKind,
-        MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
-        MaterialTextureColorSpace, MaterialValue, MaterialValueType,
+        MaterialDomain, MaterialExpressionKind, MaterialInstance, MaterialProgram,
+        MaterialProgramRef, MaterialTextureColorSpace, MaterialValue, MaterialValueType,
     },
 };
 use aestra_project::ResolvedEffectProject;
@@ -153,9 +153,12 @@ fn synthesize(
 
     let program_id = program.id;
     let domain = program.domain;
+    // The program's policy dictates the legal render states; its default is always allowed.
+    // Hardcoding one risks "render state is not allowed by its program" on compile.
+    let render_state = program.render_state_policy.default;
     let instance_id = MaterialId::new();
     let mut injected_meshes = BTreeMap::new();
-    let (renderer, cull_mode) = match domain {
+    let renderer = match domain {
         MaterialDomain::Mesh => {
             let mesh_asset = AssetId::new();
             let path = "aestra-preview/unit-sphere.mesh".to_string();
@@ -166,47 +169,33 @@ fn synthesize(
                 kind: AssetKind::Mesh,
                 path,
             });
-            (
-                RendererInstance {
-                    id: RendererId::new(),
-                    renderer_type: RendererTypeId::new(RENDERER_MESH),
-                    enabled: true,
-                    material: instance_id,
-                    properties: RendererProperties::Mesh { asset: mesh_asset },
-                },
-                MaterialCullMode::Back,
-            )
-        }
-        MaterialDomain::Ribbon => (
             RendererInstance {
                 id: RendererId::new(),
-                renderer_type: RendererTypeId::new(RENDERER_RIBBON),
+                renderer_type: RendererTypeId::new(RENDERER_MESH),
                 enabled: true,
                 material: instance_id,
-                // A single strand connects the arc's particles into one clean strip.
-                properties: RendererProperties::Ribbon {
-                    width: 0.35,
-                    strand_count: 1,
-                },
+                properties: RendererProperties::Mesh { asset: mesh_asset },
+            }
+        }
+        MaterialDomain::Ribbon => RendererInstance {
+            id: RendererId::new(),
+            renderer_type: RendererTypeId::new(RENDERER_RIBBON),
+            enabled: true,
+            material: instance_id,
+            // A single strand connects the arc's particles into one clean strip.
+            properties: RendererProperties::Ribbon {
+                width: 0.35,
+                strand_count: 1,
             },
-            MaterialCullMode::None,
-        ),
-        _ => (
-            RendererInstance::sprite(instance_id),
-            MaterialCullMode::None,
-        ),
+        },
+        _ => RendererInstance::sprite(instance_id),
     };
 
     let instance = MaterialInstance {
         id: instance_id,
         program: MaterialProgramRef::Project(program_id),
         values: BTreeMap::new(),
-        render_state: MaterialRenderState {
-            blend: BlendMode::Alpha,
-            depth_test: MaterialDepthTest::LessEqual,
-            depth_write: domain == MaterialDomain::Mesh,
-            cull_mode,
-        },
+        render_state,
     };
     let mut effect = EffectAsset::new("Material Preview", PREVIEW_DURATION);
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
@@ -233,29 +222,59 @@ fn synthesize(
 }
 
 /// A single static, full-size, opaque-white particle at the origin carrying `renderer`, so the
-/// preview shows one clean instance of the material rather than an animated swarm.
+/// preview shows one clean instance of the material rather than an animated swarm. Tunes the
+/// standard sprite module set in place (rather than rebuilding it) so every module the compiler
+/// requires — emission, shape, initialize, motion, appearance — stays present.
 fn preview_emitter(renderer: RendererInstance) -> Emitter {
     let mut emitter = Emitter::basic_sprite("Material Preview", PREVIEW_DURATION);
     emitter.max_particles = 1;
-    emitter.modules = vec![
-        // One burst, no continuous emission.
-        ModuleInstance::emission(0.0, 1),
-        ModuleInstance::shape(EmitterShape::Point),
-        // Lives the whole preview, motionless.
-        ModuleInstance::initialize(
-            ScalarRange::new(PREVIEW_DURATION * 8.0, PREVIEW_DURATION * 8.0),
-            ScalarRange::new(0.0, 0.0),
-            [0.0, 0.0, 1.0],
-            0.0,
-            ScalarRange::new(0.0, 0.0),
-        ),
-        // Constant unit size and opacity, neutral white so the material's own color dominates.
-        ModuleInstance::appearance(
-            Curve::new(vec![CurveKey::new(0.0, 1.0)]),
-            Curve::new(vec![CurveKey::new(0.0, 1.0)]),
-            Gradient::new(vec![ColorKey::new(0.0, [1.0, 1.0, 1.0, 1.0])]),
-        ),
-    ];
+    for module in &mut emitter.modules {
+        match &mut module.parameters {
+            // One particle at start, no continuous emission.
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count,
+            } => {
+                *spawn_rate = 0.0;
+                *burst_count = 1;
+            }
+            ModuleParameters::Shape { shape } => *shape = EmitterShape::Point,
+            // Lives the whole preview, motionless.
+            ModuleParameters::Initialize {
+                lifetime,
+                speed,
+                direction,
+                spread_degrees,
+                angular_velocity,
+            } => {
+                *lifetime = ScalarRange::new(PREVIEW_DURATION * 8.0, PREVIEW_DURATION * 8.0);
+                *speed = ScalarRange::new(0.0, 0.0);
+                *direction = [0.0, 0.0, 1.0];
+                *spread_degrees = 0.0;
+                *angular_velocity = ScalarRange::new(0.0, 0.0);
+            }
+            ModuleParameters::Motion {
+                gravity,
+                drag,
+                turbulence,
+            } => {
+                *gravity = [0.0; 3];
+                *drag = 0.0;
+                *turbulence = 0.0;
+            }
+            // Constant unit size and opacity, neutral white so the material's own color dominates.
+            ModuleParameters::Appearance {
+                size,
+                opacity,
+                color,
+            } => {
+                *size = Curve::new(vec![CurveKey::new(0.0, 1.0)]);
+                *opacity = Curve::new(vec![CurveKey::new(0.0, 1.0)]);
+                *color = Gradient::new(vec![ColorKey::new(0.0, [1.0, 1.0, 1.0, 1.0])]);
+            }
+            _ => {}
+        }
+    }
     emitter.renderers = vec![renderer];
     emitter
 }
