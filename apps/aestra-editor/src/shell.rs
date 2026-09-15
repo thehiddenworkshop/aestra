@@ -692,11 +692,6 @@ fn spawn_status_bar(
                     ..default()
                 },
             ));
-            crate::diagnostics::details::spawn_button(
-                bar,
-                crate::diagnostics::details::DetailsAction::LatestStatus,
-                localizer,
-            );
         });
 }
 

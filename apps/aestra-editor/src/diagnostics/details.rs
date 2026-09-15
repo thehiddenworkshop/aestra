@@ -6,7 +6,6 @@ use bevy::ui_widgets::ScrollArea;
 #[derive(Component)]
 pub(crate) enum DetailsAction {
     Message(String),
-    LatestStatus,
     Back,
 }
 
@@ -113,8 +112,6 @@ pub(super) fn activate_details(
     };
     let next = match action {
         DetailsAction::Message(message) => Some(message.clone()),
-        DetailsAction::LatestStatus if !session.status.is_empty() => Some(session.status.clone()),
-        DetailsAction::LatestStatus => return,
         DetailsAction::Back => None,
     };
     if state.details != next {
@@ -122,24 +119,6 @@ pub(super) fn activate_details(
         session.ui_revision += 1;
     }
     reveal_dock_panel(&mut layout, &mut session, ToolPanel::Diagnostics);
-}
-
-pub(super) fn sync_status_details(
-    session: Res<EditorSession>,
-    mut buttons: Query<(&DetailsAction, &mut Node)>,
-) {
-    for (action, mut node) in &mut buttons {
-        if matches!(action, DetailsAction::LatestStatus) {
-            let display = if session.status.is_empty() {
-                Display::None
-            } else {
-                Display::Flex
-            };
-            if node.display != display {
-                node.display = display;
-            }
-        }
-    }
 }
 
 pub(super) fn spawn_workspace(

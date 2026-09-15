@@ -16,36 +16,7 @@ fn summaries_bound_unicode_and_unbroken_paths_without_changing_short_messages() 
 }
 
 #[test]
-fn status_details_visibility_tracks_empty_messages_without_rebuilding() {
-    let mut app = App::new();
-    let mut session = test_support::session_with_timing_slack();
-    session.status.clear();
-    let revision = session.ui_revision;
-    app.insert_resource(session)
-        .add_systems(Update, sync_status_details);
-    let button = app
-        .world_mut()
-        .spawn((DetailsAction::LatestStatus, Node::default()))
-        .id();
-    app.update();
-    assert_eq!(
-        app.world().get::<Node>(button).unwrap().display,
-        Display::None
-    );
-    app.world_mut().resource_mut::<EditorSession>().status = "Open failed".into();
-    app.update();
-    assert_eq!(
-        app.world().get::<Node>(button).unwrap().display,
-        Display::Flex
-    );
-    assert_eq!(
-        app.world().resource::<EditorSession>().ui_revision,
-        revision
-    );
-}
-
-#[test]
-fn details_snapshot_latest_status_and_back_preserves_filter_and_document() {
+fn details_snapshot_message_and_back_preserves_filter_and_document() {
     let mut app = App::new();
     let session = test_support::session_with_timing_slack();
     let effect = session.effect.clone();
@@ -59,11 +30,17 @@ fn details_snapshot_latest_status_and_back_preserves_filter_and_document() {
             details: None,
         })
         .add_observer(activate_details);
-    let latest = app.world_mut().spawn(DetailsAction::LatestStatus).id();
-    let back = app.world_mut().spawn(DetailsAction::Back).id();
     let message = format!("Missing source\nC:/{}", "long-path/".repeat(200));
-    app.world_mut().resource_mut::<EditorSession>().status = message.clone();
-    app.world_mut().trigger(Activate { entity: latest });
+    let first = app
+        .world_mut()
+        .spawn(DetailsAction::Message(message.clone()))
+        .id();
+    let second = app
+        .world_mut()
+        .spawn(DetailsAction::Message("Saved".into()))
+        .id();
+    let back = app.world_mut().spawn(DetailsAction::Back).id();
+    app.world_mut().trigger(Activate { entity: first });
     assert_eq!(
         app.world()
             .resource::<DiagnosticsPanelState>()
@@ -72,16 +49,14 @@ fn details_snapshot_latest_status_and_back_preserves_filter_and_document() {
         Some(message.as_str())
     );
     let revision = app.world().resource::<EditorSession>().ui_revision;
-    app.world_mut().resource_mut::<EditorSession>().status = "Saved".into();
+    // Re-requesting the detail already shown must not rebuild the panel.
+    app.world_mut().trigger(Activate { entity: first });
     assert_eq!(
-        app.world()
-            .resource::<DiagnosticsPanelState>()
-            .details
-            .as_deref(),
-        Some(message.as_str())
+        app.world().resource::<EditorSession>().ui_revision,
+        revision
     );
     // An already visible panel must rebuild when a different detail is requested.
-    app.world_mut().trigger(Activate { entity: latest });
+    app.world_mut().trigger(Activate { entity: second });
     assert!(app.world().resource::<EditorSession>().ui_revision > revision);
     assert_eq!(
         app.world()

@@ -23,10 +23,6 @@ impl Plugin for EditorDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DiagnosticsPanelState>()
             .add_observer(details::activate_details)
-            .add_systems(
-                Update,
-                details::sync_status_details.in_set(DiagnosticsSet::Sync),
-            )
             .add_observer(queue_diagnostics_action_activation)
             .add_observer(open_diagnostics_context_menu)
             .add_systems(
