@@ -2379,6 +2379,20 @@ The milestones below are ordered to minimize architectural churn.
 
 **Goal:** Replace the global assumption "the complete effect is stateless" with compiler-derived island semantics.
 
+> **Status — first increment landed (unified U2).** The compiler now:
+> - classifies each authored emitter by its derived `SimulationClass` from module requirements
+>   (`EffectCompiler::classify_simulation`), naming the module that promoted it above `Analytic`;
+> - **derives `CompiledEffect.seek_mode` from the aggregate class, removing the hardcoded
+>   `StatelessDirect`** (§5.2) — analytic effects stay `StatelessDirect`, history-dependent effects
+>   resolve to `RestartReplay` (checkpoint vs restart is a backend-capability choice, §5.3, made once
+>   a checkpoint backend exists). All S0 baselines stay green: existing effects are unchanged.
+>
+> **Still to do in M2/M3:** promote per-emitter class into a persisted `CompiledSimulationIsland`
+> representation with dependency edges, and carry it in the artifact DTO. That changes
+> `CompiledEffect`'s shape, so it is coordinated with the compiled-artifact bump (unified U3 =
+> M3+M4), not this increment — which is why the per-emitter class is exposed as *analysis*
+> (`classify_simulation`) rather than stored on `CompiledEmitter` yet.
+
 ### Initial implementation
 
 Use each compiled emitter-region as the initial island seed.

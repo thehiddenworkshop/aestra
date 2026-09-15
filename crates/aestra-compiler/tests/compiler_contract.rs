@@ -404,6 +404,119 @@ fn backend_support_shape_is_agreed_for_descriptors() {
 }
 
 #[test]
+fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
+    use aestra_compiler::{
+        ExtensionRegistry, ModuleMetadata, SimulationRequirements, TemporalRequirement,
+    };
+    use aestra_core::{CAPABILITY_CPU_REFERENCE, CapabilityId, ModuleId};
+    use aestra_runtime::SimulationClass;
+
+    // Existing effects are entirely analytic and keep seeking directly (no hardcoded StatelessDirect).
+    let compiler = EffectCompiler::default();
+    let showcase = EffectAsset::from_ron(SAMPLE).unwrap();
+    for classified in compiler.classify_simulation(&showcase) {
+        assert_eq!(
+            classified.class,
+            SimulationClass::Analytic,
+            "{} should be analytic",
+            classified.name
+        );
+        assert_eq!(classified.promoted_by, None);
+    }
+    assert_eq!(
+        compiler.compile(&showcase).unwrap().seek_mode,
+        SimulationSeekMode::StatelessDirect
+    );
+
+    // Register a fake stateful module and build a mixed effect: one analytic emitter, one that uses
+    // the stateful module.
+    let stateful_type = "org.example.test::module/collide";
+    let stateful = ModuleMetadata {
+        type_id: ModuleTypeId::new(stateful_type),
+        display_name: "Collide",
+        description: "A fake stateful module for tests",
+        category: "Test",
+        stages: vec![StageKind::ParticleUpdate],
+        inputs: Vec::new(),
+        reads: Vec::new(),
+        writes: Vec::new(),
+        tags: Vec::new(),
+        capabilities: vec![CapabilityId::new(CAPABILITY_CPU_REFERENCE)],
+        simulation: SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..Default::default()
+        },
+        approximate_cost: 0,
+    };
+    let mut registry = ExtensionRegistry::builtin();
+    registry.register_module(stateful).unwrap();
+    let compiler = EffectCompiler::with_extensions(registry);
+
+    let mut asset = EffectAsset::new("Explosion", 2.0);
+    asset.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
+    let mut debris = Emitter::basic_sprite("Debris", 2.0);
+    debris.modules.push(ModuleInstance {
+        id: ModuleId::new(),
+        module_type: ModuleTypeId::new(stateful_type),
+        stage: StageKind::ParticleUpdate,
+        enabled: true,
+        parameters: ModuleParameters::Custom(BTreeMap::new()),
+        property_sources: BTreeMap::new(),
+        property_source_values: BTreeMap::new(),
+        bindings: BTreeMap::new(),
+    });
+    asset.emitters.push(debris);
+
+    // Only the emitter that uses the stateful module is promoted, and the promoting module is named.
+    let classes = compiler.classify_simulation(&asset);
+    let sparks = classes.iter().find(|c| c.name == "Sparks").unwrap();
+    let debris = classes.iter().find(|c| c.name == "Debris").unwrap();
+    assert_eq!(sparks.class, SimulationClass::Analytic);
+    assert_eq!(sparks.promoted_by, None);
+    assert_eq!(debris.class, SimulationClass::Stateful);
+    assert_eq!(
+        debris.promoted_by,
+        Some(ModuleTypeId::new(stateful_type)),
+        "the stateful module is identified as the cause of promotion"
+    );
+
+    // Seek-mode derivation end-to-end: override a *built-in* module's requirement to stateful (so the
+    // effect still compiles/lowers normally) — the resolved seek mode is no longer StatelessDirect.
+    let mut registry = ExtensionRegistry::builtin();
+    let mut motion = registry
+        .modules
+        .get(&ModuleTypeId::new(MODULE_MOTION))
+        .unwrap()
+        .clone();
+    motion.simulation = SimulationRequirements {
+        temporal: TemporalRequirement::PreviousState,
+        ..Default::default()
+    };
+    registry.modules.register(motion);
+    let stateful_compiler = EffectCompiler::with_extensions(registry);
+
+    let mut stateful_effect = EffectAsset::new("Debris Field", 2.0);
+    stateful_effect
+        .emitters
+        .push(Emitter::basic_sprite("Debris", 2.0));
+    assert_eq!(
+        stateful_compiler
+            .compile(&stateful_effect)
+            .unwrap()
+            .seek_mode,
+        SimulationSeekMode::RestartReplay
+    );
+    // The same effect compiled with the stock (analytic) registry still seeks directly.
+    assert_eq!(
+        EffectCompiler::default()
+            .compile(&stateful_effect)
+            .unwrap()
+            .seek_mode,
+        SimulationSeekMode::StatelessDirect
+    );
+}
+
+#[test]
 fn builtin_registry_instantiates_every_catalog_module() {
     let registry = ModuleRegistry::builtin();
     for metadata in registry.iter() {

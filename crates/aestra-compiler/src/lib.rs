@@ -22,11 +22,12 @@ pub use aestra_core::{
 
 use aestra_core::{
     CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, ColorKey, Curve,
-    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, EmitterShape,
-    Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
-    MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE,
-    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
+    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, EmitterId,
+    EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
+    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
+    RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
+    ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -433,6 +434,18 @@ impl CompileError {
     }
 }
 
+/// The derived simulation classification of one authored emitter (hybrid roadmap M2). Produced by
+/// analysis from the emitter's module requirements; not yet persisted in the compiled effect (the
+/// island representation and its artifact support arrive in a later milestone). `promoted_by` names
+/// the first module that lifted the emitter above `Analytic`, for promotion diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmitterSimulationClass {
+    pub emitter: EmitterId,
+    pub name: String,
+    pub class: SimulationClass,
+    pub promoted_by: Option<ModuleTypeId>,
+}
+
 /// Frontend that validates authored semantics and emits immutable runtime plans.
 #[derive(Debug, Clone)]
 pub struct EffectCompiler {
@@ -464,6 +477,48 @@ impl EffectCompiler {
     /// The unified extension registry backing this compiler.
     pub fn extensions(&self) -> &ExtensionRegistry {
         &self.registry
+    }
+
+    /// Classifies each enabled authored emitter by its derived [`SimulationClass`] (hybrid roadmap
+    /// M2). The class aggregates the emitter's enabled modules' declared simulation requirements;
+    /// `promoted_by` names the first module that lifted it above `Analytic`. Every current built-in
+    /// module is analytic, so existing effects classify entirely as `Analytic`.
+    pub fn classify_simulation(&self, asset: &EffectAsset) -> Vec<EmitterSimulationClass> {
+        asset
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .map(|emitter| {
+                let mut requirements = SimulationRequirements::ANALYTIC;
+                let mut promoted_by = None;
+                for module in emitter.modules.iter().filter(|module| module.enabled) {
+                    let Some(metadata) = self.registry.modules.get(&module.module_type) else {
+                        continue;
+                    };
+                    let before = requirements.derived_class();
+                    requirements = requirements.max(metadata.simulation);
+                    if promoted_by.is_none() && requirements.derived_class() > before {
+                        promoted_by = Some(module.module_type.clone());
+                    }
+                }
+                EmitterSimulationClass {
+                    emitter: emitter.id,
+                    name: emitter.name.clone(),
+                    class: requirements.derived_class(),
+                    promoted_by,
+                }
+            })
+            .collect()
+    }
+
+    /// The effect's aggregate simulation class — the strongest over its enabled emitters, `Analytic`
+    /// when it has none. This is what determines the resolved seek strategy.
+    fn aggregate_simulation_class(&self, asset: &EffectAsset) -> SimulationClass {
+        self.classify_simulation(asset)
+            .into_iter()
+            .map(|classified| classified.class)
+            .max()
+            .unwrap_or(SimulationClass::Analytic)
     }
 
     /// Resolves and compiles a root effect together with all transitive reusable effects.
@@ -919,7 +974,16 @@ impl EffectCompiler {
                         .expect("validated host transform track"),
                 )
             }),
-            seek_mode: SimulationSeekMode::StatelessDirect,
+            // Derived from the effect's simulation class (hybrid roadmap M2), replacing the former
+            // unconditional StatelessDirect. History-dependent effects replay; choosing checkpoint
+            // vs restart is a backend-capability decision (hybrid §5.3) made once a checkpoint-capable
+            // backend exists. Every current effect is analytic, so this stays StatelessDirect.
+            seek_mode: match self.aggregate_simulation_class(asset) {
+                SimulationClass::Analytic => SimulationSeekMode::StatelessDirect,
+                SimulationClass::Stateful | SimulationClass::Staged => {
+                    SimulationSeekMode::RestartReplay
+                }
+            },
             assets: asset
                 .assets
                 .iter()
