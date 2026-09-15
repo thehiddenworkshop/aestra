@@ -63,6 +63,13 @@ fn stateful_emitters_reserve_persistent_state_sized_by_capacity() {
         built.simulation_state.records, capacity,
         "one persistent-state record per stateful slot"
     );
+
+    // The full artifact carries the same descriptor the render backend allocates its state buffer
+    // from.
+    let compiled = stateful_compiler().compile(&asset).unwrap();
+    let artifact =
+        GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).unwrap();
+    assert_eq!(artifact.simulation_state, built.simulation_state);
 }
 
 #[test]

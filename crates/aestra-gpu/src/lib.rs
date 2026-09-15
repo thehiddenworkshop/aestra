@@ -244,6 +244,9 @@ pub struct GpuEffectArtifact {
     pub particles: Vec<GpuParticle>,
     pub total_slots: u32,
     pub bounds_half_extents: Vec3,
+    /// Persistent simulation-state sizing for stateful emitters (hybrid M4/M6). Empty for analytic
+    /// effects. The render backend allocates its state buffer from this.
+    pub simulation_state: GpuSimulationState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -299,6 +302,7 @@ impl GpuEffectArtifact {
             renderers: dynamics.renderers,
             total_slots: dynamics.total_slots,
             bounds_half_extents: dynamics.bounds_half_extents,
+            simulation_state: dynamics.simulation_state,
         })
     }
 
