@@ -42,10 +42,37 @@ fn wants_gpu_routes_texture_derivative_and_mesh_displacement_materials() {
     plain_mesh.domain = MaterialDomain::Mesh;
     assert!(!wants_gpu(&plain_mesh));
 
-    // Other domains never route to the background GPU preview.
+    // Ribbon materials that sample a texture also route (Decal/Screen do not).
     let mut ribbon = sampling(sprite("Ribbon"));
     ribbon.domain = MaterialDomain::Ribbon;
-    assert!(!wants_gpu(&ribbon));
+    assert!(wants_gpu(&ribbon));
+    let mut decal = sampling(sprite("Decal"));
+    decal.domain = MaterialDomain::Decal;
+    assert!(!wants_gpu(&decal));
+}
+
+#[test]
+fn ribbon_synthesis_traces_a_single_strand_with_moving_particles() {
+    let mut program = sampling(sprite("Ribbon Material"));
+    program.domain = MaterialDomain::Ribbon;
+
+    let (resolved, _neutrals, injected) = synthesize(program, Path::new("/root"));
+    assert!(injected.is_empty(), "a ribbon material injects no mesh");
+
+    let emitter = &resolved.root.emitters[0];
+    let renderer = &emitter.renderers[0];
+    let RendererProperties::Ribbon {
+        strand_count,
+        width,
+    } = renderer.properties
+    else {
+        panic!("ribbon material previews on a ribbon renderer");
+    };
+    assert_eq!(strand_count, 1, "one clean strand");
+    assert!(width > 0.0);
+    assert_eq!(renderer.material, resolved.root.material_instances[0].id);
+    // The strand needs several moving particles over time, not a single static one.
+    assert!(emitter.max_particles > 1);
 }
 
 #[test]

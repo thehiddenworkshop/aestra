@@ -2,9 +2,9 @@
 //!
 //! The CPU rasterizer (`material_graph::asset_preview`) renders simple materials and rejects
 //! ones that sample textures, use screen derivatives, or displace vertices — those route here.
-//! We wrap the material program in a minimal scene (a single static particle: a camera-facing
-//! sprite for the Sprite domain, a unit sphere for the Mesh domain) and feed it through the
-//! shared [`effect::assemble`] + `GpuJob` scaffolding.
+//! We wrap the material program in a minimal scene by domain — a single static camera-facing
+//! sprite (Sprite), a unit sphere (Mesh), or a short gravity-curved strand (Ribbon) — and feed
+//! it through the shared [`effect::assemble`] + `GpuJob` scaffolding.
 //!
 //! A *standalone* material has no concrete texture — the texture is an instance/effect-level
 //! input — so we bind a semantically **neutral** texture per slot (white for color, flat normal
@@ -15,7 +15,7 @@ use super::*;
 use aestra_core::{
     AssetDefinition, AssetId, AssetKind, BlendMode, ColorKey, Curve, CurveKey, EffectAsset,
     EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialId, ModuleInstance, RENDERER_MESH,
-    RendererId, RendererInstance, RendererProperties, RendererTypeId, ScalarRange,
+    RENDERER_RIBBON, RendererId, RendererInstance, RendererProperties, RendererTypeId, ScalarRange,
     material::{
         MaterialCullMode, MaterialDepthTest, MaterialDomain, MaterialExpressionKind,
         MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
@@ -38,7 +38,7 @@ const PREVIEW_DURATION: f32 = 2.0;
 pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
     if !matches!(
         program.domain,
-        MaterialDomain::Sprite | MaterialDomain::Mesh
+        MaterialDomain::Sprite | MaterialDomain::Mesh | MaterialDomain::Ribbon
     ) || program.expressions.len() > 256
         || program.parameters.len() > 128
     {
@@ -60,10 +60,11 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
     }
     let displaces = program.outputs.vertex_offset.is_some();
     match program.domain {
-        // A camera-facing sprite cannot show vertex displacement; leave those to the icon.
-        MaterialDomain::Sprite => needs_scene && !displaces,
         // A mesh surface shows both texture sampling and displacement.
         MaterialDomain::Mesh => needs_scene || displaces,
+        // A camera-facing sprite / a ribbon strip cannot show vertex displacement (the shared
+        // bounds path rejects non-mesh displacement anyway); leave those to the icon.
+        MaterialDomain::Sprite | MaterialDomain::Ribbon => needs_scene && !displaces,
         _ => false,
     }
 }
@@ -79,9 +80,9 @@ pub(super) fn prepare(
     check_cancelled(cancelled)?;
     if !matches!(
         program.domain,
-        MaterialDomain::Sprite | MaterialDomain::Mesh
+        MaterialDomain::Sprite | MaterialDomain::Mesh | MaterialDomain::Ribbon
     ) {
-        return Err("Only Sprite and Mesh materials preview in the background".into());
+        return Err("Only Sprite, Mesh, and Ribbon materials preview in the background".into());
     }
     let (resolved, neutrals, injected_meshes) = synthesize(program, root);
     let assembled: Assembled = effect::assemble(resolved, root, cancelled, &injected_meshes)?;
@@ -176,6 +177,20 @@ fn synthesize(
                 MaterialCullMode::Back,
             )
         }
+        MaterialDomain::Ribbon => (
+            RendererInstance {
+                id: RendererId::new(),
+                renderer_type: RendererTypeId::new(RENDERER_RIBBON),
+                enabled: true,
+                material: instance_id,
+                // A single strand connects the arc's particles into one clean strip.
+                properties: RendererProperties::Ribbon {
+                    width: 0.35,
+                    strand_count: 1,
+                },
+            },
+            MaterialCullMode::None,
+        ),
         _ => (
             RendererInstance::sprite(instance_id),
             MaterialCullMode::None,
@@ -197,7 +212,12 @@ fn synthesize(
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
     effect.material_instances = vec![instance];
     effect.assets = assets;
-    effect.emitters = vec![preview_emitter(renderer)];
+    // A ribbon strip needs a strand of moving particles; sprite/mesh want one static instance.
+    effect.emitters = vec![if domain == MaterialDomain::Ribbon {
+        ribbon_emitter(renderer)
+    } else {
+        preview_emitter(renderer)
+    }];
 
     let material_programs = BTreeMap::from([(program_id, program)]);
     (
@@ -232,6 +252,38 @@ fn preview_emitter(renderer: RendererInstance) -> Emitter {
         // Constant unit size and opacity, neutral white so the material's own color dominates.
         ModuleInstance::appearance(
             Curve::new(vec![CurveKey::new(0.0, 1.0)]),
+            Curve::new(vec![CurveKey::new(0.0, 1.0)]),
+            Gradient::new(vec![ColorKey::new(0.0, [1.0, 1.0, 1.0, 1.0])]),
+        ),
+    ];
+    emitter.renderers = vec![renderer];
+    emitter
+}
+
+/// A single ribbon strand: particles emitted along a gravity-curved arc so the renderer connects
+/// them into one short, opaque-white strip (mirrors the `ribbon_lab` fixture's arc, but one strand
+/// at full opacity so the whole strip shows). The strip's own material shading dominates.
+fn ribbon_emitter(renderer: RendererInstance) -> Emitter {
+    let mut emitter = Emitter::basic_sprite("Material Preview", PREVIEW_DURATION);
+    emitter.max_particles = 128;
+    emitter.modules = vec![
+        // Continuous emission traces the strand; no initial burst.
+        ModuleInstance::emission(30.0, 0),
+        ModuleInstance::shape(EmitterShape::Point),
+        ModuleInstance::initialize(
+            ScalarRange::new(PREVIEW_DURATION * 1.2, PREVIEW_DURATION * 1.2),
+            ScalarRange::new(55.0, 55.0),
+            [0.8, 0.6, 0.0],
+            0.0,
+            ScalarRange::new(0.0, 0.0),
+        ),
+        ModuleInstance::motion([0.0, -35.0, 0.0], 0.0, 0.0),
+        ModuleInstance::appearance(
+            Curve::new(vec![
+                CurveKey::new(0.0, 3.0),
+                CurveKey::new(0.35, 12.0),
+                CurveKey::new(1.0, 1.5),
+            ]),
             Curve::new(vec![CurveKey::new(0.0, 1.0)]),
             Gradient::new(vec![ColorKey::new(0.0, [1.0, 1.0, 1.0, 1.0])]),
         ),
