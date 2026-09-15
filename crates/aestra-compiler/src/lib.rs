@@ -176,6 +176,41 @@ impl SimulationRequirements {
     }
 }
 
+/// How strongly a descriptor supports a backend (extensible plan §13.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SupportLevel {
+    /// The descriptor only runs on this backend.
+    Required,
+    /// The descriptor runs on this backend.
+    #[default]
+    Supported,
+    /// The descriptor cannot run on this backend.
+    Unavailable,
+}
+
+/// The backend support a stage / module / renderer descriptor *declares* — the complement of
+/// `aestra_runtime::BackendCapabilities`, which is what a backend *offers* (§44.4). Shape agreed in
+/// the shared foundation (S1-E); no backend consumes it yet, and the hybrid roadmap's
+/// checkpoint/staged-dispatch axes will extend the backend-offers side, not this one.
+///
+/// Built-ins keep a real CPU reference; a community compute stage that ships no CPU evaluator sets
+/// `cpu_reference = Unavailable` (there is no WESL-on-CPU interpreter — extensible plan §13.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackendSupport {
+    pub cpu_reference: SupportLevel,
+    pub gpu_compute: SupportLevel,
+}
+
+impl Default for BackendSupport {
+    /// Built-in default: fully supported on both the CPU reference and GPU compute backends.
+    fn default() -> Self {
+        Self {
+            cpu_reference: SupportLevel::Supported,
+            gpu_compute: SupportLevel::Supported,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
@@ -265,6 +300,113 @@ impl ModuleRegistry {
     }
 }
 
+/// The governed set of registered capability identities (shared-foundation S1-A2/§9.1). Built-in and
+/// plugin capabilities share this one namespaced vocabulary.
+#[derive(Debug, Clone, Default)]
+pub struct CapabilityRegistry {
+    capabilities: std::collections::BTreeSet<CapabilityId>,
+}
+
+impl CapabilityRegistry {
+    /// The core-owned `aestra.*` capabilities every built-in module may declare.
+    pub fn builtin() -> Self {
+        let mut registry = Self::default();
+        registry
+            .register(CapabilityId::new(CAPABILITY_CPU_REFERENCE))
+            .expect("built-in capabilities are unique");
+        registry
+            .register(CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION))
+            .expect("built-in capabilities are unique");
+        registry
+    }
+
+    /// Registers a capability; errors if the identity was already registered.
+    pub fn register(&mut self, id: CapabilityId) -> Result<(), RegistryConflict> {
+        if self.capabilities.insert(id.clone()) {
+            Ok(())
+        } else {
+            Err(RegistryConflict::DuplicateCapability(id))
+        }
+    }
+
+    pub fn contains(&self, id: &CapabilityId) -> bool {
+        self.capabilities.contains(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CapabilityId> {
+        self.capabilities.iter()
+    }
+}
+
+/// A registry integrity problem, surfaced as a distinct diagnostic (shared-foundation S1-B2). None of
+/// these can occur for the hand-curated built-ins; they exist for plugin registration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegistryConflict {
+    /// Two module descriptors share a type ID.
+    DuplicateModule(ModuleTypeId),
+    /// Two capability declarations share an ID.
+    DuplicateCapability(CapabilityId),
+    /// A module descriptor references a capability that is not registered.
+    UnknownModuleCapability {
+        module: ModuleTypeId,
+        capability: CapabilityId,
+    },
+}
+
+/// The unified extension registry. Today it hosts modules and capabilities; stage / renderer /
+/// domain / resource sub-registries are added as their descriptor types land (extensible plan §23).
+/// Built-in Aestra functionality registers through this same surface — there is no privileged path.
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionRegistry {
+    pub modules: ModuleRegistry,
+    pub capabilities: CapabilityRegistry,
+}
+
+impl ExtensionRegistry {
+    /// The built-in registry: every core module and the governed capability vocabulary.
+    pub fn builtin() -> Self {
+        Self {
+            modules: ModuleRegistry::builtin(),
+            capabilities: CapabilityRegistry::builtin(),
+        }
+    }
+
+    /// Wraps a module registry with the built-in capability vocabulary. Keeps the legacy
+    /// module-only construction path working while resolution flows through the unified registry.
+    pub fn from_modules(modules: ModuleRegistry) -> Self {
+        Self {
+            modules,
+            capabilities: CapabilityRegistry::builtin(),
+        }
+    }
+
+    /// Registers a module descriptor; errors if its type ID is already registered.
+    pub fn register_module(&mut self, metadata: ModuleMetadata) -> Result<(), RegistryConflict> {
+        let type_id = metadata.type_id.clone();
+        match self.modules.register(metadata) {
+            None => Ok(()),
+            Some(_) => Err(RegistryConflict::DuplicateModule(type_id)),
+        }
+    }
+
+    /// Checks that every module descriptor only references registered capabilities — the
+    /// "invalid descriptor" diagnostic. Returns every conflict found (empty when consistent).
+    pub fn validate(&self) -> Vec<RegistryConflict> {
+        let mut conflicts = Vec::new();
+        for metadata in self.modules.iter() {
+            for capability in &metadata.capabilities {
+                if !self.capabilities.contains(capability) {
+                    conflicts.push(RegistryConflict::UnknownModuleCapability {
+                        module: metadata.type_id.clone(),
+                        capability: capability.clone(),
+                    });
+                }
+            }
+        }
+        conflicts
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum CompileError {
     #[error("effect compilation failed: {0}")]
@@ -294,21 +436,33 @@ impl CompileError {
 /// Frontend that validates authored semantics and emits immutable runtime plans.
 #[derive(Debug, Clone)]
 pub struct EffectCompiler {
-    registry: ModuleRegistry,
+    registry: ExtensionRegistry,
 }
 
 impl Default for EffectCompiler {
     fn default() -> Self {
-        Self::new(ModuleRegistry::builtin())
+        Self::with_extensions(ExtensionRegistry::builtin())
     }
 }
 
 impl EffectCompiler {
+    /// Builds a compiler from a module registry, wrapping it in the unified extension registry with
+    /// the built-in capability vocabulary. Module resolution flows through the unified registry.
     pub fn new(registry: ModuleRegistry) -> Self {
+        Self::with_extensions(ExtensionRegistry::from_modules(registry))
+    }
+
+    /// Builds a compiler directly from a unified extension registry.
+    pub fn with_extensions(registry: ExtensionRegistry) -> Self {
         Self { registry }
     }
 
     pub fn registry(&self) -> &ModuleRegistry {
+        &self.registry.modules
+    }
+
+    /// The unified extension registry backing this compiler.
+    pub fn extensions(&self) -> &ExtensionRegistry {
         &self.registry
     }
 
@@ -853,7 +1007,7 @@ impl EffectCompiler {
             let emitter_path = format!("effect.emitters[{emitter_index}]");
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 let path = format!("{emitter_path}.modules[{module_index}]");
-                let Some(metadata) = self.registry.get(&module.module_type) else {
+                let Some(metadata) = self.registry.modules.get(&module.module_type) else {
                     push_unique(
                         report,
                         Diagnostic::error(
@@ -1182,7 +1336,7 @@ impl EffectCompiler {
                 if !module.enabled || module.stage != stage {
                     continue;
                 }
-                let Some(metadata) = self.registry.get(&module.module_type) else {
+                let Some(metadata) = self.registry.modules.get(&module.module_type) else {
                     continue;
                 };
                 for attribute in &metadata.reads {
@@ -1231,7 +1385,7 @@ impl EffectCompiler {
         let mut discovered = live.clone();
 
         for module in modules.iter().filter(|module| module.enabled) {
-            if let Some(metadata) = self.registry.get(&module.module_type) {
+            if let Some(metadata) = self.registry.modules.get(&module.module_type) {
                 discovered.extend(metadata.reads.iter().copied());
                 discovered.extend(metadata.writes.iter().copied());
             }
@@ -1242,7 +1396,7 @@ impl EffectCompiler {
                 if !module.enabled || module.stage != stage {
                     continue;
                 }
-                let Some(metadata) = self.registry.get(&module.module_type) else {
+                let Some(metadata) = self.registry.modules.get(&module.module_type) else {
                     continue;
                 };
                 if metadata

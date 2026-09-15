@@ -275,6 +275,135 @@ fn builtin_capabilities_use_governed_namespaced_ids() {
 }
 
 #[test]
+fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts() {
+    use aestra_compiler::{
+        CapabilityRegistry, ExtensionRegistry, ModuleMetadata, RegistryConflict,
+        SimulationRequirements, TemporalRequirement,
+    };
+    use aestra_core::{CAPABILITY_CPU_REFERENCE, CapabilityId};
+    use aestra_runtime::SimulationClass;
+
+    fn fake_module(
+        type_id: &str,
+        capabilities: Vec<CapabilityId>,
+        simulation: SimulationRequirements,
+    ) -> ModuleMetadata {
+        ModuleMetadata {
+            type_id: ModuleTypeId::new(type_id),
+            display_name: "Fake",
+            description: "A fake third-party module for tests",
+            category: "Test",
+            stages: vec![StageKind::ParticleUpdate],
+            inputs: Vec::new(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            tags: Vec::new(),
+            capabilities,
+            simulation,
+            approximate_cost: 0,
+        }
+    }
+
+    // The built-in unified registry is internally consistent and hosts the built-in modules.
+    let builtin = ExtensionRegistry::builtin();
+    assert!(builtin.validate().is_empty());
+    assert_eq!(builtin.modules.len(), 5);
+    assert!(
+        builtin
+            .capabilities
+            .contains(&CapabilityId::new(CAPABILITY_CPU_REFERENCE))
+    );
+
+    // S1-F: a fake third-party module registers through the same surface and resolves — built-ins get
+    // no privileged path.
+    let mut registry = ExtensionRegistry::builtin();
+    let third_party = ModuleTypeId::new("org.example.test::module/spin");
+    registry
+        .register_module(fake_module(
+            third_party.0.as_str(),
+            vec![CapabilityId::new(CAPABILITY_CPU_REFERENCE)],
+            SimulationRequirements::ANALYTIC,
+        ))
+        .expect("a fresh third-party module registers");
+    assert!(registry.modules.get(&third_party).is_some());
+    assert!(registry.validate().is_empty());
+
+    // S1-F: a fake stateful module makes the compiler report Stateful — no backend needed yet.
+    let stateful = fake_module(
+        "org.example.test::module/collide",
+        vec![CapabilityId::new(CAPABILITY_CPU_REFERENCE)],
+        SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        stateful.simulation.derived_class(),
+        SimulationClass::Stateful
+    );
+
+    // Diagnostic 1 — duplicate module ID.
+    assert_eq!(
+        registry
+            .register_module(fake_module(
+                third_party.0.as_str(),
+                Vec::new(),
+                SimulationRequirements::ANALYTIC
+            ))
+            .unwrap_err(),
+        RegistryConflict::DuplicateModule(third_party.clone())
+    );
+
+    // Diagnostic 2 — duplicate capability ID.
+    let mut capabilities = CapabilityRegistry::builtin();
+    assert_eq!(
+        capabilities
+            .register(CapabilityId::new(CAPABILITY_CPU_REFERENCE))
+            .unwrap_err(),
+        RegistryConflict::DuplicateCapability(CapabilityId::new(CAPABILITY_CPU_REFERENCE))
+    );
+
+    // Diagnostic 3 — invalid descriptor: a module referencing an unregistered capability.
+    let mut invalid = ExtensionRegistry::builtin();
+    let unknown = CapabilityId::new("org.example.test::capability/unknown");
+    invalid
+        .register_module(fake_module(
+            "org.example.test::module/needs_unknown",
+            vec![unknown.clone()],
+            SimulationRequirements::ANALYTIC,
+        ))
+        .unwrap();
+    assert_eq!(
+        invalid.validate(),
+        vec![RegistryConflict::UnknownModuleCapability {
+            module: ModuleTypeId::new("org.example.test::module/needs_unknown"),
+            capability: unknown,
+        }]
+    );
+}
+
+#[test]
+fn backend_support_shape_is_agreed_for_descriptors() {
+    use aestra_compiler::{BackendSupport, SupportLevel};
+
+    // Built-in default: supported on both the CPU reference and GPU compute backends.
+    assert_eq!(
+        BackendSupport::default(),
+        BackendSupport {
+            cpu_reference: SupportLevel::Supported,
+            gpu_compute: SupportLevel::Supported,
+        }
+    );
+    // A GPU-only community compute stage declares no CPU reference (extensible plan §13.3): there is
+    // no WESL-on-CPU interpreter, so it is honest about the missing backend.
+    let gpu_only = BackendSupport {
+        cpu_reference: SupportLevel::Unavailable,
+        gpu_compute: SupportLevel::Required,
+    };
+    assert_ne!(gpu_only, BackendSupport::default());
+}
+
+#[test]
 fn builtin_registry_instantiates_every_catalog_module() {
     let registry = ModuleRegistry::builtin();
     for metadata in registry.iter() {

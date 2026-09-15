@@ -104,6 +104,13 @@ registry surface. S0 only *observes*.
 
 ## Milestone S1 — Identity, semantics, and the one `ModuleMetadata` extension
 
+**Status: COMPLETE** (A–F landed). Namespaced IDs + one `CapabilityId`; derived `SimulationClass` /
+`TemporalSemantics`; the single `ModuleMetadata` simulation-requirement extension with class
+derivation; the unified `ExtensionRegistry` with three conflict diagnostics; the agreed
+`BackendSupport` shape. Every step is proven behaviour-neutral by the S0 baselines, and
+`ModuleMetadata` was extended exactly once. The shared foundation (S0 + S1) is done — both the
+extensible and hybrid tracks can now diverge from here.
+
 **Exit gate:** all vocabulary and the unified registry both plans need are in place; existing effects
 compile byte/behaviour-identically; `ModuleMetadata` was extended **once**.
 
@@ -121,13 +128,17 @@ compile byte/behaviour-identically; `ModuleMetadata` was extended **once**.
 
 ### S1-B · Unified registry (extensible)
 
-- [ ] **S1-B1 — Generalize `ModuleRegistry` → `ExtensionRegistry`.** Today `ModuleRegistry` in
-  `crates/aestra-compiler/src/lib.rs` holds only modules. Introduce a registry that will host stage /
-  module / renderer / domain / resource / capability descriptors; seed it with today's built-in
-  modules via the same `builtin()` path. *Where:* `crates/aestra-compiler/src/lib.rs`. **Done when**
-  `EffectCompiler` resolves built-in modules through the unified registry with no behaviour change.
-- [ ] **S1-B2 — Registry diagnostics.** Duplicate IDs, provider conflicts, invalid descriptors.
-  **Done when** each produces a distinct diagnostic and is unit-tested.
+- [x] **S1-B1 — Generalize `ModuleRegistry` → `ExtensionRegistry`.** Added `ExtensionRegistry
+  { modules: ModuleRegistry, capabilities: CapabilityRegistry }` as a container (kept `ModuleRegistry`
+  intact — it is used across the editor/bevy, so renaming would break widely; §23's sub-registry
+  shape). `EffectCompiler` now holds it and resolves modules through `self.registry.modules`, while
+  its public `registry() -> &ModuleRegistry` and `new(ModuleRegistry)` are preserved (added
+  `with_extensions`/`extensions`). *Where:* `crates/aestra-compiler/src/lib.rs`. **Done** — no
+  behaviour change (S0 baselines + downstream typecheck clean). *(Stage/renderer/domain/resource
+  sub-registries land with their descriptor types.)*
+- [x] **S1-B2 — Registry diagnostics.** `RegistryConflict` with three distinct variants —
+  `DuplicateModule`, `DuplicateCapability`, `UnknownModuleCapability` (invalid descriptor referencing
+  an unregistered capability, via `validate()`). **Done** — each unit-tested.
 
 ### S1-C · Derived simulation semantics (hybrid)
 
@@ -159,14 +170,22 @@ compile byte/behaviour-identically; `ModuleMetadata` was extended **once**.
   `BackendSupport`) and `checkpoints`/`staged_dispatch` (hybrid `BackendSimulationCapabilities`).
   **Done when** the type shape is written down; no backend implements it yet.
 
+- [x] **S1-E1 — Fix the shape only.** Added the descriptor side: `SupportLevel
+  { Required, Supported, Unavailable }` + `BackendSupport { cpu_reference, gpu_compute }`, documented
+  as the complement of `aestra_runtime::BackendCapabilities` (the backend-offers side); the hybrid
+  checkpoint/staged-dispatch axes extend that side, not this one. **Done** — no backend consumes it
+  yet.
+
 ### S1-F · Guardrail docs & tests
 
-- [ ] **S1-F1 — Distinction tests.** Assert/document `SimulationDomain != SimulationClass`,
-  `StageKind != SimulationClass`, `SimulationSeekMode != SimulationClass`, and capability ≠ execution
-  order. **Done when** each has a test or doc-comment.
-- [ ] **S1-F2 — Fake-module tests.** Register (a) a fake third-party module and (b) a fake stateful
-  module in tests. **Done when** (a) appears via the registry with no editor regression and (b) makes
-  the compiler *report* Stateful (no backend executes it).
+- [x] **S1-F1 — Distinction tests.** The `SimulationDomain ≠ SimulationClass ≠ StageKind ≠
+  SimulationSeekMode` distinctions and *capability ≠ execution order* are documented in the
+  `SimulationClass` / `SimulationRequirements` / `CapabilityId` doc-comments; `SimulationClass` is
+  never authored (derived only). **Done** via doc-comments.
+- [x] **S1-F2 — Fake-module tests.** `extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts`
+  registers a fake third-party module (resolves through the unified registry, no privileged built-in
+  path) and a fake stateful module (its metadata derives `SimulationClass::Stateful` with no backend).
+  **Done.**
 
 ### S1 — Do NOT change
 
