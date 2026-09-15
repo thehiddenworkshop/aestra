@@ -151,6 +151,118 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
     assert_ribbon_strands_match_across_seeks_and_loops(&harness);
 }
 
+/// The representative showcase fixtures, compiled for GPU/CPU comparison (S0-A1 set).
+fn showcase_effects() -> Vec<(&'static str, aestra_runtime::CompiledEffect)> {
+    use aestra_core::material::MaterialProgram;
+    use std::collections::BTreeMap;
+
+    fn standalone(ron: &str) -> aestra_runtime::CompiledEffect {
+        EffectCompiler::default()
+            .compile(&EffectAsset::from_ron(ron).unwrap())
+            .unwrap()
+    }
+    fn with_material(effect: &str, material: &str) -> aestra_runtime::CompiledEffect {
+        let program = MaterialProgram::from_ron(material).unwrap();
+        EffectCompiler::default()
+            .compile_with_material_programs(
+                &EffectAsset::from_ron(effect).unwrap(),
+                &BTreeMap::from([(program.id, program)]),
+            )
+            .unwrap()
+    }
+
+    vec![
+        (
+            "prism_bloom",
+            standalone(include_str!(
+                "../../../assets/test/effects/prism_bloom.aestra.ron"
+            )),
+        ),
+        (
+            "ember_sigil",
+            standalone(include_str!(
+                "../../../assets/test/effects/ember_sigil.aestra.ron"
+            )),
+        ),
+        (
+            "plasma_burst",
+            standalone(include_str!(
+                "../../../assets/test/effects/plasma_burst.aestra.ron"
+            )),
+        ),
+        (
+            "ribbon_lab",
+            with_material(
+                include_str!("../../../assets/test/effects/ribbon_lab.aestra.ron"),
+                include_str!("../../../assets/test/materials/ribbon_lab.aestra.material.ron"),
+            ),
+        ),
+        (
+            "trail_lab",
+            with_material(
+                include_str!("../../../assets/test/effects/trail_lab.aestra.ron"),
+                include_str!("../../../assets/test/materials/trail_lab.aestra.material.ron"),
+            ),
+        ),
+        (
+            "mesh_material_lab",
+            with_material(
+                include_str!("../../../assets/test/effects/mesh_material_lab.aestra.ron"),
+                include_str!(
+                    "../../../assets/test/materials/mesh_material_lab.aestra.material.ron"
+                ),
+            ),
+        ),
+        (
+            "material_graph_lab",
+            with_material(
+                include_str!("../../../assets/test/effects/material_graph_lab.aestra.ron"),
+                include_str!(
+                    "../../../assets/test/materials/material_graph_lab.aestra.material.ron"
+                ),
+            ),
+        ),
+    ]
+}
+
+/// S0-A5 (docs/new/aestra_foundation_tasks_S0_S1.md): every showcase fixture's GPU simulation
+/// matches its CPU reference at canonical frames. Each fixture builds its own harness from its own
+/// generated shader (fixtures do not share a simulation shader).
+///
+/// Like the conformance test above, this **skips cleanly when no compute adapter is present** — so
+/// it does not run on GPU-less CI (e.g. GitHub Actions runners). Set
+/// `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to force it to require a GPU.
+#[test]
+fn showcase_effects_match_the_cpu_reference_on_gpu() {
+    let require_gpu = std::env::var_os(REQUIRED_GPU_ENV).is_some();
+    let times = [0.1_f32, 0.5, 1.0, 1.5];
+    let mut checked = 0;
+    for (name, effect) in showcase_effects() {
+        let effect = Arc::new(effect);
+        let instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+        let artifact = GpuEffectArtifact::from_instance(&instance)
+            .unwrap_or_else(|error| panic!("gpu artifact for {name}: {error}"));
+        let shaders = GpuShaderPackage::for_artifact(&artifact)
+            .unwrap_or_else(|error| panic!("shader package for {name}: {error}"));
+        let harness = match GpuHarness::new(&shaders.simulation.wgsl) {
+            Ok(Some(harness)) => harness,
+            Ok(None) if !require_gpu => {
+                eprintln!(
+                    "skipping showcase CPU/GPU conformance: no compatible compute adapter; set \
+                     {REQUIRED_GPU_ENV}=1 to require one"
+                );
+                return;
+            }
+            Ok(None) => panic!("{REQUIRED_GPU_ENV}=1 but no compatible compute adapter was found"),
+            Err(error) => panic!("failed to create GPU harness for {name}: {error}"),
+        };
+        assert_effect_matches_at_times(&harness, effect, &times);
+        checked += 1;
+        eprintln!("showcase GPU/CPU conformance ok: {name}");
+    }
+    assert!(checked > 0, "at least one showcase effect was GPU-checked");
+}
+
 fn assert_ribbon_strands_match_across_seeks_and_loops(harness: &GpuHarness) {
     for mode in [
         EffectPlaybackMode::Once,

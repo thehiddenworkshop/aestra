@@ -48,10 +48,13 @@ performance, sparse and dense, with no architecture change landed.
   `crates/aestra-artifact/tests/foundation_baseline_contract.rs`. **Done:** determinism + presented
   counts locked. *(Float positions intentionally not pinned to a committed value — cross-platform
   rounding; determinism is asserted within-run and round-trip instead.)*
-- [ ] **S0-A5 — Native-GPU conformance fixtures.** CPU-vs-GPU comparison at canonical frames within
-  the existing tolerance. *Where:* `crates/aestra-gpu/tests/` (follow existing GPU contract tests).
-  **Done when** CPU and native GPU agree for every fixture. *(Needs a GPU; gate on `native-gpu` test
-  cfg as existing GPU tests do.)*
+- [x] **S0-A5 — Native-GPU conformance fixtures.** For each showcase fixture, build a per-fixture
+  `GpuHarness` from its own generated shader and assert GPU simulation matches the CPU reference at
+  canonical frames (reuses `assert_effect_matches_at_times`). *Where:*
+  `bevy/aestra-bevy-render/tests/gpu_conformance.rs`
+  (`showcase_effects_match_the_cpu_reference_on_gpu`). **Done:** all 7 verified on a real adapter
+  (`AESTRA_REQUIRE_GPU_CONFORMANCE=1`). *Skips cleanly on GPU-less CI (GitHub Actions) via the same
+  adapter gate as the existing conformance test; the GPU is exercised in the `gpu-visual` workflow.*
 - [ ] **S0-A6 — Source-map assertions.** Pin current `RuntimeStage`-based source mapping for the
   fixtures. *Where:* wherever source-map tests live today. **Done when** a mapping change is caught.
 - [ ] **S0-A7 — Renderer-plan fixtures.** Assert compiled `RendererPlanKind` for the fixtures'
