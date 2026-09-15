@@ -110,3 +110,21 @@ fn showcase_effects_round_trip_through_the_versioned_artifact() {
         );
     }
 }
+
+#[test]
+fn decoded_artifacts_evaluate_identically_to_their_source() {
+    // Round-trip preserves behaviour, not just structure: the decoded artifact must produce the
+    // exact same CPU-reference particles as the freshly compiled effect (ties S0-A3 to S0-A4).
+    let (mut from_source, mut from_artifact) = (Vec::new(), Vec::new());
+    for (name, compiled) in showcase() {
+        let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+        for &time in &[0.1_f32, 0.5, 1.0, 1.5] {
+            aestra_runtime::evaluate(&compiled, time, 42, &mut from_source);
+            aestra_runtime::evaluate(&restored, time, 42, &mut from_artifact);
+            assert_eq!(
+                from_source, from_artifact,
+                "{name} @ {time}s evaluates differently after an artifact round-trip"
+            );
+        }
+    }
+}

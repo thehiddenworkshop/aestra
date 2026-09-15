@@ -87,9 +87,9 @@ fn renderer_kind(renderer: &aestra_runtime::RendererPlan) -> &'static str {
     }
 }
 
-#[test]
-fn showcase_effects_compile_to_a_stable_structural_baseline() {
-    let cases: Vec<(&str, CompiledEffect)> = vec![
+/// The representative showcase fixtures shared by every S0 baseline test in this file.
+fn showcase() -> Vec<(&'static str, CompiledEffect)> {
+    vec![
         (
             "prism_bloom",
             compile_standalone(include_str!(
@@ -140,8 +140,12 @@ fn showcase_effects_compile_to_a_stable_structural_baseline() {
                 ),
             ),
         ),
-    ];
+    ]
+}
 
+#[test]
+fn showcase_effects_compile_to_a_stable_structural_baseline() {
+    let cases = showcase();
     let report = cases
         .iter()
         .map(|(name, compiled)| format!("== {name} ==\n{}", fingerprint(compiled).trim_end()))
@@ -165,5 +169,36 @@ fn showcase_effects_compile_to_a_stable_structural_baseline() {
     // Blessed structural baseline from `main` (foundation_baseline.txt). Regenerate intentionally
     // (never to paper over an unexpected diff) by running with `--nocapture` and updating the file.
     let expected = include_str!("foundation_baseline.txt");
+    assert_eq!(report.trim_end(), expected.trim_end());
+}
+
+/// Canonical sample times (seconds) and seed for the CPU-reference baseline.
+const FRAMES: [f32; 4] = [0.1, 0.5, 1.0, 1.5];
+const SEED: u64 = 42;
+
+#[test]
+fn showcase_effects_have_deterministic_cpu_evaluation() {
+    let cases = showcase();
+    let mut report = Vec::new();
+    let (mut first, mut second) = (Vec::new(), Vec::new());
+    for (name, compiled) in &cases {
+        for &time in &FRAMES {
+            aestra_runtime::evaluate(compiled, time, SEED, &mut first);
+            aestra_runtime::evaluate(compiled, time, SEED, &mut second);
+            // Re-evaluating the same (effect, time, seed) is bit-identical — the core determinism
+            // guarantee the whole hybrid seek model depends on.
+            assert_eq!(
+                first, second,
+                "{name} @ {time}s is not deterministic across identical evaluations"
+            );
+            // Alive-particle count is a platform-stable integer; pin it so S1 cannot change how many
+            // particles an existing effect presents at a canonical time.
+            report.push(format!("{name} t={time} n={}", first.len()));
+        }
+    }
+    let report = report.join("\n");
+    eprintln!("\n{report}");
+
+    let expected = include_str!("foundation_cpu_baseline.txt");
     assert_eq!(report.trim_end(), expected.trim_end());
 }

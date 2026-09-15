@@ -40,9 +40,14 @@ performance, sparse and dense, with no architecture change landed.
   byte-identical re-encode (deterministic serialization). *Where:*
   `crates/aestra-artifact/tests/foundation_baseline_contract.rs`. **Done:** the v2 compiled format is
   locked across all seven fixtures; an accidental format change fails before any deliberate bump.
-- [ ] **S0-A4 — CPU evaluation fixtures.** Assert deterministic CPU particle state at fixed
-  canonical frames for each fixture. *Where:* `crates/aestra-runtime` tests. **Done when** repeated
-  runs are bit-identical.
+- [x] **S0-A4 — CPU evaluation fixtures.** For each fixture at canonical frames (0.1/0.5/1.0/1.5s,
+  seed 42): assert re-evaluation is bit-identical (determinism), and pin the alive-particle count to
+  a blessed baseline (`foundation_cpu_baseline.txt`). Plus a cross-crate check that a decoded artifact
+  evaluates identically to its source (ties S0-A3↔S0-A4). *Where:*
+  `crates/aestra-compiler/tests/foundation_baseline_contract.rs` +
+  `crates/aestra-artifact/tests/foundation_baseline_contract.rs`. **Done:** determinism + presented
+  counts locked. *(Float positions intentionally not pinned to a committed value — cross-platform
+  rounding; determinism is asserted within-run and round-trip instead.)*
 - [ ] **S0-A5 — Native-GPU conformance fixtures.** CPU-vs-GPU comparison at canonical frames within
   the existing tolerance. *Where:* `crates/aestra-gpu/tests/` (follow existing GPU contract tests).
   **Done when** CPU and native GPU agree for every fixture. *(Needs a GPU; gate on `native-gpu` test
