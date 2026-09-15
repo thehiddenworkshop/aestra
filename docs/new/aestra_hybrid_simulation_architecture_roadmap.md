@@ -2543,6 +2543,20 @@ Do not attempt final SoA specialization yet.
 
 **Goal:** Establish deterministic stateful semantics before relying on GPU-only behavior.
 
+> **Status — landed (unified M5, first increment).** `aestra-runtime`'s `stateful` module provides a
+> minimal deterministic stateful reference: `StatefulSimulation` maintains persistent per-particle
+> state (position/velocity/age/lifetime), spawns deterministically from `(seed, ordinal)` via
+> splitmix64, advances on the canonical 60 Hz fixed tick with semi-implicit Euler integration, retires
+> dead particles, and extracts renderer-neutral `ParticleSample`s. A `Clone` is a checkpoint; backward
+> seeks panic (restore + replay forward, §16). All M5 acceptance criteria are covered by tests:
+> deterministic from seed, `advance_to_tick` == tick-by-tick replay, checkpoint-clone-then-replay ==
+> uninterrupted forward run, presentation reflects integrated motion, and capacity bounds the live
+> count. It is a standalone reference (not yet wired through the compiler) — deliberately, per the
+> milestone's "backend validation, not feature value".
+>
+> **Still to do:** wire the stateful reference to compiled stateful emitters (so `evaluate` routes a
+> stateful island through it), and the GPU stateful backend (M6). Both consume the M4 state layout.
+
 ### Implement
 
 A minimal stateful particle lifecycle:
