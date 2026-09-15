@@ -2485,6 +2485,19 @@ A compiled effect can be serialized/reloaded without losing hybrid simulation se
 
 **Goal:** Prepare GPU/CPU runtime storage without changing visible rendering.
 
+> **Status — engine-neutral descriptor landed (unified U3/M4).** `SimulationStateLayout
+> { persistent, transient }` exists in `aestra-runtime`, distinct from the 48-byte `GpuParticle`
+> presentation ABI (untouched). It is *derived* from an emitter's class
+> (`CompiledEmitter::simulation_state_layout` → `SimulationStateLayout::for_class`): analytic emitters
+> get an empty layout (`requires_state_buffer() == false`, so analytic effects allocate no state
+> buffer); stateful/staged emitters get the fixed prototype persistent set (position/velocity/age/
+> lifetime). Not persisted — trivially derivable for now; a specialized per-module layout can be
+> persisted (with a compiled bump) once it stops being derivable.
+>
+> **Still to do:** the actual GPU state-buffer allocation + stateful update kernel — that is the
+> stateful backend (M5 CPU reference, M6 GPU), which consumes this descriptor. SoA vs specialized-AoS
+> is deferred to benchmarking (§24).
+
 ### Keep
 
 ```text

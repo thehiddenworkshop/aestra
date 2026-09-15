@@ -409,7 +409,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
         ExtensionRegistry, ModuleMetadata, SimulationRequirements, TemporalRequirement,
     };
     use aestra_core::{CAPABILITY_CPU_REFERENCE, CapabilityId, ModuleId};
-    use aestra_runtime::SimulationClass;
+    use aestra_runtime::{SimulationClass, SimulationStateLayout};
 
     // Existing effects are entirely analytic and keep seeking directly (no hardcoded StatelessDirect).
     let compiler = EffectCompiler::default();
@@ -434,6 +434,13 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
             .iter()
             .all(|emitter| emitter.simulation_class == SimulationClass::Analytic),
         "every compiled emitter carries the derived Analytic class"
+    );
+    assert!(
+        compiled_showcase
+            .emitters
+            .iter()
+            .all(|emitter| !emitter.simulation_state_layout().requires_state_buffer()),
+        "analytic emitters allocate no persistent simulation-state buffer (hybrid M4)"
     );
 
     // Register a fake stateful module and build a mixed effect: one analytic emitter, one that uses
@@ -519,6 +526,14 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
             .all(|emitter| emitter.simulation_class == SimulationClass::Stateful),
         "the compiled emitter carries the derived Stateful class"
     );
+    assert!(
+        compiled_stateful.emitters.iter().all(|emitter| {
+            let layout = emitter.simulation_state_layout();
+            layout.requires_state_buffer()
+                && layout.persistent == SimulationStateLayout::STATEFUL_PROTOTYPE
+        }),
+        "stateful emitters get the prototype persistent simulation-state layout (hybrid M4)"
+    );
     // The same effect compiled with the stock (analytic) registry still seeks directly.
     assert_eq!(
         EffectCompiler::default()
@@ -527,6 +542,24 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
             .seek_mode,
         SimulationSeekMode::StatelessDirect
     );
+}
+
+#[test]
+fn simulation_state_layout_derivation_covers_every_class() {
+    use aestra_runtime::{SimulationClass, SimulationStateLayout};
+
+    // Analytic needs no persistent state — analytic effects allocate no simulation-state buffer.
+    let analytic = SimulationStateLayout::for_class(SimulationClass::Analytic);
+    assert!(!analytic.requires_state_buffer());
+    assert!(analytic.persistent.is_empty());
+
+    // Stateful and staged both get the prototype persistent set (position/velocity/age/lifetime).
+    for class in [SimulationClass::Stateful, SimulationClass::Staged] {
+        let layout = SimulationStateLayout::for_class(class);
+        assert!(layout.requires_state_buffer());
+        assert_eq!(layout.persistent, SimulationStateLayout::STATEFUL_PROTOTYPE);
+        assert!(layout.transient.is_empty());
+    }
 }
 
 #[test]

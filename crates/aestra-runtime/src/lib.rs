@@ -61,6 +61,50 @@ pub struct ParticleLayout {
     pub transient_attributes: Vec<ParticleAttribute>,
 }
 
+/// The persistent + transient simulation state a stateful/staged emitter needs between ticks —
+/// kept distinct from the 48-byte presentation ABI (`GpuParticle`) so simulation storage and
+/// renderer storage never merge (hybrid roadmap M4 / §24). Analytic emitters need none: their state
+/// is a closed-form function of time. Derived from the emitter's simulation class; the prototype
+/// layout is a fixed set and is not persisted, since it is trivially derivable. A specialized,
+/// per-module layout can be persisted later, once it stops being derivable.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SimulationStateLayout {
+    /// Attributes carried from one tick to the next.
+    pub persistent: Vec<ParticleAttribute>,
+    /// Attributes recomputed each tick but kept out of the presentation ABI.
+    pub transient: Vec<ParticleAttribute>,
+}
+
+impl SimulationStateLayout {
+    /// The prototype persistent state for a stateful/staged emitter (hybrid roadmap M4): position,
+    /// velocity, age, lifetime. SoA / specialized layouts are decided later by benchmark, not
+    /// intuition — this is deliberately a simple fixed set for the first stateful backend.
+    pub const STATEFUL_PROTOTYPE: [ParticleAttribute; 4] = [
+        ParticleAttribute::Position,
+        ParticleAttribute::Velocity,
+        ParticleAttribute::Age,
+        ParticleAttribute::Lifetime,
+    ];
+
+    /// Derives the simulation-state layout for an execution class. Analytic emitters get an empty
+    /// layout, so analytic effects allocate no persistent state; stateful and staged emitters get
+    /// the prototype persistent set.
+    pub fn for_class(class: SimulationClass) -> Self {
+        match class {
+            SimulationClass::Analytic => Self::default(),
+            SimulationClass::Stateful | SimulationClass::Staged => Self {
+                persistent: Self::STATEFUL_PROTOTYPE.to_vec(),
+                transient: Vec::new(),
+            },
+        }
+    }
+
+    /// Whether a persistent simulation-state buffer is required. `false` for analytic emitters.
+    pub fn requires_state_buffer(&self) -> bool {
+        !self.persistent.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ParameterSlot(pub usize);
 
@@ -589,6 +633,14 @@ pub struct CompiledEmitter {
     pub simulation_class: SimulationClass,
     pub execution: ExecutionPlan,
     pub renderers: Vec<RendererPlan>,
+}
+
+impl CompiledEmitter {
+    /// The simulation-state layout this emitter-region requires between ticks, derived from its
+    /// class (hybrid roadmap M4). Analytic emitters return an empty layout — no persistent buffer.
+    pub fn simulation_state_layout(&self) -> SimulationStateLayout {
+        SimulationStateLayout::for_class(self.simulation_class)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
