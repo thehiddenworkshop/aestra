@@ -1540,6 +1540,55 @@ impl ModuleTypeId {
     }
 }
 
+/// Namespaced, globally-stable string identities for extensible concepts (shared-foundation S1-A).
+/// Use reverse-domain / `aestra.*` namespacing; never Rust type names, file paths, display names, or
+/// runtime-assigned numbers. Display names may change; these must not.
+macro_rules! namespaced_id {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[serde(transparent)]
+        pub struct $name(pub String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+    };
+}
+
+namespaced_id!(
+    /// Identifies a plugin/extension provider, e.g. `org.someauthor.aestra-fluid`.
+    PluginId
+);
+namespaced_id!(
+    /// Identifies a registered stage type, e.g. `aestra.stage.particle_update`.
+    StageTypeId
+);
+namespaced_id!(
+    /// Identifies an execution/data domain (topology), e.g. `aestra.domain.particles`.
+    DomainTypeId
+);
+namespaced_id!(
+    /// Identifies a resource type, e.g. `org.example.fluid.resource/velocity_grid`.
+    ResourceTypeId
+);
+namespaced_id!(
+    /// Identifies a capability contract, e.g. `aestra.capability.cpu_reference`. Capabilities decide
+    /// compatibility (which modules a stage may host), never execution order.
+    CapabilityId
+);
+
+/// Built-in capability identities. These are a governed public contract (extensible plan §9.1): the
+/// `aestra.*` capability namespace is owned by core; renaming or removing one is a breaking change.
+pub const CAPABILITY_CPU_REFERENCE: &str = "aestra.capability.cpu_reference";
+pub const CAPABILITY_PARTICLE_SIMULATION: &str = "aestra.capability.particle_simulation";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModuleInstance {
     pub id: ModuleId,

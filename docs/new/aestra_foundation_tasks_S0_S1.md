@@ -109,14 +109,15 @@ compile byte/behaviour-identically; `ModuleMetadata` was extended **once**.
 
 ### S1-A · Namespaced identities (extensible)
 
-- [ ] **S1-A1 — Introduce the ID newtypes.** `PluginId`, `StageTypeId`, `DomainTypeId`,
-  `ResourceTypeId`, `CapabilityId` as `#[serde(transparent)]` string newtypes, mirroring the existing
-  `ModuleTypeId`/`RendererTypeId`. *Where:* `crates/aestra-core/src/model.rs`. **Done when** they
-  round-trip and keep `ModuleTypeId`/`RendererTypeId` unchanged.
-- [ ] **S1-A2 — Reconcile with the existing `Capability` type.** `ModuleMetadata.capabilities:
-  Vec<Capability>` already exists — decide whether `CapabilityId` replaces or wraps `Capability`, and
-  document the built-in capability vocabulary as a governed public contract (extensible §9.1).
-  **Done when** there is one capability type, namespaced, with a documented built-in set.
+- [x] **S1-A1 — Introduce the ID newtypes.** `PluginId`, `StageTypeId`, `DomainTypeId`,
+  `ResourceTypeId`, `CapabilityId` as `#[serde(transparent)]` string newtypes (via a `namespaced_id!`
+  macro; `new()` + `as_str()`), re-exported from `aestra-core`; `ModuleTypeId`/`RendererTypeId`
+  unchanged. *Where:* `crates/aestra-core/src/model.rs`. **Done.**
+- [x] **S1-A2 — Reconcile with the existing `Capability` type.** Decided: **replace**, not wrap — the
+  old closed `Capability` enum was declarative-only (nothing consumed it), so it is removed and
+  `ModuleMetadata.capabilities` is now `Vec<CapabilityId>`. Built-in set documented as a governed
+  `aestra.*` contract: `CAPABILITY_CPU_REFERENCE`, `CAPABILITY_PARTICLE_SIMULATION`. **Done** — one
+  namespaced capability type, unit-tested; S0 baselines unchanged.
 
 ### S1-B · Unified registry (extensible)
 

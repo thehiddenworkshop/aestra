@@ -253,6 +253,28 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
 }
 
 #[test]
+fn builtin_capabilities_use_governed_namespaced_ids() {
+    use aestra_core::{CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId};
+
+    // The old closed `Capability` enum is gone: capabilities are now namespaced string IDs, one
+    // capability type shared by built-ins and (future) plugins (shared-foundation S1-A2).
+    for metadata in ModuleRegistry::builtin().iter() {
+        assert_eq!(
+            metadata.capabilities,
+            vec![
+                CapabilityId::new(CAPABILITY_CPU_REFERENCE),
+                CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION),
+            ],
+            "{} must expose its capabilities as governed namespaced IDs",
+            metadata.type_id.0
+        );
+    }
+    // Built-in capabilities live under the core-owned `aestra.*` namespace.
+    assert!(CAPABILITY_CPU_REFERENCE.starts_with("aestra."));
+    assert!(CAPABILITY_PARTICLE_SIMULATION.starts_with("aestra."));
+}
+
+#[test]
 fn builtin_registry_instantiates_every_catalog_module() {
     let registry = ModuleRegistry::builtin();
     for metadata in registry.iter() {

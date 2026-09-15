@@ -21,12 +21,12 @@ pub use aestra_core::{
 };
 
 use aestra_core::{
-    ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
-    EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
-    RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
-    ValidationReport, Value,
+    CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, ColorKey, Curve,
+    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, EmitterShape,
+    Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
+    MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance,
+    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE,
+    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -83,12 +83,6 @@ pub enum InputControl {
     },
     Gradient,
     Reference,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Capability {
-    CpuReference,
-    ParticleSimulation,
 }
 
 /// Whether a module's state at time `t` is a closed-form function of `t`, or depends on the previous
@@ -193,7 +187,7 @@ pub struct ModuleMetadata {
     pub reads: Vec<ParticleAttribute>,
     pub writes: Vec<ParticleAttribute>,
     pub tags: Vec<&'static str>,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<CapabilityId>,
     /// Declared simulation requirements; the compiler derives an execution class from these
     /// (shared-foundation S1-D1). Defaults to analytic for every current built-in.
     pub simulation: SimulationRequirements,
@@ -1806,7 +1800,10 @@ fn metadata(
         reads: Vec::new(),
         writes: Vec::new(),
         tags: Vec::new(),
-        capabilities: vec![Capability::CpuReference, Capability::ParticleSimulation],
+        capabilities: vec![
+            CapabilityId::new(CAPABILITY_CPU_REFERENCE),
+            CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION),
+        ],
         simulation: SimulationRequirements::ANALYTIC,
         approximate_cost: 0,
     }
