@@ -62,7 +62,12 @@ pub(super) fn resolved_fingerprint(
     let mut asset_fingerprints = Vec::new();
     for effect in std::iter::once(&resolved.root).chain(resolved.dependencies.values()) {
         for asset in &effect.assets {
-            asset_fingerprints.push(fingerprint_of(&root.join(&asset.path))?);
+            // A glTF mesh reference carries a `#MeshN/PrimitiveN` sub-asset label; the file
+            // on disk is the part before `#` (matching how the mesh loader resolves it). Without
+            // stripping it, the fingerprint lookup misses and the whole effect is treated as
+            // un-fingerprintable, so any mesh-referencing effect is silently never disk-cached.
+            let file = asset.path.split('#').next().unwrap_or(&asset.path);
+            asset_fingerprints.push(fingerprint_of(&root.join(file))?);
         }
     }
     asset_fingerprints.sort_unstable();
@@ -242,7 +247,7 @@ pub(super) fn sweep() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aestra_core::{AssetDefinition, EffectAsset};
+    use aestra_core::{AssetDefinition, AssetId, AssetKind, EffectAsset};
     use std::collections::BTreeMap;
 
     fn sample() -> ResolvedEffectProject {
@@ -280,6 +285,33 @@ mod tests {
             .assets
             .push(AssetDefinition::texture("spark", "textures/spark.png"));
         assert_ne!(key(&project, |_| Some(1)), key(&project, |_| Some(2)));
+    }
+
+    #[test]
+    fn mesh_gltf_sub_asset_fragment_is_stripped_before_the_fingerprint_lookup() {
+        // A glTF mesh reference carries a `#MeshN/PrimitiveN` label; the file on disk is the
+        // part before `#`. If the fragment is not stripped, the lookup misses and the effect is
+        // treated as un-fingerprintable, so it is silently never disk-cached (the original bug).
+        let mut project = sample();
+        project.root.assets.push(AssetDefinition {
+            id: AssetId::new(),
+            name: "Lab Cube".into(),
+            kind: AssetKind::Mesh,
+            path: "meshes/lab_cube.gltf#Mesh0/Primitive0".into(),
+        });
+        let key = key(&project, |path| {
+            // The lookup must receive the real file, without the sub-asset fragment.
+            assert!(
+                !path.to_string_lossy().contains('#'),
+                "the glTF fragment must be stripped before the file lookup"
+            );
+            assert!(path.ends_with("meshes/lab_cube.gltf"));
+            Some(7)
+        });
+        assert!(
+            key.is_some(),
+            "a mesh-referencing effect must still produce a cache key"
+        );
     }
 
     #[test]
