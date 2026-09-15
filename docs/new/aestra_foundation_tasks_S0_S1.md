@@ -35,10 +35,11 @@ performance, sparse and dense, with no architecture change landed.
   `seek_mode`, `max_particles`, source-map size, and portable requirements against a blessed baseline.
   *Where:* `crates/aestra-compiler/tests/foundation_baseline_contract.rs` +
   `foundation_baseline.txt`. **Done:** any structural lowering change fails the test.
-- [ ] **S0-A3 — Artifact round-trip fixtures.** Encode→decode each fixture at
-  `CURRENT_ARTIFACT_VERSION = 2`; assert `format_version:2` and byte-stable RON. *Where:*
-  `crates/aestra-artifact/tests/artifact_contract.rs`. **Done when** round-trip is asserted for every
-  S0-A1 fixture.
+- [x] **S0-A3 — Artifact round-trip fixtures.** For each showcase fixture: assert the encoded
+  artifact carries the magic + `format_version:2`, `decode(encode(compiled)) == compiled`, and a
+  byte-identical re-encode (deterministic serialization). *Where:*
+  `crates/aestra-artifact/tests/foundation_baseline_contract.rs`. **Done:** the v2 compiled format is
+  locked across all seven fixtures; an accidental format change fails before any deliberate bump.
 - [ ] **S0-A4 — CPU evaluation fixtures.** Assert deterministic CPU particle state at fixed
   canonical frames for each fixture. *Where:* `crates/aestra-runtime` tests. **Done when** repeated
   runs are bit-identical.
