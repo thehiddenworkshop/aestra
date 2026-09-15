@@ -17,14 +17,14 @@ aestra-editor ──────────────► aestra-bevy-render  
 aestra-viewer ──► aestra-bevy ──► aestra-bevy-render
 ```
 
-- `crates/aestra-bevy-render` (~9.4k LoC): the rendering backend. `AestraRenderPlugin`,
+- `bevy/aestra-bevy-render` (~9.4k LoC): the rendering backend. `AestraRenderPlugin`,
   `PresentedEffect`, GPU compute/statistics. Used by **both** the editor and the client plugin.
 - `bevy/aestra-bevy` (~1.9k LoC): the batteries-included client plugin. `AestraPlugin`,
   `EffectPlayer`, project reconciliation, choreography events, profiling. Used by `aestra-viewer`.
 
 Merging would force the editor to swallow the whole playback runtime it doesn't use. **Keep them
-separate.** (Optional tidy: the two Bevy-facing crates live in different directories —
-`crates/aestra-bevy-render` vs `bevy/aestra-bevy`. Co-locating them is a low-risk directory move,
+separate.** (Both Bevy-facing crates now live under `bevy/` — `bevy/aestra-bevy-render` and
+`bevy/aestra-bevy` — so `crates/` is strictly engine-agnostic. This was a pure directory move,
 orthogonal to this plan.)
 
 The *real* issue the goals expose is that the editor re-implements playback instead of consuming

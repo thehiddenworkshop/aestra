@@ -17,7 +17,7 @@ Before planning, the strategy's key claims were checked against the tree:
 
 | Strategy claim | Status | Evidence |
 | --- | --- | --- |
-| GPU artifact reconstructed every frame (§2.1) | **Confirmed** | `GpuEffectArtifact::from_instance` runs per-frame per player in `update_gpu_inputs` — `crates/aestra-bevy-render/src/gpu.rs:686` (also once in `prepare_gpu_effects:297`) |
+| GPU artifact reconstructed every frame (§2.1) | **Confirmed** | `GpuEffectArtifact::from_instance` runs per-frame per player in `update_gpu_inputs` — `bevy/aestra-bevy-render/src/gpu.rs:686` (also once in `prepare_gpu_effects:297`) |
 | Effect telemetry needs building (§5) | **Partly exists** | `EffectProfile`/`EmitterProfile` already cover alive/capacity/draws/dispatches/buffer bytes — `crates/aestra-runtime/src/profile.rs` |
 | Measured-vs-estimated honesty (§13) | **Exists** | `ProfileValue::{Measured,Estimated,Unavailable}` — `crates/aestra-runtime/src/profile.rs:6` |
 | Tracy / criterion / bench app | **Missing** | No `trace_tracy` in `Cargo.toml`; no `apps/aestra-bench` |
@@ -57,7 +57,7 @@ whole-frame + per-stage timing, so build them together.
 - Keep the `ProfileValue<T>` honesty model — anything not yet wired reports
   `Unavailable`, never a fake zero.
 - Instrument the real systems (`prepare_gpu_effects`, `update_gpu_inputs`,
-  material prep in `crates/aestra-bevy-render`) with `bevy_utils` spans so both
+  material prep in `bevy/aestra-bevy-render`) with `bevy_utils` spans so both
   Tracy and the bench harness read the same measurement points.
 
 ### 1c. Tracy CPU + allocation instrumentation — **done (spans)**
@@ -77,7 +77,7 @@ whole-frame + per-stage timing, so build them together.
 ### 1d. GPU timestamps — **wired (compile-verified); validate on GPU lane**
 - Uses Bevy's built-in render diagnostics (`RecordDiagnostics::time_span`) rather
   than a hand-rolled `TIMESTAMP_QUERY` pass. The `run_simulation` compute pass in
-  `crates/aestra-bevy-render/src/gpu.rs` is wrapped in an `aestra::gpu::simulate`
+  `bevy/aestra-bevy-render/src/gpu.rs` is wrapped in an `aestra::gpu::simulate`
   GPU time span; it is a no-op unless the host app adds `RenderDiagnosticsPlugin`.
 - `aestra-viewer` adds `RenderDiagnosticsPlugin`, so the capture tool records GPU
   time on Vulkan/DX12. Timings surface through Tracy (`--features bevy/trace_tracy`)
