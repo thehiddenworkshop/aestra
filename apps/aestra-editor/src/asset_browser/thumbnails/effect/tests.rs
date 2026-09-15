@@ -290,8 +290,8 @@ fn capture_fixture(name: &str, private_assets: bool) {
             .as_ref()
             .unwrap();
         (
-            job.entities.clone(),
-            job.target.id(),
+            job.spawned_entities(),
+            job.target_id(),
             job.textures.iter().map(Handle::id).collect::<Vec<_>>(),
             job.meshes.iter().map(Handle::id).collect::<Vec<_>>(),
         )

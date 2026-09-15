@@ -1,5 +1,6 @@
 //! One isolated native-renderer capture at a time. Never touches EditorSession or viewport entities.
 use super::*;
+mod capture;
 mod displacement;
 mod framing;
 use aestra_bevy_render::{
@@ -20,6 +21,7 @@ use bevy::{
         view::screenshot::{Screenshot, ScreenshotCaptured},
     },
 };
+use capture::CaptureHarness;
 use std::time::{Duration, Instant};
 
 const LAYER: usize = 30; // Viewport = 0, gizmos = 15, editor UI = 31.
@@ -409,18 +411,10 @@ pub(super) fn prepare(
 pub(super) struct GpuJob {
     pub source: ProjectSourceId,
     pub epoch: Epoch,
-    entities: Vec<Entity>,
     players: Vec<Entity>,
-    target: Handle<Image>,
     textures: Vec<Handle<Image>>,
     meshes: Vec<Handle<Mesh>>,
-    started: Instant,
-    settled: u8,
-    capture: Option<Entity>,
-    result: Option<Result<Vec<u8>, String>>,
-    camera_transform: Transform,
-    projection: OrthographicProjection,
-    refinements: u8,
+    harness: CaptureHarness,
 }
 
 impl GpuJob {
@@ -432,42 +426,20 @@ impl GpuJob {
         images: &mut Assets<Image>,
         context: &mut Context,
     ) -> Self {
-        let mut image = Image::new_target_texture(EDGE, EDGE, TextureFormat::Rgba8UnormSrgb, None);
-        image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
-        let target = images.add(image);
-        let projection = OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: prepared.radius * 2.0,
-            },
-            near: 0.01,
-            far: prepared.radius * 8.0 + 1.0,
-            ..OrthographicProjection::default_3d()
-        };
-        let camera_transform = Transform::from_translation(
-            prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
-        )
-        .looking_at(prepared.center, Vec3::Y);
-        let camera = commands
-            .spawn((
-                Camera3d::default(),
-                Camera {
-                    order: -10,
-                    clear_color: ClearColorConfig::Custom(Color::srgb(0.025, 0.028, 0.035)),
-                    ..default()
-                },
-                RenderTarget::Image(target.clone().into()),
-                Projection::Orthographic(projection.clone()),
-                camera_transform,
-                RenderLayers::layer(LAYER),
-                Msaa::Off,
-            ))
-            .id();
+        let harness = CaptureHarness::new(
+            prepared.center,
+            prepared.radius,
+            LAYER,
+            -10,
+            commands,
+            images,
+        );
+        let layer = harness.layer();
         let textures: BTreeMap<_, _> = prepared
             .textures
             .into_iter()
             .map(|(path, image)| (path, images.add(image)))
             .collect();
-        let players = prepared.players;
         let meshes: BTreeMap<_, _> = prepared
             .meshes
             .into_iter()
@@ -482,7 +454,8 @@ impl GpuJob {
                 )
             })
             .collect();
-        let players: Vec<_> = players
+        let players: Vec<_> = prepared
+            .players
             .into_iter()
             .map(|player| {
                 let overrides = player
@@ -512,30 +485,33 @@ impl GpuJob {
                                 .with_texture_overrides(overrides)
                                 .with_mesh_overrides(mesh_overrides)
                         },
-                        RenderLayers::layer(LAYER),
+                        RenderLayers::layer(layer),
                     ))
                     .id()
             })
             .collect();
-        let textures = textures.into_values().collect();
         Self {
             source,
             epoch,
-            entities: std::iter::once(camera)
-                .chain(players.iter().copied())
-                .collect(),
             players,
-            target,
-            textures,
+            textures: textures.into_values().collect(),
             meshes: meshes.into_values().collect(),
-            started: Instant::now(),
-            settled: 0,
-            capture: None,
-            result: None,
-            camera_transform,
-            projection,
-            refinements: 0,
+            harness,
         }
+    }
+
+    /// The camera and every spawned instance, for cleanup verification.
+    #[cfg(test)]
+    pub(super) fn spawned_entities(&self) -> Vec<Entity> {
+        std::iter::once(self.harness.camera())
+            .chain(self.players.iter().copied())
+            .collect()
+    }
+
+    /// The render target image id, for cleanup verification.
+    #[cfg(test)]
+    pub(super) fn target_id(&self) -> bevy::asset::AssetId<Image> {
+        self.harness.target().id()
     }
 
     pub fn poll(
@@ -543,53 +519,17 @@ impl GpuJob {
         commands: &mut Commands,
         context: &Context,
     ) -> Option<Result<Vec<u8>, String>> {
-        if let Some(result) = self.result.take() {
-            if self.refinements < 2
-                && let Ok(bytes) = &result
-                && let Some((offset, scale)) = framing::fit(bytes)
-                && let ScalingMode::FixedVertical { viewport_height } =
-                    &mut self.projection.scaling_mode
-            {
-                self.camera_transform.translation +=
-                    self.camera_transform.rotation * (offset * *viewport_height).extend(0.0);
-                *viewport_height *= scale;
-                commands.entity(self.entities[0]).insert((
-                    self.camera_transform,
-                    Projection::Orthographic(self.projection.clone()),
-                ));
-                if let Some(capture) = self.capture.take() {
-                    commands.entity(capture).try_despawn();
-                }
-                self.refinements += 1;
-                self.settled = 0;
-                return None;
-            }
-            return Some(result);
-        }
-        if self.started.elapsed() >= TIMEOUT {
-            let players = self
-                .players
-                .iter()
-                .filter_map(|entity| context.players.get(*entity).ok())
-                .map(|(player, status, stats)| {
-                    format!(
-                        "{:?}: {:?}/{}",
-                        status.map(|s| s.active),
-                        stats
-                            .and_then(|s| s.observation(&player.instance))
-                            .map(|(t, _)| t),
-                        player.simulation_time()
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Some(Err(format!(
-                "Effect preview timed out. Pipelines/textures ready: {}; GPU observations: {players}",
-                context.readiness.as_ref().is_some_and(|r| r.0)
-            )));
-        }
-        if self.capture.is_some() {
-            return None;
+        // The harness owns the capture loop (reframe, timeout budget, in-flight
+        // wait); this producer only decides when the effect has actually settled.
+        match self.harness.advance(commands) {
+            capture::Poll::Done(result) => return Some(result),
+            capture::Poll::TimedOut => return Some(Err(self.timeout_message(context))),
+            capture::Poll::Pending {
+                evaluate_ready: false,
+            } => return None,
+            capture::Poll::Pending {
+                evaluate_ready: true,
+            } => {}
         }
         let mut ready = context.readiness.as_ref().is_some_and(|r| r.0);
         for entity in &self.players {
@@ -612,26 +552,38 @@ impl GpuJob {
                 .and_then(|s| s.observation(&player.instance))
                 .is_some_and(|(time, _)| (time - player.simulation_time()).abs() < 0.0001);
         }
-        self.settled = if ready {
-            self.settled.saturating_add(1)
-        } else {
-            0
-        };
-        if self.settled >= 4 {
-            self.capture = Some(
-                commands
-                    .spawn(Screenshot::image(self.target.clone()))
-                    .observe(receive)
-                    .id(),
-            );
-        }
+        self.harness.settle(ready, commands);
         None
+    }
+
+    /// The effect-specific diagnostic for a capture that never settled in time.
+    fn timeout_message(&self, context: &Context) -> String {
+        let players = self
+            .players
+            .iter()
+            .filter_map(|entity| context.players.get(*entity).ok())
+            .map(|(player, status, stats)| {
+                format!(
+                    "{:?}: {:?}/{}",
+                    status.map(|s| s.active),
+                    stats
+                        .and_then(|s| s.observation(&player.instance))
+                        .map(|(t, _)| t),
+                    player.simulation_time()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "Effect preview timed out. Pipelines/textures ready: {}; GPU observations: {players}",
+            context.readiness.as_ref().is_some_and(|r| r.0)
+        )
     }
 
     /// The final refined camera framing, so a live hover preview can match the
     /// static thumbnail's tight fit instead of the conservative history bounds.
     pub fn framing(&self) -> (Transform, OrthographicProjection) {
-        (self.camera_transform, self.projection.clone())
+        self.harness.framing()
     }
 
     pub fn cleanup(
@@ -640,13 +592,10 @@ impl GpuJob {
         images: &mut Assets<Image>,
         meshes: Option<&mut Assets<Mesh>>,
     ) {
-        for entity in self.entities {
+        for entity in self.players {
             commands.entity(entity).try_despawn();
         }
-        if let Some(entity) = self.capture {
-            commands.entity(entity).try_despawn();
-        }
-        images.remove(self.target.id());
+        self.harness.cleanup(commands, images);
         for handle in self.textures {
             images.remove(handle.id());
         }
@@ -691,21 +640,8 @@ impl LivePreview {
         ));
         // Prefer the static capture's refined framing so the live animation lines
         // up with the thumbnail; fall back to the conservative history bounds.
-        let (camera_transform, projection) = framing.unwrap_or_else(|| {
-            let projection = OrthographicProjection {
-                scaling_mode: ScalingMode::FixedVertical {
-                    viewport_height: prepared.radius * 2.0,
-                },
-                near: 0.01,
-                far: prepared.radius * 8.0 + 1.0,
-                ..OrthographicProjection::default_3d()
-            };
-            let transform = Transform::from_translation(
-                prepared.center + Vec3::new(0.7, 0.4, 1.0).normalize() * prepared.radius * 3.0,
-            )
-            .looking_at(prepared.center, Vec3::Y);
-            (transform, projection)
-        });
+        let (camera_transform, projection) =
+            framing.unwrap_or_else(|| capture::default_framing(prepared.center, prepared.radius));
         let camera = commands
             .spawn((
                 Camera3d::default(),
@@ -849,11 +785,11 @@ fn receive(event: On<ScreenshotCaptured>, mut cache: ResMut<ThumbnailCache>) {
     let Some(job) = cache
         .gpu
         .as_mut()
-        .filter(|job| job.capture == Some(event.event_target()))
+        .filter(|job| job.harness.matches_capture(event.event_target()))
     else {
         return;
     };
-    job.result = Some(
+    job.harness.store_capture(
         event
             .image
             .clone()
