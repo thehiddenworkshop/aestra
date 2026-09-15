@@ -21,6 +21,12 @@ Legend: `[ ]` todo · each task names its file(s) and a **Done when** gate.
 
 ## Milestone S0 — Freeze the baseline (correctness + performance)
 
+**Status: COMPLETE** (A1–A7 + B1–B3 landed; A8 deferred to pre-M9 by design — see below). The
+before-picture for the S1 refactor is locked: correctness as hard `cargo test` gates over seven
+showcase fixtures (structure, artifact round-trip, CPU determinism, native-GPU conformance,
+source-map, renderer plans) and performance as a provenance-carrying reference artifact. Next up:
+Milestone S1.
+
 **Exit gate:** one reproducible baseline of the *current* implementation, covering correctness and
 performance, sparse and dense, with no architecture change landed.
 
@@ -65,10 +71,15 @@ performance, sparse and dense, with no architecture change landed.
   (kind + parameters — widths, strand counts, flipbook settings, mesh asset) to
   `foundation_renderer_baseline.txt`, not just the variant name. *Where:* same file
   (`showcase_effects_have_stable_renderer_plans`). **Done:** renderer lowering is pinned in detail.
-- [ ] **S0-A8 — Properties selection/action tests.** Editor tests around module/renderer
-  select/add/reorder on a fixture emitter. *Where:* `apps/aestra-editor/src/properties*` test modules
-  (`cargo test --bin aestra-editor`, editor exe is locked while running). **Done when** the current
-  panel's actions are covered before the eventual redesign.
+- [~] **S0-A8 — Properties selection/action tests. DEFERRED to pre-M9 (Phase 9a).** Editor tests
+  around module/renderer select/add/reorder on a fixture emitter. *Where:*
+  `apps/aestra-editor/src/properties*` test modules (`cargo test --bin aestra-editor`).
+  **Why deferred:** (1) `properties.rs` / `properties/renderer_controls.rs` are under active,
+  uncommitted WIP — freezing their behavior now, while those changes aren't committed, would pin an
+  incoherent state; (2) the Properties panel is rewritten wholesale at M9 (stack + inspector
+  redesign), so tests written now are thrown away almost immediately. This task's own purpose is to
+  cover the panel *"before the eventual redesign"* — so the correct moment is immediately before
+  Phase 9a, when Properties is stable and about to change, not now. **Do when:** starting Phase 9a.
 
 ### S0-B · Performance baselines
 
