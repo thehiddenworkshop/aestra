@@ -25,6 +25,10 @@ near-term feature value at low structural risk; the **extensible track** (generi
 boundary) is picked up when staged simulation / fluids force it. See the extensible plan §44 for the
 full reconciliation. This document is agnostic to that choice — S0 and S1 are required either way.
 
+The actionable, file-grounded task breakdown for S0 and S1 lives in
+**`aestra_foundation_tasks_S0_S1.md`** (checklist form). This document holds the intent; that one
+holds the steps.
+
 ---
 
 ## Shared decisions locked here (before either track diverges)
