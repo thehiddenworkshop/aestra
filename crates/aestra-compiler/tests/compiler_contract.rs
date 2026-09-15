@@ -177,6 +177,82 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
 }
 
 #[test]
+fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
+    use aestra_compiler::{
+        NeighborhoodRequirement, SimulationRequirements, SynchronizationRequirement,
+        TemporalRequirement,
+    };
+    use aestra_runtime::{SimulationClass, TemporalSemantics};
+
+    // S1 must not change how existing effects execute: every built-in stays analytic.
+    for metadata in ModuleRegistry::builtin().iter() {
+        assert_eq!(
+            metadata.simulation,
+            SimulationRequirements::ANALYTIC,
+            "{} must remain analytic in S1",
+            metadata.type_id.0
+        );
+        assert_eq!(
+            metadata.simulation.derived_class(),
+            SimulationClass::Analytic
+        );
+        assert_eq!(
+            metadata.simulation.temporal_semantics(),
+            TemporalSemantics::Direct
+        );
+    }
+
+    // A previous-state dependency (with no sync/neighbourhood) derives Stateful.
+    let stateful = SimulationRequirements {
+        temporal: TemporalRequirement::PreviousState,
+        ..Default::default()
+    };
+    assert_eq!(stateful.derived_class(), SimulationClass::Stateful);
+    assert_eq!(
+        stateful.temporal_semantics(),
+        TemporalSemantics::HistoryDependent
+    );
+
+    // Any synchronization or neighbourhood requirement derives Staged, and dominates a
+    // previous-state dependency.
+    for staged in [
+        SimulationRequirements {
+            synchronization: SynchronizationRequirement::OrderedPass,
+            ..Default::default()
+        },
+        SimulationRequirements {
+            synchronization: SynchronizationRequirement::Iterative,
+            ..Default::default()
+        },
+        SimulationRequirements {
+            neighborhood: NeighborhoodRequirement::Particles,
+            ..Default::default()
+        },
+        SimulationRequirements {
+            neighborhood: NeighborhoodRequirement::Grid,
+            ..Default::default()
+        },
+        SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            neighborhood: NeighborhoodRequirement::Grid,
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(staged.derived_class(), SimulationClass::Staged);
+    }
+
+    // Aggregating takes the stronger of each axis.
+    assert_eq!(
+        SimulationRequirements::ANALYTIC
+            .max(stateful)
+            .derived_class(),
+        SimulationClass::Stateful
+    );
+    assert!(SimulationClass::Analytic < SimulationClass::Stateful);
+    assert!(SimulationClass::Stateful < SimulationClass::Staged);
+}
+
+#[test]
 fn builtin_registry_instantiates_every_catalog_module() {
     let registry = ModuleRegistry::builtin();
     for metadata in registry.iter() {

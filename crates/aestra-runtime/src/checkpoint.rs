@@ -11,6 +11,30 @@ pub enum SimulationSeekMode {
     RestartReplay,
 }
 
+/// How a compiled unit executes over time — a *derived* compiled property, never authored and never
+/// the same as `SimulationDomain` (topology) or `StageKind` (lifecycle). See the shared-foundation
+/// milestones (S1) and the hybrid-simulation roadmap. Ordered weakest-to-strongest so a grouping can
+/// take the maximum over its parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SimulationClass {
+    /// State reconstructs directly from time: `state(t) = f(seed, params, t)`.
+    Analytic,
+    /// The next state depends on the previous state.
+    Stateful,
+    /// Stateful plus ordered/iterative passes, neighbourhoods, or grids.
+    Staged,
+}
+
+/// The temporal relationship a compiled unit has to time. Derived alongside [`SimulationClass`];
+/// `Direct` maps to `StatelessDirect` seeking, `HistoryDependent` to checkpoint/replay seeking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemporalSemantics {
+    /// Evaluable directly at any time.
+    Direct,
+    /// Requires replaying history to reach a time.
+    HistoryDependent,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CheckpointBackendId(String);
 

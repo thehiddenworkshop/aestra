@@ -130,31 +130,27 @@ compile byte/behaviour-identically; `ModuleMetadata` was extended **once**.
 
 ### S1-C · Derived simulation semantics (hybrid)
 
-- [ ] **S1-C1 — Add the derived enums.** `SimulationClass { Analytic, Stateful, Staged }` and
-  `TemporalSemantics { Direct, HistoryDependent }`. *Where:* `crates/aestra-runtime` (next to
-  `SimulationSeekMode`) or a shared contract module. **Done when** they exist and are documented as
-  *derived, never authored*.
-- [ ] **S1-C2 — Keep `SimulationSeekMode` as resolved-strategy only.** Do **not** yet remove the
-  hardcoded `seek_mode: SimulationSeekMode::StatelessDirect` in the compiler
-  (`crates/aestra-compiler/src/lib.rs` ~L680) — that removal belongs to hybrid M2. **Done when** a
-  comment/doc marks it as the resolved strategy, not the sole compiled semantic.
+- [x] **S1-C1 — Add the derived enums.** `SimulationClass { Analytic, Stateful, Staged }` (ordered
+  weakest→strongest) and `TemporalSemantics { Direct, HistoryDependent }`, in
+  `crates/aestra-runtime/src/checkpoint.rs` beside `SimulationSeekMode`, re-exported from the crate
+  root, documented as *derived, never authored*. **Done.**
+- [x] **S1-C2 — Keep `SimulationSeekMode` as resolved-strategy only.** The hardcoded
+  `seek_mode: SimulationSeekMode::StatelessDirect` in the compiler is untouched (removal belongs to
+  hybrid M2); `SimulationClass` doc marks the class/seek separation. **Done.**
 
 ### S1-D · The single `ModuleMetadata` requirement extension (the critical merge)
 
-- [ ] **S1-D1 — Extend `ModuleMetadata` ONCE.** Add the hybrid requirement fields co-designed with
-  the existing extensible fields, so there is one requirement system:
-  ```text
-  temporal        : Direct | PreviousState
-  synchronization : None | OrderedPass | Iterative
-  neighborhood    : None | Particles | Grid
-  ```
-  alongside the existing `capabilities` / `reads` / `writes` (+ `multiplicity` if landing it here).
-  *Where:* `crates/aestra-compiler/src/lib.rs` (`ModuleMetadata`, and `builtin_modules()`). **Done
-  when** every built-in module declares `temporal = Direct, synchronization = None, neighborhood =
-  None` and no second parallel requirement struct exists.
-- [ ] **S1-D2 — Derive `SimulationClass` from requirements.** `PreviousState → Stateful`;
-  `Iterative`/`Grid`/neighborhood → `Staged`; else `Analytic`. *Where:* compiler. **Done when** the
-  compiler can report, per emitter, its derived class and the field that would promote it.
+- [x] **S1-D1 — Extend `ModuleMetadata` ONCE.** Added one `simulation: SimulationRequirements` field
+  (`temporal` / `synchronization` / `neighborhood`) alongside `capabilities` / `reads` / `writes` —
+  no second requirement system. Every built-in defaults to `SimulationRequirements::ANALYTIC` via the
+  single base `metadata()` constructor. *Where:* `crates/aestra-compiler/src/lib.rs`. **Done** — the
+  S0 baselines all still pass, proving no behaviour change. *(`multiplicity` deferred to S1-D/S4
+  descriptors; not needed yet.)*
+- [x] **S1-D2 — Derive `SimulationClass` from requirements.** `SimulationRequirements::derived_class()`
+  (sync/neighbourhood → `Staged`; else `PreviousState` → `Stateful`; else `Analytic`) plus
+  `temporal_semantics()` and a `max()` aggregator. *Where:* compiler. **Done** — unit-tested that all
+  built-ins derive `Analytic` and the promotion rules are correct. *(Per-emitter reporting arrives
+  with the hybrid island milestone that consumes this.)*
 
 ### S1-E · Backend-capability shape (agreed, not implemented)
 

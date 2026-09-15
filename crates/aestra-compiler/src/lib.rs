@@ -37,7 +37,7 @@ use aestra_runtime::{
     ExecutionPlan, Expression, Instruction, IrLocation, MaterialColorPlan, OptimizationStats,
     ParameterSlot, ParticleAttribute, ParticleLayout, RendererCapability, RendererPlan,
     RendererPlanKind, RuntimeParameterValue, RuntimeStage, RuntimeValue, ScalarSource,
-    SimulationSeekMode, VectorSource,
+    SimulationClass, SimulationSeekMode, TemporalSemantics, VectorSource,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -91,6 +91,97 @@ pub enum Capability {
     ParticleSimulation,
 }
 
+/// Whether a module's state at time `t` is a closed-form function of `t`, or depends on the previous
+/// tick. Part of the single `ModuleMetadata` simulation-requirement extension (shared-foundation
+/// S1-D1); the compiler derives a [`SimulationClass`] from these — the class is never authored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum TemporalRequirement {
+    /// `state(t) = f(seed, params, t)` — no previous tick required (analytic).
+    #[default]
+    Direct,
+    /// The next state depends on the previous state (stateful).
+    PreviousState,
+}
+
+/// Whether a module needs ordered or iterative multi-pass execution. Variants are ordered
+/// weakest-to-strongest so aggregating takes the maximum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum SynchronizationRequirement {
+    #[default]
+    None,
+    /// One ordered pass with a barrier before dependents run.
+    OrderedPass,
+    /// Repeated passes (e.g. a solver iteration loop).
+    Iterative,
+}
+
+/// Whether a module reads neighbouring elements. Variants are ordered weakest-to-strongest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum NeighborhoodRequirement {
+    #[default]
+    None,
+    /// Reads other particles (e.g. particle-particle collision).
+    Particles,
+    /// Reads a grid/field domain.
+    Grid,
+}
+
+/// A module's declared simulation requirements — co-designed with its capabilities / reads / writes
+/// as the one requirement extension both architecture tracks consume (shared-foundation S1-D1). The
+/// compiler derives an execution class from these; artists never author the class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SimulationRequirements {
+    pub temporal: TemporalRequirement,
+    pub synchronization: SynchronizationRequirement,
+    pub neighborhood: NeighborhoodRequirement,
+}
+
+impl SimulationRequirements {
+    /// The analytic default: direct in time, no synchronization, no neighbourhood. Every current
+    /// built-in module uses this, so existing effects stay analytic.
+    pub const ANALYTIC: Self = Self {
+        temporal: TemporalRequirement::Direct,
+        synchronization: SynchronizationRequirement::None,
+        neighborhood: NeighborhoodRequirement::None,
+    };
+
+    /// Derives the execution class (shared-foundation S1-D2): ordered/iterative synchronization or
+    /// any neighbourhood promotes to [`SimulationClass::Staged`]; otherwise a previous-state
+    /// dependency promotes to [`SimulationClass::Stateful`]; otherwise [`SimulationClass::Analytic`].
+    pub fn derived_class(self) -> SimulationClass {
+        if self.synchronization != SynchronizationRequirement::None
+            || self.neighborhood != NeighborhoodRequirement::None
+        {
+            SimulationClass::Staged
+        } else if self.temporal == TemporalRequirement::PreviousState {
+            SimulationClass::Stateful
+        } else {
+            SimulationClass::Analytic
+        }
+    }
+
+    /// The temporal semantics implied by these requirements: analytic is [`TemporalSemantics::Direct`],
+    /// stateful and staged are [`TemporalSemantics::HistoryDependent`].
+    pub fn temporal_semantics(self) -> TemporalSemantics {
+        match self.derived_class() {
+            SimulationClass::Analytic => TemporalSemantics::Direct,
+            SimulationClass::Stateful | SimulationClass::Staged => {
+                TemporalSemantics::HistoryDependent
+            }
+        }
+    }
+
+    /// Combines two requirement sets, taking the stronger of each axis. Used to aggregate a stage's
+    /// or island's modules into one class (the aggregate is the max over its parts).
+    pub fn max(self, other: Self) -> Self {
+        Self {
+            temporal: self.temporal.max(other.temporal),
+            synchronization: self.synchronization.max(other.synchronization),
+            neighborhood: self.neighborhood.max(other.neighborhood),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
@@ -103,6 +194,9 @@ pub struct ModuleMetadata {
     pub writes: Vec<ParticleAttribute>,
     pub tags: Vec<&'static str>,
     pub capabilities: Vec<Capability>,
+    /// Declared simulation requirements; the compiler derives an execution class from these
+    /// (shared-foundation S1-D1). Defaults to analytic for every current built-in.
+    pub simulation: SimulationRequirements,
     pub approximate_cost: u32,
 }
 
@@ -1713,6 +1807,7 @@ fn metadata(
         writes: Vec::new(),
         tags: Vec::new(),
         capabilities: vec![Capability::CpuReference, Capability::ParticleSimulation],
+        simulation: SimulationRequirements::ANALYTIC,
         approximate_cost: 0,
     }
 }

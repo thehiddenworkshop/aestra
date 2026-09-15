@@ -16,7 +16,7 @@ pub use host_transform::CompiledHostTransformTrack;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
-    SeekPlan, SimulationSeekMode, StoredCheckpoint,
+    SeekPlan, SimulationClass, SimulationSeekMode, StoredCheckpoint, TemporalSemantics,
 };
 pub use compatibility::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
