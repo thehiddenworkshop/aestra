@@ -151,6 +151,7 @@ pub(super) fn assemble(
     mut saved: ResolvedEffectProject,
     root: &Path,
     cancelled: &AtomicBool,
+    injected_meshes: &BTreeMap<PathBuf, (Mesh, f32)>,
 ) -> Result<Assembled, String> {
     check_cancelled(cancelled)?;
     // The project resolver includes the entire function library, including unrelated WESL.
@@ -264,10 +265,13 @@ pub(super) fn assemble(
                             if meshes.len() >= 8 {
                                 return Err("Preview limit: eight mesh primitives".into());
                             }
-                            meshes.insert(
-                                path.clone(),
-                                mesh::load_primitive(root, &asset.path, cancelled)?,
-                            );
+                            // A synthesized material preview injects a procedural mesh (there is
+                            // no file on disk); everything else loads its glTF primitive.
+                            let loaded = match injected_meshes.get(&path) {
+                                Some(mesh) => mesh.clone(),
+                                None => mesh::load_primitive(root, &asset.path, cancelled)?,
+                            };
+                            meshes.insert(path.clone(), loaded);
                         }
                         let mut radius = meshes[&path].1;
                         if let Some(material) = instance.effect.material_instance(renderer.material)
@@ -380,7 +384,7 @@ pub(super) fn prepare(
     root: &Path,
     cancelled: &AtomicBool,
 ) -> Result<Prepared, String> {
-    let assembled = assemble(saved, root, cancelled)?;
+    let assembled = assemble(saved, root, cancelled, &BTreeMap::new())?;
     let mut pixels = 0u64;
     let mut decoded = Vec::new();
     for path in &assembled.texture_paths {

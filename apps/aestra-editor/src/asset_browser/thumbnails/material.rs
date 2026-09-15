@@ -1,9 +1,10 @@
-//! Standalone-material thumbnails via a synthesized one-instance GPU scene (M-MG2, Sprite domain).
+//! Standalone-material thumbnails via a synthesized one-instance GPU scene (M-MG2).
 //!
 //! The CPU rasterizer (`material_graph::asset_preview`) renders simple materials and rejects
-//! ones that sample textures or use screen derivatives — those route here. We wrap the material
-//! program in a minimal sprite effect and feed it through the shared [`effect::assemble`] +
-//! `GpuJob` scaffolding.
+//! ones that sample textures, use screen derivatives, or displace vertices — those route here.
+//! We wrap the material program in a minimal scene (a single static particle: a camera-facing
+//! sprite for the Sprite domain, a unit sphere for the Mesh domain) and feed it through the
+//! shared [`effect::assemble`] + `GpuJob` scaffolding.
 //!
 //! A *standalone* material has no concrete texture — the texture is an instance/effect-level
 //! input — so we bind a semantically **neutral** texture per slot (white for color, flat normal
@@ -12,8 +13,9 @@
 use super::effect::{self, Assembled, Prepared};
 use super::*;
 use aestra_core::{
-    AssetDefinition, AssetId, AssetKind, BlendMode, EffectAsset, EffectPlaybackMode, Emitter,
-    MaterialId,
+    AssetDefinition, AssetId, AssetKind, BlendMode, ColorKey, Curve, CurveKey, EffectAsset,
+    EffectPlaybackMode, Emitter, EmitterShape, Gradient, MaterialId, ModuleInstance, RENDERER_MESH,
+    RendererId, RendererInstance, RendererProperties, RendererTypeId, ScalarRange,
     material::{
         MaterialCullMode, MaterialDepthTest, MaterialDomain, MaterialExpressionKind,
         MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
@@ -21,19 +23,24 @@ use aestra_core::{
     },
 };
 use aestra_project::ResolvedEffectProject;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::{
+    math::primitives::Sphere,
+    mesh::{Meshable, VertexAttributeValues},
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+};
 
 const PREVIEW_DURATION: f32 = 2.0;
 
 /// Whether this material needs the GPU scene preview instead of the CPU rasterizer: a
-/// Sprite-domain material that samples a texture or uses screen derivatives, without function/
-/// custom-WESL calls (still not run in background previews) or vertex displacement (a mesh
-/// concern handled by a later milestone). Everything else stays on the fast CPU path.
+/// Sprite- or Mesh-domain material that samples a texture, uses screen derivatives, or (Mesh
+/// only) displaces vertices — and does not call functions/custom WESL (still not run in
+/// background previews). Everything else stays on the fast CPU path.
 pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
-    if program.domain != MaterialDomain::Sprite
-        || program.expressions.len() > 256
+    if !matches!(
+        program.domain,
+        MaterialDomain::Sprite | MaterialDomain::Mesh
+    ) || program.expressions.len() > 256
         || program.parameters.len() > 128
-        || program.outputs.vertex_offset.is_some()
     {
         return false;
     }
@@ -51,23 +58,33 @@ pub(super) fn wants_gpu(program: &MaterialProgram) -> bool {
             _ => {}
         }
     }
-    needs_scene
+    let displaces = program.outputs.vertex_offset.is_some();
+    match program.domain {
+        // A camera-facing sprite cannot show vertex displacement; leave those to the icon.
+        MaterialDomain::Sprite => needs_scene && !displaces,
+        // A mesh surface shows both texture sampling and displacement.
+        MaterialDomain::Mesh => needs_scene || displaces,
+        _ => false,
+    }
 }
 
-/// Synthesizes a one-instance sprite scene around `program`, assembles it through the shared
-/// effect scaffolding, and binds a generated neutral texture for every texture the material
-/// references. Returns the same [`Prepared`] the effect `GpuJob` consumes.
+/// Synthesizes a one-instance scene around `program` (sprite quad or unit sphere by domain),
+/// assembles it through the shared effect scaffolding, and binds a generated neutral texture for
+/// every texture the material references. Returns the same [`Prepared`] the effect `GpuJob` consumes.
 pub(super) fn prepare(
     program: MaterialProgram,
     root: &Path,
     cancelled: &AtomicBool,
 ) -> Result<Prepared, String> {
     check_cancelled(cancelled)?;
-    if program.domain != MaterialDomain::Sprite {
-        return Err("Only Sprite-domain materials preview in the background".into());
+    if !matches!(
+        program.domain,
+        MaterialDomain::Sprite | MaterialDomain::Mesh
+    ) {
+        return Err("Only Sprite and Mesh materials preview in the background".into());
     }
-    let (resolved, neutrals) = synthesize(program, root);
-    let assembled: Assembled = effect::assemble(resolved, root, cancelled)?;
+    let (resolved, neutrals, injected_meshes) = synthesize(program, root);
+    let assembled: Assembled = effect::assemble(resolved, root, cancelled, &injected_meshes)?;
     let textures = assembled
         .texture_paths
         .iter()
@@ -88,16 +105,17 @@ pub(super) fn prepare(
     })
 }
 
-/// Wraps `program` in a minimal sprite effect: a default instance, one sprite emitter, and a
-/// neutral texture asset registered for each texture id the material references (so the
-/// compiler binds them and the render samples neutral pixels). Returns the resolved project and
-/// the color space to generate for each neutral texture's absolute path.
+/// Wraps `program` in a minimal single-instance effect. Registers a neutral texture asset for
+/// each texture id the material references, and (for the Mesh domain) an injected procedural
+/// unit sphere. Returns the resolved project, the neutral color space per texture path, and the
+/// procedural meshes to inject into [`effect::assemble`].
 fn synthesize(
     program: MaterialProgram,
     root: &Path,
 ) -> (
     ResolvedEffectProject,
     BTreeMap<PathBuf, MaterialTextureColorSpace>,
+    BTreeMap<PathBuf, (Mesh, f32)>,
 ) {
     // Every texture the material references, by asset id, with the color space to fill it with.
     let mut texture_assets: BTreeMap<AssetId, MaterialTextureColorSpace> = BTreeMap::new();
@@ -133,7 +151,37 @@ fn synthesize(
     }
 
     let program_id = program.id;
+    let domain = program.domain;
     let instance_id = MaterialId::new();
+    let mut injected_meshes = BTreeMap::new();
+    let (renderer, cull_mode) = match domain {
+        MaterialDomain::Mesh => {
+            let mesh_asset = AssetId::new();
+            let path = "aestra-preview/unit-sphere.mesh".to_string();
+            injected_meshes.insert(root.join(&path), unit_sphere());
+            assets.push(AssetDefinition {
+                id: mesh_asset,
+                name: "Preview Unit Sphere".into(),
+                kind: AssetKind::Mesh,
+                path,
+            });
+            (
+                RendererInstance {
+                    id: RendererId::new(),
+                    renderer_type: RendererTypeId::new(RENDERER_MESH),
+                    enabled: true,
+                    material: instance_id,
+                    properties: RendererProperties::Mesh { asset: mesh_asset },
+                },
+                MaterialCullMode::Back,
+            )
+        }
+        _ => (
+            RendererInstance::sprite(instance_id),
+            MaterialCullMode::None,
+        ),
+    };
+
     let instance = MaterialInstance {
         id: instance_id,
         program: MaterialProgramRef::Project(program_id),
@@ -141,19 +189,15 @@ fn synthesize(
         render_state: MaterialRenderState {
             blend: BlendMode::Alpha,
             depth_test: MaterialDepthTest::LessEqual,
-            depth_write: false,
-            cull_mode: MaterialCullMode::None,
+            depth_write: domain == MaterialDomain::Mesh,
+            cull_mode,
         },
     };
-    let mut emitter = Emitter::basic_sprite("Material Preview", PREVIEW_DURATION);
-    for renderer in &mut emitter.renderers {
-        renderer.material = instance_id;
-    }
     let mut effect = EffectAsset::new("Material Preview", PREVIEW_DURATION);
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
     effect.material_instances = vec![instance];
     effect.assets = assets;
-    effect.emitters = vec![emitter];
+    effect.emitters = vec![preview_emitter(renderer)];
 
     let material_programs = BTreeMap::from([(program_id, program)]);
     (
@@ -164,7 +208,51 @@ fn synthesize(
             material_functions: BTreeMap::new(),
         },
         neutrals,
+        injected_meshes,
     )
+}
+
+/// A single static, full-size, opaque-white particle at the origin carrying `renderer`, so the
+/// preview shows one clean instance of the material rather than an animated swarm.
+fn preview_emitter(renderer: RendererInstance) -> Emitter {
+    let mut emitter = Emitter::basic_sprite("Material Preview", PREVIEW_DURATION);
+    emitter.max_particles = 1;
+    emitter.modules = vec![
+        // One burst, no continuous emission.
+        ModuleInstance::emission(0.0, 1),
+        ModuleInstance::shape(EmitterShape::Point),
+        // Lives the whole preview, motionless.
+        ModuleInstance::initialize(
+            ScalarRange::new(PREVIEW_DURATION * 8.0, PREVIEW_DURATION * 8.0),
+            ScalarRange::new(0.0, 0.0),
+            [0.0, 0.0, 1.0],
+            0.0,
+            ScalarRange::new(0.0, 0.0),
+        ),
+        // Constant unit size and opacity, neutral white so the material's own color dominates.
+        ModuleInstance::appearance(
+            Curve::new(vec![CurveKey::new(0.0, 1.0)]),
+            Curve::new(vec![CurveKey::new(0.0, 1.0)]),
+            Gradient::new(vec![ColorKey::new(0.0, [1.0, 1.0, 1.0, 1.0])]),
+        ),
+    ];
+    emitter.renderers = vec![renderer];
+    emitter
+}
+
+/// A radius-1 sphere with the full attribute set the glTF mesh loader produces (normals, UV0,
+/// generated tangents for normal maps, a duplicated UV1, and white vertex colors), so any mesh
+/// material's inputs resolve against a generic preview surface.
+fn unit_sphere() -> (Mesh, f32) {
+    let mut mesh = Sphere::new(1.0).mesh().build();
+    let _ = mesh.generate_tangents();
+    let vertices = mesh.count_vertices();
+    if let Some(VertexAttributeValues::Float32x2(uv0)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+        let uv1 = uv0.clone();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, uv1);
+    }
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[1.0f32; 4]; vertices]);
+    (mesh, 1.0)
 }
 
 /// A 1×1 neutral texture: white for color maps, flat normal for linear data maps, in the
