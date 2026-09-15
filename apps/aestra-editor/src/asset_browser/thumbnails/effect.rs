@@ -118,11 +118,23 @@ pub(super) fn saved(
 }
 
 pub(super) struct Prepared {
-    players: Vec<PresentedEffect>,
-    center: Vec3,
-    radius: f32,
-    textures: Vec<(PathBuf, Image)>,
-    meshes: Vec<(PathBuf, Mesh)>,
+    pub(super) players: Vec<PresentedEffect>,
+    pub(super) center: Vec3,
+    pub(super) radius: f32,
+    pub(super) textures: Vec<(PathBuf, Image)>,
+    pub(super) meshes: Vec<(PathBuf, Mesh)>,
+}
+
+/// The compiled, scheduled, and bounds-framed scene, before its textures are sourced.
+/// Shared by the effect path (which decodes textures from disk) and the material path
+/// (which binds generated neutral textures) — M-MG2.
+pub(super) struct Assembled {
+    pub(super) players: Vec<PresentedEffect>,
+    pub(super) center: Vec3,
+    pub(super) radius: f32,
+    /// Absolute paths of the non-mesh (texture) assets the scene references.
+    pub(super) texture_paths: BTreeSet<PathBuf>,
+    pub(super) meshes: Vec<(PathBuf, Mesh)>,
 }
 
 fn sample_time(duration: f32) -> Result<f32, String> {
@@ -132,11 +144,14 @@ fn sample_time(duration: f32) -> Result<f32, String> {
     Ok((duration * 0.5).min(2.0))
 }
 
-pub(super) fn prepare(
+/// Compiles a resolved project, schedules its instances, builds the presented players,
+/// and frames them — everything a capture needs except the texture pixels. The effect
+/// path decodes those from disk in [`prepare`]; the material path binds neutral textures.
+pub(super) fn assemble(
     mut saved: ResolvedEffectProject,
     root: &Path,
     cancelled: &AtomicBool,
-) -> Result<Prepared, String> {
+) -> Result<Assembled, String> {
     check_cancelled(cancelled)?;
     // The project resolver includes the entire function library, including unrelated WESL.
     // Calls are rejected below for this slice, so none of those definitions are required.
@@ -340,9 +355,35 @@ pub(super) fn prepare(
     if textures.len() > 8 {
         return Err("Preview limit: eight textures".into());
     }
+    let center = (min + max) * 0.5;
+    let radius = (max - min).length().max(0.1) * 0.55;
+    if !center.is_finite() || !radius.is_finite() || radius > 1.0e6 {
+        return Err("Effect bounds exceed thumbnail framing limits".into());
+    }
+    check_cancelled(cancelled)?;
+    Ok(Assembled {
+        players,
+        center,
+        radius,
+        texture_paths: textures,
+        meshes: meshes
+            .into_iter()
+            .map(|(path, (mesh, _))| (path, mesh))
+            .collect(),
+    })
+}
+
+/// A full effect thumbnail scene: assemble the players/bounds, then decode the
+/// referenced textures from disk (bounded and confined to the project root).
+pub(super) fn prepare(
+    saved: ResolvedEffectProject,
+    root: &Path,
+    cancelled: &AtomicBool,
+) -> Result<Prepared, String> {
+    let assembled = assemble(saved, root, cancelled)?;
     let mut pixels = 0u64;
     let mut decoded = Vec::new();
-    for path in &textures {
+    for path in &assembled.texture_paths {
         let relative = path
             .strip_prefix(root)
             .map_err(|_| "Texture is outside the project")?;
@@ -390,21 +431,12 @@ pub(super) fn prepare(
         decoded.push((path.clone(), image));
         check_cancelled(cancelled)?;
     }
-    let center = (min + max) * 0.5;
-    let radius = (max - min).length().max(0.1) * 0.55;
-    if !center.is_finite() || !radius.is_finite() || radius > 1.0e6 {
-        return Err("Effect bounds exceed thumbnail framing limits".into());
-    }
-    check_cancelled(cancelled)?;
     Ok(Prepared {
-        players,
-        center,
-        radius,
+        players: assembled.players,
+        center: assembled.center,
+        radius: assembled.radius,
         textures: decoded,
-        meshes: meshes
-            .into_iter()
-            .map(|(path, (mesh, _))| (path, mesh))
-            .collect(),
+        meshes: assembled.meshes,
     })
 }
 

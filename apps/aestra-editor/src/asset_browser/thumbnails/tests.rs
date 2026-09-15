@@ -329,7 +329,7 @@ fn cancelled_workers_still_count_toward_the_global_worker_limit() {
                 epoch: epoch.clone(),
                 cancelled: flag,
                 task: IoTaskPool::get().spawn(future::pending()),
-                effect: false,
+                gpu: false,
             });
     }
     texture(&root.path().join("changed.png"));

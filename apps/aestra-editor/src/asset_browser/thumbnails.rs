@@ -1,6 +1,7 @@
 //! Read-only, bounded previews of the current project page. No AssetServer full-size loads.
 mod disk_cache;
 mod effect;
+mod material;
 mod mesh;
 use super::{
     panel,
@@ -101,7 +102,9 @@ struct Job {
     epoch: Epoch,
     cancelled: Arc<AtomicBool>,
     task: Task<Result<Work, String>>,
-    effect: bool,
+    /// Produces a GPU capture (an effect, or a synthesized material scene) — it will claim
+    /// the single `cache.gpu` slot on completion, so only one such worker runs at a time.
+    gpu: bool,
 }
 enum Work {
     Pixels(Vec<u8>),
@@ -474,6 +477,17 @@ fn update(
         };
         let is_effect = Kind::of(entry) == Kind::Effect;
         let root = catalog.root().to_owned();
+        // Resolve a material up front so the single GPU slot gates both effect and
+        // GPU-material jobs. A Sprite material that samples a texture or uses screen
+        // derivatives renders a synthesized scene (M-MG2); simpler ones, and any material
+        // when the native renderer is unavailable, stay on the CPU rasterizer.
+        let material_program =
+            (Kind::of(entry) == Kind::Material).then(|| saved_material(catalog.content(), *source));
+        let gpu_material = render.enabled()
+            && material_program
+                .as_ref()
+                .is_some_and(|program| program.as_ref().is_ok_and(material::wants_gpu));
+        let is_gpu = is_effect || gpu_material;
         // Load an effect thumbnail from the on-disk cache before rendering: a hit
         // needs no worker slot (just a PNG decode) and no live renderer. Recording
         // the miss avoids re-reading disk every frame while it waits for a slot.
@@ -510,7 +524,7 @@ fn update(
         {
             continue;
         }
-        if is_effect && (cache.gpu.is_some() || cache.jobs.iter().any(|job| job.effect)) {
+        if is_gpu && (cache.gpu.is_some() || cache.jobs.iter().any(|job| job.gpu)) {
             continue;
         }
         let relative = entry.relative_path.clone();
@@ -526,17 +540,25 @@ fn update(
                 effect::prepare(saved?, &root, &flag)
                     .map(|prepared| Work::Effect(Box::new(prepared)))
             })
-        } else if Kind::of(entry) == Kind::Material {
-            // Resolve the saved snapshot, not working drafts or a second disk read. Ambiguous
-            // identities fail instead of previewing another source's material.
-            let program = saved_material(catalog.content(), *source);
-            IoTaskPool::get().spawn(async move {
-                let program = program?;
-                crate::material_graph::render_material_asset_preview(&program, EDGE, || {
-                    flag.load(Ordering::Relaxed)
+        } else if let Some(program) = material_program {
+            // The saved snapshot, not working drafts or a second disk read. Ambiguous
+            // identities fail instead of previewing another source's material. A material
+            // that needs a bound-texture/derivative scene renders synthesized on the GPU;
+            // everything else uses the CPU rasterizer.
+            if gpu_material {
+                IoTaskPool::get().spawn(async move {
+                    material::prepare(program?, &root, &flag)
+                        .map(|prepared| Work::Effect(Box::new(prepared)))
                 })
-                .map(Work::Pixels)
-            })
+            } else {
+                IoTaskPool::get().spawn(async move {
+                    let program = program?;
+                    crate::material_graph::render_material_asset_preview(&program, EDGE, || {
+                        flag.load(Ordering::Relaxed)
+                    })
+                    .map(Work::Pixels)
+                })
+            }
         } else if Kind::of(entry) == Kind::Mesh {
             IoTaskPool::get()
                 .spawn(async move { mesh::render(&root, &relative, &flag).map(Work::Pixels) })
@@ -549,7 +571,7 @@ fn update(
             epoch: epoch.clone(),
             cancelled,
             task,
-            effect: is_effect,
+            gpu: is_gpu,
         });
         cache.entries.insert(
             *source,
