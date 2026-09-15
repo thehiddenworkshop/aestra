@@ -2607,6 +2607,20 @@ without collision complexity.
 
 **Goal:** Prove persistent GPU particle simulation end-to-end.
 
+> **Status — first increment landed (unified M6).** A GPU compute kernel integrates a persistent
+> per-particle state buffer with the same semi-implicit Euler step as the M5 CPU reference, dispatched
+> once per fixed tick within a single pass (WebGPU orders dispatches, so state accumulates across
+> ticks with no readback during simulation). `bevy/aestra-bevy-render/tests/stateful_conformance.rs`
+> proves it on real GPU compute: GPU state matches the CPU reference at canonical tick counts
+> (1/5/60/240), and state persists and accumulates incrementally (age accrues exactly one dt per
+> tick). Verified on a real adapter; skips on GPU-less CI, and is wired into the `gpu-visual`
+> workflow so it runs with `AESTRA_REQUIRE_GPU_CONFORMANCE=1`.
+>
+> **Still to do — the harder half:** GPU spawn and death with a free list / slot compaction (spawn
+> needs a u64 splitmix on GPU, which WGSL lacks natively — emulate with u32 pairs), routing a compiled
+> stateful island through this backend, and mixed analytic + stateful rendering in one effect. This
+> increment fixes the particle set to isolate and prove the integration + persistence.
+
 ### GPU passes
 
 Implement:

@@ -34,6 +34,7 @@ jobs:
         run: >-
           cargo test --locked -p aestra-bevy-render
           --test gpu_conformance
+          --test stateful_conformance
           --test material_pipeline_conformance
           --test normal_map_conformance
           --test ribbon_conformance
