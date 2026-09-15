@@ -1,6 +1,6 @@
 //! S0 artifact round-trip baseline (see docs/new/aestra_foundation_tasks_S0_S1.md, task S0-A3).
 //!
-//! Locks the v2 compiled-artifact contract across the same representative showcase effects the
+//! Locks the compiled-artifact contract across the same representative showcase effects the
 //! compiler baseline pins. For each fixture it asserts:
 //!   - the encoded artifact carries the current format version and magic;
 //!   - `decode(encode(compiled)) == compiled` (lossless round-trip);
@@ -109,6 +109,51 @@ fn showcase_effects_round_trip_through_the_versioned_artifact() {
             "{name} re-encodes byte-identically (deterministic serialization)"
         );
     }
+}
+
+#[test]
+fn artifact_round_trips_a_non_analytic_simulation_class_at_v3() {
+    // The v3 bump added the per-emitter simulation class. Prove a non-Analytic class survives the
+    // round-trip (the showcase effects above are all Analytic). Override a built-in module's
+    // requirement to stateful so the effect still compiles normally.
+    use aestra_compiler::{ExtensionRegistry, SimulationRequirements, TemporalRequirement};
+    use aestra_core::{Emitter, MODULE_MOTION, ModuleTypeId};
+    use aestra_runtime::SimulationClass;
+
+    let mut registry = ExtensionRegistry::builtin();
+    let mut motion = registry
+        .modules
+        .get(&ModuleTypeId::new(MODULE_MOTION))
+        .unwrap()
+        .clone();
+    motion.simulation = SimulationRequirements {
+        temporal: TemporalRequirement::PreviousState,
+        ..Default::default()
+    };
+    registry.modules.register(motion);
+    let compiler = EffectCompiler::with_extensions(registry);
+
+    let mut asset = EffectAsset::new("Debris", 2.0);
+    asset.emitters.push(Emitter::basic_sprite("Debris", 2.0));
+    let compiled = compiler.compile(&asset).unwrap();
+    assert!(
+        compiled
+            .emitters
+            .iter()
+            .all(|emitter| emitter.simulation_class == SimulationClass::Stateful)
+    );
+
+    let bytes = encode_effect(&compiled).unwrap();
+    assert!(
+        std::str::from_utf8(&bytes)
+            .unwrap()
+            .contains(&format!("format_version:{CURRENT_ARTIFACT_VERSION}"))
+    );
+    let restored = decode_effect(&bytes).unwrap();
+    assert_eq!(
+        restored, compiled,
+        "the stateful class round-trips losslessly"
+    );
 }
 
 #[test]

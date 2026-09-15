@@ -22,12 +22,12 @@ pub use aestra_core::{
 
 use aestra_core::{
     CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, ColorKey, Curve,
-    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, EmitterId,
-    EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
-    RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
-    ValidationReport, Value,
+    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, Emitter,
+    EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION,
+    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId,
+    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
+    RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange,
+    SpriteColorSource, StageKind, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -489,26 +489,33 @@ impl EffectCompiler {
             .iter()
             .filter(|emitter| emitter.enabled)
             .map(|emitter| {
-                let mut requirements = SimulationRequirements::ANALYTIC;
-                let mut promoted_by = None;
-                for module in emitter.modules.iter().filter(|module| module.enabled) {
-                    let Some(metadata) = self.registry.modules.get(&module.module_type) else {
-                        continue;
-                    };
-                    let before = requirements.derived_class();
-                    requirements = requirements.max(metadata.simulation);
-                    if promoted_by.is_none() && requirements.derived_class() > before {
-                        promoted_by = Some(module.module_type.clone());
-                    }
-                }
+                let (class, promoted_by) = self.emitter_simulation(emitter);
                 EmitterSimulationClass {
                     emitter: emitter.id,
                     name: emitter.name.clone(),
-                    class: requirements.derived_class(),
+                    class,
                     promoted_by,
                 }
             })
             .collect()
+    }
+
+    /// Derives one emitter's simulation class by aggregating its enabled modules' requirements, and
+    /// the first module that promoted it above `Analytic`. Shared by classification and lowering.
+    fn emitter_simulation(&self, emitter: &Emitter) -> (SimulationClass, Option<ModuleTypeId>) {
+        let mut requirements = SimulationRequirements::ANALYTIC;
+        let mut promoted_by = None;
+        for module in emitter.modules.iter().filter(|module| module.enabled) {
+            let Some(metadata) = self.registry.modules.get(&module.module_type) else {
+                continue;
+            };
+            let before = requirements.derived_class();
+            requirements = requirements.max(metadata.simulation);
+            if promoted_by.is_none() && requirements.derived_class() > before {
+                promoted_by = Some(module.module_type.clone());
+            }
+        }
+        (requirements.derived_class(), promoted_by)
     }
 
     /// The effect's aggregate simulation class — the strongest over its enabled emitters, `Analytic`
@@ -940,6 +947,8 @@ impl EffectCompiler {
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
                 .collect();
+            // Every region of an emitter shares its modules, hence its simulation class (hybrid M3).
+            let simulation_class = self.emitter_simulation(emitter).0;
             for region in emitter.timeline_regions() {
                 emitters.push(CompiledEmitter {
                     source: emitter.id,
@@ -953,6 +962,7 @@ impl EffectCompiler {
                     duration: region.duration,
                     seed_index: emitter_index as u32,
                     max_particles: emitter.max_particles,
+                    simulation_class,
                     execution: execution.clone(),
                     renderers: renderers.clone(),
                 });

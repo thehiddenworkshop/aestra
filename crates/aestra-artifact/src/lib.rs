@@ -18,14 +18,16 @@ use aestra_runtime::{
     CompiledParameterOverride, CompiledVec3Curve, EffectRequirements, ExecutionPlan, Expression,
     Instruction, IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot,
     ParticleAttribute, ParticleLayout, RendererCapability, RendererPlan, RendererPlanKind,
-    RuntimeStage, RuntimeValue, ScalarSource, SimulationSeekMode, VectorSource,
+    RuntimeStage, RuntimeValue, ScalarSource, SimulationClass, SimulationSeekMode, VectorSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
-pub const CURRENT_ARTIFACT_VERSION: u32 = 2;
+/// v3 adds the per-emitter simulation class (hybrid roadmap M2/M3, unified U3). Bumped once as the
+/// coordinated compiled-artifact change (see docs/new §44.5).
+pub const CURRENT_ARTIFACT_VERSION: u32 = 3;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -110,6 +112,13 @@ enum SeekModeV1 {
     StatelessDirect,
     CheckpointRestore,
     RestartReplay,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum SimulationClassV1 {
+    Analytic,
+    Stateful,
+    Staged,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -332,6 +341,7 @@ struct EmitterV1 {
     duration: f32,
     seed_index: u32,
     max_particles: u32,
+    simulation_class: SimulationClassV1,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
 }
@@ -669,6 +679,26 @@ impl From<SeekModeV1> for SimulationSeekMode {
             SeekModeV1::StatelessDirect => Self::StatelessDirect,
             SeekModeV1::CheckpointRestore => Self::CheckpointRestore,
             SeekModeV1::RestartReplay => Self::RestartReplay,
+        }
+    }
+}
+
+impl From<SimulationClass> for SimulationClassV1 {
+    fn from(value: SimulationClass) -> Self {
+        match value {
+            SimulationClass::Analytic => Self::Analytic,
+            SimulationClass::Stateful => Self::Stateful,
+            SimulationClass::Staged => Self::Staged,
+        }
+    }
+}
+
+impl From<SimulationClassV1> for SimulationClass {
+    fn from(value: SimulationClassV1) -> Self {
+        match value {
+            SimulationClassV1::Analytic => Self::Analytic,
+            SimulationClassV1::Stateful => Self::Stateful,
+            SimulationClassV1::Staged => Self::Staged,
         }
     }
 }
@@ -1571,6 +1601,7 @@ impl EmitterV1 {
             duration: emitter.duration,
             seed_index: emitter.seed_index,
             max_particles: emitter.max_particles,
+            simulation_class: emitter.simulation_class.into(),
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -1604,6 +1635,7 @@ impl EmitterV1 {
             duration: self.duration,
             seed_index: self.seed_index,
             max_particles: self.max_particles,
+            simulation_class: self.simulation_class.into(),
             execution: self
                 .execution
                 .decode(parameters, &format!("{path}.execution"))?,

@@ -423,9 +423,17 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
         );
         assert_eq!(classified.promoted_by, None);
     }
+    let compiled_showcase = compiler.compile(&showcase).unwrap();
     assert_eq!(
-        compiler.compile(&showcase).unwrap().seek_mode,
+        compiled_showcase.seek_mode,
         SimulationSeekMode::StatelessDirect
+    );
+    assert!(
+        compiled_showcase
+            .emitters
+            .iter()
+            .all(|emitter| emitter.simulation_class == SimulationClass::Analytic),
+        "every compiled emitter carries the derived Analytic class"
     );
 
     // Register a fake stateful module and build a mixed effect: one analytic emitter, one that uses
@@ -499,12 +507,17 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
     stateful_effect
         .emitters
         .push(Emitter::basic_sprite("Debris", 2.0));
+    let compiled_stateful = stateful_compiler.compile(&stateful_effect).unwrap();
     assert_eq!(
-        stateful_compiler
-            .compile(&stateful_effect)
-            .unwrap()
-            .seek_mode,
+        compiled_stateful.seek_mode,
         SimulationSeekMode::RestartReplay
+    );
+    assert!(
+        compiled_stateful
+            .emitters
+            .iter()
+            .all(|emitter| emitter.simulation_class == SimulationClass::Stateful),
+        "the compiled emitter carries the derived Stateful class"
     );
     // The same effect compiled with the stock (analytic) registry still seeks directly.
     assert_eq!(

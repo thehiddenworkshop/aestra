@@ -584,6 +584,9 @@ pub struct CompiledEmitter {
     pub duration: f32,
     pub seed_index: u32,
     pub max_particles: u32,
+    /// The derived execution class of this emitter-region's simulation island (hybrid roadmap M2/M3).
+    /// Every current effect is `Analytic`; the compiler derives this from module requirements.
+    pub simulation_class: SimulationClass,
     pub execution: ExecutionPlan,
     pub renderers: Vec<RendererPlan>,
 }

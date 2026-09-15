@@ -2387,11 +2387,16 @@ The milestones below are ordered to minimize architectural churn.
 >   resolve to `RestartReplay` (checkpoint vs restart is a backend-capability choice, §5.3, made once
 >   a checkpoint backend exists). All S0 baselines stay green: existing effects are unchanged.
 >
-> **Still to do in M2/M3:** promote per-emitter class into a persisted `CompiledSimulationIsland`
-> representation with dependency edges, and carry it in the artifact DTO. That changes
-> `CompiledEffect`'s shape, so it is coordinated with the compiled-artifact bump (unified U3 =
-> M3+M4), not this increment — which is why the per-emitter class is exposed as *analysis*
-> (`classify_simulation`) rather than stored on `CompiledEmitter` yet.
+> **Update — U3 first increment landed.** `CompiledEmitter.simulation_class` now *persists* the
+> derived class (populated by the compiler, one class per emitter-region — the initial island
+> granularity of §13), and the compiled-artifact format was bumped **v2 → v3** to carry it
+> (`SimulationClassV1`), the single coordinated compiled bump (§44.5). The S0 artifact baseline moved
+> with it (it tracks `CURRENT_ARTIFACT_VERSION`), and a test proves a non-`Analytic` class round-trips.
+>
+> **Still to do in M2/M3/M4:** a first-class `CompiledSimulationIsland` grouping with dependency edges
+> (islands that span emitters), the persistent/transient **state-layout** split (M4), and the
+> simulation-state vs presentation-state ABI separation. Those build on the per-emitter class landed
+> here.
 
 ### Initial implementation
 
