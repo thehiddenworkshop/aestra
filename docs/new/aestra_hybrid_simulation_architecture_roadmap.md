@@ -2636,12 +2636,22 @@ without collision complexity.
 > is a GPU atomic free-list allocator proven to hand out distinct slots under parallel allocation — the
 > hard property behind dead-slot recycling. Both are production WGSL in `aestra-gpu`.
 >
-> **Still to do — the rest of the harder half:** assemble integrate + spawn + death + the free list
-> into one per-tick loop with per-particle identity (particles matched by their deterministic spawn
-> ordinal, so parallel slot assignment need not match the CPU), presentation extraction (state →
-> 48-byte `GpuParticle`), and finally wiring allocate + dispatch into `aestra-bevy-render/src/gpu.rs`
-> — which then runs a real stateful effect end-to-end, meaningful precisely because the proven kernels
-> exist.
+> **Assembled death loop — landed and proven (the last algorithmically-interesting piece).** The full
+> per-tick loop — integrate + death + spawn + free-list reuse — now runs on the GPU as two phases over
+> five shared bindings: `death_integrate` advances each live slot and, if it died this tick, marks it
+> free and pushes it to the atomic free list; `spawn` then claims a freed slot and a fresh ordinal via
+> `atomicAdd`. Per-particle identity is the spawn ordinal, written into state (stride grows to 9 floats,
+> the ordinal stored as bits), so live GPU slots are matched to the CPU reference *by ordinal* even
+> though the parallel slot assignment differs. The CPU reference now carries the same ordinal
+> (`StatefulSimulation::alive_particles()` returns `(id, position)`). `stateful_conformance.rs` runs a
+> 90-tick window with a 0.5 s lifetime — real death and slot reuse, ample capacity so ordinals line up —
+> and matches every live GPU particle to `StatefulSimulation` by ordinal. Verified on a real GPU (all
+> seven stateful conformance tests pass with `AESTRA_REQUIRE_GPU_CONFORMANCE=1`). The death kernels
+> reuse the two already-proven primitives (the u64 spawn RNG and the free-list allocator) verbatim.
+>
+> **Still to do:** presentation extraction (state → 48-byte `GpuParticle`), and finally wiring allocate
+> + dispatch into `aestra-bevy-render/src/gpu.rs` — which then runs a real stateful effect end-to-end,
+> meaningful precisely because the proven kernels exist.
 
 ### GPU passes
 
