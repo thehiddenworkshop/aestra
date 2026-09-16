@@ -348,6 +348,26 @@ fn spawn_launch_direction(seed: vec2<u32>, ordinal: vec2<u32>) -> vec3<f32> {
 }
 "#;
 
+/// A GPU atomic slot allocator for stateful particle death/reuse (hybrid roadmap M6): dead slots are
+/// pushed onto a free list and reused by spawns. The including shader must declare the module-scope
+/// bindings `free_list: array<u32>` and `free_count: atomic<u32>` (naga does not accept atomic
+/// pointers as function parameters, so these operate on the module bindings directly — WGSL allows
+/// referring to a global declared elsewhere in the module). `aestra_free_pop` returns a distinct free
+/// slot (the caller must dispatch no more poppers than the current free count); `aestra_free_push`
+/// returns a dead slot to the list. The specific slot a spawn receives is irrelevant — particles are
+/// matched by their deterministic spawn ordinal, not by slot — so parallel allocation order does not
+/// affect the simulation result.
+pub const STATEFUL_FREE_LIST_WGSL: &str = r#"
+fn aestra_free_pop() -> u32 {
+    let top = atomicSub(&free_count, 1u);
+    return free_list[top - 1u];
+}
+fn aestra_free_push(slot: u32) {
+    let index = atomicAdd(&free_count, 1u);
+    free_list[index] = slot;
+}
+"#;
+
 impl GpuEffectArtifact {
     /// Builds the full artifact including capacity-sized particle storage. Use this
     /// when persistent GPU particle buffers are first created or resized; the

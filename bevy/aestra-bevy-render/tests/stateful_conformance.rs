@@ -10,14 +10,18 @@
 //! - **M6 spawn** — the deterministic spawn RNG (u64 splitmix emulated in WGSL, from
 //!   `aestra_gpu::STATEFUL_SPAWN_RNG_WGSL`) matches the CPU reference, and the full GPU spawn+integrate
 //!   loop reproduces `StatefulSimulation` across a window with no death.
+//! - **M6 death/reuse allocator** — the GPU atomic free list
+//!   (`aestra_gpu::STATEFUL_FREE_LIST_WGSL`) hands out distinct slots under parallel allocation, the
+//!   core property that makes dead-slot recycling correct.
 //!
-//! Still deferred: particle death + a free list / slot compaction, and presentation extraction
-//! (state → the 48-byte `GpuParticle`).
+//! Still deferred: assembling integrate + spawn + death + the free list into one loop with
+//! per-particle identity (matched by spawn ordinal), and presentation extraction (state → the
+//! 48-byte `GpuParticle`).
 //!
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
-use aestra_gpu::STATEFUL_SPAWN_RNG_WGSL;
+use aestra_gpu::{STATEFUL_FREE_LIST_WGSL, STATEFUL_SPAWN_RNG_WGSL};
 use aestra_runtime::StatefulSimulation;
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
@@ -155,6 +159,21 @@ fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Pops `arrayLength(&output)` slots from the free list in parallel, one per thread, into `output` —
+/// exercising the production `aestra_free_pop`. The dispatch pops no more than the free count.
+const FREE_LIST_ENTRY: &str = r#"
+@group(0) @binding(0) var<storage, read_write> free_list: array<u32>;
+@group(0) @binding(1) var<storage, read_write> free_count: atomic<u32>;
+@group(0) @binding(2) var<storage, read_write> output: array<u32>;
+
+@compute @workgroup_size(64)
+fn allocate(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= arrayLength(&output)) { return; }
+    output[i] = aestra_free_pop();
+}
+"#;
+
 struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -162,6 +181,8 @@ struct Harness {
     pipeline: wgpu::ComputePipeline,
     spawn_pipeline: wgpu::ComputePipeline,
     advance_pipeline: wgpu::ComputePipeline,
+    free_list_layout: wgpu::BindGroupLayout,
+    free_list_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -253,6 +274,31 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
+        // A 3-binding layout for the free-list allocator (the atomic counter is a storage buffer).
+        let free_list_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Aestra free-list bindings"),
+            entries: &[storage(0, false), storage(1, false), storage(2, false)],
+        });
+        let free_list_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Aestra free-list pipeline layout"),
+                bind_group_layouts: &[Some(&free_list_layout)],
+                immediate_size: 0,
+            });
+        let free_list_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra free-list allocate"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+                "{STATEFUL_FREE_LIST_WGSL}{FREE_LIST_ENTRY}"
+            ))),
+        });
+        let free_list_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("allocate"),
+            layout: Some(&free_list_pipeline_layout),
+            module: &free_list_shader,
+            entry_point: Some("allocate"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Ok(Some(Self {
             device,
             queue,
@@ -260,7 +306,105 @@ impl Harness {
             pipeline,
             spawn_pipeline,
             advance_pipeline,
+            free_list_layout,
+            free_list_pipeline,
         }))
+    }
+
+    /// Submits the encoder, waits, and reads the mapped staging buffer back as `u32`s.
+    fn read_back_u32(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        staging: &wgpu::Buffer,
+    ) -> Result<Vec<u32>, String> {
+        let submission = self.queue.submit([encoder.finish()]);
+        let slice = staging.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(GPU_SUBMISSION_TIMEOUT),
+            })
+            .map_err(|error| format!("GPU submission did not complete: {error}"))?;
+        receiver
+            .recv_timeout(GPU_MAP_CALLBACK_TIMEOUT)
+            .map_err(|error| format!("GPU readback callback not delivered: {error}"))?
+            .map_err(|error| error.to_string())?;
+        let bytes = slice.get_mapped_range().to_vec();
+        staging.unmap();
+        StorageBuffer::new(&bytes)
+            .create()
+            .map_err(|error| error.to_string())
+    }
+
+    /// Pops `poppers` slots in parallel from a fresh free list of `capacity` slots, returning the
+    /// popped indices. `poppers <= capacity`, so the allocator never underflows.
+    fn allocate_slots(&self, capacity: u32, poppers: u32) -> Result<Vec<u32>, String> {
+        let free_list = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("free list"),
+                contents: &encode(&(0..capacity).collect::<Vec<u32>>())?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let free_count = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("free count"),
+                contents: &encode(&capacity)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let out_bytes = encode(&vec![0u32; poppers as usize])?;
+        let output = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("alloc output"),
+                contents: &out_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Aestra free-list bind group"),
+            layout: &self.free_list_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: free_list.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: free_count.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output.as_entire_binding(),
+                },
+            ],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("alloc readback"),
+            size: out_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("alloc commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("allocate"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.free_list_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(poppers.div_ceil(WORKGROUP), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&output, 0, &staging, 0, out_bytes.len() as u64);
+        self.read_back_u32(encoder, &staging)
     }
 
     /// Uploads `initial`, dispatches the integrate kernel `ticks` times on the *persistent* state
@@ -796,7 +940,7 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
 
     assert_eq!(cpu.len(), simulation.live_count());
     assert!(
-        cpu.len() > 0,
+        !cpu.is_empty(),
         "particles are alive at the end of the window"
     );
     // With no death, CPU particle `i` (spawn order) is GPU slot `i`.
@@ -811,5 +955,32 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
                 "particle {index} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
             );
         }
+    }
+}
+
+#[test]
+fn gpu_free_list_allocator_yields_distinct_slots() {
+    // Hybrid roadmap M6 death/reuse: dead slots are recycled through a GPU atomic free list. The
+    // hard property is that parallel allocation never hands the same slot to two spawns. Prove it —
+    // pop many slots in parallel and check they are all distinct, valid indices. Which slot a spawn
+    // gets does not matter (particles are matched by spawn ordinal), only distinctness.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let capacity = 4096_u32;
+    for &poppers in &[1_u32, 64, 1000, capacity] {
+        let mut slots = harness.allocate_slots(capacity, poppers).unwrap();
+        assert_eq!(slots.len(), poppers as usize);
+        assert!(
+            slots.iter().all(|&slot| slot < capacity),
+            "every popped slot is a valid index"
+        );
+        slots.sort_unstable();
+        slots.dedup();
+        assert_eq!(
+            slots.len(),
+            poppers as usize,
+            "parallel allocation of {poppers} slots yields distinct slots (no double-allocation)"
+        );
     }
 }

@@ -2631,11 +2631,17 @@ without collision complexity.
 > `StatefulSimulation::{splitmix64, launch_direction}` as the canonical definitions both sides conform
 > to. This is production shader code in `aestra-gpu`, reusable by the eventual spawn pipeline.
 >
-> **Still to do — the rest of the harder half:** the GPU spawn *kernel* that writes initial state
-> (position/velocity/lifetime) into the persistent buffer using this RNG, death + a free list / slot
-> compaction, presentation extraction (state → 48-byte `GpuParticle`), and finally wiring the
-> allocate + dispatch into `aestra-bevy-render/src/gpu.rs` — which then runs a real stateful effect
-> end-to-end, and is meaningful precisely because spawn/integrate/present exist.
+> **Spawn kernel + free-list allocator — landed and proven.** The GPU spawn+integrate loop reproduces
+> the M5 CPU reference over a no-death window (using the u64 RNG), and `aestra_gpu::STATEFUL_FREE_LIST_WGSL`
+> is a GPU atomic free-list allocator proven to hand out distinct slots under parallel allocation — the
+> hard property behind dead-slot recycling. Both are production WGSL in `aestra-gpu`.
+>
+> **Still to do — the rest of the harder half:** assemble integrate + spawn + death + the free list
+> into one per-tick loop with per-particle identity (particles matched by their deterministic spawn
+> ordinal, so parallel slot assignment need not match the CPU), presentation extraction (state →
+> 48-byte `GpuParticle`), and finally wiring allocate + dispatch into `aestra-bevy-render/src/gpu.rs`
+> — which then runs a real stateful effect end-to-end, meaningful precisely because the proven kernels
+> exist.
 
 ### GPU passes
 
