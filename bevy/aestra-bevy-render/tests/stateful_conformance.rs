@@ -7,10 +7,12 @@
 //!   across dispatches — no readback during simulation, only for the final conformance check.
 //! - **M7** — a backward seek done as a GPU-resident checkpoint restore plus forward replay
 //!   (snapshot and restore entirely GPU→GPU) reaches the same state as an uninterrupted forward run.
+//! - **M6 spawn** — the deterministic spawn RNG (u64 splitmix emulated in WGSL, from
+//!   `aestra_gpu::STATEFUL_SPAWN_RNG_WGSL`) matches the CPU reference, and the full GPU spawn+integrate
+//!   loop reproduces `StatefulSimulation` across a window with no death.
 //!
-//! Spawn, death, and the free list are the harder half of M6 (they need a u64 splitmix on GPU and
-//! slot compaction) and are a deliberate follow-up; this increment fixes the particle set and proves
-//! the integration + persistence.
+//! Still deferred: particle death + a free list / slot compaction, and presentation extraction
+//! (state → the 48-byte `GpuParticle`).
 //!
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
@@ -108,12 +110,58 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// The combined per-tick stateful advance: integrate the already-spawned slots by one dt, then spawn
+/// this tick's new slots into the persistent buffer using the shared RNG — exactly the order
+/// `StatefulSimulation::advance_tick` uses. Params are a flat `array<u32>` to avoid struct alignment.
+const ADVANCE_WGSL_ENTRY: &str = r#"
+@group(0) @binding(0) var<storage, read_write> state: array<f32>;
+@group(0) @binding(1) var<storage, read> params: array<u32>;
+
+@compute @workgroup_size(64)
+fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let slot = gid.x;
+    let capacity = params[3];
+    if (slot >= capacity) { return; }
+    let seed = vec2<u32>(params[0], params[1]);
+    let spawned_before = params[4];
+    let to_spawn_end = params[5];
+    let speed = bitcast<f32>(params[6]);
+    let lifetime = bitcast<f32>(params[7]);
+    let dt = bitcast<f32>(params[8]);
+    let gravity = vec3<f32>(bitcast<f32>(params[9]), bitcast<f32>(params[10]), bitcast<f32>(params[11]));
+    let base = slot * 8u;
+    if (slot < spawned_before) {
+        let vx = state[base + 3u] + gravity.x * dt;
+        let vy = state[base + 4u] + gravity.y * dt;
+        let vz = state[base + 5u] + gravity.z * dt;
+        state[base + 3u] = vx;
+        state[base + 4u] = vy;
+        state[base + 5u] = vz;
+        state[base + 0u] = state[base + 0u] + vx * dt;
+        state[base + 1u] = state[base + 1u] + vy * dt;
+        state[base + 2u] = state[base + 2u] + vz * dt;
+        state[base + 6u] = state[base + 6u] + dt;
+    } else if (slot < to_spawn_end) {
+        let dir = spawn_launch_direction(seed, vec2<u32>(slot, 0u));
+        state[base + 0u] = 0.0;
+        state[base + 1u] = 0.0;
+        state[base + 2u] = 0.0;
+        state[base + 3u] = dir.x * speed;
+        state[base + 4u] = dir.y * speed;
+        state[base + 5u] = dir.z * speed;
+        state[base + 6u] = 0.0;
+        state[base + 7u] = lifetime;
+    }
+}
+"#;
+
 struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::ComputePipeline,
     spawn_pipeline: wgpu::ComputePipeline,
+    advance_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -191,12 +239,27 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
+        let advance_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra stateful advance"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+                "{STATEFUL_SPAWN_RNG_WGSL}{ADVANCE_WGSL_ENTRY}"
+            ))),
+        });
+        let advance_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("advance"),
+            layout: Some(&pipeline_layout),
+            module: &advance_shader,
+            entry_point: Some("advance"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Ok(Some(Self {
             device,
             queue,
             bind_group_layout,
             pipeline,
             spawn_pipeline,
+            advance_pipeline,
         }))
     }
 
@@ -357,6 +420,100 @@ impl Harness {
         }
         encoder.copy_buffer_to_buffer(&out, 0, &staging, 0, out_bytes.len() as u64);
         self.read_back(encoder, &staging)
+    }
+
+    /// Runs the full stateful spawn+integrate loop for `ticks` fixed ticks over a persistent state
+    /// buffer, mirroring `StatefulSimulation::advance_tick` (integrate the already-spawned slots,
+    /// then spawn this tick's slots). Returns the final packed state (`capacity * 8` floats). One
+    /// dispatch per tick within a single pass, so state persists across ticks.
+    #[allow(clippy::too_many_arguments)]
+    fn advance_stateful(
+        &self,
+        gravity: [f32; 3],
+        spawn_per_tick: u32,
+        speed: f32,
+        lifetime: f32,
+        capacity: u32,
+        seed: u64,
+        ticks: u32,
+    ) -> Result<Vec<f32>, String> {
+        let state_bytes = encode(&vec![0.0_f32; capacity as usize * 8])?;
+        let state = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("stateful state"),
+                contents: &state_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("stateful readback"),
+            size: state_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        // One params buffer + bind group per tick (spawned_before / to_spawn_end change each tick).
+        let mut bind_groups = Vec::with_capacity(ticks as usize);
+        let mut param_buffers = Vec::with_capacity(ticks as usize);
+        for tick in 1..=ticks {
+            let spawned_before = (tick - 1).saturating_mul(spawn_per_tick).min(capacity);
+            let to_spawn_end = tick.saturating_mul(spawn_per_tick).min(capacity);
+            let params: Vec<u32> = vec![
+                seed as u32,
+                (seed >> 32) as u32,
+                spawn_per_tick,
+                capacity,
+                spawned_before,
+                to_spawn_end,
+                speed.to_bits(),
+                lifetime.to_bits(),
+                TICK_DT.to_bits(),
+                gravity[0].to_bits(),
+                gravity[1].to_bits(),
+                gravity[2].to_bits(),
+            ];
+            let params_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("stateful params"),
+                    contents: &encode(&params)?,
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("stateful advance bind group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: state.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                ],
+            }));
+            param_buffers.push(params_buffer);
+        }
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("stateful advance commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("stateful advance"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.advance_pipeline);
+            for bind_group in &bind_groups {
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP), 1, 1);
+            }
+        }
+        encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+        let result = self.read_back(encoder, &staging);
+        drop(param_buffers);
+        result
     }
 
     /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
@@ -596,6 +753,63 @@ fn gpu_spawn_rng_matches_the_cpu_reference() {
                     actual
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
+    // Hybrid roadmap M6: the GPU spawn+integrate loop must reproduce the M5 CPU reference. Run the
+    // full per-tick loop on the GPU (spawn new slots with the shared RNG, integrate the rest) and
+    // compare the presented positions to StatefulSimulation. A long lifetime keeps every particle
+    // alive across the window, so no death/free-list is exercised yet (that is the next step).
+    use aestra_runtime::StatefulConfig;
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let config = StatefulConfig {
+        gravity: [0.0, -9.81, 0.0],
+        spawn_per_tick: 4,
+        initial_speed: 12.0,
+        lifetime: 1000.0,
+        capacity: 512,
+    };
+    let ticks = 100_u32;
+    let seed = 0x1234_5678_9abc_def0_u64;
+
+    let gpu = harness
+        .advance_stateful(
+            config.gravity,
+            config.spawn_per_tick,
+            config.initial_speed,
+            config.lifetime,
+            config.capacity,
+            seed,
+            ticks,
+        )
+        .unwrap();
+
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.advance_to_tick(ticks as u64);
+    let mut cpu = Vec::new();
+    simulation.present(&mut cpu);
+
+    assert_eq!(cpu.len(), simulation.live_count());
+    assert!(
+        cpu.len() > 0,
+        "particles are alive at the end of the window"
+    );
+    // With no death, CPU particle `i` (spawn order) is GPU slot `i`.
+    for (index, sample) in cpu.iter().enumerate() {
+        let base = index * 8;
+        for axis in 0..3 {
+            let expected = sample.position[axis];
+            let actual = gpu[base + axis];
+            let tolerance = 1e-3 + 1e-4 * expected.abs().max(actual.abs());
+            assert!(
+                (expected - actual).abs() <= tolerance,
+                "particle {index} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
         }
     }
 }
