@@ -28,6 +28,9 @@ pub struct StatefulConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct StateParticle {
+    /// The particle's spawn ordinal — its stable identity, used to match against the GPU backend
+    /// (whose parallel slot assignment need not match this reference's).
+    id: u64,
     position: [f32; 3],
     velocity: [f32; 3],
     age: f32,
@@ -68,6 +71,15 @@ impl StatefulSimulation {
     /// The number of live particles.
     pub fn live_count(&self) -> usize {
         self.particles.len()
+    }
+
+    /// Every live particle as `(spawn ordinal, position)`, for identity-based conformance against a
+    /// backend whose slot assignment differs from this reference's.
+    pub fn alive_particles(&self) -> Vec<(u64, [f32; 3])> {
+        self.particles
+            .iter()
+            .map(|particle| (particle.id, particle.position))
+            .collect()
     }
 
     /// The persistent simulation-state layout this reference maintains (hybrid M4).
@@ -111,6 +123,7 @@ impl StatefulSimulation {
                 direction[2] * self.config.initial_speed,
             ];
             self.particles.push(StateParticle {
+                id: self.spawned,
                 position: [0.0; 3],
                 velocity,
                 age: 0.0,

@@ -13,10 +13,12 @@
 //! - **M6 death/reuse allocator** — the GPU atomic free list
 //!   (`aestra_gpu::STATEFUL_FREE_LIST_WGSL`) hands out distinct slots under parallel allocation, the
 //!   core property that makes dead-slot recycling correct.
+//! - **M6 assembled death loop** — integrate + death + spawn + free-list reuse in one loop, with
+//!   per-particle identity (the spawn ordinal) written into state so live GPU slots can be matched
+//!   to the CPU reference by ordinal even though the parallel slot assignment differs. Over a window
+//!   with real death and slot reuse, every live GPU particle matches `StatefulSimulation`.
 //!
-//! Still deferred: assembling integrate + spawn + death + the free list into one loop with
-//! per-particle identity (matched by spawn ordinal), and presentation extraction (state → the
-//! 48-byte `GpuParticle`).
+//! Still deferred: presentation extraction (state → the 48-byte `GpuParticle`).
 //!
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
@@ -174,6 +176,77 @@ fn allocate(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// The full stateful loop with death and slot reuse. Two per-tick phases sharing five bindings:
+/// `death_integrate` integrates each live slot by one dt and frees it (pushes to the free list) if it
+/// died; `spawn` claims a free slot and a fresh ordinal for each of this tick's new particles. The
+/// state stride is 9 floats: position, velocity, age, lifetime, and the spawn ordinal (identity).
+/// `params` = [capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy, gz].
+const DEATH_LOOP_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read_write> state: array<f32>;
+@group(0) @binding(1) var<storage, read_write> free_list: array<u32>;
+@group(0) @binding(2) var<storage, read_write> free_count: atomic<u32>;
+@group(0) @binding(3) var<storage, read_write> spawn_counter: atomic<u32>;
+@group(0) @binding(4) var<storage, read> params: array<u32>;
+
+@compute @workgroup_size(64)
+fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let slot = gid.x;
+    if (slot >= params[0]) { return; }
+    let base = slot * 9u;
+    let lifetime = state[base + 7u];
+    let age = state[base + 6u];
+    if (lifetime > 0.0 && age < lifetime) {
+        let dt = bitcast<f32>(params[6]);
+        let gx = bitcast<f32>(params[7]);
+        let gy = bitcast<f32>(params[8]);
+        let gz = bitcast<f32>(params[9]);
+        let vx = state[base + 3u] + gx * dt;
+        let vy = state[base + 4u] + gy * dt;
+        let vz = state[base + 5u] + gz * dt;
+        state[base + 3u] = vx;
+        state[base + 4u] = vy;
+        state[base + 5u] = vz;
+        state[base + 0u] = state[base + 0u] + vx * dt;
+        state[base + 1u] = state[base + 1u] + vy * dt;
+        state[base + 2u] = state[base + 2u] + vz * dt;
+        let new_age = age + dt;
+        state[base + 6u] = new_age;
+        if (new_age >= lifetime) {
+            state[base + 7u] = 0.0; // mark the slot free
+            aestra_free_push(slot);
+        }
+    }
+}
+
+@compute @workgroup_size(64)
+fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params[1]) { return; }
+    // Claim a free slot; if the free list is empty this tick, this spawn does not happen (matching
+    // the CPU reference's room bound).
+    let top = atomicSub(&free_count, 1u);
+    if (top == 0u || top > params[0]) {
+        atomicAdd(&free_count, 1u);
+        return;
+    }
+    let slot = free_list[top - 1u];
+    let ordinal = atomicAdd(&spawn_counter, 1u);
+    let seed = vec2<u32>(params[2], params[3]);
+    let speed = bitcast<f32>(params[4]);
+    let lifetime = bitcast<f32>(params[5]);
+    let dir = spawn_launch_direction(seed, vec2<u32>(ordinal, 0u));
+    let base = slot * 9u;
+    state[base + 0u] = 0.0;
+    state[base + 1u] = 0.0;
+    state[base + 2u] = 0.0;
+    state[base + 3u] = dir.x * speed;
+    state[base + 4u] = dir.y * speed;
+    state[base + 5u] = dir.z * speed;
+    state[base + 6u] = 0.0;
+    state[base + 7u] = lifetime;
+    state[base + 8u] = bitcast<f32>(ordinal);
+}
+"#;
+
 struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -183,6 +256,9 @@ struct Harness {
     advance_pipeline: wgpu::ComputePipeline,
     free_list_layout: wgpu::BindGroupLayout,
     free_list_pipeline: wgpu::ComputePipeline,
+    death_layout: wgpu::BindGroupLayout,
+    death_integrate_pipeline: wgpu::ComputePipeline,
+    death_spawn_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -299,6 +375,50 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
+        // The full death loop shares five bindings across its two phases: state (rw), free list (rw),
+        // free count (atomic rw), spawn counter (atomic rw), params (ro). Its WGSL is assembled from
+        // the two production primitives (the spawn RNG and the free-list allocator) plus the two
+        // kernels, so this conformance-checks that exact reusable code.
+        let death_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Aestra death-loop bindings"),
+            entries: &[
+                storage(0, false),
+                storage(1, false),
+                storage(2, false),
+                storage(3, false),
+                storage(4, true),
+            ],
+        });
+        let death_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Aestra death-loop pipeline layout"),
+                bind_group_layouts: &[Some(&death_layout)],
+                immediate_size: 0,
+            });
+        let death_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra death loop"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+                "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{DEATH_LOOP_WGSL}"
+            ))),
+        });
+        let death_integrate_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("death_integrate"),
+                layout: Some(&death_pipeline_layout),
+                module: &death_shader,
+                entry_point: Some("death_integrate"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let death_spawn_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("death_spawn"),
+                layout: Some(&death_pipeline_layout),
+                module: &death_shader,
+                entry_point: Some("spawn"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
         Ok(Some(Self {
             device,
             queue,
@@ -308,6 +428,9 @@ impl Harness {
             advance_pipeline,
             free_list_layout,
             free_list_pipeline,
+            death_layout,
+            death_integrate_pipeline,
+            death_spawn_pipeline,
         }))
     }
 
@@ -660,6 +783,144 @@ impl Harness {
         result
     }
 
+    /// Runs the full death loop — integrate + death + spawn + free-list reuse with per-particle
+    /// identity — for `ticks` fixed ticks, then reads back every live slot as `(spawn ordinal,
+    /// position)`. Each tick runs two dispatches in one pass: `death_integrate` over all `capacity`
+    /// slots (advance the live ones, free the ones that died this tick) then `spawn` over
+    /// `spawn_per_tick` threads (each claims a freed slot and a fresh ordinal). State stride is 9
+    /// floats (position, velocity, age, lifetime, ordinal-as-bits). Slots are matched to the CPU
+    /// reference by ordinal, so the arbitrary parallel slot assignment need not agree.
+    #[allow(clippy::too_many_arguments)]
+    fn advance_stateful_with_death(
+        &self,
+        gravity: [f32; 3],
+        spawn_per_tick: u32,
+        speed: f32,
+        lifetime: f32,
+        capacity: u32,
+        seed: u64,
+        ticks: u32,
+    ) -> Result<Vec<(u64, [f32; 3])>, String> {
+        let state_bytes = encode(&vec![0.0_f32; capacity as usize * 9])?;
+        let state = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("death state"),
+                contents: &state_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        // Every slot starts free.
+        let free_list = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("death free list"),
+                contents: &encode(&(0..capacity).collect::<Vec<u32>>())?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let free_count = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("death free count"),
+                contents: &encode(&capacity)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let spawn_counter = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("death spawn counter"),
+                contents: &encode(&0_u32)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        // Params are constant across every tick.
+        let params: Vec<u32> = vec![
+            capacity,
+            spawn_per_tick,
+            seed as u32,
+            (seed >> 32) as u32,
+            speed.to_bits(),
+            lifetime.to_bits(),
+            TICK_DT.to_bits(),
+            gravity[0].to_bits(),
+            gravity[1].to_bits(),
+            gravity[2].to_bits(),
+        ];
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("death params"),
+                contents: &encode(&params)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("death bind group"),
+            layout: &self.death_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: free_list.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: free_count.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: spawn_counter.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("death readback"),
+            size: state_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("death commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("death loop"),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &bind_group, &[]);
+            for _ in 0..ticks {
+                pass.set_pipeline(&self.death_integrate_pipeline);
+                pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP), 1, 1);
+                pass.set_pipeline(&self.death_spawn_pipeline);
+                pass.dispatch_workgroups(spawn_per_tick.div_ceil(WORKGROUP), 1, 1);
+            }
+        }
+        encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+        // Read the raw words so the ordinal (stored as bits) comes back exactly.
+        let raw = self.read_back_u32(encoder, &staging)?;
+        let mut alive = Vec::new();
+        for slot in 0..capacity as usize {
+            let base = slot * 9;
+            let lifetime = f32::from_bits(raw[base + 7]);
+            let age = f32::from_bits(raw[base + 6]);
+            if lifetime > 0.0 && age < lifetime {
+                let position = [
+                    f32::from_bits(raw[base]),
+                    f32::from_bits(raw[base + 1]),
+                    f32::from_bits(raw[base + 2]),
+                ];
+                alive.push((raw[base + 8] as u64, position));
+            }
+        }
+        Ok(alive)
+    }
+
     /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
     /// `overshoot_to`, then restores the checkpoint (a backward seek) and replays forward to
     /// `seek_target` — all in GPU commands, no readback until the final state (§4.4/§19). Proves a
@@ -982,5 +1243,78 @@ fn gpu_free_list_allocator_yields_distinct_slots() {
             poppers as usize,
             "parallel allocation of {poppers} slots yields distinct slots (no double-allocation)"
         );
+    }
+}
+
+#[test]
+fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
+    // Hybrid roadmap M6, the last algorithmically-interesting piece: the full stateful loop with
+    // particle death and slot reuse must reproduce the M5 CPU reference. Run a window long enough
+    // that early particles die and their slots are recycled by later spawns, then match every live
+    // GPU particle to StatefulSimulation *by spawn ordinal* — the GPU's parallel slot assignment is
+    // arbitrary and need not agree with the CPU's, only the per-identity state must.
+    use aestra_runtime::StatefulConfig;
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    // Short lifetime (0.5s = 30 ticks) forces death well inside the 90-tick window; capacity is
+    // ample (steady-state live count ~= 30 * 4 = 120 << 512), so no capacity pressure — every spawn
+    // succeeds and the ordinals line up exactly, isolating the death/reuse path.
+    let config = StatefulConfig {
+        gravity: [0.0, -9.81, 0.0],
+        spawn_per_tick: 4,
+        initial_speed: 12.0,
+        lifetime: 0.5,
+        capacity: 512,
+    };
+    let ticks = 90_u32;
+    let seed = 0xDEAD_BEEF_CAFE_F00D_u64;
+
+    let gpu = harness
+        .advance_stateful_with_death(
+            config.gravity,
+            config.spawn_per_tick,
+            config.initial_speed,
+            config.lifetime,
+            config.capacity,
+            seed,
+            ticks,
+        )
+        .unwrap();
+
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.advance_to_tick(ticks as u64);
+    let cpu = simulation.alive_particles();
+
+    // The window must actually exercise death: fewer particles are alive than were ever spawned.
+    assert!(
+        !cpu.is_empty(),
+        "particles are alive at the end of the window"
+    );
+    assert!(
+        cpu.len() < (ticks * config.spawn_per_tick) as usize,
+        "the window retires particles (death is exercised, not just spawn+integrate)"
+    );
+    assert_eq!(
+        gpu.len(),
+        cpu.len(),
+        "GPU and CPU agree on the live particle count ({} vs {})",
+        gpu.len(),
+        cpu.len()
+    );
+
+    let gpu_by_id: std::collections::HashMap<u64, [f32; 3]> = gpu.into_iter().collect();
+    for (id, cpu_pos) in cpu {
+        let gpu_pos = gpu_by_id.get(&id).unwrap_or_else(|| {
+            panic!("CPU particle with ordinal {id} is missing from the GPU live set")
+        });
+        for axis in 0..3 {
+            let (expected, actual) = (cpu_pos[axis], gpu_pos[axis]);
+            let tolerance = 1e-3 + 1e-4 * expected.abs().max(actual.abs());
+            assert!(
+                (expected - actual).abs() <= tolerance,
+                "ordinal {id} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
+        }
     }
 }
