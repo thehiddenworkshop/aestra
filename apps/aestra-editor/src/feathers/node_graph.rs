@@ -278,6 +278,7 @@ pub(crate) struct GraphViewportMemory {
     offsets: HashMap<(String, String), Vec2>,
     placement_revisions: HashMap<(String, String), u64>,
     offset_epochs: HashMap<String, u64>,
+    graph_revisions: HashMap<String, u64>,
     serial: u64,
 }
 
@@ -299,6 +300,7 @@ impl GraphViewportMemory {
         self.offsets.retain(|(key, _), _| keep(key));
         self.placement_revisions.retain(|(key, _), _| keep(key));
         self.offset_epochs.retain(|key, _| keep(key));
+        self.graph_revisions.retain(|key, _| keep(key));
     }
 
     pub(crate) fn retain_nodes(&mut self, graph: &str, keep: impl Fn(&str) -> bool) {
@@ -313,8 +315,18 @@ impl GraphViewportMemory {
     /// Semantic reload/edit invalidates session displacement, not authored base placement.
     pub(crate) fn clear_offsets(&mut self, graph: &str) {
         self.offsets.retain(|(key, _), _| key != graph);
-        self.serial += 1;
+        self.touch_graph(graph);
         self.offset_epochs.insert(graph.to_owned(), self.serial);
+    }
+
+    /// Monotonic document-local token used to reject stale asynchronous layout results.
+    pub(crate) fn placement_revision(&self, graph: &str) -> u64 {
+        self.graph_revisions.get(graph).copied().unwrap_or_default()
+    }
+
+    fn touch_graph(&mut self, graph: &str) {
+        self.serial += 1;
+        self.graph_revisions.insert(graph.to_owned(), self.serial);
     }
 
     pub(crate) fn view(&self, graph_key: &str) -> Option<(Vec2, f32)> {
@@ -346,13 +358,14 @@ impl GraphViewportMemory {
         position: Vec2,
         collapsed: bool,
     ) {
-        let key = (graph_key.into(), node_key.into());
+        let graph_key = graph_key.into();
+        let key = (graph_key.clone(), node_key.into());
         if self
             .nodes
             .get(&key)
-            .is_none_or(|node| node.position != position)
+            .is_none_or(|node| node.position != position || node.collapsed != collapsed)
         {
-            self.serial += 1;
+            self.touch_graph(&graph_key);
             self.placement_revisions.insert(key.clone(), self.serial);
         }
         self.offsets.remove(&key);
@@ -376,9 +389,12 @@ impl GraphViewportMemory {
 
     pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
         let key = (graph_key.to_owned(), node_key.to_owned());
-        self.nodes.remove(&key);
-        self.offsets.remove(&key);
-        self.placement_revisions.remove(&key);
+        let changed = self.nodes.remove(&key).is_some()
+            | self.offsets.remove(&key).is_some()
+            | self.placement_revisions.remove(&key).is_some();
+        if changed {
+            self.touch_graph(graph_key);
+        }
     }
 
     /// Replacement rather than accumulation keeps rebuild/remeasurement idempotent.

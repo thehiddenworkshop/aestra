@@ -8,6 +8,9 @@
 use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod elk;
+pub(crate) use elk::ElkLayeredLayout;
+
 pub(crate) const MAX_LAYOUT_NODES: usize = 4_096;
 pub(crate) const MAX_LAYOUT_EDGES: usize = 16_384;
 const POSITION_EPSILON: f32 = 0.001;
@@ -20,6 +23,10 @@ impl GraphLayoutNodeId {
         u32::try_from(index)
             .map(Self)
             .map_err(|_| GraphLayoutError::TooManyNodes(index))
+    }
+
+    pub(crate) const fn index(self) -> u32 {
+        self.0
     }
 }
 

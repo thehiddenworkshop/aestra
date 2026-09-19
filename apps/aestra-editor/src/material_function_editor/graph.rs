@@ -62,6 +62,7 @@ struct BodyAction {
 enum BodyActionKind {
     Back,
     Locate,
+    Arrange,
     Create(aestra_compiler::MaterialGraphCreateKind),
     Boolean(MaterialExpressionId, bool),
     Input(MaterialFunctionInputId),
@@ -395,6 +396,18 @@ fn action(
         ));
         return;
     }
+    if matches!(action.kind, BodyActionKind::Arrange) {
+        commands.trigger(crate::material_graph::arrange::ArrangeGraph {
+            view: GraphViewKey {
+                document: GraphDocumentKey {
+                    project: catalog.root().to_owned(),
+                    asset: crate::document::DocumentKey::MaterialFunction(action.owner),
+                },
+                view: action.scope,
+            },
+        });
+        return;
+    }
     let graph_key = format!("function:{}:{}", catalog.root().display(), action.owner);
     let view_key = GraphViewKey {
         document: GraphDocumentKey {
@@ -726,6 +739,17 @@ pub(crate) fn spawn(
                 "icons/frame-all.svg",
                 "Frame all".into(),
                 GraphFrameAction::new(&viewport_key, GraphFrameTarget::All),
+            );
+            spawn_graph_tool_button(
+                toolbar,
+                assets,
+                "icons/graph-align.svg",
+                "Arrange graph".into(),
+                BodyAction {
+                    owner: function.id,
+                    kind: BodyActionKind::Arrange,
+                    scope: view,
+                },
             );
             spawn_graph_tool_button(
                 toolbar,

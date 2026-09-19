@@ -218,6 +218,7 @@ panel-settings = PARAMÈTRES
 
 material-graph-add-node = Ajouter un nœud (Tab)
 material-graph-frame-all = Cadrer tous les nœuds (Début)
+material-graph-arrange = Organiser le graphe
 material-graph-frame-selection = Cadrer le nœud sélectionné (F)
 material-graph-show-all-previews = Afficher tous les aperçus de nœuds
 material-graph-hide-all-previews = Masquer tous les aperçus de nœuds

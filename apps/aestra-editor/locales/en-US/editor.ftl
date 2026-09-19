@@ -218,6 +218,7 @@ panel-settings = SETTINGS
 
 material-graph-add-node = Add node (Tab)
 material-graph-frame-all = Frame all nodes (Home)
+material-graph-arrange = Arrange graph
 material-graph-frame-selection = Frame selected node (F)
 material-graph-show-all-previews = Show all node previews
 material-graph-hide-all-previews = Hide all node previews

@@ -18,6 +18,7 @@ aestra-runtime = { path = "../../crates/aestra-runtime" }
 bevy = { workspace = true, features = ["system_clipboard"] }
 bevy_resvg.workspace = true
 bevy_winit = "0.19.1"
+elkrs.workspace = true
 fluent-bundle.workspace = true
 base64 = "0.22.1"
 gltf = { version = "1.4.1", default-features = false }
@@ -25,10 +26,8 @@ image = { workspace = true, features = ["jpeg", "webp", "bmp", "tga"] }
 rfd = "0.15"
 ron.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 unic-langid.workspace = true
 winit = "0.30"
-
-[dev-dependencies]
-serde_json.workspace = true

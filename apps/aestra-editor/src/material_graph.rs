@@ -64,6 +64,7 @@ use std::{
 };
 
 const COLUMN_WIDTH: f32 = 282.0;
+pub(crate) mod arrange;
 pub(crate) mod asset_drop;
 mod asset_preview;
 mod function_layout;
@@ -117,6 +118,7 @@ fn reset_graph_document_transients(
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
+        arrange::register(app);
         insertion::register(app);
         layout_lifecycle::register_notice(app);
         app.configure_sets(
@@ -811,6 +813,7 @@ enum MaterialGraphToolbarAction {
     EffectContext,
     LocateSource(MaterialProgramId),
     AddNode(MaterialProgramId, MaterialSelectionScope),
+    Arrange(MaterialProgramId, MaterialSelectionScope),
     ToggleAllPreviews(MaterialProgramId),
 }
 
@@ -1307,6 +1310,7 @@ fn handle_material_graph_toolbar_actions(
     graph_nodes: Query<&MaterialGraphAction>,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut previews: ResMut<MaterialGraphPreviewState>,
+    catalog: Res<ProjectEffectCatalog>,
     mut session: ResMut<EditorSession>,
 ) {
     for (entity, interaction, action, pending) in &actions {
@@ -1348,6 +1352,20 @@ fn handle_material_graph_toolbar_actions(
                 });
                 palette.node_menu = None;
                 palette.query.clear();
+            }
+            MaterialGraphToolbarAction::Arrange(program, scope) => {
+                commands.trigger(arrange::ArrangeGraph {
+                    view: GraphViewKey {
+                        document: GraphDocumentKey {
+                            project: catalog.root().to_owned(),
+                            asset: crate::document::DocumentKey::MaterialProgram(program),
+                        },
+                        view: scope,
+                    },
+                });
+                // The mounted view and its geometry revision are part of the async request token.
+                // Rebuilding here would invalidate every result before it can be applied.
+                continue;
             }
             MaterialGraphToolbarAction::ToggleAllPreviews(program) => {
                 let before = presentation::visible(&previews, program);
@@ -4568,6 +4586,13 @@ fn spawn_header(
                     localizer.text("material-graph-frame-selection"),
                     GraphFrameAction::new(frame_key.to_owned(), GraphFrameTarget::Selection),
                 );
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    "icons/graph-align.svg",
+                    localizer.text("material-graph-arrange"),
+                    MaterialGraphToolbarAction::Arrange(graph.program, scope),
+                );
                 let all_previews_visible = graph_preview_targets(graph)
                     .all(|target| previews.is_visible(graph.program, target));
                 spawn_material_graph_toolbar_button(
@@ -5827,6 +5852,44 @@ mod tests {
             assert!(action.contains::<PendingFeathersActivation>());
             assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
         }
+    }
+
+    #[test]
+    fn arrange_activation_keeps_the_mounted_graph_alive_until_completion() {
+        use bevy::ecs::system::RunSystemOnce;
+
+        let root = tempfile::tempdir().unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let session = test_support::session_with_timing_slack();
+        let revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .insert_resource(session)
+            .init_resource::<MaterialGraphPaletteState>()
+            .init_resource::<MaterialGraphPreviewState>();
+        let action = app
+            .world_mut()
+            .spawn((
+                MaterialGraphToolbarAction::Arrange(MaterialProgramId::new(), None),
+                FeathersActionButton,
+                Interaction::Pressed,
+                PendingFeathersActivation,
+            ))
+            .id();
+
+        app.world_mut()
+            .run_system_once(handle_material_graph_toolbar_actions)
+            .unwrap();
+
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision
+        );
+        assert!(
+            !app.world()
+                .entity(action)
+                .contains::<PendingFeathersActivation>()
+        );
     }
 
     #[test]

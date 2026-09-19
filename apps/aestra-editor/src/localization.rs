@@ -133,6 +133,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "panel-settings",
     "material-graph-add-node",
     "material-graph-frame-all",
+    "material-graph-arrange",
     "material-graph-frame-selection",
     "material-graph-show-all-previews",
     "material-graph-hide-all-previews",

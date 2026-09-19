@@ -1,6 +1,9 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M8 implemented, 2026-09-19. M8 adds the semantic-neutral layout-engine boundary and material/function request adapters. Native M5/M6 acceptance remains pending alongside M7 creation/insertion checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M9 implemented, 2026-09-19. M9 qualifies exact-pinned `elkrs`
+> 0.1.1 and adds explicit, validated, asynchronous whole-graph arrangement with one-step
+> presentation Undo. Native M5/M6 acceptance remains pending alongside M7 creation/insertion
+> checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1917,6 +1920,21 @@ The material graph can request topology-based arrangement without depending dire
 ---
 
 ## Milestone 9 — `elkrs` layered layout prototype
+
+**Implemented 2026-09-19.** The exact-pinned Apache-2.0 `elkrs` 0.1.1 release is
+qualified in `docs/material-system/elkrs-qualification.md`. Its adapter consumes only the
+M8 owned contract, passes measured dimensions, requests deterministic left-to-right layered
+placement and maps validated positions back while retaining Aestra cubic wires. Material and
+native function toolbars expose Arrange Graph. One bounded compute-pool job may run at a time;
+document/topology/view/geometry/manual-placement changes reject stale completion. Valid results
+enter the existing presentation chronology as one exact Undo/Redo action. Partial regions and
+pinned-node reconciliation remain intentionally rejected for M10/M12.
+
+Automated M9 validation: **966 editor tests passed** (7 existing opt-in tests ignored), plus the
+architecture test; strict editor/benchmark Clippy, formatting and diff checks passed. The
+qualification benchmark measured 0.912 ms / 3.551 ms / 13.277 ms medians for representative
+16 / 64 / 256-node graphs on the Windows development profile. Native visual acceptance of both
+toolbar actions remains pending.
 
 ### Goal
 

@@ -39,6 +39,130 @@ fn fixture() -> (
 }
 
 #[test]
+fn arrangement_uses_projected_canvas_nodes_not_inline_semantic_constants() {
+    let root = tempfile::tempdir().unwrap();
+    let mut program = MaterialProgram::additive_sprite("Inline arrangement");
+    let old_alpha = program.outputs.alpha;
+    let inline = MaterialExpressionId::new();
+    let multiply = MaterialExpressionId::new();
+    program.expressions.extend([
+        MaterialExpression {
+            id: inline,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: multiply,
+            kind: MaterialExpressionKind::Multiply(old_alpha, inline),
+        },
+    ]);
+    program.outputs.alpha = multiply;
+    let program = program.normalized();
+    program
+        .save_ron(root.path().join("inline.aestra.material.ron"))
+        .unwrap();
+    let catalog = ProjectEffectCatalog::scan(root.path());
+    let mut session = crate::test_support::session_with_timing_slack();
+    session.open_material_program(&catalog, program.id).unwrap();
+    let graph = material_graph_view_key(program.id);
+    let (_, keys) = semantic(&graph, &catalog, &session).unwrap();
+    let projection = MaterialCompiler.project_graph(&program, None);
+    let projected = projection
+        .nodes
+        .iter()
+        .map(|node| material_graph_expression_node_key(node.expression))
+        .chain([MATERIAL_GRAPH_OUTPUT_NODE_KEY.into()])
+        .collect::<BTreeSet<_>>();
+
+    assert!(!keys.contains(&material_graph_expression_node_key(inline)));
+    assert!(!keys.contains(&material_graph_expression_node_key(old_alpha)));
+    assert_eq!(keys, projected);
+}
+
+#[test]
+fn arrangement_is_one_exact_undo_and_redo() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    let before = Snapshot::capture(
+        &graph,
+        app.world().resource::<ProjectEffectCatalog>(),
+        app.world().resource::<EditorSession>(),
+        app.world().resource::<GraphViewportMemory>(),
+    )
+    .unwrap();
+    let revision = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .placement_revision(&graph);
+    let arranged = before
+        .keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (key.clone(), Vec2::new(index as f32 * 240.0, 80.0)))
+        .collect::<BTreeMap<_, _>>();
+    arrange(app.world_mut(), before, revision, arranged.clone()).unwrap();
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph)
+            .into_iter()
+            .map(|(key, (position, _))| (key, position))
+            .collect::<BTreeMap<_, _>>(),
+        arranged
+    );
+
+    step(&mut app, true);
+    assert!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph)
+            .is_empty()
+    );
+    step(&mut app, false);
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph)
+            .into_iter()
+            .map(|(key, (position, _))| (key, position))
+            .collect::<BTreeMap<_, _>>(),
+        arranged
+    );
+}
+
+#[test]
+fn arrangement_rejects_manual_placement_changes_without_mutating_other_nodes() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    let before = Snapshot::capture(
+        &graph,
+        app.world().resource::<ProjectEffectCatalog>(),
+        app.world().resource::<EditorSession>(),
+        app.world().resource::<GraphViewportMemory>(),
+    )
+    .unwrap();
+    let revision = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .placement_revision(&graph);
+    let changed = before.keys.iter().next().unwrap().clone();
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .place_node(&graph, &changed, Vec2::new(17.0, 31.0));
+    let arranged = before
+        .keys
+        .iter()
+        .map(|key| (key.clone(), Vec2::new(500.0, 500.0)))
+        .collect();
+    assert!(arrange(app.world_mut(), before, revision, arranged).is_err());
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        BTreeMap::from([(changed, (Vec2::new(17.0, 31.0), false))])
+    );
+}
+
+#[test]
 fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchanged() {
     use bevy::ecs::system::RunSystemOnce;
     let (_root, mut app, program, _) = fixture();

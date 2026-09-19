@@ -791,3 +791,29 @@ until an explicit arrangement engine and command exist.
 M8 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **960 editor tests passed**
 (7 existing opt-in tests ignored), plus the architecture test. Strict editor/project Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9 implementation — qualified layered arrangement
+
+- Exact-pinned `elkrs` 0.1.1 implements `GraphLayoutEngine` through JSON snapshots; no ELK type
+  crosses the Aestra boundary. It uses canonical nodes/edges, measured sizes, layered RIGHT/DOWN
+  directions, fixed spacing and a deterministic seed. Returned identity, coordinates and bounds
+  pass the M8 validator before semantic keys are recovered.
+- Whole-graph Arrange is explicit in material and native-function toolbars. Current cubic wires
+  remain Aestra-owned. Partial regions and pinned nodes fail closed until later milestones define
+  their anchor/reconciliation policy.
+- At most one immutable compute-pool job is active. Project/document identity, topology,
+  mounted-view generation, geometry revision and graph placement revision are checked before
+  application. Concurrent Arrange is rejected and stale/error results leave placement unchanged.
+- Valid completion applies atomically as one presentation-only action. Undo/Redo restores exact
+  prior base placement without dirtying shader semantics. Manual placement during computation
+  invalidates the candidate.
+- Dependency/license, Windows toolchain, capability and performance evidence is recorded in
+  `docs/material-system/elkrs-qualification.md`; the reproducible benchmark is
+  `cargo run -p aestra-bench --bin graph_layout -- --iterations N`.
+
+M9 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **966 editor tests passed**
+(7 existing opt-in tests ignored), plus the architecture test. Strict editor/benchmark Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed. New M9
+coverage includes deterministic measured layered layout, direction/order, disconnected/cyclic
+graphs, overlap and crossing reduction, constraint rejection, exact Undo/Redo and rejection after
+an intervening manual placement. Native visual acceptance of both toolbar actions remains pending.

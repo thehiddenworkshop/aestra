@@ -158,6 +158,73 @@ impl Snapshot {
             invalidated: false,
         })
     }
+
+    fn is_current(&self, catalog: &ProjectEffectCatalog, session: &EditorSession) -> bool {
+        self.root == catalog.root()
+            && self.generation == catalog.content_revision().generation
+            && semantic(&self.graph, catalog, session)
+                .is_some_and(|(stamp, keys)| stamp == self.stamp && keys == self.keys)
+    }
+}
+
+/// Atomically installs a validated asynchronous arrangement and records one presentation-only
+/// history entry. Any semantic or manual-placement change since dispatch rejects the result.
+pub(crate) fn arrange(
+    world: &mut World,
+    before: Snapshot,
+    expected_placement_revision: u64,
+    positions: BTreeMap<String, Vec2>,
+) -> Result<(), String> {
+    if !before.is_current(
+        world.resource::<ProjectEffectCatalog>(),
+        world.resource::<EditorSession>(),
+    ) {
+        return Err("Arrange result is stale: the graph changed while layout was running".into());
+    }
+    if positions.keys().ne(before.keys.iter())
+        || positions.values().any(|position| !position.is_finite())
+    {
+        return Err("Arrange result does not match the current graph".into());
+    }
+    let graph = before.graph.clone();
+    if world
+        .resource::<GraphViewportMemory>()
+        .placement_revision(&graph)
+        != expected_placement_revision
+    {
+        return Err("Arrange result was ignored because node placement changed".into());
+    }
+
+    {
+        let mut memory = world.resource_mut::<GraphViewportMemory>();
+        for (node, position) in positions {
+            let collapsed = memory
+                .node(&graph, &node)
+                .map(|(_, collapsed)| collapsed)
+                .unwrap_or(false);
+            memory.set_node(&graph, node, position, collapsed);
+        }
+        memory.clear_offsets(&graph);
+    }
+    let after = Snapshot::capture(
+        &graph,
+        world.resource::<ProjectEffectCatalog>(),
+        world.resource::<EditorSession>(),
+        world.resource::<GraphViewportMemory>(),
+    )
+    .ok_or("Arrange result became stale before it could be applied")?;
+    if before.nodes != after.nodes {
+        record(
+            world,
+            Transaction {
+                before,
+                after,
+                previews: None,
+                invalidated: false,
+            },
+        );
+    }
+    Ok(())
 }
 
 fn stamp(value: &impl std::fmt::Debug) -> u64 {
@@ -183,9 +250,14 @@ fn semantic(
         {
             return None;
         }
+        // Presentation history follows projected canvas nodes, not every semantic expression.
+        // Single-use constants rendered inline on a socket have no independent geometry or base
+        // position and must not make a valid whole-graph layout look incomplete.
+        let inline = program.inline_constants();
         let keys = program
             .expressions
             .iter()
+            .filter(|expression| !inline.contains(&expression.id))
             .map(|e| material_graph_expression_node_key(e.id))
             .chain(std::iter::once(MATERIAL_GRAPH_OUTPUT_NODE_KEY.into()))
             .collect();
