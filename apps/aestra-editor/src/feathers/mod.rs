@@ -12,6 +12,7 @@ pub(crate) mod color_picker;
 pub(crate) mod combo_box;
 pub(crate) mod context_menu;
 pub(crate) mod field_row;
+pub(crate) mod graph_layout;
 pub(crate) mod icon;
 pub(crate) mod list_row;
 pub(crate) mod node_graph;

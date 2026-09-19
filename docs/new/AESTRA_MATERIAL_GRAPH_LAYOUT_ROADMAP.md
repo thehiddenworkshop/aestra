@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M6 and M7a–M7e implemented, 2026-09-19. M7e adds shared placement for non-pointer semantic commands. Native M5/M6 acceptance remains pending alongside M7 creation/insertion checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M8 implemented, 2026-09-19. M8 adds the semantic-neutral layout-engine boundary and material/function request adapters. Native M5/M6 acceptance remains pending alongside M7 creation/insertion checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1874,6 +1874,16 @@ fallback rather than an unrequested global arrange.
 ---
 
 ## Milestone 8 — Aestra graph-layout abstraction
+
+**Implemented 2026-09-19.** `feathers::graph_layout` defines opaque node/port IDs,
+direction, nodes, edges, regions, input/result snapshots, structured errors and the
+`GraphLayoutEngine` trait without importing material types. Canonical constructors and
+candidate validation enforce bounded, finite, complete inputs and results; pinned and
+out-of-region nodes cannot move. Material-program and native function adapters deterministically
+map their topology and measured/saved presentation state to opaque IDs, retain the reverse
+mapping, and reject incomplete geometry before an engine is invoked. Initial adapters expose
+node topology only; stable port mapping remains M14 scope. No engine, Arrange command,
+automatic movement, persistence write or new dependency is introduced by this milestone.
 
 ### Goal
 

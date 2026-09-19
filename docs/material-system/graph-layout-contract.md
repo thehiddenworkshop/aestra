@@ -762,3 +762,32 @@ at three DPI scales. The function signature activation test also verifies Add Ou
 creates placement without a mounted canvas. Strict editor/project Clippy (`--all-targets
 -- -D warnings`), workspace formatting and `git diff --check` passed. Native acceptance
 remains pending.
+
+## M8 implementation — semantic-neutral layout-engine boundary
+
+- `feathers::graph_layout` defines `GraphLayoutEngine`, canonical owned input snapshots,
+  opaque node/port identities, direction, bounded regions and validated result candidates.
+  It imports no material semantic types and performs no ECS, document, persistence or history
+  access. Engines therefore operate as replaceable pure services over owned data.
+- Inputs are sorted deterministically and limited to 4,096 nodes and 16,384 edges. Duplicate
+  nodes, missing edge/region endpoints, non-finite positions and non-positive sizes are rejected
+  before engine execution. Empty explicit regions are invalid.
+- Results must contain exactly the input nodes with finite positions and enclosing finite bounds.
+  Pinned nodes and nodes outside an explicit region must retain their input positions. Invalid
+  candidates cannot be mapped back to editor presentation keys.
+- The material adapter projects both program and native function topology into opaque IDs in
+  stable key order and retains a private reverse map. Geometry must exactly match the projected
+  topology. Custom-WESL function bodies are rejected because they have no node canvas. Initial
+  adapters intentionally omit port IDs; M14 owns stable port-aware layout.
+- M8 adds no Arrange action, engine dependency, worker, automatic motion or persistence write.
+  M9 can qualify and implement an engine behind this boundary; application and presentation
+  history remain later controller responsibilities.
+
+Automated coverage includes canonical ordering, interchangeable deterministic engines, invalid
+input/result constraints, material topology mapping, function order independence, reverse result
+mapping, incomplete geometry and invalid region rejection. Native acceptance is not applicable
+until an explicit arrangement engine and command exist.
+
+M8 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **960 editor tests passed**
+(7 existing opt-in tests ignored), plus the architecture test. Strict editor/project Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.

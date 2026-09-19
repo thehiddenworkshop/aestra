@@ -68,6 +68,7 @@ pub(crate) mod asset_drop;
 mod asset_preview;
 mod function_layout;
 pub(crate) mod insertion;
+mod layout_adapter;
 mod layout_lifecycle;
 pub(crate) mod presentation;
 pub(crate) mod semantic_placement;
