@@ -70,6 +70,7 @@ mod function_layout;
 pub(crate) mod insertion;
 mod layout_lifecycle;
 pub(crate) mod presentation;
+pub(crate) mod semantic_placement;
 pub(crate) use asset_preview::render_material_asset_preview;
 pub(crate) use function_layout::function_graph_memory_key;
 const CANVAS_PADDING: f32 = 34.0;

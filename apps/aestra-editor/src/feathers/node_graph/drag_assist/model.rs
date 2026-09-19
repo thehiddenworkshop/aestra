@@ -2,13 +2,11 @@
 use bevy::prelude::*;
 
 pub(super) const MAX_NODES: usize = 512;
-pub(super) const MAX_PORTS: usize = 32;
 const RADIUS: f32 = 6.0; // logical screen pixels, independent of canvas zoom/DPI
 
 #[derive(Clone, Debug)]
 pub(super) struct Shape {
     pub rect: Rect,
-    pub rows: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,46 +69,23 @@ pub(super) fn snap(
                 if separation * zoom > 320.0 {
                     continue;
                 }
-                for from in [rect.min[axis], rect.center()[axis], rect.max[axis]] {
-                    for to in [
-                        target.rect.min[axis],
-                        target.rect.center()[axis],
-                        target.rect.max[axis],
-                    ] {
-                        consider(
-                            best,
-                            to - from,
-                            Guide {
-                                axis,
-                                coordinate: to,
-                                start: rect.min[cross].min(target.rect.min[cross]),
-                                end: rect.max[cross].max(target.rect.max[cross]),
-                            },
-                            radius,
-                        );
-                    }
-                }
-            }
-            if moving.rows.len() <= MAX_PORTS
-                && target.rows.len() <= MAX_PORTS
-                && (target.rect.min.x - rect.max.x).max(rect.min.x - target.rect.max.x) * zoom
-                    <= 320.0
-            {
-                for from in &moving.rows {
-                    for to in &target.rows {
-                        let y = target.rect.min.y + to;
-                        consider(
-                            &mut matches[1],
-                            y - (raw.y + from),
-                            Guide {
-                                axis: 1,
-                                coordinate: y,
-                                start: rect.min.x.min(target.rect.min.x),
-                                end: rect.max.x.max(target.rect.max.x),
-                            },
-                            radius,
-                        );
-                    }
+                // Match like borders only. Centers and socket rows are not node
+                // boundaries and make unequal-height nodes appear misaligned.
+                for (from, to) in [
+                    (rect.min[axis], target.rect.min[axis]),
+                    (rect.max[axis], target.rect.max[axis]),
+                ] {
+                    consider(
+                        best,
+                        to - from,
+                        Guide {
+                            axis,
+                            coordinate: to,
+                            start: rect.min[cross].min(target.rect.min[cross]),
+                            end: rect.max[cross].max(target.rect.max[cross]),
+                        },
+                        radius,
+                    );
                 }
             }
         }

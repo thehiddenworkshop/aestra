@@ -1,6 +1,6 @@
 # Aestra Material Graph Layout & Interaction Roadmap
 
-> **Status:** M0–M6 and M7a–M7d implemented, 2026-09-13. M7d adds function socket-to-canvas node creation; M7 remains in progress. Native M5/M6 acceptance remains pending alongside creation/insertion checks; implementation progress does not mark these gates passed.
+> **Status:** M0–M6 and M7a–M7e implemented, 2026-09-19. M7e adds shared placement for non-pointer semantic commands. Native M5/M6 acceptance remains pending alongside M7 creation/insertion checks; implementation progress does not mark these gates passed.
 > **Repository reviewed:** `thehiddenworkshop/aestra`, including the material/function graph and multi-view changes after the original 2026-09-10 audit.  
 > **Scope:** Shared material/function graph layout, manual positioning, explicit arrangement, dynamic node sizing/previews, incremental placement, and AI-authored graph changes.
 
@@ -1763,7 +1763,7 @@ Native acceptance includes different DPI/zoom, two views and wire alignment.
 **Implemented; native acceptance pending.** Both graph toolbars use shared icon
 toggles for grid snapping (off by default) and alignment (on by default), with Alt
 bypassing both. Soft attraction uses a six-logical-screen-pixel radius; grid candidates
-use the existing 32-unit lattice, with measured edge/center/port-row alignment taking
+use the existing 32-unit lattice, with matching measured border alignment taking
 priority. Settings and guides are session-only. Raw pointer placement stays separate
 from the snapped position so small deltas escape snap targets without drift. Only the
 dragged node moves, through the existing base-position and single-gesture Undo path.
@@ -1779,8 +1779,8 @@ Add:
 
 - optional grid snapping;
 - alignment guides;
-- edge/center snapping;
-- port-row alignment where useful;
+- matching-border snapping (left, right, top, bottom);
+- no center or port-row attraction during node dragging;
 - modifier to temporarily disable snapping.
 
 ### Done when
@@ -1831,9 +1831,19 @@ Source-relative/target-relative placement, helper-node sizes and obstacle handli
 the existing shared placement policy. Stale functions, projects and views cannot consume
 an old menu. Function socket snapping and connection ghosts now stay in their own view.
 
-Remaining M7 work: placement for non-interactive semantic commands. Explicit input choice
-for ambiguous existing-node wire insertion is also deferred; M7d's port choices apply to
-new nodes created from a socket, not M7b/M7c wire-drop insertion.
+**M7e implemented; native acceptance pending.** Non-pointer material modifier/preset edits
+and function signature actions use a shared semantic-placement boundary. Newly visible
+nodes are placed in stable dependency order, near an existing consumer or source, using
+the bounded local policy. Existing manual and bootstrap bases stay fixed. Measured geometry
+is used from a deterministic matching view; hidden/stale views fall back to saved positions
+and the renderer's bootstrap estimates with an advisory. Failed commands do not write layout;
+successful semantics and placement share one Undo/Redo action. Inline defaults remain inline.
+The boundary is reusable by future command adapters; it does not turn raw compiler commands,
+reloads or background reconciliation into editor layout operations.
+
+Remaining M7 acceptance: native checks for M7a–M7e. Explicit input choice for ambiguous
+existing-node wire insertion remains deferred; M7d's port choices apply to new nodes
+created from a socket, not M7b/M7c wire-drop insertion.
 
 ### Goal
 
@@ -2231,7 +2241,7 @@ implement all phases as one task.
 
 # 37. First vertical slice to implement
 
-**Next acceptance: M5 overlays, M6 drag assistance and M7a–M7d creation/insertion.** These slices
+**Next acceptance: M5 overlays, M6 drag assistance and M7a–M7e creation/insertion.** These slices
 are implemented; use the [contract audit and implementation records](../material-system/graph-layout-contract.md)
 as the baseline. Check native move/collapse/preview Undo/Redo and mixed graph edits in
 material/function views, plus snapping/Alt/guides, creation/insertion Undo and local

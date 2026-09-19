@@ -357,7 +357,7 @@ fn create_edits(
         .collect())
 }
 
-fn estimated_size(
+pub(crate) fn estimated_size(
     id: MaterialExpressionId,
     nodes: &[MaterialExpression],
     edges: &[aestra_compiler::MaterialFunctionGraphEdge],
@@ -587,6 +587,55 @@ fn title(expression: &MaterialExpression, function: &MaterialFunction) -> String
         .into()
 }
 
+/// Shared with non-pointer semantic creation so hidden views retain the same bootstrap bases.
+pub(crate) fn bootstrap_layout(
+    nodes: &[MaterialExpression],
+    edges: &[aestra_compiler::MaterialFunctionGraphEdge],
+) -> (BTreeMap<MaterialExpressionId, Vec2>, Vec2, Vec2) {
+    let mut inputs = nodes
+        .iter()
+        .map(|node| (node.id, Vec::new()))
+        .collect::<BTreeMap<_, _>>();
+    for edge in edges {
+        if let Some(Target::Input(expression, _)) = target(&edge.target) {
+            inputs.entry(expression).or_default().push(edge.source);
+        }
+    }
+    let mut depths = BTreeMap::new();
+    for node in nodes {
+        crate::material_graph::expression_depth(
+            node.id,
+            &inputs,
+            &mut depths,
+            &mut Default::default(),
+        );
+    }
+    let mut columns = BTreeMap::<usize, f32>::new();
+    let positions = nodes
+        .iter()
+        .map(|expression| {
+            let depth = depths[&expression.id];
+            let y = columns.entry(depth).or_insert(68.0);
+            let initial = Vec2::new(34.0 + depth as f32 * 282.0, *y);
+            let rows = match &expression.kind {
+                MaterialExpressionKind::Constant(value) => components(value).len(),
+                _ => inputs[&expression.id].len(),
+            };
+            *y += 62.0 + rows.max(1) as f32 * PORT_ROW_HEIGHT.max(28.0);
+            (expression.id, initial)
+        })
+        .collect();
+    let output = Vec2::new(
+        34.0 + (depths.values().copied().max().unwrap_or_default() + 1) as f32 * 282.0,
+        122.0,
+    );
+    let extent = Vec2::new(
+        (output.x + NODE_WIDTH + 34.0).max(720.0),
+        (columns.values().copied().reduce(f32::max).unwrap_or(0.0) + 34.0).max(420.0),
+    );
+    (positions, output, extent)
+}
+
 pub(crate) fn spawn(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -615,42 +664,12 @@ pub(crate) fn spawn(
         || format!("{graph_key}#tool"),
         |view| format!("{graph_key}#view:{}", view.0),
     );
-    let mut inputs = nodes
-        .iter()
-        .map(|node| (node.id, Vec::new()))
-        .collect::<BTreeMap<_, _>>();
-    for edge in &edges {
-        if let Some(Target::Input(expression, _)) = target(&edge.target) {
-            inputs.entry(expression).or_default().push(edge.source);
-        }
+    let (mut positions, output_position, extent) = bootstrap_layout(&nodes, &edges);
+    for (id, position) in &mut positions {
+        *position = memory
+            .node_position(&graph_key, &id.to_string())
+            .unwrap_or(*position);
     }
-    let mut depths = BTreeMap::new();
-    for node in &nodes {
-        crate::material_graph::expression_depth(
-            node.id,
-            &inputs,
-            &mut depths,
-            &mut Default::default(),
-        );
-    }
-    let mut columns = BTreeMap::<usize, f32>::new();
-    let positions = nodes
-        .iter()
-        .map(|expression| {
-            let depth = depths[&expression.id];
-            let y = columns.entry(depth).or_insert(68.0);
-            let initial = Vec2::new(34.0 + depth as f32 * 282.0, *y);
-            let rows = match &expression.kind {
-                MaterialExpressionKind::Constant(value) => components(value).len(),
-                _ => inputs[&expression.id].len(),
-            };
-            *y += 62.0 + rows.max(1) as f32 * PORT_ROW_HEIGHT.max(28.0);
-            let position = memory
-                .node_position(&graph_key, &expression.id.to_string())
-                .unwrap_or(initial);
-            (expression.id, position)
-        })
-        .collect::<BTreeMap<_, _>>();
     parent
         .spawn(graph_toolbar_bundle())
         .with_children(|toolbar| {
@@ -730,14 +749,6 @@ pub(crate) fn spawn(
                 ),
             );
         });
-    let output_position = Vec2::new(
-        34.0 + (depths.values().copied().max().unwrap_or_default() + 1) as f32 * 282.0,
-        122.0,
-    );
-    let extent = Vec2::new(
-        (output_position.x + NODE_WIDTH + 34.0).max(720.0),
-        (columns.values().copied().reduce(f32::max).unwrap_or(0.0) + 34.0).max(420.0),
-    );
     let viewport = spawn_graph_viewport(
         parent,
         GraphViewportProps {
@@ -915,7 +926,7 @@ pub(crate) fn spawn(
                                 );
                             });
                         }
-                    } else if inputs[&expression.id].is_empty() {
+                    } else if expression.kind.dependencies().is_empty() {
                         body.spawn((
                             Node {
                                 min_height: Val::Px(26.0),

@@ -525,13 +525,14 @@ and `git diff --check` passed. Changes remain subject to the native acceptance a
   switchable with icon buttons and localized tooltips. Hold either Alt key to bypass
   snapping. These are application-session preferences, not asset or project metadata.
 - Drag capture reads the originating view's stable, mounted geometry snapshot, never
-  a different view's measurement owner. Nodes' measured edges, centers and socket rows
-  are candidates; grid alignment uses the existing 32-logical-unit lattice. The soft
+  a different view's measurement owner. Only matching measured borders (left/left,
+  right/right, top/top, bottom/bottom) are candidates; centers and socket rows do not
+  attract the dragged node. Grid alignment uses the existing 32-logical-unit lattice. The soft
   radius is six logical screen pixels divided by the current canvas zoom. DPI conversion
   remains at the existing physical-pointer to logical-graph boundary.
 - Alignment has priority over grid, with deterministic geometric tie breaking. Targets
   more than 320 logical screen pixels away on the cross axis are excluded. Candidate
-  work is capped at 512 measured nodes and 32 port rows per node; missing/incomplete or
+  work is capped at 512 measured nodes; missing/incomplete or
   oversized geometry falls back to free movement (or the independent grid option).
 - The unsnapped position accumulates pointer deltas; the displayed snapped position
   never becomes the next pointer origin. The user's displayed drop location becomes
@@ -547,7 +548,8 @@ and `git diff --check` passed. Changes remain subject to the native acceptance a
   shared positions, without inheriting the originating view's guide overlay or camera.
 
 Native acceptance still required (including the outstanding M5 checks): in both graph
-types, drag near edges/centers/port rows; enable grid; move slowly out of a snap; hold Alt
+types, drag unequal-sized nodes near matching borders and verify centers/socket rows do
+not attract them; enable grid; move slowly out of a snap; hold Alt
 for arbitrary placement; release and Undo/Redo once. Repeat with a visible preview and
 a second view at a different zoom/DPI. Verify wires follow, guides never capture input,
 and no asset becomes semantically dirty. No native acceptance is claimed by unit tests.
@@ -721,3 +723,42 @@ filtered Enter activation, DPI/zoom coordinates, cancellation/teardown, stale ch
 and compound creation Undo/Redo. Strict editor/project Clippy (`--all-targets -- -D
 warnings`), workspace formatting and `git diff --check` passed. Native acceptance remains
 pending.
+
+## M7e implementation — semantic-command creation placement
+
+- `material_graph::semantic_placement::Context` wraps non-pointer program replacements
+  and function edits. Properties modifier/preset operations, modifier property controls
+  and function signature actions use this boundary. Existing cursor/drop adapters retain
+  their explicit placement; low-level authoring commands and reloads do not implicitly
+  perform editor layout. Future command adapters can reuse this boundary.
+- Both adapters project native topology into a common placement model. Inline material
+  defaults are not fabricated into canvas nodes. Newly visible nodes use stable topological
+  ordering and prefer a placed consumer (before it), then a placed source (after it).
+  Each new rectangle becomes an obstacle for the rest of the batch. Unconnected nodes use
+  the same bootstrap layout as rendering. Creation is limited to 512 visible nodes per
+  command; the existing bounded obstacle/candidate search remains in force.
+- A deterministic mounted view of the matching project/document supplies measured geometry.
+  Missing/stale geometry uses saved effective positions and bootstrap estimates, not another
+  document's camera or nodes. Estimated geometry never claims measured clearance; fallback
+  emits the existing local-spacing advisory instead of running global arrangement.
+- After semantic validation succeeds, existing bootstrap bases are frozen without baking
+  preview offsets into persistence. Existing manual bases/collapse states are untouched.
+  Creation and all placement changes attach to the same semantic history entry. Failed or
+  no-op commands leave placement/history unchanged. Hosts without layout memory still run
+  semantic validation and history without requiring a canvas.
+- The function renderer and command adapter share extracted bootstrap positions and size
+  estimates. No material surrogate is created for a function.
+
+Native acceptance remains pending: insert a modifier and a multi-node preset from Properties,
+add a function output, and check one-step Undo/Redo. Repeat with a closed graph, manually
+positioned/collapsed neighbors, expanded previews and split views at varied DPI/zoom. Existing
+nodes must remain fixed and invalid commands must not leave new placements behind.
+
+M7e validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **952 editor tests passed**
+(7 existing opt-in tests ignored), plus the architecture test. Seven new tests cover
+multi-node creation, preserved manual/bootstrap bases, compound Undo/Redo, stale/invalid
+commands, normalized no-ops, headless hosts, bounded batches and measured/stale geometry
+at three DPI scales. The function signature activation test also verifies Add Output
+creates placement without a mounted canvas. Strict editor/project Clippy (`--all-targets
+-- -D warnings`), workspace formatting and `git diff --check` passed. Native acceptance
+remains pending.

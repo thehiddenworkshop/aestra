@@ -252,6 +252,7 @@ pub(super) fn handle_material_stack_property_scalar_change(
     mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
     mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
     mut session: ResMut<EditorSession>,
+    mut placement: crate::material_graph::semantic_placement::Context,
 ) {
     if !change.is_final || !change.value.is_finite() {
         return;
@@ -276,6 +277,7 @@ pub(super) fn handle_material_stack_property_scalar_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
+        &mut placement,
         |_, current, _| {
             MaterialCompiler
                 .plan_stack_set_property(current, control.expression, control.property, value)
@@ -285,6 +287,7 @@ pub(super) fn handle_material_stack_property_scalar_change(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_material_stack_property_toggle_change(
     change: On<ValueChange<bool>>,
     controls: Query<&MaterialStackPropertyToggleControl>,
@@ -293,6 +296,7 @@ pub(super) fn handle_material_stack_property_toggle_change(
     mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
     mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
     mut session: ResMut<EditorSession>,
+    mut placement: crate::material_graph::semantic_placement::Context,
 ) {
     if !change.is_final {
         return;
@@ -315,6 +319,7 @@ pub(super) fn handle_material_stack_property_toggle_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
+        &mut placement,
         |_, current, _| {
             MaterialCompiler
                 .plan_stack_set_property(

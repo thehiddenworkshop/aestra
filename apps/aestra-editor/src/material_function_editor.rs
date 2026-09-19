@@ -19,7 +19,7 @@ use bevy::{
 };
 use std::{collections::BTreeMap, path::PathBuf};
 
-mod graph;
+pub(crate) mod graph;
 pub(crate) use graph::spawn as spawn_graph;
 
 type Key = (PathBuf, MaterialFunctionId);
@@ -351,7 +351,7 @@ fn activate(
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
-    mut memory: Option<ResMut<crate::feathers::node_graph::GraphViewportMemory>>,
+    mut placement: crate::material_graph::semantic_placement::Context,
 ) {
     let Ok(action) = controls.get(event.entity) else {
         return;
@@ -359,20 +359,11 @@ fn activate(
     if session.standalone_function() != Some(action.owner) {
         return;
     }
-    let graph = format!("function:{}:{}", catalog.root().display(), action.owner);
-    let layout_before = memory.as_deref().and_then(|memory| {
-        crate::material_graph::presentation::Snapshot::capture(&graph, &catalog, &session, memory)
-    });
     let result = (|| {
         let mut function = session.graph_function(&catalog)?;
         mutate(&mut function, action.kind)?;
-        editor.edit(&mut session, &mut catalog, function)
+        placement.function(&mut session, &mut catalog, &mut editor, function)
     })();
-    if result.is_ok()
-        && let (Some(before), Some(memory)) = (layout_before, memory.as_deref_mut())
-    {
-        before.attach(&catalog, &mut session, memory);
-    }
     finish(&mut session, result);
 }
 
@@ -962,6 +953,35 @@ mod tests {
             .unwrap();
         assert_eq!(current.name, "Renamed");
         assert_eq!(current.inputs.len(), function.inputs.len() + 1);
+
+        // Signature-created nodes use the same semantic placement boundary even with
+        // no mounted canvas. This is a real activation, not a direct helper call.
+        app.init_resource::<crate::feathers::node_graph::GraphViewportMemory>();
+        let action = app
+            .world_mut()
+            .spawn(Action {
+                owner: function.id,
+                kind: ActionKind::AddOutput,
+            })
+            .id();
+        app.world_mut().trigger(Activate { entity: action });
+        let updated = app
+            .world()
+            .resource::<EditorSession>()
+            .graph_function(app.world().resource::<ProjectEffectCatalog>())
+            .unwrap();
+        let created = updated
+            .expressions
+            .iter()
+            .find(|node| !current.expressions.iter().any(|old| old.id == node.id))
+            .unwrap();
+        let graph = crate::material_graph::function_graph_memory_key(root.path(), function.id);
+        assert!(
+            app.world()
+                .resource::<crate::feathers::node_graph::GraphViewportMemory>()
+                .node(&graph, &created.id.to_string())
+                .is_some()
+        );
     }
 
     #[test]

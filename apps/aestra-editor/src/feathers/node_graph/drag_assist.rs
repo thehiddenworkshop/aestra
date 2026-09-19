@@ -175,12 +175,6 @@ impl Context<'_, '_> {
                                     measured.effective_position,
                                     measured.effective_position + measured.size,
                                 ),
-                                rows: measured
-                                    .ports
-                                    .iter()
-                                    .take(model::MAX_PORTS)
-                                    .map(|port| port.offset.y)
-                                    .collect(),
                             },
                             content: measured.content,
                             collapsed: measured.collapsed,
@@ -262,7 +256,6 @@ impl Context<'_, '_> {
             .map(|capture| capture.shape.clone())
             .unwrap_or(model::Shape {
                 rect: Rect::from_corners(gesture.raw, gesture.raw),
-                rows: vec![],
             });
         let targets = gesture
             .geometry

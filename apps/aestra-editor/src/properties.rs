@@ -425,10 +425,14 @@ fn handle_properties_actions(
     localizer: Res<Localizer>,
     mut catalog: Option<ResMut<ProjectEffectCatalog>>,
     mut repair: Option<ResMut<EffectClipRepairState>>,
-    mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
-    mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
+    histories: (
+        Option<ResMut<MaterialProgramEditHistory>>,
+        Option<ResMut<EditorHistoryLedger>>,
+    ),
     mut material_stack_inspector: Option<ResMut<MaterialStackInspectorState>>,
+    mut semantic_placement: crate::material_graph::semantic_placement::Context,
 ) {
+    let (mut material_history, mut history_ledger) = histories;
     for (entity, interaction, action, feathers_action, pending, disabled, mut background) in
         &mut actions
     {
@@ -659,6 +663,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Moved material modifier",
+                            &mut semantic_placement,
                             |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_move(current, expression, target_index)
@@ -679,6 +684,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Added material modifier",
+                            &mut semantic_placement,
                             |document, _, _| {
                                 let command = MaterialToolCommand::InsertMaterialOperation {
                                     program,
@@ -707,6 +713,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Applied material preset",
+                            &mut semantic_placement,
                             |document, _, catalog| {
                                 let command = MaterialToolCommand::ApplyMaterialPreset {
                                     program,
@@ -737,6 +744,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Removed material modifier",
+                            &mut semantic_placement,
                             |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_remove(current, expression)
@@ -761,6 +769,7 @@ fn handle_properties_actions(
                             } else {
                                 "Disabled material modifier"
                             },
+                            &mut semantic_placement,
                             |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_set_enabled(current, expression, enabled)
@@ -826,6 +835,7 @@ fn handle_properties_actions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_material_program_edit(
     session: &mut EditorSession,
     catalog: Option<&mut ProjectEffectCatalog>,
@@ -833,6 +843,7 @@ fn apply_material_program_edit(
     history_ledger: Option<&mut EditorHistoryLedger>,
     program: MaterialProgramId,
     label: &str,
+    placement: &mut crate::material_graph::semantic_placement::Context,
     plan: impl FnOnce(
         &MaterialAuthoringDocument,
         &aestra_core::material::MaterialProgram,
@@ -861,12 +872,18 @@ fn apply_material_program_edit(
                 .ok_or_else(|| format!("Material program {program} is unavailable"))?;
             let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
             let replacement = plan(&document, &current, catalog)?;
-            material_history.execute_replacement(session, catalog, label, current, replacement)
+            placement.program(
+                session,
+                catalog,
+                material_history,
+                label,
+                current,
+                replacement,
+            )
         });
     match result {
         Ok(()) => {
             history_ledger.record_material_edit(session);
-            session.status = label.into();
         }
         Err(error) => session.status = format!("Material edit failed: {error}"),
     }

@@ -31,6 +31,38 @@ pub(crate) struct Placement {
 }
 
 impl Area {
+    /// Estimated rectangles are a fallback, never evidence of measured clearance.
+    pub(crate) fn seed(&mut self, key: GraphNodeKey, position: Vec2, size: Vec2) {
+        if valid_rect(position, size)
+            && let std::collections::btree_map::Entry::Vacant(entry) = self.nodes.entry(key)
+        {
+            entry.insert(Rect::from_corners(position, position + size));
+            self.measured = false;
+        }
+    }
+
+    pub(crate) fn rect(&self, key: GraphNodeKey) -> Option<Rect> {
+        self.nodes.get(&key).copied()
+    }
+
+    pub(crate) fn place_node(
+        &mut self,
+        key: GraphNodeKey,
+        cursor: Vec2,
+        size: Vec2,
+        neighborhood: Neighborhood,
+    ) -> Placement {
+        let placed = self.place(cursor, size, neighborhood);
+        if valid_rect(placed.position, size) {
+            self.reserved.pop();
+            self.nodes.insert(
+                key,
+                Rect::from_corners(placed.position, placed.position + size),
+            );
+        }
+        placed
+    }
+
     pub(crate) fn place(
         &mut self,
         cursor: Vec2,
@@ -164,6 +196,16 @@ pub(crate) struct Context<'w, 's> {
 }
 
 impl Context<'_, '_> {
+    /// Non-pointer commands use a deterministic mounted view, never a different document.
+    pub(crate) fn document_view(&self, document: &GraphDocumentKey) -> Option<GraphViewKey> {
+        self.views
+            .iter()
+            .filter(|(_, meta, _, computed)| {
+                &meta.key.document == document && computed.size().min_element() > 0.0
+            })
+            .map(|(_, meta, _, _)| meta.key.clone())
+            .min()
+    }
     /// Freeze bootstrap positions only after semantic creation succeeds. Never bake
     /// a temporary offset into an existing base, and never touch another view's nodes.
     pub(crate) fn preserve_existing(&self, key: &GraphViewKey, memory: &mut GraphViewportMemory) {

@@ -132,7 +132,6 @@ fn small_pointer_deltas_escape_grid_without_drift_and_emit_one_edit() {
                 Vec2::new(51.0, 15.0),
                 &model::Shape {
                     rect: Rect::default(),
-                    rows: vec![],
                 },
                 &[],
                 zoom,
