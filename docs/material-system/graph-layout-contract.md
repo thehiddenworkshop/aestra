@@ -1024,3 +1024,24 @@ and `git diff --check` passed.
 M10.1 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1003 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
 workspace formatting and `git diff --check` passed.
+
+## M10.2 implementation — partial candidate reconciliation
+
+- The planner validates the layered result against its extracted movable input, then translates the
+  region as one rigid unit. External anchors preserve the median pre-layout attachment position;
+  disconnected selections preserve the center of their previous area.
+- The selected backend runs only on that self-contained movable input. Its result is never applied
+  directly; reconciliation must first return a complete validated graph candidate.
+- Frozen rectangles are conservative boundary obstacles with the same 32-unit node spacing as the
+  layered layout. A bounded deterministic nearest-candidate search moves only the selected region;
+  it never rewrites a frozen node or separates nodes inside the arranged result.
+- Reconciliation is limited to 512 candidate placements and 4,096 logical units from the preferred
+  anchor. If no valid local placement exists, it returns a structured conflict and no result is
+  applied.
+- The merged result includes every original node and is reconstructed through the M8 validator with
+  the selected region declared movable. This independently proves that all unaffected positions
+  remain exact.
+
+M10.2 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1007 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
+workspace formatting and `git diff --check` passed.

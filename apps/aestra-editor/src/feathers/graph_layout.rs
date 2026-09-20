@@ -240,6 +240,8 @@ pub(crate) enum GraphLayoutError {
     NonFiniteResult(GraphLayoutNodeId),
     #[error("layout result moved pinned or out-of-region node {0:?}")]
     MovedFixedNode(GraphLayoutNodeId),
+    #[error("partial graph layout cannot be reconciled locally with the frozen graph")]
+    PartialLayoutConflict,
     #[error("layout result bounds are invalid or do not contain all nodes")]
     InvalidBounds,
     #[error("graph contains a directed cycle through nodes {0:?}")]
