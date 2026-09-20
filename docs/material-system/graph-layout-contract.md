@@ -986,3 +986,25 @@ backends on a representative variable-size branch graph.
 M9A.7 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **998 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.8 implementation — native engine activation
+
+- The asynchronous whole-graph Arrange controller now dispatches `AestraLayeredLayout`. Existing
+  immutable input capture, one-job bound, stale geometry/document/placement rejection, M8 result
+  validation, atomic presentation application and exact Undo/Redo remain unchanged around the
+  engine swap.
+- `elkrs` and its adapter/comparison harness compile only for editor tests. The editor manifest now
+  lists `elkrs` under development dependencies, and the normal editor dependency graph contains no
+  `elkrs` package. Benchmark/reference tooling outside the production editor remains available.
+- An acceptance corpus covers linear, branching, long-edge, disconnected and variable-rectangle
+  graphs in both directions. Native results have no overlaps, stay within two crossings of the
+  reference result, keep total center-line Manhattan span within 2.5 times the reference, complete
+  comfortably below the one-second regression ceiling, and retain deterministic hashes.
+- Architecture tests lock both sides of activation: Arrange Graph must call the native engine and
+  the production dependency section must not contain the reference backend. There is no user-facing
+  backend preference or fallback that could silently change layout behavior.
+
+M9A.8 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **999 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy
+(`--all-targets -- -D warnings`), the production-only dependency-tree check, workspace formatting
+and `git diff --check` passed.

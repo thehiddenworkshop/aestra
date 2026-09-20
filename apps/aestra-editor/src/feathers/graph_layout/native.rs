@@ -2,7 +2,7 @@
 //!
 //! M9A.1 deliberately stops at a canonical DAG. Later milestones consume this representation
 //! for layer assignment, virtual nodes, crossing reduction and coordinate generation. The
-//! production `elkrs` adapter remains active until that pipeline satisfies the acceptance gates.
+//! The test-only `elkrs` adapter remains available as a qualified comparison oracle.
 
 use super::{
     GraphDirection, GraphLayoutEdge, GraphLayoutEngine, GraphLayoutError, GraphLayoutInput,

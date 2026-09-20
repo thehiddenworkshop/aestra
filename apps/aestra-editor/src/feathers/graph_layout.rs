@@ -8,9 +8,12 @@
 use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 pub(crate) mod comparison;
+#[cfg(test)]
 mod elk;
 pub(crate) mod native;
+#[cfg(test)]
 pub(crate) use elk::ElkLayeredLayout;
 
 pub(crate) const MAX_LAYOUT_NODES: usize = 4_096;

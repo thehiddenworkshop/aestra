@@ -5,8 +5,8 @@ use super::*;
 use crate::document::{DocumentId, DocumentKey};
 use crate::feathers::{
     graph_layout::{
-        ElkLayeredLayout, GraphLayoutEngine, GraphLayoutError, GraphLayoutNodeState,
-        GraphLayoutResult,
+        GraphLayoutEngine, GraphLayoutError, GraphLayoutNodeState, GraphLayoutResult,
+        native::AestraLayeredLayout,
     },
     node_graph::geometry::{GraphGeometryRegistry, GraphGeometryView},
 };
@@ -69,7 +69,7 @@ fn request(
         }
     };
     let input = adapter.input.clone();
-    let task = AsyncComputeTaskPool::get().spawn(async move { ElkLayeredLayout.layout(&input) });
+    let task = AsyncComputeTaskPool::get().spawn(async move { AestraLayeredLayout.layout(&input) });
     state.job = Some(ArrangeJob {
         view,
         viewport,

@@ -358,4 +358,56 @@ mod tests {
             reordered.elkrs.determinism_hash
         );
     }
+
+    #[test]
+    fn native_quality_is_comparable_on_the_acceptance_corpus() {
+        let common_sizes = [
+            Vec2::new(70.0, 40.0),
+            Vec2::new(120.0, 65.0),
+            Vec2::new(85.0, 110.0),
+            Vec2::new(100.0, 50.0),
+            Vec2::new(60.0, 90.0),
+            Vec2::new(140.0, 55.0),
+            Vec2::new(95.0, 75.0),
+        ];
+        let corpus = [
+            input(
+                GraphDirection::LeftToRight,
+                &common_sizes[..6],
+                &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)],
+            ),
+            input(
+                GraphDirection::LeftToRight,
+                &common_sizes,
+                &[(0, 2), (1, 2), (2, 4), (2, 5), (3, 5), (0, 6), (5, 6)],
+            ),
+            input(
+                GraphDirection::LeftToRight,
+                &common_sizes,
+                &[(0, 1), (2, 3), (3, 4), (5, 6)],
+            ),
+            input(
+                GraphDirection::TopToBottom,
+                &common_sizes,
+                &[(6, 0), (6, 1), (6, 2), (0, 5), (1, 4), (2, 3)],
+            ),
+        ];
+
+        for input in corpus {
+            let comparison = BackendComparison::run(&input).unwrap();
+            assert_eq!(comparison.native.node_overlaps, 0);
+            assert_eq!(comparison.elkrs.node_overlaps, 0);
+            assert!(
+                comparison.native.edge_crossings <= comparison.elkrs.edge_crossings + 2,
+                "native crossings are not comparable:\n{comparison}"
+            );
+            assert!(
+                comparison.native.total_edge_span
+                    <= comparison.elkrs.total_edge_span.mul_add(2.5, 1.0),
+                "native edge span is not comparable:\n{comparison}"
+            );
+            assert!(comparison.native.runtime < Duration::from_secs(1));
+            assert!(comparison.native.bounds.size().cmpgt(Vec2::ZERO).all());
+        }
+    }
 }
