@@ -83,6 +83,10 @@ fn spawn_combo_option<A: Component + Copy>(
             option.action,
             FeathersActionButton,
             AccessibleLabel(option.label.clone()),
+            // `FeathersMenuPopup` opens a modal tab group and focuses the first
+            // indexed item. Without an explicit tab index the popup reports
+            // `NoFocusableEntities` and closes before the action can run.
+            bevy::input_focus::tab_navigation::TabIndex(0),
         ))
         .with_children(|item| {
             item.spawn((
@@ -188,6 +192,73 @@ struct SearchableAction {
 #[cfg(test)]
 mod searchable_tests {
     use super::*;
+    use bevy::{
+        asset::AssetPlugin,
+        input_focus::{
+            InputFocus, InputFocusPlugin,
+            tab_navigation::{NavAction, TabNavigationPlugin},
+        },
+        scene::ScenePlugin,
+        text::TextPlugin,
+        ui_widgets::{MenuFocusState, MenuPlugin, MenuPopup},
+    };
+
+    #[derive(Component, Clone, Copy)]
+    struct TestMenuAction;
+
+    fn spawn_test_action_menu(mut commands: Commands) {
+        commands.spawn(Node::default()).with_children(|parent| {
+            spawn_action_menu(
+                parent,
+                "Arrange nodes",
+                &[ComboOption {
+                    label: "Arrange graph".into(),
+                    selected: false,
+                    action: TestMenuAction,
+                }],
+            );
+        });
+    }
+
+    #[test]
+    fn action_menu_options_are_focusable() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+            InputFocusPlugin,
+            TabNavigationPlugin,
+            MenuPlugin,
+        ))
+        .add_systems(Startup, spawn_test_action_menu);
+        app.update();
+
+        let option = {
+            let mut options = app.world_mut().query_filtered::<
+                (Entity, &bevy::input_focus::tab_navigation::TabIndex),
+                (With<bevy::ui_widgets::MenuItem>, With<TestMenuAction>),
+            >();
+            let (option, tab_index) = options.single(app.world()).unwrap();
+            assert_eq!(tab_index.0, 0);
+            option
+        };
+        let popup = {
+            let mut popups = app.world_mut().query_filtered::<Entity, With<MenuPopup>>();
+            popups.single(app.world()).unwrap()
+        };
+        app.world_mut()
+            .entity_mut(popup)
+            .insert(MenuFocusState::Opening(NavAction::First));
+        app.update();
+
+        assert_eq!(
+            app.world().get::<MenuFocusState>(popup),
+            Some(&MenuFocusState::Open)
+        );
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(option));
+    }
 
     #[test]
     fn search_filters_only_its_own_menu_case_insensitively() {

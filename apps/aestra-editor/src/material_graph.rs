@@ -4614,6 +4614,17 @@ fn spawn_header(
                     localizer.text("material-graph-frame-selection"),
                     GraphFrameAction::new(frame_key.to_owned(), GraphFrameTarget::Selection),
                 );
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    "icons/graph-align.svg",
+                    localizer.text("material-graph-arrange"),
+                    MaterialGraphToolbarAction::Arrange(
+                        graph.program,
+                        scope,
+                        arrange::ArrangeScope::Graph,
+                    ),
+                );
                 let arrange_options = [
                     ComboOption {
                         label: localizer.text("material-graph-arrange-selection"),
@@ -4655,7 +4666,7 @@ fn spawn_header(
                 spawn_icon_action_menu(
                     header,
                     asset_server,
-                    "icons/graph-align.svg",
+                    "icons/chevron-down.svg",
                     &localizer.text("material-graph-arrange-menu"),
                     &localizer.text("material-graph-arrange-menu"),
                     &arrange_options,
