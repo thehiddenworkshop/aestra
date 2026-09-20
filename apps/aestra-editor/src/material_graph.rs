@@ -7,6 +7,7 @@ use crate::feathers::node_graph::geometry::{
 
 use crate::{
     feathers::{
+        combo_box::{ComboOption, spawn_icon_action_menu},
         context_menu::{
             pointer_position_in_node, should_dismiss_pointer_context_menu,
             spawn_pointer_context_menu_custom_item, spawn_pointer_context_menu_item,
@@ -381,6 +382,25 @@ impl MaterialGraphSelectionState {
         selection.expressions.insert(expression);
         selection.connection = None;
     }
+}
+
+fn arrange_seeds(
+    selection: &MaterialGraphSelectionState,
+    scope: MaterialSelectionScope,
+    program: MaterialProgramId,
+) -> BTreeSet<GraphNodeKey> {
+    selection
+        .get(scope)
+        .filter(|selected| selected.program == Some(program))
+        .map(|selected| {
+            selected
+                .expressions
+                .iter()
+                .copied()
+                .map(GraphNodeKey::Expression)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -813,7 +833,11 @@ enum MaterialGraphToolbarAction {
     EffectContext,
     LocateSource(MaterialProgramId),
     AddNode(MaterialProgramId, MaterialSelectionScope),
-    Arrange(MaterialProgramId, MaterialSelectionScope),
+    Arrange(
+        MaterialProgramId,
+        MaterialSelectionScope,
+        arrange::ArrangeScope,
+    ),
     ToggleAllPreviews(MaterialProgramId),
 }
 
@@ -1310,6 +1334,7 @@ fn handle_material_graph_toolbar_actions(
     graph_nodes: Query<&MaterialGraphAction>,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut previews: ResMut<MaterialGraphPreviewState>,
+    selection: Res<MaterialGraphSelectionState>,
     catalog: Res<ProjectEffectCatalog>,
     mut session: ResMut<EditorSession>,
 ) {
@@ -1353,15 +1378,18 @@ fn handle_material_graph_toolbar_actions(
                 palette.node_menu = None;
                 palette.query.clear();
             }
-            MaterialGraphToolbarAction::Arrange(program, scope) => {
+            MaterialGraphToolbarAction::Arrange(program, selection_scope, arrange_scope) => {
+                let seeds = arrange_seeds(&selection, selection_scope, program);
                 commands.trigger(arrange::ArrangeGraph {
                     view: GraphViewKey {
                         document: GraphDocumentKey {
                             project: catalog.root().to_owned(),
                             asset: crate::document::DocumentKey::MaterialProgram(program),
                         },
-                        view: scope,
+                        view: selection_scope,
                     },
+                    scope: arrange_scope,
+                    seeds,
                 });
                 // The mounted view and its geometry revision are part of the async request token.
                 // Rebuilding here would invalidate every result before it can be applied.
@@ -4586,12 +4614,51 @@ fn spawn_header(
                     localizer.text("material-graph-frame-selection"),
                     GraphFrameAction::new(frame_key.to_owned(), GraphFrameTarget::Selection),
                 );
-                spawn_material_graph_toolbar_button(
+                let arrange_options = [
+                    ComboOption {
+                        label: localizer.text("material-graph-arrange-selection"),
+                        selected: false,
+                        action: MaterialGraphToolbarAction::Arrange(
+                            graph.program,
+                            scope,
+                            arrange::ArrangeScope::Selection,
+                        ),
+                    },
+                    ComboOption {
+                        label: localizer.text("material-graph-arrange-upstream"),
+                        selected: false,
+                        action: MaterialGraphToolbarAction::Arrange(
+                            graph.program,
+                            scope,
+                            arrange::ArrangeScope::Upstream,
+                        ),
+                    },
+                    ComboOption {
+                        label: localizer.text("material-graph-arrange-downstream"),
+                        selected: false,
+                        action: MaterialGraphToolbarAction::Arrange(
+                            graph.program,
+                            scope,
+                            arrange::ArrangeScope::Downstream,
+                        ),
+                    },
+                    ComboOption {
+                        label: localizer.text("material-graph-arrange"),
+                        selected: false,
+                        action: MaterialGraphToolbarAction::Arrange(
+                            graph.program,
+                            scope,
+                            arrange::ArrangeScope::Graph,
+                        ),
+                    },
+                ];
+                spawn_icon_action_menu(
                     header,
                     asset_server,
                     "icons/graph-align.svg",
-                    localizer.text("material-graph-arrange"),
-                    MaterialGraphToolbarAction::Arrange(graph.program, scope),
+                    &localizer.text("material-graph-arrange-menu"),
+                    &localizer.text("material-graph-arrange-menu"),
+                    &arrange_options,
                 );
                 let all_previews_visible = graph_preview_targets(graph)
                     .all(|target| previews.is_visible(graph.program, target));
@@ -5866,11 +5933,16 @@ mod tests {
         app.insert_resource(catalog)
             .insert_resource(session)
             .init_resource::<MaterialGraphPaletteState>()
-            .init_resource::<MaterialGraphPreviewState>();
+            .init_resource::<MaterialGraphPreviewState>()
+            .init_resource::<MaterialGraphSelectionState>();
         let action = app
             .world_mut()
             .spawn((
-                MaterialGraphToolbarAction::Arrange(MaterialProgramId::new(), None),
+                MaterialGraphToolbarAction::Arrange(
+                    MaterialProgramId::new(),
+                    None,
+                    arrange::ArrangeScope::Graph,
+                ),
                 FeathersActionButton,
                 Interaction::Pressed,
                 PendingFeathersActivation,
@@ -6774,6 +6846,34 @@ mod tests {
         assert_eq!(expressions(&selection), BTreeSet::from([second]));
         selection.select_expression(scope, program, second, true, false);
         assert!(expressions(&selection).is_empty());
+    }
+
+    #[test]
+    fn arrange_seeds_use_only_the_target_program_and_view() {
+        use crate::docking::EditorViewId;
+        let program = MaterialProgramId::new();
+        let other_program = MaterialProgramId::new();
+        let first = MaterialExpressionId::new();
+        let second = MaterialExpressionId::new();
+        let left = Some(EditorViewId(1));
+        let right = Some(EditorViewId(2));
+        let mut selection = MaterialGraphSelectionState::default();
+        selection.select_expression(left, program, first, false, false);
+        selection.select_expression(left, program, second, false, true);
+        selection.select_expression(right, program, MaterialExpressionId::new(), false, false);
+
+        assert_eq!(
+            arrange_seeds(&selection, left, program),
+            BTreeSet::from([
+                GraphNodeKey::Expression(first),
+                GraphNodeKey::Expression(second),
+            ])
+        );
+        assert!(arrange_seeds(&selection, left, other_program).is_empty());
+        assert_ne!(
+            arrange_seeds(&selection, left, program),
+            arrange_seeds(&selection, right, program)
+        );
     }
 
     #[test]

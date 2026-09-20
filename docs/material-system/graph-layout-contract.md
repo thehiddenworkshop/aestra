@@ -1045,3 +1045,23 @@ workspace formatting and `git diff --check` passed.
 M10.2 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1007 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
 workspace formatting and `git diff --check` passed.
+
+## M10.3 implementation — targeted material-graph actions
+
+- The material graph's Arrange toolbar control is now an icon menu with Arrange Selection,
+  Arrange Upstream, Arrange Downstream and Arrange Graph. Full arrangement retains its previous
+  behavior.
+- Selection seeds are captured from the exact material program and editor-view scope that owns the
+  toolbar. Another tab's selection cannot leak into the request, and a missing selection fails with
+  a direct status message before dispatch.
+- The existing bounded asynchronous controller now carries an explicit arrange scope. Partial work
+  runs the M10 planner/reconciler while full work continues to call `AestraLayeredLayout` directly.
+  Both paths retain the same immutable geometry token, stale-result rejection, complete adapter
+  validation, atomic application and one-entry presentation Undo/Redo.
+- Native function graphs retain their existing Arrange Graph command. Targeted function actions
+  require view-scoped function-node selection and are the next parity slice; they do not fall back
+  to a hidden or cross-document selection.
+
+M10.3 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1008 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
+workspace formatting and `git diff --check` passed.

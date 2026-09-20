@@ -397,15 +397,15 @@ fn action(
         return;
     }
     if matches!(action.kind, BodyActionKind::Arrange) {
-        commands.trigger(crate::material_graph::arrange::ArrangeGraph {
-            view: GraphViewKey {
+        commands.trigger(crate::material_graph::arrange::ArrangeGraph::full(
+            GraphViewKey {
                 document: GraphDocumentKey {
                     project: catalog.root().to_owned(),
                     asset: crate::document::DocumentKey::MaterialFunction(action.owner),
                 },
                 view: action.scope,
             },
-        });
+        ));
         return;
     }
     let graph_key = format!("function:{}:{}", catalog.root().display(), action.owner);

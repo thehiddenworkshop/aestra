@@ -1,20 +1,62 @@
-//! Bounded asynchronous whole-graph arrangement with stale-result rejection.
+//! Bounded asynchronous full and targeted arrangement with stale-result rejection.
 
 use super::layout_adapter::LayoutAdapter;
 use super::*;
 use crate::document::{DocumentId, DocumentKey};
 use crate::feathers::{
     graph_layout::{
-        GraphLayoutEngine, GraphLayoutError, GraphLayoutNodeState, GraphLayoutResult,
+        GraphLayoutEngine, GraphLayoutError, GraphLayoutNodeState, GraphLayoutRegion,
+        GraphLayoutResult,
         native::AestraLayeredLayout,
+        partial::{PartialLayoutPlan, PartialLayoutScope},
     },
     node_graph::geometry::{GraphGeometryRegistry, GraphGeometryView},
 };
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArrangeScope {
+    Graph,
+    Selection,
+    Upstream,
+    Downstream,
+}
+
+impl ArrangeScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Graph => "Arrange Graph",
+            Self::Selection => "Arrange Selection",
+            Self::Upstream => "Arrange Upstream",
+            Self::Downstream => "Arrange Downstream",
+        }
+    }
+
+    fn partial(self) -> Option<PartialLayoutScope> {
+        match self {
+            Self::Graph => None,
+            Self::Selection => Some(PartialLayoutScope::Selection),
+            Self::Upstream => Some(PartialLayoutScope::Upstream),
+            Self::Downstream => Some(PartialLayoutScope::Downstream),
+        }
+    }
+}
+
 #[derive(Event, Debug, Clone)]
 pub(crate) struct ArrangeGraph {
     pub view: GraphViewKey,
+    pub scope: ArrangeScope,
+    pub seeds: BTreeSet<GraphNodeKey>,
+}
+
+impl ArrangeGraph {
+    pub(crate) fn full(view: GraphViewKey) -> Self {
+        Self {
+            view,
+            scope: ArrangeScope::Graph,
+            seeds: BTreeSet::new(),
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -31,7 +73,22 @@ struct ArrangeJob {
     placement_revision: u64,
     adapter: LayoutAdapter,
     before: presentation::Snapshot,
+    scope: ArrangeScope,
     task: Task<Result<GraphLayoutResult, GraphLayoutError>>,
+}
+
+enum LayoutWork {
+    Full(crate::feathers::graph_layout::GraphLayoutInput),
+    Partial(PartialLayoutPlan),
+}
+
+impl LayoutWork {
+    fn run(self) -> Result<GraphLayoutResult, GraphLayoutError> {
+        match self {
+            Self::Full(input) => AestraLayeredLayout.layout(&input),
+            Self::Partial(plan) => plan.layout(&AestraLayeredLayout),
+        }
+    }
 }
 
 pub(super) fn register(app: &mut App) {
@@ -50,26 +107,28 @@ fn request(
     views: Query<(Entity, &GraphGeometryView)>,
 ) {
     if state.job.is_some() {
-        session.status = "Arrange Graph is already running".into();
+        session.status = "A graph arrangement is already running".into();
         return;
     }
+    let scope = event.event().scope;
     let result = prepare(
         event.event().view.clone(),
+        scope,
+        &event.event().seeds,
         &catalog,
         &session,
         &memory,
         &registry,
         &views,
     );
-    let (view, viewport, snapshot, graph, adapter, before) = match result {
+    let (view, viewport, snapshot, graph, adapter, before, work) = match result {
         Ok(prepared) => prepared,
         Err(error) => {
-            session.status = format!("Arrange Graph unavailable: {error}");
+            session.status = format!("{} unavailable: {error}", scope.label());
             return;
         }
     };
-    let input = adapter.input.clone();
-    let task = AsyncComputeTaskPool::get().spawn(async move { AestraLayeredLayout.layout(&input) });
+    let task = AsyncComputeTaskPool::get().spawn(async move { work.run() });
     state.job = Some(ArrangeJob {
         view,
         viewport,
@@ -79,9 +138,10 @@ fn request(
         graph,
         adapter,
         before,
+        scope,
         task,
     });
-    session.status = "Arranging graph…".into();
+    session.status = format!("{}…", scope.label());
 }
 
 type Prepared = (
@@ -91,10 +151,13 @@ type Prepared = (
     String,
     LayoutAdapter,
     presentation::Snapshot,
+    LayoutWork,
 );
 
 fn prepare(
     view: GraphViewKey,
+    scope: ArrangeScope,
+    seeds: &BTreeSet<GraphNodeKey>,
     catalog: &ProjectEffectCatalog,
     session: &EditorSession,
     memory: &GraphViewportMemory,
@@ -122,12 +185,12 @@ fn prepare(
                     position: node.effective_position,
                     size: node.size,
                     pinned: false,
-                    selected: false,
+                    selected: seeds.contains(key),
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let (graph, adapter) = match view.document.asset {
+    let (graph, mut adapter) = match view.document.asset {
         DocumentKey::MaterialProgram(id) => {
             let document = session.graph_authoring_document(catalog)?;
             let program = document
@@ -162,9 +225,29 @@ fn prepare(
         }
         DocumentKey::WeslSource(_) => return Err("WESL documents do not have a node graph".into()),
     };
+    let work = match scope.partial() {
+        None => LayoutWork::Full(adapter.input.clone()),
+        Some(partial_scope) => {
+            if seeds.is_empty() {
+                return Err("select one or more graph nodes first".into());
+            }
+            let layout_seeds = seeds
+                .iter()
+                .map(|seed| {
+                    adapter
+                        .layout_key(*seed)
+                        .ok_or("the selection contains a node outside the current graph")
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            let plan = PartialLayoutPlan::extract(&adapter.input, &layout_seeds, partial_scope)
+                .map_err(|error| error.to_string())?;
+            adapter.input.region = GraphLayoutRegion::Nodes(plan.region.clone());
+            LayoutWork::Partial(plan)
+        }
+    };
     let before = presentation::Snapshot::capture(&graph, catalog, session, memory)
         .ok_or("the graph presentation is unavailable")?;
-    Ok((view, viewport, snapshot, graph, adapter, before))
+    Ok((view, viewport, snapshot, graph, adapter, before, work))
 }
 
 fn poll(
@@ -194,7 +277,7 @@ fn poll(
     let semantic_positions = match result {
         Ok(result) => result,
         Err(error) => {
-            session.status = format!("Arrange Graph failed: {error}");
+            session.status = format!("{} failed: {error}", job.scope.label());
             return;
         }
     };
@@ -206,7 +289,7 @@ fn poll(
     let positions = match positions {
         Ok(positions) => positions,
         Err(error) => {
-            session.status = format!("Arrange Graph failed: {error}");
+            session.status = format!("{} failed: {error}", job.scope.label());
             return;
         }
     };
