@@ -864,3 +864,53 @@ nodes and empty graphs. The native backend remains preparatory and does not repl
 M9A.2 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **977 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.3 implementation — layout-only virtual nodes
+
+- Canonical edges spanning more than one rank expand into a chain with one virtual node in every
+  intermediate rank. Every expanded segment therefore connects adjacent ranks; already-adjacent
+  edges remain direct and allocate no virtual nodes.
+- `LayerNodeId` separates real/editor IDs from `VirtualNodeId`. A virtual identity embeds the full
+  canonical source edge, including ports, plus its intermediate rank. IDs are deterministic across
+  input ordering and port-distinct parallel edges cannot collide.
+- Expanded components retain only real IDs in their editor-node list and real-rank map. Virtual
+  identities exist solely inside native layers and segments, cannot be converted implicitly to a
+  `GraphLayoutNodeId`, and will therefore never enter editor results or persistence.
+- Every segment keeps its original authored edge so later crossing, placement and routing stages
+  can operate on the expanded topology and collapse it back to one editor connection.
+
+Automated coverage verifies adjacent-rank segments, exact deterministic virtual identities,
+port-distinct parallel chains, no-op expansion for adjacent edges, isolated components, empty
+graphs and strict separation between real and virtual identity. The native backend remains
+preparatory and `elkrs` is still the active Arrange Graph implementation.
+
+M9A.3 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **981 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.4 implementation — deterministic crossing minimization
+
+- Each expanded component runs alternating source-to-sink and sink-to-source barycenter sweeps.
+  Barycenters are compared as exact integer fractions, so ordering does not depend on floating-point
+  behavior. Stable layout identity resolves ties; an existing position is used only for nodes with
+  no neighbor on the active sweep boundary.
+- Adjacent transpose passes evaluate both neighboring rank boundaries and accept a swap only when
+  it strictly lowers their crossing count. At most eight sweep pairs run, and the best complete
+  layer ordering seen is retained; crossing minimization can therefore never return a worse
+  ordering than its canonical input.
+- Crossing counts preserve parallel-edge multiplicity but exclude edge pairs sharing a source or
+  target. Per-boundary inversion counting uses a Fenwick tree rather than comparing every pair of
+  edges. `CrossingMetrics` reports aggregate before/after counts and the maximum sweep-pair count
+  for benchmark instrumentation.
+- Real and virtual nodes participate through the same stable `LayerNodeId` ordering. Ranks,
+  topology and authored edge identity are unchanged, and no virtual identity leaves the native
+  preparation pipeline.
+
+Automated coverage verifies a connected crossed graph, strict adjacent-transpose improvement,
+shared-endpoint counting, deterministic virtual-node ordering, stable empty/zero-crossing graphs
+and parity with the qualified `elkrs` backend on a representative branch graph. The native backend
+remains preparatory and `elkrs` is still the active Arrange Graph implementation.
+
+M9A.4 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **988 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.

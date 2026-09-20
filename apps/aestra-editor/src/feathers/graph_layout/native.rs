@@ -10,6 +10,9 @@ use super::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod crossings;
+pub(crate) use crossings::CrossingMetrics;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AestraLayeredLayout;
 
@@ -45,6 +48,55 @@ pub(crate) struct LayerAssignment {
 pub(crate) struct RankedComponent {
     pub(crate) nodes: Vec<GraphLayoutNodeId>,
     pub(crate) layers: Vec<Vec<GraphLayoutNodeId>>,
+}
+
+/// Internal layered-graph identity. Only `Real` IDs can ever map back to editor nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum LayerNodeId {
+    Real(GraphLayoutNodeId),
+    Virtual(VirtualNodeId),
+}
+
+/// A deterministic layout-only identity derived from the full canonical edge and its rank.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct VirtualNodeId {
+    pub(crate) edge: GraphLayoutEdge,
+    pub(crate) rank: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct LayerEdge {
+    pub(crate) source: LayerNodeId,
+    pub(crate) target: LayerNodeId,
+    pub(crate) original: GraphLayoutEdge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExpandedComponent {
+    pub(crate) real_nodes: Vec<GraphLayoutNodeId>,
+    pub(crate) layers: Vec<Vec<LayerNodeId>>,
+    pub(crate) edges: Vec<LayerEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExpandedGraph {
+    /// Ranks exist only for real/editor nodes. Virtual ranks live exclusively in their IDs.
+    pub(crate) real_ranks: BTreeMap<GraphLayoutNodeId, usize>,
+    pub(crate) components: Vec<ExpandedComponent>,
+}
+
+impl ExpandedGraph {
+    pub(crate) fn rank(&self, node: LayerNodeId) -> Option<usize> {
+        match node {
+            LayerNodeId::Real(key) => self.real_ranks.get(&key).copied(),
+            LayerNodeId::Virtual(node) => Some(node.rank),
+        }
+    }
+
+    /// Deterministically reduces crossings without changing ranks or topology.
+    pub(crate) fn minimize_crossings(&mut self) -> CrossingMetrics {
+        crossings::minimize(self)
+    }
 }
 
 impl CanonicalGraph {
@@ -137,6 +189,86 @@ impl CanonicalGraph {
         }
 
         LayerAssignment { ranks, components }
+    }
+
+    /// Replaces each edge spanning multiple ranks with adjacent-rank layout segments.
+    ///
+    /// Virtual nodes use a type that cannot be confused with an editor `GraphLayoutNodeId` and
+    /// are retained only by the native layout pipeline. Each segment remembers its canonical edge
+    /// so later routing can collapse the chain back to one authored connection.
+    pub(crate) fn expand_long_edges(&self) -> ExpandedGraph {
+        let assignment = self.longest_path_layers();
+        let mut component_by_node = BTreeMap::new();
+        let mut components = assignment
+            .components
+            .iter()
+            .enumerate()
+            .map(|(component_index, component)| {
+                for &key in &component.nodes {
+                    component_by_node.insert(key, component_index);
+                }
+                ExpandedComponent {
+                    real_nodes: component.nodes.clone(),
+                    layers: component
+                        .layers
+                        .iter()
+                        .map(|layer| layer.iter().copied().map(LayerNodeId::Real).collect())
+                        .collect(),
+                    edges: Vec::new(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for &edge in &self.edges {
+            let (Some(&source_rank), Some(&target_rank), Some(&component_index)) = (
+                assignment.ranks.get(&edge.source),
+                assignment.ranks.get(&edge.target),
+                component_by_node.get(&edge.source),
+            ) else {
+                debug_assert!(false, "canonical edge must have ranks and a component");
+                continue;
+            };
+            let Some(component) = components.get_mut(component_index) else {
+                debug_assert!(false, "canonical edge component must exist");
+                continue;
+            };
+            debug_assert!(target_rank > source_rank);
+
+            let mut previous = LayerNodeId::Real(edge.source);
+            for rank in (source_rank + 1)..target_rank {
+                let virtual_node = LayerNodeId::Virtual(VirtualNodeId { edge, rank });
+                let Some(layer) = component.layers.get_mut(rank) else {
+                    debug_assert!(false, "virtual rank must exist in its component");
+                    continue;
+                };
+                layer.push(virtual_node);
+                component.edges.push(LayerEdge {
+                    source: previous,
+                    target: virtual_node,
+                    original: edge,
+                });
+                previous = virtual_node;
+            }
+            component.edges.push(LayerEdge {
+                source: previous,
+                target: LayerNodeId::Real(edge.target),
+                original: edge,
+            });
+        }
+
+        for component in &mut components {
+            for layer in &mut component.layers {
+                layer.sort();
+                layer.dedup();
+            }
+            component.edges.sort();
+            component.edges.dedup();
+        }
+
+        ExpandedGraph {
+            real_ranks: assignment.ranks,
+            components,
+        }
     }
 }
 
@@ -288,6 +420,7 @@ fn find_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feathers::graph_layout::{ElkLayeredLayout, GraphLayoutEngine};
     use bevy::prelude::Vec2;
 
     fn id(value: usize) -> GraphLayoutNodeId {
@@ -486,5 +619,235 @@ mod tests {
             .longest_path_layers();
         assert!(assignment.ranks.is_empty());
         assert!(assignment.components.is_empty());
+    }
+
+    #[test]
+    fn long_edges_expand_into_adjacent_rank_segments() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2, 3], &[(0, 1), (1, 2), (2, 3), (0, 3)]))
+            .unwrap();
+        let long_edge = edge(0, 3);
+        let first = LayerNodeId::Virtual(VirtualNodeId {
+            edge: long_edge,
+            rank: 1,
+        });
+        let second = LayerNodeId::Virtual(VirtualNodeId {
+            edge: long_edge,
+            rank: 2,
+        });
+        let expanded = graph.expand_long_edges();
+        let component = &expanded.components[0];
+
+        assert!(component.layers[1].contains(&first));
+        assert!(component.layers[2].contains(&second));
+        assert!(component.edges.contains(&LayerEdge {
+            source: LayerNodeId::Real(id(0)),
+            target: first,
+            original: long_edge,
+        }));
+        assert!(component.edges.contains(&LayerEdge {
+            source: first,
+            target: second,
+            original: long_edge,
+        }));
+        assert!(component.edges.contains(&LayerEdge {
+            source: second,
+            target: LayerNodeId::Real(id(3)),
+            original: long_edge,
+        }));
+        for edge in &component.edges {
+            assert_eq!(
+                expanded.rank(edge.target),
+                expanded.rank(edge.source).map(|rank| rank + 1)
+            );
+        }
+    }
+
+    #[test]
+    fn adjacent_edges_do_not_create_virtual_nodes() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2], &[(0, 1), (1, 2)]))
+            .unwrap();
+        let expanded = graph.expand_long_edges();
+        let component = &expanded.components[0];
+
+        assert!(
+            component
+                .layers
+                .iter()
+                .flatten()
+                .all(|node| matches!(node, LayerNodeId::Real(_)))
+        );
+        assert_eq!(component.edges.len(), 2);
+        assert_eq!(
+            component.real_nodes,
+            graph.nodes.iter().map(|node| node.key).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn parallel_long_edges_receive_distinct_deterministic_virtual_ids() {
+        let mut input = input(&[0, 1, 2, 3], &[(0, 1), (1, 2), (2, 3), (0, 3)]);
+        input.edges.push(GraphLayoutEdge {
+            source: id(0),
+            target: id(3),
+            source_port: Some(super::super::GraphLayoutPortId(7)),
+            target_port: Some(super::super::GraphLayoutPortId(9)),
+        });
+        let mut shuffled = input.clone();
+        shuffled.nodes.reverse();
+        shuffled.edges.reverse();
+
+        let expected = AestraLayeredLayout
+            .canonicalize(&input)
+            .unwrap()
+            .expand_long_edges();
+        let actual = AestraLayeredLayout
+            .canonicalize(&shuffled)
+            .unwrap()
+            .expand_long_edges();
+        assert_eq!(actual, expected);
+
+        let virtual_nodes = actual.components[0]
+            .layers
+            .iter()
+            .flatten()
+            .filter(|node| matches!(node, LayerNodeId::Virtual(_)))
+            .copied()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(virtual_nodes.len(), 4);
+    }
+
+    #[test]
+    fn virtual_nodes_stay_out_of_real_identity_and_empty_components() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2, 3, 4], &[(0, 1), (1, 2), (2, 3), (0, 3)]))
+            .unwrap();
+        let expanded = graph.expand_long_edges();
+
+        assert_eq!(expanded.real_ranks.len(), graph.nodes.len());
+        assert_eq!(expanded.components[1].real_nodes, [id(4)]);
+        assert_eq!(
+            expanded.components[1].layers,
+            [vec![LayerNodeId::Real(id(4))]]
+        );
+        assert!(expanded.components[1].edges.is_empty());
+
+        let empty = AestraLayeredLayout
+            .canonicalize(&input(&[], &[]))
+            .unwrap()
+            .expand_long_edges();
+        assert!(empty.real_ranks.is_empty());
+        assert!(empty.components.is_empty());
+    }
+
+    #[test]
+    fn crossing_minimization_orders_a_crossed_two_layer_graph() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2, 3], &[(0, 2), (0, 3), (1, 2)]))
+            .unwrap();
+        let mut expanded = graph.expand_long_edges();
+        let metrics = expanded.minimize_crossings();
+
+        assert_eq!(metrics.crossings_before, 1);
+        assert_eq!(metrics.crossings_after, 0);
+        assert!(metrics.sweep_pairs > 0);
+        assert_eq!(
+            expanded.components[0].layers,
+            [
+                vec![LayerNodeId::Real(id(0)), LayerNodeId::Real(id(1))],
+                vec![LayerNodeId::Real(id(3)), LayerNodeId::Real(id(2))]
+            ]
+        );
+    }
+
+    #[test]
+    fn crossing_minimization_is_deterministic_with_virtual_nodes() {
+        let ordered = input(
+            &[0, 1, 2, 3, 4, 5],
+            &[(0, 2), (1, 3), (2, 4), (3, 5), (0, 5), (1, 4)],
+        );
+        let mut shuffled = ordered.clone();
+        shuffled.nodes.reverse();
+        shuffled.edges.reverse();
+
+        let mut expected = AestraLayeredLayout
+            .canonicalize(&ordered)
+            .unwrap()
+            .expand_long_edges();
+        let expected_metrics = expected.minimize_crossings();
+        let mut actual = AestraLayeredLayout
+            .canonicalize(&shuffled)
+            .unwrap()
+            .expand_long_edges();
+        let actual_metrics = actual.minimize_crossings();
+
+        assert_eq!(actual, expected);
+        assert_eq!(actual_metrics, expected_metrics);
+        assert!(actual_metrics.crossings_after <= actual_metrics.crossings_before);
+        assert!(
+            actual.components[0]
+                .layers
+                .iter()
+                .flatten()
+                .any(|node| matches!(node, LayerNodeId::Virtual(_)))
+        );
+    }
+
+    #[test]
+    fn crossing_minimization_matches_elkrs_on_a_representative_branch_graph() {
+        let input = input(
+            &[0, 1, 2, 3, 4, 5, 6],
+            &[(6, 0), (6, 1), (6, 2), (0, 5), (1, 4), (2, 3)],
+        );
+        let elk = ElkLayeredLayout.layout(&input).unwrap();
+        let terminal_edges = input
+            .edges
+            .iter()
+            .filter(|edge| edge.source != id(6))
+            .copied()
+            .collect::<Vec<_>>();
+        let elk_crossings = terminal_edges
+            .iter()
+            .enumerate()
+            .map(|(index, first)| {
+                terminal_edges
+                    .iter()
+                    .skip(index + 1)
+                    .filter(|second| {
+                        (elk.positions[&first.source].y - elk.positions[&second.source].y)
+                            * (elk.positions[&first.target].y - elk.positions[&second.target].y)
+                            < 0.0
+                    })
+                    .count()
+            })
+            .sum::<usize>();
+
+        let mut expanded = AestraLayeredLayout
+            .canonicalize(&input)
+            .unwrap()
+            .expand_long_edges();
+        let metrics = expanded.minimize_crossings();
+
+        assert_eq!(metrics.crossings_before, 3);
+        assert_eq!(metrics.crossings_after, elk_crossings);
+        assert_eq!(metrics.crossings_after, 0);
+    }
+
+    #[test]
+    fn crossing_minimization_keeps_zero_crossing_and_empty_graphs_stable() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2], &[(0, 1), (1, 2)]))
+            .unwrap();
+        let mut expanded = graph.expand_long_edges();
+        let before = expanded.clone();
+        assert_eq!(expanded.minimize_crossings(), CrossingMetrics::default());
+        assert_eq!(expanded, before);
+
+        let mut empty = AestraLayeredLayout
+            .canonicalize(&input(&[], &[]))
+            .unwrap()
+            .expand_long_edges();
+        assert_eq!(empty.minimize_crossings(), CrossingMetrics::default());
     }
 }

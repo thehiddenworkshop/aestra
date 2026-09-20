@@ -14,6 +14,12 @@ use aestra_core::{EffectAsset, material::MaterialProgram};
 use aestra_runtime::{CompiledEffect, RuntimeStage};
 use std::collections::BTreeMap;
 
+/// `include_str!` preserves checkout line endings, while generated reports always use `\n`.
+/// Normalize only that platform detail so the baseline remains strict about every content line.
+fn normalized_baseline(text: &str) -> String {
+    text.trim_end().replace("\r\n", "\n")
+}
+
 fn compile_standalone(effect_ron: &str) -> CompiledEffect {
     let asset = EffectAsset::from_ron(effect_ron).expect("effect fixture parses");
     assert!(
@@ -169,7 +175,7 @@ fn showcase_effects_compile_to_a_stable_structural_baseline() {
     // Blessed structural baseline from `main` (foundation_baseline.txt). Regenerate intentionally
     // (never to paper over an unexpected diff) by running with `--nocapture` and updating the file.
     let expected = include_str!("foundation_baseline.txt");
-    assert_eq!(report.trim_end(), expected.trim_end());
+    assert_eq!(normalized_baseline(&report), normalized_baseline(expected));
 }
 
 /// Canonical sample times (seconds) and seed for the CPU-reference baseline.
@@ -200,7 +206,7 @@ fn showcase_effects_have_deterministic_cpu_evaluation() {
     eprintln!("\n{report}");
 
     let expected = include_str!("foundation_cpu_baseline.txt");
-    assert_eq!(report.trim_end(), expected.trim_end());
+    assert_eq!(normalized_baseline(&report), normalized_baseline(expected));
 }
 
 fn stage_abbr(stage: RuntimeStage) -> &'static str {
@@ -255,7 +261,7 @@ fn showcase_effects_have_valid_stable_source_maps() {
     eprintln!("\n{report}");
 
     let expected = include_str!("foundation_source_map_baseline.txt");
-    assert_eq!(report.trim_end(), expected.trim_end());
+    assert_eq!(normalized_baseline(&report), normalized_baseline(expected));
 }
 
 #[test]
@@ -276,5 +282,5 @@ fn showcase_effects_have_stable_renderer_plans() {
     eprintln!("\n{report}");
 
     let expected = include_str!("foundation_renderer_baseline.txt");
-    assert_eq!(report.trim_end(), expected.trim_end());
+    assert_eq!(normalized_baseline(&report), normalized_baseline(expected));
 }
