@@ -1008,3 +1008,19 @@ M9A.8 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **999 editor tests
 (7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy
 (`--all-targets -- -D warnings`), the production-only dependency-tree check, workspace formatting
 and `git diff --check` passed.
+
+## M10.1 implementation — partial-layout planning
+
+- Targeted arrangement is planned above the layered engine. Given stable seed node IDs, the shared
+  planner deterministically expands either the selection, its complete upstream dependency branch,
+  or its complete downstream consumer branch.
+- The plan contains a full-layout input for only the movable induced subgraph, the exact geometry
+  and position of every frozen node, and ordered incoming/outgoing anchors for every edge crossing
+  the region.
+- Empty and unknown seeds fail before a background job is dispatched. The native engine continues
+  to receive a self-contained full graph; placement near the original area and boundary collision
+  reconciliation remain controller responsibilities rather than Sugiyama-engine policy.
+
+M10.1 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1003 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
+workspace formatting and `git diff --check` passed.

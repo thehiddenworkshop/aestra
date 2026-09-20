@@ -13,6 +13,7 @@ pub(crate) mod comparison;
 #[cfg(test)]
 mod elk;
 pub(crate) mod native;
+pub(crate) mod partial;
 #[cfg(test)]
 pub(crate) use elk::ElkLayeredLayout;
 
