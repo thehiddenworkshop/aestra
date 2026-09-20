@@ -35,6 +35,18 @@ pub(crate) struct CanonicalGraph {
     pub(crate) topological_order: Vec<GraphLayoutNodeId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LayerAssignment {
+    pub(crate) ranks: BTreeMap<GraphLayoutNodeId, usize>,
+    pub(crate) components: Vec<RankedComponent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RankedComponent {
+    pub(crate) nodes: Vec<GraphLayoutNodeId>,
+    pub(crate) layers: Vec<Vec<GraphLayoutNodeId>>,
+}
+
 impl CanonicalGraph {
     fn try_from_input(input: &GraphLayoutInput) -> Result<Self, GraphLayoutError> {
         input.validate()?;
@@ -78,6 +90,53 @@ impl CanonicalGraph {
             components,
             topological_order,
         })
+    }
+
+    /// Assigns each component independently using the longest path from any source.
+    ///
+    /// Rank zero is the component's source side. Every edge advances by at least one rank and
+    /// stable node keys order peers inside a rank. Material/function output nodes are ordinary
+    /// sinks at this semantic-neutral boundary; because they consume the graph's output branches,
+    /// the longest-path rule naturally places them at the component's final rank.
+    pub(crate) fn longest_path_layers(&self) -> LayerAssignment {
+        let mut ranks = BTreeMap::new();
+        let mut components = Vec::with_capacity(self.components.len());
+
+        for component in &self.components {
+            let component_nodes = component.iter().copied().collect::<BTreeSet<_>>();
+            for &key in &self.topological_order {
+                if !component_nodes.contains(&key) {
+                    continue;
+                }
+                let rank = self
+                    .predecessors
+                    .get(&key)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|predecessor| ranks.get(predecessor).copied())
+                    .max()
+                    .map_or(0, |rank| rank + 1);
+                ranks.insert(key, rank);
+            }
+
+            let layer_count = component
+                .iter()
+                .filter_map(|key| ranks.get(key).copied())
+                .max()
+                .map_or(0, |rank| rank + 1);
+            let mut layers = vec![Vec::new(); layer_count];
+            for &key in component {
+                if let Some(&rank) = ranks.get(&key) {
+                    layers[rank].push(key);
+                }
+            }
+            components.push(RankedComponent {
+                nodes: component.clone(),
+                layers,
+            });
+        }
+
+        LayerAssignment { ranks, components }
     }
 }
 
@@ -339,5 +398,93 @@ mod tests {
         assert!(graph.edges.is_empty());
         assert!(graph.components.is_empty());
         assert!(graph.topological_order.is_empty());
+    }
+
+    #[test]
+    fn longest_path_ranks_advance_dependencies_and_put_output_last() {
+        // Node 5 represents the semantic output and consumes both a short and a long branch.
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(
+                &[0, 1, 2, 3, 4, 5],
+                &[(0, 2), (1, 3), (3, 4), (2, 5), (4, 5)],
+            ))
+            .unwrap();
+        let assignment = graph.longest_path_layers();
+
+        assert_eq!(assignment.ranks[&id(0)], 0);
+        assert_eq!(assignment.ranks[&id(1)], 0);
+        assert_eq!(assignment.ranks[&id(2)], 1);
+        assert_eq!(assignment.ranks[&id(3)], 1);
+        assert_eq!(assignment.ranks[&id(4)], 2);
+        assert_eq!(assignment.ranks[&id(5)], 3);
+        assert_eq!(
+            assignment.components[0].layers,
+            [
+                vec![id(0), id(1)],
+                vec![id(2), id(3)],
+                vec![id(4)],
+                vec![id(5)]
+            ]
+        );
+        for edge in &graph.edges {
+            assert!(assignment.ranks[&edge.source] < assignment.ranks[&edge.target]);
+        }
+    }
+
+    #[test]
+    fn disconnected_components_start_at_zero_and_keep_independent_depths() {
+        let graph = AestraLayeredLayout
+            .canonicalize(&input(&[0, 1, 2, 3, 4, 5], &[(0, 1), (1, 2), (3, 4)]))
+            .unwrap();
+        let assignment = graph.longest_path_layers();
+
+        assert_eq!(
+            assignment.components,
+            [
+                RankedComponent {
+                    nodes: vec![id(0), id(1), id(2)],
+                    layers: vec![vec![id(0)], vec![id(1)], vec![id(2)]],
+                },
+                RankedComponent {
+                    nodes: vec![id(3), id(4)],
+                    layers: vec![vec![id(3)], vec![id(4)]],
+                },
+                RankedComponent {
+                    nodes: vec![id(5)],
+                    layers: vec![vec![id(5)]],
+                },
+            ]
+        );
+        assert_eq!(assignment.ranks[&id(3)], 0);
+        assert_eq!(assignment.ranks[&id(5)], 0);
+    }
+
+    #[test]
+    fn longest_path_assignment_is_stable_across_input_order_and_direction() {
+        let ordered = input(&[0, 1, 2, 3], &[(0, 2), (1, 2), (2, 3)]);
+        let mut shuffled = ordered.clone();
+        shuffled.nodes.reverse();
+        shuffled.edges.reverse();
+        shuffled.direction = GraphDirection::TopToBottom;
+
+        let expected = AestraLayeredLayout
+            .canonicalize(&ordered)
+            .unwrap()
+            .longest_path_layers();
+        let actual = AestraLayeredLayout
+            .canonicalize(&shuffled)
+            .unwrap()
+            .longest_path_layers();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn empty_graph_has_empty_layer_assignment() {
+        let assignment = AestraLayeredLayout
+            .canonicalize(&input(&[], &[]))
+            .unwrap()
+            .longest_path_layers();
+        assert!(assignment.ranks.is_empty());
+        assert!(assignment.components.is_empty());
     }
 }

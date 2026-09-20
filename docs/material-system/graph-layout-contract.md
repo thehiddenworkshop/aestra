@@ -842,3 +842,25 @@ M9A.1 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **973 editor tests
 (7 native-GPU/benchmark tests ignored), plus the architecture test. The validation run also
 corrected the preceding milestone's semantic-placement projection so inline socket constants are
 consistently excluded from canvas placement, arrangement and presentation history.
+
+## M9A.2 implementation — deterministic longest-path layers
+
+- Every canonical component is ranked independently using `rank(source) = 0` and
+  `rank(node) = 1 + max(rank(predecessor))`. No semantic/editor state or saved position affects
+  the result.
+- Each dependency advances by at least one rank. Material/function output nodes consume their
+  output branches, so the longest-path rule naturally places them in the component's final/right
+  layer without teaching the shared engine about material node kinds.
+- Ranked components preserve canonical component order, retain their canonical node list and
+  expose key-ordered nodes per layer. Components of different depths all begin at rank zero;
+  isolated nodes form one rank-zero layer.
+- Graph direction does not alter topology ranks. Later coordinate assignment maps those ranks to
+  the requested left-to-right or top-to-bottom axis.
+
+Automated coverage verifies dependency direction, a multi-branch output at the final rank, stable
+tie ordering, input-order independence, direction independence, component-local depths, isolated
+nodes and empty graphs. The native backend remains preparatory and does not replace `elkrs` yet.
+
+M9A.2 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **977 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
