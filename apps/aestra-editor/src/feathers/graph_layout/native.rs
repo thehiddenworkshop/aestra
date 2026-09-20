@@ -5,11 +5,13 @@
 //! production `elkrs` adapter remains active until that pipeline satisfies the acceptance gates.
 
 use super::{
-    GraphDirection, GraphLayoutEdge, GraphLayoutError, GraphLayoutInput, GraphLayoutNode,
-    GraphLayoutNodeId, GraphLayoutRegion,
+    GraphDirection, GraphLayoutEdge, GraphLayoutEngine, GraphLayoutError, GraphLayoutInput,
+    GraphLayoutNode, GraphLayoutNodeId, GraphLayoutRegion, GraphLayoutResult,
 };
+use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod coordinates;
 mod crossings;
 pub(crate) use crossings::CrossingMetrics;
 
@@ -24,6 +26,38 @@ impl AestraLayeredLayout {
     ) -> Result<CanonicalGraph, GraphLayoutError> {
         CanonicalGraph::try_from_input(input)
     }
+}
+
+impl GraphLayoutEngine for AestraLayeredLayout {
+    fn layout(&self, input: &GraphLayoutInput) -> Result<GraphLayoutResult, GraphLayoutError> {
+        input.validate()?;
+        if !matches!(input.region, GraphLayoutRegion::Full) {
+            return Err(native_adapter("partial graph layout is not supported yet"));
+        }
+        if input.nodes.iter().any(|node| node.pinned) {
+            return Err(native_adapter("pinned graph layout is not supported yet"));
+        }
+
+        let graph = self.canonicalize(input)?;
+        let mut expanded = graph.expand_long_edges();
+        expanded.minimize_crossings();
+        let positioned = expanded.assign_coordinates(&graph)?;
+        if positioned.components.len() > 1 {
+            return Err(native_adapter(
+                "disconnected component packing is not supported yet",
+            ));
+        }
+        let positions = positioned
+            .components
+            .into_iter()
+            .flat_map(|component| component.real_positions())
+            .collect();
+        GraphLayoutResult::from_positions(input, positions)
+    }
+}
+
+fn native_adapter(message: impl Into<String>) -> GraphLayoutError {
+    GraphLayoutError::Adapter(format!("native layered layout: {}", message.into()))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +119,29 @@ pub(crate) struct ExpandedGraph {
     pub(crate) components: Vec<ExpandedComponent>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PositionedComponent {
+    pub(crate) real_nodes: Vec<GraphLayoutNodeId>,
+    pub(crate) positions: BTreeMap<LayerNodeId, Vec2>,
+    pub(crate) bounds: Rect,
+}
+
+impl PositionedComponent {
+    pub(crate) fn real_positions(self) -> impl Iterator<Item = (GraphLayoutNodeId, Vec2)> {
+        self.real_nodes.into_iter().filter_map(move |key| {
+            self.positions
+                .get(&LayerNodeId::Real(key))
+                .copied()
+                .map(|position| (key, position))
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct PositionedGraph {
+    pub(crate) components: Vec<PositionedComponent>,
+}
+
 impl ExpandedGraph {
     pub(crate) fn rank(&self, node: LayerNodeId) -> Option<usize> {
         match node {
@@ -96,6 +153,14 @@ impl ExpandedGraph {
     /// Deterministically reduces crossings without changing ranks or topology.
     pub(crate) fn minimize_crossings(&mut self) -> CrossingMetrics {
         crossings::minimize(self)
+    }
+
+    /// Assigns measured, overlap-free coordinates inside each weak component.
+    pub(crate) fn assign_coordinates(
+        &self,
+        graph: &CanonicalGraph,
+    ) -> Result<PositionedGraph, GraphLayoutError> {
+        coordinates::assign(self, graph)
     }
 }
 
@@ -458,6 +523,57 @@ mod tests {
             GraphLayoutRegion::Full,
         )
         .unwrap()
+    }
+
+    fn sized_input(
+        direction: GraphDirection,
+        sizes: &[Vec2],
+        edges: &[(usize, usize)],
+    ) -> GraphLayoutInput {
+        GraphLayoutInput::try_new(
+            direction,
+            sizes
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, size)| GraphLayoutNode {
+                    key: id(index),
+                    position: Vec2::new(index as f32 * 10.0, 0.0),
+                    size,
+                    pinned: false,
+                    selected: false,
+                })
+                .collect(),
+            edges
+                .iter()
+                .copied()
+                .map(|(source, target)| edge(source, target))
+                .collect(),
+            GraphLayoutRegion::Full,
+        )
+        .unwrap()
+    }
+
+    fn assert_no_real_node_overlaps(input: &GraphLayoutInput, result: &GraphLayoutResult) {
+        let rectangles = input
+            .nodes
+            .iter()
+            .map(|node| {
+                let position = result.positions[&node.key];
+                Rect::from_corners(position, position + node.size)
+            })
+            .collect::<Vec<_>>();
+        for (index, left) in rectangles.iter().enumerate() {
+            for right in rectangles.iter().skip(index + 1) {
+                assert!(
+                    left.max.x <= right.min.x
+                        || right.max.x <= left.min.x
+                        || left.max.y <= right.min.y
+                        || right.max.y <= left.min.y,
+                    "native coordinate assignment produced overlapping rectangles {left:?} and {right:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -849,5 +965,148 @@ mod tests {
             .unwrap()
             .expand_long_edges();
         assert_eq!(empty.minimize_crossings(), CrossingMetrics::default());
+    }
+
+    #[test]
+    fn coordinates_use_measured_rectangles_and_configured_spacing() {
+        let input = sized_input(
+            GraphDirection::LeftToRight,
+            &[
+                Vec2::new(120.0, 30.0),
+                Vec2::new(40.0, 90.0),
+                Vec2::new(55.0, 180.0),
+            ],
+            &[(0, 2), (1, 2)],
+        );
+        let graph = AestraLayeredLayout.canonicalize(&input).unwrap();
+        let mut expanded = graph.expand_long_edges();
+        expanded.minimize_crossings();
+        let positioned = expanded.assign_coordinates(&graph).unwrap();
+        let component = &positioned.components[0];
+
+        assert_eq!(component.positions[&LayerNodeId::Real(id(0))], Vec2::ZERO);
+        assert_eq!(
+            component.positions[&LayerNodeId::Real(id(1))],
+            Vec2::new(0.0, 30.0 + coordinates::INTRA_RANK_SPACING)
+        );
+        assert_eq!(
+            component.positions[&LayerNodeId::Real(id(2))],
+            Vec2::new(120.0 + coordinates::INTER_RANK_SPACING, 0.0)
+        );
+        assert_eq!(component.bounds.min, Vec2::ZERO);
+        assert_eq!(component.bounds.max, Vec2::new(247.0, 180.0));
+
+        let result = AestraLayeredLayout.layout(&input).unwrap();
+        result.validate(&input).unwrap();
+        assert_no_real_node_overlaps(&input, &result);
+    }
+
+    #[test]
+    fn top_to_bottom_coordinates_swap_flow_and_stack_axes() {
+        let input = sized_input(
+            GraphDirection::TopToBottom,
+            &[
+                Vec2::new(35.0, 100.0),
+                Vec2::new(85.0, 40.0),
+                Vec2::new(160.0, 60.0),
+            ],
+            &[(0, 2), (1, 2)],
+        );
+        let result = AestraLayeredLayout.layout(&input).unwrap();
+
+        assert_eq!(result.positions[&id(0)], Vec2::ZERO);
+        assert_eq!(
+            result.positions[&id(1)],
+            Vec2::new(35.0 + coordinates::INTRA_RANK_SPACING, 0.0)
+        );
+        assert_eq!(
+            result.positions[&id(2)],
+            Vec2::new(0.0, 100.0 + coordinates::INTER_RANK_SPACING)
+        );
+        result.validate(&input).unwrap();
+        assert_no_real_node_overlaps(&input, &result);
+    }
+
+    #[test]
+    fn coordinate_assignment_retains_virtual_points_but_returns_only_real_nodes() {
+        let input = sized_input(
+            GraphDirection::LeftToRight,
+            &[Vec2::new(80.0, 40.0); 4],
+            &[(0, 1), (1, 2), (2, 3), (0, 3)],
+        );
+        let graph = AestraLayeredLayout.canonicalize(&input).unwrap();
+        let mut expanded = graph.expand_long_edges();
+        expanded.minimize_crossings();
+        let positioned = expanded.assign_coordinates(&graph).unwrap();
+        let component = &positioned.components[0];
+        let virtual_positions = component
+            .positions
+            .iter()
+            .filter(|(node, _)| matches!(node, LayerNodeId::Virtual(_)))
+            .map(|(_, position)| *position)
+            .collect::<Vec<_>>();
+
+        assert_eq!(virtual_positions.len(), 2);
+        assert!(
+            virtual_positions
+                .iter()
+                .all(|position| position.is_finite())
+        );
+        let result = AestraLayeredLayout.layout(&input).unwrap();
+        assert_eq!(result.positions.len(), input.nodes.len());
+        assert_eq!(
+            result.positions.keys().copied().collect::<Vec<_>>(),
+            input.nodes.iter().map(|node| node.key).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn native_candidate_is_deterministic_and_rejects_deferred_constraints() {
+        let input = sized_input(
+            GraphDirection::LeftToRight,
+            &[Vec2::new(80.0, 40.0); 4],
+            &[(0, 2), (1, 2), (2, 3)],
+        );
+        let mut shuffled = input.clone();
+        shuffled.nodes.reverse();
+        shuffled.edges.reverse();
+        assert_eq!(
+            AestraLayeredLayout.layout(&input).unwrap(),
+            AestraLayeredLayout.layout(&shuffled).unwrap()
+        );
+
+        let disconnected = sized_input(
+            GraphDirection::LeftToRight,
+            &[Vec2::new(80.0, 40.0); 2],
+            &[],
+        );
+        assert!(matches!(
+            AestraLayeredLayout.layout(&disconnected),
+            Err(GraphLayoutError::Adapter(message)) if message.contains("component packing")
+        ));
+
+        let mut pinned = input.clone();
+        pinned.nodes[0].pinned = true;
+        assert!(matches!(
+            AestraLayeredLayout.layout(&pinned),
+            Err(GraphLayoutError::Adapter(_))
+        ));
+
+        let mut partial = input;
+        partial.region = GraphLayoutRegion::Nodes(BTreeSet::from([id(0), id(2), id(3)]));
+        assert!(matches!(
+            AestraLayeredLayout.layout(&partial),
+            Err(GraphLayoutError::Adapter(_))
+        ));
+    }
+
+    #[test]
+    fn empty_native_graph_returns_a_valid_empty_candidate() {
+        let input = input(&[], &[]);
+        let result = AestraLayeredLayout.layout(&input).unwrap();
+
+        assert!(result.positions.is_empty());
+        assert_eq!(result.bounds, Rect::default());
+        result.validate(&input).unwrap();
     }
 }

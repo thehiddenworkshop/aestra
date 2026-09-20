@@ -914,3 +914,29 @@ remains preparatory and `elkrs` is still the active Arrange Graph implementation
 M9A.4 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **988 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.5 implementation — rectangle-aware coordinates
+
+- The native pipeline now implements the shared `GraphLayoutEngine` contract for empty and
+  connected DAGs. It canonicalizes, ranks, expands long edges, minimizes crossings, assigns
+  coordinates and constructs the result through the authoritative M8 validator. It remains a
+  preparatory backend; Arrange Graph continues to use qualified `elkrs`.
+- Rank flow offsets use the largest measured real-node extent in the preceding rank plus 72 editor
+  units. Nodes are stacked in their crossing-minimized order using their measured cross-axis extent
+  plus 32 units. Left-to-right maps flow/cross to X/Y; top-to-bottom maps them to Y/X.
+- Preview-expanded geometry is therefore part of placement rather than a post-layout correction.
+  Real rectangles cannot overlap within a component. Component bounds are computed from those
+  exact rectangles for the M9A.6 packing stage.
+- Virtual nodes retain deterministic zero-area coordinate points, separated in layer order, for
+  later edge routing. Only real editor IDs are projected into `GraphLayoutResult`.
+- Partial/pinned inputs retain the existing fail-closed policy. Multiple independently positioned
+  components are also rejected until M9A.6 defines and tests their packing; the engine never emits
+  an overlapping multi-component candidate as an accidental intermediate behavior.
+
+Automated coverage verifies exact variable-size spacing, expanded-height accommodation, no real
+rectangle overlap, both directions, virtual-point retention, real-only results, stable results
+under input reordering, empty candidates, M8 result validation and fail-closed deferred constraints.
+
+M9A.5 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **993 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
