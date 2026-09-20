@@ -940,3 +940,25 @@ under input reordering, empty candidates, M8 result validation and fail-closed d
 M9A.5 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **993 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.6 implementation — deterministic component packing
+
+- Independently positioned weak components are retained in canonical order, which is determined
+  by their minimum stable node ID. The semantic-neutral engine does not attempt to identify a
+  material-specific output component; every DAG component already has at least one structural sink.
+- Component bounds are normalized to X zero and stacked vertically with a fixed 96-unit gap. The
+  simple V1 policy is deterministic, preserves each component's internal coordinate assignment and
+  guarantees that real-node rectangles from different components cannot overlap.
+- The component translation is applied to every real and virtual position and to the recorded
+  bounds. Future routing therefore sees the same packed coordinate space as the editor result.
+- `AestraLayeredLayout` now produces complete M8-validated candidates for disconnected graphs.
+  Partial and pinned layout remain explicitly unsupported; `elkrs` remains the active Arrange
+  Graph backend pending the later A/B and activation milestones.
+
+Automated coverage verifies exact gaps across differently sized connected and isolated components,
+stable results after input-vector reversal, zero inter-component overlap, final result validation,
+and identical translation of a long edge's virtual points and component bounds.
+
+M9A.6 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **995 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.

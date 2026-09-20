@@ -41,12 +41,8 @@ impl GraphLayoutEngine for AestraLayeredLayout {
         let graph = self.canonicalize(input)?;
         let mut expanded = graph.expand_long_edges();
         expanded.minimize_crossings();
-        let positioned = expanded.assign_coordinates(&graph)?;
-        if positioned.components.len() > 1 {
-            return Err(native_adapter(
-                "disconnected component packing is not supported yet",
-            ));
-        }
+        let mut positioned = expanded.assign_coordinates(&graph)?;
+        positioned.pack_components();
         let positions = positioned
             .components
             .into_iter()
@@ -140,6 +136,13 @@ impl PositionedComponent {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct PositionedGraph {
     pub(crate) components: Vec<PositionedComponent>,
+}
+
+impl PositionedGraph {
+    /// Left-aligns canonical components and stacks them vertically without overlap.
+    pub(crate) fn pack_components(&mut self) {
+        coordinates::pack(self);
+    }
 }
 
 impl ExpandedGraph {
@@ -1075,16 +1078,6 @@ mod tests {
             AestraLayeredLayout.layout(&shuffled).unwrap()
         );
 
-        let disconnected = sized_input(
-            GraphDirection::LeftToRight,
-            &[Vec2::new(80.0, 40.0); 2],
-            &[],
-        );
-        assert!(matches!(
-            AestraLayeredLayout.layout(&disconnected),
-            Err(GraphLayoutError::Adapter(message)) if message.contains("component packing")
-        ));
-
         let mut pinned = input.clone();
         pinned.nodes[0].pinned = true;
         assert!(matches!(
@@ -1098,6 +1091,70 @@ mod tests {
             AestraLayeredLayout.layout(&partial),
             Err(GraphLayoutError::Adapter(_))
         ));
+    }
+
+    #[test]
+    fn disconnected_components_are_stably_packed_without_overlap() {
+        let input = sized_input(
+            GraphDirection::LeftToRight,
+            &[
+                Vec2::new(100.0, 50.0),
+                Vec2::new(60.0, 80.0),
+                Vec2::new(70.0, 30.0),
+                Vec2::new(90.0, 45.0),
+                Vec2::new(40.0, 110.0),
+            ],
+            &[(0, 1), (3, 4)],
+        );
+        let mut shuffled = input.clone();
+        shuffled.nodes.reverse();
+        shuffled.edges.reverse();
+
+        let result = AestraLayeredLayout.layout(&input).unwrap();
+        let shuffled_result = AestraLayeredLayout.layout(&shuffled).unwrap();
+
+        assert_eq!(result, shuffled_result);
+        assert_eq!(result.positions[&id(0)], Vec2::ZERO);
+        assert_eq!(
+            result.positions[&id(2)],
+            Vec2::new(0.0, 80.0 + coordinates::COMPONENT_SPACING)
+        );
+        assert_eq!(
+            result.positions[&id(3)],
+            Vec2::new(
+                0.0,
+                80.0 + coordinates::COMPONENT_SPACING + 30.0 + coordinates::COMPONENT_SPACING
+            )
+        );
+        result.validate(&input).unwrap();
+        assert_no_real_node_overlaps(&input, &result);
+    }
+
+    #[test]
+    fn component_packing_translates_virtual_points_with_their_component() {
+        let input = sized_input(
+            GraphDirection::TopToBottom,
+            &[Vec2::new(80.0, 40.0); 5],
+            &[(1, 2), (2, 3), (3, 4), (1, 4)],
+        );
+        let graph = AestraLayeredLayout.canonicalize(&input).unwrap();
+        let mut expanded = graph.expand_long_edges();
+        expanded.minimize_crossings();
+        let mut positioned = expanded.assign_coordinates(&graph).unwrap();
+        let local_virtual_positions = positioned.components[1]
+            .positions
+            .iter()
+            .filter(|(node, _)| matches!(node, LayerNodeId::Virtual(_)))
+            .map(|(node, position)| (*node, *position))
+            .collect::<BTreeMap<_, _>>();
+
+        positioned.pack_components();
+
+        let offset = Vec2::new(0.0, 40.0 + coordinates::COMPONENT_SPACING);
+        for (node, local) in local_virtual_positions {
+            assert_eq!(positioned.components[1].positions[&node], local + offset);
+        }
+        assert_eq!(positioned.components[1].bounds.min, offset);
     }
 
     #[test]

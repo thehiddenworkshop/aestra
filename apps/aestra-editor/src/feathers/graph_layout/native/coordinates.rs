@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 pub(super) const INTRA_RANK_SPACING: f32 = 32.0;
 pub(super) const INTER_RANK_SPACING: f32 = 72.0;
+pub(super) const COMPONENT_SPACING: f32 = 96.0;
 
 pub(super) fn assign(
     expanded: &ExpandedGraph,
@@ -26,6 +27,26 @@ pub(super) fn assign(
         .map(|component| assign_component(component, graph.direction, &sizes))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(PositionedGraph { components })
+}
+
+pub(super) fn pack(graph: &mut PositionedGraph) {
+    let component_count = graph.components.len();
+    let mut vertical_cursor = 0.0;
+    for (index, component) in graph.components.iter_mut().enumerate() {
+        let offset = Vec2::new(
+            -component.bounds.min.x,
+            vertical_cursor - component.bounds.min.y,
+        );
+        for position in component.positions.values_mut() {
+            *position += offset;
+        }
+        component.bounds =
+            Rect::from_corners(component.bounds.min + offset, component.bounds.max + offset);
+        vertical_cursor = component.bounds.max.y;
+        if index + 1 < component_count {
+            vertical_cursor += COMPONENT_SPACING;
+        }
+    }
 }
 
 fn assign_component(
