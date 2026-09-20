@@ -121,7 +121,8 @@ fn semantic_program_batch_preserves_manual_and_bootstrap_bases_in_one_undo() {
     let (_root, mut app, before, _) = fixture();
     let after = replacement(&before);
     let graph = material_graph_view_key(before.id);
-    let manual = material_graph_expression_node_key(before.expressions[0].id);
+    let after_inline = after.inline_constants();
+    let manual = MATERIAL_GRAPH_OUTPUT_NODE_KEY.to_owned();
     app.world_mut()
         .resource_mut::<GraphViewportMemory>()
         .set_node(&graph, &manual, Vec2::new(-720.5, 910.25), true);
@@ -143,6 +144,9 @@ fn semantic_program_batch_preserves_manual_and_bootstrap_bases_in_one_undo() {
         .base_nodes(&graph);
     assert_eq!(bases[&manual], initial[&manual]);
     for (key, node) in &baseline.nodes {
+        if matches!(key, GraphNodeKey::Expression(id) if after_inline.contains(id)) {
+            continue;
+        }
         let key = baseline.node_key(*key);
         if key != manual {
             assert_eq!(bases[&key].0, node.initial);

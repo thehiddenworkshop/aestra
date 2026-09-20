@@ -9,6 +9,7 @@ use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod elk;
+pub(crate) mod native;
 pub(crate) use elk::ElkLayeredLayout;
 
 pub(crate) const MAX_LAYOUT_NODES: usize = 4_096;
@@ -236,6 +237,8 @@ pub(crate) enum GraphLayoutError {
     MovedFixedNode(GraphLayoutNodeId),
     #[error("layout result bounds are invalid or do not contain all nodes")]
     InvalidBounds,
+    #[error("graph contains a directed cycle through nodes {0:?}")]
+    CycleDetected(Vec<GraphLayoutNodeId>),
     #[error("layout adapter: {0}")]
     Adapter(String),
 }

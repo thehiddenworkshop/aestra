@@ -817,3 +817,28 @@ M9 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **966 editor tests pa
 coverage includes deterministic measured layered layout, direction/order, disconnected/cyclic
 graphs, overlap and crossing reduction, constraint rejection, exact Undo/Redo and rejection after
 an intervening manual placement. Native visual acceptance of both toolbar actions remains pending.
+
+## M9A.1 implementation — canonical native graph and DAG validation
+
+- `AestraLayeredLayout` now owns a deterministic preparation stage behind the existing M8 engine
+  boundary. It does not produce positions and is not yet selected by Arrange Graph; qualified
+  `elkrs` remains the production/reference backend until the later M9A acceptance gates pass.
+- The native snapshot revalidates and sorts nodes and port-aware edges, removes exact duplicate
+  edges, and builds stable unique predecessor/successor lists. Parallel port edges remain in the
+  canonical edge list while contributing one topological relationship.
+- Weakly connected components include isolated nodes and are ordered by their smallest node key;
+  each component is internally key-ordered. A stable Kahn traversal records canonical DAG order
+  with node-key tie-breaking, independent of input vector order.
+- Directed cycles fail before any later layout stage with `GraphLayoutError::CycleDetected`. The
+  diagnostic contains a deterministic simple cycle rotated to start at its smallest node and does
+  not include merely downstream nodes.
+
+Automated coverage includes input-order independence, duplicate and parallel edges, deterministic
+neighbors/components/topological order, isolated and empty graphs, multi-node cycles, self-loops
+and stable cycle diagnostics. M9A.2 can now assign ranks from this canonical DAG without reading
+material semantics or editor state.
+
+M9A.1 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **973 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. The validation run also
+corrected the preceding milestone's semantic-placement projection so inline socket constants are
+consistently excluded from canvas placement, arrangement and presentation history.

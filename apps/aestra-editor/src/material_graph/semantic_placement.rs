@@ -30,9 +30,11 @@ impl Model {
             &catalog.material_function_library()?,
         );
         let layout = layout_graph(&projection, previews);
+        let inline = program.inline_constants();
         let mut nodes = projection
             .nodes
             .iter()
+            .filter(|node| !inline.contains(&node.expression))
             .map(|node| {
                 (
                     GraphNodeKey::Expression(node.expression),
