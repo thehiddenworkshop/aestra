@@ -962,3 +962,27 @@ and identical translation of a long edge's virtual points and component bounds.
 M9A.6 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **995 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
 (`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.
+
+## M9A.7 implementation — native/elkrs A/B harness
+
+- `graph_layout::comparison::BackendComparison` re-canonicalizes one immutable input snapshot,
+  runs `AestraLayeredLayout` and qualified `ElkLayeredLayout` against that same snapshot, and
+  validates both results through the M8 contract. It is an internal development/test facility and
+  does not add a backend selector or alter Arrange Graph.
+- Each backend report records real-node rectangle overlaps, proper center-line edge crossings,
+  total Manhattan edge span, result bounds, engine runtime and a deterministic result hash.
+  Edges sharing an endpoint are not counted as crossings. Center coordinates are indexed once;
+  runtime measures only engine execution rather than metric collection.
+- The hash uses fixed FNV-1a encoding over canonical node IDs, normalized coordinate bits and
+  bounds. Runtime is deliberately excluded. Repeated runs and canonicalized input permutations
+  therefore expose nondeterministic placement without conflating timing noise.
+- A compact text table makes the report directly usable from tests and future benchmark tooling.
+  Success remains quality-contract parity, not pixel-identical coordinates between backends.
+
+Automated coverage verifies exact overlap/crossing/span/bounds metrics, stable hashing across runs
+and input permutations, report formatting, and zero-overlap/zero-crossing results from both
+backends on a representative variable-size branch graph.
+
+M9A.7 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **998 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus the architecture test. Strict editor Clippy
+(`--all-targets -- -D warnings`), workspace formatting and `git diff --check` passed.

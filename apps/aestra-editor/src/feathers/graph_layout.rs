@@ -8,6 +8,7 @@
 use bevy::prelude::{Rect, Vec2};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) mod comparison;
 mod elk;
 pub(crate) mod native;
 pub(crate) use elk::ElkLayeredLayout;
