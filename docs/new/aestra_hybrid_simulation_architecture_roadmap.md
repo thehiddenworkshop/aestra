@@ -2721,9 +2721,10 @@ without collision complexity.
 > clears the counter and stamps telemetry, its simulate contributes the analytic emitters' live counts),
 > then runs the stateful emitters, whose presents add their counts and fill their slots. A headless test
 > asserts a mixed effect marks exactly its stateful emitters and sizes the persistent state from only
-> their capacities; the `mixed_lab` fixture (one analytic + two stateful emitters) exercises it. The
-> acceptance criterion "mixed analytic + stateful effects render correctly" is met (pending a final
-> in-editor look at `mixed_lab`).
+> their capacities; the `mixed_lab` fixture (one analytic + two stateful emitters) exercises it, and it
+> is confirmed rendering correctly in the editor on a real GPU — all three emitters draw together, the
+> analytic sparks with turbulent motion and the two stateful fountains with the reference-integrator
+> arcs. The acceptance criterion "mixed analytic + stateful effects render correctly" is met.
 >
 > **Still to do:** richer authored dynamics than the reference integrator's scalar midpoints (drag,
 > turbulence, shape, per-particle ranges); and GPU-resident checkpoint seek (M7) in place of the current
