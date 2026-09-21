@@ -23,7 +23,7 @@
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
-use aestra_gpu::{STATEFUL_FREE_LIST_WGSL, STATEFUL_SPAWN_RNG_WGSL};
+use aestra_gpu::{STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL};
 use aestra_runtime::StatefulSimulation;
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
@@ -247,6 +247,26 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Presentation extraction: map each stride-9 persistent state slot to a 12-word GpuParticle record,
+/// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Two bindings: state (read) and the
+/// presentation output (read-write).
+const PRESENT_ENTRY: &str = r#"
+@group(0) @binding(0) var<storage, read> state: array<f32>;
+@group(0) @binding(1) var<storage, read_write> present_out: array<f32>;
+
+@compute @workgroup_size(64)
+fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let slot = gid.x;
+    if (slot >= arrayLength(&state) / AESTRA_STATE_STRIDE) { return; }
+    aestra_present_stateful(slot, 0u);
+}
+"#;
+
+/// Words per presentation record — the 48-byte `GpuParticle` ABI.
+const PRESENT_STRIDE: usize = 12;
+/// Persistent state slot stride for the death loop and presentation extraction (adds the ordinal).
+const DEATH_STRIDE: usize = 9;
+
 struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -259,6 +279,8 @@ struct Harness {
     death_layout: wgpu::BindGroupLayout,
     death_integrate_pipeline: wgpu::ComputePipeline,
     death_spawn_pipeline: wgpu::ComputePipeline,
+    present_layout: wgpu::BindGroupLayout,
+    present_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -419,6 +441,32 @@ impl Harness {
                 compilation_options: Default::default(),
                 cache: None,
             });
+        // Presentation extraction: state (read) -> GpuParticle records (read-write). Its WGSL is the
+        // production STATEFUL_PRESENT_WGSL plus the entry point.
+        let present_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Aestra present bindings"),
+            entries: &[storage(0, true), storage(1, false)],
+        });
+        let present_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Aestra present pipeline layout"),
+                bind_group_layouts: &[Some(&present_layout)],
+                immediate_size: 0,
+            });
+        let present_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra present"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+                "{STATEFUL_PRESENT_WGSL}{PRESENT_ENTRY}"
+            ))),
+        });
+        let present_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("present"),
+            layout: Some(&present_pipeline_layout),
+            module: &present_shader,
+            entry_point: Some("present"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Ok(Some(Self {
             device,
             queue,
@@ -431,6 +479,8 @@ impl Harness {
             death_layout,
             death_integrate_pipeline,
             death_spawn_pipeline,
+            present_layout,
+            present_pipeline,
         }))
     }
 
@@ -921,6 +971,65 @@ impl Harness {
         Ok(alive)
     }
 
+    /// Runs presentation extraction over an uploaded stride-9 state buffer, returning the raw
+    /// `capacity * 12` presentation words (the `GpuParticle` ABI). Floats come back as bits so
+    /// `packed_emitter_alive` and `particle_index` are recovered exactly.
+    fn extract_presentation(&self, state_words: &[f32]) -> Result<Vec<u32>, String> {
+        let count = state_words.len() / DEATH_STRIDE;
+        let state_bytes = encode(&state_words.to_vec())?;
+        let state = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("present state"),
+                contents: &state_bytes,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let out_bytes = encode(&vec![0.0_f32; count * PRESENT_STRIDE])?;
+        let present_out = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("present out"),
+                contents: &out_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("present bind group"),
+            layout: &self.present_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: present_out.as_entire_binding(),
+                },
+            ],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("present readback"),
+            size: out_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("present commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("present"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.present_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups((count as u32).div_ceil(WORKGROUP), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&present_out, 0, &staging, 0, out_bytes.len() as u64);
+        self.read_back_u32(encoder, &staging)
+    }
+
     /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
     /// `overshoot_to`, then restores the checkpoint (a backward seek) and replays forward to
     /// `seek_target` — all in GPU commands, no readback until the final state (§4.4/§19). Proves a
@@ -1044,6 +1153,106 @@ fn assert_positions_match(cpu: &[f32], gpu: &[f32]) {
             );
         }
     }
+}
+
+/// One stride-9 persistent state slot: position, velocity, age, lifetime, and the spawn ordinal
+/// stored as bits (subnormal for small ordinals, which is what production stores).
+fn state_slot(
+    position: [f32; 3],
+    velocity: [f32; 3],
+    age: f32,
+    lifetime: f32,
+    ordinal: u32,
+) -> [f32; DEATH_STRIDE] {
+    [
+        position[0],
+        position[1],
+        position[2],
+        velocity[0],
+        velocity[1],
+        velocity[2],
+        age,
+        lifetime,
+        f32::from_bits(ordinal),
+    ]
+}
+
+/// The reference presentation mapping, as raw `GpuParticle` words — identical to what
+/// `aestra_gpu::STATEFUL_PRESENT_WGSL` (and `StatefulSimulation::present`) must produce for one slot:
+/// white color, state position, unit size, zero rotation, clamped normalized age, packed
+/// emitter/alive, and the spawn ordinal in `particle_index`.
+fn cpu_present_record(slot: &[f32]) -> [u32; PRESENT_STRIDE] {
+    let age = slot[6];
+    let lifetime = slot[7];
+    let alive = lifetime > 0.0 && age < lifetime;
+    let normalized_age = if lifetime > 0.0 {
+        (age / lifetime).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    [
+        1.0_f32.to_bits(),
+        1.0_f32.to_bits(),
+        1.0_f32.to_bits(),
+        1.0_f32.to_bits(),
+        slot[0].to_bits(),
+        slot[1].to_bits(),
+        slot[2].to_bits(),
+        1.0_f32.to_bits(),
+        0.0_f32.to_bits(),
+        normalized_age.to_bits(),
+        alive as u32, // packed_emitter_alive; emitter 0 << 16 | alive
+        slot[8].to_bits(),
+    ]
+}
+
+#[test]
+fn gpu_presentation_extraction_matches_the_reference_abi() {
+    // Hybrid roadmap M6 presentation extraction: the stateful path must emit the same 48-byte
+    // GpuParticle records the analytic path does, so both feed one alive/compaction/render pipeline.
+    // Prove aestra_gpu::STATEFUL_PRESENT_WGSL maps persistent state to that ABI exactly, for a mix of
+    // alive particles (varied age), a particle exactly at its lifetime (dead), one past it (dead), and
+    // a free slot (lifetime 0) — matching the reference rule word for word, including the packed
+    // alive flag and the spawn ordinal carried in particle_index.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let slots = [
+        state_slot([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], 0.0, 2.0, 0), // fresh, age 0
+        state_slot([1.5, -4.0, 2.0], [0.0, -9.0, 0.0], 1.0, 2.0, 1), // mid-life
+        state_slot([10.0, 20.0, -5.0], [0.0, 0.0, 0.0], 1.999, 2.0, 2), // near death
+        state_slot([3.0, 3.0, 3.0], [0.0, 0.0, 0.0], 2.0, 2.0, 3), // age == lifetime: dead
+        state_slot([7.0, 7.0, 7.0], [0.0, 0.0, 0.0], 5.0, 2.0, 4), // past lifetime: dead
+        state_slot([9.0, 9.0, 9.0], [0.0, 0.0, 0.0], 0.0, 0.0, 5), // free slot (lifetime 0)
+    ];
+    let state: Vec<f32> = slots.iter().flatten().copied().collect();
+
+    let gpu = harness.extract_presentation(&state).unwrap();
+    assert_eq!(gpu.len(), slots.len() * PRESENT_STRIDE);
+
+    for (slot_index, slot) in slots.iter().enumerate() {
+        let expected = cpu_present_record(slot);
+        let base = slot_index * PRESENT_STRIDE;
+        for (word, &expected_word) in expected.iter().enumerate() {
+            assert_eq!(
+                gpu[base + word],
+                expected_word,
+                "slot {slot_index} word {word}: GPU={:#010x} reference={expected_word:#010x} \
+                 (float GPU={} reference={})",
+                gpu[base + word],
+                f32::from_bits(gpu[base + word]),
+                f32::from_bits(expected_word)
+            );
+        }
+    }
+
+    // The alive flags land where expected: slots 0/1/2 alive, 3/4/5 dead.
+    let alive_flag = |slot_index: usize| gpu[slot_index * PRESENT_STRIDE + 10] & 0xffff;
+    assert_eq!(
+        (0..slots.len()).map(alive_flag).collect::<Vec<_>>(),
+        vec![1, 1, 1, 0, 0, 0],
+        "the alive bit reflects lifetime/age exactly"
+    );
 }
 
 #[test]

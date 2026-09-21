@@ -368,6 +368,50 @@ fn aestra_free_push(slot: u32) {
 }
 "#;
 
+/// Presentation extraction for the stateful GPU backend (hybrid roadmap M6): map one persistent
+/// simulation-state slot to the 48-byte [`GpuParticle`] presentation ABI the renderer consumes, so
+/// the stateful path feeds the same alive/compaction/render pipeline the analytic path uses. This is
+/// the GPU counterpart of `aestra_runtime::StatefulSimulation::present`.
+///
+/// The persistent state slot is `AESTRA_STATE_STRIDE` (9) `f32`s — position xyz, velocity xyz, age,
+/// lifetime, and the spawn ordinal stored as bits (the stable particle identity). The presentation
+/// record is 12 words matching `GpuParticle`: `color.rgba`, `position.xyz`, `size`, `rotation`,
+/// `normalized_age`, `packed_emitter_alive` (`emitter << 16 | alive`), `particle_index`. The spawn
+/// ordinal is written verbatim into `particle_index`, the analytic path's stable per-particle index
+/// (used for per-particle RNG and ribbon strand grouping). A dead slot (`lifetime <= 0` or
+/// `age >= lifetime`) is emitted with `alive = 0`; the existing compaction pass drops it.
+///
+/// The including shader must declare module-scope bindings `state: array<f32>` (the persistent
+/// buffer) and `present_out: array<f32>` (12 words per slot), matching the free-list convention.
+pub const STATEFUL_PRESENT_WGSL: &str = r#"
+const AESTRA_STATE_STRIDE: u32 = 9u;
+const AESTRA_PRESENT_STRIDE: u32 = 12u;
+
+fn aestra_present_stateful(slot: u32, emitter_index: u32) {
+    let s = slot * AESTRA_STATE_STRIDE;
+    let o = slot * AESTRA_PRESENT_STRIDE;
+    let age = state[s + 6u];
+    let lifetime = state[s + 7u];
+    let alive = lifetime > 0.0 && age < lifetime;
+    var normalized_age = 0.0;
+    if (lifetime > 0.0) {
+        normalized_age = clamp(age / lifetime, 0.0, 1.0);
+    }
+    present_out[o + 0u] = 1.0; // color.r
+    present_out[o + 1u] = 1.0; // color.g
+    present_out[o + 2u] = 1.0; // color.b
+    present_out[o + 3u] = 1.0; // color.a
+    present_out[o + 4u] = state[s + 0u]; // position.x
+    present_out[o + 5u] = state[s + 1u]; // position.y
+    present_out[o + 6u] = state[s + 2u]; // position.z
+    present_out[o + 7u] = 1.0; // size
+    present_out[o + 8u] = 0.0; // rotation
+    present_out[o + 9u] = normalized_age;
+    present_out[o + 10u] = bitcast<f32>((emitter_index << 16u) | select(0u, 1u, alive)); // packed_emitter_alive
+    present_out[o + 11u] = state[s + 8u]; // particle_index = spawn ordinal (bits copied verbatim)
+}
+"#;
+
 impl GpuEffectArtifact {
     /// Builds the full artifact including capacity-sized particle storage. Use this
     /// when persistent GPU particle buffers are first created or resized; the
