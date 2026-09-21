@@ -2736,9 +2736,20 @@ without collision complexity.
 > `GpuEmitter`. The conformance tests run with real ranges, a spread cone, and drag and still match the
 > CPU reference bit-for-bit on a real GPU (nine tests). The fixtures show it in the editor.
 >
-> **Still to do:** turbulence and shape (spawn-volume) — both need matching noise/volume sampling, and
-> turbulence in particular reintroduces the CPU/GPU trig-parity question; and GPU-resident checkpoint
-> seek (M7) in place of the current reallocate-and-replay restart.
+> **Shapes and turbulence — landed.** Stateful emitters gained spawn shapes (point, filled sphere, box)
+> and value-noise turbulence, both kept trig-free so the GPU still matches the CPU reference bit-for-bit:
+> the sphere uses `sqrt` of a uniform for the radial distance (no `cbrt`), and turbulence is hash value
+> noise (hash per integer cell of `age * FREQ`, smoothstep-interpolated) rather than `sin`. Turbulence
+> depends only on `(seed, ordinal, age)` — all persistent — so an M7 checkpoint restore reproduces it
+> exactly (the checkpoint-seek conformance test now runs with turbulence and still matches). Shared WGSL
+> `spawn_launch_position` / `spawn_turbulence` mirror the reference; the params grew to 25 words; the
+> render backend maps the authored shape (sphere/box → the stateful encoding, others → point) and
+> turbulence from the compiled `GpuEmitter`. Ten stateful conformance tests pass on a real GPU with
+> shapes and turbulence active; the fixtures show them.
+>
+> **Still to do:** emitter-time / curve-driven sources, and the trig-shaped spawn volumes (circle, ring,
+> cone), which would reintroduce the CPU/GPU trig-parity question (needing a trig-free construction or a
+> tolerance-based conformance).
 
 ### GPU passes
 
