@@ -383,13 +383,16 @@ fn aestra_free_push(slot: u32) {
 ///
 /// The including shader must declare module-scope bindings `state: array<f32>` (the persistent
 /// buffer) and `present_out: array<f32>` (12 words per slot), matching the free-list convention.
+/// `slot` indexes the per-emitter `state`; `out_slot` indexes the effect-wide `present_out`, so a
+/// stateful emitter whose particles occupy `[slot_offset, slot_offset + capacity)` of the shared
+/// buffer passes `out_slot = slot_offset + slot`.
 pub const STATEFUL_PRESENT_WGSL: &str = r#"
 const AESTRA_STATE_STRIDE: u32 = 9u;
 const AESTRA_PRESENT_STRIDE: u32 = 12u;
 
-fn aestra_present_stateful(slot: u32, emitter_index: u32) {
+fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32) {
     let s = slot * AESTRA_STATE_STRIDE;
-    let o = slot * AESTRA_PRESENT_STRIDE;
+    let o = out_slot * AESTRA_PRESENT_STRIDE;
     let age = state[s + 6u];
     let lifetime = state[s + 7u];
     let alive = lifetime > 0.0 && age < lifetime;
@@ -502,16 +505,20 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= params[0]) { return; }
     let emitter_index = params[10];
-    aestra_present_stateful(slot, emitter_index);
-    // Compact the live slots exactly as the analytic simulate does: append the slot to this emitter's
-    // region of alive_indices at an atomically-claimed index, and bump its indirect instance count
-    // and the global live counter. Dead slots are written (alive = 0) but not compacted.
+    let slot_offset = params[11];
+    // This emitter's particles occupy [slot_offset, slot_offset + capacity) of the effect-wide
+    // presentation and alive buffers; state is the emitter's own buffer, indexed by the local slot.
+    let out_slot = slot_offset + slot;
+    aestra_present_stateful(slot, out_slot, emitter_index);
+    // Compact the live slots exactly as the analytic simulate does: append the global particle index
+    // to this emitter's region of alive_indices at an atomically-claimed index, and bump its indirect
+    // instance count and the global live counter. Dead slots are written (alive = 0) but not compacted.
     let base = slot * AESTRA_STATE_STRIDE;
     let lifetime = state[base + 7u];
     let age = state[base + 6u];
     if (lifetime > 0.0 && age < lifetime) {
         let compact_index = atomicAdd(&indirect[emitter_index * 4u + 1u], 1u);
-        alive_indices[params[11] + compact_index] = slot;
+        alive_indices[slot_offset + compact_index] = out_slot;
         atomicAdd(&counters[0], 1u);
     }
 }

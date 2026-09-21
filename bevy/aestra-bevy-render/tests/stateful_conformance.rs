@@ -261,7 +261,7 @@ const PRESENT_ENTRY: &str = r#"
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= arrayLength(&state) / AESTRA_STATE_STRIDE) { return; }
-    aestra_present_stateful(slot, 0u);
+    aestra_present_stateful(slot, slot, 0u);
 }
 "#;
 
@@ -1122,9 +1122,14 @@ impl Harness {
             slot_offset,
         ];
         let params_buffer = buffer("present-compact params", &encode(&params)?, false);
+        // Present writes at the global slot (slot_offset + local), so size the shared buffer to cover
+        // this emitter's region.
         let present_out = buffer(
             "present-compact out",
-            &encode(&vec![0.0_f32; capacity as usize * PRESENT_STRIDE])?,
+            &encode(&vec![
+                0.0_f32;
+                (slot_offset + capacity) as usize * PRESENT_STRIDE
+            ])?,
             false,
         );
         let alive_len = (slot_offset + capacity) as usize;
@@ -1466,27 +1471,33 @@ fn gpu_present_compacts_live_slots_into_the_render_buffers() {
         state_slot([3.0, 3.0, 3.0], [0.0, 0.0, 0.0], 0.0, 0.0, 3), // free (lifetime 0)
         state_slot([4.0, 4.0, 4.0], [0.0, 0.0, 0.0], 1.9, 2.0, 4), // alive
     ];
-    let expected_alive: Vec<u32> = (0..slots.len() as u32)
+    let slot_offset = 3_u32;
+    // alive_indices stores the GLOBAL particle index (slot_offset + local slot), which the renderer
+    // uses to fetch present_out[global].
+    let expected_global: Vec<u32> = (0..slots.len() as u32)
         .filter(|&slot| {
             let s = slot as usize;
             slots[s][7] > 0.0 && slots[s][6] < slots[s][7]
         })
+        .map(|local| slot_offset + local)
         .collect();
     let state: Vec<f32> = slots.iter().flatten().copied().collect();
 
-    // slot_offset = 3 exercises the emitter's non-zero region of alive_indices.
-    let (alive_indices, indirect, counters) = harness.present_compact(&state, 0, 3).unwrap();
+    // slot_offset = 3 exercises the emitter's non-zero region of alive_indices and present_out.
+    let (alive_indices, indirect, counters) =
+        harness.present_compact(&state, 0, slot_offset).unwrap();
 
-    let count = expected_alive.len() as u32;
+    let count = expected_global.len() as u32;
     assert_eq!(indirect[1], count, "indirect instance count == live count");
     assert_eq!(counters[0], count, "live counter == live count");
-    // The compacted region [slot_offset, slot_offset + count) holds exactly the alive slots (order is
-    // arbitrary under parallel compaction, so compare as sets).
-    let mut compacted = alive_indices[3..3 + count as usize].to_vec();
+    // The compacted region [slot_offset, slot_offset + count) holds exactly the alive global indices
+    // (order is arbitrary under parallel compaction, so compare as sets).
+    let mut compacted =
+        alive_indices[slot_offset as usize..slot_offset as usize + count as usize].to_vec();
     compacted.sort_unstable();
     assert_eq!(
-        compacted, expected_alive,
-        "the compacted alive_indices region lists exactly the live slots"
+        compacted, expected_global,
+        "the compacted alive_indices region lists exactly the live global slots"
     );
 }
 
