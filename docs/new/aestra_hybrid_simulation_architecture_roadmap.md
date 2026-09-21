@@ -2779,11 +2779,27 @@ Compare stateful CPU reference and native GPU output at canonical frames.
 > CPU readback except the final check (§4.4/§19), and the simulation never run with negative `dt`
 > (§16). Verified on a real adapter and wired into the `gpu-visual` CI.
 >
-> **Still to do:** a generic runtime-owned checkpoint *store* (cadence, byte budget, nearest-checkpoint
-> lookup, invalidation) around this GPU-resident snapshot — i.e. generalizing `CheckpointStore` /
-> `CheckpointContext` to simulation state and driving snapshot/restore from the seek planner, rather
-> than the hand-scheduled snapshot in the test. This increment proves the GPU mechanism; the policy
-> layer is the follow-up.
+> **Checkpoint store — landed.** The render backend now keeps a per-emitter store of GPU-resident
+> checkpoints and drives snapshot/restore from the seek. Each `StatefulPersistentState` carries a
+> `Vec<StatefulCheckpoint>` — GPU→GPU copies of all four persistent buffers (state, free list, free
+> count, spawn counter) plus the CPU spawn accumulator. `dispatch_stateful_effect` advances in
+> cadence-aligned segments, capturing a checkpoint every `STATEFUL_CHECKPOINT_CADENCE` ticks; a backward
+> seek restores the nearest checkpoint at or before the target (partition-point lookup) and replays only
+> the remainder, or resets to tick 0 when the target precedes the earliest checkpoint. A per-emitter
+> count budget bounds memory: exceeding it coarsens the store by retaining every other entry (doubling
+> the effective cadence, keeping full-timeline coverage). Invalidation is a dynamics/seed fingerprint on
+> `StatefulDispatch` — a change reallocates the state and drops the checkpoints, so editing an effect
+> restarts its simulation cleanly. The coarsening and fingerprint logic are unit-tested, and a new GPU
+> conformance test proves the *full death loop* restores + replays to the uninterrupted state (snapshot
+> at tick 40, overshoot to 90, restore + replay to 70, matched by ordinal) — snapshotting all four
+> buffers is what makes the spawn ordinals and free-list reuse line up. Ten stateful conformance tests
+> pass on a real GPU; the editor boots and runs it cleanly.
+>
+> This meets the M7 acceptance criteria below: a backward seek never shows a checkpoint as the final
+> state, the final state equals the uninterrupted forward run, checkpoints are GPU-resident (no CPU
+> round trips), and stale checkpoints are rejected on a dynamics change. A follow-up could generalize
+> the store into the shared `CheckpointStore` / `CheckpointContext` the trail system uses, and add an
+> adaptive (rather than fixed) cadence.
 
 ### Reuse trail design principles
 
