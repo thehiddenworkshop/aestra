@@ -354,6 +354,7 @@ mod tests {
                 trail_roots: vec![],
                 simulation_state: default(),
                 stateful_dispatch: Vec::new(),
+                stateful_only: false,
             },
         ));
         for _ in 0..MAX_IN_FLIGHT + 1 {

@@ -1,25 +1,29 @@
-//! One-off generator for the Persistent stateful test fixture. Builds a MULTI-emitter effect whose
-//! every emitter carries the Persistent solver, so it exercises the GPU multi-stateful path (one set
-//! of persistent buffers + one dispatch per emitter, sharing the effect's particle/alive/indirect
-//! buffers). Written through the real `save_ron` so the RON matches the loader exactly.
+//! One-off generator for the Persistent stateful test fixtures. Writes two effects through the real
+//! `save_ron` (so the RON matches the loader exactly):
+//! - `persistent_lab`: a multi-emitter effect where *every* emitter carries the Persistent solver,
+//!   exercising the pure multi-stateful GPU path.
+//! - `mixed_lab`: one analytic emitter and two stateful emitters in one effect, exercising the mixed
+//!   path (analytic reset+simulate skipping stateful slots, then the stateful dispatches filling them).
 
 use aestra_core::{
     EffectAsset, EffectPlaybackMode, Emitter, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
     ModuleInstance, ModuleParameters, ScalarRange,
 };
 
-/// A stateful sprite emitter tuned to clean scalar values, since the stateful integrator reads range
-/// midpoints. Distinct capacities/dynamics per emitter exercise the per-emitter slot regions.
-fn stateful_emitter(
+/// A sprite emitter tuned to clean scalar values, since the stateful integrator reads range midpoints.
+/// Distinct capacities/dynamics per emitter exercise the per-emitter slot regions. When `persistent`
+/// is true the Persistent marker is added, promoting the emitter to the stateful GPU path; otherwise
+/// it stays analytic.
+fn tuned_emitter(
     name: &str,
-    duration: f32,
     capacity: u32,
     spawn_rate: f32,
     speed: f32,
     lifetime: f32,
     gravity: [f32; 3],
+    persistent: bool,
 ) -> Emitter {
-    let mut emitter = Emitter::basic_sprite(name, duration);
+    let mut emitter = Emitter::basic_sprite(name, 3.0);
     emitter.max_particles = capacity;
     for module in &mut emitter.modules {
         match &mut module.parameters {
@@ -46,65 +50,101 @@ fn stateful_emitter(
             _ => {}
         }
     }
-    // The marker that promotes this emitter to the stateful GPU path.
-    emitter.modules.push(ModuleInstance::persistent());
+    if persistent {
+        emitter.modules.push(ModuleInstance::persistent());
+    }
     emitter
 }
 
-fn main() {
-    let mut effect = EffectAsset::new("Persistent Lab", 3.0);
-    effect.playback_mode = EffectPlaybackMode::LoopContinuous;
+fn write(effect: &EffectAsset, path: &str) {
+    effect.validate().expect("fixture is valid");
+    effect.save_ron(path).expect("write fixture");
+    let reloaded = EffectAsset::load_ron(path).expect("reload fixture");
+    reloaded.validate().expect("reloaded fixture is valid");
+    let stateful = reloaded
+        .emitters
+        .iter()
+        .filter(|emitter| {
+            emitter
+                .modules
+                .iter()
+                .any(|module| matches!(module.parameters, ModuleParameters::Persistent {}))
+        })
+        .count();
+    println!(
+        "wrote and round-tripped {path} ({} emitters, {stateful} stateful)",
+        reloaded.emitters.len()
+    );
+}
 
-    // Three stateful emitters with distinct capacities, spawn rates, speeds, lifetimes, and gravity,
-    // so their per-emitter state regions, spawn ordinals, and dynamics are all independently driven.
-    effect.emitters.push(stateful_emitter(
+fn main() {
+    // persistent_lab: three stateful emitters with distinct capacities/dynamics — the pure
+    // multi-stateful path (per-emitter state regions, ordinals, and dynamics all independently driven).
+    let mut persistent = EffectAsset::new("Persistent Lab", 3.0);
+    persistent.playback_mode = EffectPlaybackMode::LoopContinuous;
+    persistent.emitters.push(tuned_emitter(
         "Tall Fountain",
-        3.0,
         256,
         48.0,
         45.0,
         1.5,
         [0.0, -30.0, 0.0],
+        true,
     ));
-    effect.emitters.push(stateful_emitter(
+    persistent.emitters.push(tuned_emitter(
         "Fast Spray",
-        3.0,
         128,
         30.0,
         70.0,
         1.0,
         [0.0, -50.0, 0.0],
+        true,
     ));
-    effect.emitters.push(stateful_emitter(
+    persistent.emitters.push(tuned_emitter(
         "Slow Drift",
-        3.0,
         192,
         60.0,
         20.0,
         2.0,
         [0.0, -8.0, 0.0],
+        true,
     ));
-
-    effect.validate().expect("the persistent fixture is valid");
-    let path = "sample-project/effects/persistent_lab.aestra.ron";
-    effect.save_ron(path).expect("write persistent fixture");
-
-    // Round-trip: the loader must parse the file we just wrote, and every reloaded emitter must still
-    // carry the Persistent marker.
-    let reloaded = EffectAsset::load_ron(path).expect("reload persistent fixture");
-    reloaded.validate().expect("reloaded fixture is valid");
-    let all_stateful = reloaded.emitters.iter().all(|emitter| {
-        emitter
-            .modules
-            .iter()
-            .any(|module| matches!(module.parameters, ModuleParameters::Persistent {}))
-    });
-    assert!(
-        all_stateful,
-        "every reloaded emitter keeps the Persistent module"
+    write(
+        &persistent,
+        "sample-project/effects/persistent_lab.aestra.ron",
     );
-    println!(
-        "wrote and round-tripped {path} ({} stateful emitters)",
-        reloaded.emitters.len()
-    );
+
+    // mixed_lab: one analytic emitter plus two stateful emitters in one effect — the mixed path. The
+    // analytic emitter simulates the usual way (with drag/turbulence); the stateful emitters are the
+    // reference integrator. All three share the effect's particle/alive/indirect buffers.
+    let mut mixed = EffectAsset::new("Mixed Lab", 3.0);
+    mixed.playback_mode = EffectPlaybackMode::LoopContinuous;
+    mixed.emitters.push(tuned_emitter(
+        "Analytic Sparks",
+        192,
+        40.0,
+        60.0,
+        1.2,
+        [0.0, -20.0, 0.0],
+        false,
+    ));
+    mixed.emitters.push(tuned_emitter(
+        "Stateful Fountain",
+        256,
+        48.0,
+        45.0,
+        1.5,
+        [0.0, -30.0, 0.0],
+        true,
+    ));
+    mixed.emitters.push(tuned_emitter(
+        "Stateful Drift",
+        128,
+        30.0,
+        22.0,
+        2.0,
+        [0.0, -8.0, 0.0],
+        true,
+    ));
+    write(&mixed, "sample-project/effects/mixed_lab.aestra.ron");
 }

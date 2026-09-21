@@ -62,7 +62,7 @@ struct Emitter {
     max_scale: f32,
     rotation: vec4<f32>,
     scale: vec3<f32>,
-    _transform_padding: f32,
+    stateful: u32,
     size: Curve,
     opacity: Curve,
     color: Gradient,
@@ -413,6 +413,9 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
     let emitter = emitters[emitter_index];
+    if emitter.stateful != 0u {
+        return;
+    }
     var particle_index = slot - emitter.slot_offset;
     var particle_cycle = 0u;
     var particle_seed = globals.seed;

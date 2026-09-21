@@ -123,10 +123,13 @@ pub(crate) struct GpuEffectBuffers {
     /// this (see [`StatefulStates`]).
     simulation_state: GpuSimulationState,
     /// One stateful dispatch descriptor per enabled stateful emitter (hybrid roadmap M6), in compiled
-    /// emitter order. Non-empty only when *every* enabled emitter is stateful — the case the GPU
-    /// stateful path drives end-to-end; empty for analytic effects and (for now) mixed
-    /// analytic+stateful effects, which take the analytic path.
+    /// emitter order. Empty for a fully analytic effect.
     stateful_dispatch: Vec<StatefulDispatch>,
+    /// True when *every* enabled emitter is stateful, so the effect skips the analytic reset+simulate
+    /// entirely. False for a mixed analytic+stateful effect, where the analytic path runs first (its
+    /// `simulate` skips the stateful emitters' slots) and the stateful dispatches fill them after,
+    /// reusing the shared counter/telemetry the analytic reset already wrote.
+    stateful_only: bool,
 }
 
 /// The parameters the GPU stateful path needs for one emitter (hybrid roadmap M6), sourced from the
@@ -648,11 +651,11 @@ pub(crate) fn prepare_gpu_effects(
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
-        // The GPU stateful path (hybrid roadmap M6) drives every enabled stateful emitter end-to-end,
-        // one dispatch descriptor each (in compiled emitter order, which is 1:1 with the GpuEmitters).
-        // Dynamics come from the compiled GpuEmitter as scalar midpoints of the authored ranges — the
-        // minimal reference model. The path only engages when *all* enabled emitters are stateful; a
-        // mixed effect keeps the empty list and takes the analytic path (documented follow-up).
+        // The GPU stateful path (hybrid roadmap M6) drives every enabled stateful emitter, one dispatch
+        // descriptor each (in compiled emitter order, which is 1:1 with the GpuEmitters). Dynamics come
+        // from the compiled GpuEmitter as scalar midpoints of the authored ranges — the minimal
+        // reference model. `stateful_only` records whether the whole effect is stateful (skip the
+        // analytic path) or mixed (run analytic first, then fill the stateful emitters' slots).
         let compiled_emitters = &player.instance.effect().emitters;
         let enabled_emitters = compiled_emitters
             .iter()
@@ -661,7 +664,7 @@ pub(crate) fn prepare_gpu_effects(
         let emitter_count = artifact.emitters.len() as u32;
         let seed = player.instance.seed();
         let stateful_dispatch: Vec<StatefulDispatch> = if artifact.simulation_state.records > 0 {
-            let dispatches: Vec<StatefulDispatch> = compiled_emitters
+            compiled_emitters
                 .iter()
                 .enumerate()
                 .filter(|(_, compiled)| {
@@ -683,16 +686,12 @@ pub(crate) fn prepare_gpu_effects(
                             seed,
                         })
                 })
-                .collect();
-            // Only engage when every enabled emitter is stateful; otherwise fall back to analytic.
-            if dispatches.len() == enabled_emitters {
-                dispatches
-            } else {
-                Vec::new()
-            }
+                .collect()
         } else {
             Vec::new()
         };
+        let stateful_only =
+            !stateful_dispatch.is_empty() && stateful_dispatch.len() == enabled_emitters;
         let indirect_draw_commands = indirect_draw_commands_with_statistics(&artifact.emitters);
         let particle_statistics = GpuParticleStatistics::new(&player.instance);
         let trail_roots = artifact
@@ -798,6 +797,7 @@ pub(crate) fn prepare_gpu_effects(
                 total_slots: artifact.total_slots,
                 simulation_state: artifact.simulation_state,
                 stateful_dispatch,
+                stateful_only,
             },
             GpuPresentationPrepared,
             particle_statistics,
@@ -2038,6 +2038,62 @@ fn stamp_stateful_statistics(
     encoder.copy_buffer_to_buffer(&telemetry_src, 0, indirect, telemetry_offset, 16);
 }
 
+/// Runs the per-emitter stateful dispatches for one effect. When `owns_shared_reset` is true (a fully
+/// stateful effect, with no analytic reset), it clears the shared live counter before the emitter loop
+/// and stamps the statistics telemetry after it; when false (a mixed effect), the analytic reset
+/// already did both, so it only runs the emitters — their presents add to the counter the analytic
+/// `simulate` already contributed to.
+#[allow(clippy::too_many_arguments)]
+fn run_stateful_dispatches(
+    device: &RenderDevice,
+    encoder: &mut CommandEncoder,
+    pipelines: (&ComputePipeline, &ComputePipeline, &ComputePipeline),
+    layout: &BindGroupLayout,
+    persistent_states: &mut [StatefulPersistentState],
+    dispatches: &[StatefulDispatch],
+    particles: &Buffer,
+    alive: &Buffer,
+    indirect: &Buffer,
+    counters: &Buffer,
+    simulation_time: f32,
+    statistics_token: u32,
+    history_epoch: u32,
+    owns_shared_reset: bool,
+) {
+    if owns_shared_reset {
+        // Clear the shared live counter once, before any emitter's present bumps it.
+        encoder.clear_buffer(counters, 0, Some(4));
+    }
+    for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
+        dispatch_stateful_effect(
+            device,
+            encoder,
+            pipelines.0,
+            pipelines.1,
+            pipelines.2,
+            layout,
+            persistent,
+            dispatch,
+            particles,
+            alive,
+            indirect,
+            counters,
+            simulation_time,
+        );
+    }
+    if owns_shared_reset && let Some(first) = dispatches.first() {
+        stamp_stateful_statistics(
+            device,
+            encoder,
+            indirect,
+            first.emitter_count,
+            statistics_token,
+            history_epoch,
+            simulation_time,
+        );
+    }
+}
+
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
@@ -2097,63 +2153,44 @@ fn run_simulation(
     histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, _, e, _)| e.has_trails));
     let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
     for (entity, main_entity, effect, bind_group) in &effects {
-        // Stateful effects (hybrid roadmap M6) run their own persistent path instead of the analytic
-        // reset+simulate, feeding the same alive/indirect/particles buffers the render path draws. One
-        // set of persistent buffers per stateful emitter; the shared live counter and statistics
-        // telemetry are reset/stamped once around the emitter loop.
-        if !effect.stateful_dispatch.is_empty() {
-            if let (Some((sp, death_integrate, spawn, present)), Some(persistent_states)) =
+        // A fully stateful effect (hybrid roadmap M6) skips the analytic reset+simulate entirely and
+        // runs only its persistent path, which owns the shared counter reset and statistics telemetry.
+        // A mixed effect falls through to the analytic path and runs its stateful emitters afterward
+        // (at the end of this loop body), where the analytic reset has already prepared the buffers.
+        if effect.stateful_only
+            && let (Some((sp, death_integrate, spawn, present)), Some(persistent_states)) =
                 (&stateful, stateful_states.0.get_mut(&entity))
+        {
+            let render_buffers = [
+                &effect.particles,
+                &effect.alive,
+                &effect.indirect,
+                &effect.counters,
+            ]
+            .map(|handle| buffers.get(handle).map(|buffer| &buffer.buffer));
+            if let [Some(particles), Some(alive), Some(indirect), Some(counters)] = render_buffers
+                && persistent_states.len() == effect.stateful_dispatch.len()
             {
-                let render_buffers = [
-                    &effect.particles,
-                    &effect.alive,
-                    &effect.indirect,
-                    &effect.counters,
-                ]
-                .map(|handle| buffers.get(handle).map(|buffer| &buffer.buffer));
-                if let [Some(particles), Some(alive), Some(indirect), Some(counters)] =
-                    render_buffers
-                    && persistent_states.len() == effect.stateful_dispatch.len()
-                {
-                    let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
-                    // Clear the shared live counter once, before any emitter's present bumps it.
-                    render_context
-                        .command_encoder()
-                        .clear_buffer(counters, 0, Some(4));
-                    for (dispatch, persistent) in effect
-                        .stateful_dispatch
-                        .iter()
-                        .zip(persistent_states.iter_mut())
-                    {
-                        dispatch_stateful_effect(
-                            &render_device,
-                            render_context.command_encoder(),
-                            death_integrate,
-                            spawn,
-                            present,
-                            &layout,
-                            persistent,
-                            dispatch,
-                            particles,
-                            alive,
-                            indirect,
-                            counters,
-                            effect.simulation_time,
-                        );
-                    }
-                    // Stamp the statistics telemetry once, after every emitter has presented.
-                    stamp_stateful_statistics(
-                        &render_device,
-                        render_context.command_encoder(),
-                        indirect,
-                        effect.stateful_dispatch[0].emitter_count,
-                        effect.statistics_token,
-                        effect.history_epoch,
-                        effect.simulation_time,
-                    );
-                }
+                let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
+                run_stateful_dispatches(
+                    &render_device,
+                    render_context.command_encoder(),
+                    (death_integrate, spawn, present),
+                    &layout,
+                    persistent_states,
+                    &effect.stateful_dispatch,
+                    particles,
+                    alive,
+                    indirect,
+                    counters,
+                    effect.simulation_time,
+                    effect.statistics_token,
+                    effect.history_epoch,
+                    true,
+                );
             }
+        }
+        if effect.stateful_only {
             continue;
         }
         if (effect.has_ribbons && link_ribbons.is_none())
@@ -2355,6 +2392,45 @@ fn run_simulation(
                 }
             }
         }
+        // Mixed effect (some analytic, some stateful emitters): the analytic reset+simulate above ran
+        // (its `simulate` skipped the stateful emitters' slots), so now fill those slots with the
+        // stateful path. The analytic reset already cleared the shared counter and stamped telemetry,
+        // so these dispatches must not repeat that (`owns_shared_reset = false`). Pure-stateful effects
+        // took the branch at the top of the loop and never reach here; pure-analytic effects have an
+        // empty dispatch list, so this is a no-op for them.
+        if !effect.stateful_dispatch.is_empty()
+            && let (Some((sp, death_integrate, spawn, present)), Some(persistent_states)) =
+                (&stateful, stateful_states.0.get_mut(&entity))
+        {
+            let render_buffers = [
+                &effect.particles,
+                &effect.alive,
+                &effect.indirect,
+                &effect.counters,
+            ]
+            .map(|handle| buffers.get(handle).map(|buffer| &buffer.buffer));
+            if let [Some(particles), Some(alive), Some(indirect), Some(counters)] = render_buffers
+                && persistent_states.len() == effect.stateful_dispatch.len()
+            {
+                let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
+                run_stateful_dispatches(
+                    &render_device,
+                    render_context.command_encoder(),
+                    (death_integrate, spawn, present),
+                    &layout,
+                    persistent_states,
+                    &effect.stateful_dispatch,
+                    particles,
+                    alive,
+                    indirect,
+                    counters,
+                    effect.simulation_time,
+                    effect.statistics_token,
+                    effect.history_epoch,
+                    false,
+                );
+            }
+        }
     }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
     // This avoids CPU readback and preserves the existing per-emitter simulation ABI.
@@ -2480,6 +2556,7 @@ mod tests {
                     trail_roots: vec![],
                     simulation_state: default(),
                     stateful_dispatch: Vec::new(),
+                    stateful_only: false,
                 },
             ))
             .id();

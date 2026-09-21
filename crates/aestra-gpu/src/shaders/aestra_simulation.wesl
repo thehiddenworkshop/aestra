@@ -63,7 +63,9 @@ struct Emitter {
     max_scale: f32,
     rotation: vec4<f32>,
     scale: vec3<f32>,
-    _transform_padding: f32,
+    // Non-zero when this emitter is simulated by the stateful GPU path (hybrid roadmap M6); the
+    // analytic `simulate` skips its slots so the two paths can share one effect's buffers.
+    stateful: u32,
     size: Curve,
     opacity: Curve,
     color: Gradient,
@@ -445,6 +447,12 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let emitter = emitters[emitter_index];
+    if emitter.stateful != 0u {
+        // The stateful GPU path (hybrid roadmap M6) owns this emitter's slots — it writes their
+        // presentation records and compacts them itself. Skip so the two paths share one effect's
+        // buffers without the analytic path double-writing or double-counting these slots.
+        return;
+    }
     var particle_index = slot - emitter.slot_offset;
     var particle_cycle = 0u;
     var particle_seed = globals.seed;

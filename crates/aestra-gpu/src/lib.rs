@@ -142,7 +142,10 @@ pub struct GpuEmitter {
     pub max_scale: f32,
     pub rotation: Vec4,
     pub scale: Vec3,
-    pub _transform_padding: f32,
+    /// Non-zero when this emitter is simulated by the stateful GPU path (hybrid roadmap M6); the
+    /// analytic `simulate` skips its slots so analytic and stateful emitters can share one effect's
+    /// buffers. (Occupies the former transform padding word — no layout change.)
+    pub stateful: u32,
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
@@ -939,7 +942,9 @@ impl GpuEffectArtifact {
                 max_scale: scale.max_element(),
                 rotation: Vec4::from_array(rotation.to_array()),
                 scale,
-                _transform_padding: 0.0,
+                stateful: u32::from(
+                    emitter.enabled && emitter.simulation_class != SimulationClass::Analytic,
+                ),
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
