@@ -377,6 +377,65 @@ fn spawn_launch_velocity(
     let speed = speed_min + (speed_max - speed_min) * aestra_spawn_uniform(seed, ord, 0u);
     return dir * speed;
 }
+// A signed per-particle uniform in [-1, 1) for a channel. Mirrors the CPU reference's spawn_signed.
+fn aestra_spawn_signed(seed: vec2<u32>, ordinal: vec2<u32>, channel: u32) -> f32 {
+    return aestra_spawn_uniform(seed, ordinal, channel) * 2.0 - 1.0;
+}
+// The initial position sampled from the spawn shape (0 = point, 1 = sphere, 2 = box). Trig- and
+// cbrt-free, so it matches aestra_runtime::StatefulSimulation::launch_position bit-for-bit.
+fn spawn_launch_position(
+    seed: vec2<u32>, ordinal: u32, shape_kind: u32, radius: f32, half_extents: vec3<f32>
+) -> vec3<f32> {
+    let ord = vec2<u32>(ordinal, 0u);
+    if (shape_kind == 2u) {
+        return vec3<f32>(
+            aestra_spawn_signed(seed, ord, 2u) * half_extents.x,
+            aestra_spawn_signed(seed, ord, 3u) * half_extents.y,
+            aestra_spawn_signed(seed, ord, 4u) * half_extents.z);
+    } else if (shape_kind == 1u) {
+        let v = vec3<f32>(
+            aestra_spawn_signed(seed, ord, 2u),
+            aestra_spawn_signed(seed, ord, 3u),
+            aestra_spawn_signed(seed, ord, 4u));
+        let length_squared = v.x * v.x + v.y * v.y + v.z * v.z;
+        var dir = vec3<f32>(0.0, 1.0, 0.0);
+        if (length_squared > 1e-12) {
+            dir = v / sqrt(length_squared);
+        }
+        let distance = radius * sqrt(aestra_spawn_uniform(seed, ord, 5u));
+        return dir * distance;
+    }
+    return vec3<f32>(0.0, 0.0, 0.0);
+}
+fn aestra_turbulence_hash(seed: vec2<u32>, ordinal: vec2<u32>, channel: u32, cell: u32) -> vec2<u32> {
+    let key = channel * 0x10000u + cell + 1u;
+    let term1 = aestra_u64_mul(ordinal, vec2<u32>(0x7F4A7C15u, 0x9E3779B9u));
+    let term2 = aestra_u64_mul(vec2<u32>(key, 0u), vec2<u32>(0x6659FD93u, 0xD6E8FEB8u));
+    return aestra_splitmix64((seed ^ term1) ^ term2);
+}
+// One axis of value noise in [-1, 1): hash the integer cell of age*FREQ and the next, smoothstep-lerp.
+fn aestra_turbulence_noise(seed: vec2<u32>, ordinal: u32, channel: u32, age: f32) -> f32 {
+    let ord = vec2<u32>(ordinal, 0u);
+    let t = age * 3.0;
+    let cell_f = floor(t);
+    let frac = t - cell_f;
+    let cell = u32(cell_f);
+    let a = aestra_unit_signed(aestra_turbulence_hash(seed, ord, channel, cell));
+    let b = aestra_unit_signed(aestra_turbulence_hash(seed, ord, channel, cell + 1u));
+    let weight = frac * frac * (3.0 - 2.0 * frac);
+    return a + (b - a) * weight;
+}
+// The per-axis turbulence acceleration for a particle at `age`. Mirrors the CPU
+// aestra_runtime::StatefulSimulation::turbulence_acceleration; depends only on (seed, ordinal, age).
+fn spawn_turbulence(seed: vec2<u32>, ordinal: u32, age: f32, strength: f32) -> vec3<f32> {
+    if (strength == 0.0) {
+        return vec3<f32>(0.0, 0.0, 0.0);
+    }
+    return vec3<f32>(
+        strength * aestra_turbulence_noise(seed, ordinal, 10u, age),
+        strength * aestra_turbulence_noise(seed, ordinal, 11u, age),
+        strength * aestra_turbulence_noise(seed, ordinal, 12u, age));
+}
 "#;
 
 /// A GPU atomic slot allocator for stateful particle death/reuse (hybrid roadmap M6): dead slots are
@@ -474,11 +533,10 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// output draws through the identical render path. All dynamics mirror
 /// `aestra_runtime::StatefulSimulation` bit-for-bit. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
 /// `u32`s: `[capacity, spawn_per_tick, seed_lo, seed_hi, speed_min, speed_max, lifetime_min,
-/// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset]`
-/// (floats stored as bits).
-/// Number of `u32` words in the stateful simulation `params` buffer (see
-/// [`STATEFUL_SIMULATION_ENTRIES`]). One source of truth for the render backend and conformance tests.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 19;
+/// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset,
+/// turbulence, shape_kind, shape_radius, half_x, half_y, half_z]` (floats stored as bits;
+/// `shape_kind` 0 = point, 1 = sphere, 2 = box).
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 25;
 
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
@@ -491,13 +549,17 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (lifetime > 0.0 && age < lifetime) {
         let dt = bitcast<f32>(params[8]);
         let drag = bitcast<f32>(params[16]);
-        let gx = bitcast<f32>(params[9]);
-        let gy = bitcast<f32>(params[10]);
-        let gz = bitcast<f32>(params[11]);
-        // Semi-implicit Euler with linear drag: gravity then damping, then position.
-        let vgx = state[base + 3u] + gx * dt;
-        let vgy = state[base + 4u] + gy * dt;
-        let vgz = state[base + 5u] + gz * dt;
+        let seed = vec2<u32>(params[2], params[3]);
+        let ordinal = bitcast<u32>(state[base + 8u]);
+        // Acceleration = gravity + value-noise turbulence at the current age.
+        let turbulence = spawn_turbulence(seed, ordinal, age, bitcast<f32>(params[19]));
+        let ax = bitcast<f32>(params[9]) + turbulence.x;
+        let ay = bitcast<f32>(params[10]) + turbulence.y;
+        let az = bitcast<f32>(params[11]) + turbulence.z;
+        // Semi-implicit Euler with linear drag: accelerate, then damp, then position.
+        let vgx = state[base + 3u] + ax * dt;
+        let vgy = state[base + 4u] + ay * dt;
+        let vgz = state[base + 5u] + az * dt;
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
@@ -534,10 +596,12 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
         seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
+    let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
+    let position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
     let base = slot * AESTRA_STATE_STRIDE;
-    state[base + 0u] = 0.0;
-    state[base + 1u] = 0.0;
-    state[base + 2u] = 0.0;
+    state[base + 0u] = position.x;
+    state[base + 1u] = position.y;
+    state[base + 2u] = position.z;
     state[base + 3u] = velocity.x;
     state[base + 4u] = velocity.y;
     state[base + 5u] = velocity.z;

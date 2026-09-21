@@ -27,12 +27,22 @@ use aestra_gpu::{
     STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
     stateful_simulation_wgsl,
 };
-use aestra_runtime::{StatefulConfig, StatefulSimulation};
+use aestra_runtime::{SpawnShape, StatefulConfig, StatefulSimulation};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 use wgpu::util::DeviceExt;
 
-/// Builds the production 19-word stateful `params` buffer from a config (the layout the death loop and
+/// Encodes a spawn shape as `(kind, radius, half_extents)` for the params buffer (0 = point,
+/// 1 = sphere, 2 = box), matching the GPU `spawn_launch_position`.
+fn shape_params(shape: SpawnShape) -> (u32, f32, [f32; 3]) {
+    match shape {
+        SpawnShape::Point => (0, 0.0, [0.0; 3]),
+        SpawnShape::Sphere { radius } => (1, radius, [0.0; 3]),
+        SpawnShape::Box { half_extents } => (2, 0.0, half_extents),
+    }
+}
+
+/// Builds the production 25-word stateful `params` buffer from a config (the layout the death loop and
 /// production kernels share). Floats are stored as bits.
 fn stateful_params(
     config: &StatefulConfig,
@@ -40,6 +50,7 @@ fn stateful_params(
     emitter_index: u32,
     slot_offset: u32,
 ) -> Vec<u32> {
+    let (shape_kind, shape_radius, half) = shape_params(config.shape);
     vec![
         config.capacity,
         config.spawn_per_tick,
@@ -60,6 +71,12 @@ fn stateful_params(
         config.drag.to_bits(),
         emitter_index,
         slot_offset,
+        config.turbulence.to_bits(),
+        shape_kind,
+        shape_radius.to_bits(),
+        half[0].to_bits(),
+        half[1].to_bits(),
+        half[2].to_bits(),
     ]
 }
 
@@ -152,10 +169,11 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 /// The combined per-tick stateful advance (no death): integrate the already-spawned slots by one dt,
 /// then spawn this tick's new slots (spawn order = slot index), exactly as
-/// `StatefulSimulation::advance_tick` does, with the same richer dynamics (speed & lifetime ranges,
-/// spread cone, drag). Stride-8 state (no ordinal, since slot == ordinal here). Params (18 words):
-/// [seed_lo, seed_hi, capacity, spawned_before, to_spawn_end, speed_min, speed_max, life_min, life_max,
-/// dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag].
+/// `StatefulSimulation::advance_tick` does, with the full richer dynamics (speed & lifetime ranges,
+/// spread cone, drag, spawn shape, value-noise turbulence). Stride-8 state (no ordinal, since
+/// slot == ordinal here). Params (24 words): [seed_lo, seed_hi, capacity, spawned_before, to_spawn_end,
+/// speed_min, speed_max, life_min, life_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag,
+/// turbulence, shape_kind, shape_radius, half_x, half_y, half_z].
 const ADVANCE_WGSL_ENTRY: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
 @group(0) @binding(1) var<storage, read> params: array<u32>;
@@ -170,12 +188,17 @@ fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
     let to_spawn_end = params[4];
     let dt = bitcast<f32>(params[9]);
     let drag = bitcast<f32>(params[17]);
-    let gravity = vec3<f32>(bitcast<f32>(params[10]), bitcast<f32>(params[11]), bitcast<f32>(params[12]));
     let base = slot * 8u;
     if (slot < spawned_before) {
-        let vgx = state[base + 3u] + gravity.x * dt;
-        let vgy = state[base + 4u] + gravity.y * dt;
-        let vgz = state[base + 5u] + gravity.z * dt;
+        // slot == the particle's spawn ordinal in this no-death by-slot loop.
+        let age = state[base + 6u];
+        let turbulence = spawn_turbulence(seed, slot, age, bitcast<f32>(params[18]));
+        let ax = bitcast<f32>(params[10]) + turbulence.x;
+        let ay = bitcast<f32>(params[11]) + turbulence.y;
+        let az = bitcast<f32>(params[12]) + turbulence.z;
+        let vgx = state[base + 3u] + ax * dt;
+        let vgy = state[base + 4u] + ay * dt;
+        let vgz = state[base + 5u] + az * dt;
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
@@ -185,16 +208,18 @@ fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[base + 0u] = state[base + 0u] + vx * dt;
         state[base + 1u] = state[base + 1u] + vy * dt;
         state[base + 2u] = state[base + 2u] + vz * dt;
-        state[base + 6u] = state[base + 6u] + dt;
+        state[base + 6u] = age + dt;
     } else if (slot < to_spawn_end) {
         let direction = vec3<f32>(bitcast<f32>(params[13]), bitcast<f32>(params[14]), bitcast<f32>(params[15]));
         let velocity = spawn_launch_velocity(
             seed, slot, bitcast<f32>(params[5]), bitcast<f32>(params[6]), direction, bitcast<f32>(params[16]));
         let lifetime = bitcast<f32>(params[7])
             + (bitcast<f32>(params[8]) - bitcast<f32>(params[7])) * aestra_spawn_uniform(seed, vec2<u32>(slot, 0u), 1u);
-        state[base + 0u] = 0.0;
-        state[base + 1u] = 0.0;
-        state[base + 2u] = 0.0;
+        let half_extents = vec3<f32>(bitcast<f32>(params[21]), bitcast<f32>(params[22]), bitcast<f32>(params[23]));
+        let position = spawn_launch_position(seed, slot, params[19], bitcast<f32>(params[20]), half_extents);
+        state[base + 0u] = position.x;
+        state[base + 1u] = position.y;
+        state[base + 2u] = position.z;
         state[base + 3u] = velocity.x;
         state[base + 4u] = velocity.y;
         state[base + 5u] = velocity.z;
@@ -241,12 +266,15 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (lifetime > 0.0 && age < lifetime) {
         let dt = bitcast<f32>(params[8]);
         let drag = bitcast<f32>(params[16]);
-        let gx = bitcast<f32>(params[9]);
-        let gy = bitcast<f32>(params[10]);
-        let gz = bitcast<f32>(params[11]);
-        let vgx = state[base + 3u] + gx * dt;
-        let vgy = state[base + 4u] + gy * dt;
-        let vgz = state[base + 5u] + gz * dt;
+        let seed = vec2<u32>(params[2], params[3]);
+        let ordinal = bitcast<u32>(state[base + 8u]);
+        let turbulence = spawn_turbulence(seed, ordinal, age, bitcast<f32>(params[19]));
+        let ax = bitcast<f32>(params[9]) + turbulence.x;
+        let ay = bitcast<f32>(params[10]) + turbulence.y;
+        let az = bitcast<f32>(params[11]) + turbulence.z;
+        let vgx = state[base + 3u] + ax * dt;
+        let vgy = state[base + 4u] + ay * dt;
+        let vgz = state[base + 5u] + az * dt;
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
@@ -283,10 +311,12 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
         seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
+    let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
+    let position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
     let base = slot * 9u;
-    state[base + 0u] = 0.0;
-    state[base + 1u] = 0.0;
-    state[base + 2u] = 0.0;
+    state[base + 0u] = position.x;
+    state[base + 1u] = position.y;
+    state[base + 2u] = position.z;
     state[base + 3u] = velocity.x;
     state[base + 4u] = velocity.y;
     state[base + 5u] = velocity.z;
@@ -862,8 +892,9 @@ impl Harness {
         for tick in 1..=ticks {
             let spawned_before = (tick - 1).saturating_mul(spawn_per_tick).min(capacity);
             let to_spawn_end = tick.saturating_mul(spawn_per_tick).min(capacity);
-            // ADVANCE layout (18 words): seed, capacity, spawned_before, to_spawn_end, speed range,
-            // lifetime range, dt, gravity, direction, spread, drag.
+            // ADVANCE layout (24 words): seed, capacity, spawned_before, to_spawn_end, speed range,
+            // lifetime range, dt, gravity, direction, spread, drag, turbulence, shape.
+            let (shape_kind, shape_radius, half) = shape_params(config.shape);
             let params: Vec<u32> = vec![
                 seed as u32,
                 (seed >> 32) as u32,
@@ -883,6 +914,12 @@ impl Harness {
                 config.direction[2].to_bits(),
                 config.spread.to_bits(),
                 config.drag.to_bits(),
+                config.turbulence.to_bits(),
+                shape_kind,
+                shape_radius.to_bits(),
+                half[0].to_bits(),
+                half[1].to_bits(),
+                half[2].to_bits(),
             ];
             let params_buffer = self
                 .device
@@ -1270,9 +1307,9 @@ impl Harness {
         let free_list = buffer("dummy free list", &encode(&[0_u32])?, false);
         let free_count = buffer("dummy free count", &encode(&0_u32)?, false);
         let spawn_counter = buffer("dummy spawn counter", &encode(&0_u32)?, false);
-        // The 19-word layout; present reads only params[0] (capacity), [17] (emitter_index), and
+        // The 25-word layout; present reads only params[0] (capacity), [17] (emitter_index), and
         // [18] (slot_offset).
-        let mut params = vec![0_u32; 19];
+        let mut params = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
         params[0] = capacity;
         params[17] = emitter_index;
         params[18] = slot_offset;
@@ -1789,6 +1826,10 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
         direction: [0.2, 1.0, -0.1],
         spread: 0.6,
         drag: 0.5,
+        shape: SpawnShape::Box {
+            half_extents: [4.0, 1.0, 6.0],
+        },
+        turbulence: 5.0,
         capacity: 512,
     };
     let ticks = 100_u32;
@@ -1839,6 +1880,8 @@ fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
         drag: 0.8,
+        shape: SpawnShape::Sphere { radius: 2.0 },
+        turbulence: 7.0,
         capacity: 512,
     };
     let seed = 0xC0FF_EE00_1234_5678_u64;
@@ -1921,6 +1964,8 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
         drag: 0.8,
+        shape: SpawnShape::Sphere { radius: 2.5 },
+        turbulence: 7.0,
         capacity: 512,
     };
     let ticks = 90_u32;

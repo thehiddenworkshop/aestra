@@ -11,11 +11,24 @@
 
 use crate::{DEFAULT_PLAYBACK_TICK_RATE, ParticleSample, SimulationClass, SimulationStateLayout};
 
+/// The volume new particles spawn within (hybrid roadmap M6). Sampled per particle from deterministic
+/// uniforms, trig-free so the GPU reproduces it bit-for-bit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SpawnShape {
+    /// All particles spawn at the emitter origin.
+    Point,
+    /// A filled sphere of the given radius (radial distance from `sqrt` of a uniform, so no `cbrt`).
+    Sphere { radius: f32 },
+    /// An axis-aligned box spanning `[-half_extents, half_extents]`.
+    Box { half_extents: [f32; 3] },
+}
+
 /// Fixed configuration for the prototype stateful integrator. Richer than a single speed/lifetime:
-/// per-particle random speed and lifetime ranges, an authored launch direction with a spread cone, and
-/// linear drag. Every axis is deterministic from `(seed, ordinal)` and — deliberately — trig-free, so
-/// the GPU kernels can reproduce it bit-for-bit (`normalize` uses only IEEE-correctly-rounded `sqrt`
-/// and division; the cone is `normalize(direction + spread * random_unit)`, not a trig cone).
+/// per-particle random speed and lifetime ranges, an authored launch direction with a spread cone,
+/// linear drag, a spawn shape, and value-noise turbulence. Every axis is deterministic from
+/// `(seed, ordinal[, age])` and — deliberately — trig-free, so the GPU kernels can reproduce it
+/// bit-for-bit (`normalize` and shapes use only IEEE-correctly-rounded `sqrt`/division; turbulence is
+/// hash value noise with a polynomial smoothstep, never `sin`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatefulConfig {
     /// Constant acceleration applied to velocity each tick.
@@ -33,6 +46,11 @@ pub struct StatefulConfig {
     pub spread: f32,
     /// Linear velocity damping per second (`v -= drag * v * dt` each tick); `0` disables it.
     pub drag: f32,
+    /// The volume particles spawn within.
+    pub shape: SpawnShape,
+    /// Procedural turbulence strength: a per-particle, per-axis value-noise acceleration that evolves
+    /// with the particle's age. `0` disables it.
+    pub turbulence: f32,
     /// Maximum live particles; spawning stops at this bound (bounded allocation).
     pub capacity: u32,
 }
@@ -122,16 +140,36 @@ impl StatefulSimulation {
         spawn_uniform(seed, ordinal, channel)
     }
 
+    /// The deterministic initial position sampled from the spawn shape for a spawn ordinal. Canonical
+    /// for both this CPU reference and the GPU spawn kernel.
+    pub fn launch_position(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
+        launch_position(config, seed, ordinal)
+    }
+
+    /// The deterministic per-axis turbulence acceleration for a particle at `age`. Canonical for both
+    /// this CPU reference and the GPU integrate kernel.
+    pub fn turbulence_acceleration(seed: u64, ordinal: u64, age: f32, strength: f32) -> [f32; 3] {
+        turbulence_acceleration(seed, ordinal, age, strength)
+    }
+
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;
         let drag = self.config.drag;
         for particle in &mut self.particles {
-            // Semi-implicit (symplectic) Euler with linear drag: velocity first (gravity, then
-            // damping), then position.
-            for axis in 0..3 {
-                let with_gravity = particle.velocity[axis] + self.config.gravity[axis] * dt;
-                let damped = with_gravity - drag * with_gravity * dt;
+            // Semi-implicit (symplectic) Euler with linear drag and value-noise turbulence: the
+            // per-axis acceleration (gravity + turbulence at the current age) updates velocity first
+            // (then damping), then position.
+            let turbulence = turbulence_acceleration(
+                self.seed,
+                particle.id,
+                particle.age,
+                self.config.turbulence,
+            );
+            for (axis, &turb) in turbulence.iter().enumerate() {
+                let acceleration = self.config.gravity[axis] + turb;
+                let with_acceleration = particle.velocity[axis] + acceleration * dt;
+                let damped = with_acceleration - drag * with_acceleration * dt;
                 particle.velocity[axis] = damped;
                 particle.position[axis] += damped * dt;
             }
@@ -145,6 +183,7 @@ impl StatefulSimulation {
         for _ in 0..spawn {
             let ordinal = self.spawned;
             let velocity = launch_velocity(&self.config, self.seed, ordinal);
+            let position = launch_position(&self.config, self.seed, ordinal);
             let lifetime = lerp(
                 self.config.lifetime.0,
                 self.config.lifetime.1,
@@ -152,7 +191,7 @@ impl StatefulSimulation {
             );
             self.particles.push(StateParticle {
                 id: ordinal,
-                position: [0.0; 3],
+                position,
                 velocity,
                 age: 0.0,
                 lifetime,
@@ -220,6 +259,78 @@ fn launch_velocity(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3]
         direction[1] * speed,
         direction[2] * speed,
     ]
+}
+
+/// The deterministic initial position for a particle, sampled from the emitter's spawn shape. Uses
+/// only signed uniforms and `sqrt` — trig- and `cbrt`-free — so the GPU reproduces it bit-for-bit.
+fn launch_position(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
+    match config.shape {
+        SpawnShape::Point => [0.0; 3],
+        SpawnShape::Box { half_extents } => [
+            spawn_signed(seed, ordinal, 2) * half_extents[0],
+            spawn_signed(seed, ordinal, 3) * half_extents[1],
+            spawn_signed(seed, ordinal, 4) * half_extents[2],
+        ],
+        SpawnShape::Sphere { radius } => {
+            let vector = [
+                spawn_signed(seed, ordinal, 2),
+                spawn_signed(seed, ordinal, 3),
+                spawn_signed(seed, ordinal, 4),
+            ];
+            let direction = normalize_or(vector, [0.0, 1.0, 0.0]);
+            let distance = radius * spawn_uniform(seed, ordinal, 5).sqrt();
+            [
+                direction[0] * distance,
+                direction[1] * distance,
+                direction[2] * distance,
+            ]
+        }
+    }
+}
+
+/// The per-axis turbulence acceleration for a particle at `age`: independent value noise per axis,
+/// scaled by `strength`. Value noise (hash per integer cell, smoothstep-interpolated) is trig-free, so
+/// it matches the GPU bit-for-bit, and it depends only on `(seed, ordinal, age)` — all persistent — so
+/// a checkpoint restore reproduces it exactly.
+fn turbulence_acceleration(seed: u64, ordinal: u64, age: f32, strength: f32) -> [f32; 3] {
+    if strength == 0.0 {
+        return [0.0; 3];
+    }
+    [
+        strength * turbulence_noise(seed, ordinal, 10, age),
+        strength * turbulence_noise(seed, ordinal, 11, age),
+        strength * turbulence_noise(seed, ordinal, 12, age),
+    ]
+}
+
+/// One axis of value noise in `[-1, 1)`: hash the integer cell of `age * FREQ` and the next, and
+/// smoothstep-interpolate between them by the fractional part.
+fn turbulence_noise(seed: u64, ordinal: u64, channel: u64, age: f32) -> f32 {
+    const FREQ: f32 = 3.0;
+    let t = age * FREQ;
+    let cell = t.floor();
+    let frac = t - cell;
+    let cell = cell as u64;
+    let a = unit_signed(turbulence_hash(seed, ordinal, channel, cell));
+    let b = unit_signed(turbulence_hash(seed, ordinal, channel, cell + 1));
+    let smooth = frac * frac * (3.0 - 2.0 * frac);
+    a + (b - a) * smooth
+}
+
+fn turbulence_hash(seed: u64, ordinal: u64, channel: u64, cell: u64) -> u64 {
+    let key = channel
+        .wrapping_mul(0x1_0000)
+        .wrapping_add(cell)
+        .wrapping_add(1);
+    splitmix64(
+        seed ^ ordinal.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ key.wrapping_mul(0xD6E8_FEB8_6659_FD93),
+    )
+}
+
+/// A deterministic per-particle signed uniform in `[-1, 1)` for a channel — `spawn_uniform` remapped.
+fn spawn_signed(seed: u64, ordinal: u64, channel: u64) -> f32 {
+    spawn_uniform(seed, ordinal, channel) * 2.0 - 1.0
 }
 
 /// A deterministic launch direction (components in `[-1, 1]`) from the seed and the particle's spawn
@@ -291,6 +402,8 @@ mod tests {
             direction: [0.0, 1.0, 0.0],
             spread: 0.4,
             drag: 0.5,
+            shape: SpawnShape::Sphere { radius: 3.0 },
+            turbulence: 6.0,
             capacity: 128,
         }
     }
@@ -429,6 +542,8 @@ mod tests {
             direction: [0.0, 1.0, 0.0],
             spread: 0.0,
             drag: 0.0,
+            shape: SpawnShape::Point,
+            turbulence: 0.0,
             capacity: 8,
         };
         let dragged = StatefulConfig { drag: 2.0, ..base };
@@ -442,6 +557,71 @@ mod tests {
             "drag reduces the height reached ({} vs {})",
             height(&with),
             height(&without)
+        );
+    }
+
+    #[test]
+    fn spawn_shapes_place_particles_within_their_volume() {
+        let seed = 0x5417;
+        for ordinal in 0..64 {
+            // Sphere: within the radius.
+            let sphere = StatefulConfig {
+                shape: SpawnShape::Sphere { radius: 5.0 },
+                ..config()
+            };
+            let position = StatefulSimulation::launch_position(&sphere, seed, ordinal);
+            let distance = (position[0].powi(2) + position[1].powi(2) + position[2].powi(2)).sqrt();
+            assert!(
+                distance <= 5.0 + 1e-3,
+                "sphere spawn {distance} within radius 5"
+            );
+
+            // Box: each axis within its half extent.
+            let boxed = StatefulConfig {
+                shape: SpawnShape::Box {
+                    half_extents: [4.0, 2.0, 6.0],
+                },
+                ..config()
+            };
+            let position = StatefulSimulation::launch_position(&boxed, seed, ordinal);
+            assert!(position[0].abs() <= 4.0 + 1e-3);
+            assert!(position[1].abs() <= 2.0 + 1e-3);
+            assert!(position[2].abs() <= 6.0 + 1e-3);
+
+            // Point: exactly the origin.
+            let point = StatefulConfig {
+                shape: SpawnShape::Point,
+                ..config()
+            };
+            assert_eq!(
+                StatefulSimulation::launch_position(&point, seed, ordinal),
+                [0.0; 3]
+            );
+        }
+    }
+
+    #[test]
+    fn turbulence_is_bounded_evolves_with_age_and_disables_at_zero() {
+        let seed = 0x7B_u64;
+        let ordinal = 11;
+        // Bounded by strength and varies with age (value noise moves between cells).
+        let mut samples = Vec::new();
+        for step in 0..20 {
+            let age = step as f32 * 0.1;
+            let acceleration = StatefulSimulation::turbulence_acceleration(seed, ordinal, age, 8.0);
+            for axis in acceleration {
+                assert!(axis.abs() <= 8.0 + 1e-3, "turbulence within +/- strength");
+            }
+            samples.push(acceleration[0]);
+        }
+        assert!(
+            samples.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-3),
+            "turbulence evolves with age"
+        );
+        assert_eq!(
+            StatefulSimulation::turbulence_acceleration(seed, ordinal, 0.5, 0.0),
+            [0.0; 3],
+            "zero strength disables turbulence"
         );
     }
 }

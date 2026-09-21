@@ -14,7 +14,7 @@ pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
 mod stateful;
 pub use host_transform::CompiledHostTransformTrack;
-pub use stateful::{StatefulConfig, StatefulSimulation};
+pub use stateful::{SpawnShape, StatefulConfig, StatefulSimulation};
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,

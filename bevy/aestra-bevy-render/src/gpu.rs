@@ -160,6 +160,14 @@ struct StatefulDispatch {
     spread: f32,
     /// Linear velocity damping per second (`v -= drag * v * dt`).
     drag: f32,
+    /// Value-noise turbulence strength.
+    turbulence: f32,
+    /// Spawn shape: 0 = point, 1 = sphere (radius), 2 = box (half extents).
+    shape_kind: u32,
+    /// Sphere radius (when `shape_kind == 1`).
+    shape_radius: f32,
+    /// Box half extents (when `shape_kind == 2`).
+    shape_half_extents: [f32; 3],
     /// Constant acceleration applied to velocity each tick.
     gravity: [f32; 3],
     /// The effect's 64-bit spawn seed.
@@ -185,6 +193,12 @@ impl StatefulDispatch {
             self.direction[2].to_bits(),
             self.spread.to_bits(),
             self.drag.to_bits(),
+            self.turbulence.to_bits(),
+            self.shape_kind,
+            self.shape_radius.to_bits(),
+            self.shape_half_extents[0].to_bits(),
+            self.shape_half_extents[1].to_bits(),
+            self.shape_half_extents[2].to_bits(),
             self.gravity[0].to_bits(),
             self.gravity[1].to_bits(),
             self.gravity[2].to_bits(),
@@ -726,6 +740,19 @@ pub(crate) fn prepare_gpu_effects(
                             // ~90 deg -> factor 1, blending in more of the random unit vector.
                             spread: emitter.spread_radians / std::f32::consts::FRAC_PI_2,
                             drag: 0.5 * (emitter.drag.x + emitter.drag.y),
+                            turbulence: 0.5 * (emitter.turbulence.x + emitter.turbulence.y),
+                            // Map the analytic shape encoding to the stateful one (sphere/box/point).
+                            shape_kind: match emitter.shape_kind {
+                                3 => 1, // Sphere
+                                5 => 2, // Box
+                                _ => 0, // Point (and shapes the stateful path does not model yet)
+                            },
+                            shape_radius: emitter.shape_radius,
+                            shape_half_extents: [
+                                emitter.shape_radius,
+                                emitter.shape_depth,
+                                emitter.shape_extent_z,
+                            ],
                             gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
                             seed,
                         })
@@ -2135,6 +2162,12 @@ fn dispatch_stateful_effect(
             dispatch.drag.to_bits(),
             dispatch.emitter_index,
             dispatch.slot_offset,
+            dispatch.turbulence.to_bits(),
+            dispatch.shape_kind,
+            dispatch.shape_radius.to_bits(),
+            dispatch.shape_half_extents[0].to_bits(),
+            dispatch.shape_half_extents[1].to_bits(),
+            dispatch.shape_half_extents[2].to_bits(),
         ];
         words.into_iter().flat_map(u32::to_le_bytes).collect()
     };
@@ -2726,6 +2759,10 @@ mod tests {
             direction: [0.0, 1.0, 0.0],
             spread: 0.4,
             drag: 0.5,
+            turbulence: 4.0,
+            shape_kind: 1,
+            shape_radius: 3.0,
+            shape_half_extents: [0.0; 3],
             gravity: [0.0, -9.81, 0.0],
             seed: 42,
         };

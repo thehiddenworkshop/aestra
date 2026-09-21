@@ -6,8 +6,8 @@
 //!   path (analytic reset+simulate skipping stateful slots, then the stateful dispatches filling them).
 
 use aestra_core::{
-    EffectAsset, EffectPlaybackMode, Emitter, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
-    ModuleInstance, ModuleParameters, ScalarRange,
+    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE,
+    MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ScalarRange,
 };
 
 /// A sprite emitter tuned to clean scalar values, since the stateful integrator reads range midpoints.
@@ -44,10 +44,18 @@ fn tuned_emitter(
                 *spd = ScalarRange::new(speed * 0.7, speed * 1.3);
                 *spread_degrees = 30.0;
             }
-            ModuleParameters::Motion { gravity: g, .. }
-                if module.module_type.0 == MODULE_MOTION =>
-            {
+            ModuleParameters::Motion {
+                gravity: g,
+                turbulence,
+                ..
+            } if module.module_type.0 == MODULE_MOTION => {
                 *g = gravity;
+                *turbulence = 6.0; // value-noise turbulence in the stateful path
+            }
+            ModuleParameters::Shape { shape } if module.module_type.0 == MODULE_SHAPE => {
+                // A sphere spawn volume, so particles emit from a filled sphere (the stateful path
+                // maps Sphere/Box; other shapes fall back to a point).
+                *shape = EmitterShape::Sphere { radius: 6.0 };
             }
             _ => {}
         }
