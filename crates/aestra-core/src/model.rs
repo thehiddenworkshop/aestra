@@ -19,6 +19,11 @@ pub const MODULE_SHAPE: &str = "aestra.spawn.shape";
 pub const MODULE_INITIALIZE: &str = "aestra.spawn.initialize";
 pub const MODULE_MOTION: &str = "aestra.update.motion";
 pub const MODULE_APPEARANCE: &str = "aestra.update.appearance";
+/// The persistent-state solver: its presence promotes an emitter to a stateful simulation class
+/// (hybrid roadmap M6), where per-particle state persists and advances incrementally across fixed
+/// ticks. It carries no inputs of its own — it reuses the emitter's spawn/motion/lifetime modules —
+/// and is the marker the compiler classifies on and the GPU backend runs its persistent path for.
+pub const MODULE_PERSISTENT: &str = "aestra.update.persistent";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
@@ -1676,6 +1681,22 @@ impl ModuleInstance {
         }
     }
 
+    /// The persistent-state solver (hybrid roadmap M6): promotes the emitter to a stateful class so
+    /// its particles carry persistent per-particle state across fixed ticks. Placed in the particle
+    /// update stage alongside Motion, which supplies its acceleration.
+    pub fn persistent() -> Self {
+        Self {
+            id: ModuleId::new(),
+            module_type: ModuleTypeId::new(MODULE_PERSISTENT),
+            stage: StageKind::ParticleUpdate,
+            enabled: true,
+            parameters: ModuleParameters::Persistent {},
+            property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+        }
+    }
+
     pub fn appearance(size: Curve, opacity: Curve, color: Gradient) -> Self {
         Self {
             id: ModuleId::new(),
@@ -1895,6 +1916,7 @@ impl ModuleInstance {
             ModuleParameters::Shape { .. } => (MODULE_SHAPE, StageKind::ParticleSpawn),
             ModuleParameters::Initialize { .. } => (MODULE_INITIALIZE, StageKind::ParticleSpawn),
             ModuleParameters::Motion { .. } => (MODULE_MOTION, StageKind::ParticleUpdate),
+            ModuleParameters::Persistent {} => (MODULE_PERSISTENT, StageKind::ParticleUpdate),
             ModuleParameters::Appearance { .. } => (MODULE_APPEARANCE, StageKind::ParticleUpdate),
             ModuleParameters::Custom(values) => {
                 if self.module_type.0.trim().is_empty() {
@@ -2040,6 +2062,9 @@ pub enum ModuleParameters {
         opacity: Curve,
         color: Gradient,
     },
+    /// The persistent-state solver marker (hybrid roadmap M6). Carries no inputs — it promotes the
+    /// emitter to a stateful simulation class, reusing the emitter's other modules for its dynamics.
+    Persistent {},
     Custom(BTreeMap<String, Value>),
 }
 

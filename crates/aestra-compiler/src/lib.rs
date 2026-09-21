@@ -24,10 +24,10 @@ use aestra_core::{
     CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, ColorKey, Curve,
     CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, Emitter,
     EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId,
-    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
-    RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange,
-    SpriteColorSource, StageKind, ValidationReport, Value,
+    MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
+    MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
+    ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties,
+    ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -279,6 +279,7 @@ impl ModuleRegistry {
                 ScalarRange::new(-1.0, 1.0),
             )),
             MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0)),
+            MODULE_PERSISTENT => Some(ModuleInstance::persistent()),
             MODULE_APPEARANCE => Some(ModuleInstance::appearance(
                 Curve::new(vec![
                     CurveKey::new(0.0, 4.0),
@@ -841,8 +842,12 @@ impl EffectCompiler {
 
             let mut execution = ExecutionPlan::default();
             for module in emitter.modules.iter().filter(|module| module.enabled) {
-                let instruction = lower_module(module, &context)
-                    .expect("validated built-in module must have a lowering");
+                // Marker modules (e.g. the Persistent solver) contribute no analytic instruction —
+                // their effect is on the emitter's simulation class, resolved separately. Every other
+                // validated built-in module lowers to an instruction.
+                let Some(instruction) = lower_module(module, &context) else {
+                    continue;
+                };
                 let (constants, parameters) = expression_counts(&instruction);
                 optimizations.constant_expressions += constants;
                 optimizations.runtime_parameter_reads += parameters;
@@ -1673,6 +1678,10 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
                 context,
             ),
         },
+        // The persistent-state solver contributes no analytic instruction: its effect is to promote
+        // the emitter's simulation class (handled in classification), and the stateful GPU backend
+        // drives the dynamics from the emitter's other modules.
+        ModuleParameters::Persistent {} => return None,
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
@@ -1927,6 +1936,7 @@ fn parameters_match(module: &ModuleInstance) -> bool {
             | (MODULE_SHAPE, ModuleParameters::Shape { .. })
             | (MODULE_INITIALIZE, ModuleParameters::Initialize { .. })
             | (MODULE_MOTION, ModuleParameters::Motion { .. })
+            | (MODULE_PERSISTENT, ModuleParameters::Persistent {})
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
 }
@@ -2056,6 +2066,11 @@ impl ModuleMetadata {
 
     fn with_cost(mut self, approximate_cost: u32) -> Self {
         self.approximate_cost = approximate_cost;
+        self
+    }
+
+    fn with_simulation(mut self, simulation: SimulationRequirements) -> Self {
+        self.simulation = simulation;
         self
     }
 }
@@ -2324,5 +2339,25 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_flow(vec![A::NormalizedAge], vec![A::Size, A::Color])
         .with_tags(vec!["update", "color", "size"])
         .with_cost(5),
+        metadata(
+            MODULE_PERSISTENT,
+            "Persistent State",
+            "Simulates this emitter with persistent per-particle state that advances incrementally \
+             across fixed ticks, enabling history-dependent behavior.",
+            "Simulation",
+            StageKind::ParticleUpdate,
+        )
+        // Reading and writing previous-tick state is what promotes the emitter to a stateful class:
+        // the compiler derives SimulationClass::Stateful from this temporal requirement (S1-D2).
+        .with_flow(
+            vec![A::Position, A::Velocity, A::Age],
+            vec![A::Position, A::Velocity, A::Age],
+        )
+        .with_simulation(SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..SimulationRequirements::ANALYTIC
+        })
+        .with_tags(vec!["simulation", "stateful", "persistent"])
+        .with_cost(6),
     ]
 }

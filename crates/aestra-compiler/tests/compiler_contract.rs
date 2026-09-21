@@ -4,10 +4,10 @@ use aestra_compiler::{
 use aestra_core::{
     ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
     EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode, Emitter, EmitterRegionId,
-    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialId,
-    MaterialInput, MaterialParameterId, MaterialProgramId, MaterialProperties, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, PropertySourceValue, ScalarRange, StageKind,
-    Value, Vec3Curve, Vec3Range,
+    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT,
+    MODULE_SHAPE, MaterialId, MaterialInput, MaterialParameterId, MaterialProgramId,
+    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
+    PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
         MaterialInput as SemanticMaterialInput, MaterialInstance, MaterialParameter,
@@ -100,7 +100,18 @@ fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let registry = ModuleRegistry::builtin();
-    assert_eq!(registry.len(), 5);
+    assert_eq!(registry.len(), 6);
+
+    let persistent = registry
+        .iter()
+        .find(|metadata| metadata.type_id.0 == "aestra.update.persistent")
+        .expect("persistent solver metadata must be registered");
+    assert_eq!(persistent.display_name, "Persistent State");
+    assert_eq!(persistent.stages, [StageKind::ParticleUpdate]);
+    assert!(
+        persistent.inputs.is_empty(),
+        "the persistent solver is a marker with no inputs"
+    );
 
     let motion = registry
         .iter()
@@ -184,12 +195,26 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
     };
     use aestra_runtime::{SimulationClass, TemporalSemantics};
 
-    // S1 must not change how existing effects execute: every built-in stays analytic.
+    // Every built-in stays analytic except the Persistent solver, which is the one built-in that
+    // deliberately declares a previous-state dependency (hybrid roadmap M6). Existing analytic
+    // effects — which never include that marker — are unaffected.
     for metadata in ModuleRegistry::builtin().iter() {
+        if metadata.type_id.0 == "aestra.update.persistent" {
+            assert_eq!(
+                metadata.simulation.derived_class(),
+                SimulationClass::Stateful,
+                "the persistent solver derives Stateful"
+            );
+            assert_eq!(
+                metadata.simulation.temporal_semantics(),
+                TemporalSemantics::HistoryDependent
+            );
+            continue;
+        }
         assert_eq!(
             metadata.simulation,
             SimulationRequirements::ANALYTIC,
-            "{} must remain analytic in S1",
+            "{} must remain analytic",
             metadata.type_id.0
         );
         assert_eq!(
@@ -307,7 +332,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
     // The built-in unified registry is internally consistent and hosts the built-in modules.
     let builtin = ExtensionRegistry::builtin();
     assert!(builtin.validate().is_empty());
-    assert_eq!(builtin.modules.len(), 5);
+    assert_eq!(builtin.modules.len(), 6);
     assert!(
         builtin
             .capabilities
@@ -1945,4 +1970,97 @@ fn project_compilation_diagnoses_orphaned_and_type_changed_clip_overrides() {
         diagnostic.code == DiagnosticCode::ParameterTypeMismatch
             && diagnostic.path.contains(&parameter.to_string())
     }));
+}
+
+#[test]
+fn the_persistent_module_promotes_an_authored_effect_to_stateful_in_production() {
+    use aestra_runtime::{SimulationClass, SimulationStateLayout};
+    // The built-in Persistent solver is reachable through the STOCK compiler (no test override): it
+    // is in the catalog, and adding it to an emitter promotes exactly that emitter to Stateful, names
+    // it as the cause, flips the effect's seek mode to restart+replay, and gives the emitter the
+    // persistent state layout the GPU backend sizes its state buffer from. This is the authoring →
+    // compile half of the stateful backend (hybrid roadmap M6).
+    let compiler = EffectCompiler::default();
+
+    // It is a real catalog entry the authoring UI can instantiate to its production defaults.
+    let instantiated = compiler
+        .registry()
+        .instantiate(&ModuleTypeId::new(MODULE_PERSISTENT))
+        .expect("the Persistent module is in the built-in catalog");
+    assert!(matches!(
+        instantiated.parameters,
+        ModuleParameters::Persistent {}
+    ));
+
+    // One analytic emitter, one made persistent by adding the marker module.
+    let mut asset = EffectAsset::new("Debris Field", 2.0);
+    asset
+        .emitters
+        .push(Emitter::basic_sprite("Analytic Sparks", 2.0));
+    let mut debris = Emitter::basic_sprite("Persistent Debris", 2.0);
+    debris.modules.push(ModuleInstance::persistent());
+    asset.emitters.push(debris);
+
+    // The authored effect (marker included) is valid — parameters match the module type and stage.
+    asset.validate().expect("the persistent effect is valid");
+
+    // Only the emitter with the marker is promoted, and the marker is named as the cause.
+    let classes = compiler.classify_simulation(&asset);
+    let sparks = classes
+        .iter()
+        .find(|c| c.name == "Analytic Sparks")
+        .unwrap();
+    let debris = classes
+        .iter()
+        .find(|c| c.name == "Persistent Debris")
+        .unwrap();
+    assert_eq!(sparks.class, SimulationClass::Analytic);
+    assert_eq!(sparks.promoted_by, None);
+    assert_eq!(debris.class, SimulationClass::Stateful);
+    assert_eq!(
+        debris.promoted_by,
+        Some(ModuleTypeId::new(MODULE_PERSISTENT)),
+        "the Persistent module is identified as the cause of promotion"
+    );
+
+    // End to end: the effect compiles, seeks by restart+replay, and carries exactly one stateful
+    // emitter (with a persistent state layout) and one analytic emitter (without).
+    let compiled = compiler.compile(&asset).unwrap();
+    assert_eq!(compiled.seek_mode, SimulationSeekMode::RestartReplay);
+    let stateful: Vec<_> = compiled
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.simulation_class == SimulationClass::Stateful)
+        .collect();
+    let analytic: Vec<_> = compiled
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.simulation_class == SimulationClass::Analytic)
+        .collect();
+    assert_eq!(stateful.len(), 1, "one emitter is stateful");
+    assert_eq!(analytic.len(), 1, "one emitter stays analytic");
+    assert!(
+        stateful[0]
+            .simulation_state_layout()
+            .requires_state_buffer()
+            && stateful[0].simulation_state_layout().persistent
+                == SimulationStateLayout::STATEFUL_PROTOTYPE,
+        "the stateful emitter gets the prototype persistent state layout (hybrid M4)"
+    );
+    assert!(
+        !analytic[0]
+            .simulation_state_layout()
+            .requires_state_buffer(),
+        "the analytic emitter allocates no persistent state buffer"
+    );
+
+    // The same effect compiled without the marker stays fully analytic and seeks directly.
+    let mut analytic_asset = EffectAsset::new("Debris Field", 2.0);
+    analytic_asset
+        .emitters
+        .push(Emitter::basic_sprite("Persistent Debris", 2.0));
+    assert_eq!(
+        compiler.compile(&analytic_asset).unwrap().seek_mode,
+        SimulationSeekMode::StatelessDirect
+    );
 }
