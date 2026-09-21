@@ -7,7 +7,10 @@
 //! with minimal bindings into WGSL that naga parses and validates. It catches syntax/type breakage
 //! in the primitives on GPU-less CI, before the render wiring depends on them.
 
-use aestra_gpu::{STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL};
+use aestra_gpu::{
+    STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
+    stateful_simulation_wgsl,
+};
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 fn assert_valid_wgsl(label: &str, wgsl: &str) {
@@ -86,4 +89,32 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
         "STATEFUL_PRESENT_WGSL",
         &format!("{STATEFUL_PRESENT_WGSL}{entry}"),
     );
+}
+
+#[test]
+fn the_unified_stateful_module_composes_into_valid_wgsl_with_all_three_entry_points() {
+    // The render backend builds its death_integrate / spawn / present pipelines from one composed
+    // module over a shared six-binding layout. Validate that the assembled module parses, validates,
+    // and exposes exactly those three entry points — this is the shader the pipelines will use.
+    let wgsl = stateful_simulation_wgsl();
+    let module = naga::front::wgsl::parse_str(&wgsl).unwrap_or_else(|error| {
+        panic!(
+            "stateful_simulation_wgsl must parse: {}",
+            error.emit_to_string(&wgsl)
+        )
+    });
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .unwrap_or_else(|error| panic!("stateful_simulation_wgsl must validate: {error}"));
+    let entry_points: Vec<&str> = module
+        .entry_points
+        .iter()
+        .map(|e| e.name.as_str())
+        .collect();
+    for expected in ["death_integrate", "spawn", "present"] {
+        assert!(
+            entry_points.contains(&expected),
+            "the unified module exposes the {expected} entry point (found {entry_points:?})"
+        );
+    }
 }

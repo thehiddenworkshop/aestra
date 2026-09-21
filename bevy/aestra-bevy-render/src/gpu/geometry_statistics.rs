@@ -352,6 +352,7 @@ mod tests {
                 statistics_token: 42,
                 checkpoint_context: default(),
                 trail_roots: vec![],
+                simulation_state: default(),
             },
         ));
         for _ in 0..MAX_IN_FLIGHT + 1 {

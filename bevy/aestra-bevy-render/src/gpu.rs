@@ -34,8 +34,8 @@ pub use aestra_gpu::{
     MAX_FLIPBOOK_FRAMES,
 };
 use aestra_gpu::{
-    GpuBlend, WORKGROUP_SIZE, fold_seed, indirect_draw_commands_with_statistics,
-    indirect_draw_offset,
+    GpuBlend, GpuSimulationState, WORKGROUP_SIZE, fold_seed,
+    indirect_draw_commands_with_statistics, indirect_draw_offset,
 };
 use aestra_runtime::RendererPlanKind;
 use bevy::{
@@ -53,7 +53,7 @@ use bevy::{
         gpu_readback::{Readback, ReadbackComplete},
         render_asset::RenderAssets,
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, Buffer,
             BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
             ComputePipelineDescriptor, DownlevelFlags, Extent3d, PipelineCache, ShaderStages,
             TextureDimension, TextureFormat,
@@ -81,6 +81,10 @@ pub const WESL_RENDER_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
 pub const WESL_MESH_WIREFRAME_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl";
+/// The unified stateful simulation module (hybrid roadmap M6): the death_integrate / spawn / present
+/// compute pipelines are built from this. Composed from the proven `aestra_gpu` WGSL primitives.
+pub const STATEFUL_SIMULATION_SHADER_PATH: &str =
+    "embedded://aestra_bevy_render/shaders/aestra_stateful_simulation.wgsl";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 enum GpuRenderMode {
@@ -113,6 +117,10 @@ pub(crate) struct GpuEffectBuffers {
     statistics_token: u32,
     checkpoint_context: Arc<trail_checkpoints::TrailContext>,
     trail_roots: Vec<(u32, u32)>,
+    /// Persistent simulation-state sizing for stateful emitters (hybrid roadmap M6); `records == 0`
+    /// for a fully analytic effect. The render world allocates its persistent state buffers from
+    /// this (see [`StatefulStates`]).
+    simulation_state: GpuSimulationState,
 }
 
 #[derive(Component, Clone)]
@@ -270,6 +278,23 @@ struct SimulationPipeline {
     update_trails: CachedComputePipelineId,
 }
 
+/// The stateful GPU backend's compute pipelines (hybrid roadmap M6), built from the unified
+/// `aestra_gpu::stateful_simulation_wgsl` module over a shared six-binding layout: persistent state,
+/// the free list and its atomic count, the atomic spawn counter, the per-dispatch params, and the
+/// presentation output. Present only for effects with at least one stateful emitter; the per-frame
+/// dispatch that consumes these lands in the next increment.
+#[derive(Resource)]
+#[allow(dead_code)] // Fields are consumed by the stateful dispatch step (M6, next increment).
+struct StatefulSimulationPipeline {
+    layout: BindGroupLayoutDescriptor,
+    /// Advances each live slot by one fixed tick and frees the ones that died this tick.
+    death_integrate: CachedComputePipelineId,
+    /// Claims a free slot and a fresh ordinal for each of this tick's new particles.
+    spawn: CachedComputePipelineId,
+    /// Extracts live persistent state into the 48-byte presentation particle buffer.
+    present: CachedComputePipelineId,
+}
+
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
@@ -313,10 +338,17 @@ pub(crate) fn install(app: &mut App) {
         )
         .insert_resource(timing_mailbox)
         .add_systems(ExtractSchedule, publish_gpu_capabilities)
-        .add_systems(RenderStartup, init_pipeline)
+        .add_systems(RenderStartup, (init_pipeline, init_stateful_pipeline))
+        .init_resource::<StatefulStates>()
         .add_systems(
             Render,
-            prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
+            (
+                prepare_bind_groups,
+                // Persistent stateful buffers are allocated alongside the analytic bind groups; the
+                // dispatch that consumes them lands in the next increment.
+                prepare_stateful_states,
+            )
+                .in_set(RenderSystems::PrepareBindGroups),
         )
         // Run inside the render-graph diagnostics window (after `Begin`) and before
         // the graph draws (`Render`), so the `aestra::gpu::simulate` GPU timestamp
@@ -359,6 +391,13 @@ fn install_shader_assets(app: &App) {
         shader_root.join("aestra_sprite_render.wesl"),
         Path::new("aestra_bevy_render/shaders/aestra_sprite_render.wesl"),
         SPRITE_RENDER_WESL.as_bytes(),
+    );
+    // The unified stateful simulation module (hybrid roadmap M6), composed from the proven aestra-gpu
+    // primitives. Plain WGSL (no WESL composition), so it is embedded directly as .wgsl.
+    registry.insert_asset(
+        shader_root.join("aestra_stateful_simulation.wgsl"),
+        Path::new("aestra_bevy_render/shaders/aestra_stateful_simulation.wgsl"),
+        aestra_gpu::stateful_simulation_wgsl().into_bytes(),
     );
 }
 
@@ -679,6 +718,7 @@ pub(crate) fn prepare_gpu_effects(
                 trail_roots,
                 ribbon_workgroups,
                 total_slots: artifact.total_slots,
+                simulation_state: artifact.simulation_state,
             },
             GpuPresentationPrepared,
             particle_statistics,
@@ -1521,6 +1561,63 @@ fn init_pipeline(
     });
 }
 
+/// Builds the stateful backend's compute pipelines (hybrid roadmap M6) from the unified
+/// `aestra_gpu::stateful_simulation_wgsl` module. The six-binding layout is shared across the three
+/// entry points (each uses a subset). Gated on the same device limits as the analytic pipeline plus
+/// the six-binding requirement; when unavailable the resource is simply absent and stateful effects
+/// fall back like any unsupported artifact.
+fn init_stateful_pipeline(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    pipeline_cache: Res<PipelineCache>,
+    render_device: Res<RenderDevice>,
+    adapter: Res<RenderAdapter>,
+) {
+    const STATEFUL_BINDING_COUNT: u32 = 6;
+    let limits = render_device.limits();
+    if !adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(DownlevelFlags::COMPUTE_SHADERS)
+        || limits.max_storage_buffers_per_shader_stage < STATEFUL_BINDING_COUNT
+        || limits.max_bindings_per_bind_group < STATEFUL_BINDING_COUNT
+        || limits.max_compute_invocations_per_workgroup < WORKGROUP_SIZE
+        || limits.max_compute_workgroup_size_x < WORKGROUP_SIZE
+    {
+        return;
+    }
+    let layout = BindGroupLayoutDescriptor::new(
+        "aestra_gpu_stateful_simulation",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                storage_buffer::<Vec<f32>>(false),           // 0: persistent state
+                storage_buffer::<Vec<u32>>(false),           // 1: free list
+                storage_buffer::<Vec<u32>>(false),           // 2: free count (atomic)
+                storage_buffer::<Vec<u32>>(false),           // 3: spawn counter (atomic)
+                storage_buffer_read_only::<Vec<u32>>(false), // 4: params
+                storage_buffer::<Vec<GpuParticle>>(false),   // 5: presentation output
+            ),
+        ),
+    );
+    let shader = asset_server.load(STATEFUL_SIMULATION_SHADER_PATH);
+    let pipeline = |label: &'static str, entry: &'static str| {
+        pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+            label: Some(label.into()),
+            layout: vec![layout.clone()],
+            shader: shader.clone(),
+            entry_point: Some(entry.into()),
+            ..default()
+        })
+    };
+    commands.insert_resource(StatefulSimulationPipeline {
+        layout: layout.clone(),
+        death_integrate: pipeline("aestra stateful death+integrate", "death_integrate"),
+        spawn: pipeline("aestra stateful spawn", "spawn"),
+        present: pipeline("aestra stateful present", "present"),
+    });
+}
+
 fn prepare_bind_groups(
     mut commands: Commands,
     pipeline: Option<Res<SimulationPipeline>>,
@@ -1584,6 +1681,101 @@ type TrailHistories = BTreeMap<
         trail_checkpoints::TrailHistory,
     ),
 >;
+
+/// The persistent GPU state for one stateful effect (hybrid roadmap M6). Unlike the analytic
+/// particle buffer — recomputed from scratch every frame — this survives across frames so per-particle
+/// state advances incrementally; it is only reallocated when the effect's capacity changes. The
+/// stateful dispatch (next increment) advances `state` with the death loop and extracts it into the
+/// presentation buffer.
+#[allow(dead_code)] // Buffers are bound and dispatched by the stateful simulation step (M6, next).
+struct StatefulPersistentState {
+    /// Slot capacity these buffers were sized for; a change triggers reallocation.
+    records: u32,
+    /// `f32` components of persistent state per slot.
+    stride: u32,
+    /// `records * stride` persistent state floats (position, velocity, age, lifetime, ordinal bits).
+    state: Buffer,
+    /// Free-slot indices for death/reuse; initialised to every slot free.
+    free_list: Buffer,
+    /// Atomic count of free slots; initialised to `records`.
+    free_count: Buffer,
+    /// Atomic spawn ordinal counter; initialised to 0.
+    spawn_counter: Buffer,
+}
+
+impl StatefulPersistentState {
+    /// Allocates and initialises the persistent buffers for `sizing.records` slots: zeroed state, a
+    /// full free list (`0..records`), a free count of `records`, and a spawn counter of 0.
+    fn allocate(render_device: &RenderDevice, sizing: GpuSimulationState) -> Self {
+        let state_floats = sizing.records as usize * sizing.stride as usize;
+        let state = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful state"),
+            contents: &vec![0_u8; state_floats * std::mem::size_of::<f32>()],
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        });
+        let free_list_bytes: Vec<u8> = (0..sizing.records).flat_map(u32::to_le_bytes).collect();
+        let free_list = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful free list"),
+            contents: &free_list_bytes,
+            usage: BufferUsages::STORAGE,
+        });
+        let free_count = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful free count"),
+            contents: &sizing.records.to_le_bytes(),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        let spawn_counter = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful spawn counter"),
+            contents: &0_u32.to_le_bytes(),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        Self {
+            records: sizing.records,
+            stride: sizing.stride,
+            state,
+            free_list,
+            free_count,
+            spawn_counter,
+        }
+    }
+}
+
+/// Per-entity persistent state for stateful effects, kept in the render world across frames (the
+/// `TrailHistories` pattern). Populated by [`prepare_stateful_states`]; consumed by the stateful
+/// dispatch step (next increment).
+#[derive(Resource, Default)]
+struct StatefulStates(BTreeMap<Entity, StatefulPersistentState>);
+
+/// Allocates and retains the persistent state buffers for every stateful effect, reallocating only
+/// when an effect's capacity changes and dropping them when the effect stops being stateful or is
+/// removed. This is the render-world lifecycle the analytic path does not need (it recomputes every
+/// frame); the stateful dispatch reads these buffers.
+fn prepare_stateful_states(
+    mut states: ResMut<StatefulStates>,
+    render_device: Res<RenderDevice>,
+    effects: Query<(Entity, &GpuEffectBuffers)>,
+) {
+    states.0.retain(|entity, _| {
+        effects
+            .get(*entity)
+            .is_ok_and(|(_, effect)| effect.simulation_state.records > 0)
+    });
+    for (entity, effect) in &effects {
+        let sizing = effect.simulation_state;
+        if sizing.records == 0 {
+            continue;
+        }
+        let stale = states.0.get(&entity).is_none_or(|existing| {
+            existing.records != sizing.records || existing.stride != sizing.stride
+        });
+        if stale {
+            states.0.insert(
+                entity,
+                StatefulPersistentState::allocate(&render_device, sizing),
+            );
+        }
+    }
+}
 
 fn run_simulation(
     mut render_context: RenderContext,
@@ -1953,6 +2145,7 @@ mod tests {
                     statistics_token: 0,
                     checkpoint_context: default(),
                     trail_roots: vec![],
+                    simulation_state: default(),
                 },
             ))
             .id();
