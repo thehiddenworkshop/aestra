@@ -2661,10 +2661,32 @@ without collision complexity.
 > WGSL primitives (spawn RNG, free list, presentation) compose into naga-valid WGSL, so GPU-less CI
 > catches shader breakage before the render wiring depends on them.
 >
-> **Still to do:** wiring allocate + dispatch into `aestra-bevy-render/src/gpu.rs` — allocate the
-> state buffer from `GpuSimulationState`, dispatch the death loop then presentation extraction, and
-> feed the existing compaction/render path — which then runs a real stateful effect end-to-end,
-> meaningful precisely because every kernel it composes is already proven.
+> **Authored reachability — landed and proven.** Until now no authored effect could reach
+> `SimulationClass::Stateful`; the whole path was reachable only through test overrides. A new built-in
+> module, the **Persistent solver** (`MODULE_PERSISTENT`, `ModuleParameters::Persistent {}`), fixes
+> that: it is a parameterless marker whose metadata declares `TemporalRequirement::PreviousState`, so
+> an emitter carrying it derives `Stateful` (S1-D2), the effect resolves to restart+replay seek, and
+> the emitter gets the persistent state layout the GPU sizing keys off. It reuses the emitter's other
+> modules for its dynamics (capacity from `max_particles`, gravity/speed/lifetime/spawn from the
+> sibling modules already packed into `GpuEmitter`), so no new artifact/GPU params are needed. It
+> lowers to no analytic instruction (its effect is on the class). A production compiler test (stock
+> `EffectCompiler`) proves it promotes exactly the emitter that carries it and leaves siblings analytic.
+>
+> **Render infrastructure — landed (Step 1 of the wiring).** `aestra_gpu::stateful_simulation_wgsl()`
+> composes the shared six-binding module (state, free list, free count, spawn counter, params,
+> presentation output) from the three proven primitives plus the `death_integrate` / `spawn` /
+> `present` entry points; a GPU-less test validates it. In `aestra-bevy-render`, `init_stateful_pipeline`
+> builds those three compute pipelines from the composed module (embedded `.wgsl` asset), and
+> `StatefulStates` keeps each stateful effect's persistent GPU buffers in the render world across
+> frames (the `TrailHistories` pattern), allocated from `GpuSimulationState` and reallocated only on a
+> capacity change. Compile-verified, shader-validated, render lib tests green.
+>
+> **Still to do (Step 2 of the wiring):** the per-frame stateful dispatch in
+> `aestra-bevy-render/src/gpu.rs` — map `simulation_time` to fixed ticks, dispatch the death loop and
+> presentation extraction over the persistent buffers, compact the presented particles into the alive
+> and indirect buffers the render path draws, and integrate seek via checkpoints. This is where a
+> Persistent effect first runs end-to-end and renders in the editor, meaningful precisely because
+> every kernel it composes is already proven. Needs editor-level verification.
 
 ### GPU passes
 
