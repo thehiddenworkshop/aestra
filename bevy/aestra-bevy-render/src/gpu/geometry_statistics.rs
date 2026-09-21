@@ -353,6 +353,7 @@ mod tests {
                 checkpoint_context: default(),
                 trail_roots: vec![],
                 simulation_state: default(),
+                stateful_dispatch: None,
             },
         ));
         for _ in 0..MAX_IN_FLIGHT + 1 {

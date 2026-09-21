@@ -53,8 +53,9 @@ use bevy::{
         gpu_readback::{Readback, ReadbackComplete},
         render_asset::RenderAssets,
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, Buffer,
-            BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
+            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, Buffer, BufferInitDescriptor, BufferUsages,
+            CachedComputePipelineId, CommandEncoder, ComputePassDescriptor, ComputePipeline,
             ComputePipelineDescriptor, DownlevelFlags, Extent3d, PipelineCache, ShaderStages,
             TextureDimension, TextureFormat,
             binding_types::{storage_buffer, storage_buffer_read_only},
@@ -121,6 +122,35 @@ pub(crate) struct GpuEffectBuffers {
     /// for a fully analytic effect. The render world allocates its persistent state buffers from
     /// this (see [`StatefulStates`]).
     simulation_state: GpuSimulationState,
+    /// The single-emitter stateful dispatch descriptor (hybrid roadmap M6), present only when the
+    /// effect is exactly one enabled stateful emitter — the case the GPU stateful path currently
+    /// drives end-to-end. `None` for analytic effects and (for now) multi-emitter stateful effects.
+    stateful_dispatch: Option<StatefulDispatch>,
+}
+
+/// The parameters the GPU stateful path needs for one emitter (hybrid roadmap M6), sourced from the
+/// compiled emitter at prepare time so the render graph does not need the CPU effect. The stateful
+/// integrator is the minimal reference model (deterministic launch direction, constant gravity, fixed
+/// lifetime), so it reads scalar midpoints of the authored ranges rather than the full analytic
+/// feature set.
+#[derive(Clone)]
+struct StatefulDispatch {
+    /// Live-particle capacity — the emitter's `max_particles`, and the persistent state slot count.
+    capacity: u32,
+    /// This emitter's base index into the alive-indices / indirect draw buffers.
+    slot_offset: u32,
+    /// This emitter's index for the packed emitter/alive word and its indirect draw command.
+    emitter_index: u32,
+    /// Mean particles emitted per second; fractional per-tick spawns accumulate across ticks.
+    spawn_rate: f32,
+    /// Initial launch speed along the deterministic direction.
+    speed: f32,
+    /// Particle lifetime in seconds.
+    lifetime: f32,
+    /// Constant acceleration applied to velocity each tick.
+    gravity: [f32; 3],
+    /// The effect's 64-bit spawn seed.
+    seed: u64,
 }
 
 #[derive(Component, Clone)]
@@ -284,7 +314,6 @@ struct SimulationPipeline {
 /// presentation output. Present only for effects with at least one stateful emitter; the per-frame
 /// dispatch that consumes these lands in the next increment.
 #[derive(Resource)]
-#[allow(dead_code)] // Fields are consumed by the stateful dispatch step (M6, next increment).
 struct StatefulSimulationPipeline {
     layout: BindGroupLayoutDescriptor,
     /// Advances each live slot by one fixed tick and frees the ones that died this tick.
@@ -615,6 +644,32 @@ pub(crate) fn prepare_gpu_effects(
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
+        // The GPU stateful path (hybrid roadmap M6) currently drives one enabled stateful emitter
+        // end-to-end. When the effect is exactly that, capture its dynamics from the compiled GpuEmitter
+        // (scalar midpoints of the authored ranges — the minimal reference model). records > 0 with a
+        // single enabled emitter means that emitter is the stateful one, and it owns slots [0, capacity).
+        let enabled_emitters = player
+            .effect()
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .count();
+        let stateful_dispatch = (artifact.simulation_state.records > 0
+            && enabled_emitters == 1
+            && !artifact.emitters.is_empty())
+        .then(|| {
+            let emitter = &artifact.emitters[0];
+            StatefulDispatch {
+                capacity: emitter.max_particles,
+                slot_offset: emitter.slot_offset,
+                emitter_index: 0,
+                spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
+                speed: 0.5 * (emitter.speed.x + emitter.speed.y),
+                lifetime: 0.5 * (emitter.lifetime.x + emitter.lifetime.y),
+                gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
+                seed: player.instance.seed(),
+            }
+        });
         let indirect_draw_commands = indirect_draw_commands_with_statistics(&artifact.emitters);
         let particle_statistics = GpuParticleStatistics::new(&player.instance);
         let trail_roots = artifact
@@ -719,6 +774,7 @@ pub(crate) fn prepare_gpu_effects(
                 ribbon_workgroups,
                 total_slots: artifact.total_slots,
                 simulation_state: artifact.simulation_state,
+                stateful_dispatch,
             },
             GpuPresentationPrepared,
             particle_statistics,
@@ -1690,7 +1746,6 @@ type TrailHistories = BTreeMap<
 /// state advances incrementally; it is only reallocated when the effect's capacity changes. The
 /// stateful dispatch (next increment) advances `state` with the death loop and extracts it into the
 /// presentation buffer.
-#[allow(dead_code)] // Buffers are bound and dispatched by the stateful simulation step (M6, next).
 struct StatefulPersistentState {
     /// Slot capacity these buffers were sized for; a change triggers reallocation.
     records: u32,
@@ -1704,6 +1759,11 @@ struct StatefulPersistentState {
     free_count: Buffer,
     /// Atomic spawn ordinal counter; initialised to 0.
     spawn_counter: Buffer,
+    /// The last fixed tick the persistent state was advanced to. A target below this is a backward
+    /// seek, handled by restart+replay: reallocate to the initial state and replay forward.
+    last_tick: u32,
+    /// Fractional spawn carry, so a non-integer per-tick spawn rate emits the right long-run count.
+    spawn_accumulator: f32,
 }
 
 impl StatefulPersistentState {
@@ -1739,6 +1799,8 @@ impl StatefulPersistentState {
             free_list,
             free_count,
             spawn_counter,
+            last_tick: 0,
+            spawn_accumulator: 0.0,
         }
     }
 }
@@ -1780,6 +1842,137 @@ fn prepare_stateful_states(
     }
 }
 
+/// The canonical fixed simulation tick, matching `aestra_runtime::StatefulSimulation::TICK_DT`.
+const STATEFUL_TICK_DT: f32 = 1.0 / 60.0;
+/// Cap on fixed ticks advanced in a single frame, so a large seek or a first frame far into the
+/// timeline cannot stall the GPU; the simulation catches up over subsequent frames.
+const STATEFUL_MAX_CATCHUP_TICKS: u32 = 300;
+
+/// Encodes one stateful effect's per-frame GPU work (hybrid roadmap M6): advance the persistent state
+/// from its last tick to the tick for `simulation_time` (death loop + spawn per tick), then reset this
+/// emitter's compaction outputs and run present, which extracts presentation and compacts the live
+/// slots into the alive/indirect/counters buffers the render path draws. A backward seek is handled by
+/// restart+replay — the persistent state is reset to tick 0 and replayed forward (the effect's derived
+/// seek mode). Every kernel here is conformance-proven on real GPU; this is their orchestration.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_stateful_effect(
+    device: &RenderDevice,
+    encoder: &mut CommandEncoder,
+    death_integrate: &ComputePipeline,
+    spawn: &ComputePipeline,
+    present: &ComputePipeline,
+    layout: &BindGroupLayout,
+    persistent: &mut StatefulPersistentState,
+    sizing: GpuSimulationState,
+    dispatch: &StatefulDispatch,
+    particles: &Buffer,
+    alive: &Buffer,
+    indirect: &Buffer,
+    counters: &Buffer,
+    simulation_time: f32,
+) {
+    let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
+    // Backward seek: restart from the initial state and replay forward (never integrate in reverse).
+    if target_tick < persistent.last_tick {
+        *persistent = StatefulPersistentState::allocate(device, sizing);
+    }
+    let capacity = dispatch.capacity;
+    let workgroups = capacity.div_ceil(WORKGROUP_SIZE);
+    let ticks = (target_tick - persistent.last_tick).min(STATEFUL_MAX_CATCHUP_TICKS);
+
+    // params = [capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy, gz,
+    //           emitter_index, slot_offset]; only spawn_per_tick varies across ticks.
+    let params_bytes = |spawn_per_tick: u32| -> Vec<u8> {
+        [
+            capacity,
+            spawn_per_tick,
+            dispatch.seed as u32,
+            (dispatch.seed >> 32) as u32,
+            dispatch.speed.to_bits(),
+            dispatch.lifetime.to_bits(),
+            STATEFUL_TICK_DT.to_bits(),
+            dispatch.gravity[0].to_bits(),
+            dispatch.gravity[1].to_bits(),
+            dispatch.gravity[2].to_bits(),
+            dispatch.emitter_index,
+            dispatch.slot_offset,
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect()
+    };
+    let bind_group = |params: &Buffer| {
+        device.create_bind_group(
+            Some("aestra_gpu_stateful"),
+            layout,
+            &BindGroupEntries::sequential((
+                persistent.state.as_entire_buffer_binding(),
+                persistent.free_list.as_entire_buffer_binding(),
+                persistent.free_count.as_entire_buffer_binding(),
+                persistent.spawn_counter.as_entire_buffer_binding(),
+                params.as_entire_buffer_binding(),
+                particles.as_entire_buffer_binding(),
+                alive.as_entire_buffer_binding(),
+                indirect.as_entire_buffer_binding(),
+                counters.as_entire_buffer_binding(),
+            )),
+        )
+    };
+
+    // Per-tick params + bind groups (the spawn count varies with the fractional accumulator). One pass
+    // keeps the persistent state coherent across ticks (WebGPU orders dispatches within a pass).
+    let mut tick_resources = Vec::with_capacity(ticks as usize);
+    for _ in 0..ticks {
+        persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
+        let spawn_count = persistent.spawn_accumulator.floor();
+        persistent.spawn_accumulator -= spawn_count;
+        let spawn_count = (spawn_count as u32).min(capacity);
+        let params = device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful tick params"),
+            contents: &params_bytes(spawn_count),
+            usage: BufferUsages::STORAGE,
+        });
+        let group = bind_group(&params);
+        tick_resources.push((params, group));
+    }
+    if !tick_resources.is_empty() {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra stateful advance"),
+            timestamp_writes: None,
+        });
+        for (_, group) in &tick_resources {
+            pass.set_bind_group(0, group, &[]);
+            pass.set_pipeline(death_integrate);
+            pass.dispatch_workgroups(workgroups, 1, 1);
+            pass.set_pipeline(spawn);
+            pass.dispatch_workgroups(workgroups, 1, 1);
+        }
+    }
+    persistent.last_tick += ticks;
+
+    // Reset this emitter's live counter and indirect instance count, then present + compact. The
+    // vertex count (word 0 of the draw command) is preserved; only the instance count (word 1) is
+    // zeroed so the compaction rebuilds it.
+    encoder.clear_buffer(counters, 0, Some(4));
+    let instance_count_offset = u64::from(dispatch.emitter_index * 4 + 1) * 4;
+    encoder.clear_buffer(indirect, instance_count_offset, Some(4));
+    let present_params = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("aestra stateful present params"),
+        contents: &params_bytes(0),
+        usage: BufferUsages::STORAGE,
+    });
+    let present_group = bind_group(&present_params);
+    {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra stateful present"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &present_group, &[]);
+        pass.set_pipeline(present);
+        pass.dispatch_workgroups(workgroups, 1, 1);
+    }
+}
+
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
@@ -1800,6 +1993,8 @@ fn run_simulation(
     state: (
         Local<TrailHistories>,
         Local<simulation_timing::SimulationTimer>,
+        Option<Res<StatefulSimulationPipeline>>,
+        ResMut<StatefulStates>,
     ),
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
@@ -1807,7 +2002,18 @@ fn run_simulation(
         return;
     };
     let (buffers, render_device, queue, timing_mailbox) = gpu_resources;
-    let (mut histories, mut timer) = state;
+    let (mut histories, mut timer, stateful_pipeline, mut stateful_states) = state;
+    // Resolve the stateful compute pipelines once (present only when the device supports the path and
+    // the pipelines have finished compiling). The stateful branch below drives one enabled stateful
+    // emitter end-to-end; other effects take the analytic path unchanged.
+    let stateful = stateful_pipeline.as_ref().and_then(|sp| {
+        Some((
+            sp,
+            pipeline_cache.get_compute_pipeline(sp.death_integrate)?,
+            pipeline_cache.get_compute_pipeline(sp.spawn)?,
+            pipeline_cache.get_compute_pipeline(sp.present)?,
+        ))
+    });
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);
     let (Some(reset), Some(simulate)) = (
@@ -1826,6 +2032,42 @@ fn run_simulation(
     histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, _, e, _)| e.has_trails));
     let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
     for (entity, main_entity, effect, bind_group) in &effects {
+        // Stateful effects (hybrid roadmap M6) run their own persistent path instead of the analytic
+        // reset+simulate, feeding the same alive/indirect/particles buffers the render path draws.
+        if let Some(dispatch) = &effect.stateful_dispatch {
+            if let (Some((sp, death_integrate, spawn, present)), Some(persistent)) =
+                (&stateful, stateful_states.0.get_mut(&entity))
+            {
+                let render_buffers = [
+                    &effect.particles,
+                    &effect.alive,
+                    &effect.indirect,
+                    &effect.counters,
+                ]
+                .map(|handle| buffers.get(handle).map(|buffer| &buffer.buffer));
+                if let [Some(particles), Some(alive), Some(indirect), Some(counters)] =
+                    render_buffers
+                {
+                    dispatch_stateful_effect(
+                        &render_device,
+                        render_context.command_encoder(),
+                        death_integrate,
+                        spawn,
+                        present,
+                        &pipeline_cache.get_bind_group_layout(&sp.layout),
+                        persistent,
+                        effect.simulation_state,
+                        dispatch,
+                        particles,
+                        alive,
+                        indirect,
+                        counters,
+                        effect.simulation_time,
+                    );
+                }
+            }
+            continue;
+        }
         if (effect.has_ribbons && link_ribbons.is_none())
             || (effect.has_trails && update_trails.is_none())
         {
@@ -2149,6 +2391,7 @@ mod tests {
                     checkpoint_context: default(),
                     trail_roots: vec![],
                     simulation_state: default(),
+                    stateful_dispatch: None,
                 },
             ))
             .id();
