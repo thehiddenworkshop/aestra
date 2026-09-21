@@ -1,6 +1,6 @@
 (
     format_version: 3,
-    id: "caf4fb1d-23c5-469e-bda4-1d38e823dd08",
+    id: "c86945ec-f792-4141-9674-8178b64baaed",
     name: "Persistent Lab",
     duration: 3.0,
     playback_mode: LoopContinuous,
@@ -18,7 +18,7 @@
     parameters: [],
     emitters: [
         (
-            id: "f43fa237-8691-41d4-b3fd-7214ef44a4dd",
+            id: "0b9605e1-74b0-40d8-8cba-7f17f94be143",
             name: "Persistent Fountain",
             enabled: true,
             transform: (
@@ -32,7 +32,7 @@
             simulation_domain: Particle,
             modules: [
                 (
-                    id: "d6f74dd6-99d5-4a07-af88-08e20fa9672e",
+                    id: "3cd9e906-6519-4eaa-adc7-20aa52176085",
                     module_type: "aestra.emission.rate",
                     stage: EmitterUpdate,
                     enabled: true,
@@ -42,7 +42,7 @@
                     ),
                 ),
                 (
-                    id: "5bf923d4-86b0-4c18-b610-bc6e24e259fb",
+                    id: "983bf514-2b56-4eea-9d8e-8e5425d222d1",
                     module_type: "aestra.spawn.shape",
                     stage: ParticleSpawn,
                     enabled: true,
@@ -53,7 +53,7 @@
                     ),
                 ),
                 (
-                    id: "cc57e6fd-274f-4a18-a181-cdf14015c8bd",
+                    id: "d0e0b967-287b-4b31-a4f1-1c57ad65b4f7",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
@@ -75,7 +75,7 @@
                     ),
                 ),
                 (
-                    id: "07b08df9-bda5-47eb-8dbe-e1c57770b5b6",
+                    id: "c733d4dd-f461-461e-a46a-f8d9fc78fc63",
                     module_type: "aestra.update.motion",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -86,13 +86,13 @@
                     ),
                 ),
                 (
-                    id: "f8acbd54-3490-4281-b52a-8908d4928ef4",
+                    id: "1d9e3c2c-e5e9-4427-9660-dd9e2469b33b",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
                         size: (
-                            id: "d020a234-0256-47ab-bd77-9891f7949dbc",
+                            id: "49cdb3c7-a466-4aab-9332-4ece0efc2cf4",
                             keys: [
                                 (
                                     time: 0.0,
@@ -109,7 +109,7 @@
                             ],
                         ),
                         opacity: (
-                            id: "bc28feb6-5281-450e-ae97-ba159634c106",
+                            id: "3075e358-ac3f-4e75-889c-78b5e1fdbd7a",
                             keys: [
                                 (
                                     time: 0.0,
@@ -126,7 +126,7 @@
                             ],
                         ),
                         color: (
-                            id: "e8be1476-81ca-41d0-853b-de13dff3a772",
+                            id: "fb1d2084-5870-44ec-8c81-ebd4ed4dc63b",
                             keys: [
                                 (
                                     time: 0.0,
@@ -145,7 +145,7 @@
                     ),
                 ),
                 (
-                    id: "f71d6e33-e596-4779-936e-5ff8561f7f53",
+                    id: "cab2663d-3959-414c-af70-9afab47a0b83",
                     module_type: "aestra.update.persistent",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -154,7 +154,7 @@
             ],
             renderers: [
                 (
-                    id: "9f972fb5-5e62-4af2-b297-33a811e58069",
+                    id: "eff51c4d-c2be-4190-a7ee-dcdd85552c7e",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",

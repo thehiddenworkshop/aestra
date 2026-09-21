@@ -40,7 +40,7 @@ fn main() {
     effect.emitters.push(emitter);
 
     effect.validate().expect("the persistent fixture is valid");
-    let path = "assets/test/effects/persistent_lab.aestra.ron";
+    let path = "sample-project/effects/persistent_lab.aestra.ron";
     effect.save_ron(path).expect("write persistent fixture");
 
     // Round-trip: the loader must parse the file we just wrote, and the reloaded emitter must still
