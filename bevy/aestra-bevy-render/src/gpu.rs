@@ -166,6 +166,35 @@ struct StatefulDispatch {
     seed: u64,
 }
 
+impl StatefulDispatch {
+    /// A hash of the emitter's seed, slot placement, and dynamics. A change means a different
+    /// simulation, so the persistent state and its checkpoints are invalidated (hybrid roadmap M7).
+    fn fingerprint(&self) -> u64 {
+        let mut hash = self.seed;
+        for bits in [
+            self.capacity,
+            self.slot_offset,
+            self.emitter_index,
+            self.spawn_rate.to_bits(),
+            self.speed.0.to_bits(),
+            self.speed.1.to_bits(),
+            self.lifetime.0.to_bits(),
+            self.lifetime.1.to_bits(),
+            self.direction[0].to_bits(),
+            self.direction[1].to_bits(),
+            self.direction[2].to_bits(),
+            self.spread.to_bits(),
+            self.drag.to_bits(),
+            self.gravity[0].to_bits(),
+            self.gravity[1].to_bits(),
+            self.gravity[2].to_bits(),
+        ] {
+            hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
+    }
+}
+
 #[derive(Component, Clone)]
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
@@ -1779,16 +1808,31 @@ type TrailHistories = BTreeMap<
     ),
 >;
 
-/// The persistent GPU state for one stateful effect (hybrid roadmap M6). Unlike the analytic
+/// One GPU-resident snapshot of a stateful emitter's full persistent state at a fixed tick (hybrid
+/// roadmap M7): copies of all four buffers plus the CPU-side spawn accumulator. A backward seek
+/// restores the nearest snapshot at or before the target and replays forward the short remainder,
+/// instead of replaying from tick 0.
+struct StatefulCheckpoint {
+    tick: u32,
+    state: Buffer,
+    free_list: Buffer,
+    free_count: Buffer,
+    spawn_counter: Buffer,
+    spawn_accumulator: f32,
+}
+
+/// The persistent GPU state for one stateful effect (hybrid roadmap M6/M7). Unlike the analytic
 /// particle buffer — recomputed from scratch every frame — this survives across frames so per-particle
-/// state advances incrementally; it is only reallocated when the effect's capacity changes. The
-/// stateful dispatch (next increment) advances `state` with the death loop and extracts it into the
-/// presentation buffer.
+/// state advances incrementally, and it carries a store of GPU-resident checkpoints for cheap backward
+/// seek. Reallocated (which drops the checkpoints) when the emitter's capacity or dynamics fingerprint
+/// changes.
 struct StatefulPersistentState {
     /// Slot capacity these buffers were sized for; a change triggers reallocation.
     records: u32,
     /// `f32` components of persistent state per slot.
     stride: u32,
+    /// Identity of the emitter's dynamics + seed; a change invalidates the state and its checkpoints.
+    fingerprint: u64,
     /// `records * stride` persistent state floats (position, velocity, age, lifetime, ordinal bits).
     state: Buffer,
     /// Free-slot indices for death/reuse; initialised to every slot free.
@@ -1797,50 +1841,172 @@ struct StatefulPersistentState {
     free_count: Buffer,
     /// Atomic spawn ordinal counter; initialised to 0.
     spawn_counter: Buffer,
-    /// The last fixed tick the persistent state was advanced to. A target below this is a backward
-    /// seek, handled by restart+replay: reallocate to the initial state and replay forward.
+    /// The last fixed tick the persistent state was advanced to. A target below this is a backward seek.
     last_tick: u32,
     /// Fractional spawn carry, so a non-integer per-tick spawn rate emits the right long-run count.
     spawn_accumulator: f32,
+    /// GPU-resident checkpoints, ascending by tick (hybrid roadmap M7).
+    checkpoints: Vec<StatefulCheckpoint>,
 }
+
+/// Fixed tick cadence between checkpoints (~1/3 s at 60 Hz).
+const STATEFUL_CHECKPOINT_CADENCE: u32 = 20;
+/// Checkpoint count budget per emitter; exceeding it coarsens the store (drops every other), doubling
+/// the effective cadence and keeping memory bounded with full-timeline coverage.
+const MAX_STATEFUL_CHECKPOINTS: usize = 64;
 
 impl StatefulPersistentState {
     /// Allocates and initialises one emitter's persistent buffers for `records` slots: zeroed state, a
-    /// full free list (`0..records`), a free count of `records`, and a spawn counter of 0.
-    fn allocate(render_device: &RenderDevice, records: u32, stride: u32) -> Self {
-        let state_floats = records as usize * stride as usize;
-        let state = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful state"),
-            contents: &vec![0_u8; state_floats * std::mem::size_of::<f32>()],
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
-        });
-        let free_list_bytes: Vec<u8> = (0..records).flat_map(u32::to_le_bytes).collect();
-        let free_list = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful free list"),
-            contents: &free_list_bytes,
-            usage: BufferUsages::STORAGE,
-        });
-        let free_count = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful free count"),
-            contents: &records.to_le_bytes(),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        });
-        let spawn_counter = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful spawn counter"),
-            contents: &0_u32.to_le_bytes(),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        });
+    /// full free list (`0..records`), a free count of `records`, and a spawn counter of 0. All four
+    /// buffers are copy source+dest so they can be snapshot to / restored from a checkpoint.
+    fn allocate(render_device: &RenderDevice, records: u32, stride: u32, fingerprint: u64) -> Self {
+        let (state, free_list, free_count, spawn_counter) =
+            Self::fresh_buffers(render_device, records, stride);
         Self {
             records,
             stride,
+            fingerprint,
             state,
             free_list,
             free_count,
             spawn_counter,
             last_tick: 0,
             spawn_accumulator: 0.0,
+            checkpoints: Vec::new(),
         }
     }
+
+    /// Creates the four persistent buffers initialised to tick 0.
+    fn fresh_buffers(
+        render_device: &RenderDevice,
+        records: u32,
+        stride: u32,
+    ) -> (Buffer, Buffer, Buffer, Buffer) {
+        const COPYABLE: BufferUsages = BufferUsages::STORAGE
+            .union(BufferUsages::COPY_SRC)
+            .union(BufferUsages::COPY_DST);
+        let state_floats = records as usize * stride as usize;
+        let state = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful state"),
+            contents: &vec![0_u8; state_floats * std::mem::size_of::<f32>()],
+            usage: COPYABLE,
+        });
+        let free_list_bytes: Vec<u8> = (0..records).flat_map(u32::to_le_bytes).collect();
+        let free_list = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful free list"),
+            contents: &free_list_bytes,
+            usage: COPYABLE,
+        });
+        let free_count = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful free count"),
+            contents: &records.to_le_bytes(),
+            usage: COPYABLE,
+        });
+        let spawn_counter = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful spawn counter"),
+            contents: &0_u32.to_le_bytes(),
+            usage: COPYABLE,
+        });
+        (state, free_list, free_count, spawn_counter)
+    }
+
+    /// Re-initialises the four buffers to tick 0 (keeping the checkpoint store), for a backward seek
+    /// before the earliest checkpoint.
+    fn reset_to_zero(&mut self, render_device: &RenderDevice) {
+        let (state, free_list, free_count, spawn_counter) =
+            Self::fresh_buffers(render_device, self.records, self.stride);
+        self.state = state;
+        self.free_list = free_list;
+        self.free_count = free_count;
+        self.spawn_counter = spawn_counter;
+        self.last_tick = 0;
+        self.spawn_accumulator = 0.0;
+    }
+
+    /// Captures a GPU-resident checkpoint of the current state at `tick` (copying all four buffers
+    /// GPU→GPU), unless one already exists at that tick. Coarsens the store when it exceeds the budget.
+    fn capture(&mut self, render_device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
+        if self
+            .checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.tick == tick)
+        {
+            return;
+        }
+        let (state, free_list, free_count, spawn_counter) =
+            Self::fresh_buffers(render_device, self.records, self.stride);
+        encoder.copy_buffer_to_buffer(&self.state, 0, &state, 0, self.state.size());
+        encoder.copy_buffer_to_buffer(&self.free_list, 0, &free_list, 0, self.free_list.size());
+        encoder.copy_buffer_to_buffer(&self.free_count, 0, &free_count, 0, self.free_count.size());
+        encoder.copy_buffer_to_buffer(
+            &self.spawn_counter,
+            0,
+            &spawn_counter,
+            0,
+            self.spawn_counter.size(),
+        );
+        let checkpoint = StatefulCheckpoint {
+            tick,
+            state,
+            free_list,
+            free_count,
+            spawn_counter,
+            spawn_accumulator: self.spawn_accumulator,
+        };
+        // Insert keeping the store ascending by tick.
+        let position = self
+            .checkpoints
+            .partition_point(|existing| existing.tick < tick);
+        self.checkpoints.insert(position, checkpoint);
+        if self.checkpoints.len() > MAX_STATEFUL_CHECKPOINTS {
+            retain_every_other(&mut self.checkpoints);
+        }
+    }
+
+    /// Restores the nearest checkpoint at or before `target` (copying its four buffers back GPU→GPU),
+    /// returning its `(tick, spawn_accumulator)`, or `None` when no checkpoint is at or before `target`.
+    fn restore_nearest(&self, encoder: &mut CommandEncoder, target: u32) -> Option<(u32, f32)> {
+        // The store is ascending by tick; the nearest at or before `target` is just before the first
+        // one past it.
+        let index = self
+            .checkpoints
+            .partition_point(|checkpoint| checkpoint.tick <= target)
+            .checked_sub(1)?;
+        let checkpoint = &self.checkpoints[index];
+        encoder.copy_buffer_to_buffer(&checkpoint.state, 0, &self.state, 0, self.state.size());
+        encoder.copy_buffer_to_buffer(
+            &checkpoint.free_list,
+            0,
+            &self.free_list,
+            0,
+            self.free_list.size(),
+        );
+        encoder.copy_buffer_to_buffer(
+            &checkpoint.free_count,
+            0,
+            &self.free_count,
+            0,
+            self.free_count.size(),
+        );
+        encoder.copy_buffer_to_buffer(
+            &checkpoint.spawn_counter,
+            0,
+            &self.spawn_counter,
+            0,
+            self.spawn_counter.size(),
+        );
+        Some((checkpoint.tick, checkpoint.spawn_accumulator))
+    }
+}
+
+/// Halves a store by retaining every other entry (index 0, 2, 4, …), doubling the effective cadence
+/// while keeping the first and (for an odd length) last, so full-timeline coverage survives.
+fn retain_every_other<T>(items: &mut Vec<T>) {
+    let mut keep = false;
+    items.retain(|_| {
+        keep = !keep;
+        keep
+    });
 }
 
 /// Per-entity persistent state for stateful effects, kept in the render world across frames (the
@@ -1869,13 +2035,17 @@ fn prepare_stateful_states(
         }
         let stride = effect.simulation_state.stride;
         let current = states.0.get(&entity);
+        // Reallocate (dropping the checkpoints) when the emitter set, a capacity, or a dynamics
+        // fingerprint changes — any of which means a different simulation.
         let matches = current.is_some_and(|states| {
             states.len() == effect.stateful_dispatch.len()
                 && states
                     .iter()
                     .zip(&effect.stateful_dispatch)
                     .all(|(state, dispatch)| {
-                        state.records == dispatch.capacity && state.stride == stride
+                        state.records == dispatch.capacity
+                            && state.stride == stride
+                            && state.fingerprint == dispatch.fingerprint()
                     })
         });
         if !matches {
@@ -1883,7 +2053,12 @@ fn prepare_stateful_states(
                 .stateful_dispatch
                 .iter()
                 .map(|dispatch| {
-                    StatefulPersistentState::allocate(&render_device, dispatch.capacity, stride)
+                    StatefulPersistentState::allocate(
+                        &render_device,
+                        dispatch.capacity,
+                        stride,
+                        dispatch.fingerprint(),
+                    )
                 })
                 .collect();
             states.0.insert(entity, allocated);
@@ -1897,12 +2072,13 @@ const STATEFUL_TICK_DT: f32 = 1.0 / 60.0;
 /// timeline cannot stall the GPU; the simulation catches up over subsequent frames.
 const STATEFUL_MAX_CATCHUP_TICKS: u32 = 300;
 
-/// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6): advance its persistent
-/// state from its last tick to the tick for `simulation_time` (death loop + spawn per tick), then
-/// reset its indirect instance count and run present, which extracts presentation and compacts its
-/// live slots into the effect-wide alive/indirect/counters buffers the render path draws. A backward
-/// seek is handled by restart+replay — the state is reset to tick 0 and replayed forward (the derived
-/// seek mode). The caller clears the shared live counter once before the emitter loop and stamps the
+/// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6/M7): advance its persistent
+/// state from its last tick to the tick for `simulation_time` (death loop + spawn per tick), capturing
+/// GPU-resident checkpoints at a fixed cadence, then reset its indirect instance count and run present,
+/// which extracts presentation and compacts its live slots into the effect-wide alive/indirect/counters
+/// buffers the render path draws. A backward seek restores the nearest checkpoint at or before the
+/// target and replays only the remainder forward (the derived restart+replay seek mode; never a reverse
+/// integration). The caller clears the shared live counter once before the emitter loop and stamps the
 /// statistics telemetry once after it. Every kernel here is conformance-proven on real GPU.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_stateful_effect(
@@ -1921,14 +2097,20 @@ fn dispatch_stateful_effect(
     simulation_time: f32,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
-    // Backward seek: restart from the initial state and replay forward (never integrate in reverse).
+    // Backward seek (hybrid roadmap M7): restore the nearest checkpoint at or before the target and
+    // replay only the short remainder forward — never integrate in reverse. If no checkpoint is at or
+    // before the target (scrubbing before the earliest one), reset to tick 0 and replay from there.
     if target_tick < persistent.last_tick {
-        *persistent =
-            StatefulPersistentState::allocate(device, persistent.records, persistent.stride);
+        match persistent.restore_nearest(encoder, target_tick) {
+            Some((tick, accumulator)) => {
+                persistent.last_tick = tick;
+                persistent.spawn_accumulator = accumulator;
+            }
+            None => persistent.reset_to_zero(device),
+        }
     }
     let capacity = dispatch.capacity;
     let workgroups = capacity.div_ceil(WORKGROUP_SIZE);
-    let ticks = (target_tick - persistent.last_tick).min(STATEFUL_MAX_CATCHUP_TICKS);
 
     // The production 19-word params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); only
     // spawn_per_tick varies across ticks.
@@ -1956,15 +2138,21 @@ fn dispatch_stateful_effect(
         ];
         words.into_iter().flat_map(u32::to_le_bytes).collect()
     };
+    // Clone the buffer handles (cheap Arc clones) so the bind groups don't borrow `persistent`, which
+    // must stay mutably available to capture checkpoints between advance segments.
+    let state_buffer = persistent.state.clone();
+    let free_list_buffer = persistent.free_list.clone();
+    let free_count_buffer = persistent.free_count.clone();
+    let spawn_counter_buffer = persistent.spawn_counter.clone();
     let bind_group = |params: &Buffer| {
         device.create_bind_group(
             Some("aestra_gpu_stateful"),
             layout,
             &BindGroupEntries::sequential((
-                persistent.state.as_entire_buffer_binding(),
-                persistent.free_list.as_entire_buffer_binding(),
-                persistent.free_count.as_entire_buffer_binding(),
-                persistent.spawn_counter.as_entire_buffer_binding(),
+                state_buffer.as_entire_buffer_binding(),
+                free_list_buffer.as_entire_buffer_binding(),
+                free_count_buffer.as_entire_buffer_binding(),
+                spawn_counter_buffer.as_entire_buffer_binding(),
                 params.as_entire_buffer_binding(),
                 particles.as_entire_buffer_binding(),
                 alive.as_entire_buffer_binding(),
@@ -1974,36 +2162,54 @@ fn dispatch_stateful_effect(
         )
     };
 
-    // Per-tick params + bind groups (the spawn count varies with the fractional accumulator). One pass
-    // keeps the persistent state coherent across ticks (WebGPU orders dispatches within a pass).
-    let mut tick_resources = Vec::with_capacity(ticks as usize);
-    for _ in 0..ticks {
-        persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
-        let spawn_count = persistent.spawn_accumulator.floor();
-        persistent.spawn_accumulator -= spawn_count;
-        let spawn_count = (spawn_count as u32).min(capacity);
-        let params = device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("aestra stateful tick params"),
-            contents: &params_bytes(spawn_count),
-            usage: BufferUsages::STORAGE,
-        });
-        let group = bind_group(&params);
-        tick_resources.push((params, group));
-    }
-    if !tick_resources.is_empty() {
-        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("aestra stateful advance"),
-            timestamp_writes: None,
-        });
-        for (_, group) in &tick_resources {
-            pass.set_bind_group(0, group, &[]);
-            pass.set_pipeline(death_integrate);
-            pass.dispatch_workgroups(workgroups, 1, 1);
-            pass.set_pipeline(spawn);
-            pass.dispatch_workgroups(workgroups, 1, 1);
+    // Advance from last_tick to target in cadence-aligned segments, capturing a GPU-resident
+    // checkpoint at each cadence boundary reached (so a later backward seek restores nearby). Bounded
+    // per frame so a large jump cannot stall the GPU. Resources are kept alive until the encoder is
+    // submitted by the caller.
+    let mut remaining = (target_tick - persistent.last_tick).min(STATEFUL_MAX_CATCHUP_TICKS);
+    let mut params_keepalive = Vec::new();
+    let mut group_keepalive = Vec::new();
+    while remaining > 0 {
+        let to_boundary =
+            STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
+        let segment = remaining.min(to_boundary);
+        let mut groups = Vec::with_capacity(segment as usize);
+        for _ in 0..segment {
+            persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
+            let spawn_count = persistent.spawn_accumulator.floor();
+            persistent.spawn_accumulator -= spawn_count;
+            let spawn_count = (spawn_count as u32).min(capacity);
+            let params = device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra stateful tick params"),
+                contents: &params_bytes(spawn_count),
+                usage: BufferUsages::STORAGE,
+            });
+            groups.push(bind_group(&params));
+            params_keepalive.push(params);
         }
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("aestra stateful advance"),
+                timestamp_writes: None,
+            });
+            for group in &groups {
+                pass.set_bind_group(0, group, &[]);
+                pass.set_pipeline(death_integrate);
+                pass.dispatch_workgroups(workgroups, 1, 1);
+                pass.set_pipeline(spawn);
+                pass.dispatch_workgroups(workgroups, 1, 1);
+            }
+        }
+        persistent.last_tick += segment;
+        remaining -= segment;
+        if persistent
+            .last_tick
+            .is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
+        {
+            persistent.capture(device, encoder, persistent.last_tick);
+        }
+        group_keepalive.extend(groups);
     }
-    persistent.last_tick += ticks;
 
     // Reset this emitter's indirect instance count, then present + compact. The vertex count (word 0
     // of the draw command) is preserved; only the instance count (word 1) is zeroed so the compaction
@@ -2490,6 +2696,60 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coarsening_a_checkpoint_store_halves_it_keeping_full_coverage() {
+        // retain_every_other backs the checkpoint-budget coarsening: it keeps indices 0, 2, 4, …,
+        // doubling the spacing while preserving the first and last entries (for an odd length).
+        let mut ticks: Vec<u32> = (0..=12).map(|k| k * 20).collect(); // 13 entries: 0,20,…,240
+        retain_every_other(&mut ticks);
+        assert_eq!(ticks, vec![0, 40, 80, 120, 160, 200, 240]);
+        // Idempotent shape: coarsening again keeps halving and still spans the timeline.
+        retain_every_other(&mut ticks);
+        assert_eq!(ticks, vec![0, 80, 160, 240]);
+
+        let mut even = vec![1, 2, 3, 4];
+        retain_every_other(&mut even);
+        assert_eq!(even, vec![1, 3], "even length keeps the first of each pair");
+    }
+
+    #[test]
+    fn a_dynamics_change_changes_the_fingerprint() {
+        let base = StatefulDispatch {
+            capacity: 128,
+            slot_offset: 0,
+            emitter_index: 0,
+            emitter_count: 1,
+            spawn_rate: 24.0,
+            speed: (10.0, 14.0),
+            lifetime: (1.0, 1.5),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.4,
+            drag: 0.5,
+            gravity: [0.0, -9.81, 0.0],
+            seed: 42,
+        };
+        assert_eq!(
+            base.fingerprint(),
+            base.clone().fingerprint(),
+            "stable for equal dynamics"
+        );
+        let mut changed = base.clone();
+        changed.gravity[1] = -12.0;
+        assert_ne!(
+            base.fingerprint(),
+            changed.fingerprint(),
+            "gravity change invalidates"
+        );
+        let mut reseeded = base.clone();
+        reseeded.seed = 43;
+        assert_ne!(
+            base.fingerprint(),
+            reseeded.fingerprint(),
+            "seed change invalidates"
+        );
+    }
+
     use aestra_compiler::EffectCompiler;
     use aestra_core::material::{
         LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialEvaluationDomain, MaterialExpression,

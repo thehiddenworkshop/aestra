@@ -1053,6 +1053,132 @@ impl Harness {
         Ok(alive)
     }
 
+    /// The M7 seek proof for the full death loop: advance to `checkpoint_at` and snapshot ALL FOUR
+    /// persistent buffers (state, free list, free count, spawn counter) GPU→GPU, overshoot forward to
+    /// `overshoot_to`, then restore the snapshot and replay forward to `seek_target` — all in GPU
+    /// commands. Returns the live `(ordinal, position)` set. Snapshotting all four buffers (not just
+    /// state) is what makes the death loop's spawn ordinals and free-list reuse reproduce exactly.
+    fn death_loop_seek_via_checkpoint(
+        &self,
+        config: &StatefulConfig,
+        seed: u64,
+        checkpoint_at: u32,
+        overshoot_to: u32,
+        seek_target: u32,
+    ) -> Result<Vec<(u64, [f32; 3])>, String> {
+        assert!(checkpoint_at <= seek_target && seek_target <= overshoot_to);
+        let capacity = config.capacity;
+        let copyable = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let make = |label, contents: &[u8]| {
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents,
+                    usage: copyable,
+                })
+        };
+        let state_bytes = encode(&vec![0.0_f32; capacity as usize * DEATH_STRIDE])?;
+        let state = make("seek state", &state_bytes);
+        let free_list = make(
+            "seek free list",
+            &encode(&(0..capacity).collect::<Vec<u32>>())?,
+        );
+        let free_count = make("seek free count", &encode(&capacity)?);
+        let spawn_counter = make("seek spawn counter", &encode(&0_u32)?);
+        // Checkpoint copies of the four buffers.
+        let cp_state = make("cp state", &state_bytes);
+        let cp_free_list = make("cp free list", &encode(&vec![0_u32; capacity as usize])?);
+        let cp_free_count = make("cp free count", &encode(&0_u32)?);
+        let cp_spawn_counter = make("cp spawn counter", &encode(&0_u32)?);
+        let params_buffer = make(
+            "seek params",
+            &encode(&stateful_params(config, seed, 0, 0))?,
+        );
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("seek bind group"),
+            layout: &self.death_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: free_list.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: free_count.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: spawn_counter.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let spawn_per_tick = config.spawn_per_tick;
+        let advance = |encoder: &mut wgpu::CommandEncoder, ticks: u32| {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("seek advance"),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &bind_group, &[]);
+            for _ in 0..ticks {
+                pass.set_pipeline(&self.death_integrate_pipeline);
+                pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP), 1, 1);
+                pass.set_pipeline(&self.death_spawn_pipeline);
+                pass.dispatch_workgroups(spawn_per_tick.div_ceil(WORKGROUP), 1, 1);
+            }
+        };
+        let snapshot =
+            |encoder: &mut wgpu::CommandEncoder, from: &[&wgpu::Buffer], to: &[&wgpu::Buffer]| {
+                for (source, dest) in from.iter().zip(to) {
+                    encoder.copy_buffer_to_buffer(source, 0, dest, 0, source.size());
+                }
+            };
+        let live = [&state, &free_list, &free_count, &spawn_counter];
+        let saved = [&cp_state, &cp_free_list, &cp_free_count, &cp_spawn_counter];
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("seek readback"),
+            size: state_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("seek commands"),
+            });
+        advance(&mut encoder, checkpoint_at);
+        snapshot(&mut encoder, &live, &saved); // capture
+        advance(&mut encoder, overshoot_to - checkpoint_at);
+        snapshot(&mut encoder, &saved, &live); // restore
+        advance(&mut encoder, seek_target - checkpoint_at);
+        encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+        let raw = self.read_back_u32(encoder, &staging)?;
+        let mut alive = Vec::new();
+        for slot in 0..capacity as usize {
+            let base = slot * DEATH_STRIDE;
+            let lifetime = f32::from_bits(raw[base + 7]);
+            let age = f32::from_bits(raw[base + 6]);
+            if lifetime > 0.0 && age < lifetime {
+                let position = [
+                    f32::from_bits(raw[base]),
+                    f32::from_bits(raw[base + 1]),
+                    f32::from_bits(raw[base + 2]),
+                ];
+                alive.push((raw[base + 8] as u64, position));
+            }
+        }
+        Ok(alive)
+    }
+
     /// Runs presentation extraction over an uploaded stride-9 state buffer, returning the raw
     /// `capacity * 12` presentation words (the `GpuParticle` ABI). Floats come back as bits so
     /// `packed_emitter_alive` and `particle_index` are recovered exactly.
@@ -1690,6 +1816,57 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
             assert!(
                 (expected - actual).abs() <= tolerance,
                 "particle {index} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
+        }
+    }
+}
+
+#[test]
+fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
+    // Hybrid roadmap M7: a backward seek of a full stateful effect restores the nearest GPU-resident
+    // checkpoint (all four persistent buffers) and replays forward — never a reverse integration.
+    // Prove it for the death loop: checkpoint at tick 40, overshoot to 90, restore + replay to 70, and
+    // match the uninterrupted forward run to 70 by spawn ordinal. Snapshotting the free list and spawn
+    // counter (not just state) is what makes the ordinals and slot reuse line up.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let config = StatefulConfig {
+        gravity: [0.0, -9.81, 0.0],
+        spawn_per_tick: 4,
+        speed: (9.0, 15.0),
+        lifetime: (0.45, 0.6),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.5,
+        drag: 0.8,
+        capacity: 512,
+    };
+    let seed = 0xC0FF_EE00_1234_5678_u64;
+
+    let seeked = harness
+        .death_loop_seek_via_checkpoint(&config, seed, 40, 90, 70)
+        .unwrap();
+    let uninterrupted = harness
+        .advance_stateful_with_death(&config, seed, 70)
+        .unwrap();
+
+    assert!(!uninterrupted.is_empty(), "particles are alive at tick 70");
+    assert_eq!(
+        seeked.len(),
+        uninterrupted.len(),
+        "restore+replay and the uninterrupted run agree on the live count"
+    );
+    let by_id: std::collections::HashMap<u64, [f32; 3]> = uninterrupted.into_iter().collect();
+    for (id, seeked_pos) in seeked {
+        let expected = by_id
+            .get(&id)
+            .unwrap_or_else(|| panic!("ordinal {id} present after seek but not uninterrupted"));
+        for axis in 0..3 {
+            let (a, b) = (seeked_pos[axis], expected[axis]);
+            let tolerance = 1e-3 + 1e-4 * a.abs().max(b.abs());
+            assert!(
+                (a - b).abs() <= tolerance,
+                "ordinal {id} axis {axis}: seek={a:.5} uninterrupted={b:.5}"
             );
         }
     }
