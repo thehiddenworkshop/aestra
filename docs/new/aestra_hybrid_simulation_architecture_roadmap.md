@@ -2649,9 +2649,22 @@ without collision complexity.
 > seven stateful conformance tests pass with `AESTRA_REQUIRE_GPU_CONFORMANCE=1`). The death kernels
 > reuse the two already-proven primitives (the u64 spawn RNG and the free-list allocator) verbatim.
 >
-> **Still to do:** presentation extraction (state → 48-byte `GpuParticle`), and finally wiring allocate
-> + dispatch into `aestra-bevy-render/src/gpu.rs` — which then runs a real stateful effect end-to-end,
-> meaningful precisely because the proven kernels exist.
+> **Presentation extraction — landed and proven.** `aestra_gpu::STATEFUL_PRESENT_WGSL` maps one
+> persistent state slot (stride 9) to the 48-byte `GpuParticle` presentation ABI — white color, state
+> position, unit size, zero rotation, clamped normalized age, packed emitter/alive, and the spawn
+> ordinal carried verbatim in `particle_index` (the analytic path's stable per-particle index). Dead
+> slots emit `alive = 0` for the existing compaction pass to drop, so the stateful path feeds the same
+> alive/compaction/render pipeline as the analytic path. `stateful_conformance.rs` extracts a crafted
+> state buffer (fresh/mid-life/near-death alive slots plus age==lifetime, past-lifetime, and free
+> slots) and matches every `GpuParticle` word to the reference rule; verified on a real GPU (eight
+> stateful conformance tests pass). A GPU-less `aestra-gpu` test now also validates all three stateful
+> WGSL primitives (spawn RNG, free list, presentation) compose into naga-valid WGSL, so GPU-less CI
+> catches shader breakage before the render wiring depends on them.
+>
+> **Still to do:** wiring allocate + dispatch into `aestra-bevy-render/src/gpu.rs` — allocate the
+> state buffer from `GpuSimulationState`, dispatch the death loop then presentation extraction, and
+> feed the existing compaction/render path — which then runs a real stateful effect end-to-end,
+> meaningful precisely because every kernel it composes is already proven.
 
 ### GPU passes
 
