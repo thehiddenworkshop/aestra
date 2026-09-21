@@ -141,6 +141,9 @@ struct StatefulDispatch {
     slot_offset: u32,
     /// This emitter's index for the packed emitter/alive word and its indirect draw command.
     emitter_index: u32,
+    /// The effect's enabled-emitter count, locating the statistics telemetry trailer in the indirect
+    /// buffer (at `emitter_count * 4`).
+    emitter_count: u32,
     /// Mean particles emitted per second; fractional per-tick spawns accumulate across ticks.
     spawn_rate: f32,
     /// Initial launch speed along the deterministic direction.
@@ -663,6 +666,7 @@ pub(crate) fn prepare_gpu_effects(
                 capacity: emitter.max_particles,
                 slot_offset: emitter.slot_offset,
                 emitter_index: 0,
+                emitter_count: enabled_emitters as u32,
                 spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
                 speed: 0.5 * (emitter.speed.x + emitter.speed.y),
                 lifetime: 0.5 * (emitter.lifetime.x + emitter.lifetime.y),
@@ -1870,6 +1874,8 @@ fn dispatch_stateful_effect(
     indirect: &Buffer,
     counters: &Buffer,
     simulation_time: f32,
+    statistics_token: u32,
+    history_epoch: u32,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
     // Backward seek: restart from the initial state and replay forward (never integrate in reverse).
@@ -1971,6 +1977,26 @@ fn dispatch_stateful_effect(
         pass.set_pipeline(present);
         pass.dispatch_workgroups(workgroups, 1, 1);
     }
+
+    // Stamp the particle-statistics telemetry trailer the analytic reset writes, so the live-count
+    // readback accepts this frame: [MAGIC, context token, history epoch, time]. The per-emitter
+    // instance counts (the alive counts the readback reports) were rebuilt by present's compaction.
+    let telemetry: [u32; 4] = [
+        aestra_gpu::PARTICLE_STATISTICS_MAGIC,
+        statistics_token,
+        history_epoch,
+        simulation_time.to_bits(),
+    ];
+    let telemetry_src = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("aestra stateful statistics telemetry"),
+        contents: &telemetry
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<u8>>(),
+        usage: BufferUsages::COPY_SRC,
+    });
+    let telemetry_offset = u64::from(dispatch.emitter_count * 4) * 4;
+    encoder.copy_buffer_to_buffer(&telemetry_src, 0, indirect, telemetry_offset, 16);
 }
 
 fn run_simulation(
@@ -2063,6 +2089,8 @@ fn run_simulation(
                         indirect,
                         counters,
                         effect.simulation_time,
+                        effect.statistics_token,
+                        effect.history_epoch,
                     );
                 }
             }
