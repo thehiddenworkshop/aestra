@@ -1,6 +1,6 @@
 (
     format_version: 3,
-    id: "a22bb57b-c59b-4f86-8dcd-e7b8058dad13",
+    id: "2b26d571-7692-4492-9c4d-2e98043ed8b1",
     name: "Mixed Lab",
     duration: 3.0,
     playback_mode: LoopContinuous,
@@ -18,7 +18,7 @@
     parameters: [],
     emitters: [
         (
-            id: "41fd7d47-e4d9-45ba-a32a-ba939cc38e1f",
+            id: "bac3b0fd-2e01-4508-8ab7-d915389b6aea",
             name: "Analytic Sparks",
             enabled: true,
             transform: (
@@ -32,7 +32,7 @@
             simulation_domain: Particle,
             modules: [
                 (
-                    id: "7b0ffd56-a77b-4eb9-8e6f-e94626575bf0",
+                    id: "3fc0b1c0-3d34-4df7-9144-59aa7d1345f9",
                     module_type: "aestra.emission.rate",
                     stage: EmitterUpdate,
                     enabled: true,
@@ -42,7 +42,7 @@
                     ),
                 ),
                 (
-                    id: "9fb36c5d-eb30-46da-8709-54b6c29c57e0",
+                    id: "9c04e96f-6819-49f0-ab6d-0df59871d0f2",
                     module_type: "aestra.spawn.shape",
                     stage: ParticleSpawn,
                     enabled: true,
@@ -53,21 +53,21 @@
                     ),
                 ),
                 (
-                    id: "52181261-6e03-4d87-a041-44d7ff61fbbd",
+                    id: "531d06c5-554c-4329-be73-4e1967a71029",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Initialize(
                         lifetime: (
-                            min: 1.2,
-                            max: 1.2,
+                            min: 0.96000004,
+                            max: 1.44,
                         ),
                         speed: (
-                            min: 60.0,
-                            max: 60.0,
+                            min: 42.0,
+                            max: 78.0,
                         ),
                         direction: (0.0, 1.0, 0.0),
-                        spread_degrees: 25.0,
+                        spread_degrees: 30.0,
                         angular_velocity: (
                             min: -2.0,
                             max: 2.0,
@@ -75,7 +75,7 @@
                     ),
                 ),
                 (
-                    id: "b20fb680-632f-49f6-9057-8116a7e0b535",
+                    id: "3ef8b26b-765b-4263-aba7-eae4d6ee23cf",
                     module_type: "aestra.update.motion",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -86,13 +86,13 @@
                     ),
                 ),
                 (
-                    id: "a74ddee7-1993-4cfa-9aae-b55007b2a4e1",
+                    id: "f2dd4665-9562-4b0f-becd-baf604498fb2",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
                         size: (
-                            id: "6d820091-483e-49ad-8e41-85bc9bc16479",
+                            id: "c07474b2-cc8d-4458-9da1-51b26ad3c65a",
                             keys: [
                                 (
                                     time: 0.0,
@@ -109,7 +109,7 @@
                             ],
                         ),
                         opacity: (
-                            id: "acb51df7-4d8a-4cec-a984-04edf7bd3862",
+                            id: "3f47f1a6-912c-4955-a1ca-4f2afd2923d7",
                             keys: [
                                 (
                                     time: 0.0,
@@ -126,7 +126,7 @@
                             ],
                         ),
                         color: (
-                            id: "214ce14a-708b-42c2-aff6-6cbe797ec485",
+                            id: "43a03075-a143-4d05-ae29-8f6979841f1f",
                             keys: [
                                 (
                                     time: 0.0,
@@ -147,7 +147,7 @@
             ],
             renderers: [
                 (
-                    id: "44dcd08e-2cd3-4e07-b00d-7bf283ab4a2f",
+                    id: "7b67add6-b61c-4412-b1f3-f20f2b9bdbf2",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",
@@ -156,7 +156,7 @@
             ],
         ),
         (
-            id: "258c51e8-bb12-4465-a6c9-5bb27b0005a2",
+            id: "3064b6fe-ca35-4bce-8330-6ab3f8f001f7",
             name: "Stateful Fountain",
             enabled: true,
             transform: (
@@ -170,7 +170,7 @@
             simulation_domain: Particle,
             modules: [
                 (
-                    id: "bade84af-cc8b-4f32-9d45-c9c1c5025782",
+                    id: "3f095781-5688-446f-8405-26ac5fff38c2",
                     module_type: "aestra.emission.rate",
                     stage: EmitterUpdate,
                     enabled: true,
@@ -180,7 +180,7 @@
                     ),
                 ),
                 (
-                    id: "2b3d2587-dadc-4219-bcdb-6aa4faeeac48",
+                    id: "52fa1655-5d56-43bc-a4dd-5d9ac7fc5bce",
                     module_type: "aestra.spawn.shape",
                     stage: ParticleSpawn,
                     enabled: true,
@@ -191,21 +191,21 @@
                     ),
                 ),
                 (
-                    id: "645c9be2-be6d-4435-a567-d53cd581ef30",
+                    id: "7f393a12-d8fd-4ef4-862c-559aeac0734e",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Initialize(
                         lifetime: (
-                            min: 1.5,
-                            max: 1.5,
+                            min: 1.2,
+                            max: 1.8000001,
                         ),
                         speed: (
-                            min: 45.0,
-                            max: 45.0,
+                            min: 31.5,
+                            max: 58.499996,
                         ),
                         direction: (0.0, 1.0, 0.0),
-                        spread_degrees: 25.0,
+                        spread_degrees: 30.0,
                         angular_velocity: (
                             min: -2.0,
                             max: 2.0,
@@ -213,7 +213,7 @@
                     ),
                 ),
                 (
-                    id: "a6d0df92-d2ba-4fa2-a8a4-1840a617f664",
+                    id: "88a1045d-4e58-4fa3-8453-71d805576f8f",
                     module_type: "aestra.update.motion",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -224,13 +224,13 @@
                     ),
                 ),
                 (
-                    id: "9b062f81-98a8-4f2f-af81-1ee6ea00bff1",
+                    id: "659273dc-b9e4-49ec-928f-b2fd57555f11",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
                         size: (
-                            id: "d000e310-904c-419f-83ef-e0f4320311e1",
+                            id: "8427fe88-05af-4354-828d-3e7b22638073",
                             keys: [
                                 (
                                     time: 0.0,
@@ -247,7 +247,7 @@
                             ],
                         ),
                         opacity: (
-                            id: "4293a069-129e-454b-9d34-d3a9845884b7",
+                            id: "02607e64-81f3-4e34-bb42-a4e8a88a944f",
                             keys: [
                                 (
                                     time: 0.0,
@@ -264,7 +264,7 @@
                             ],
                         ),
                         color: (
-                            id: "ae02b6d9-c683-4485-8b11-dd983d7effae",
+                            id: "85a77025-6551-4ce0-96c4-c7a56333c605",
                             keys: [
                                 (
                                     time: 0.0,
@@ -283,7 +283,7 @@
                     ),
                 ),
                 (
-                    id: "9cad3a26-b2f5-4442-9a66-3571b4230bac",
+                    id: "2e75b3b9-be21-4909-83d7-84dbe8020f6c",
                     module_type: "aestra.update.persistent",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -292,7 +292,7 @@
             ],
             renderers: [
                 (
-                    id: "6f4054b0-7621-4156-a566-339153e2e480",
+                    id: "e7e74835-77a9-44b6-a16c-111fd6b78dab",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",
@@ -301,7 +301,7 @@
             ],
         ),
         (
-            id: "1b32707b-606b-40ff-b7dd-6900e36dd7d9",
+            id: "0bee2b98-e714-4441-af93-1282aced77b6",
             name: "Stateful Drift",
             enabled: true,
             transform: (
@@ -315,7 +315,7 @@
             simulation_domain: Particle,
             modules: [
                 (
-                    id: "70477d98-24cf-48cf-b33e-23e422ed5b50",
+                    id: "a934e5e1-87f4-4939-ae3a-95e5f62623ae",
                     module_type: "aestra.emission.rate",
                     stage: EmitterUpdate,
                     enabled: true,
@@ -325,7 +325,7 @@
                     ),
                 ),
                 (
-                    id: "6c1dcfee-c275-4b12-a5b7-a42bb35499d5",
+                    id: "1420ce9b-3b58-4ba8-b3a3-6920ad8b44dd",
                     module_type: "aestra.spawn.shape",
                     stage: ParticleSpawn,
                     enabled: true,
@@ -336,21 +336,21 @@
                     ),
                 ),
                 (
-                    id: "f08dfe2a-6a66-41a1-a492-3853fce9ee07",
+                    id: "42145ae7-cc84-457a-b37b-e5912aced90b",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Initialize(
                         lifetime: (
-                            min: 2.0,
-                            max: 2.0,
+                            min: 1.6,
+                            max: 2.4,
                         ),
                         speed: (
-                            min: 22.0,
-                            max: 22.0,
+                            min: 15.4,
+                            max: 28.599998,
                         ),
                         direction: (0.0, 1.0, 0.0),
-                        spread_degrees: 25.0,
+                        spread_degrees: 30.0,
                         angular_velocity: (
                             min: -2.0,
                             max: 2.0,
@@ -358,7 +358,7 @@
                     ),
                 ),
                 (
-                    id: "c2f09c5e-e429-428d-a709-b8151ceb996d",
+                    id: "3f4bb6af-1ad1-4d52-9ae5-b2602586283b",
                     module_type: "aestra.update.motion",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -369,13 +369,13 @@
                     ),
                 ),
                 (
-                    id: "2aa102da-debb-4adc-826c-1277f0f3868c",
+                    id: "8a8d85fb-2afd-452d-a302-681d4d855389",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
                         size: (
-                            id: "49e02e49-0483-4677-a602-f93d869e3c72",
+                            id: "e57a4dc5-11bb-422f-8b78-0c519836532b",
                             keys: [
                                 (
                                     time: 0.0,
@@ -392,7 +392,7 @@
                             ],
                         ),
                         opacity: (
-                            id: "afd6bc1c-33ec-43bb-99f0-2d5f10f7d57c",
+                            id: "2bf06aa8-1394-45f0-b805-34454f4a7ac8",
                             keys: [
                                 (
                                     time: 0.0,
@@ -409,7 +409,7 @@
                             ],
                         ),
                         color: (
-                            id: "96982161-bc66-4df8-a6f0-d9604c3f7179",
+                            id: "37223992-58bc-47e6-afbc-973e399fe0f5",
                             keys: [
                                 (
                                     time: 0.0,
@@ -428,7 +428,7 @@
                     ),
                 ),
                 (
-                    id: "15147d25-0396-44d7-aa03-5392601893b4",
+                    id: "e2881864-43b5-4510-b06b-ed202017a8b6",
                     module_type: "aestra.update.persistent",
                     stage: ParticleUpdate,
                     enabled: true,
@@ -437,7 +437,7 @@
             ],
             renderers: [
                 (
-                    id: "84ee7389-9b02-4dfa-9b51-11bcbaee515a",
+                    id: "0ab9a274-56e5-4326-857e-85153b5123bc",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",

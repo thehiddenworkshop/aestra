@@ -11,17 +11,28 @@
 
 use crate::{DEFAULT_PLAYBACK_TICK_RATE, ParticleSample, SimulationClass, SimulationStateLayout};
 
-/// Fixed configuration for the prototype stateful integrator. Deliberately tiny.
+/// Fixed configuration for the prototype stateful integrator. Richer than a single speed/lifetime:
+/// per-particle random speed and lifetime ranges, an authored launch direction with a spread cone, and
+/// linear drag. Every axis is deterministic from `(seed, ordinal)` and — deliberately — trig-free, so
+/// the GPU kernels can reproduce it bit-for-bit (`normalize` uses only IEEE-correctly-rounded `sqrt`
+/// and division; the cone is `normalize(direction + spread * random_unit)`, not a trig cone).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatefulConfig {
     /// Constant acceleration applied to velocity each tick.
     pub gravity: [f32; 3],
     /// Particles spawned per tick (bounded by `capacity`).
     pub spawn_per_tick: u32,
-    /// Initial particle speed along its deterministic launch direction.
-    pub initial_speed: f32,
-    /// Particle lifetime in seconds.
-    pub lifetime: f32,
+    /// Initial particle speed, sampled per particle uniformly in `[min, max]`.
+    pub speed: (f32, f32),
+    /// Particle lifetime in seconds, sampled per particle uniformly in `[min, max]`.
+    pub lifetime: (f32, f32),
+    /// The base launch direction; normalized at spawn (a zero vector falls back to the random unit).
+    pub direction: [f32; 3],
+    /// Cone spread: `0` launches straight along `direction`, larger values blend in more of the
+    /// per-particle random unit vector before renormalizing.
+    pub spread: f32,
+    /// Linear velocity damping per second (`v -= drag * v * dt` each tick); `0` disables it.
+    pub drag: f32,
     /// Maximum live particles; spawning stops at this bound (bounded allocation).
     pub capacity: u32,
 }
@@ -99,14 +110,30 @@ impl StatefulSimulation {
         launch_direction(seed, ordinal)
     }
 
+    /// The full per-particle launch velocity (direction cone × sampled speed) for a spawn ordinal.
+    /// Canonical for both this CPU reference and the GPU spawn kernel.
+    pub fn launch_velocity(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
+        launch_velocity(config, seed, ordinal)
+    }
+
+    /// The deterministic per-particle uniform in `[0, 1)` for a channel (speed = 0, lifetime = 1).
+    /// Canonical for both this CPU reference and the GPU spawn kernel.
+    pub fn spawn_uniform(seed: u64, ordinal: u64, channel: u64) -> f32 {
+        spawn_uniform(seed, ordinal, channel)
+    }
+
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;
+        let drag = self.config.drag;
         for particle in &mut self.particles {
-            // Semi-implicit (symplectic) Euler: update velocity first, then position.
+            // Semi-implicit (symplectic) Euler with linear drag: velocity first (gravity, then
+            // damping), then position.
             for axis in 0..3 {
-                particle.velocity[axis] += self.config.gravity[axis] * dt;
-                particle.position[axis] += particle.velocity[axis] * dt;
+                let with_gravity = particle.velocity[axis] + self.config.gravity[axis] * dt;
+                let damped = with_gravity - drag * with_gravity * dt;
+                particle.velocity[axis] = damped;
+                particle.position[axis] += damped * dt;
             }
             particle.age += dt;
         }
@@ -116,18 +143,19 @@ impl StatefulSimulation {
         let room = (self.config.capacity as usize).saturating_sub(self.particles.len());
         let spawn = (self.config.spawn_per_tick as usize).min(room);
         for _ in 0..spawn {
-            let direction = launch_direction(self.seed, self.spawned);
-            let velocity = [
-                direction[0] * self.config.initial_speed,
-                direction[1] * self.config.initial_speed,
-                direction[2] * self.config.initial_speed,
-            ];
+            let ordinal = self.spawned;
+            let velocity = launch_velocity(&self.config, self.seed, ordinal);
+            let lifetime = lerp(
+                self.config.lifetime.0,
+                self.config.lifetime.1,
+                spawn_uniform(self.seed, ordinal, 1),
+            );
             self.particles.push(StateParticle {
-                id: self.spawned,
+                id: ordinal,
                 position: [0.0; 3],
                 velocity,
                 age: 0.0,
-                lifetime: self.config.lifetime,
+                lifetime,
             });
             self.spawned += 1;
         }
@@ -169,6 +197,31 @@ impl StatefulSimulation {
     }
 }
 
+/// The full launch velocity for a particle: an authored direction blended with the per-particle random
+/// unit vector to a spread cone, renormalized, and scaled by a per-particle random speed. Canonical for
+/// both this CPU reference and the GPU spawn kernel — trig-free so they match bit-for-bit.
+fn launch_velocity(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
+    let random_unit = launch_direction(seed, ordinal);
+    // Cone: base direction + spread * random unit, renormalized. Falls back to the random unit when
+    // the base direction is zero (matching the GPU, which normalizes the same mixed vector).
+    let mixed = [
+        config.direction[0] + config.spread * random_unit[0],
+        config.direction[1] + config.spread * random_unit[1],
+        config.direction[2] + config.spread * random_unit[2],
+    ];
+    let direction = normalize_or(mixed, random_unit);
+    let speed = lerp(
+        config.speed.0,
+        config.speed.1,
+        spawn_uniform(seed, ordinal, 0),
+    );
+    [
+        direction[0] * speed,
+        direction[1] * speed,
+        direction[2] * speed,
+    ]
+}
+
 /// A deterministic launch direction (components in `[-1, 1]`) from the seed and the particle's spawn
 /// ordinal. Uses splitmix64 so the same `(seed, ordinal)` always yields the same direction — the
 /// determinism the whole seek model relies on.
@@ -179,6 +232,37 @@ fn launch_direction(seed: u64, ordinal: u64) -> [f32; 3] {
         unit_signed(splitmix64(base)),
         unit_signed(splitmix64(base ^ 0xD1B5_4A32_D192_ED03)),
     ]
+}
+
+/// A deterministic per-particle uniform in `[0, 1)` for a named `channel` (speed = 0, lifetime = 1).
+/// Salted distinctly from the direction hash so the samples are independent. Canonical for both sides.
+fn spawn_uniform(seed: u64, ordinal: u64, channel: u64) -> f32 {
+    let hash = splitmix64(
+        seed ^ ordinal.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (channel.wrapping_add(1)).wrapping_mul(0xD6E8_FEB8_6659_FD93),
+    );
+    unit01(hash)
+}
+
+/// Maps a hash to `[0, 1)` using 24 bits of precision.
+fn unit01(hash: u64) -> f32 {
+    (hash >> 40) as f32 / (1u64 << 24) as f32
+}
+
+fn lerp(min: f32, max: f32, t: f32) -> f32 {
+    min + (max - min) * t
+}
+
+/// Normalizes `v`, or returns `fallback` when `v` is (near) zero. Uses only `sqrt` and division, both
+/// IEEE-correctly-rounded, so the GPU reproduces it exactly.
+fn normalize_or(v: [f32; 3], fallback: [f32; 3]) -> [f32; 3] {
+    let length_squared = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+    if length_squared > 1e-12 {
+        let length = length_squared.sqrt();
+        [v[0] / length, v[1] / length, v[2] / length]
+    } else {
+        fallback
+    }
 }
 
 fn splitmix64(input: u64) -> u64 {
@@ -202,8 +286,11 @@ mod tests {
         StatefulConfig {
             gravity: [0.0, -9.81, 0.0],
             spawn_per_tick: 4,
-            initial_speed: 12.0,
-            lifetime: 1.5,
+            speed: (10.0, 14.0),
+            lifetime: (1.2, 1.8),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.4,
+            drag: 0.5,
             capacity: 128,
         }
     }
@@ -284,7 +371,7 @@ mod tests {
     fn capacity_bounds_the_live_particle_count() {
         let bounded = StatefulConfig {
             capacity: 10,
-            lifetime: 1000.0,
+            lifetime: (1000.0, 1000.0),
             ..config()
         };
         let mut simulation = StatefulSimulation::new(bounded, 5);
@@ -292,6 +379,69 @@ mod tests {
         assert!(
             simulation.live_count() <= 10,
             "capacity bounds live particles"
+        );
+    }
+
+    #[test]
+    fn richer_dynamics_vary_per_particle_and_launch_along_the_cone() {
+        // Speed and lifetime are sampled per particle in range, and the launch direction is a
+        // renormalized cone around `direction`, so particles are not identical and the samples stay in
+        // their authored bounds.
+        let seed = 0x51ED;
+        let mut speeds = Vec::new();
+        let mut lifetimes = Vec::new();
+        for ordinal in 0..64 {
+            let velocity = StatefulSimulation::launch_velocity(&config(), seed, ordinal);
+            let speed = (velocity[0].powi(2) + velocity[1].powi(2) + velocity[2].powi(2)).sqrt();
+            assert!(
+                (10.0 - 1e-3..=14.0 + 1e-3).contains(&speed),
+                "sampled speed {speed} is within [10, 14]"
+            );
+            let lifetime = lerp(
+                config().lifetime.0,
+                config().lifetime.1,
+                StatefulSimulation::spawn_uniform(seed, ordinal, 1),
+            );
+            assert!((1.2..=1.8).contains(&lifetime));
+            // spread 0.4 around +Y keeps the dominant component pointing up.
+            assert!(velocity[1] > 0.0, "the cone launches upward along +Y");
+            speeds.push(speed);
+            lifetimes.push(lifetime);
+        }
+        assert!(
+            speeds.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-3),
+            "speeds vary per particle"
+        );
+        assert!(
+            lifetimes.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-3),
+            "lifetimes vary per particle"
+        );
+    }
+
+    #[test]
+    fn drag_slows_particles_relative_to_no_drag() {
+        // With gravity disabled and a straight-up launch, drag must reduce the height reached.
+        let base = StatefulConfig {
+            gravity: [0.0, 0.0, 0.0],
+            spawn_per_tick: 1,
+            speed: (20.0, 20.0),
+            lifetime: (100.0, 100.0),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.0,
+            drag: 0.0,
+            capacity: 8,
+        };
+        let dragged = StatefulConfig { drag: 2.0, ..base };
+        let mut without = StatefulSimulation::new(base, 1);
+        let mut with = StatefulSimulation::new(dragged, 1);
+        without.advance_to_tick(60);
+        with.advance_to_tick(60);
+        let height = |sim: &StatefulSimulation| sim.alive_particles()[0].1[1];
+        assert!(
+            height(&with) < height(&without),
+            "drag reduces the height reached ({} vs {})",
+            height(&with),
+            height(&without)
         );
     }
 }

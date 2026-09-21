@@ -27,10 +27,41 @@ use aestra_gpu::{
     STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
     stateful_simulation_wgsl,
 };
-use aestra_runtime::StatefulSimulation;
+use aestra_runtime::{StatefulConfig, StatefulSimulation};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 use wgpu::util::DeviceExt;
+
+/// Builds the production 19-word stateful `params` buffer from a config (the layout the death loop and
+/// production kernels share). Floats are stored as bits.
+fn stateful_params(
+    config: &StatefulConfig,
+    seed: u64,
+    emitter_index: u32,
+    slot_offset: u32,
+) -> Vec<u32> {
+    vec![
+        config.capacity,
+        config.spawn_per_tick,
+        seed as u32,
+        (seed >> 32) as u32,
+        config.speed.0.to_bits(),
+        config.speed.1.to_bits(),
+        config.lifetime.0.to_bits(),
+        config.lifetime.1.to_bits(),
+        TICK_DT.to_bits(),
+        config.gravity[0].to_bits(),
+        config.gravity[1].to_bits(),
+        config.gravity[2].to_bits(),
+        config.direction[0].to_bits(),
+        config.direction[1].to_bits(),
+        config.direction[2].to_bits(),
+        config.spread.to_bits(),
+        config.drag.to_bits(),
+        emitter_index,
+        slot_offset,
+    ]
+}
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
 const GPU_SUBMISSION_TIMEOUT: Duration = Duration::from_secs(120);
@@ -119,9 +150,12 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// The combined per-tick stateful advance: integrate the already-spawned slots by one dt, then spawn
-/// this tick's new slots into the persistent buffer using the shared RNG — exactly the order
-/// `StatefulSimulation::advance_tick` uses. Params are a flat `array<u32>` to avoid struct alignment.
+/// The combined per-tick stateful advance (no death): integrate the already-spawned slots by one dt,
+/// then spawn this tick's new slots (spawn order = slot index), exactly as
+/// `StatefulSimulation::advance_tick` does, with the same richer dynamics (speed & lifetime ranges,
+/// spread cone, drag). Stride-8 state (no ordinal, since slot == ordinal here). Params (18 words):
+/// [seed_lo, seed_hi, capacity, spawned_before, to_spawn_end, speed_min, speed_max, life_min, life_max,
+/// dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag].
 const ADVANCE_WGSL_ENTRY: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
 @group(0) @binding(1) var<storage, read> params: array<u32>;
@@ -129,20 +163,22 @@ const ADVANCE_WGSL_ENTRY: &str = r#"
 @compute @workgroup_size(64)
 fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
-    let capacity = params[3];
+    let capacity = params[2];
     if (slot >= capacity) { return; }
     let seed = vec2<u32>(params[0], params[1]);
-    let spawned_before = params[4];
-    let to_spawn_end = params[5];
-    let speed = bitcast<f32>(params[6]);
-    let lifetime = bitcast<f32>(params[7]);
-    let dt = bitcast<f32>(params[8]);
-    let gravity = vec3<f32>(bitcast<f32>(params[9]), bitcast<f32>(params[10]), bitcast<f32>(params[11]));
+    let spawned_before = params[3];
+    let to_spawn_end = params[4];
+    let dt = bitcast<f32>(params[9]);
+    let drag = bitcast<f32>(params[17]);
+    let gravity = vec3<f32>(bitcast<f32>(params[10]), bitcast<f32>(params[11]), bitcast<f32>(params[12]));
     let base = slot * 8u;
     if (slot < spawned_before) {
-        let vx = state[base + 3u] + gravity.x * dt;
-        let vy = state[base + 4u] + gravity.y * dt;
-        let vz = state[base + 5u] + gravity.z * dt;
+        let vgx = state[base + 3u] + gravity.x * dt;
+        let vgy = state[base + 4u] + gravity.y * dt;
+        let vgz = state[base + 5u] + gravity.z * dt;
+        let vx = vgx - drag * vgx * dt;
+        let vy = vgy - drag * vgy * dt;
+        let vz = vgz - drag * vgz * dt;
         state[base + 3u] = vx;
         state[base + 4u] = vy;
         state[base + 5u] = vz;
@@ -151,13 +187,17 @@ fn advance(@builtin(global_invocation_id) gid: vec3<u32>) {
         state[base + 2u] = state[base + 2u] + vz * dt;
         state[base + 6u] = state[base + 6u] + dt;
     } else if (slot < to_spawn_end) {
-        let dir = spawn_launch_direction(seed, vec2<u32>(slot, 0u));
+        let direction = vec3<f32>(bitcast<f32>(params[13]), bitcast<f32>(params[14]), bitcast<f32>(params[15]));
+        let velocity = spawn_launch_velocity(
+            seed, slot, bitcast<f32>(params[5]), bitcast<f32>(params[6]), direction, bitcast<f32>(params[16]));
+        let lifetime = bitcast<f32>(params[7])
+            + (bitcast<f32>(params[8]) - bitcast<f32>(params[7])) * aestra_spawn_uniform(seed, vec2<u32>(slot, 0u), 1u);
         state[base + 0u] = 0.0;
         state[base + 1u] = 0.0;
         state[base + 2u] = 0.0;
-        state[base + 3u] = dir.x * speed;
-        state[base + 4u] = dir.y * speed;
-        state[base + 5u] = dir.z * speed;
+        state[base + 3u] = velocity.x;
+        state[base + 4u] = velocity.y;
+        state[base + 5u] = velocity.z;
         state[base + 6u] = 0.0;
         state[base + 7u] = lifetime;
     }
@@ -183,7 +223,7 @@ fn allocate(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// `death_integrate` integrates each live slot by one dt and frees it (pushes to the free list) if it
 /// died; `spawn` claims a free slot and a fresh ordinal for each of this tick's new particles. The
 /// state stride is 9 floats: position, velocity, age, lifetime, and the spawn ordinal (identity).
-/// `params` = [capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy, gz].
+/// `params` uses the production 19-word layout (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`).
 const DEATH_LOOP_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
 @group(0) @binding(1) var<storage, read_write> free_list: array<u32>;
@@ -199,13 +239,17 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lifetime = state[base + 7u];
     let age = state[base + 6u];
     if (lifetime > 0.0 && age < lifetime) {
-        let dt = bitcast<f32>(params[6]);
-        let gx = bitcast<f32>(params[7]);
-        let gy = bitcast<f32>(params[8]);
-        let gz = bitcast<f32>(params[9]);
-        let vx = state[base + 3u] + gx * dt;
-        let vy = state[base + 4u] + gy * dt;
-        let vz = state[base + 5u] + gz * dt;
+        let dt = bitcast<f32>(params[8]);
+        let drag = bitcast<f32>(params[16]);
+        let gx = bitcast<f32>(params[9]);
+        let gy = bitcast<f32>(params[10]);
+        let gz = bitcast<f32>(params[11]);
+        let vgx = state[base + 3u] + gx * dt;
+        let vgy = state[base + 4u] + gy * dt;
+        let vgz = state[base + 5u] + gz * dt;
+        let vx = vgx - drag * vgx * dt;
+        let vy = vgy - drag * vgy * dt;
+        let vz = vgz - drag * vgz * dt;
         state[base + 3u] = vx;
         state[base + 4u] = vy;
         state[base + 5u] = vz;
@@ -234,16 +278,18 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = free_list[top - 1u];
     let ordinal = atomicAdd(&spawn_counter, 1u);
     let seed = vec2<u32>(params[2], params[3]);
-    let speed = bitcast<f32>(params[4]);
-    let lifetime = bitcast<f32>(params[5]);
-    let dir = spawn_launch_direction(seed, vec2<u32>(ordinal, 0u));
+    let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
+    let velocity = spawn_launch_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let lifetime = bitcast<f32>(params[6])
+        + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let base = slot * 9u;
     state[base + 0u] = 0.0;
     state[base + 1u] = 0.0;
     state[base + 2u] = 0.0;
-    state[base + 3u] = dir.x * speed;
-    state[base + 4u] = dir.y * speed;
-    state[base + 5u] = dir.z * speed;
+    state[base + 3u] = velocity.x;
+    state[base + 4u] = velocity.y;
+    state[base + 5u] = velocity.z;
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
@@ -788,17 +834,14 @@ impl Harness {
     /// buffer, mirroring `StatefulSimulation::advance_tick` (integrate the already-spawned slots,
     /// then spawn this tick's slots). Returns the final packed state (`capacity * 8` floats). One
     /// dispatch per tick within a single pass, so state persists across ticks.
-    #[allow(clippy::too_many_arguments)]
     fn advance_stateful(
         &self,
-        gravity: [f32; 3],
-        spawn_per_tick: u32,
-        speed: f32,
-        lifetime: f32,
-        capacity: u32,
+        config: &StatefulConfig,
         seed: u64,
         ticks: u32,
     ) -> Result<Vec<f32>, String> {
+        let capacity = config.capacity;
+        let spawn_per_tick = config.spawn_per_tick;
         let state_bytes = encode(&vec![0.0_f32; capacity as usize * 8])?;
         let state = self
             .device
@@ -819,19 +862,27 @@ impl Harness {
         for tick in 1..=ticks {
             let spawned_before = (tick - 1).saturating_mul(spawn_per_tick).min(capacity);
             let to_spawn_end = tick.saturating_mul(spawn_per_tick).min(capacity);
+            // ADVANCE layout (18 words): seed, capacity, spawned_before, to_spawn_end, speed range,
+            // lifetime range, dt, gravity, direction, spread, drag.
             let params: Vec<u32> = vec![
                 seed as u32,
                 (seed >> 32) as u32,
-                spawn_per_tick,
                 capacity,
                 spawned_before,
                 to_spawn_end,
-                speed.to_bits(),
-                lifetime.to_bits(),
+                config.speed.0.to_bits(),
+                config.speed.1.to_bits(),
+                config.lifetime.0.to_bits(),
+                config.lifetime.1.to_bits(),
                 TICK_DT.to_bits(),
-                gravity[0].to_bits(),
-                gravity[1].to_bits(),
-                gravity[2].to_bits(),
+                config.gravity[0].to_bits(),
+                config.gravity[1].to_bits(),
+                config.gravity[2].to_bits(),
+                config.direction[0].to_bits(),
+                config.direction[1].to_bits(),
+                config.direction[2].to_bits(),
+                config.spread.to_bits(),
+                config.drag.to_bits(),
             ];
             let params_buffer = self
                 .device
@@ -885,17 +936,14 @@ impl Harness {
     /// `spawn_per_tick` threads (each claims a freed slot and a fresh ordinal). State stride is 9
     /// floats (position, velocity, age, lifetime, ordinal-as-bits). Slots are matched to the CPU
     /// reference by ordinal, so the arbitrary parallel slot assignment need not agree.
-    #[allow(clippy::too_many_arguments)]
     fn advance_stateful_with_death(
         &self,
-        gravity: [f32; 3],
-        spawn_per_tick: u32,
-        speed: f32,
-        lifetime: f32,
-        capacity: u32,
+        config: &StatefulConfig,
         seed: u64,
         ticks: u32,
     ) -> Result<Vec<(u64, [f32; 3])>, String> {
+        let capacity = config.capacity;
+        let spawn_per_tick = config.spawn_per_tick;
         let state_bytes = encode(&vec![0.0_f32; capacity as usize * 9])?;
         let state = self
             .device
@@ -926,19 +974,8 @@ impl Harness {
                 contents: &encode(&0_u32)?,
                 usage: wgpu::BufferUsages::STORAGE,
             });
-        // Params are constant across every tick.
-        let params: Vec<u32> = vec![
-            capacity,
-            spawn_per_tick,
-            seed as u32,
-            (seed >> 32) as u32,
-            speed.to_bits(),
-            lifetime.to_bits(),
-            TICK_DT.to_bits(),
-            gravity[0].to_bits(),
-            gravity[1].to_bits(),
-            gravity[2].to_bits(),
-        ];
+        // Params are constant across every tick (the production 19-word layout).
+        let params = stateful_params(config, seed, 0, 0);
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1107,20 +1144,12 @@ impl Harness {
         let free_list = buffer("dummy free list", &encode(&[0_u32])?, false);
         let free_count = buffer("dummy free count", &encode(&0_u32)?, false);
         let spawn_counter = buffer("dummy spawn counter", &encode(&0_u32)?, false);
-        let params: Vec<u32> = vec![
-            capacity,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            emitter_index,
-            slot_offset,
-        ];
+        // The 19-word layout; present reads only params[0] (capacity), [17] (emitter_index), and
+        // [18] (slot_offset).
+        let mut params = vec![0_u32; 19];
+        params[0] = capacity;
+        params[17] = emitter_index;
+        params[18] = slot_offset;
         let params_buffer = buffer("present-compact params", &encode(&params)?, false);
         // Present writes at the global slot (slot_offset + local), so size the shared buffer to cover
         // this emitter's region.
@@ -1619,35 +1648,27 @@ fn gpu_spawn_rng_matches_the_cpu_reference() {
 
 #[test]
 fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
-    // Hybrid roadmap M6: the GPU spawn+integrate loop must reproduce the M5 CPU reference. Run the
-    // full per-tick loop on the GPU (spawn new slots with the shared RNG, integrate the rest) and
-    // compare the presented positions to StatefulSimulation. A long lifetime keeps every particle
-    // alive across the window, so no death/free-list is exercised yet (that is the next step).
-    use aestra_runtime::StatefulConfig;
+    // Hybrid roadmap M6: the GPU spawn+integrate loop must reproduce the M5 CPU reference, including
+    // the richer dynamics (per-particle speed & lifetime ranges, a spread cone, and drag). Run the full
+    // per-tick loop on the GPU and compare the presented positions to StatefulSimulation. Long lifetimes
+    // keep every particle alive across the window, so no death/free-list is exercised here.
     let Some(harness) = require_harness() else {
         return;
     };
     let config = StatefulConfig {
         gravity: [0.0, -9.81, 0.0],
         spawn_per_tick: 4,
-        initial_speed: 12.0,
-        lifetime: 1000.0,
+        speed: (8.0, 16.0),
+        lifetime: (1000.0, 1000.0),
+        direction: [0.2, 1.0, -0.1],
+        spread: 0.6,
+        drag: 0.5,
         capacity: 512,
     };
     let ticks = 100_u32;
     let seed = 0x1234_5678_9abc_def0_u64;
 
-    let gpu = harness
-        .advance_stateful(
-            config.gravity,
-            config.spawn_per_tick,
-            config.initial_speed,
-            config.lifetime,
-            config.capacity,
-            seed,
-            ticks,
-        )
-        .unwrap();
+    let gpu = harness.advance_stateful(&config, seed, ticks).unwrap();
 
     let mut simulation = StatefulSimulation::new(config, seed);
     simulation.advance_to_tick(ticks as u64);
@@ -1708,33 +1729,28 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
     // that early particles die and their slots are recycled by later spawns, then match every live
     // GPU particle to StatefulSimulation *by spawn ordinal* — the GPU's parallel slot assignment is
     // arbitrary and need not agree with the CPU's, only the per-identity state must.
-    use aestra_runtime::StatefulConfig;
     let Some(harness) = require_harness() else {
         return;
     };
-    // Short lifetime (0.5s = 30 ticks) forces death well inside the 90-tick window; capacity is
-    // ample (steady-state live count ~= 30 * 4 = 120 << 512), so no capacity pressure — every spawn
-    // succeeds and the ordinals line up exactly, isolating the death/reuse path.
+    // Short lifetimes (~0.5s) force death well inside the 90-tick window; capacity is ample (steady
+    // state << 512), so no capacity pressure — every spawn succeeds and the ordinals line up exactly,
+    // isolating the death/reuse path. Richer dynamics (speed & lifetime ranges, a spread cone, drag)
+    // are all exercised, and all match the CPU reference bit-for-bit.
     let config = StatefulConfig {
         gravity: [0.0, -9.81, 0.0],
         spawn_per_tick: 4,
-        initial_speed: 12.0,
-        lifetime: 0.5,
+        speed: (9.0, 15.0),
+        lifetime: (0.45, 0.6),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.5,
+        drag: 0.8,
         capacity: 512,
     };
     let ticks = 90_u32;
     let seed = 0xDEAD_BEEF_CAFE_F00D_u64;
 
     let gpu = harness
-        .advance_stateful_with_death(
-            config.gravity,
-            config.spawn_per_tick,
-            config.initial_speed,
-            config.lifetime,
-            config.capacity,
-            seed,
-            ticks,
-        )
+        .advance_stateful_with_death(&config, seed, ticks)
         .unwrap();
 
     let mut simulation = StatefulSimulation::new(config, seed);

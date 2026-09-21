@@ -349,6 +349,34 @@ fn spawn_launch_direction(seed: vec2<u32>, ordinal: vec2<u32>) -> vec3<f32> {
         aestra_unit_signed(aestra_splitmix64(base ^ vec2<u32>(0xD192ED03u, 0xD1B54A32u)))
     );
 }
+fn aestra_unit01(h: vec2<u32>) -> f32 {
+    let v = aestra_u64_shr(h, 40u).x;
+    return f32(v) / f32(1u << 24u);
+}
+// A deterministic per-particle uniform in [0, 1) for a named channel (speed = 0, lifetime = 1), salted
+// distinctly from the direction hash. Mirrors aestra_runtime::StatefulSimulation::spawn_uniform.
+fn aestra_spawn_uniform(seed: vec2<u32>, ordinal: vec2<u32>, channel: u32) -> f32 {
+    let term1 = aestra_u64_mul(ordinal, vec2<u32>(0x7F4A7C15u, 0x9E3779B9u));
+    let term2 = aestra_u64_mul(vec2<u32>(channel + 1u, 0u), vec2<u32>(0x6659FD93u, 0xD6E8FEB8u));
+    return aestra_unit01(aestra_splitmix64((seed ^ term1) ^ term2));
+}
+// The full per-particle launch velocity: the authored direction blended with the random unit vector to
+// a spread cone, renormalized (sqrt/division only — no trig, so the CPU reference matches bit-for-bit),
+// scaled by a per-particle random speed. Mirrors aestra_runtime::StatefulSimulation::launch_velocity.
+fn spawn_launch_velocity(
+    seed: vec2<u32>, ordinal: u32, speed_min: f32, speed_max: f32, direction: vec3<f32>, spread: f32
+) -> vec3<f32> {
+    let ord = vec2<u32>(ordinal, 0u);
+    let random_unit = spawn_launch_direction(seed, ord);
+    let mixed = direction + spread * random_unit;
+    let length_squared = mixed.x * mixed.x + mixed.y * mixed.y + mixed.z * mixed.z;
+    var dir = random_unit;
+    if (length_squared > 1e-12) {
+        dir = mixed / sqrt(length_squared);
+    }
+    let speed = speed_min + (speed_max - speed_min) * aestra_spawn_uniform(seed, ord, 0u);
+    return dir * speed;
+}
 "#;
 
 /// A GPU atomic slot allocator for stateful particle death/reuse (hybrid roadmap M6): dead slots are
@@ -438,12 +466,20 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 
 /// The three entry points of the unified stateful simulation module (hybrid roadmap M6), over the
 /// [`STATEFUL_SIMULATION_BINDINGS`] layout. `death_integrate` advances each live slot by one fixed
-/// tick and frees the ones that died; `spawn` claims a free slot and a fresh ordinal for each of this
-/// tick's new particles; `present` extracts the live state into the presentation buffer *and* compacts
-/// the live slots into `alive_indices` while bumping the indirect draw count and live counter — the
-/// same compaction the analytic `simulate` performs, so the stateful output draws through the identical
-/// render path. `params` is `[capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy,
-/// gz, emitter_index, slot_offset]`.
+/// tick (gravity, then linear drag) and frees the ones that died; `spawn` claims a free slot and a
+/// fresh ordinal for each of this tick's new particles, sampling a per-particle speed and lifetime in
+/// range and a launch direction on the authored spread cone; `present` extracts the live state into the
+/// presentation buffer *and* compacts the live slots into `alive_indices` while bumping the indirect
+/// draw count and live counter — the same compaction the analytic `simulate` performs, so the stateful
+/// output draws through the identical render path. All dynamics mirror
+/// `aestra_runtime::StatefulSimulation` bit-for-bit. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
+/// `u32`s: `[capacity, spawn_per_tick, seed_lo, seed_hi, speed_min, speed_max, lifetime_min,
+/// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset]`
+/// (floats stored as bits).
+/// Number of `u32` words in the stateful simulation `params` buffer (see
+/// [`STATEFUL_SIMULATION_ENTRIES`]). One source of truth for the render backend and conformance tests.
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 19;
+
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
 fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -453,13 +489,18 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lifetime = state[base + 7u];
     let age = state[base + 6u];
     if (lifetime > 0.0 && age < lifetime) {
-        let dt = bitcast<f32>(params[6]);
-        let gx = bitcast<f32>(params[7]);
-        let gy = bitcast<f32>(params[8]);
-        let gz = bitcast<f32>(params[9]);
-        let vx = state[base + 3u] + gx * dt;
-        let vy = state[base + 4u] + gy * dt;
-        let vz = state[base + 5u] + gz * dt;
+        let dt = bitcast<f32>(params[8]);
+        let drag = bitcast<f32>(params[16]);
+        let gx = bitcast<f32>(params[9]);
+        let gy = bitcast<f32>(params[10]);
+        let gz = bitcast<f32>(params[11]);
+        // Semi-implicit Euler with linear drag: gravity then damping, then position.
+        let vgx = state[base + 3u] + gx * dt;
+        let vgy = state[base + 4u] + gy * dt;
+        let vgz = state[base + 5u] + gz * dt;
+        let vx = vgx - drag * vgx * dt;
+        let vy = vgy - drag * vgy * dt;
+        let vz = vgz - drag * vgz * dt;
         state[base + 3u] = vx;
         state[base + 4u] = vy;
         state[base + 5u] = vz;
@@ -488,16 +529,18 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = free_list[top - 1u];
     let ordinal = atomicAdd(&spawn_counter, 1u);
     let seed = vec2<u32>(params[2], params[3]);
-    let speed = bitcast<f32>(params[4]);
-    let lifetime = bitcast<f32>(params[5]);
-    let dir = spawn_launch_direction(seed, vec2<u32>(ordinal, 0u));
+    let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
+    let velocity = spawn_launch_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let lifetime = bitcast<f32>(params[6])
+        + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let base = slot * AESTRA_STATE_STRIDE;
     state[base + 0u] = 0.0;
     state[base + 1u] = 0.0;
     state[base + 2u] = 0.0;
-    state[base + 3u] = dir.x * speed;
-    state[base + 4u] = dir.y * speed;
-    state[base + 5u] = dir.z * speed;
+    state[base + 3u] = velocity.x;
+    state[base + 4u] = velocity.y;
+    state[base + 5u] = velocity.z;
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
@@ -507,8 +550,8 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= params[0]) { return; }
-    let emitter_index = params[10];
-    let slot_offset = params[11];
+    let emitter_index = params[17];
+    let slot_offset = params[18];
     // This emitter's particles occupy [slot_offset, slot_offset + capacity) of the effect-wide
     // presentation and alive buffers; state is the emitter's own buffer, indexed by the local slot.
     let out_slot = slot_offset + slot;

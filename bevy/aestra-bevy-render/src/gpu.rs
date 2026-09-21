@@ -150,10 +150,16 @@ struct StatefulDispatch {
     emitter_count: u32,
     /// Mean particles emitted per second; fractional per-tick spawns accumulate across ticks.
     spawn_rate: f32,
-    /// Initial launch speed along the deterministic direction.
-    speed: f32,
-    /// Particle lifetime in seconds.
-    lifetime: f32,
+    /// Per-particle launch speed range `(min, max)`.
+    speed: (f32, f32),
+    /// Per-particle lifetime range `(min, max)` in seconds.
+    lifetime: (f32, f32),
+    /// Base launch direction; the per-particle direction is `normalize(direction + spread * random)`.
+    direction: [f32; 3],
+    /// Cone spread factor mapped from the authored spread angle (`0` = straight along `direction`).
+    spread: f32,
+    /// Linear velocity damping per second (`v -= drag * v * dt`).
+    drag: f32,
     /// Constant acceleration applied to velocity each tick.
     gravity: [f32; 3],
     /// The effect's 64-bit spawn seed.
@@ -680,8 +686,17 @@ pub(crate) fn prepare_gpu_effects(
                             emitter_index: index as u32,
                             emitter_count,
                             spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
-                            speed: 0.5 * (emitter.speed.x + emitter.speed.y),
-                            lifetime: 0.5 * (emitter.lifetime.x + emitter.lifetime.y),
+                            speed: (emitter.speed.x, emitter.speed.y),
+                            lifetime: (emitter.lifetime.x, emitter.lifetime.y),
+                            direction: [
+                                emitter.direction.x,
+                                emitter.direction.y,
+                                emitter.direction.z,
+                            ],
+                            // Map the authored spread half-angle to the cone factor: 0 rad -> straight,
+                            // ~90 deg -> factor 1, blending in more of the random unit vector.
+                            spread: emitter.spread_radians / std::f32::consts::FRAC_PI_2,
+                            drag: 0.5 * (emitter.drag.x + emitter.drag.y),
                             gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
                             seed,
                         })
@@ -1915,26 +1930,31 @@ fn dispatch_stateful_effect(
     let workgroups = capacity.div_ceil(WORKGROUP_SIZE);
     let ticks = (target_tick - persistent.last_tick).min(STATEFUL_MAX_CATCHUP_TICKS);
 
-    // params = [capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy, gz,
-    //           emitter_index, slot_offset]; only spawn_per_tick varies across ticks.
+    // The production 19-word params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); only
+    // spawn_per_tick varies across ticks.
     let params_bytes = |spawn_per_tick: u32| -> Vec<u8> {
-        [
+        let words: [u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS] = [
             capacity,
             spawn_per_tick,
             dispatch.seed as u32,
             (dispatch.seed >> 32) as u32,
-            dispatch.speed.to_bits(),
-            dispatch.lifetime.to_bits(),
+            dispatch.speed.0.to_bits(),
+            dispatch.speed.1.to_bits(),
+            dispatch.lifetime.0.to_bits(),
+            dispatch.lifetime.1.to_bits(),
             STATEFUL_TICK_DT.to_bits(),
             dispatch.gravity[0].to_bits(),
             dispatch.gravity[1].to_bits(),
             dispatch.gravity[2].to_bits(),
+            dispatch.direction[0].to_bits(),
+            dispatch.direction[1].to_bits(),
+            dispatch.direction[2].to_bits(),
+            dispatch.spread.to_bits(),
+            dispatch.drag.to_bits(),
             dispatch.emitter_index,
             dispatch.slot_offset,
-        ]
-        .into_iter()
-        .flat_map(u32::to_le_bytes)
-        .collect()
+        ];
+        words.into_iter().flat_map(u32::to_le_bytes).collect()
     };
     let bind_group = |params: &Buffer| {
         device.create_bind_group(

@@ -38,9 +38,11 @@ fn tuned_emitter(
                 spread_degrees,
                 ..
             } if module.module_type.0 == MODULE_INITIALIZE => {
-                *life = ScalarRange::new(lifetime, lifetime);
-                *spd = ScalarRange::new(speed, speed);
-                *spread_degrees = 25.0;
+                // Real ranges so speed and lifetime vary per particle (the richer stateful dynamics),
+                // plus a spread cone.
+                *life = ScalarRange::new(lifetime * 0.8, lifetime * 1.2);
+                *spd = ScalarRange::new(speed * 0.7, speed * 1.3);
+                *spread_degrees = 30.0;
             }
             ModuleParameters::Motion { gravity: g, .. }
                 if module.module_type.0 == MODULE_MOTION =>
