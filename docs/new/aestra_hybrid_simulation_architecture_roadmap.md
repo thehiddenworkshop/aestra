@@ -2712,10 +2712,22 @@ without collision complexity.
 > runs cleanly on a real GPU. Proven on GPU via the `present_compact` conformance test at a non-zero
 > slot offset. The path engages only when *all* enabled emitters are stateful.
 >
-> **Still to do:** mixed analytic + stateful emitters in one effect (both paths writing the shared
-> buffers coherently — a mixed effect currently falls back to the analytic path); richer authored
-> dynamics than the reference integrator's scalar midpoints (drag, turbulence, shape, per-particle
-> ranges); and GPU-resident checkpoint seek (M7) in place of the current reallocate-and-replay restart.
+> **Mixed analytic + stateful — landed.** One effect can now combine analytic and stateful emitters,
+> the two paths sharing the effect's particle/alive/indirect/counters buffers by dividing the work.
+> `GpuEmitter` carries a `stateful` flag (set for enabled non-analytic emitters); the analytic
+> `simulate` early-returns for a slot whose emitter is stateful, so it neither writes nor compacts those
+> slots. In `run_simulation`, a fully stateful effect (`stateful_only`) skips the analytic path and owns
+> the shared counter reset + telemetry; a mixed effect runs the analytic reset+simulate first (its reset
+> clears the counter and stamps telemetry, its simulate contributes the analytic emitters' live counts),
+> then runs the stateful emitters, whose presents add their counts and fill their slots. A headless test
+> asserts a mixed effect marks exactly its stateful emitters and sizes the persistent state from only
+> their capacities; the `mixed_lab` fixture (one analytic + two stateful emitters) exercises it. The
+> acceptance criterion "mixed analytic + stateful effects render correctly" is met (pending a final
+> in-editor look at `mixed_lab`).
+>
+> **Still to do:** richer authored dynamics than the reference integrator's scalar midpoints (drag,
+> turbulence, shape, per-particle ranges); and GPU-resident checkpoint seek (M7) in place of the current
+> reallocate-and-replay restart.
 
 ### GPU passes
 
