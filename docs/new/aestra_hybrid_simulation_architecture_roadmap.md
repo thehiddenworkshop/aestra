@@ -2701,8 +2701,19 @@ without collision complexity.
 > spawn, integrate under gravity, die at their lifetime, and slots recycle — with the live count showing
 > and no fallback or errors. Every compute kernel it orchestrates is independently conformance-proven.
 >
-> **Still to do:** multi-emitter and mixed analytic+stateful effects (only the single-stateful-emitter
-> case is wired; a per-emitter state offset or per-emitter buffer set generalizes it); richer authored
+> **Multi-emitter — landed.** The path now drives *every* enabled stateful emitter in an effect, each
+> with its own persistent buffer set (state / free list / free count / spawn counter) allocated from its
+> capacity, and its own per-tick dispatch. The single-emitter limiter was `present`'s compaction, which
+> addressed the shared particle/alive buffers by the local slot (correct only at `slot_offset 0`);
+> `present` now writes at the global slot (`slot_offset + local`) and stores the global index in
+> `alive_indices`, so each emitter's particles occupy its own region. `run_simulation` clears the shared
+> live counter once, runs death+spawn+present per emitter, and stamps the statistics telemetry once. The
+> `persistent_lab` fixture is now three stateful emitters (distinct capacities/dynamics); it boots and
+> runs cleanly on a real GPU. Proven on GPU via the `present_compact` conformance test at a non-zero
+> slot offset. The path engages only when *all* enabled emitters are stateful.
+>
+> **Still to do:** mixed analytic + stateful emitters in one effect (both paths writing the shared
+> buffers coherently — a mixed effect currently falls back to the analytic path); richer authored
 > dynamics than the reference integrator's scalar midpoints (drag, turbulence, shape, per-particle
 > ranges); and GPU-resident checkpoint seek (M7) in place of the current reallocate-and-replay restart.
 
