@@ -2681,12 +2681,29 @@ without collision complexity.
 > frames (the `TrailHistories` pattern), allocated from `GpuSimulationState` and reallocated only on a
 > capacity change. Compile-verified, shader-validated, render lib tests green.
 >
-> **Still to do (Step 2 of the wiring):** the per-frame stateful dispatch in
-> `aestra-bevy-render/src/gpu.rs` — map `simulation_time` to fixed ticks, dispatch the death loop and
-> presentation extraction over the persistent buffers, compact the presented particles into the alive
-> and indirect buffers the render path draws, and integrate seek via checkpoints. This is where a
-> Persistent effect first runs end-to-end and renders in the editor, meaningful precisely because
-> every kernel it composes is already proven. Needs editor-level verification.
+> **Compaction — landed and proven (Step 2a).** The unified module's `present` entry now also compacts:
+> for each live slot it atomically claims a slot in the emitter's `alive_indices` region and bumps the
+> indirect instance count and the live counter — the same compaction the analytic `simulate` does — so
+> the stateful output draws through the identical render path. Proven on a real GPU (nine stateful
+> conformance tests): over a mix of alive/dead/free slots, the indirect count, live counter, and
+> compacted `alive_indices` region all match the alive set.
+>
+> **Per-frame dispatch — landed (Step 2b), runtime pipeline-verified.** `dispatch_stateful_effect` in
+> `run_simulation` maps `simulation_time` to a fixed tick, advances the outstanding ticks (death loop +
+> spawn per tick, one pass, bounded catch-up), resets the emitter's live counter and indirect instance
+> count, then runs present+compact. A backward seek reallocates the persistent state to tick 0 and
+> replays forward (the derived restart+replay seek mode). Stateful effects take this path instead of the
+> analytic reset+simulate; the single-enabled-stateful-emitter case (the common Persistent effect) is
+> driven end-to-end, with the dynamics sourced from the compiled `GpuEmitter` (scalar midpoints — the
+> minimal reference model). The editor boots cleanly with the stateful pipelines compiled at runtime on
+> a real GPU (RTX 4070 SUPER / Vulkan), confirming the composed WGSL and nine-binding layout are
+> accepted by the backend.
+>
+> **Still to do:** visual/behavioral verification of a Persistent effect rendering in the editor (the
+> dispatch is compile- and pipeline-verified but not yet watched); multi-emitter and mixed
+> analytic+stateful effects (only the single-stateful-emitter case is wired); particle-statistics
+> telemetry on the stateful path; and richer authored dynamics than the reference integrator's scalar
+> midpoints.
 
 ### GPU passes
 
