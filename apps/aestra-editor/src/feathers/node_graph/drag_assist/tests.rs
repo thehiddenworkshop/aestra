@@ -43,6 +43,7 @@ fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
             selection_bounds: None,
             frame_request: None,
             measured_frame: None,
+            suppress_context_click: false,
         })
         .id();
     let node = app
@@ -56,6 +57,7 @@ fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
                 collapsed: false,
                 dragging: false,
                 drag_before: None,
+                drag_modifier: None,
                 suppress_release_click: false,
             },
             Node::default(),

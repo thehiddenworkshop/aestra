@@ -202,6 +202,7 @@ pub(super) fn automation_lane_count(emitter: &Emitter) -> usize {
                 ],
                 ModuleParameters::Motion { .. } => vec!["gravity", "drag", "turbulence"],
                 ModuleParameters::Appearance { .. } => vec!["size", "opacity", "color"],
+                ModuleParameters::Persistent { .. } => Vec::new(),
                 ModuleParameters::Custom(values) => values.keys().map(String::as_str).collect(),
             };
             parameters

@@ -59,6 +59,7 @@ fn node(graph_key: &str, node_key: &str) -> FeathersGraphNode {
         collapsed: false,
         dragging: false,
         drag_before: None,
+        drag_modifier: None,
         suppress_release_click: false,
     }
 }
@@ -72,6 +73,7 @@ fn viewport(key: &str, zoom: f32) -> FeathersGraphViewport {
         selection_bounds: None,
         frame_request: Some(GraphFrameTarget::All),
         measured_frame: None,
+        suppress_context_click: false,
     }
 }
 

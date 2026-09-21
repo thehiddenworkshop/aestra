@@ -24,7 +24,7 @@ struct Open {
     viewport: Entity,
     anchor: Entity,
     before: MaterialFunction,
-    origin: SocketKind,
+    origin: Option<SocketKind>,
     position: Vec2,
     choices: Vec<Choice>,
     generation: u64,
@@ -34,7 +34,7 @@ struct Open {
 #[derive(Resource, Default)]
 struct Palette(Option<Open>);
 #[derive(Component)]
-struct Surface;
+pub(super) struct Surface;
 #[derive(Component, Clone, Copy)]
 struct Choose(usize);
 
@@ -72,7 +72,7 @@ fn validate(
 fn choices(
     document: &MaterialAuthoringDocument,
     function: &MaterialFunction,
-    origin: SocketKind,
+    origin: Option<SocketKind>,
 ) -> Vec<Choice> {
     let library =
         aestra_compiler::MaterialFunctionLibrary::new(document.material_functions.clone());
@@ -119,9 +119,23 @@ fn choices(
             .iter()
             .map(|id| estimated_size(*id, &nodes, &edges))
             .collect::<Vec<_>>();
+        if origin.is_none() {
+            if validate(document, function.id, &edits) {
+                choices.push(Choice {
+                    label,
+                    category,
+                    edits,
+                    created,
+                    sizes,
+                });
+            }
+            continue;
+        }
         let connections = match origin {
-            SocketKind::Target(target) => vec![(String::new(), connection_edit(main, target))],
-            SocketKind::Source(source) => {
+            Some(SocketKind::Target(target)) => {
+                vec![(String::new(), connection_edit(main, target))]
+            }
+            Some(SocketKind::Source(source)) => {
                 let mut inputs = Vec::new();
                 let mut names = Vec::new();
                 for edge in edges {
@@ -145,6 +159,7 @@ fn choices(
                     })
                     .collect()
             }
+            None => unreachable!(),
         };
         for (suffix, connection) in connections {
             let mut candidate = edits.clone();
@@ -213,9 +228,30 @@ pub(super) fn open(world: &mut World, socket: Entity, pointer: Vec2) {
     let Some(viewport) = viewport(world, socket) else {
         return;
     };
+    open_at(world, viewport, pointer, origin.owner, Some(origin.kind));
+}
+
+pub(super) fn open_canvas(world: &mut World, viewport: Entity, pointer: Vec2) {
+    if !world.contains_resource::<Palette>() {
+        return;
+    }
+    close(world);
+    let Some(owner) = world.get::<View>(viewport).map(|view| view.0) else {
+        return;
+    };
+    open_at(world, viewport, pointer, owner, None);
+}
+
+fn open_at(
+    world: &mut World,
+    viewport: Entity,
+    pointer: Vec2,
+    owner: MaterialFunctionId,
+    origin: Option<SocketKind>,
+) {
     if world
         .get::<View>(viewport)
-        .is_none_or(|view| view.0 != origin.owner)
+        .is_none_or(|view| view.0 != owner)
         || world
             .get_resource::<ButtonInput<KeyCode>>()
             .is_some_and(|keys| keys.pressed(KeyCode::Escape))
@@ -268,9 +304,7 @@ pub(super) fn open(world: &mut World, socket: Entity, pointer: Vec2) {
     let Some(catalog) = world.get_resource::<ProjectEffectCatalog>() else {
         return;
     };
-    if session.standalone_function() != Some(origin.owner)
-        || catalog.root() != view.document.project
-    {
+    if session.standalone_function() != Some(owner) || catalog.root() != view.document.project {
         return;
     }
     let Ok(before) = session.graph_function(catalog) else {
@@ -279,7 +313,7 @@ pub(super) fn open(world: &mut World, socket: Entity, pointer: Vec2) {
     let Ok(document) = session.graph_authoring_document(catalog) else {
         return;
     };
-    let choices = choices(&document, &before, origin.kind);
+    let choices = choices(&document, &before, origin);
     let generation = catalog.content_revision().generation;
     let options = choices
         .iter()
@@ -332,7 +366,7 @@ pub(super) fn open(world: &mut World, socket: Entity, pointer: Vec2) {
         viewport,
         anchor,
         before,
-        origin: origin.kind,
+        origin,
         position,
         choices,
         generation,
@@ -470,15 +504,16 @@ fn choose(
         editor.edit_body(&mut session, &mut catalog, choice.edits.clone())?;
         placement.preserve_existing(&open.view, &mut memory);
         let neighborhood = match open.origin {
-            SocketKind::Source(source) => {
+            Some(SocketKind::Source(source)) => {
                 placement::Neighborhood::After(GraphNodeKey::Expression(source))
             }
-            SocketKind::Target(Target::Input(target, _)) => {
+            Some(SocketKind::Target(Target::Input(target, _))) => {
                 placement::Neighborhood::Before(GraphNodeKey::Expression(target))
             }
-            SocketKind::Target(Target::Output(_)) => {
+            Some(SocketKind::Target(Target::Output(_))) => {
                 placement::Neighborhood::Before(GraphNodeKey::FunctionOutputs)
             }
+            None => placement::Neighborhood::Cursor,
         };
         let mut unassisted = false;
         for (id, size) in choice.created.iter().zip(&choice.sizes) {
@@ -491,7 +526,11 @@ fn choose(
             unassisted |= !placed.assisted;
         }
         before.attach(&catalog, &mut session, &mut memory);
-        session.status = format!("Added and connected {}", choice.label);
+        session.status = if open.origin.is_some() {
+            format!("Added and connected {}", choice.label)
+        } else {
+            format!("Added {}", choice.label)
+        };
         if unassisted {
             session
                 .status

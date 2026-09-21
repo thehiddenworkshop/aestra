@@ -30,7 +30,7 @@ use bevy::{
     window::{CursorMoved, PrimaryWindow, SystemCursorIcon, Window},
 };
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod drag_assist;
 mod framing;
@@ -148,12 +148,16 @@ impl Plugin for FeathersNodeGraphPlugin {
             .init_resource::<overlay::GraphOverlays>()
             .init_resource::<drag_assist::State>()
             .init_resource::<GraphPanGesture>()
+            .init_resource::<GraphMarqueeGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
             .add_observer(begin_graph_node_press)
             .add_observer(begin_graph_node_drag)
             .add_observer(drag_graph_node)
             .add_observer(end_graph_node_drag)
+            .add_observer(begin_graph_marquee)
+            .add_observer(update_graph_marquee)
+            .add_observer(end_graph_marquee)
             .add_observer(drag_assist::toggle)
             .add_systems(
                 Update,
@@ -230,6 +234,7 @@ pub(crate) struct FeathersGraphViewport {
     selection_bounds: Option<Rect>,
     frame_request: Option<GraphFrameTarget>,
     measured_frame: Option<(GraphFrameTarget, GraphView)>,
+    suppress_context_click: bool,
 }
 
 impl FeathersGraphViewport {
@@ -239,6 +244,10 @@ impl FeathersGraphViewport {
 
     pub(crate) fn unproject_viewport_point(&self, point: Vec2) -> Vec2 {
         (point - self.pan) / self.zoom
+    }
+
+    pub(crate) fn consume_suppressed_context_click(&mut self) -> bool {
+        std::mem::take(&mut self.suppress_context_click)
     }
 }
 
@@ -440,6 +449,60 @@ struct GraphPanGesture {
     cursor_position: Option<Vec2>,
 }
 
+#[derive(Resource, Default)]
+struct GraphMarqueeGesture {
+    viewport: Option<Entity>,
+    overlay: Option<Entity>,
+    start: Vec2,
+    current: Vec2,
+    mode: GraphSelectionMode,
+}
+
+#[derive(Component)]
+struct GraphMarqueeOverlay;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum GraphSelectionMode {
+    #[default]
+    Replace,
+    Add,
+    Toggle,
+}
+
+#[derive(Event, Debug, Clone)]
+pub(crate) struct GraphMarqueeSelection {
+    pub viewport: Entity,
+    pub nodes: BTreeSet<String>,
+    pub mode: GraphSelectionMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphNodeDragModifier {
+    Duplicate,
+    Upstream,
+    Downstream,
+}
+
+/// Marks semantic expression nodes that support modifier-drag duplication/branch movement.
+/// Synthetic output nodes intentionally omit this marker and retain ordinary movement.
+#[derive(Component)]
+pub(crate) struct GraphModifiedDragTarget;
+
+#[derive(Event, Debug, Clone)]
+pub(crate) struct GraphModifiedNodeDrag {
+    pub graph: String,
+    pub node: String,
+    pub before: (Vec2, bool),
+    pub after: (Vec2, bool),
+    pub modifier: GraphNodeDragModifier,
+}
+
+#[derive(Event, Debug, Clone)]
+pub(crate) struct GraphPresentationBatchEdit {
+    pub graph: String,
+    pub before: BTreeMap<String, (Vec2, bool)>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GraphSocketSide {
     Input,
@@ -492,6 +555,7 @@ pub(crate) struct FeathersGraphNode {
     collapsed: bool,
     dragging: bool,
     drag_before: Option<(Vec2, bool)>,
+    drag_modifier: Option<GraphNodeDragModifier>,
     suppress_release_click: bool,
 }
 
@@ -507,6 +571,14 @@ pub(crate) struct GraphPresentationEdit {
 impl FeathersGraphNode {
     pub(crate) fn position(&self) -> Vec2 {
         self.position
+    }
+
+    pub(crate) fn graph_key(&self) -> &str {
+        &self.graph_key
+    }
+
+    pub(crate) fn node_key(&self) -> &str {
+        &self.node_key
     }
 
     fn begin_drag(&mut self) {
@@ -691,7 +763,10 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
             should_block_lower: true,
             is_hoverable: true,
         },
-        EntityCursor::System(SystemCursorIcon::Grab),
+        // Primary-drag on blank canvas is marquee selection. Pan gestures switch the global
+        // cursor to `Grabbing` while active, so a resting open hand would advertise the wrong
+        // primary-button action here.
+        EntityCursor::System(SystemCursorIcon::Crosshair),
         FeathersGraphViewport {
             key: props.key,
             pan: props.initial_view.map_or(Vec2::ZERO, |(pan, _)| pan),
@@ -704,6 +779,7 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
                 .initial_view
                 .is_none()
                 .then_some(GraphFrameTarget::All),
+            suppress_context_click: false,
         },
     ));
     let entity = viewport.id();
@@ -965,6 +1041,7 @@ fn begin_graph_node_drag(
     mut nodes: Query<&mut FeathersGraphNode>,
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
+    modified_targets: Query<(), With<GraphModifiedDragTarget>>,
     keys: Res<ButtonInput<KeyCode>>,
     memory: Res<GraphViewportMemory>,
     mut assistance: drag_assist::Context,
@@ -989,6 +1066,17 @@ fn begin_graph_node_drag(
             .node(&node.graph_key, &node.node_key)
             .unwrap_or((node.position, node.collapsed)),
     );
+    node.drag_modifier = if !modified_targets.contains(entity) {
+        None
+    } else if keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight) {
+        Some(GraphNodeDragModifier::Duplicate)
+    } else if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
+        Some(GraphNodeDragModifier::Upstream)
+    } else if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+        Some(GraphNodeDragModifier::Downstream)
+    } else {
+        None
+    };
     node.begin_drag();
     assistance.begin(entity, &node, &parents, &memory);
     commands.queue(move |world: &mut World| insertion::begin(world, entity));
@@ -1073,7 +1161,7 @@ fn graph_drag_delta(screen_delta: Vec2, zoom: f32) -> Vec2 {
 
 fn end_graph_node_drag(
     mut drag: On<Pointer<DragEnd>>,
-    mut nodes: Query<&mut FeathersGraphNode>,
+    mut nodes: Query<(&mut FeathersGraphNode, &mut Node)>,
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -1092,26 +1180,49 @@ fn end_graph_node_drag(
     ) else {
         return;
     };
-    let Ok(mut node) = nodes.get_mut(entity) else {
+    let Ok((mut node, mut style)) = nodes.get_mut(entity) else {
         return;
     };
     let mut edit = None;
+    let mut modified = None;
     if let Some(before) = node.drag_before.take() {
         let after = (node.position, node.collapsed);
         if before != after {
-            // A displaced node's displayed drop location becomes its authored base,
-            // including a drag-start/end with no intervening motion event.
-            memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
-            edit = Some(GraphPresentationEdit {
-                graph: node.graph_key.clone(),
-                node: node.node_key.clone(),
-                before,
-                after,
-            });
+            if let Some(modifier) = node.drag_modifier.take() {
+                modified = Some(GraphModifiedNodeDrag {
+                    graph: node.graph_key.clone(),
+                    node: node.node_key.clone(),
+                    before,
+                    after,
+                    modifier,
+                });
+                if modifier == GraphNodeDragModifier::Duplicate {
+                    node.position = before.0;
+                    style.left = Val::Px(before.0.x);
+                    style.top = Val::Px(before.0.y);
+                    memory.set_node(&node.graph_key, &node.node_key, before.0, before.1);
+                }
+            } else {
+                // A displaced node's displayed drop location becomes its authored base,
+                // including a drag-start/end with no intervening motion event.
+                memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
+                edit = Some(GraphPresentationEdit {
+                    graph: node.graph_key.clone(),
+                    node: node.node_key.clone(),
+                    before,
+                    after,
+                });
+            }
         }
     }
+    node.drag_modifier = None;
     node.end_drag();
-    commands.queue(move |world: &mut World| insertion::finish(world, entity, edit));
+    commands.queue(move |world: &mut World| {
+        insertion::finish(world, entity, edit);
+        if let Some(modified) = modified {
+            world.trigger(modified);
+        }
+    });
     assistance.end(entity);
     override_cursor.0 = None;
     drag.propagate(false);
@@ -1132,6 +1243,174 @@ fn graph_node_from_target<D: QueryData, F: QueryFilter>(
         }
         entity = parents.get(entity).ok()?.parent();
     }
+}
+
+fn graph_viewport_from_target(
+    mut entity: Entity,
+    viewports: &Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
+    nodes: &Query<(), With<FeathersGraphNode>>,
+    controls: &Query<(), GraphNodeControlFilter>,
+    parents: &Query<&ChildOf>,
+) -> Option<Entity> {
+    loop {
+        if nodes.contains(entity) || controls.contains(entity) {
+            return None;
+        }
+        if viewports.contains(entity) {
+            return Some(entity);
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+fn begin_graph_marquee(
+    mut drag: On<Pointer<DragStart>>,
+    viewports: Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
+    nodes: Query<(), With<FeathersGraphNode>>,
+    controls: Query<(), GraphNodeControlFilter>,
+    parents: Query<&ChildOf>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut gesture: ResMut<GraphMarqueeGesture>,
+    mut commands: Commands,
+) {
+    if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
+        return;
+    }
+    let Some(viewport) =
+        graph_viewport_from_target(drag.event_target(), &viewports, &nodes, &controls, &parents)
+    else {
+        return;
+    };
+    let Ok((computed, transform, _)) = viewports.get(viewport) else {
+        return;
+    };
+    let start = crate::feathers::context_menu::pointer_position_in_node(
+        drag.pointer_location.position,
+        computed,
+        transform,
+    );
+    if !start.is_finite() {
+        return;
+    }
+    let mode = if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
+        GraphSelectionMode::Toggle
+    } else if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+        GraphSelectionMode::Add
+    } else {
+        GraphSelectionMode::Replace
+    };
+    let overlay = commands
+        .spawn((
+            GraphMarqueeOverlay,
+            ChildOf(viewport),
+            Pickable::IGNORE,
+            GlobalZIndex(200),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(start.x),
+                top: Val::Px(start.y),
+                width: Val::Px(0.0),
+                height: Val::Px(0.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.38, 0.22, 0.72, 0.16)),
+            BorderColor::all(theme::ACCENT),
+        ))
+        .id();
+    *gesture = GraphMarqueeGesture {
+        viewport: Some(viewport),
+        overlay: Some(overlay),
+        start,
+        current: start,
+        mode,
+    };
+    drag.propagate(false);
+}
+
+fn update_graph_marquee(
+    mut drag: On<Pointer<Drag>>,
+    viewports: Query<(&ComputedNode, &UiGlobalTransform, &FeathersGraphViewport)>,
+    mut overlays: Query<&mut Node, With<GraphMarqueeOverlay>>,
+    mut gesture: ResMut<GraphMarqueeGesture>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    let (Some(viewport), Some(overlay)) = (gesture.viewport, gesture.overlay) else {
+        return;
+    };
+    let Ok((computed, transform, _)) = viewports.get(viewport) else {
+        return;
+    };
+    let current = crate::feathers::context_menu::pointer_position_in_node(
+        drag.pointer_location.position,
+        computed,
+        transform,
+    );
+    if !current.is_finite() {
+        return;
+    }
+    gesture.current = current;
+    if let Ok(mut node) = overlays.get_mut(overlay) {
+        let min = gesture.start.min(current);
+        let size = (current - gesture.start).abs();
+        node.left = Val::Px(min.x);
+        node.top = Val::Px(min.y);
+        node.width = Val::Px(size.x);
+        node.height = Val::Px(size.y);
+    }
+    drag.propagate(false);
+}
+
+fn end_graph_marquee(
+    mut drag: On<Pointer<DragEnd>>,
+    mut gesture: ResMut<GraphMarqueeGesture>,
+    viewports: Query<&FeathersGraphViewport>,
+    nodes: Query<(Entity, &FeathersGraphNode, &ComputedNode)>,
+    parents: Query<&ChildOf>,
+    mut commands: Commands,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    let Some(viewport_entity) = gesture.viewport.take() else {
+        return;
+    };
+    if let Some(overlay) = gesture.overlay.take()
+        && let Ok(mut overlay) = commands.get_entity(overlay)
+    {
+        overlay.despawn();
+    }
+    let Ok(viewport) = viewports.get(viewport_entity) else {
+        return;
+    };
+    let start = viewport.unproject_viewport_point(gesture.start);
+    let end = viewport.unproject_viewport_point(gesture.current);
+    let marquee = Rect::from_corners(start.min(end), start.max(end));
+    let selected = nodes
+        .iter()
+        .filter(|(entity, _, _)| {
+            parents
+                .iter_ancestors(*entity)
+                .any(|ancestor| ancestor == viewport_entity)
+        })
+        .filter(|(_, node, computed)| {
+            let size = computed.size() * computed.inverse_scale_factor;
+            let bounds = Rect::from_corners(node.position, node.position + size);
+            marquee.min.x <= bounds.max.x
+                && marquee.max.x >= bounds.min.x
+                && marquee.min.y <= bounds.max.y
+                && marquee.max.y >= bounds.min.y
+        })
+        .map(|(_, node, _)| node.node_key.clone())
+        .collect();
+    commands.trigger(GraphMarqueeSelection {
+        viewport: viewport_entity,
+        nodes: selected,
+        mode: gesture.mode,
+    });
+    drag.propagate(false);
 }
 
 fn queue_graph_collapse_activation(
@@ -1274,6 +1553,8 @@ fn navigate_graph_viewports(
     if !was_panning {
         let button = if buttons.just_pressed(MouseButton::Middle) {
             Some(MouseButton::Middle)
+        } else if buttons.just_pressed(MouseButton::Right) {
+            Some(MouseButton::Right)
         } else if space && buttons.just_pressed(MouseButton::Left) {
             Some(MouseButton::Left)
         } else {
@@ -1282,6 +1563,11 @@ fn navigate_graph_viewports(
         if let (Some(viewport), Some(button)) = (hovered, button) {
             gesture.viewport = Some(viewport);
             gesture.button = Some(button);
+            if button == MouseButton::Right
+                && let Ok((_, _, _, mut viewport)) = viewports.get_mut(viewport)
+            {
+                viewport.suppress_context_click = false;
+            }
         }
     }
 
@@ -1300,6 +1586,9 @@ fn navigate_graph_viewports(
                 // Pan is screen-space, so neither display scale nor graph zoom belongs here.
                 viewport.pan += pointer_delta;
                 viewport.frame_request = None;
+                if button == MouseButton::Right {
+                    viewport.suppress_context_click = true;
+                }
             }
         }
         let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
@@ -1439,6 +1728,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             collapsed: false,
             dragging: false,
             drag_before: None,
+            drag_modifier: None,
             suppress_release_click: false,
         },
         Pickable {
@@ -1668,7 +1958,7 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
                     // Sockets live under the pan/zoom canvas transform and clip, so anchor the
                     // tooltip beside the cursor rather than the (mis-placed, clipped) element.
                     .anchored_to_cursor(),
-                EntityCursor::System(SystemCursorIcon::Pointer),
+                EntityCursor::System(SystemCursorIcon::Crosshair),
                 Node {
                     width: Val::Px(SOCKET_HIT_SIZE),
                     height: Val::Px(SOCKET_HIT_SIZE),
@@ -1818,6 +2108,7 @@ mod tests {
                     collapsed: false,
                     dragging: false,
                     drag_before: None,
+                    drag_modifier: None,
                     suppress_release_click: false,
                 },
                 Node::default(),
@@ -1900,6 +2191,7 @@ mod tests {
                 selection_bounds: None,
                 frame_request: None,
                 measured_frame: None,
+                suppress_context_click: false,
             };
             let wire_endpoint_screen = viewport.project_graph_point(graph_point);
 
@@ -1933,6 +2225,7 @@ mod tests {
             collapsed: false,
             dragging: false,
             drag_before: None,
+            drag_modifier: None,
             suppress_release_click: false,
         };
 

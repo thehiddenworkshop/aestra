@@ -1,6 +1,6 @@
 //! Presentation deltas share the existing document chronology, but never shader state.
 use super::*;
-use crate::feathers::node_graph::GraphPresentationEdit;
+use crate::feathers::node_graph::{GraphPresentationBatchEdit, GraphPresentationEdit};
 use crate::history::asset_order::Context;
 use crate::material_document::MaterialEditingTarget;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -425,6 +425,37 @@ pub(super) fn node_edit(event: On<GraphPresentationEdit>, mut commands: Commands
                 invalidated: false,
             },
         );
+    });
+}
+
+pub(super) fn batch_edit(event: On<GraphPresentationBatchEdit>, mut commands: Commands) {
+    let edit = event.event().clone();
+    commands.queue(move |world: &mut World| {
+        let Some(after) = Snapshot::capture(
+            &edit.graph,
+            world.resource::<ProjectEffectCatalog>(),
+            world.resource::<EditorSession>(),
+            world.resource::<GraphViewportMemory>(),
+        ) else {
+            return;
+        };
+        let mut before = after.clone();
+        for (node, state) in edit.before {
+            if before.keys.contains(&node) {
+                before.nodes.insert(node, state);
+            }
+        }
+        if before.nodes != after.nodes {
+            record(
+                world,
+                Transaction {
+                    before,
+                    after,
+                    previews: None,
+                    invalidated: false,
+                },
+            );
+        }
     });
 }
 

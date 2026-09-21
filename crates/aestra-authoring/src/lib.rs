@@ -43,6 +43,6 @@ pub use material_migration::{
 pub use material_tools::{
     MaterialConnectionTarget, MaterialFresnelIntensity, MaterialInsertionPoint,
     MaterialParameterBinding, MaterialToolCommand, MaterialToolError, MaterialToolPlan,
-    MaterialToolPlanner,
+    MaterialToolPlanner, remap_expression_sources,
 };
 pub use selection::{LockState, Selection, SemanticTarget};

@@ -9,7 +9,7 @@ fn function_socket_palette_choices_are_transactional() {
     let options = choices(
         &document,
         &function,
-        SocketKind::Target(Target::Output(function.outputs[0].id)),
+        Some(SocketKind::Target(Target::Output(function.outputs[0].id))),
     );
     assert!(!options.is_empty());
     assert_eq!(document, before);
@@ -47,7 +47,7 @@ fn source_menu_names_each_input_and_rejects_stale_endpoints() {
     let options = choices(
         &document,
         &function,
-        SocketKind::Source(function.expressions[0].id),
+        Some(SocketKind::Source(function.expressions[0].id)),
     );
     assert!(options.iter().any(|option| option.label == "Multiply — A"));
     assert!(options.iter().any(|option| option.label == "Multiply — B"));
@@ -59,7 +59,7 @@ fn source_menu_names_each_input_and_rejects_stale_endpoints() {
         choices(
             &document,
             &function,
-            SocketKind::Source(MaterialExpressionId::new())
+            Some(SocketKind::Source(MaterialExpressionId::new()))
         )
         .is_empty()
     );
@@ -67,7 +67,9 @@ fn source_menu_names_each_input_and_rejects_stale_endpoints() {
         choices(
             &document,
             &function,
-            SocketKind::Target(Target::Output(MaterialFunctionOutputId::new()))
+            Some(SocketKind::Target(Target::Output(
+                MaterialFunctionOutputId::new()
+            )))
         )
         .is_empty()
     );
@@ -89,7 +91,10 @@ fn target_menu_supports_ordinary_function_inputs() {
     let options = choices(
         &document,
         &function,
-        SocketKind::Target(Target::Input(derivative, MaterialExpressionInput::Value)),
+        Some(SocketKind::Target(Target::Input(
+            derivative,
+            MaterialExpressionInput::Value,
+        ))),
     );
     let option = options
         .iter()
@@ -238,6 +243,8 @@ fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Enti
                         &catalog,
                         &assets,
                         &memory,
+                        &crate::material_graph::MaterialGraphSelectionState::default(),
+                        &FunctionGraphMenuState::default(),
                         &session.material_target,
                         Some(crate::docking::EditorViewId(9)),
                     )

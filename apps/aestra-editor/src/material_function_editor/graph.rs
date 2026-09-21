@@ -1,11 +1,18 @@
 //! Function-native canvas: no surrogate material program or effect is created.
 use super::*;
+use crate::feathers::context_menu::{
+    pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu_item,
+    spawn_pointer_context_menu_sized,
+};
 use crate::feathers::node_graph::geometry::{
     GraphDocumentKey, GraphGeometryNode, GraphGeometryPort, GraphGeometryView, GraphNodeKey,
     GraphViewKey,
 };
 use crate::feathers::{
-    combo_box::{spawn_compact_action_menu, spawn_searchable_icon_action_menu},
+    combo_box::{
+        ComboOption, spawn_compact_action_menu, spawn_icon_action_menu,
+        spawn_searchable_icon_action_menu,
+    },
     icon::load_svg_icon,
     node_graph::*,
 };
@@ -15,20 +22,62 @@ use aestra_authoring::{
 use aestra_compiler::{
     MaterialCompiler, MaterialFunctionBodyProjection, MaterialFunctionGraphTarget,
 };
+use bevy::ui::RelativeCursorPosition;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod socket_palette;
 
 #[derive(Component, Clone, Copy)]
 struct View(MaterialFunctionId);
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Clone, Copy)]
+struct ViewScope(crate::material_graph::MaterialSelectionScope);
+#[derive(Component, Clone, Copy)]
+struct FunctionGraphNodeAction {
+    owner: MaterialFunctionId,
+    expression: MaterialExpressionId,
+    scope: crate::material_graph::MaterialSelectionScope,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target {
     Input(MaterialExpressionId, MaterialExpressionInput),
     Output(MaterialFunctionOutputId),
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum SocketKind {
     Source(MaterialExpressionId),
     Target(Target),
+}
+
+fn function_socket_positions(
+    viewport: Entity,
+    owner: MaterialFunctionId,
+    sockets: &Query<(&Socket, &UiGlobalTransform, &Anchor)>,
+    graph_nodes: &Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
+    parents: &Query<&ChildOf>,
+) -> Vec<(SocketKind, Vec2)> {
+    sockets
+        .iter()
+        .filter(|(socket, _, _)| {
+            socket.owner == owner
+                && parents
+                    .iter_ancestors(socket.node)
+                    .any(|ancestor| ancestor == viewport)
+        })
+        .filter_map(|(socket, transform, anchor)| {
+            let (node, computed, node_transform) = graph_nodes.get(socket.node).ok()?;
+            let (_, _, world) = transform.to_scale_angle_translation();
+            let offset = anchor.0.unwrap_or_else(|| {
+                crate::material_graph::viewport_local_position(computed, node_transform, world)
+            });
+            Some((socket.kind, node.position() + offset))
+        })
+        .collect()
+}
+
+fn function_socket_position(positions: &[(SocketKind, Vec2)], kind: SocketKind) -> Option<Vec2> {
+    positions
+        .iter()
+        .find_map(|(candidate, position)| (*candidate == kind).then_some(*position))
 }
 #[derive(Component, Clone, Copy)]
 struct Socket {
@@ -52,6 +101,42 @@ struct Wire {
     source: MaterialExpressionId,
     target: Target,
 }
+
+#[derive(Debug, Clone)]
+enum FunctionGraphMenuKind {
+    Node(MaterialExpressionId),
+    Connections(Vec<(MaterialExpressionId, Target)>),
+}
+
+#[derive(Debug, Clone)]
+struct FunctionGraphMenuOpen {
+    owner: MaterialFunctionId,
+    scope: crate::material_graph::MaterialSelectionScope,
+    position: Vec2,
+    kind: FunctionGraphMenuKind,
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct FunctionGraphMenuState {
+    open: Option<FunctionGraphMenuOpen>,
+}
+
+impl FunctionGraphMenuState {
+    pub(crate) fn is_open(&self) -> bool {
+        self.open.is_some()
+    }
+}
+
+#[derive(Component)]
+struct FunctionGraphContextMenu;
+
+#[derive(Component, Clone, Copy)]
+enum FunctionGraphContextAction {
+    Open(MaterialExpressionId),
+    Duplicate(MaterialExpressionId),
+    Delete(MaterialExpressionId),
+    Disconnect(Target),
+}
 #[derive(Component, Clone, Copy)]
 struct BodyAction {
     owner: MaterialFunctionId,
@@ -62,7 +147,7 @@ struct BodyAction {
 enum BodyActionKind {
     Back,
     Locate,
-    Arrange,
+    Arrange(crate::material_graph::arrange::ArrangeScope),
     Create(aestra_compiler::MaterialGraphCreateKind),
     Boolean(MaterialExpressionId, bool),
     Input(MaterialFunctionInputId),
@@ -78,14 +163,25 @@ struct Constant {
 pub(super) fn register(app: &mut App) {
     socket_palette::register(app);
     app.init_resource::<ConnectionPreview>()
+        .init_resource::<FunctionGraphMenuState>()
+        .init_resource::<crate::material_graph::MaterialGraphSelectionState>()
         .add_observer(start_connection)
         .add_observer(move_connection)
         .add_observer(end_connection)
+        .add_observer(select_function_graph_node)
+        .add_observer(open_nested_function_call)
+        .add_observer(select_function_graph_canvas)
+        .add_observer(select_function_graph_marquee)
+        .add_observer(handle_modified_function_node_drag)
+        .add_observer(open_function_graph_palette)
+        .add_observer(open_function_graph_pin_menu)
+        .add_observer(open_function_graph_node_menu)
+        .add_observer(handle_function_graph_context_action)
         .add_observer(action)
         .add_observer(drop_socket)
         .add_observer(constant_text)
         .add_observer(constant_number)
-        .add_systems(Update, attach_wires)
+        .add_systems(Update, (attach_wires, dismiss_function_graph_menu))
         .add_systems(
             PostUpdate,
             update_wires.after(bevy::ui::UiSystems::PostLayout),
@@ -370,9 +466,765 @@ pub(crate) fn estimated_size(
     Vec2::new(NODE_WIDTH, 62.0 + rows.max(1) as f32 * 28.0)
 }
 
+fn select_function_graph_node(
+    mut click: On<Pointer<Click>>,
+    actions: Query<&FunctionGraphNodeAction>,
+    mut graph_nodes: Query<&mut FeathersGraphNode>,
+    parents: Query<&ChildOf>,
+    sockets: Query<(), With<Socket>>,
+    controls: Query<(), Or<(With<Constant>, With<BodyAction>)>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
+        return;
+    }
+    let mut entity = click.event_target();
+    let (action, node_entity) = loop {
+        if sockets.contains(entity) || controls.contains(entity) {
+            return;
+        }
+        if let Ok(action) = actions.get(entity) {
+            break (*action, entity);
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    if graph_nodes
+        .get_mut(node_entity)
+        .is_ok_and(|mut node| node.consume_suppressed_release_click())
+    {
+        click.propagate(false);
+        return;
+    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    selection.select_function_expression(
+        action.scope,
+        action.owner,
+        action.expression,
+        control,
+        shift,
+    );
+    session.ui_revision += 1;
+    click.propagate(false);
+}
+
+fn open_nested_function_call(
+    mut click: On<Pointer<Click>>,
+    actions: Query<&FunctionGraphNodeAction>,
+    parents: Query<&ChildOf>,
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary || click.count < 2 {
+        return;
+    }
+    let mut entity = click.event_target();
+    let action = loop {
+        if let Ok(action) = actions.get(entity) {
+            break *action;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let Ok(function) = session.graph_function(&catalog) else {
+        return;
+    };
+    if function.id != action.owner {
+        return;
+    }
+    let Some(expression) = function
+        .expressions
+        .iter()
+        .find(|expression| expression.id == action.expression)
+    else {
+        return;
+    };
+    let MaterialExpressionKind::FunctionCall {
+        function: aestra_core::material::MaterialFunctionRef::Project(function),
+        ..
+    } = &expression.kind
+    else {
+        return;
+    };
+    commands.trigger(crate::asset_browser::OpenFunction {
+        function: *function,
+        new_view: false,
+    });
+    click.propagate(false);
+}
+
+fn select_function_graph_canvas(
+    mut click: On<Pointer<Click>>,
+    views: Query<(&View, &ViewScope)>,
+    controls: Query<
+        (),
+        Or<(
+            With<FunctionGraphNodeAction>,
+            With<Socket>,
+            With<Constant>,
+            With<BodyAction>,
+            With<socket_palette::Surface>,
+        )>,
+    >,
+    parents: Query<&ChildOf>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let view = loop {
+        if controls.contains(entity) {
+            return;
+        }
+        if let Ok(view) = views.get(entity) {
+            break (*view.0, *view.1);
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    if selection.clear_function_selection(view.1.0, view.0.0) {
+        session.ui_revision += 1;
+    }
+    click.propagate(false);
+}
+
+fn open_function_graph_palette(
+    mut click: On<Pointer<Click>>,
+    mut views: Query<(
+        &View,
+        &ViewScope,
+        &mut FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    graph_nodes: Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
+    sockets: Query<(&Socket, &UiGlobalTransform, &Anchor)>,
+    wires: Query<(Entity, &Wire)>,
+    controls: Query<
+        (),
+        Or<(
+            With<FunctionGraphNodeAction>,
+            With<Socket>,
+            With<Constant>,
+            With<BodyAction>,
+            With<socket_palette::Surface>,
+            With<FunctionGraphContextMenu>,
+        )>,
+    >,
+    parents: Query<&ChildOf>,
+    mut menus: ResMut<FunctionGraphMenuState>,
+    mut session: ResMut<EditorSession>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let viewport = loop {
+        if controls.contains(entity) {
+            return;
+        }
+        if let Ok((view, scope, mut viewport, computed, transform)) = views.get_mut(entity) {
+            if viewport.consume_suppressed_context_click() {
+                click.propagate(false);
+                return;
+            }
+            let position =
+                pointer_position_in_node(click.pointer_location.position, computed, transform);
+            let socket_positions =
+                function_socket_positions(entity, view.0, &sockets, &graph_nodes, &parents);
+            if let Some((source, target)) = wires
+                .iter()
+                .filter(|(wire_entity, wire)| {
+                    wire.owner == view.0
+                        && parents
+                            .iter_ancestors(*wire_entity)
+                            .any(|ancestor| ancestor == entity)
+                })
+                .filter_map(|(_, wire)| {
+                    let start = function_socket_position(
+                        &socket_positions,
+                        SocketKind::Source(wire.source),
+                    )?;
+                    let end = function_socket_position(
+                        &socket_positions,
+                        SocketKind::Target(wire.target),
+                    )?;
+                    let distance = crate::material_graph::distance_to_graph_wire(
+                        position,
+                        viewport.project_graph_point(start),
+                        viewport.project_graph_point(end),
+                    );
+                    (distance <= 9.0).then_some((distance, wire.source, wire.target))
+                })
+                .min_by(|left, right| left.0.total_cmp(&right.0))
+                .map(|(_, source, target)| (source, target))
+            {
+                menus.open = Some(FunctionGraphMenuOpen {
+                    owner: view.0,
+                    scope: scope.0,
+                    position,
+                    kind: FunctionGraphMenuKind::Connections(vec![(source, target)]),
+                });
+                session.ui_revision += 1;
+                click.propagate(false);
+                return;
+            }
+            break entity;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let pointer = click.pointer_location.position;
+    commands.queue(move |world: &mut World| socket_palette::open_canvas(world, viewport, pointer));
+    click.propagate(false);
+}
+
+fn open_function_graph_pin_menu(
+    mut click: On<Pointer<Click>>,
+    sockets: Query<(Entity, &Socket)>,
+    mut views: Query<(
+        &View,
+        &ViewScope,
+        &mut FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    wires: Query<(Entity, &Wire)>,
+    parents: Query<&ChildOf>,
+    mut menus: ResMut<FunctionGraphMenuState>,
+    mut session: ResMut<EditorSession>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let Some(socket_entity) = socket_entity(click.event_target(), &sockets, &parents) else {
+        return;
+    };
+    let Ok((_, socket)) = sockets.get(socket_entity) else {
+        return;
+    };
+    let mut ancestor = socket_entity;
+    let (viewport_entity, scope, mut viewport, computed, transform) = loop {
+        if let Ok((_, scope, viewport, computed, transform)) = views.get_mut(ancestor) {
+            break (ancestor, *scope, viewport, computed, transform);
+        }
+        let Ok(parent) = parents.get(ancestor) else {
+            return;
+        };
+        ancestor = parent.parent();
+    };
+    if viewport.consume_suppressed_context_click() {
+        click.propagate(false);
+        return;
+    }
+    let connections = wires
+        .iter()
+        .filter(|(wire_entity, wire)| {
+            wire.owner == socket.owner
+                && parents
+                    .iter_ancestors(*wire_entity)
+                    .any(|ancestor| ancestor == viewport_entity)
+                && match socket.kind {
+                    SocketKind::Source(source) => wire.source == source,
+                    SocketKind::Target(target) => wire.target == target,
+                }
+        })
+        .map(|(_, wire)| (wire.source, wire.target))
+        .collect::<Vec<_>>();
+    if connections.is_empty() {
+        let pointer = click.pointer_location.position;
+        commands
+            .queue(move |world: &mut World| socket_palette::open(world, socket_entity, pointer));
+    } else {
+        menus.open = Some(FunctionGraphMenuOpen {
+            owner: socket.owner,
+            scope: scope.0,
+            position: pointer_position_in_node(
+                click.pointer_location.position,
+                computed,
+                transform,
+            ),
+            kind: FunctionGraphMenuKind::Connections(connections),
+        });
+        session.ui_revision += 1;
+    }
+    click.propagate(false);
+}
+
+fn open_function_graph_node_menu(
+    mut click: On<Pointer<Click>>,
+    actions: Query<&FunctionGraphNodeAction>,
+    sockets: Query<(), With<Socket>>,
+    mut views: Query<(
+        &View,
+        &ViewScope,
+        &mut FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    parents: Query<&ChildOf>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut menus: ResMut<FunctionGraphMenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let action = loop {
+        if sockets.contains(entity) {
+            return;
+        }
+        if let Ok(action) = actions.get(entity) {
+            break *action;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let mut ancestor = entity;
+    let (scope, mut viewport, computed, transform) = loop {
+        if let Ok((_, scope, viewport, computed, transform)) = views.get_mut(ancestor) {
+            break (*scope, viewport, computed, transform);
+        }
+        let Ok(parent) = parents.get(ancestor) else {
+            return;
+        };
+        ancestor = parent.parent();
+    };
+    if viewport.consume_suppressed_context_click() {
+        click.propagate(false);
+        return;
+    }
+    if !selection.is_function_expression_selected(action.scope, action.owner, action.expression) {
+        selection.select_function_expression(
+            action.scope,
+            action.owner,
+            action.expression,
+            false,
+            false,
+        );
+    }
+    menus.open = Some(FunctionGraphMenuOpen {
+        owner: action.owner,
+        scope: scope.0,
+        position: pointer_position_in_node(click.pointer_location.position, computed, transform),
+        kind: FunctionGraphMenuKind::Node(action.expression),
+    });
+    session.ui_revision += 1;
+    click.propagate(false);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_function_graph_context_action(
+    event: On<Activate>,
+    actions: Query<&FunctionGraphContextAction>,
+    graph_nodes: Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    mut menus: ResMut<FunctionGraphMenuState>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut editor: ResMut<FunctionEditor>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut memory: ResMut<GraphViewportMemory>,
+    mut commands: Commands,
+) {
+    let Ok(action) = actions.get(event.entity) else {
+        return;
+    };
+    let Some(open) = menus.open.clone() else {
+        return;
+    };
+    if session.standalone_function() != Some(open.owner) {
+        menus.open = None;
+        return;
+    }
+    match *action {
+        FunctionGraphContextAction::Open(expression) => {
+            if let Ok(function) = session.graph_function(&catalog)
+                && let Some(MaterialExpression {
+                    kind:
+                        MaterialExpressionKind::FunctionCall {
+                            function: aestra_core::material::MaterialFunctionRef::Project(function),
+                            ..
+                        },
+                    ..
+                }) = function
+                    .expressions
+                    .iter()
+                    .find(|candidate| candidate.id == expression)
+            {
+                commands.trigger(crate::asset_browser::OpenFunction {
+                    function: *function,
+                    new_view: false,
+                });
+            }
+        }
+        FunctionGraphContextAction::Duplicate(expression) => {
+            match duplicate_function_selection(
+                open.owner,
+                open.scope,
+                expression,
+                Vec2::splat(24.0),
+                &graph_nodes,
+                &mut editor,
+                &mut session,
+                &mut catalog,
+                &mut memory,
+                &mut selection,
+            ) {
+                Ok(count) => session.status = format!("Duplicated {count} function node(s)"),
+                Err(error) => {
+                    session.status = format!("Could not duplicate function nodes: {error}")
+                }
+            }
+        }
+        FunctionGraphContextAction::Delete(expression) => {
+            let mut selected = selection
+                .function_arrange_seeds(open.scope, open.owner)
+                .into_iter()
+                .filter_map(|key| match key {
+                    GraphNodeKey::Expression(id) => Some(id),
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>();
+            if selected.is_empty() {
+                selected.insert(expression);
+            }
+            let graph_key =
+                crate::material_graph::function_graph_memory_key(catalog.root(), open.owner);
+            let before = crate::material_graph::presentation::Snapshot::capture(
+                &graph_key, &catalog, &session, &memory,
+            );
+            let result = editor.edit_body(
+                &mut session,
+                &mut catalog,
+                selected
+                    .iter()
+                    .rev()
+                    .map(|expression| Edit::Remove {
+                        expression: *expression,
+                    })
+                    .collect(),
+            );
+            match result {
+                Ok(()) => {
+                    for expression in &selected {
+                        memory.remove_node(&graph_key, &expression.to_string());
+                    }
+                    if let Some(before) = before {
+                        before.attach(&catalog, &mut session, &mut memory);
+                    }
+                    selection.clear_function_selection(open.scope, open.owner);
+                    session.status = format!("Deleted {} function node(s)", selected.len());
+                }
+                Err(error) => session.status = format!("Could not delete function nodes: {error}"),
+            }
+        }
+        FunctionGraphContextAction::Disconnect(target) => {
+            let result = match target {
+                Target::Input(expression, MaterialExpressionInput::FunctionArgument(input)) => {
+                    editor.edit_body(
+                        &mut session,
+                        &mut catalog,
+                        vec![Edit::SetArgument {
+                            expression,
+                            input,
+                            source: None,
+                        }],
+                    )
+                }
+                _ => Err("This required connection needs a replacement source".into()),
+            };
+            finish(&mut session, result);
+        }
+    }
+    menus.open = None;
+    session.ui_revision += 1;
+}
+
+fn dismiss_function_graph_menu(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    surfaces: Query<&RelativeCursorPosition, With<FunctionGraphContextMenu>>,
+    mut menus: ResMut<FunctionGraphMenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if should_dismiss_pointer_context_menu(
+        menus.open.is_some(),
+        buttons.just_pressed(MouseButton::Left),
+        keys.just_pressed(KeyCode::Escape),
+        surfaces.iter().any(RelativeCursorPosition::cursor_over),
+    ) {
+        menus.open = None;
+        session.ui_revision += 1;
+    }
+}
+
+fn select_function_graph_marquee(
+    event: On<GraphMarqueeSelection>,
+    views: Query<(&View, &ViewScope)>,
+    graph_nodes: Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok((function, scope)) = views.get(event.viewport) else {
+        return;
+    };
+    let expressions = graph_nodes
+        .iter()
+        .filter(|(action, node)| {
+            action.owner == function.0 && event.nodes.contains(node.node_key())
+        })
+        .map(|(action, _)| action.expression)
+        .collect::<BTreeSet<_>>();
+    if selection.select_function_expressions(scope.0, function.0, &expressions, event.mode) {
+        session.ui_revision += 1;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn duplicate_function_selection(
+    owner: MaterialFunctionId,
+    scope: crate::material_graph::MaterialSelectionScope,
+    anchor: MaterialExpressionId,
+    offset: Vec2,
+    graph_nodes: &Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    editor: &mut FunctionEditor,
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    memory: &mut GraphViewportMemory,
+    selection: &mut crate::material_graph::MaterialGraphSelectionState,
+) -> Result<usize, String> {
+    let function = session.graph_function(catalog)?;
+    if function.id != owner {
+        return Err("The function editing target changed".into());
+    }
+    let mut selected = selection
+        .function_arrange_seeds(scope, owner)
+        .into_iter()
+        .filter_map(|key| match key {
+            GraphNodeKey::Expression(id) => Some(id),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    if selected.is_empty() {
+        selected.insert(anchor);
+    }
+    let ordered = function
+        .expressions
+        .iter()
+        .filter(|expression| selected.contains(&expression.id))
+        .collect::<Vec<_>>();
+    let remapped = ordered
+        .iter()
+        .map(|expression| (expression.id, MaterialExpressionId::new()))
+        .collect::<BTreeMap<_, _>>();
+    let edits = ordered
+        .iter()
+        .enumerate()
+        .map(|(index, expression)| {
+            let mut kind = expression.kind.clone();
+            aestra_authoring::remap_expression_sources(&mut kind, &remapped);
+            Edit::Add {
+                expression: MaterialExpression {
+                    id: remapped[&expression.id],
+                    kind,
+                },
+                index: function.expressions.len() + index,
+            }
+        })
+        .collect::<Vec<_>>();
+    let positions = graph_nodes
+        .iter()
+        .filter(|(node, _)| node.owner == owner && selected.contains(&node.expression))
+        .map(|(node, graph)| (node.expression, graph.position()))
+        .collect::<BTreeMap<_, _>>();
+    let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), owner);
+    let before = crate::material_graph::presentation::Snapshot::capture(
+        &graph_key, catalog, session, memory,
+    );
+    editor.edit_body(session, catalog, edits)?;
+    for (source, duplicate) in &remapped {
+        let position = positions
+            .get(source)
+            .copied()
+            .or_else(|| memory.node_position(&graph_key, &source.to_string()))
+            .unwrap_or(Vec2::ZERO)
+            + offset;
+        memory.place_node(&graph_key, duplicate.to_string(), position);
+    }
+    if let Some(before) = before {
+        before.attach(catalog, session, memory);
+    }
+    selection.select_function_expressions(
+        scope,
+        owner,
+        &remapped.values().copied().collect(),
+        GraphSelectionMode::Replace,
+    );
+    Ok(remapped.len())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_modified_function_node_drag(
+    event: On<GraphModifiedNodeDrag>,
+    graph_nodes: Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    mut editor: ResMut<FunctionEditor>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut memory: ResMut<GraphViewportMemory>,
+    mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
+    mut commands: Commands,
+) {
+    let Some((action, _)) = graph_nodes
+        .iter()
+        .find(|(_, node)| node.graph_key() == event.graph && node.node_key() == event.node)
+    else {
+        return;
+    };
+    if !selection.is_function_expression_selected(action.scope, action.owner, action.expression) {
+        selection.select_function_expression(
+            action.scope,
+            action.owner,
+            action.expression,
+            false,
+            false,
+        );
+    }
+    let delta = event.after.0 - event.before.0;
+    match event.modifier {
+        GraphNodeDragModifier::Duplicate => {
+            match duplicate_function_selection(
+                action.owner,
+                action.scope,
+                action.expression,
+                delta,
+                &graph_nodes,
+                &mut editor,
+                &mut session,
+                &mut catalog,
+                &mut memory,
+                &mut selection,
+            ) {
+                Ok(count) => session.status = format!("Duplicated {count} function node(s)"),
+                Err(error) => {
+                    session.status = format!("Could not duplicate function nodes: {error}")
+                }
+            }
+        }
+        GraphNodeDragModifier::Upstream | GraphNodeDragModifier::Downstream => {
+            let Ok(function) = session.graph_function(&catalog) else {
+                return;
+            };
+            if function.id != action.owner {
+                return;
+            }
+            let Ok(library) = catalog.material_function_library() else {
+                return;
+            };
+            let projection = MaterialCompiler.project_function_graph(&function, &library);
+            let keys = function_branch_nodes(
+                &projection.body,
+                GraphNodeKey::Expression(action.expression),
+                event.modifier == GraphNodeDragModifier::Upstream,
+            );
+            let mut before = BTreeMap::new();
+            for key in &keys {
+                let node = match key {
+                    GraphNodeKey::Expression(id) => id.to_string(),
+                    GraphNodeKey::FunctionOutputs => "outputs".into(),
+                    GraphNodeKey::MaterialOutputs => continue,
+                };
+                let Some(state) = memory.node(&event.graph, &node) else {
+                    continue;
+                };
+                let original = if node == event.node {
+                    event.before
+                } else {
+                    state
+                };
+                before.insert(node.clone(), original);
+                memory.set_node(&event.graph, node, original.0 + delta, original.1);
+            }
+            let expressions = keys
+                .into_iter()
+                .filter_map(|key| match key {
+                    GraphNodeKey::Expression(id) => Some(id),
+                    _ => None,
+                })
+                .collect();
+            selection.select_function_expressions(
+                action.scope,
+                action.owner,
+                &expressions,
+                GraphSelectionMode::Replace,
+            );
+            commands.trigger(GraphPresentationBatchEdit {
+                graph: event.graph.clone(),
+                before,
+            });
+        }
+    }
+    session.ui_revision += 1;
+}
+
+fn function_branch_nodes(
+    projection: &MaterialFunctionBodyProjection,
+    seed: GraphNodeKey,
+    upstream: bool,
+) -> BTreeSet<GraphNodeKey> {
+    let MaterialFunctionBodyProjection::Graph { edges, .. } = projection else {
+        return BTreeSet::from([seed]);
+    };
+    let mut result = BTreeSet::from([seed]);
+    let mut frontier = vec![seed];
+    while let Some(current) = frontier.pop() {
+        for edge in edges {
+            let Some(target) = target(&edge.target).map(|target| match target {
+                Target::Input(expression, _) => GraphNodeKey::Expression(expression),
+                Target::Output(_) => GraphNodeKey::FunctionOutputs,
+            }) else {
+                continue;
+            };
+            let source = GraphNodeKey::Expression(edge.source);
+            let candidate = if upstream && target == current {
+                Some(source)
+            } else if !upstream && source == current {
+                Some(target)
+            } else {
+                None
+            };
+            if let Some(candidate) = candidate
+                && result.insert(candidate)
+            {
+                frontier.push(candidate);
+            }
+        }
+    }
+    result
+}
+
 fn action(
     event: On<Activate>,
     actions: Query<&BodyAction>,
+    selection: Res<crate::material_graph::MaterialGraphSelectionState>,
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
@@ -396,16 +1248,18 @@ fn action(
         ));
         return;
     }
-    if matches!(action.kind, BodyActionKind::Arrange) {
-        commands.trigger(crate::material_graph::arrange::ArrangeGraph::full(
-            GraphViewKey {
+    if let BodyActionKind::Arrange(arrange_scope) = action.kind {
+        commands.trigger(crate::material_graph::arrange::ArrangeGraph {
+            view: GraphViewKey {
                 document: GraphDocumentKey {
                     project: catalog.root().to_owned(),
                     asset: crate::document::DocumentKey::MaterialFunction(action.owner),
                 },
                 view: action.scope,
             },
-        ));
+            scope: arrange_scope,
+            seeds: selection.function_arrange_seeds(action.scope, action.owner),
+        });
         return;
     }
     let graph_key = format!("function:{}:{}", catalog.root().display(), action.owner);
@@ -655,6 +1509,8 @@ pub(crate) fn spawn(
     catalog: &ProjectEffectCatalog,
     assets: &AssetServer,
     memory: &GraphViewportMemory,
+    selection: &crate::material_graph::MaterialGraphSelectionState,
+    menus: &FunctionGraphMenuState,
     editing_target: &crate::material_document::MaterialEditingTarget,
     view: Option<crate::docking::EditorViewId>,
 ) {
@@ -740,6 +1596,13 @@ pub(crate) fn spawn(
                 "Frame all".into(),
                 GraphFrameAction::new(&viewport_key, GraphFrameTarget::All),
             );
+            spawn_graph_frame_button(
+                toolbar,
+                assets,
+                "icons/frame-selection.svg",
+                "Frame selection".into(),
+                GraphFrameAction::new(&viewport_key, GraphFrameTarget::Selection),
+            );
             spawn_graph_tool_button(
                 toolbar,
                 assets,
@@ -747,9 +1610,65 @@ pub(crate) fn spawn(
                 "Arrange graph".into(),
                 BodyAction {
                     owner: function.id,
-                    kind: BodyActionKind::Arrange,
+                    kind: BodyActionKind::Arrange(
+                        crate::material_graph::arrange::ArrangeScope::Graph,
+                    ),
                     scope: view,
                 },
+            );
+            let arrange_options = [
+                ComboOption {
+                    label: "Arrange selection".into(),
+                    selected: false,
+                    action: BodyAction {
+                        owner: function.id,
+                        kind: BodyActionKind::Arrange(
+                            crate::material_graph::arrange::ArrangeScope::Selection,
+                        ),
+                        scope: view,
+                    },
+                },
+                ComboOption {
+                    label: "Arrange upstream".into(),
+                    selected: false,
+                    action: BodyAction {
+                        owner: function.id,
+                        kind: BodyActionKind::Arrange(
+                            crate::material_graph::arrange::ArrangeScope::Upstream,
+                        ),
+                        scope: view,
+                    },
+                },
+                ComboOption {
+                    label: "Arrange downstream".into(),
+                    selected: false,
+                    action: BodyAction {
+                        owner: function.id,
+                        kind: BodyActionKind::Arrange(
+                            crate::material_graph::arrange::ArrangeScope::Downstream,
+                        ),
+                        scope: view,
+                    },
+                },
+                ComboOption {
+                    label: "Arrange graph".into(),
+                    selected: false,
+                    action: BodyAction {
+                        owner: function.id,
+                        kind: BodyActionKind::Arrange(
+                            crate::material_graph::arrange::ArrangeScope::Graph,
+                        ),
+                        scope: view,
+                    },
+                },
+            ];
+            spawn_icon_action_menu(
+                toolbar,
+                assets,
+                "icons/chevron-down.svg",
+                "Arrange nodes",
+                "Arrange nodes",
+                &arrange_options,
             );
             spawn_graph_tool_button(
                 toolbar,
@@ -825,6 +1744,7 @@ pub(crate) fn spawn(
                     &expression.id.to_string(),
                     title(expression, &function),
                     positions[&expression.id],
+                    selection.is_function_expression_selected(view, function.id, expression.id),
                     assets,
                 );
                 let geometry = GraphGeometryNode::new(
@@ -832,7 +1752,7 @@ pub(crate) fn spawn(
                     expression,
                     false,
                 );
-                spawn_graph_node(canvas, props, geometry, |node, body| {
+                let graph_node = spawn_graph_node(canvas, props, geometry, |node, body| {
                     socket(
                         body,
                         function.id,
@@ -988,6 +1908,14 @@ pub(crate) fn spawn(
                         });
                     });
                 });
+                canvas.commands().entity(graph_node).insert((
+                    FunctionGraphNodeAction {
+                        owner: function.id,
+                        expression: expression.id,
+                        scope: view,
+                    },
+                    GraphModifiedDragTarget,
+                ));
             }
             spawn_graph_node(
                 canvas,
@@ -996,6 +1924,7 @@ pub(crate) fn spawn(
                     "outputs",
                     "Function outputs".into(),
                     output_position,
+                    false,
                     assets,
                 ),
                 GraphGeometryNode::new(GraphNodeKey::FunctionOutputs, &function.outputs, false),
@@ -1029,8 +1958,89 @@ pub(crate) fn spawn(
                 .collect(),
         },
         View(function.id),
+        ViewScope(view),
         crate::material_graph::asset_drop::GraphDropTarget::function(session, function.id),
     ));
+    if let Some(open) = menus
+        .open
+        .as_ref()
+        .filter(|open| open.owner == function.id && open.scope == view)
+    {
+        parent
+            .commands()
+            .entity(viewport)
+            .with_children(|viewport| {
+                spawn_function_graph_context_menu(viewport, open, &function);
+            });
+    }
+}
+
+fn spawn_function_graph_context_menu(
+    parent: &mut ChildSpawnerCommands,
+    open: &FunctionGraphMenuOpen,
+    function: &MaterialFunction,
+) {
+    spawn_pointer_context_menu_sized(
+        parent,
+        open.position,
+        216.0,
+        (),
+        (FunctionGraphContextMenu, FeathersGraphNavigationBlocker),
+        |menu| match &open.kind {
+            FunctionGraphMenuKind::Node(expression) => {
+                if function.expressions.iter().any(|candidate| {
+                    candidate.id == *expression
+                        && matches!(
+                            candidate.kind,
+                            MaterialExpressionKind::FunctionCall {
+                                function: aestra_core::material::MaterialFunctionRef::Project(_),
+                                ..
+                            }
+                        )
+                }) {
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        "Open function",
+                        FunctionGraphContextAction::Open(*expression),
+                    );
+                }
+                spawn_pointer_context_menu_item(
+                    menu,
+                    "Duplicate node(s)",
+                    FunctionGraphContextAction::Duplicate(*expression),
+                );
+                spawn_pointer_context_menu_item(
+                    menu,
+                    "Delete node(s)",
+                    FunctionGraphContextAction::Delete(*expression),
+                );
+            }
+            FunctionGraphMenuKind::Connections(connections) => {
+                for (index, (_, target)) in connections.iter().copied().enumerate() {
+                    let optional = matches!(
+                        target,
+                        Target::Input(_, MaterialExpressionInput::FunctionArgument(_))
+                    );
+                    let label = if optional {
+                        if connections.len() == 1 {
+                            "Break connection".to_owned()
+                        } else {
+                            format!("Break connection {}", index + 1)
+                        }
+                    } else if connections.len() == 1 {
+                        "Required connection".to_owned()
+                    } else {
+                        format!("Required connection {}", index + 1)
+                    };
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        &label,
+                        FunctionGraphContextAction::Disconnect(target),
+                    );
+                }
+            }
+        },
+    );
 }
 
 fn props(
@@ -1038,6 +2048,7 @@ fn props(
     node: &str,
     title: String,
     position: Vec2,
+    selected: bool,
     assets: &AssetServer,
 ) -> GraphNodeProps {
     GraphNodeProps {
@@ -1045,7 +2056,7 @@ fn props(
         node_key: node.into(),
         title,
         position,
-        selected: false,
+        selected,
         muted: false,
         collapse_icon: load_svg_icon(assets, "icons/chevron-down.svg"),
         expand_icon: load_svg_icon(assets, "icons/chevron-right.svg"),
@@ -1278,6 +2289,61 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn function_selection_is_scoped_and_produces_partial_arrange_seeds() {
+        let function = MaterialFunctionId::new();
+        let other_function = MaterialFunctionId::new();
+        let first = MaterialExpressionId::new();
+        let second = MaterialExpressionId::new();
+        let left = Some(crate::docking::EditorViewId(1));
+        let right = Some(crate::docking::EditorViewId(2));
+        let mut selection = crate::material_graph::MaterialGraphSelectionState::default();
+
+        selection.select_function_expression(left, function, first, false, false);
+        selection.select_function_expression(left, function, second, false, true);
+        selection.select_function_expression(right, other_function, first, false, false);
+
+        assert!(selection.is_function_expression_selected(left, function, first));
+        assert!(selection.is_function_expression_selected(left, function, second));
+        assert!(!selection.is_function_expression_selected(right, function, first));
+        assert_eq!(
+            selection.function_arrange_seeds(left, function),
+            BTreeSet::from([
+                GraphNodeKey::Expression(first),
+                GraphNodeKey::Expression(second),
+            ])
+        );
+        assert!(selection.function_arrange_seeds(right, function).is_empty());
+        assert!(selection.clear_function_selection(left, function));
+        assert!(selection.function_arrange_seeds(left, function).is_empty());
+        assert!(!selection.clear_function_selection(left, function));
+    }
+
+    #[test]
+    fn modifier_drag_branch_closures_follow_function_edge_direction() {
+        let function = MaterialFunction::from_ron(include_str!(
+            "../../../../assets/test/materials/dissolve_edge.aestra.material-function.ron"
+        ))
+        .unwrap();
+        let library = aestra_compiler::MaterialFunctionLibrary::new(vec![function.clone()]);
+        let projection = MaterialCompiler.project_function_graph(&function, &library);
+        let MaterialFunctionBodyProjection::Graph { edges, .. } = &projection.body else {
+            panic!("fixture should have a graph body");
+        };
+        let edge = edges
+            .iter()
+            .find_map(|edge| target(&edge.target).map(|target| (edge.source, target)))
+            .expect("fixture graph should contain a directed edge");
+        let source = GraphNodeKey::Expression(edge.0);
+        let target = match edge.1 {
+            Target::Input(expression, _) => GraphNodeKey::Expression(expression),
+            Target::Output(_) => GraphNodeKey::FunctionOutputs,
+        };
+
+        assert!(function_branch_nodes(&projection.body, target, true).contains(&source));
+        assert!(function_branch_nodes(&projection.body, source, false).contains(&target));
+    }
+
+    #[test]
     fn function_graph_rebuild_uses_expression_ids_for_manual_placement_and_output_ids_for_sockets()
     {
         use bevy::ecs::system::RunSystemOnce;
@@ -1347,6 +2413,8 @@ mod tests {
                                 &catalog,
                                 &assets,
                                 &memory,
+                                &crate::material_graph::MaterialGraphSelectionState::default(),
+                                &FunctionGraphMenuState::default(),
                                 &target,
                                 Some(crate::docking::EditorViewId(index)),
                             )

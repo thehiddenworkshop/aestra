@@ -1065,3 +1065,43 @@ workspace formatting and `git diff --check` passed.
 M10.3 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1008 editor tests passed**
 (7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
 workspace formatting and `git diff --check` passed.
+
+## M10.4 implementation — targeted function-graph actions
+
+- Native function graphs now retain the direct Arrange Graph toolbar action and add a separate
+  Arrange Nodes menu with Arrange Selection, Arrange Upstream, Arrange Downstream and Arrange
+  Graph. Frame Selection is available beside Frame All.
+- Function expression selection uses the shared view-scoped graph-selection resource. Plain click
+  replaces the selection, Shift extends it, Control toggles it, and a blank-canvas click clears it.
+  Selection from another function or another editor view cannot become layout seeds.
+- Selected function nodes render through the shared `GraphNodeProps::selected` treatment and map
+  directly to stable `GraphNodeKey::Expression` seeds. Function outputs remain fixed synthetic
+  nodes rather than implicit selection seeds.
+- Targeted function requests use the same M10 partial planner/reconciler, bounded asynchronous job,
+  stale-result validation and one-entry presentation Undo/Redo path as material graphs. Full Arrange
+  retains the existing direct action and full-layout behavior.
+
+M10.4 validation with `cargo +1.98.1-x86_64-pc-windows-msvc`: **1010 editor tests passed**
+(7 native-GPU/benchmark tests ignored), plus all 3 architecture tests. Strict editor Clippy,
+workspace formatting, `git diff --check` and the normal editor build passed.
+
+## M10.5 implementation — graph gesture parity
+
+- The shared graph widget owns blank-canvas marquee selection, middle/right-button and Space+LMB
+  panning, cursor-centred wheel zoom, and modifier-aware node drags. Marquee selection supports
+  replace, Shift-add and Control-toggle modes in both material and function views.
+- Node dragging keeps ordinary movement presentation-only. Alt-drag duplicates the active scoped
+  selection at the dragged offset; Control-drag moves the complete upstream dependency branch and
+  Shift-drag moves the complete downstream consumer branch. Each branch move is recorded as one
+  presentation-history entry.
+- Pin-to-pin drags retain typed connection validation. Releasing a pin drag on blank canvas opens
+  the context-sensitive node search for both graph kinds. Right-click blank canvas opens general
+  node search, while right-clicking a node, connected pin, or wire opens the corresponding semantic
+  context menu. A right-button pan suppresses its release click so it never opens a menu by
+  accident.
+- Double-clicking a project function-call node opens that function without creating a second
+  interaction model. Function-node context menus expose the same open, duplicate and delete paths;
+  optional function arguments can be disconnected back to their declared default, while required
+  connections report that they need a replacement source.
+- Resting cursor feedback matches the primary gesture: blank graph canvas and pins use a crosshair,
+  movable nodes use a grab hand, and active node/canvas movement uses the grabbing cursor.

@@ -40,6 +40,7 @@ fn wheel_navigation_uses_logical_viewport_size_and_cancels_pending_frame() {
                                 zoom: 0.25,
                             },
                         )),
+                        suppress_context_click: false,
                     },
                     ComputedNode {
                         size: size * scale,

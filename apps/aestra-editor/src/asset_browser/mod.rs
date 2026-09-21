@@ -23,6 +23,7 @@ mod virtual_sources;
 
 use crate::*;
 pub(crate) use actions::LocateInAssets;
+pub(crate) use actions::OpenFunction;
 pub(crate) use bookmarks::AssetOpened;
 pub(crate) use inspection::spawn_asset_inspector;
 pub(crate) use panel::BrowserSurface;

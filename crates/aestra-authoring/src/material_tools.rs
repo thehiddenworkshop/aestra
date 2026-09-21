@@ -1246,7 +1246,7 @@ fn next_expression_id(
     }
 }
 
-fn remap_expression_sources(
+pub fn remap_expression_sources(
     kind: &mut MaterialExpressionKind,
     remapped: &BTreeMap<MaterialExpressionId, MaterialExpressionId>,
 ) {
