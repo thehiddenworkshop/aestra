@@ -2726,9 +2726,19 @@ without collision complexity.
 > analytic sparks with turbulent motion and the two stateful fountains with the reference-integrator
 > arcs. The acceptance criterion "mixed analytic + stateful effects render correctly" is met.
 >
-> **Still to do:** richer authored dynamics than the reference integrator's scalar midpoints (drag,
-> turbulence, shape, per-particle ranges); and GPU-resident checkpoint seek (M7) in place of the current
-> reallocate-and-replay restart.
+> **Richer dynamics — landed.** Stateful emitters are no longer a fixed-speed, fixed-lifetime,
+> isotropic burst: they sample a per-particle speed and lifetime in range, launch along the authored
+> direction within a spread cone, and experience linear drag. The dynamics are deliberately trig-free so
+> the GPU reproduces the CPU reference bit-for-bit — the cone is `normalize(direction + spread *
+> random_unit)` (`sqrt`/division are IEEE-correctly-rounded, unlike `sin`/`cos`). `StatefulConfig`, the
+> shared spawn WGSL (`aestra_spawn_uniform` / `spawn_launch_velocity`), and a 19-word params layout carry
+> the ranges, direction, spread, and drag; the render backend sources them from the compiled
+> `GpuEmitter`. The conformance tests run with real ranges, a spread cone, and drag and still match the
+> CPU reference bit-for-bit on a real GPU (nine tests). The fixtures show it in the editor.
+>
+> **Still to do:** turbulence and shape (spawn-volume) — both need matching noise/volume sampling, and
+> turbulence in particular reintroduces the CPU/GPU trig-parity question; and GPU-resident checkpoint
+> seek (M7) in place of the current reallocate-and-replay restart.
 
 ### GPU passes
 
