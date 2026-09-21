@@ -1,0 +1,169 @@
+(
+    format_version: 3,
+    id: "caf4fb1d-23c5-469e-bda4-1d38e823dd08",
+    name: "Persistent Lab",
+    duration: 3.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    parameters: [],
+    emitters: [
+        (
+            id: "f43fa237-8691-41d4-b3fd-7214ef44a4dd",
+            name: "Persistent Fountain",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 3.0,
+            max_particles: 256,
+            simulation_domain: Particle,
+            modules: [
+                (
+                    id: "d6f74dd6-99d5-4a07-af88-08e20fa9672e",
+                    module_type: "aestra.emission.rate",
+                    stage: EmitterUpdate,
+                    enabled: true,
+                    parameters: Emission(
+                        spawn_rate: 48.0,
+                        burst_count: 12,
+                    ),
+                ),
+                (
+                    id: "5bf923d4-86b0-4c18-b610-bc6e24e259fb",
+                    module_type: "aestra.spawn.shape",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Shape(
+                        shape: Circle(
+                            radius: 12.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "cc57e6fd-274f-4a18-a181-cdf14015c8bd",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (
+                            min: 1.5,
+                            max: 1.5,
+                        ),
+                        speed: (
+                            min: 45.0,
+                            max: 45.0,
+                        ),
+                        direction: (0.0, 1.0, 0.0),
+                        spread_degrees: 25.0,
+                        angular_velocity: (
+                            min: -2.0,
+                            max: 2.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "07b08df9-bda5-47eb-8dbe-e1c57770b5b6",
+                    module_type: "aestra.update.motion",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Motion(
+                        gravity: (0.0, -30.0, 0.0),
+                        drag: 0.6,
+                        turbulence: 4.0,
+                    ),
+                ),
+                (
+                    id: "f8acbd54-3490-4281-b52a-8908d4928ef4",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (
+                            id: "d020a234-0256-47ab-bd77-9891f7949dbc",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 4.0,
+                                ),
+                                (
+                                    time: 0.35,
+                                    value: 10.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 1.0,
+                                ),
+                            ],
+                        ),
+                        opacity: (
+                            id: "bc28feb6-5281-450e-ae97-ba159634c106",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 0.0,
+                                ),
+                                (
+                                    time: 0.12,
+                                    value: 1.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 0.0,
+                                ),
+                            ],
+                        ),
+                        color: (
+                            id: "e8be1476-81ca-41d0-853b-de13dff3a772",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    color: (0.35, 0.75, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 0.5,
+                                    color: (0.62, 0.3, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 1.0,
+                                    color: (0.15, 0.05, 0.4, 0.0),
+                                ),
+                            ],
+                        ),
+                    ),
+                ),
+                (
+                    id: "f71d6e33-e596-4779-936e-5ff8561f7f53",
+                    module_type: "aestra.update.persistent",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Persistent(),
+                ),
+            ],
+            renderers: [
+                (
+                    id: "9f972fb5-5e62-4af2-b297-33a811e58069",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    events: [],
+    dependencies: [],
+    metadata: {},
+)
