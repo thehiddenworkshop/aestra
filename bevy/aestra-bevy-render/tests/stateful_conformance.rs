@@ -23,7 +23,10 @@
 //! Like the other GPU conformance tests, this **skips when no compute adapter is present**, so it
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
-use aestra_gpu::{STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL};
+use aestra_gpu::{
+    STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
+    stateful_simulation_wgsl,
+};
 use aestra_runtime::StatefulSimulation;
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
@@ -262,6 +265,9 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// The compaction outputs `present` produces: `(alive_indices, indirect, counters)`.
+type CompactionOutputs = (Vec<u32>, Vec<u32>, Vec<u32>);
+
 /// Words per presentation record — the 48-byte `GpuParticle` ABI.
 const PRESENT_STRIDE: usize = 12;
 /// Persistent state slot stride for the death loop and presentation extraction (adds the ordinal).
@@ -281,6 +287,8 @@ struct Harness {
     death_spawn_pipeline: wgpu::ComputePipeline,
     present_layout: wgpu::BindGroupLayout,
     present_pipeline: wgpu::ComputePipeline,
+    unified_layout: wgpu::BindGroupLayout,
+    unified_present_pipeline: wgpu::ComputePipeline,
 }
 
 impl Harness {
@@ -467,6 +475,41 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
+        // The production unified module (9 bindings): here we drive its `present` entry, which both
+        // extracts presentation and compacts the live slots into alive_indices/indirect/counters.
+        let unified_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Aestra unified stateful bindings"),
+            entries: &[
+                storage(0, false), // state
+                storage(1, false), // free_list
+                storage(2, false), // free_count
+                storage(3, false), // spawn_counter
+                storage(4, true),  // params
+                storage(5, false), // present_out
+                storage(6, false), // alive_indices
+                storage(7, false), // indirect
+                storage(8, false), // counters
+            ],
+        });
+        let unified_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Aestra unified stateful pipeline layout"),
+                bind_group_layouts: &[Some(&unified_layout)],
+                immediate_size: 0,
+            });
+        let unified_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra unified stateful"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(stateful_simulation_wgsl())),
+        });
+        let unified_present_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("unified present"),
+                layout: Some(&unified_pipeline_layout),
+                module: &unified_shader,
+                entry_point: Some("present"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
         Ok(Some(Self {
             device,
             queue,
@@ -481,6 +524,8 @@ impl Harness {
             death_spawn_pipeline,
             present_layout,
             present_pipeline,
+            unified_layout,
+            unified_present_pipeline,
         }))
     }
 
@@ -1030,6 +1075,156 @@ impl Harness {
         self.read_back_u32(encoder, &staging)
     }
 
+    /// Runs the production unified module's `present` entry over an uploaded stride-9 state buffer and
+    /// reads back the compaction outputs it produces alongside presentation: `(alive_indices, indirect,
+    /// counters)`. `alive_indices` has `slot_offset + capacity` words, `indirect` has `(emitter+1)*4`
+    /// words (the per-emitter draw commands), and `counters` has two. Proves the stateful path compacts
+    /// its live slots into the same buffers the analytic path feeds the renderer.
+    fn present_compact(
+        &self,
+        state_words: &[f32],
+        emitter_index: u32,
+        slot_offset: u32,
+    ) -> Result<CompactionOutputs, String> {
+        let capacity = (state_words.len() / DEATH_STRIDE) as u32;
+        let buffer = |label, contents: &[u8], copy_src| {
+            let mut usage = wgpu::BufferUsages::STORAGE;
+            if copy_src {
+                usage |= wgpu::BufferUsages::COPY_SRC;
+            }
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents,
+                    usage,
+                })
+        };
+        let state = buffer(
+            "present-compact state",
+            &encode(&state_words.to_vec())?,
+            false,
+        );
+        let free_list = buffer("dummy free list", &encode(&[0_u32])?, false);
+        let free_count = buffer("dummy free count", &encode(&0_u32)?, false);
+        let spawn_counter = buffer("dummy spawn counter", &encode(&0_u32)?, false);
+        let params: Vec<u32> = vec![
+            capacity,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            emitter_index,
+            slot_offset,
+        ];
+        let params_buffer = buffer("present-compact params", &encode(&params)?, false);
+        let present_out = buffer(
+            "present-compact out",
+            &encode(&vec![0.0_f32; capacity as usize * PRESENT_STRIDE])?,
+            false,
+        );
+        let alive_len = (slot_offset + capacity) as usize;
+        let alive_indices = buffer(
+            "present-compact alive",
+            &encode(&vec![0_u32; alive_len])?,
+            true,
+        );
+        let indirect_len = (emitter_index as usize + 1) * 4;
+        let indirect = buffer(
+            "present-compact indirect",
+            &encode(&vec![0_u32; indirect_len])?,
+            true,
+        );
+        let counters = buffer("present-compact counters", &encode(&vec![0_u32; 2])?, true);
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("present-compact bind group"),
+            layout: &self.unified_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: free_list.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: free_count.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: spawn_counter.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: present_out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: alive_indices.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: indirect.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: counters.as_entire_binding(),
+                },
+            ],
+        });
+        // One staging buffer holds indirect ++ counters ++ alive_indices, read back together.
+        let indirect_bytes = (indirect_len * 4) as u64;
+        let counters_bytes = 2 * 4;
+        let alive_bytes = (alive_len * 4) as u64;
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("present-compact readback"),
+            size: indirect_bytes + counters_bytes + alive_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("present-compact commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("present-compact"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.unified_present_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&indirect, 0, &staging, 0, indirect_bytes);
+        encoder.copy_buffer_to_buffer(&counters, 0, &staging, indirect_bytes, counters_bytes);
+        encoder.copy_buffer_to_buffer(
+            &alive_indices,
+            0,
+            &staging,
+            indirect_bytes + counters_bytes,
+            alive_bytes,
+        );
+        let all = self.read_back_u32(encoder, &staging)?;
+        let (indirect_out, rest) = all.split_at(indirect_len);
+        let (counters_out, alive_out) = rest.split_at(2);
+        Ok((
+            alive_out.to_vec(),
+            indirect_out.to_vec(),
+            counters_out.to_vec(),
+        ))
+    }
+
     /// Integrates to `checkpoint_at`, snapshots the state buffer GPU→GPU, overshoots forward to
     /// `overshoot_to`, then restores the checkpoint (a backward seek) and replays forward to
     /// `seek_target` — all in GPU commands, no readback until the final state (§4.4/§19). Proves a
@@ -1252,6 +1447,46 @@ fn gpu_presentation_extraction_matches_the_reference_abi() {
         (0..slots.len()).map(alive_flag).collect::<Vec<_>>(),
         vec![1, 1, 1, 0, 0, 0],
         "the alive bit reflects lifetime/age exactly"
+    );
+}
+
+#[test]
+fn gpu_present_compacts_live_slots_into_the_render_buffers() {
+    // Hybrid roadmap M6 (render wiring, Step 2): the unified module's `present` entry must compact
+    // the live slots into alive_indices and bump the indirect instance count + live counter, exactly
+    // as the analytic `simulate` does, so the stateful output draws through the identical render path.
+    // Prove it: over a mix of alive/dead/free slots, the compaction outputs match the alive set.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let slots = [
+        state_slot([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], 0.0, 2.0, 0), // alive
+        state_slot([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], 3.0, 2.0, 1), // dead (age > lifetime)
+        state_slot([2.0, 2.0, 2.0], [0.0, 0.0, 0.0], 1.0, 2.0, 2), // alive
+        state_slot([3.0, 3.0, 3.0], [0.0, 0.0, 0.0], 0.0, 0.0, 3), // free (lifetime 0)
+        state_slot([4.0, 4.0, 4.0], [0.0, 0.0, 0.0], 1.9, 2.0, 4), // alive
+    ];
+    let expected_alive: Vec<u32> = (0..slots.len() as u32)
+        .filter(|&slot| {
+            let s = slot as usize;
+            slots[s][7] > 0.0 && slots[s][6] < slots[s][7]
+        })
+        .collect();
+    let state: Vec<f32> = slots.iter().flatten().copied().collect();
+
+    // slot_offset = 3 exercises the emitter's non-zero region of alive_indices.
+    let (alive_indices, indirect, counters) = harness.present_compact(&state, 0, 3).unwrap();
+
+    let count = expected_alive.len() as u32;
+    assert_eq!(indirect[1], count, "indirect instance count == live count");
+    assert_eq!(counters[0], count, "live counter == live count");
+    // The compacted region [slot_offset, slot_offset + count) holds exactly the alive slots (order is
+    // arbitrary under parallel compaction, so compare as sets).
+    let mut compacted = alive_indices[3..3 + count as usize].to_vec();
+    compacted.sort_unstable();
+    assert_eq!(
+        compacted, expected_alive,
+        "the compacted alive_indices region lists exactly the live slots"
     );
 }
 

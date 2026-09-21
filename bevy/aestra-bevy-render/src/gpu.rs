@@ -1562,9 +1562,9 @@ fn init_pipeline(
 }
 
 /// Builds the stateful backend's compute pipelines (hybrid roadmap M6) from the unified
-/// `aestra_gpu::stateful_simulation_wgsl` module. The six-binding layout is shared across the three
+/// `aestra_gpu::stateful_simulation_wgsl` module. The nine-binding layout is shared across the three
 /// entry points (each uses a subset). Gated on the same device limits as the analytic pipeline plus
-/// the six-binding requirement; when unavailable the resource is simply absent and stateful effects
+/// the nine-binding requirement; when unavailable the resource is simply absent and stateful effects
 /// fall back like any unsupported artifact.
 fn init_stateful_pipeline(
     mut commands: Commands,
@@ -1573,7 +1573,7 @@ fn init_stateful_pipeline(
     render_device: Res<RenderDevice>,
     adapter: Res<RenderAdapter>,
 ) {
-    const STATEFUL_BINDING_COUNT: u32 = 6;
+    const STATEFUL_BINDING_COUNT: u32 = 9;
     let limits = render_device.limits();
     if !adapter
         .get_downlevel_capabilities()
@@ -1597,6 +1597,9 @@ fn init_stateful_pipeline(
                 storage_buffer::<Vec<u32>>(false),           // 3: spawn counter (atomic)
                 storage_buffer_read_only::<Vec<u32>>(false), // 4: params
                 storage_buffer::<Vec<GpuParticle>>(false),   // 5: presentation output
+                storage_buffer::<Vec<u32>>(false),           // 6: alive indices (compaction)
+                storage_buffer::<Vec<u32>>(false),           // 7: indirect draw commands (atomic)
+                storage_buffer::<Vec<u32>>(false),           // 8: live counters (atomic)
             ),
         ),
     );

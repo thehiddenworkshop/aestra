@@ -415,7 +415,9 @@ fn aestra_present_stateful(slot: u32, emitter_index: u32) {
 /// The module-scope bindings the unified stateful simulation module ([`stateful_simulation_wgsl`])
 /// declares, shared across its `death_integrate` / `spawn` / `present` entry points. The persistent
 /// state, the free list and its atomic count, the atomic spawn counter, the constant per-dispatch
-/// params, and the presentation output (the 48-byte `GpuParticle` buffer, written as raw words).
+/// params, the presentation output (the 48-byte `GpuParticle` buffer, written as raw words), and the
+/// three compaction outputs `present` shares with the analytic path so both feed one render pipeline:
+/// the compacted alive-slot list, and the atomic indirect draw commands and live counters.
 pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
 @group(0) @binding(1) var<storage, read_write> free_list: array<u32>;
@@ -423,13 +425,19 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 @group(0) @binding(3) var<storage, read_write> spawn_counter: atomic<u32>;
 @group(0) @binding(4) var<storage, read> params: array<u32>;
 @group(0) @binding(5) var<storage, read_write> present_out: array<f32>;
+@group(0) @binding(6) var<storage, read_write> alive_indices: array<u32>;
+@group(0) @binding(7) var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(8) var<storage, read_write> counters: array<atomic<u32>>;
 "#;
 
 /// The three entry points of the unified stateful simulation module (hybrid roadmap M6), over the
 /// [`STATEFUL_SIMULATION_BINDINGS`] layout. `death_integrate` advances each live slot by one fixed
 /// tick and frees the ones that died; `spawn` claims a free slot and a fresh ordinal for each of this
-/// tick's new particles; `present` extracts the live state into the presentation buffer. `params` is
-/// `[capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy, gz, emitter_index]`.
+/// tick's new particles; `present` extracts the live state into the presentation buffer *and* compacts
+/// the live slots into `alive_indices` while bumping the indirect draw count and live counter — the
+/// same compaction the analytic `simulate` performs, so the stateful output draws through the identical
+/// render path. `params` is `[capacity, spawn_per_tick, seed_lo, seed_hi, speed, lifetime, dt, gx, gy,
+/// gz, emitter_index, slot_offset]`.
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
 fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -493,7 +501,19 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= params[0]) { return; }
-    aestra_present_stateful(slot, params[10]);
+    let emitter_index = params[10];
+    aestra_present_stateful(slot, emitter_index);
+    // Compact the live slots exactly as the analytic simulate does: append the slot to this emitter's
+    // region of alive_indices at an atomically-claimed index, and bump its indirect instance count
+    // and the global live counter. Dead slots are written (alive = 0) but not compacted.
+    let base = slot * AESTRA_STATE_STRIDE;
+    let lifetime = state[base + 7u];
+    let age = state[base + 6u];
+    if (lifetime > 0.0 && age < lifetime) {
+        let compact_index = atomicAdd(&indirect[emitter_index * 4u + 1u], 1u);
+        alive_indices[params[11] + compact_index] = slot;
+        atomicAdd(&counters[0], 1u);
+    }
 }
 "#;
 

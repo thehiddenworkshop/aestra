@@ -758,7 +758,7 @@ fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool
                     ColorKey::new(1.0, [0.1, 0.05, 0.2, 0.0]),
                 ]);
             }
-            ModuleParameters::Custom(_) => {}
+            ModuleParameters::Persistent {} | ModuleParameters::Custom(_) => {}
         }
     }
     effect.emitters.push(emitter);
