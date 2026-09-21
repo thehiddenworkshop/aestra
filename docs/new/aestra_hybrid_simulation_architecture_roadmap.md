@@ -2858,6 +2858,22 @@ fixed-step replay
 
 **Goal:** Make one effect safely combine analytic, stateful, and eventually staged islands.
 
+> **Status — met for analytic + stateful islands.** The seek coordination falls out of earlier work
+> plus presentation interpolation: a mixed effect's analytic and stateful emitters share one
+> `simulation_time`, the analytic path evaluates directly at it, and the stateful path restores the
+> nearest checkpoint and replays to the tick for it (M6 mixed effects + M7 checkpoints). Presentation
+> interpolation closes the sub-tick gap: `aestra_present_stateful` takes a `subtick` (seconds since the
+> last fixed tick) and extrapolates the presented position by `velocity * subtick` and the age by
+> `subtick`, so stateful particles move smoothly between the 60 Hz ticks and sit at the continuous time
+> the analytic emitters use — coherent at the same logical time, and smooth at 120/144 Hz while the
+> simulation stays fixed-step. It reads through to the persistent state, so M7 checkpoints (which
+> snapshot state, not presentation) are unaffected. Nested child instances already key their persistent
+> state and checkpoints per entity plus a dynamics fingerprint, so they cannot reuse incompatible state.
+> A GPU conformance test proves the extrapolation; the acceptance criteria below are met for the
+> analytic + stateful case. Staged islands are future work (M13+), and generalizing the coordinator into
+> an explicit shared component (rather than the shared `simulation_time` it rests on today) is a
+> possible follow-up.
+
 ### Add an effect-level seek coordinator
 
 Given:
