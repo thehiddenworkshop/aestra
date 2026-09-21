@@ -2139,9 +2139,9 @@ fn dispatch_stateful_effect(
     let capacity = dispatch.capacity;
     let workgroups = capacity.div_ceil(WORKGROUP_SIZE);
 
-    // The production 19-word params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); only
-    // spawn_per_tick varies across ticks.
-    let params_bytes = |spawn_per_tick: u32| -> Vec<u8> {
+    // The production params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); `spawn_per_tick`
+    // varies across advance ticks and `subtick` is the presentation-interpolation time used by present.
+    let params_bytes = |spawn_per_tick: u32, subtick: f32| -> Vec<u8> {
         let words: [u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS] = [
             capacity,
             spawn_per_tick,
@@ -2168,6 +2168,7 @@ fn dispatch_stateful_effect(
             dispatch.shape_half_extents[0].to_bits(),
             dispatch.shape_half_extents[1].to_bits(),
             dispatch.shape_half_extents[2].to_bits(),
+            subtick.to_bits(),
         ];
         words.into_iter().flat_map(u32::to_le_bytes).collect()
     };
@@ -2214,7 +2215,7 @@ fn dispatch_stateful_effect(
             let spawn_count = (spawn_count as u32).min(capacity);
             let params = device.create_buffer_with_data(&BufferInitDescriptor {
                 label: Some("aestra stateful tick params"),
-                contents: &params_bytes(spawn_count),
+                contents: &params_bytes(spawn_count, 0.0),
                 usage: BufferUsages::STORAGE,
             });
             groups.push(bind_group(&params));
@@ -2249,9 +2250,15 @@ fn dispatch_stateful_effect(
     // rebuilds it. The shared live counter is cleared once by the caller before the emitter loop.
     let instance_count_offset = u64::from(dispatch.emitter_index * 4 + 1) * 4;
     encoder.clear_buffer(indirect, instance_count_offset, Some(4));
+    // Presentation interpolation (hybrid roadmap M8): extrapolate by the sub-tick time — how far past
+    // the last simulated tick the requested time is — so stateful particles move smoothly between the
+    // 60 Hz ticks and stay coherent with the continuous time analytic emitters evaluate at. Bounded to
+    // one tick in case the fixed-tick advance is lagging behind the presentation time.
+    let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
+        .clamp(0.0, STATEFUL_TICK_DT);
     let present_params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful present params"),
-        contents: &params_bytes(0),
+        contents: &params_bytes(0, subtick),
         usage: BufferUsages::STORAGE,
     });
     let present_group = bind_group(&present_params);

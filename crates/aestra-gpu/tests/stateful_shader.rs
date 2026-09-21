@@ -82,7 +82,7 @@ fn presentation_primitive_composes_into_valid_wgsl() {
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= arrayLength(&state) / AESTRA_STATE_STRIDE) { return; }
-    aestra_present_stateful(slot, slot, 0u);
+    aestra_present_stateful(slot, slot, 0u, 0.0);
 }
 "#;
     assert_valid_wgsl(

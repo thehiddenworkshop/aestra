@@ -327,17 +327,18 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// Presentation extraction: map each stride-9 persistent state slot to a 12-word GpuParticle record,
-/// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Two bindings: state (read) and the
-/// presentation output (read-write).
+/// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Three bindings: state (read), the
+/// presentation output (read-write), and the sub-tick interpolation time (read).
 const PRESENT_ENTRY: &str = r#"
 @group(0) @binding(0) var<storage, read> state: array<f32>;
 @group(0) @binding(1) var<storage, read_write> present_out: array<f32>;
+@group(0) @binding(2) var<storage, read> subtick: f32;
 
 @compute @workgroup_size(64)
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
     if (slot >= arrayLength(&state) / AESTRA_STATE_STRIDE) { return; }
-    aestra_present_stateful(slot, slot, 0u);
+    aestra_present_stateful(slot, slot, 0u, subtick);
 }
 "#;
 
@@ -529,7 +530,7 @@ impl Harness {
         // production STATEFUL_PRESENT_WGSL plus the entry point.
         let present_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Aestra present bindings"),
-            entries: &[storage(0, true), storage(1, false)],
+            entries: &[storage(0, true), storage(1, false), storage(2, true)],
         });
         let present_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1216,10 +1217,11 @@ impl Harness {
         Ok(alive)
     }
 
-    /// Runs presentation extraction over an uploaded stride-9 state buffer, returning the raw
-    /// `capacity * 12` presentation words (the `GpuParticle` ABI). Floats come back as bits so
-    /// `packed_emitter_alive` and `particle_index` are recovered exactly.
-    fn extract_presentation(&self, state_words: &[f32]) -> Result<Vec<u32>, String> {
+    /// Runs presentation extraction over an uploaded stride-9 state buffer with a `subtick`
+    /// interpolation time, returning the raw `capacity * 12` presentation words (the `GpuParticle`
+    /// ABI). Floats come back as bits so `packed_emitter_alive` and `particle_index` are recovered
+    /// exactly.
+    fn extract_presentation(&self, state_words: &[f32], subtick: f32) -> Result<Vec<u32>, String> {
         let count = state_words.len() / DEATH_STRIDE;
         let state_bytes = encode(&state_words.to_vec())?;
         let state = self
@@ -1237,6 +1239,13 @@ impl Harness {
                 contents: &out_bytes,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             });
+        let subtick_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("present subtick"),
+                contents: &encode(&subtick)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("present bind group"),
             layout: &self.present_layout,
@@ -1248,6 +1257,10 @@ impl Harness {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: present_out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: subtick_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1619,7 +1632,8 @@ fn gpu_presentation_extraction_matches_the_reference_abi() {
     ];
     let state: Vec<f32> = slots.iter().flatten().copied().collect();
 
-    let gpu = harness.extract_presentation(&state).unwrap();
+    // subtick 0: the raw tick state, no interpolation.
+    let gpu = harness.extract_presentation(&state, 0.0).unwrap();
     assert_eq!(gpu.len(), slots.len() * PRESENT_STRIDE);
 
     for (slot_index, slot) in slots.iter().enumerate() {
@@ -1645,6 +1659,45 @@ fn gpu_presentation_extraction_matches_the_reference_abi() {
         vec![1, 1, 1, 0, 0, 0],
         "the alive bit reflects lifetime/age exactly"
     );
+}
+
+#[test]
+fn gpu_present_interpolates_position_and_age_by_the_subtick() {
+    // Hybrid roadmap M8 presentation interpolation: at a non-zero sub-tick, present extrapolates the
+    // position by velocity * subtick and the age by subtick, so stateful particles move smoothly
+    // between the 60 Hz ticks (and stay coherent with the continuous time analytic emitters use).
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let slots = [
+        state_slot([0.0, 0.0, 0.0], [10.0, -4.0, 2.0], 0.5, 2.0, 0),
+        state_slot([1.0, 2.0, 3.0], [0.0, 8.0, -1.0], 1.0, 2.0, 1),
+    ];
+    let state: Vec<f32> = slots.iter().flatten().copied().collect();
+    let subtick = 0.5_f32 / 60.0; // half a tick
+
+    let gpu = harness.extract_presentation(&state, subtick).unwrap();
+
+    for (index, slot) in slots.iter().enumerate() {
+        let base = index * PRESENT_STRIDE;
+        let position = [slot[0], slot[1], slot[2]];
+        let velocity = [slot[3], slot[4], slot[5]];
+        for axis in 0..3 {
+            let expected = position[axis] + velocity[axis] * subtick;
+            let actual = f32::from_bits(gpu[base + 4 + axis]);
+            assert!(
+                (expected - actual).abs() <= 1e-5,
+                "slot {index} axis {axis}: extrapolated {actual} != {expected}"
+            );
+        }
+        // normalized_age is (age + subtick) / lifetime, clamped.
+        let expected_age = ((slot[6] + subtick) / slot[7]).clamp(0.0, 1.0);
+        let actual_age = f32::from_bits(gpu[base + 9]);
+        assert!(
+            (expected_age - actual_age).abs() <= 1e-5,
+            "slot {index} normalized age {actual_age} != {expected_age}"
+        );
+    }
 }
 
 #[test]

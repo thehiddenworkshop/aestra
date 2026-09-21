@@ -476,27 +476,33 @@ fn aestra_free_push(slot: u32) {
 /// `slot` indexes the per-emitter `state`; `out_slot` indexes the effect-wide `present_out`, so a
 /// stateful emitter whose particles occupy `[slot_offset, slot_offset + capacity)` of the shared
 /// buffer passes `out_slot = slot_offset + slot`.
+///
+/// `subtick` (seconds since the last fixed tick, in `[0, dt)`) is the presentation-interpolation term
+/// (hybrid roadmap M8): the position is extrapolated by `velocity * subtick` and the age by `subtick`,
+/// so stateful particles move smoothly between the 60 Hz ticks and stay coherent with the continuous
+/// time analytic emitters evaluate at. Pass `0` for the raw tick state.
 pub const STATEFUL_PRESENT_WGSL: &str = r#"
 const AESTRA_STATE_STRIDE: u32 = 9u;
 const AESTRA_PRESENT_STRIDE: u32 = 12u;
 
-fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32) {
+fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick: f32) {
     let s = slot * AESTRA_STATE_STRIDE;
     let o = out_slot * AESTRA_PRESENT_STRIDE;
     let age = state[s + 6u];
     let lifetime = state[s + 7u];
     let alive = lifetime > 0.0 && age < lifetime;
+    // Presentation interpolation: extrapolate position by velocity and age by the sub-tick time.
     var normalized_age = 0.0;
     if (lifetime > 0.0) {
-        normalized_age = clamp(age / lifetime, 0.0, 1.0);
+        normalized_age = clamp((age + subtick) / lifetime, 0.0, 1.0);
     }
     present_out[o + 0u] = 1.0; // color.r
     present_out[o + 1u] = 1.0; // color.g
     present_out[o + 2u] = 1.0; // color.b
     present_out[o + 3u] = 1.0; // color.a
-    present_out[o + 4u] = state[s + 0u]; // position.x
-    present_out[o + 5u] = state[s + 1u]; // position.y
-    present_out[o + 6u] = state[s + 2u]; // position.z
+    present_out[o + 4u] = state[s + 0u] + state[s + 3u] * subtick; // position.x
+    present_out[o + 5u] = state[s + 1u] + state[s + 4u] * subtick; // position.y
+    present_out[o + 6u] = state[s + 2u] + state[s + 5u] * subtick; // position.z
     present_out[o + 7u] = 1.0; // size
     present_out[o + 8u] = 0.0; // rotation
     present_out[o + 9u] = normalized_age;
@@ -534,9 +540,10 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// `aestra_runtime::StatefulSimulation` bit-for-bit. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
 /// `u32`s: `[capacity, spawn_per_tick, seed_lo, seed_hi, speed_min, speed_max, lifetime_min,
 /// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset,
-/// turbulence, shape_kind, shape_radius, half_x, half_y, half_z]` (floats stored as bits;
-/// `shape_kind` 0 = point, 1 = sphere, 2 = box).
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 25;
+/// turbulence, shape_kind, shape_radius, half_x, half_y, half_z, subtick]` (floats stored as bits;
+/// `shape_kind` 0 = point, 1 = sphere, 2 = box; `subtick` is the presentation-interpolation time in
+/// seconds since the last tick).
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 26;
 
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
@@ -619,7 +626,7 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
     // This emitter's particles occupy [slot_offset, slot_offset + capacity) of the effect-wide
     // presentation and alive buffers; state is the emitter's own buffer, indexed by the local slot.
     let out_slot = slot_offset + slot;
-    aestra_present_stateful(slot, out_slot, emitter_index);
+    aestra_present_stateful(slot, out_slot, emitter_index, bitcast<f32>(params[25]));
     // Compact the live slots exactly as the analytic simulate does: append the global particle index
     // to this emitter's region of alive_indices at an atomically-claimed index, and bump its indirect
     // instance count and the global live counter. Dead slots are written (alive = 0) but not compacted.
