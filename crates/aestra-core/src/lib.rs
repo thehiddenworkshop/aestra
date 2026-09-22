@@ -7,9 +7,11 @@ mod id;
 pub mod material;
 mod migration;
 mod model;
+mod property_schema;
 mod transform_curve;
 
 pub use collision::*;
+pub use property_schema::*;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity, ValidationReport};
 pub use host_transform::*;
 pub use id::*;

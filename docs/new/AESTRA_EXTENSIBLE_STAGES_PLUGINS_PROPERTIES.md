@@ -2372,6 +2372,26 @@ The work should be incremental. Do not attempt dynamic plugin loading, a new exe
 
 ## Milestone 2 — property schema and generic extension payload
 
+> **Status — schema + payload slice landed.** `aestra-core` now has the generic extension-data types
+> (`aestra-core/src/property_schema.rs`): `ExtensionPayload { schema_version, values: PropertyBag }`
+> stores authored plugin data as a schema version plus a self-describing `PropertyBag` over the existing
+> semantic `Value` model, so it serializes/deserializes **without any plugin Rust code**. `PropertySchema`
+> (a versioned list of `PropertyDescriptor { name, label, description, value_type, default, unit,
+> control, sources }` with a `PropertyControl` generalizing the compiler's `InputControl`) is the
+> generalization of `ModuleMetadata.inputs` (§19.1): `ModuleMetadata::property_schema()` /
+> `InputMetadata::to_property_descriptor()` express every built-in's inputs as a schema, proven lossless
+> and self-validating for the whole built-in registry (`builtin_module_inputs_express_losslessly_as_property_schemas`).
+> `PropertySchema::validate` reports type mismatches and out-of-range numeric values on *described*
+> properties, `apply_defaults`/`default_bag` seed authoring, typed accessors (`get_f32`, `get_bool`, …)
+> serve built-ins, and **unknown bag keys are preserved** (validated as OK, reported via `unknown_keys`,
+> surviving round trips) so a missing/newer plugin never loses data. The M2 acceptance workload — a fake
+> "Test Module { strength: float, mode: enum }" that serializes, deserializes without plugin code,
+> validates when installed, and preserves an unknown key when missing — passes in `property_schema`'s
+> tests. **Deliberately deferred (per the chosen slice):** the editor still renders built-in controls
+> through the live `InputMetadata` path; converging that onto the schema-driven inspector is Phase 9b,
+> and embedding `ExtensionPayload` into the authored module/stage/renderer shape is the M3 format-v4
+> migration — M2 adds the types and the built-in expression without a format bump.
+
 ### Goal
 
 Make authored plugin data representable without plugin Rust structs.

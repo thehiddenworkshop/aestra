@@ -2201,3 +2201,52 @@ fn the_collision_module_promotes_an_emitter_to_stateful_and_carries_its_collider
     assert!(analytic_compiled.collision_inputs().is_empty());
     assert!(analytic_compiled.supports_exact_backward_seek());
 }
+
+#[test]
+fn builtin_module_inputs_express_losslessly_as_property_schemas() {
+    use aestra_compiler::BUILTIN_PROPERTY_SCHEMA_VERSION;
+    // Extensibility redesign M2 (§19.1): PropertySchema is the generalization of ModuleMetadata.inputs.
+    // Every built-in module's inputs must express as a schema with one descriptor per input, preserving
+    // identity/type/default/unit — so built-ins and plugins share one control-rendering and validation
+    // path — and each built-in's default payload must validate cleanly against its own schema.
+    let registry = ModuleRegistry::builtin();
+    let mut modules_with_inputs = 0;
+    for metadata in registry.iter() {
+        let schema = metadata.property_schema();
+        assert_eq!(schema.schema_version, BUILTIN_PROPERTY_SCHEMA_VERSION);
+        assert_eq!(
+            schema.properties.len(),
+            metadata.inputs.len(),
+            "{} expresses one descriptor per input",
+            metadata.type_id.0
+        );
+        for input in &metadata.inputs {
+            let descriptor = schema
+                .descriptor(input.name)
+                .unwrap_or_else(|| panic!("{} has a descriptor for {}", metadata.type_id.0, input.name));
+            assert_eq!(descriptor.label, input.display_name);
+            assert_eq!(descriptor.value_type, input.value_type);
+            assert_eq!(&descriptor.default, &input.default_value);
+            assert_eq!(descriptor.unit.as_deref(), input.unit);
+        }
+        if !metadata.inputs.is_empty() {
+            modules_with_inputs += 1;
+        }
+        // The built-in's own defaults must be valid under the schema-driven validator.
+        let defaults = schema.default_bag();
+        assert!(
+            schema.validate(&defaults).is_empty(),
+            "{}'s default payload validates against its schema",
+            metadata.type_id.0
+        );
+        assert!(
+            schema.unknown_keys(&defaults).is_empty(),
+            "{}'s default payload has no undescribed keys",
+            metadata.type_id.0
+        );
+    }
+    assert!(
+        modules_with_inputs >= 3,
+        "several built-ins carry authored inputs expressed as schemas"
+    );
+}

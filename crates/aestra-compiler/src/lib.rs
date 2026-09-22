@@ -26,8 +26,9 @@ use aestra_core::{
     EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_COLLISION,
     MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
     MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
-    ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties,
-    ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
+    ParameterId, PropertyControl, PropertyDescriptor, PropertySchema, RENDERER_FLIPBOOK,
+    RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
+    ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -84,6 +85,61 @@ pub enum InputControl {
     },
     Gradient,
     Reference,
+}
+
+/// The property-schema version built-in modules publish (extensibility redesign M2). Built-ins are v1.
+pub const BUILTIN_PROPERTY_SCHEMA_VERSION: u32 = 1;
+
+impl InputControl {
+    /// The owned, serializable [`PropertyControl`] equivalent, so built-in controls render and validate
+    /// through the same schema-driven path as plugin controls (extensibility redesign M2, §19.1).
+    pub fn to_property_control(self) -> PropertyControl {
+        match self {
+            Self::Toggle => PropertyControl::Toggle,
+            Self::Number { step, min, max } => PropertyControl::Number { step, min, max },
+            Self::Vector { step, min, max } => PropertyControl::Vector { step, min, max },
+            Self::Range { step, min, max } => PropertyControl::Range { step, min, max },
+            // Built-in choices draw their options from the host (e.g. the shape/blend enums), so the
+            // schema carries no explicit options; a plugin choice would list them.
+            Self::Choice => PropertyControl::Choice {
+                options: Vec::new(),
+            },
+            Self::Curve { step, min, max } => PropertyControl::Curve { step, min, max },
+            Self::Gradient => PropertyControl::Gradient,
+            Self::Reference => PropertyControl::Reference,
+        }
+    }
+}
+
+impl InputMetadata {
+    /// Expresses this built-in input as a [`PropertyDescriptor`] — the generalization the schema-driven
+    /// inspector and plugin properties share (extensibility redesign M2, §19.1).
+    pub fn to_property_descriptor(&self) -> PropertyDescriptor {
+        PropertyDescriptor {
+            name: self.name.to_string(),
+            label: self.display_name.to_string(),
+            description: self.description.to_string(),
+            value_type: self.value_type,
+            default: self.default_value.clone(),
+            unit: self.unit.map(str::to_string),
+            control: self.control.to_property_control(),
+            sources: self.sources.clone(),
+        }
+    }
+}
+
+impl ModuleMetadata {
+    /// This module's inputs expressed as a [`PropertySchema`] (extensibility redesign M2, §19.1): the
+    /// generalization of `ModuleMetadata.inputs` that built-ins and plugins both render/validate through.
+    pub fn property_schema(&self) -> PropertySchema {
+        PropertySchema::new(
+            BUILTIN_PROPERTY_SCHEMA_VERSION,
+            self.inputs
+                .iter()
+                .map(InputMetadata::to_property_descriptor)
+                .collect(),
+        )
+    }
 }
 
 /// Whether a module's state at time `t` is a closed-form function of `t`, or depends on the previous
