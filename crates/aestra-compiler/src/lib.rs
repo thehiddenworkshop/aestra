@@ -1220,6 +1220,10 @@ impl EffectCompiler {
                     max_particles: emitter.max_particles,
                     simulation_class,
                     colliders: colliders.clone(),
+                    stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
+                        &execution,
+                        emitter.id,
+                    ),
                     execution: execution.clone(),
                     renderers: renderers.clone(),
                 });

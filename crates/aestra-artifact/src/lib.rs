@@ -1628,6 +1628,14 @@ impl EmitterV1 {
         if self.max_particles == 0 {
             return invalid(format!("{path}.max_particles"), "must be greater than zero");
         }
+        let execution = self
+            .execution
+            .decode(parameters, &format!("{path}.execution"))?;
+        // The generic stage plan (extensible-stages M5) is derived from the execution plan; its
+        // per-stage ids are deterministic from the emitter id + stage type, so the round trip retains
+        // the same stage identities without storing them separately.
+        let stages =
+            aestra_runtime::CompiledLifecycleStages::from_execution_plan(&execution, self.source);
         Ok(CompiledEmitter {
             source: self.source,
             region: self.region,
@@ -1642,9 +1650,8 @@ impl EmitterV1 {
             max_particles: self.max_particles,
             simulation_class: self.simulation_class.into(),
             colliders: self.colliders,
-            execution: self
-                .execution
-                .decode(parameters, &format!("{path}.execution"))?,
+            stages,
+            execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),
         })
     }

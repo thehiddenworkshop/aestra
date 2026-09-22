@@ -2295,6 +2295,56 @@ fn a_third_party_stage_hosts_standard_modules_by_capability() {
 }
 
 #[test]
+fn compiled_emitter_carries_a_stage_id_based_generic_stage_plan() {
+    // Extensible-stages M5: the compiler produces a generic, stage-identified plan alongside the legacy
+    // three-vector execution plan. It holds the same instructions (CPU behavior unchanged), gives every
+    // stage a stable id + stage-type, supports stage-id source navigation, and is deterministic.
+    let compiler = EffectCompiler::default();
+    let mut asset = EffectAsset::new("Stages", 2.0);
+    asset.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+    let compiled = compiler.compile(&asset).unwrap();
+    let emitter = &compiled.emitters[0];
+
+    // The generic plan rebuilds the exact legacy execution plan (bit/order equivalent).
+    assert_eq!(emitter.stages.to_execution_plan(), emitter.execution);
+    assert!(!emitter.stages.is_empty());
+
+    // Canonical lifecycle order with stable, distinct stage ids and stage-type identities.
+    let types: Vec<&str> = emitter
+        .stages
+        .stages
+        .iter()
+        .map(|stage| stage.stage_type.as_str())
+        .collect();
+    assert_eq!(
+        types,
+        vec![
+            aestra_core::AESTRA_STAGE_EMITTER_UPDATE,
+            aestra_core::AESTRA_STAGE_PARTICLE_SPAWN,
+            aestra_core::AESTRA_STAGE_PARTICLE_UPDATE,
+        ]
+    );
+    let ids: std::collections::BTreeSet<_> =
+        emitter.stages.stages.iter().map(|stage| stage.id).collect();
+    assert_eq!(ids.len(), emitter.stages.stages.len(), "stage ids are distinct");
+
+    // Stage-id source navigation: a module resolves to the stage that runs it.
+    let motion_source = emitter.execution.particle_update[0].source();
+    let stage = emitter
+        .stages
+        .stage_of_module(motion_source)
+        .expect("the module resolves to a stage");
+    assert_eq!(
+        stage.stage_type.as_str(),
+        aestra_core::AESTRA_STAGE_PARTICLE_UPDATE
+    );
+
+    // Deterministic: recompiling the same asset yields the same stage ids.
+    let again = compiler.compile(&asset).unwrap();
+    assert_eq!(emitter.stages.stages[0].id, again.emitters[0].stages.stages[0].id);
+}
+
+#[test]
 fn duplicate_singleton_modules_in_one_stage_are_rejected() {
     // A Single-multiplicity module (the persistent solver) may appear at most once per stage.
     use aestra_core::ModuleInstance;

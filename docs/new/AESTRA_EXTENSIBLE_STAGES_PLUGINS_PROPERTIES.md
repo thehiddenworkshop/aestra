@@ -2578,6 +2578,22 @@ A third-party test stage that provides the particle-update capabilities can host
 
 ## Milestone 5 — generic compiled stage plan
 
+> **Status — generic stage plan landed as a first-class compiled structure.** `CompiledStage { id:
+> StageId, stage_type: StageTypeId, instructions }` and `CompiledLifecycleStages { stages: Vec<_> }`
+> (aestra-runtime) make the three-vector `ExecutionPlan` no longer the compiler's *only* stage model:
+> every compiled emitter now also carries `stages`, a generic ordered plan where each stage has a
+> stable identity. The compiler builds it from the execution plan (`from_execution_plan`, deterministic
+> `StageId::for_name(emitter:stage_type)`); `to_execution_plan` rebuilds the exact legacy plan, so the
+> interpreter still runs the typed `ExecutionPlan` and **CPU behavior is bit/order-identical** (asserted
+> by `compiled_emitter_carries_a_stage_id_based_generic_stage_plan`). **Source navigation is stage-id
+> based** via `stage_of_module` (a module resolves to the stage that runs it). The **artifact round trip
+> retains the generic stage identities**: the decode reproduces `stages` from the execution plan and the
+> emitter's stable source id, so the ids match — covered by the existing full-struct round-trip
+> equality (`reloaded == compiled` now includes `stages`). **Deferred:** the interpreter consuming the
+> generic plan directly (rather than the derived `ExecutionPlan`) and lowering stages into more than one
+> pass is M6's execution IR; the Compiler Inspector / profiler still read `execution` and can adopt the
+> stage-id plan when their UI surfaces stages.
+
 ### Goal
 
 Remove the fixed three-vector runtime plan as the compiler's only stage representation.

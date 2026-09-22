@@ -551,12 +551,96 @@ impl Instruction {
     }
 }
 
-/// Ordered operations grouped by semantic execution stage.
+/// Ordered operations grouped by semantic execution stage. The interpreter's execution input; the
+/// generic [`CompiledLifecycleStages`] (extensible-stages M5) carries the same instructions plus stable
+/// per-stage identities and is the representation the artifact and source navigation use.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExecutionPlan {
     pub emitter_update: Vec<Instruction>,
     pub particle_spawn: Vec<Instruction>,
     pub particle_update: Vec<Instruction>,
+}
+
+/// One compiled stage (extensible-stages M5): a stable [`StageId`], its stage-type identity, and the
+/// ordered instructions it runs. Initially the instructions are the same typed [`Instruction`]s the
+/// legacy [`ExecutionPlan`] holds; later milestones lower stages into the generic execution IR.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledStage {
+    pub id: aestra_core::StageId,
+    pub stage_type: aestra_core::StageTypeId,
+    pub instructions: Vec<Instruction>,
+}
+
+/// The generic, ordered compiled stage plan of one emitter (extensible-stages M5): the representation
+/// that replaces the fixed three-vector [`ExecutionPlan`] as the compiler's *only* stage model. Every
+/// stage carries a stable identity, so source navigation and the artifact are stage-id based rather
+/// than tied to the three hardcoded lifecycle slots.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CompiledLifecycleStages {
+    pub stages: Vec<CompiledStage>,
+}
+
+impl CompiledLifecycleStages {
+    /// Builds the generic stages from the legacy three-vector plan, assigning each non-empty stage a
+    /// deterministic id derived from the emitter and its stage type (extensible-stages M5). Stages keep
+    /// their canonical lifecycle order (emitter update, then particle spawn, then particle update).
+    pub fn from_execution_plan(plan: &ExecutionPlan, emitter: EmitterId) -> Self {
+        let mut stages = Vec::new();
+        for (stage_type, instructions) in [
+            (aestra_core::AESTRA_STAGE_EMITTER_UPDATE, &plan.emitter_update),
+            (aestra_core::AESTRA_STAGE_PARTICLE_SPAWN, &plan.particle_spawn),
+            (aestra_core::AESTRA_STAGE_PARTICLE_UPDATE, &plan.particle_update),
+        ] {
+            if instructions.is_empty() {
+                continue;
+            }
+            stages.push(CompiledStage {
+                id: aestra_core::StageId::for_name(&format!("{}:{stage_type}", emitter.as_uuid())),
+                stage_type: aestra_core::StageTypeId::new(stage_type),
+                instructions: instructions.clone(),
+            });
+        }
+        Self { stages }
+    }
+
+    /// The instructions of the stage of a given stage type, or an empty slice.
+    pub fn stage_instructions(&self, stage_type: &str) -> &[Instruction] {
+        self.stages
+            .iter()
+            .find(|stage| stage.stage_type.as_str() == stage_type)
+            .map_or(&[], |stage| &stage.instructions)
+    }
+
+    /// Rebuilds the legacy three-vector plan the interpreter consumes (extensible-stages M5). Bit- and
+    /// order-equivalent to the plan the stages were built from, so CPU behavior is unchanged.
+    pub fn to_execution_plan(&self) -> ExecutionPlan {
+        ExecutionPlan {
+            emitter_update: self
+                .stage_instructions(aestra_core::AESTRA_STAGE_EMITTER_UPDATE)
+                .to_vec(),
+            particle_spawn: self
+                .stage_instructions(aestra_core::AESTRA_STAGE_PARTICLE_SPAWN)
+                .to_vec(),
+            particle_update: self
+                .stage_instructions(aestra_core::AESTRA_STAGE_PARTICLE_UPDATE)
+                .to_vec(),
+        }
+    }
+
+    /// The stage that runs the instruction sourced from `module`, for stage-id source navigation
+    /// (extensible-stages M5).
+    pub fn stage_of_module(&self, module: ModuleId) -> Option<&CompiledStage> {
+        self.stages.iter().find(|stage| {
+            stage
+                .instructions
+                .iter()
+                .any(|instruction| instruction.source() == module)
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stages.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -669,7 +753,12 @@ pub struct CompiledEmitter {
     /// module order, applied by the stateful integrator after each tick. Empty for emitters without a
     /// collision module.
     pub colliders: Vec<aestra_core::Collider>,
+    /// The interpreter's execution input (typed, three lifecycle slots).
     pub execution: ExecutionPlan,
+    /// The generic, stage-identified compiled stage plan (extensible-stages M5). Holds the same
+    /// instructions as `execution` plus stable per-stage identities; it is what the artifact serializes
+    /// and what stage-id source navigation resolves against. Derivable from `execution` and vice versa.
+    pub stages: CompiledLifecycleStages,
     pub renderers: Vec<RendererPlan>,
 }
 
