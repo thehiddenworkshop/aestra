@@ -3280,6 +3280,28 @@ Use a small deterministic test such as:
 > GPU-vs-GPU determinism (same asset + seed → same frames). Do not add a first-party fluid solver or
 > CPU fluid fixtures.
 
+> **Status — staged multi-pass proof landed (unified M14).** The generic staged infrastructure (M13)
+> now runs a real multi-stage, multi-resource grid simulation, proven on the real GPU by **GPU-vs-GPU
+> determinism** per the reframing above — no first-party fluid solver and no CPU-reference fluid were
+> added; the workload WGSL is test-only (`staged_fluid_conformance.rs`). A generalized executor runs an
+> arbitrary `StagedPlan` of heterogeneous passes over named resources (ping-pong + single-buffer,
+> persistent + transient), building each pass's bind group by the convention `[reads…, writes…,
+> params]` and swapping written ping-pong resources; each pass is its own compute pass (ordered
+> barrier). The smoke workload is a per-tick **inject → advect → diffuse×K** over a velocity + density
+> grid (advect semi-Lagrangian with bilinear sampling; diffuse reuses `aestra_gpu::STAGED_DIFFUSION_WGSL`),
+> plus a presentation `sample` pass. All reframed acceptance criteria are proven:
+> `staged_multipass_smoke_is_deterministic_and_injection_adds_mass` (deterministic fixed-step evolution
+> — identical frames across independent runs — and analytic injection adds mass);
+> `staged_multipass_checkpoint_replay_matches_and_checkpoint_memory_is_bounded` (multi-resource
+> restore/replay reaches the uninterrupted state, and the checkpoint holds only the persistent resources
+> — velocity + density + particles, never the transient brightness — so it is bounded independent of
+> ticks and diffuse iterations); and `the_fluid_drives_particles_deterministically` (the presentation
+> pass samples the grid at particle positions, so the fluid drives stateful particles, deterministically
+> and without the particle presentation ABI storing fluid state). **Still first-party-deferred, by
+> design:** the actual Navier-Stokes solver (divergence/pressure/projection) ships as the external
+> GPU-only plugin; promoting this generalized executor from the harness into a render-backend resource
+> and authoring a staged module land with that plugin's integration, on top of this proven infra.
+
 **Goal:** Prove real stateful grid simulation using generic staged infrastructure.
 
 ### Suggested order
