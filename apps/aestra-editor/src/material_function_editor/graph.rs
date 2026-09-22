@@ -165,6 +165,10 @@ pub(super) fn register(app: &mut App) {
     app.init_resource::<ConnectionPreview>()
         .init_resource::<FunctionGraphMenuState>()
         .init_resource::<crate::material_graph::MaterialGraphSelectionState>()
+        // Graph observers registered here (e.g. handle_function_graph_context_action) read the
+        // viewport pan/zoom memory; own its presence so every context registering these observers —
+        // including focused tests — has it, not just apps that also add the feathers node-graph plugin.
+        .init_resource::<crate::feathers::node_graph::GraphViewportMemory>()
         .add_observer(start_connection)
         .add_observer(move_connection)
         .add_observer(end_connection)
