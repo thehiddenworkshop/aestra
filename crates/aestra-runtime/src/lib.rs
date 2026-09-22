@@ -11,9 +11,15 @@ pub use project_profile::{ProjectInstanceProfile, ProjectProfile};
 mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
+mod execution_ir;
 mod profile;
 mod staged;
 mod stateful;
+pub use execution_ir::{
+    execute_reference, lower_stage_fused, ComputeOp, CopyOp, ExecutionBlock, ExecutionError,
+    ExecutionOp, ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode,
+    ResourceDescriptor, ResourceLifetime, AESTRA_RESOURCE_PARTICLES,
+};
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{
     diffuse_2d, diffuse_2d_step, StagedDispatch, StagedPass, StagedPlan, StagedPlanError,

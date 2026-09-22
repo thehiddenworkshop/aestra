@@ -2629,6 +2629,23 @@ Update:
 
 ## Milestone 6 — portable Execution IR and resource model
 
+> **Status — portable Execution IR + reference backend landed.** `aestra-runtime::execution_ir` defines
+> the engine-independent IR: `ExecutionBlock { resources: Vec<ResourceDescriptor>, ops: Vec<ExecutionOp> }`
+> where `ExecutionOp` is `Compute(ComputeOp)` / `Barrier` / `Copy(CopyOp)` / `Repeat { policy:
+> RepeatPolicy, body }`, with `ResourceDescriptor` + `ResourceAccess`(`Read`/`Write`/`ReadWrite`) and
+> `RepeatPolicy::FixedCount`. `ExecutionBlock::validate()` checks declared/unique resources, resolvable
+> accesses, non-zero dispatches, and non-zero repeats (recursing into repeat bodies). A **reference
+> backend** (`execute_reference`) runs a block into a deterministic ordered trace — repeats expand,
+> barriers stay in place — with no GPU. The M6 acceptance workload (Compute A → Barrier → Repeat
+> Compute B ×4 → Compute C) validates and traces in exactly that order
+> (`a_multi_pass_stage_validates_and_executes_in_deterministic_order`). Built-in particle behavior
+> lowers **fused** via `lower_stage_fused`: a whole stage (any number of modules) becomes a single
+> compute pass over the particle buffer, not one dispatch per module
+> (`a_built_in_particle_stage_lowers_fused_to_a_single_compute_pass`), so nothing regresses. **Deferred:**
+> the native GPU backend executing these blocks (allocating declared resources, resolving barriers,
+> running repeat loops, timestamps) is M7 — the reference backend proves the IR's ordering semantics
+> that M7 will honor.
+
 ### Goal
 
 Allow a stage to lower into more than one runtime/GPU pass.
