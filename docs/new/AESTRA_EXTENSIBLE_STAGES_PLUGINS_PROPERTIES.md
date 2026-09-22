@@ -2527,6 +2527,24 @@ Add structural validation (Layer 1, §32).
 
 ## Milestone 4 — descriptor compatibility and capabilities
 
+> **Status — capability-based compatibility landed.** The concrete stage check
+> (`metadata.stages.contains(module.stage)`) is replaced by capability satisfaction: a stage
+> **provides** a `CapabilitySet` and a module **requires** a `CapabilityExpression` (`AnyOf` / `AllOf` /
+> `Unconstrained`), and `StageTypeDescriptor::hosts(requires)` decides compatibility by inspecting only
+> what the stage provides — never its concrete type id. Six lifecycle-role capabilities
+> (`aestra.capability.hosts_*`, core) are provided by the built-in stages via
+> `StageTypeDescriptor::lifecycle(LifecycleRole)`, and each built-in module's requirement is derived
+> from its declared roles (`ModuleMetadata::required_capabilities`), so the check is behaviour-identical
+> to the old one for built-ins while letting a **third-party stage host standard modules by providing
+> the right capability** — proven by `a_third_party_stage_hosts_standard_modules_by_capability` (a
+> custom-type-id stage that provides `hosts_particle_update` hosts Motion/Appearance but not the
+> particle-spawn Shape). `ModuleMultiplicity { Single, Multiple }` was added with singleton validation
+> (the persistent solver is `Single`; two on one emitter are rejected —
+> `duplicate_singleton_modules_in_one_stage_are_rejected`). **Deferred:** `ModuleMetadata.stages` is
+> retained as the authoring hint that `required_capabilities` derives from rather than fully removed;
+> `BackendSupport` and richer `CapabilityExpression` operators (Not/nested) land with the descriptor
+> registry work in M5–M7 when a concrete need appears.
+
 ### Goal
 
 Remove concrete stage checks from module discovery.

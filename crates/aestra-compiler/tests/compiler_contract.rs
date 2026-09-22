@@ -336,6 +336,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
             tags: Vec::new(),
             capabilities,
             simulation,
+            multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
             approximate_cost: 0,
         }
     }
@@ -497,6 +498,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
             temporal: TemporalRequirement::PreviousState,
             ..Default::default()
         },
+        multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
         approximate_cost: 0,
     };
     let mut registry = ExtensionRegistry::builtin();
@@ -2249,4 +2251,70 @@ fn builtin_module_inputs_express_losslessly_as_property_schemas() {
         modules_with_inputs >= 3,
         "several built-ins carry authored inputs expressed as schemas"
     );
+}
+
+#[test]
+fn a_third_party_stage_hosts_standard_modules_by_capability() {
+    use aestra_compiler::{CapabilitySet, LifecycleRole, ModuleMultiplicity, StageTypeDescriptor};
+    use aestra_core::{
+        CapabilityId, StageTypeId, CAPABILITY_HOSTS_PARTICLE_UPDATE, MODULE_APPEARANCE,
+        MODULE_PERSISTENT,
+    };
+    // Extensible-stages M4 acceptance: a third-party stage that merely *provides* the particle-update
+    // capability hosts the standard particle-update modules — with no hardcoded knowledge of its type
+    // id on either side. Compatibility is capability satisfaction, not a concrete stage-type check.
+    let registry = ModuleRegistry::builtin();
+    let third_party = StageTypeDescriptor {
+        type_id: StageTypeId::new("org.example.plugin::stage/custom_update"),
+        display_name: "Custom Update".to_string(),
+        role: None,
+        provides: CapabilitySet::new([CapabilityId::new(CAPABILITY_HOSTS_PARTICLE_UPDATE)]),
+    };
+
+    let motion = registry.get(&ModuleTypeId::new(MODULE_MOTION)).unwrap();
+    let appearance = registry.get(&ModuleTypeId::new(MODULE_APPEARANCE)).unwrap();
+    let shape = registry.get(&ModuleTypeId::new(MODULE_SHAPE)).unwrap();
+    assert!(
+        third_party.hosts(&motion.required_capabilities()),
+        "the third-party stage hosts a standard particle-update module by capability"
+    );
+    assert!(third_party.hosts(&appearance.required_capabilities()));
+    assert!(
+        !third_party.hosts(&shape.required_capabilities()),
+        "a particle-spawn module is not hosted by a particle-update stage"
+    );
+
+    // The built-in lifecycle descriptor gives the same answers the old concrete stage check did.
+    let builtin = StageTypeDescriptor::lifecycle(LifecycleRole::ParticleUpdate);
+    assert!(builtin.hosts(&motion.required_capabilities()));
+    assert!(!builtin.hosts(&shape.required_capabilities()));
+
+    // The persistent solver is a singleton (M4 multiplicity).
+    let persistent = registry.get(&ModuleTypeId::new(MODULE_PERSISTENT)).unwrap();
+    assert_eq!(persistent.multiplicity, ModuleMultiplicity::Single);
+}
+
+#[test]
+fn duplicate_singleton_modules_in_one_stage_are_rejected() {
+    // A Single-multiplicity module (the persistent solver) may appear at most once per stage.
+    use aestra_core::ModuleInstance;
+    let compiler = EffectCompiler::default();
+    let mut asset = EffectAsset::new("Double Solver", 2.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+    emitter.modules.push(ModuleInstance::persistent());
+    emitter.modules.push(ModuleInstance::persistent());
+    asset.emitters.push(emitter);
+
+    let report = compiler.compile(&asset).unwrap_err();
+    assert!(
+        report.to_string().to_lowercase().contains("singleton"),
+        "two persistent solvers on one emitter are rejected as a singleton violation: {report}"
+    );
+
+    // One solver is fine.
+    let mut ok = EffectAsset::new("Single Solver", 2.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+    emitter.modules.push(ModuleInstance::persistent());
+    ok.emitters.push(emitter);
+    assert!(compiler.compile(&ok).is_ok(), "one persistent solver is valid");
 }

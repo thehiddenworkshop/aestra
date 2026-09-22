@@ -28,7 +28,7 @@ use aestra_core::{
     MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
     ParameterId, PropertyControl, PropertyDescriptor, PropertySchema, RENDERER_FLIPBOOK,
     RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
-    ValidationReport, Value,
+    StageTypeId, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -268,6 +268,145 @@ impl Default for BackendSupport {
     }
 }
 
+/// A lifecycle role — the fixed effect/emitter/particle spawn/update slots (extensible-stages M4).
+/// Maps 1:1 with the non-`Simulation` [`StageKind`] variants; each carries the capability a stage of
+/// that role **provides** and a module of that role **requires**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleRole {
+    EffectSpawn,
+    EffectUpdate,
+    EmitterSpawn,
+    EmitterUpdate,
+    ParticleSpawn,
+    ParticleUpdate,
+}
+
+impl LifecycleRole {
+    /// The capability a stage of this role provides / a module of this role requires.
+    pub fn capability(self) -> CapabilityId {
+        CapabilityId::new(match self {
+            Self::EffectSpawn => aestra_core::CAPABILITY_HOSTS_EFFECT_SPAWN,
+            Self::EffectUpdate => aestra_core::CAPABILITY_HOSTS_EFFECT_UPDATE,
+            Self::EmitterSpawn => aestra_core::CAPABILITY_HOSTS_EMITTER_SPAWN,
+            Self::EmitterUpdate => aestra_core::CAPABILITY_HOSTS_EMITTER_UPDATE,
+            Self::ParticleSpawn => aestra_core::CAPABILITY_HOSTS_PARTICLE_SPAWN,
+            Self::ParticleUpdate => aestra_core::CAPABILITY_HOSTS_PARTICLE_UPDATE,
+        })
+    }
+
+    /// The lifecycle role of a stage, or `None` for a `Simulation(name)` stage (not a fixed role).
+    pub fn from_stage(stage: &StageKind) -> Option<Self> {
+        match stage {
+            StageKind::EffectSpawn => Some(Self::EffectSpawn),
+            StageKind::EffectUpdate => Some(Self::EffectUpdate),
+            StageKind::EmitterSpawn => Some(Self::EmitterSpawn),
+            StageKind::EmitterUpdate => Some(Self::EmitterUpdate),
+            StageKind::ParticleSpawn => Some(Self::ParticleSpawn),
+            StageKind::ParticleUpdate => Some(Self::ParticleUpdate),
+            StageKind::Simulation(_) => None,
+        }
+    }
+}
+
+/// A set of capabilities (extensible-stages M4, §9). A stage provides one; a module requirement is
+/// tested against it. Membership decides compatibility, never execution order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CapabilitySet {
+    ids: BTreeSet<CapabilityId>,
+}
+
+impl CapabilitySet {
+    pub fn new(ids: impl IntoIterator<Item = CapabilityId>) -> Self {
+        Self {
+            ids: ids.into_iter().collect(),
+        }
+    }
+
+    pub fn contains(&self, id: &CapabilityId) -> bool {
+        self.ids.contains(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CapabilityId> {
+        self.ids.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+}
+
+/// A module's requirement over the capabilities its host stage provides (extensible-stages M4). The
+/// compatibility contract is capability satisfaction — never a concrete stage-type check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilityExpression {
+    /// Satisfied by a stage providing **any** of these — the common "runs in one of these roles".
+    AnyOf(CapabilitySet),
+    /// Satisfied only by a stage providing **all** of these.
+    AllOf(CapabilitySet),
+    /// No requirement — compatible with any stage.
+    Unconstrained,
+}
+
+impl CapabilityExpression {
+    /// Whether a stage that provides `provided` satisfies this requirement.
+    pub fn is_satisfied_by(&self, provided: &CapabilitySet) -> bool {
+        match self {
+            Self::AnyOf(set) => set.iter().any(|id| provided.contains(id)),
+            Self::AllOf(set) => !set.is_empty() && set.iter().all(|id| provided.contains(id)),
+            Self::Unconstrained => true,
+        }
+    }
+}
+
+/// How many instances of a module a single stage may host (extensible-stages M4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModuleMultiplicity {
+    /// At most one per stage (e.g. a solver marker); duplicates are a validation error.
+    Single,
+    /// Any number (the default — repeated same-type modules are allowed, §8.1).
+    #[default]
+    Multiple,
+}
+
+/// Describes a stage type (extensible-stages M4, §6.3): its identity, optional lifecycle role, and the
+/// capabilities it **provides** to the modules it hosts. A built-in lifecycle stage provides exactly
+/// its role capability; a plugin stage provides whatever capabilities it declares. Module/stage
+/// compatibility is [`StageTypeDescriptor::hosts`], which never inspects the stage's concrete type id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageTypeDescriptor {
+    pub type_id: StageTypeId,
+    pub display_name: String,
+    pub role: Option<LifecycleRole>,
+    pub provides: CapabilitySet,
+}
+
+impl StageTypeDescriptor {
+    /// A built-in lifecycle stage descriptor: it provides exactly its role's capability.
+    pub fn lifecycle(role: LifecycleRole) -> Self {
+        let type_id = StageTypeId::new(match role {
+            LifecycleRole::EffectSpawn => aestra_core::AESTRA_STAGE_EFFECT_SPAWN,
+            LifecycleRole::EffectUpdate => aestra_core::AESTRA_STAGE_EFFECT_UPDATE,
+            LifecycleRole::EmitterSpawn => aestra_core::AESTRA_STAGE_EMITTER_SPAWN,
+            LifecycleRole::EmitterUpdate => aestra_core::AESTRA_STAGE_EMITTER_UPDATE,
+            LifecycleRole::ParticleSpawn => aestra_core::AESTRA_STAGE_PARTICLE_SPAWN,
+            LifecycleRole::ParticleUpdate => aestra_core::AESTRA_STAGE_PARTICLE_UPDATE,
+        });
+        Self {
+            type_id,
+            display_name: format!("{role:?}"),
+            role: Some(role),
+            provides: CapabilitySet::new([role.capability()]),
+        }
+    }
+
+    /// Whether this stage can host a module with the given capability requirement — the M4
+    /// compatibility contract. It inspects only what the stage *provides*, so a third-party stage hosts
+    /// standard modules without either side knowing the other's concrete type id.
+    pub fn hosts(&self, requires: &CapabilityExpression) -> bool {
+        requires.is_satisfied_by(&self.provides)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
@@ -283,7 +422,41 @@ pub struct ModuleMetadata {
     /// Declared simulation requirements; the compiler derives an execution class from these
     /// (shared-foundation S1-D1). Defaults to analytic for every current built-in.
     pub simulation: SimulationRequirements,
+    /// How many of this module a single stage may host (extensible-stages M4). Defaults to `Multiple`.
+    pub multiplicity: ModuleMultiplicity,
     pub approximate_cost: u32,
+}
+
+impl ModuleMetadata {
+    /// The capabilities this module requires from its host stage (extensible-stages M4), derived from
+    /// the lifecycle roles of its declared stages: a module runs in a stage that provides **any** of
+    /// its roles' capabilities. This is the capability-based replacement for the old concrete
+    /// `stages.contains(module.stage)` check — a stage providing the right capability hosts the module
+    /// regardless of its concrete type id. A module declaring only `Simulation` stages is
+    /// `Unconstrained` for now (no built-in does).
+    pub fn required_capabilities(&self) -> CapabilityExpression {
+        let roles: Vec<CapabilityId> = self
+            .stages
+            .iter()
+            .filter_map(LifecycleRole::from_stage)
+            .map(LifecycleRole::capability)
+            .collect();
+        if roles.is_empty() {
+            CapabilityExpression::Unconstrained
+        } else {
+            CapabilityExpression::AnyOf(CapabilitySet::new(roles))
+        }
+    }
+}
+
+/// The capabilities a built-in [`StageKind`] provides (extensible-stages M4). A lifecycle stage
+/// provides its role capability; a `Simulation` stage provides none built-in (a simulation module
+/// would declare its own).
+fn stage_provided_capabilities(stage: &StageKind) -> CapabilitySet {
+    match LifecycleRole::from_stage(stage) {
+        Some(role) => CapabilitySet::new([role.capability()]),
+        None => CapabilitySet::default(),
+    }
 }
 
 /// Extensible catalog used by validation, authoring UI, and lowering.
@@ -1176,14 +1349,21 @@ impl EffectCompiler {
                     );
                     continue;
                 };
-                if !metadata.stages.contains(&module.stage) {
+                // Capability-based compatibility (extensible-stages M4): the module is valid here when
+                // its required capabilities are satisfied by what its host stage provides — never a
+                // hardcoded stage-type check. For built-ins this is equivalent to the old
+                // `stages.contains(module.stage)`, and it also lets third-party stages host standard
+                // modules by providing the right capabilities.
+                let provided = stage_provided_capabilities(&module.stage);
+                if !metadata.required_capabilities().is_satisfied_by(&provided) {
                     push_unique(
                         report,
                         Diagnostic::error(
                             DiagnosticCode::StageMismatch,
                             format!("{path}.stage"),
                             format!(
-                                "module '{}' cannot execute in stage {:?}",
+                                "module '{}' cannot execute in stage {:?}: its required capabilities \
+                                 are not provided there",
                                 module.module_type.0, module.stage
                             ),
                         ),
@@ -1312,6 +1492,44 @@ impl EffectCompiler {
                             );
                         }
                     }
+                }
+            }
+
+            // Singleton validation (extensible-stages M4): a `Single`-multiplicity module may appear
+            // at most once per stage. Report once, at the first offending occurrence.
+            for (module_index, module) in emitter.modules.iter().enumerate() {
+                let Some(metadata) = self.registry.modules.get(&module.module_type) else {
+                    continue;
+                };
+                if metadata.multiplicity != ModuleMultiplicity::Single {
+                    continue;
+                }
+                // Only report from the first occurrence of this type+stage.
+                let first = emitter.modules.iter().position(|other| {
+                    other.module_type == module.module_type && other.stage == module.stage
+                });
+                if first != Some(module_index) {
+                    continue;
+                }
+                let count = emitter
+                    .modules
+                    .iter()
+                    .filter(|other| {
+                        other.module_type == module.module_type && other.stage == module.stage
+                    })
+                    .count();
+                if count > 1 {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidValue,
+                            format!("{emitter_path}.modules[{module_index}]"),
+                            format!(
+                                "module '{}' is a singleton but appears more than once in stage {:?}",
+                                module.module_type.0, module.stage
+                            ),
+                        ),
+                    );
                 }
             }
 
@@ -2127,11 +2345,17 @@ fn metadata(
             CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION),
         ],
         simulation: SimulationRequirements::ANALYTIC,
+        multiplicity: ModuleMultiplicity::Multiple,
         approximate_cost: 0,
     }
 }
 
 impl ModuleMetadata {
+    fn with_multiplicity(mut self, multiplicity: ModuleMultiplicity) -> Self {
+        self.multiplicity = multiplicity;
+        self
+    }
+
     fn with_inputs(mut self, inputs: Vec<InputMetadata>) -> Self {
         self.inputs = inputs;
         self
@@ -2441,6 +2665,8 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             temporal: TemporalRequirement::PreviousState,
             ..SimulationRequirements::ANALYTIC
         })
+        // One persistent solver per emitter — a second would be an ambiguous double state advance.
+        .with_multiplicity(ModuleMultiplicity::Single)
         .with_tags(vec!["simulation", "stateful", "persistent"])
         .with_cost(6),
         metadata(

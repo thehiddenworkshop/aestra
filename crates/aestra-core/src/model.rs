@@ -1604,6 +1604,18 @@ namespaced_id!(
 pub const CAPABILITY_CPU_REFERENCE: &str = "aestra.capability.cpu_reference";
 pub const CAPABILITY_PARTICLE_SIMULATION: &str = "aestra.capability.particle_simulation";
 
+/// Lifecycle-role capabilities (extensible-stages M4, §9): a stage **provides** the capability of its
+/// lifecycle role, and a module **requires** the role(s) it can run in. Module/stage compatibility is
+/// capability satisfaction, never a hardcoded stage-type check — so a third-party stage that provides,
+/// say, `HOSTS_PARTICLE_UPDATE` can host the standard particle-update modules without either side
+/// knowing the other's concrete type id.
+pub const CAPABILITY_HOSTS_EFFECT_SPAWN: &str = "aestra.capability.hosts_effect_spawn";
+pub const CAPABILITY_HOSTS_EFFECT_UPDATE: &str = "aestra.capability.hosts_effect_update";
+pub const CAPABILITY_HOSTS_EMITTER_SPAWN: &str = "aestra.capability.hosts_emitter_spawn";
+pub const CAPABILITY_HOSTS_EMITTER_UPDATE: &str = "aestra.capability.hosts_emitter_update";
+pub const CAPABILITY_HOSTS_PARTICLE_SPAWN: &str = "aestra.capability.hosts_particle_spawn";
+pub const CAPABILITY_HOSTS_PARTICLE_UPDATE: &str = "aestra.capability.hosts_particle_update";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModuleInstance {
     pub id: ModuleId,
