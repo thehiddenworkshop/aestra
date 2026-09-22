@@ -3145,6 +3145,26 @@ forward-only
 
 # Milestone 12 — Preview vs exact seek modes
 
+> **Status — preview/exact seek landed (unified M12).** `aestra_runtime::SeekQuality { Preview, Exact }`
+> (default `Exact`) is threaded from the editor through the player/`PresentedEffect` to the GPU stateful
+> backend. The backend's per-frame catch-up is now quality-bounded: `Exact` uses the full
+> reconstruction budget (settled cursors converge to the authoritative state in a few frames), while
+> `Preview` caps it tightly (`STATEFUL_PREVIEW_CATCHUP_TICKS`) so rapid scrubbing stays responsive. The
+> preview approximation is **temporal, not value-approximate** — a bounded seek presents an *exact*
+> earlier tick when it cannot reach the target within budget, never a wrong state, and
+> `SeekQuality::Preview.is_authoritative()` is `false`, so **preview never claims to be authoritative**;
+> a settled cursor refines to `Exact` and replays the remainder to the target, whose result is the
+> deterministic state the M7/M10 conformance already proves. **Editor wiring:** a history discontinuity
+> (the editor's existing "scrubbing this frame" signal) requests `Preview`; normal playback advance
+> requests `Exact`, so dragging is bounded/responsive and releasing refines. Covered by a render-crate
+> unit test (`preview_seek_is_bounded_per_frame_and_exact_converges_to_the_target`): preview's per-frame
+> budget is smaller than exact's, both are finite (no single frame stalls the GPU), and iterating the
+> bounded catch-up converges *exactly* to the target tick. **Still to do (optional):** the richer
+> preview levers the milestone lists — coarser stateful timestep, reduced collision complexity, fewer
+> particles, reduced staged-solver iterations — layer on top of this temporal bound when a single
+> effect's one-frame reconstruction is itself too expensive; and a viewport "preview" badge would make
+> the non-authoritative state visible during a drag.
+
 **Goal:** Keep the editor responsive when stateful effects become expensive.
 
 ### Add

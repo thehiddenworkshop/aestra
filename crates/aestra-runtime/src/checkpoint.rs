@@ -11,6 +11,33 @@ pub enum SimulationSeekMode {
     RestartReplay,
 }
 
+/// The fidelity requested of a stateful seek (hybrid roadmap M12). Reconstructing a stateful effect's
+/// state at a scrubbed time (restore the nearest checkpoint, replay the fixed-tick remainder) can be
+/// expensive; while the user is actively scrubbing, a bounded **preview** keeps the editor responsive,
+/// and when the cursor settles an **exact** pass reconstructs the authoritative, deterministic state.
+///
+/// Preview is a *bounded approximation* — the backend caps the per-frame reconstruction work, so the
+/// displayed state may lag the requested time — and it is never authoritative
+/// ([`is_authoritative`](Self::is_authoritative) is false). Only `Exact`, once it reaches the target,
+/// is authoritative. The default is `Exact`: playback and settled positions are always authoritative,
+/// and a host opts into preview explicitly for the duration of a scrub gesture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SeekQuality {
+    /// Bounded, possibly-approximate reconstruction for responsive scrubbing. Never authoritative.
+    Preview,
+    /// Full reconstruction to the exact requested tick — the authoritative, deterministic result.
+    #[default]
+    Exact,
+}
+
+impl SeekQuality {
+    /// Whether a seek at this quality, having reached its target tick, yields the authoritative state.
+    /// Preview is always non-authoritative (bounded approximation); only `Exact` is authoritative.
+    pub fn is_authoritative(self) -> bool {
+        matches!(self, Self::Exact)
+    }
+}
+
 /// How a compiled unit executes over time — a *derived* compiled property, never authored and never
 /// the same as `SimulationDomain` (topology) or `StageKind` (lifecycle). See the shared-foundation
 /// milestones (S1) and the hybrid-simulation roadmap. Ordered weakest-to-strongest so a grouping can

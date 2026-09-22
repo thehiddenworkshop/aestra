@@ -20,7 +20,7 @@ pub use stateful::{
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
-    SeekPlan, SimulationClass, SimulationSeekMode, StoredCheckpoint, TemporalSemantics,
+    SeekPlan, SeekQuality, SimulationClass, SimulationSeekMode, StoredCheckpoint, TemporalSemantics,
 };
 pub use compatibility::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,

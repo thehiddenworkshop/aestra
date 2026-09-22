@@ -24,7 +24,7 @@ use crate::material::{
 };
 use aestra_core::{AssetId, EmitterId, MaterialId, MaterialProgramId};
 use aestra_gpu::material::CompiledMaterialProgram;
-use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
+use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample, SeekQuality};
 use bevy::{
     ecs::schedule::IntoScheduleConfigs,
     prelude::{
@@ -77,6 +77,10 @@ impl Default for AestraRenderSettings {
 #[require(Transform, Visibility)]
 pub struct PresentedEffect {
     pub instance: EffectInstance,
+    /// The fidelity requested of stateful seeks this frame (hybrid roadmap M12). `Exact` by default;
+    /// a host sets `Preview` for the duration of a scrub gesture (synced from the player) so the GPU
+    /// backend bounds its per-frame reconstruction and keeps scrubbing responsive.
+    seek_quality: SeekQuality,
     render_mode: EffectRenderMode,
     texture_overrides: BTreeMap<AssetId, Handle<Image>>,
     mesh_overrides: BTreeMap<AssetId, Handle<bevy::prelude::Mesh>>,
@@ -92,6 +96,7 @@ impl PresentedEffect {
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
         let mut presented = Self {
             instance: EffectInstance::new(effect),
+            seek_quality: SeekQuality::Exact,
             render_mode: EffectRenderMode::Rendered,
             texture_overrides: BTreeMap::new(),
             mesh_overrides: BTreeMap::new(),
@@ -136,6 +141,17 @@ impl PresentedEffect {
 
     pub fn simulation_time(&self) -> f32 {
         self.instance.time()
+    }
+
+    /// The fidelity requested of stateful seeks this frame (hybrid roadmap M12).
+    pub fn seek_quality(&self) -> SeekQuality {
+        self.seek_quality
+    }
+
+    /// Sets the requested stateful-seek fidelity for this frame (hybrid roadmap M12). The plugin syncs
+    /// this from the player; `Preview` bounds the GPU reconstruction during scrubbing.
+    pub fn set_seek_quality(&mut self, quality: SeekQuality) {
+        self.seek_quality = quality;
     }
 
     pub fn render_mode(&self) -> EffectRenderMode {

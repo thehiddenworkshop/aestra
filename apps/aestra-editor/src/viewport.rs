@@ -23,6 +23,7 @@ use aestra_bevy_render::{
 use aestra_core::{EffectClipId, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value};
 use aestra_runtime::{
     CompiledEffect, CompiledEffectProject, CompiledParameterOverride, DEFAULT_PLAYBACK_TICK_RATE,
+    SeekQuality,
 };
 use bevy::{
     app::TransformGizmoRenderStep,
@@ -2771,6 +2772,15 @@ fn sync_rendered_preview(
         if player.instance.seed() != instance.seed {
             player.instance.set_seed(instance.seed);
         }
+        // Preview vs exact stateful seeking (hybrid roadmap M12): a history discontinuity is the
+        // editor's "scrubbing this frame" signal, so request a bounded preview seek to keep dragging
+        // responsive; a settled cursor (normal playback advance) refines to the authoritative exact
+        // state. Only affects stateful effects; analytic ones seek directly regardless.
+        player.set_seek_quality(if discontinuity {
+            SeekQuality::Preview
+        } else {
+            SeekQuality::Exact
+        });
         if discontinuity {
             player.instance.seek(instance.time);
         } else if (player.simulation_time() - instance.time).abs()

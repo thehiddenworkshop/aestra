@@ -58,7 +58,7 @@ pub use aestra_runtime::{
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
     PlaybackCheckpoint, PlaybackClock, PlaybackDriver, ProfileValue, ProfileValueSource,
     ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind,
-    RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
+    RuntimeValue, SeekOrigin, SeekPlan, SeekQuality, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -142,6 +142,7 @@ fn sync_player_presentations(mut players: Query<(&EffectPlayer, &mut PresentedEf
     for (player, mut presented) in &mut players {
         presented.instance = player.instance().clone();
         presented.set_render_mode(player.render_mode());
+        presented.set_seek_quality(player.seek_quality());
     }
 }
 
@@ -170,6 +171,10 @@ pub struct EffectPlayer {
     driver: PlaybackDriver,
     pub speed: f32,
     pub playing: bool,
+    /// The fidelity requested of stateful seeks (hybrid roadmap M12). `Exact` by default — playback and
+    /// settled positions reconstruct the authoritative state; a host sets `Preview` for the duration of
+    /// a scrub gesture so rapid scrubbing stays responsive, then restores `Exact` on release.
+    seek_quality: SeekQuality,
     render_mode: EffectRenderMode,
     choreography_events: Vec<DispatchedChoreographyEvent>,
     project_choreography_events: Vec<ProjectChoreographyEvent>,
@@ -195,6 +200,7 @@ impl EffectPlayer {
             driver: PlaybackDriver::new(EffectInstance::new(effect)),
             speed: 1.0,
             playing: true,
+            seek_quality: SeekQuality::Exact,
             render_mode: EffectRenderMode::Rendered,
             choreography_events: Vec::new(),
             project_choreography_events: Vec::new(),
@@ -276,6 +282,19 @@ impl EffectPlayer {
 
     pub fn seek_mode(&self) -> SimulationSeekMode {
         self.effect().seek_mode
+    }
+
+    /// The fidelity requested of stateful seeks this frame (hybrid roadmap M12).
+    pub fn seek_quality(&self) -> SeekQuality {
+        self.seek_quality
+    }
+
+    /// Requests a stateful-seek fidelity. A host sets [`SeekQuality::Preview`] while the user is
+    /// actively scrubbing the timeline (bounded reconstruction keeps the editor responsive), and
+    /// restores [`SeekQuality::Exact`] when the cursor settles so the authoritative state is
+    /// reconstructed. Only affects stateful effects; analytic seeks are already direct.
+    pub fn set_seek_quality(&mut self, quality: SeekQuality) {
+        self.seek_quality = quality;
     }
 
     pub fn restart(&mut self) {

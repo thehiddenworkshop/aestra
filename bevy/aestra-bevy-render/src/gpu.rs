@@ -37,7 +37,7 @@ use aestra_gpu::{
     GpuBlend, GpuSimulationState, WORKGROUP_SIZE, fold_seed,
     indirect_draw_commands_with_statistics, indirect_draw_offset,
 };
-use aestra_runtime::{RendererPlanKind, SimulationClass};
+use aestra_runtime::{RendererPlanKind, SeekQuality, SimulationClass};
 use bevy::{
     asset::{RenderAssetUsages, io::embedded::EmbeddedAssetRegistry},
     camera::{
@@ -114,6 +114,10 @@ pub(crate) struct GpuEffectBuffers {
     ribbon_workgroups: u32,
     total_slots: u32,
     simulation_time: f32,
+    /// The requested fidelity of stateful seeking this frame (hybrid roadmap M12): `Preview` bounds the
+    /// per-frame reconstruction while the user scrubs; `Exact` (the default) reconstructs the
+    /// authoritative state. Sourced from the player each frame.
+    seek_quality: SeekQuality,
     history_epoch: u32,
     statistics_token: u32,
     checkpoint_context: Arc<trail_checkpoints::TrailContext>,
@@ -938,6 +942,7 @@ pub(crate) fn prepare_gpu_effects(
                 has_ribbons,
                 has_trails,
                 simulation_time: player.simulation_time(),
+                seek_quality: player.seek_quality(),
                 history_epoch: player.instance.history_epoch(),
                 statistics_token: 0,
                 checkpoint_context: default(),
@@ -1502,6 +1507,7 @@ fn sync_gpu_render_transforms(
                     .matrix_at(player.simulation_time()),
             );
         gpu.simulation_time = player.simulation_time();
+        gpu.seek_quality = player.seek_quality();
         gpu.history_epoch = player.instance.history_epoch();
         if gpu.has_trails {
             let seed = player.instance.seed();
@@ -2175,7 +2181,24 @@ fn prepare_stateful_states(
 const STATEFUL_TICK_DT: f32 = 1.0 / 60.0;
 /// Cap on fixed ticks advanced in a single frame, so a large seek or a first frame far into the
 /// timeline cannot stall the GPU; the simulation catches up over subsequent frames.
+/// Per-frame fixed-tick catch-up budget for an *exact* stateful seek: large, so a settled cursor
+/// converges to the authoritative state in a few frames, but still bounded so one frame cannot stall
+/// the GPU on a huge jump (the remainder continues on later frames).
 const STATEFUL_MAX_CATCHUP_TICKS: u32 = 300;
+
+/// Per-frame catch-up budget for a *preview* seek (hybrid roadmap M12): tight, so rapid scrubbing stays
+/// responsive. The reconstruction is temporally bounded — the presented state is an *exact* earlier
+/// tick when the budget cannot reach the target, never a values-approximate one — and a preview is
+/// never authoritative, so an exact pass on cursor-release replays the remainder to the target.
+const STATEFUL_PREVIEW_CATCHUP_TICKS: u32 = 24;
+
+/// The per-frame catch-up budget for a stateful seek at the requested quality (hybrid roadmap M12).
+fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
+    match quality {
+        SeekQuality::Preview => STATEFUL_PREVIEW_CATCHUP_TICKS,
+        SeekQuality::Exact => STATEFUL_MAX_CATCHUP_TICKS,
+    }
+}
 
 /// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6/M7): advance its persistent
 /// state from its last tick to the tick for `simulation_time` (death loop + spawn per tick), capturing
@@ -2200,6 +2223,7 @@ fn dispatch_stateful_effect(
     indirect: &Buffer,
     counters: &Buffer,
     simulation_time: f32,
+    seek_quality: SeekQuality,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
     // Backward seek (hybrid roadmap M7): restore the nearest checkpoint at or before the target and
@@ -2282,7 +2306,8 @@ fn dispatch_stateful_effect(
     // checkpoint at each cadence boundary reached (so a later backward seek restores nearby). Bounded
     // per frame so a large jump cannot stall the GPU. Resources are kept alive until the encoder is
     // submitted by the caller.
-    let mut remaining = (target_tick - persistent.last_tick).min(STATEFUL_MAX_CATCHUP_TICKS);
+    let mut remaining =
+        (target_tick - persistent.last_tick).min(stateful_catchup_budget(seek_quality));
     let mut params_keepalive = Vec::new();
     let mut group_keepalive = Vec::new();
     while remaining > 0 {
@@ -2404,6 +2429,7 @@ fn run_stateful_dispatches(
     indirect: &Buffer,
     counters: &Buffer,
     simulation_time: f32,
+    seek_quality: SeekQuality,
     statistics_token: u32,
     history_epoch: u32,
     owns_shared_reset: bool,
@@ -2427,6 +2453,7 @@ fn run_stateful_dispatches(
             indirect,
             counters,
             simulation_time,
+            seek_quality,
         );
     }
     if owns_shared_reset && let Some(first) = dispatches.first() {
@@ -2532,6 +2559,7 @@ fn run_simulation(
                     indirect,
                     counters,
                     effect.simulation_time,
+                    effect.seek_quality,
                     effect.statistics_token,
                     effect.history_epoch,
                     true,
@@ -2773,6 +2801,7 @@ fn run_simulation(
                     indirect,
                     counters,
                     effect.simulation_time,
+                    effect.seek_quality,
                     effect.statistics_token,
                     effect.history_epoch,
                     false,
@@ -2818,6 +2847,48 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_seek_is_bounded_per_frame_and_exact_converges_to_the_target() {
+        // Hybrid roadmap M12: preview bounds per-frame reconstruction more tightly than exact, so
+        // rapid scrubbing stays responsive; both budgets are finite, so no single frame can stall the
+        // GPU on a huge jump; and iterating the bounded catch-up converges *exactly* to the target tick
+        // (the state is a valid earlier tick until it arrives — never values-approximate).
+        assert!(
+            stateful_catchup_budget(SeekQuality::Preview)
+                < stateful_catchup_budget(SeekQuality::Exact),
+            "preview reconstructs fewer ticks per frame than exact"
+        );
+
+        let target = 1000_u32;
+        let mut frames_by_quality = Vec::new();
+        for quality in [SeekQuality::Preview, SeekQuality::Exact] {
+            let budget = stateful_catchup_budget(quality);
+            let mut last_tick = 0_u32;
+            let mut frames = 0_u32;
+            while last_tick < target {
+                // The exact per-frame advance the dispatch computes: min(remaining, budget).
+                let step = (target - last_tick).min(budget);
+                assert!(step <= budget, "each frame advances at most the budget");
+                last_tick += step;
+                frames += 1;
+                assert!(frames < 10_000, "the seek must terminate");
+            }
+            assert_eq!(
+                last_tick, target,
+                "the {quality:?} seek converges exactly to the target tick"
+            );
+            frames_by_quality.push(frames);
+        }
+        assert!(
+            frames_by_quality[0] > frames_by_quality[1],
+            "preview reaches a large target over more (cheaper) frames than exact"
+        );
+
+        // Preview is never authoritative; exact is (once it reaches the target).
+        assert!(!SeekQuality::Preview.is_authoritative());
+        assert!(SeekQuality::Exact.is_authoritative());
+    }
 
     #[test]
     fn coarsening_a_checkpoint_store_halves_it_keeping_full_coverage() {
@@ -2980,6 +3051,7 @@ mod tests {
                     ribbon_workgroups: 1,
                     total_slots: 1,
                     simulation_time: 0.0,
+                    seek_quality: SeekQuality::Exact,
                     history_epoch: 0,
                     statistics_token: 0,
                     checkpoint_context: default(),

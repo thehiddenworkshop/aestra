@@ -348,6 +348,7 @@ mod tests {
                 ribbon_workgroups: 1,
                 total_slots: 8,
                 simulation_time: 1.5,
+                seek_quality: aestra_runtime::SeekQuality::Exact,
                 history_epoch: 0,
                 statistics_token: 42,
                 checkpoint_context: default(),
