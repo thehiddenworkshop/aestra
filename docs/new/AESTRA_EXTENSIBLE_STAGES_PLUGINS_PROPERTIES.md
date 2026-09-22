@@ -2429,6 +2429,31 @@ and:
 
 ## Milestone 3 — explicit authored stages and format v4
 
+> **Status — format v4 cut, via a flat-in-memory DTO (landed in 3 stages).** Authored format is now
+> **v4**: an emitter's modules live in named lifecycle containers (`emitter_spawn` / `emitter_update` /
+> `particle_spawn` / `particle_update`) plus explicit `simulation_stages`, `simulation_domain` is a
+> namespaced `DomainTypeId`, and the effect reserves its own `lifecycle` slots. Per the agreed approach
+> the **in-memory model stays flat**: `aestra-core::authored_v4::AuthoredV4Document` is a serde DTO that
+> nests on save (`to_pretty_ron`/`save_ron`) and flattens on load (`from_ron`), reconstructing each
+> module's stage from its container, so the ~300 flat `modules`/`stage` call sites and the editor did not
+> churn. Simulation stages get a `StageId` derived deterministically from their name
+> (`StageId::for_name`), so round trips are stable without the flat model storing a per-stage UUID.
+> `StageId` and the built-in `aestra.stage.*` / `aestra.domain.*` id consts are registered. **Migration
+> stance (pre-release):** the legacy v2→v3 migration was dropped and no runtime v3→v4 migration is
+> carried — a one-shot `migrate_v3_to_v4` example converted the 24 in-repo assets, which are committed in
+> v4; older formats now load as an explicit `UnsupportedFormat` error. Acceptance met: v3 assets migrated
+> deterministically; v4 round-trips without registry access (DTO + RON round-trip tests); the standard
+> lifecycle cannot be reordered/deleted (fixed named slots in the format); repeated same-type modules
+> stay valid; simulation stages have stable ids + first-appearance order; the format-contract test is
+> re-pinned to v4. **Deliberately deferred (pre-release lets us re-cut the format, so no "one migration"
+> constraint):** the renderer `payload` generalization rides with M8's renderer work; effect-level
+> module *storage* in the flat model (the reserved effect `lifecycle` is currently always empty); the
+> in-memory containment refactor and editor stage-section UI ride with M9; and a dedicated Layer-1
+> structural-validation pass beyond the total DTO conversion + existing `validate()`. Two pre-existing
+> `aestra-editor` material-editor tests fail independently of this work (an in-progress
+> `material_function_editor` refactor already uncommitted at the start), so effect-format changes are
+> otherwise green across the workspace.
+
 ### Goal
 
 Make stages first-class semantic objects — and land **every authored-format shape change in one v4
