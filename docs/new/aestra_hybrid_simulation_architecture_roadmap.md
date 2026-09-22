@@ -2914,6 +2914,22 @@ Add previous/current state presentation interpolation for stateful particles so 
 
 **Goal:** Make performance policy evidence-driven.
 
+> **Status — first crossover measured.** `aestra-bench --gpu-sim` runs the same semantic workload two
+> ways on real GPU compute — the production analytic `simulate` and the M6 stateful death loop + present
+> — and measures the per-frame GPU time of each (timestamp queries, median/p95) across a matrix of
+> capacity × occupancy, reporting persistent bytes/slot and dispatch count and a per-cell crossover, to
+> JSON under `benchmarks/gpu-baselines/`. The documented crossover matrix and interpretation live in
+> `docs/new/aestra_m9_crossover_findings.md` (measured on an RTX 4070 SUPER). It answers the two
+> acceptance-criteria questions: for a simple effect analytic is cheaper in most cells (stateful wins at
+> small capacity + low occupancy, where the cheap Euler step beats reconstruction and dispatch overhead
+> dominates), and sparse capacity hurts analytic badly — it pays ~full-capacity cost regardless of
+> occupancy (identical time at 5 % and 100 % for capacity 131 072), since it dispatches over every slot
+> every frame. Per the milestone, the runtime does **not** auto-switch on this. **Still to do:** the
+> richer sweeps the milestone lists — curve-heavy analytic effects (which shift more cells to stateful),
+> more hardware, seek/checkpoint cost, and the analytic-kernel experiments (compact active worklist,
+> per-emitter dispatch, specialized simple kernels) whose need the non-monotonic partial-fill cost hints
+> at.
+
 ### Extend `aestra-bench`
 
 Add identical semantic workloads implemented as:
