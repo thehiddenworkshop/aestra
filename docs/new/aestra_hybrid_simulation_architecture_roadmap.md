@@ -3206,6 +3206,31 @@ replace preview with authoritative result
 
 # Milestone 13 — Generic staged simulation plan
 
+> **Status — staged infrastructure landed and GPU-conformance-proven (unified M13).** The generic
+> multi-pass description is a portable `aestra_runtime::staged` module: `StagedPlan` = named
+> `StagedResource`s (each `bytes`-sized, optionally `ping_pong` double-buffered, `Persistent`
+> [checkpointed] or `Transient` scratch) + an ordered list of `StagedPass`es (a shader entry, its read
+> and write resources, a `StagedDispatch` shape, and an iteration count). `validate()` checks unique
+> resources and that every pass reference resolves and has a non-zero dispatch/≥1 iteration;
+> `total_dispatches()` and `checkpointed_resources()` size the timestamp queries and the checkpoint
+> snapshot. Nothing in it depends on a GPU. The first validation workload is **2D diffusion** — one
+> explicit periodic-grid Jacobi step (`diffuse_2d_step`, only `+ - *`, no trig, fully deterministic) as
+> the CPU reference, and `aestra_gpu::STAGED_DIFFUSION_WGSL` as the GPU pass. A small **plan-driven
+> executor** in `staged_conformance.rs` allocates the ping-pong grid and runs the `diffuse` pass for the
+> plan's iteration count, each iteration a *separate* compute pass (so the read-after-write between
+> iterations is an ordered barrier), swapping front/back and timing each pass with GPU timestamp
+> queries. All five acceptance criteria are proven on the real GPU (RTX 4070 SUPER):
+> `staged_diffusion_ordered_passes_match_the_cpu_reference` shows multiple ordered passes execute
+> deterministically, reproduce the CPU reference, and record one timestamp interval per dispatch
+> (`total_dispatches`); `staged_diffusion_checkpoint_and_replay_reproduces_the_uninterrupted_run` shows
+> the ping-pong state survives a checkpoint (its front buffer) and replays to the identical field. Plus
+> `aestra-runtime` unit tests (plan validation, diffusion conservation/determinism, CPU
+> checkpoint/replay) and a naga-validation test for the pass. **Still to do:** promoting the executor
+> from the conformance harness into a first-party render-backend resource, and wiring a staged module
+> through authoring/compiler — both land with M14's fluid workload, which drives this infrastructure.
+> Per the M14 note, the fluid *solver* itself ships as a GPU-only plugin; this staged plan stays
+> first-party.
+
 **Goal:** Build multi-pass infrastructure before implementing real fluids.
 
 ### Runtime/compiler

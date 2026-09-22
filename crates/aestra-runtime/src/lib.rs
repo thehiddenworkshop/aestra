@@ -12,8 +12,13 @@ mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
+mod staged;
 mod stateful;
 pub use host_transform::CompiledHostTransformTrack;
+pub use staged::{
+    diffuse_2d, diffuse_2d_step, StagedDispatch, StagedPass, StagedPlan, StagedPlanError,
+    StagedResource, StagedResourceLifetime,
+};
 pub use stateful::{
     Collider, ColliderShape, SpawnShape, StatefulConfig, StatefulSimulation, MAX_COLLIDERS,
 };

@@ -771,6 +771,45 @@ pub fn stateful_simulation_wgsl() -> String {
     )
 }
 
+/// The 2D-diffusion compute pass — the first staged-simulation validation workload (hybrid roadmap
+/// M13). One explicit (Jacobi) diffusion step on a periodic grid: it reads the front grid buffer and
+/// writes the back, and the staged executor ping-pongs them across iterations. Bindings match the
+/// staged executor's convention — read resources, then write resources, then `params` — over the
+/// `diffuse` pass of a [`aestra_runtime::StagedPlan`]. `params` is [`STAGED_DIFFUSION_PARAM_WORDS`]
+/// `u32`s: `[width, height, rate_bits]`. Uses only `+ - *` (no trig), so it reproduces
+/// `aestra_runtime::diffuse_2d_step` bit-for-bit, and diffusion is numerically damping so any residual
+/// rounding decays rather than amplifies.
+pub const STAGED_DIFFUSION_PARAM_WORDS: usize = 3;
+
+pub const STAGED_DIFFUSION_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read> grid_in: array<f32>;
+@group(0) @binding(1) var<storage, read_write> grid_out: array<f32>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
+
+@compute @workgroup_size(8, 8, 1)
+fn diffuse(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let width = params[0];
+    let height = params[1];
+    let rate = bitcast<f32>(params[2]);
+    let x = gid.x;
+    let y = gid.y;
+    if (x >= width || y >= height) { return; }
+    // Periodic wrap at the edges — no boundary special-casing to diverge on. The unused select branch
+    // may wrap in u32 (defined) but is never the chosen value.
+    let left = select(x - 1u, width - 1u, x == 0u);
+    let right = select(x + 1u, 0u, x == width - 1u);
+    let up = select(y - 1u, height - 1u, y == 0u);
+    let down = select(y + 1u, 0u, y == height - 1u);
+    let center = grid_in[y * width + x];
+    // Neighbour sum in the same left, right, up, down order as the CPU reference.
+    let neighbours = grid_in[y * width + left]
+        + grid_in[y * width + right]
+        + grid_in[up * width + x]
+        + grid_in[down * width + x];
+    grid_out[y * width + x] = center + rate * (neighbours - 4.0 * center);
+}
+"#;
+
 impl GpuEffectArtifact {
     /// Builds the full artifact including capacity-sized particle storage. Use this
     /// when persistent GPU particle buffers are first created or resized; the

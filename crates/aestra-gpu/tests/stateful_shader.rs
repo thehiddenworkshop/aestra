@@ -118,3 +118,16 @@ fn the_unified_stateful_module_composes_into_valid_wgsl_with_all_three_entry_poi
         );
     }
 }
+
+#[test]
+fn staged_diffusion_pass_composes_into_valid_wgsl() {
+    // The M13 staged validation workload: the 2D-diffusion pass must parse, validate, and expose the
+    // `diffuse` entry the staged executor dispatches.
+    let wgsl = aestra_gpu::STAGED_DIFFUSION_WGSL;
+    assert_valid_wgsl("staged diffusion", wgsl);
+    let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+    assert!(
+        module.entry_points.iter().any(|e| e.name == "diffuse"),
+        "the staged diffusion module exposes the diffuse entry point"
+    );
+}
