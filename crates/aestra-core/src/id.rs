@@ -71,3 +71,28 @@ semantic_id!(MaterialFunctionId);
 semantic_id!(MaterialFunctionInputId);
 semantic_id!(MaterialFunctionOutputId);
 semantic_id!(MaterialPresetId);
+semantic_id!(StageId);
+
+impl StageId {
+    /// A deterministic stage id derived from a name (extensible-stages M3). Simulation stages are
+    /// identified by their authored name in the flat in-memory model, so their `StageId` is derived
+    /// from that name rather than randomly generated — the same name always yields the same id, so a
+    /// v4 round trip is stable without the flat model storing a separate per-stage UUID.
+    pub fn for_name(name: &str) -> Self {
+        // Two FNV-1a passes with distinct offsets fill the 128 bits deterministically (no deps, stable
+        // across platforms).
+        const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+        let fnv = |seed: u64| -> u64 {
+            let mut hash = seed;
+            for byte in name.as_bytes() {
+                hash ^= u64::from(*byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+            hash
+        };
+        let high = fnv(FNV_OFFSET);
+        let low = fnv(FNV_OFFSET ^ 0x9E37_79B9_7F4A_7C15);
+        Self::from_u128((u128::from(high) << 64) | u128::from(low))
+    }
+}
