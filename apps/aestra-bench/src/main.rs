@@ -15,6 +15,8 @@
 //! timestamped trail experiments and writes reports under `benchmarks/gpu-baselines/`.
 
 #[cfg(feature = "gpu")]
+mod gpu_sim;
+#[cfg(feature = "gpu")]
 mod gpu_trails;
 mod metrics;
 mod scenario;
@@ -64,6 +66,22 @@ fn main() {
         }
         #[cfg(feature = "gpu")]
         return;
+    }
+
+    if config.gpu_sim {
+        #[cfg(feature = "gpu")]
+        {
+            if let Err(error) = gpu_sim::run(&config) {
+                eprintln!("aestra-bench: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            eprintln!("aestra-bench: --gpu-sim requires --features gpu");
+            std::process::exit(2);
+        }
     }
 
     let scenarios: Vec<&scenario::Scenario> = if config.all {
@@ -123,6 +141,7 @@ fn main() {
 
 struct Config {
     gpu_trails: Option<String>,
+    gpu_sim: bool,
     #[cfg(feature = "gpu")]
     trail_owners: Vec<u32>,
     #[cfg(feature = "gpu")]
@@ -145,6 +164,7 @@ impl Config {
 
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut gpu_trails = None;
+        let mut gpu_sim = false;
         let mut trail_owners = None;
         let mut trail_views = None;
         let mut owner_capacity = None;
@@ -180,6 +200,7 @@ impl Config {
                 "--views" => {
                     trail_views = Some(parse_views(&next_value(&mut args, "--views")?)?);
                 }
+                "--gpu-sim" => gpu_sim = true,
                 "--scenario" => {
                     scenario = Some(next_value(&mut args, "--scenario")?);
                 }
@@ -202,6 +223,11 @@ impl Config {
         if gpu_trails.is_some() && (all || scenario.is_some()) {
             return Err("--gpu-trails cannot be combined with --scenario or --all".into());
         }
+        if gpu_sim && (all || scenario.is_some() || gpu_trails.is_some()) {
+            return Err(
+                "--gpu-sim cannot be combined with --scenario, --all or --gpu-trails".into(),
+            );
+        }
         if (trail_owners.is_some()
             || trail_views.is_some()
             || owner_capacity.is_some()
@@ -211,8 +237,10 @@ impl Config {
         {
             return Err("trail geometry, occupancy and view options require --gpu-trails rendering or sweep".into());
         }
-        if !all && scenario.is_none() && gpu_trails.is_none() {
-            return Err("expected --scenario <name>, --all or --gpu-trails <kind>".into());
+        if !all && scenario.is_none() && gpu_trails.is_none() && !gpu_sim {
+            return Err(
+                "expected --scenario <name>, --all, --gpu-trails <kind> or --gpu-sim".into(),
+            );
         }
         if frames == 0 {
             return Err("--frames must be greater than zero".into());
@@ -251,6 +279,7 @@ impl Config {
                 }
             }),
             gpu_trails,
+            gpu_sim,
             scenario,
             all,
             frames,
