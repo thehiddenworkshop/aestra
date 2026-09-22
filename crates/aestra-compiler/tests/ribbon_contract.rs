@@ -59,8 +59,9 @@ fn ribbon_lab_compiles_and_requires_native_presentation() {
 
 #[test]
 fn ribbon_strand_count_defaults_validates_and_rejects_conflicting_shared_links() {
+    // Drop the strand_count field so deserialization must apply the serde default (1).
     let legacy = include_str!("../../../assets/test/effects/ribbon_lab.aestra.ron")
-        .replace(", strand_count: 3", "");
+        .replace("strand_count: 3,", "");
     let legacy = EffectAsset::from_ron(&legacy).unwrap();
     assert!(matches!(
         legacy.emitters[0].renderers[0].properties,

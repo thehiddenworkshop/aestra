@@ -200,7 +200,7 @@ fn add_mesh_renderer_chooses_source_and_creates_one_undoable_edit() {
             SemanticTarget::Renderer(renderer.id)
         );
         assert_eq!(
-            EffectAsset::from_ron(&ron::to_string(&after).unwrap()).unwrap(),
+            EffectAsset::from_ron(&after.to_pretty_ron().unwrap()).unwrap(),
             after
         );
         f.app
@@ -336,7 +336,7 @@ fn single_mesh_drop_on_card_or_input_is_one_undoable_assignment() {
             .trigger(crate::history::HistoryAction::Redo);
         assert_eq!(f.effect(), after);
         assert_eq!(std::fs::read(path).unwrap(), bytes);
-        let text = ron::to_string(&after).unwrap();
+        let text = after.to_pretty_ron().unwrap();
         assert_eq!(EffectAsset::from_ron(&text).unwrap(), after);
     }
 }

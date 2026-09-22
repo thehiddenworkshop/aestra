@@ -2736,7 +2736,9 @@ mod tests {
         let mut disk = test_support::effect_with_timing_slack();
         disk.name = "User's newer sample".into();
         disk.save_ron(&path).unwrap();
-        let source = ron::ser::to_string(&test_support::effect_with_timing_slack()).unwrap();
+        let source = test_support::effect_with_timing_slack()
+            .to_pretty_ron()
+            .unwrap();
         let session = EditorSession::from_embedded_sample(&source);
         assert!(session.source_path.is_none());
         assert_eq!(EffectAsset::load_ron(&path).unwrap(), disk);

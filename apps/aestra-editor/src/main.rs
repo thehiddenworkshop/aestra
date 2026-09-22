@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn bundled_effect_is_valid() {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
-        assert_eq!(effect.format_version, 3);
+        assert_eq!(effect.format_version, 4);
         assert_eq!(effect.emitters.len(), 4);
     }
 

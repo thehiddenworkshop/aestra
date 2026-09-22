@@ -530,7 +530,10 @@ impl EffectAsset {
                 current: crate::CURRENT_FORMAT_VERSION,
             });
         }
-        let asset: Self = ron::from_str(source)?;
+        // Authored format v4 stores stages structurally (extensible-stages M3); parse the nested v4
+        // document and flatten it into the in-memory model.
+        let document: crate::AuthoredV4Document = ron::from_str(source)?;
+        let asset = document.into_effect();
         asset.validate()?;
         Ok(asset)
     }
@@ -541,8 +544,11 @@ impl EffectAsset {
 
     pub fn to_pretty_ron(&self) -> Result<String, AssetError> {
         self.validate()?;
+        // Serialize through the nested v4 document shape (extensible-stages M3).
+        let document = crate::AuthoredV4Document::from_effect(self)
+            .map_err(|error| AssetError::V4Conversion(error.to_string()))?;
         Ok(ron::ser::to_string_pretty(
-            self,
+            &document,
             ron::ser::PrettyConfig::new().depth_limit(12),
         )?)
     }
@@ -3209,6 +3215,8 @@ pub enum AssetError {
     Migration { from: u32, to: u32, message: String },
     #[error("effect validation failed: {0}")]
     Validation(#[from] ValidationReport),
+    #[error("could not represent the effect in authored format v4: {0}")]
+    V4Conversion(String),
 }
 
 fn register_id(

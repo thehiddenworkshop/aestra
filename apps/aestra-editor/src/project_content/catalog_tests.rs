@@ -245,7 +245,7 @@ fn project_catalog_preserves_invalid_and_unsupported_files() {
     let future_source = test_support::effect_with_timing_slack()
         .to_pretty_ron()
         .unwrap()
-        .replacen("format_version: 3", "format_version: 99", 1);
+        .replacen("format_version: 4", "format_version: 99", 1);
     fs::write(&unsupported_path, future_source).unwrap();
 
     let catalog = ProjectEffectCatalog::scan(temporary.path());

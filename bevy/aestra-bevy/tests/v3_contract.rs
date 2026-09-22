@@ -10,7 +10,7 @@ use std::sync::Arc;
 fn immutable_v3_contract_preserves_its_public_shape() {
     let effect = contract_effect();
 
-    assert_eq!(effect.format_version, 3);
+    assert_eq!(effect.format_version, 4);
     assert_eq!(effect.id, EffectId::from_u128(1));
     assert_eq!(effect.emitters.len(), 1);
     assert_eq!(effect.emitters[0].name, "Contract Emitter");
@@ -38,9 +38,10 @@ fn immutable_textured_contract_compiles_with_a_texture_path() {
 }
 
 #[test]
-fn strict_loading_reports_that_format_v2_requires_a_migration_path() {
+fn strict_loading_rejects_a_non_current_format() {
+    // Pre-release carries no migrations, so an older format is an explicit UnsupportedFormat error.
     let source = contract_effect().to_pretty_ron().unwrap().replacen(
-        "format_version: 3",
+        "format_version: 4",
         "format_version: 2",
         1,
     );
@@ -49,7 +50,7 @@ fn strict_loading_reports_that_format_v2_requires_a_migration_path() {
         error,
         AssetError::UnsupportedFormat {
             found: 2,
-            current: 3
+            current: 4
         }
     ));
 }
@@ -61,12 +62,12 @@ fn immutable_v3_contract_has_stable_pretty_serialization() {
 
     assert_eq!(
         serialized.len(),
-        6_014,
+        6_923,
         "update only for an intentional format change"
     );
     assert_eq!(
         fnv1a64(serialized.as_bytes()),
-        0x3f30_7f7b_45c0_9ffc,
+        0x41d3_b334_ee6a_e057,
         "update only for an intentional format change"
     );
     assert_eq!(

@@ -22,4 +22,4 @@ pub use model::*;
 pub use transform_curve::*;
 
 /// The only effect format accepted by this version of Aestra.
-pub const CURRENT_FORMAT_VERSION: u32 = 3;
+pub const CURRENT_FORMAT_VERSION: u32 = 4;
