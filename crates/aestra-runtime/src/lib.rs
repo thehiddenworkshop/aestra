@@ -14,7 +14,9 @@ pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
 mod stateful;
 pub use host_transform::CompiledHostTransformTrack;
-pub use stateful::{SpawnShape, StatefulConfig, StatefulSimulation};
+pub use stateful::{
+    Collider, ColliderShape, SpawnShape, StatefulConfig, StatefulSimulation, MAX_COLLIDERS,
+};
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
@@ -658,6 +660,10 @@ pub struct CompiledEmitter {
     /// The derived execution class of this emitter-region's simulation island (hybrid roadmap M2/M3).
     /// Every current effect is `Analytic`; the compiler derives this from module requirements.
     pub simulation_class: SimulationClass,
+    /// Collision primitives authored on this emitter's collision modules (hybrid roadmap M10), in
+    /// module order, applied by the stateful integrator after each tick. Empty for emitters without a
+    /// collision module.
+    pub colliders: Vec<aestra_core::Collider>,
     pub execution: ExecutionPlan,
     pub renderers: Vec<RendererPlan>,
 }

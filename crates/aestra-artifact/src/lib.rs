@@ -5,8 +5,8 @@
 //! independent from Rust's in-memory representation and makes version changes reviewable.
 
 use aestra_core::{
-    AssetId, AssetKind, BlendMode, ChoreographyEventId, ChoreographyEventPayload, ColorKey, Curve,
-    CurveKey, EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EffectPlaybackMode,
+    AssetId, AssetKind, BlendMode, ChoreographyEventId, ChoreographyEventPayload, Collider, ColorKey,
+    Curve, CurveKey, EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EffectPlaybackMode,
     EmitterId, EmitterRegionId, EmitterShape, EmitterTransform, FlipbookPlaybackMode,
     FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId, PropertyEvaluationDomain,
     RendererId, ScalarRange, UvRect, ValueType, Vec3Range,
@@ -342,6 +342,10 @@ struct EmitterV1 {
     seed_index: u32,
     max_particles: u32,
     simulation_class: SimulationClassV1,
+    /// Collision primitives resolved by the stateful backend (hybrid roadmap M10). Defaulted for
+    /// artifacts baked before collision support, so older artifacts still decode.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    colliders: Vec<Collider>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
 }
@@ -1602,6 +1606,7 @@ impl EmitterV1 {
             seed_index: emitter.seed_index,
             max_particles: emitter.max_particles,
             simulation_class: emitter.simulation_class.into(),
+            colliders: emitter.colliders.clone(),
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -1636,6 +1641,7 @@ impl EmitterV1 {
             seed_index: self.seed_index,
             max_particles: self.max_particles,
             simulation_class: self.simulation_class.into(),
+            colliders: self.colliders,
             execution: self
                 .execution
                 .decode(parameters, &format!("{path}.execution"))?,

@@ -172,6 +172,9 @@ struct StatefulDispatch {
     gravity: [f32; 3],
     /// The effect's 64-bit spawn seed.
     seed: u64,
+    /// Collision primitives resolved after each tick (hybrid roadmap M10), capped at `MAX_COLLIDERS`
+    /// when packed into the params buffer. Empty for emitters without a collision module.
+    colliders: Vec<aestra_core::Collider>,
 }
 
 impl StatefulDispatch {
@@ -202,10 +205,65 @@ impl StatefulDispatch {
             self.gravity[0].to_bits(),
             self.gravity[1].to_bits(),
             self.gravity[2].to_bits(),
+            self.colliders.len() as u32,
         ] {
             hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
         }
+        // Colliders change the simulation, so fold each one's shape and response into the fingerprint
+        // (hybrid roadmap M10): editing a collider invalidates the persistent state and checkpoints.
+        for collider in &self.colliders {
+            let (kind, a, b) = collider_geometry(collider);
+            for bits in [
+                kind,
+                a[0].to_bits(),
+                a[1].to_bits(),
+                a[2].to_bits(),
+                b[0].to_bits(),
+                b[1].to_bits(),
+                b[2].to_bits(),
+                collider.restitution.to_bits(),
+                collider.friction.to_bits(),
+                u32::from(collider.kill),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
         hash
+    }
+}
+
+/// Decodes a collider into the `(kind, a, b)` param packing shared by the GPU kernel and CPU reference
+/// (hybrid roadmap M10): `kind` 0 = plane (`a` = unit normal, `b.x` = distance), 1 = sphere (`a` =
+/// center, `b.x` = radius), 2 = box (`a` = min, `b` = max).
+fn collider_geometry(collider: &aestra_core::Collider) -> (u32, [f32; 3], [f32; 3]) {
+    match collider.shape {
+        aestra_core::ColliderShape::Plane { normal, distance } => {
+            (0, normal, [distance, 0.0, 0.0])
+        }
+        aestra_core::ColliderShape::Sphere { center, radius } => (1, center, [radius, 0.0, 0.0]),
+        aestra_core::ColliderShape::Aabb { min, max } => (2, min, max),
+    }
+}
+
+/// Packs the emitter's colliders into the params buffer's collider block (count word at index 26, then
+/// up to `MAX_COLLIDERS` 10-word records from index 27), mirroring `aestra_gpu::STATEFUL_COLLISION_WGSL`
+/// and the CPU reference's `resolve_colliders`.
+fn pack_colliders(colliders: &[aestra_core::Collider], words: &mut [u32]) {
+    let count = colliders.len().min(aestra_runtime::MAX_COLLIDERS);
+    words[26] = count as u32;
+    for (index, collider) in colliders.iter().take(count).enumerate() {
+        let base = 27 + index * 10;
+        let (kind, a, b) = collider_geometry(collider);
+        words[base] = kind;
+        words[base + 1] = a[0].to_bits();
+        words[base + 2] = a[1].to_bits();
+        words[base + 3] = a[2].to_bits();
+        words[base + 4] = b[0].to_bits();
+        words[base + 5] = b[1].to_bits();
+        words[base + 6] = b[2].to_bits();
+        words[base + 7] = collider.restitution.to_bits();
+        words[base + 8] = collider.friction.to_bits();
+        words[base + 9] = u32::from(collider.kill);
     }
 }
 
@@ -719,7 +777,7 @@ pub(crate) fn prepare_gpu_effects(
                 .filter(|(_, compiled)| {
                     compiled.enabled && compiled.simulation_class != SimulationClass::Analytic
                 })
-                .filter_map(|(index, _)| {
+                .filter_map(|(index, compiled)| {
                     artifact
                         .emitters
                         .get(index)
@@ -755,6 +813,7 @@ pub(crate) fn prepare_gpu_effects(
                             ],
                             gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
                             seed,
+                            colliders: compiled.colliders.clone(),
                         })
                 })
                 .collect()
@@ -2142,7 +2201,8 @@ fn dispatch_stateful_effect(
     // The production params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); `spawn_per_tick`
     // varies across advance ticks and `subtick` is the presentation-interpolation time used by present.
     let params_bytes = |spawn_per_tick: u32, subtick: f32| -> Vec<u8> {
-        let words: [u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS] = [
+        let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+        words[..26].copy_from_slice(&[
             capacity,
             spawn_per_tick,
             dispatch.seed as u32,
@@ -2169,7 +2229,10 @@ fn dispatch_stateful_effect(
             dispatch.shape_half_extents[1].to_bits(),
             dispatch.shape_half_extents[2].to_bits(),
             subtick.to_bits(),
-        ];
+        ]);
+        // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
+        // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
+        pack_colliders(&dispatch.colliders, &mut words);
         words.into_iter().flat_map(u32::to_le_bytes).collect()
     };
     // Clone the buffer handles (cheap Arc clones) so the bind groups don't borrow `persistent`, which
@@ -2772,6 +2835,7 @@ mod tests {
             shape_half_extents: [0.0; 3],
             gravity: [0.0, -9.81, 0.0],
             seed: 42,
+            colliders: Vec::new(),
         };
         assert_eq!(
             base.fingerprint(),
@@ -2791,6 +2855,29 @@ mod tests {
             base.fingerprint(),
             reseeded.fingerprint(),
             "seed change invalidates"
+        );
+        // A collider change invalidates the persistent state and checkpoints (hybrid roadmap M10).
+        let mut with_collider = base.clone();
+        with_collider.colliders.push(aestra_core::Collider {
+            shape: aestra_core::ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: 0.0,
+            },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        });
+        assert_ne!(
+            base.fingerprint(),
+            with_collider.fingerprint(),
+            "adding a collider invalidates"
+        );
+        let mut bouncier = with_collider.clone();
+        bouncier.colliders[0].restitution = 0.9;
+        assert_ne!(
+            with_collider.fingerprint(),
+            bouncier.fingerprint(),
+            "changing collider response invalidates"
         );
     }
 

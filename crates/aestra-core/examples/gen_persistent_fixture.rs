@@ -1,13 +1,15 @@
-//! One-off generator for the Persistent stateful test fixtures. Writes two effects through the real
+//! One-off generator for the Persistent stateful test fixtures. Writes effects through the real
 //! `save_ron` (so the RON matches the loader exactly):
 //! - `persistent_lab`: a multi-emitter effect where *every* emitter carries the Persistent solver,
 //!   exercising the pure multi-stateful GPU path.
 //! - `mixed_lab`: one analytic emitter and two stateful emitters in one effect, exercising the mixed
 //!   path (analytic reset+simulate skipping stateful slots, then the stateful dispatches filling them).
+//! - `collision_lab`: a fountain whose Collision module (which auto-promotes it to stateful) bounces
+//!   particles off a ground plane, a sphere obstacle, and a box obstacle (hybrid roadmap M10).
 
 use aestra_core::{
-    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ScalarRange,
+    Collider, ColliderShape, EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, MODULE_EMISSION,
+    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ScalarRange,
 };
 
 /// A sprite emitter tuned to clean scalar values, since the stateful integrator reads range midpoints.
@@ -75,10 +77,12 @@ fn write(effect: &EffectAsset, path: &str) {
         .emitters
         .iter()
         .filter(|emitter| {
-            emitter
-                .modules
-                .iter()
-                .any(|module| matches!(module.parameters, ModuleParameters::Persistent {}))
+            emitter.modules.iter().any(|module| {
+                matches!(
+                    module.parameters,
+                    ModuleParameters::Persistent {} | ModuleParameters::Collision { .. }
+                )
+            })
         })
         .count();
     println!(
@@ -157,4 +161,53 @@ fn main() {
         true,
     ));
     write(&mixed, "sample-project/effects/mixed_lab.aestra.ron");
+
+    // collision_lab: a single upward fountain with a Collision module (M10). Adding the module — with
+    // no manual stateful toggle — promotes the emitter to the stateful GPU path, and the integrator
+    // bounces particles off a ground plane, a sphere obstacle, and a box obstacle each fixed tick.
+    let mut collision = EffectAsset::new("Collision Lab", 3.0);
+    collision.playback_mode = EffectPlaybackMode::LoopContinuous;
+    let mut fountain = tuned_emitter(
+        "Bouncing Fountain",
+        512,
+        60.0,
+        45.0,
+        2.5,
+        [0.0, -30.0, 0.0],
+        false, // the Collision module below is what promotes it — no Persistent marker needed
+    );
+    fountain.modules.push(ModuleInstance::collision(vec![
+        // Ground plane below the spawn sphere (radius 6 at the origin) so fresh spawns start above it.
+        Collider {
+            shape: ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: -8.0,
+            },
+            restitution: 0.6,
+            friction: 0.3,
+            kill: false,
+        },
+        // A sphere obstacle up in the fountain's arc.
+        Collider {
+            shape: ColliderShape::Sphere {
+                center: [0.0, 16.0, 0.0],
+                radius: 5.0,
+            },
+            restitution: 0.85,
+            friction: 0.1,
+            kill: false,
+        },
+        // A box obstacle the particles pass through on the way up and down.
+        Collider {
+            shape: ColliderShape::Aabb {
+                min: [-6.0, 4.0, -6.0],
+                max: [6.0, 6.0, 6.0],
+            },
+            restitution: 0.4,
+            friction: 0.5,
+            kill: false,
+        },
+    ]));
+    collision.emitters.push(fountain);
+    write(&collision, "sample-project/effects/collision_lab.aestra.ron");
 }

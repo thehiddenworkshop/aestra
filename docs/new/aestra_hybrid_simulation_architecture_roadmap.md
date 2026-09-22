@@ -3013,6 +3013,32 @@ and:
 
 # Milestone 10 — Stateful collision primitives
 
+> **Status — collision landed and GPU-conformance-proven (unified M10).** The first feature that
+> semantically requires history now ships end to end. A new built-in **Collision** module
+> (`aestra.update.collision`, `MODULE_COLLISION`) carries authored colliders and declares
+> `TemporalRequirement::PreviousState` exactly like the persistent solver, so adding it — with **no
+> manual stateful toggle** — auto-promotes its emitter to `SimulationClass::Stateful`, names itself as
+> the cause, and flips the effect to restart+replay seeking (proven in
+> `the_collision_module_promotes_an_emitter_to_stateful_and_carries_its_colliders`). Three engine-neutral
+> collider shapes are supported — **plane, sphere, AABB** — with a uniform **bounce** response
+> (restitution + friction; friction < 1 gives sliding) and **kill**. The response is expressed once in
+> `aestra-runtime::stateful` (CPU reference) and once in `aestra_gpu::STATEFUL_COLLISION_WGSL` (the
+> shared GPU resolver `death_integrate` calls), using only `+ - * /`, comparisons, and `sqrt` — no trig,
+> and an explicit left-to-right `aestra_dot3` instead of the `dot` builtin so nothing contracts to an
+> FMA that could flip a contact near a boundary. Colliders flow authoring → compiled emitter → baked
+> artifact (`EmitterV1.colliders`) → `StatefulDispatch`, packed into the params buffer (a count word
+> plus up to `MAX_COLLIDERS` 10-word records) and folded into the dispatch fingerprint so editing a
+> collider invalidates the persistent state and checkpoints. **CPU/GPU fixed-tick conformance** is
+> proven on the real GPU (`gpu_collision_matches_the_cpu_reference`, matching every live particle by
+> spawn ordinal through all three shapes), and **backward seek via checkpoint/replay reproduces the
+> uninterrupted forward run with collision active** (`gpu_collision_checkpoint_seek_reaches_the_uninterrupted_state`)
+> — collision reads only the persistent state the checkpoint store already snapshots. The
+> `collision_lab` fixture (`sample-project/effects/collision_lab.aestra.ron`) is a bouncing fountain for
+> editor verification. **Still to do:** the `OnCollision` **event** semantics — surfacing per-contact
+> events from the GPU (an atomic event queue + deterministic ordering) is a separate system deferred to
+> its own increment; the collision *response* (kill/bounce) is complete and is what M11's collider input
+> providers will drive.
+
 **Goal:** Add the first real feature that semantically requires history.
 
 ### Start portable

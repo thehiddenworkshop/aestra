@@ -1,0 +1,199 @@
+(
+    format_version: 3,
+    id: "51fc12be-437c-49da-98c1-f94f6c9989dc",
+    name: "Collision Lab",
+    duration: 3.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    parameters: [],
+    emitters: [
+        (
+            id: "b40e5479-aa19-4c94-9ed1-8ee60a6765ef",
+            name: "Bouncing Fountain",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 3.0,
+            max_particles: 512,
+            simulation_domain: Particle,
+            modules: [
+                (
+                    id: "2e45ecc0-cff5-4151-a9ac-6ad713832eec",
+                    module_type: "aestra.emission.rate",
+                    stage: EmitterUpdate,
+                    enabled: true,
+                    parameters: Emission(
+                        spawn_rate: 60.0,
+                        burst_count: 12,
+                    ),
+                ),
+                (
+                    id: "b9f9ff6c-55f4-44e7-a31d-6cddeff26bb3",
+                    module_type: "aestra.spawn.shape",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Shape(
+                        shape: Sphere(
+                            radius: 6.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "b319a332-274d-404c-b3cf-4f674234fd29",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (
+                            min: 2.0,
+                            max: 3.0,
+                        ),
+                        speed: (
+                            min: 31.5,
+                            max: 58.499996,
+                        ),
+                        direction: (0.0, 1.0, 0.0),
+                        spread_degrees: 30.0,
+                        angular_velocity: (
+                            min: -2.0,
+                            max: 2.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "e4bd4f21-2c8c-4585-8df0-3fefa8fe46e5",
+                    module_type: "aestra.update.motion",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Motion(
+                        gravity: (0.0, -30.0, 0.0),
+                        drag: 0.6,
+                        turbulence: 6.0,
+                    ),
+                ),
+                (
+                    id: "5d9968f1-7929-41d4-a794-8e1825d7da1a",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (
+                            id: "63b52f09-0060-4b9c-8124-e54c70e80429",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 4.0,
+                                ),
+                                (
+                                    time: 0.35,
+                                    value: 10.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 1.0,
+                                ),
+                            ],
+                        ),
+                        opacity: (
+                            id: "65261c2f-1550-4969-8576-776321b6498e",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 0.0,
+                                ),
+                                (
+                                    time: 0.12,
+                                    value: 1.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 0.0,
+                                ),
+                            ],
+                        ),
+                        color: (
+                            id: "9badc546-3fa2-4ac8-9a6e-9354deaf6f16",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    color: (0.35, 0.75, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 0.5,
+                                    color: (0.62, 0.3, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 1.0,
+                                    color: (0.15, 0.05, 0.4, 0.0),
+                                ),
+                            ],
+                        ),
+                    ),
+                ),
+                (
+                    id: "91cad079-e621-401a-8280-a59d9b40ab57",
+                    module_type: "aestra.update.collision",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Collision(
+                        colliders: [
+                            (
+                                shape: Plane(
+                                    normal: (0.0, 1.0, 0.0),
+                                    distance: -8.0,
+                                ),
+                                restitution: 0.6,
+                                friction: 0.3,
+                                kill: false,
+                            ),
+                            (
+                                shape: Sphere(
+                                    center: (0.0, 16.0, 0.0),
+                                    radius: 5.0,
+                                ),
+                                restitution: 0.85,
+                                friction: 0.1,
+                                kill: false,
+                            ),
+                            (
+                                shape: Aabb(
+                                    min: (-6.0, 4.0, -6.0),
+                                    max: (6.0, 6.0, 6.0),
+                                ),
+                                restitution: 0.4,
+                                friction: 0.5,
+                                kill: false,
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+            renderers: [
+                (
+                    id: "fa9bdffd-c963-4dcd-8494-3a28433747b4",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    events: [],
+    dependencies: [],
+    metadata: {},
+)

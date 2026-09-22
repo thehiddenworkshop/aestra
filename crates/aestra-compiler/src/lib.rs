@@ -21,10 +21,10 @@ pub use aestra_core::{
 };
 
 use aestra_core::{
-    CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, ColorKey, Curve,
-    CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, Emitter,
-    EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
+    CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, Collider, ColorKey,
+    Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, Emitter,
+    EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_COLLISION,
+    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
     MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
     ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties,
     ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
@@ -280,6 +280,15 @@ impl ModuleRegistry {
             )),
             MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0)),
             MODULE_PERSISTENT => Some(ModuleInstance::persistent()),
+            MODULE_COLLISION => Some(ModuleInstance::collision(vec![Collider {
+                shape: aestra_core::ColliderShape::Plane {
+                    normal: [0.0, 1.0, 0.0],
+                    distance: 0.0,
+                },
+                restitution: 0.5,
+                friction: 0.2,
+                kill: false,
+            }])),
             MODULE_APPEARANCE => Some(ModuleInstance::appearance(
                 Curve::new(vec![
                     CurveKey::new(0.0, 4.0),
@@ -954,6 +963,19 @@ impl EffectCompiler {
                 .collect();
             // Every region of an emitter shares its modules, hence its simulation class (hybrid M3).
             let simulation_class = self.emitter_simulation(emitter).0;
+            // Collision colliders (hybrid roadmap M10): gathered from the emitter's enabled collision
+            // modules in order, so the stateful backend resolves them after each tick. Their presence
+            // is also what promoted the emitter to a stateful class above.
+            let colliders: Vec<Collider> = emitter
+                .modules
+                .iter()
+                .filter(|module| module.enabled)
+                .filter_map(|module| match &module.parameters {
+                    ModuleParameters::Collision { colliders } => Some(colliders.iter().copied()),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
             for region in emitter.timeline_regions() {
                 emitters.push(CompiledEmitter {
                     source: emitter.id,
@@ -968,6 +990,7 @@ impl EffectCompiler {
                     seed_index: emitter_index as u32,
                     max_particles: emitter.max_particles,
                     simulation_class,
+                    colliders: colliders.clone(),
                     execution: execution.clone(),
                     renderers: renderers.clone(),
                 });
@@ -1682,6 +1705,10 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         // the emitter's simulation class (handled in classification), and the stateful GPU backend
         // drives the dynamics from the emitter's other modules.
         ModuleParameters::Persistent {} => return None,
+        // Collision, like the persistent solver, contributes no analytic instruction: it promotes the
+        // emitter's class (handled in classification) and its colliders are gathered onto the compiled
+        // emitter for the stateful GPU backend to resolve after each tick (hybrid roadmap M10).
+        ModuleParameters::Collision { .. } => return None,
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
@@ -1937,6 +1964,7 @@ fn parameters_match(module: &ModuleInstance) -> bool {
             | (MODULE_INITIALIZE, ModuleParameters::Initialize { .. })
             | (MODULE_MOTION, ModuleParameters::Motion { .. })
             | (MODULE_PERSISTENT, ModuleParameters::Persistent {})
+            | (MODULE_COLLISION, ModuleParameters::Collision { .. })
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
 }
@@ -2359,5 +2387,26 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         })
         .with_tags(vec!["simulation", "stateful", "persistent"])
         .with_cost(6),
+        metadata(
+            MODULE_COLLISION,
+            "Collision",
+            "Collides this emitter's particles with authored planes, spheres, and boxes, bouncing \
+             (restitution + friction) or killing them on contact.",
+            "Simulation",
+            StageKind::ParticleUpdate,
+        )
+        // Resolving collisions reads and writes previous-tick position/velocity, so — like the
+        // persistent solver — this temporal requirement promotes the emitter to a stateful class
+        // (hybrid roadmap M10): no manual stateful toggle is needed.
+        .with_flow(
+            vec![A::Position, A::Velocity, A::Age],
+            vec![A::Position, A::Velocity, A::Age],
+        )
+        .with_simulation(SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..SimulationRequirements::ANALYTIC
+        })
+        .with_tags(vec!["simulation", "stateful", "collision"])
+        .with_cost(7),
     ]
 }

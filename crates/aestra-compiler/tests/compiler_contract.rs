@@ -2,10 +2,11 @@ use aestra_compiler::{
     EffectCompiler, InputEvaluationDomain, InputSourceKind, ModuleRegistry, ProjectCompileError,
 };
 use aestra_core::{
-    ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
-    EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode, Emitter, EmitterRegionId,
-    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT,
-    MODULE_SHAPE, MaterialId, MaterialInput, MaterialParameterId, MaterialProgramId,
+    ChoreographyEvent, ChoreographyEventPayload, Collider, ColliderShape, Curve, CurveKey,
+    DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode,
+    Emitter, EmitterRegionId, EmitterShape, MODULE_COLLISION, MODULE_EMISSION, MODULE_INITIALIZE,
+    MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialId, MaterialInput, MaterialParameterId,
+    MaterialProgramId,
     MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
     PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
     material::{
@@ -100,7 +101,14 @@ fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let registry = ModuleRegistry::builtin();
-    assert_eq!(registry.len(), 6);
+    assert_eq!(registry.len(), 7);
+
+    let collision = registry
+        .iter()
+        .find(|metadata| metadata.type_id.0 == "aestra.update.collision")
+        .expect("collision metadata must be registered");
+    assert_eq!(collision.display_name, "Collision");
+    assert_eq!(collision.stages, [StageKind::ParticleUpdate]);
 
     let persistent = registry
         .iter()
@@ -195,15 +203,18 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
     };
     use aestra_runtime::{SimulationClass, TemporalSemantics};
 
-    // Every built-in stays analytic except the Persistent solver, which is the one built-in that
-    // deliberately declares a previous-state dependency (hybrid roadmap M6). Existing analytic
-    // effects — which never include that marker — are unaffected.
+    // Every built-in stays analytic except the two that deliberately declare a previous-state
+    // dependency: the Persistent solver (hybrid roadmap M6) and Collision (M10). Existing analytic
+    // effects — which never include those — are unaffected.
     for metadata in ModuleRegistry::builtin().iter() {
-        if metadata.type_id.0 == "aestra.update.persistent" {
+        if metadata.type_id.0 == "aestra.update.persistent"
+            || metadata.type_id.0 == "aestra.update.collision"
+        {
             assert_eq!(
                 metadata.simulation.derived_class(),
                 SimulationClass::Stateful,
-                "the persistent solver derives Stateful"
+                "{} derives Stateful",
+                metadata.type_id.0
             );
             assert_eq!(
                 metadata.simulation.temporal_semantics(),
@@ -332,7 +343,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
     // The built-in unified registry is internally consistent and hosts the built-in modules.
     let builtin = ExtensionRegistry::builtin();
     assert!(builtin.validate().is_empty());
-    assert_eq!(builtin.modules.len(), 6);
+    assert_eq!(builtin.modules.len(), 7);
     assert!(
         builtin
             .capabilities
@@ -2062,5 +2073,99 @@ fn the_persistent_module_promotes_an_authored_effect_to_stateful_in_production()
     assert_eq!(
         compiler.compile(&analytic_asset).unwrap().seek_mode,
         SimulationSeekMode::StatelessDirect
+    );
+}
+
+#[test]
+fn the_collision_module_promotes_an_emitter_to_stateful_and_carries_its_colliders() {
+    use aestra_runtime::SimulationClass;
+    // Hybrid roadmap M10 acceptance: adding a Collision module — with no manual "stateful" toggle —
+    // promotes exactly its emitter to Stateful (it requires previous-tick state), names itself as the
+    // cause, and the compiled emitter carries the authored colliders for the stateful backend to
+    // resolve. This is the authoring → compile half of GPU collision.
+    let compiler = EffectCompiler::default();
+
+    // It is a real catalog entry the authoring UI can instantiate to a production default (a plane).
+    let instantiated = compiler
+        .registry()
+        .instantiate(&ModuleTypeId::new(MODULE_COLLISION))
+        .expect("the Collision module is in the built-in catalog");
+    assert!(matches!(
+        instantiated.parameters,
+        ModuleParameters::Collision { .. }
+    ));
+
+    let colliders = vec![
+        Collider {
+            shape: ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: 0.0,
+            },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        },
+        Collider {
+            shape: ColliderShape::Sphere {
+                center: [0.0, 2.0, 0.0],
+                radius: 1.5,
+            },
+            restitution: 0.8,
+            friction: 0.0,
+            kill: true,
+        },
+    ];
+
+    let mut asset = EffectAsset::new("Bouncing Debris", 2.0);
+    asset
+        .emitters
+        .push(Emitter::basic_sprite("Analytic Sparks", 2.0));
+    let mut debris = Emitter::basic_sprite("Colliding Debris", 2.0);
+    debris
+        .modules
+        .push(ModuleInstance::collision(colliders.clone()));
+    asset.emitters.push(debris);
+
+    asset.validate().expect("the collision effect is valid");
+
+    // Only the emitter with the collision module is promoted, and it is named as the cause.
+    let classes = compiler.classify_simulation(&asset);
+    let sparks = classes
+        .iter()
+        .find(|c| c.name == "Analytic Sparks")
+        .unwrap();
+    let debris_class = classes
+        .iter()
+        .find(|c| c.name == "Colliding Debris")
+        .unwrap();
+    assert_eq!(sparks.class, SimulationClass::Analytic);
+    assert_eq!(debris_class.class, SimulationClass::Stateful);
+    assert_eq!(
+        debris_class.promoted_by,
+        Some(ModuleTypeId::new(MODULE_COLLISION)),
+        "the Collision module is identified as the cause of promotion — no manual stateful toggle"
+    );
+
+    // End to end: the stateful emitter carries exactly the authored colliders (order preserved), and
+    // collision, like the persistent solver, seeks by restart+replay (backward seek via checkpoint).
+    let compiled = compiler.compile(&asset).unwrap();
+    assert_eq!(compiled.seek_mode, SimulationSeekMode::RestartReplay);
+    let stateful: Vec<_> = compiled
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.simulation_class == SimulationClass::Stateful)
+        .collect();
+    assert_eq!(stateful.len(), 1, "one emitter is stateful");
+    assert_eq!(
+        stateful[0].colliders, colliders,
+        "the compiled stateful emitter carries the authored colliders in order"
+    );
+    assert!(
+        compiled
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.simulation_class == SimulationClass::Analytic)
+            .all(|emitter| emitter.colliders.is_empty()),
+        "the analytic emitter carries no colliders"
     );
 }

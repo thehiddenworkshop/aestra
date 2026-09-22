@@ -511,6 +511,115 @@ fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick
 }
 "#;
 
+/// Collision resolution for the stateful GPU backend (hybrid roadmap M10): after a particle is
+/// integrated, each authored collider is applied in order, pushing the particle back onto the surface
+/// and bouncing (restitution + friction) or killing it. This is the GPU counterpart of
+/// `aestra_runtime::stateful`'s `resolve_colliders`; every operation is `+ - * /`, comparison, or
+/// `sqrt` (all IEEE-correctly-rounded — no trig), so the two match bit-for-bit, and it reads only the
+/// persistent position/velocity, so a checkpoint restore reproduces every bounce.
+///
+/// Colliders are packed into `params` starting at [`AESTRA_COLLIDER_COUNT_INDEX`]: one count word, then
+/// up to [`MAX_COLLIDERS`](aestra_runtime::MAX_COLLIDERS) records of 10 words each —
+/// `[kind, a.xyz, b.xyz, restitution, friction, kill]`. `kind` is `0` plane (`a` = unit normal,
+/// `b.x` = plane distance), `1` sphere (`a` = center, `b.x` = radius), `2` box (`a` = min, `b` = max).
+/// The including shader must declare the `params: array<u32>` binding.
+pub const STATEFUL_COLLISION_WGSL: &str = r#"
+const AESTRA_COLLIDER_COUNT_INDEX: u32 = 26u;
+const AESTRA_COLLIDER_BASE: u32 = 27u;
+const AESTRA_COLLIDER_STRIDE: u32 = 10u;
+const AESTRA_MAX_COLLIDERS: u32 = 4u;
+
+struct AestraCollision { position: vec3<f32>, velocity: vec3<f32>, killed: bool };
+
+// Left-to-right 3-component dot, matching the CPU reference's summation order exactly (the `dot`
+// builtin may contract to a fused multiply-add and round differently, which near a contact boundary
+// could flip whether a particle collides and diverge from the CPU).
+fn aestra_dot3(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+// One collider (packed at params[base .. base+10]) resolved against a particle's position/velocity.
+fn aestra_collider_at(base: u32, position: vec3<f32>, velocity: vec3<f32>) -> AestraCollision {
+    let kind = params[base + 0u];
+    let a = vec3<f32>(bitcast<f32>(params[base + 1u]), bitcast<f32>(params[base + 2u]), bitcast<f32>(params[base + 3u]));
+    let b = vec3<f32>(bitcast<f32>(params[base + 4u]), bitcast<f32>(params[base + 5u]), bitcast<f32>(params[base + 6u]));
+    let restitution = bitcast<f32>(params[base + 7u]);
+    let friction = bitcast<f32>(params[base + 8u]);
+    let kill = params[base + 9u] != 0u;
+
+    // Each shape reports (contact, outward unit normal, penetration depth >= 0).
+    var contact = false;
+    var normal = vec3<f32>(0.0, 1.0, 0.0);
+    var penetration = 0.0;
+    if (kind == 0u) {
+        // Plane: half-space below dot(normal, p) = distance.
+        let signed = aestra_dot3(a, position) - b.x;
+        contact = signed < 0.0;
+        normal = a;
+        penetration = -signed;
+    } else if (kind == 1u) {
+        // Sphere: inside the radius.
+        let delta = position - a;
+        let len2 = aestra_dot3(delta, delta);
+        let distance = sqrt(len2);
+        contact = distance < b.x;
+        if (len2 > 1e-12) { normal = delta / sqrt(len2); } else { normal = vec3<f32>(0.0, 1.0, 0.0); }
+        penetration = b.x - distance;
+    } else {
+        // AABB: inside the box; exit along the axis/face of least penetration (strict < breaks ties
+        // toward the earlier axis and toward min, matching the CPU reference exactly).
+        contact = position.x > a.x && position.x < b.x
+            && position.y > a.y && position.y < b.y
+            && position.z > a.z && position.z < b.z;
+        var best_pen = 3.4028235e38;
+        var best_normal = vec3<f32>(0.0, 1.0, 0.0);
+        let to_min_x = position.x - a.x;
+        if (to_min_x < best_pen) { best_pen = to_min_x; best_normal = vec3<f32>(-1.0, 0.0, 0.0); }
+        let to_max_x = b.x - position.x;
+        if (to_max_x < best_pen) { best_pen = to_max_x; best_normal = vec3<f32>(1.0, 0.0, 0.0); }
+        let to_min_y = position.y - a.y;
+        if (to_min_y < best_pen) { best_pen = to_min_y; best_normal = vec3<f32>(0.0, -1.0, 0.0); }
+        let to_max_y = b.y - position.y;
+        if (to_max_y < best_pen) { best_pen = to_max_y; best_normal = vec3<f32>(0.0, 1.0, 0.0); }
+        let to_min_z = position.z - a.z;
+        if (to_min_z < best_pen) { best_pen = to_min_z; best_normal = vec3<f32>(0.0, 0.0, -1.0); }
+        let to_max_z = b.z - position.z;
+        if (to_max_z < best_pen) { best_pen = to_max_z; best_normal = vec3<f32>(0.0, 0.0, 1.0); }
+        normal = best_normal;
+        penetration = best_pen;
+    }
+
+    if (!contact) { return AestraCollision(position, velocity, false); }
+    if (kill) { return AestraCollision(position, velocity, true); }
+
+    // Push out along the contact normal, reflect the inbound normal velocity by restitution, damp the
+    // tangential velocity by friction — the uniform response shared by every shape.
+    let new_position = position + normal * penetration;
+    let normal_speed = aestra_dot3(velocity, normal);
+    let tangential = velocity - normal * normal_speed;
+    var reflected = normal_speed;
+    if (normal_speed < 0.0) { reflected = -restitution * normal_speed; }
+    let new_velocity = tangential * (1.0 - friction) + normal * reflected;
+    return AestraCollision(new_position, new_velocity, false);
+}
+
+// Applies every active collider to a particle in order, returning the resolved state and whether it was
+// killed. Mirrors aestra_runtime::stateful::resolve_colliders.
+fn aestra_resolve_colliders(position: vec3<f32>, velocity: vec3<f32>) -> AestraCollision {
+    var pos = position;
+    var vel = velocity;
+    let count = min(params[AESTRA_COLLIDER_COUNT_INDEX], AESTRA_MAX_COLLIDERS);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let base = AESTRA_COLLIDER_BASE + i * AESTRA_COLLIDER_STRIDE;
+        let r = aestra_collider_at(base, pos, vel);
+        if (r.killed) { return AestraCollision(pos, vel, true); }
+        pos = r.position;
+        vel = r.velocity;
+    }
+    return AestraCollision(pos, vel, false);
+}
+"#;
+
 /// The module-scope bindings the unified stateful simulation module ([`stateful_simulation_wgsl`])
 /// declares, shared across its `death_integrate` / `spawn` / `present` entry points. The persistent
 /// state, the free list and its atomic count, the atomic spawn counter, the constant per-dispatch
@@ -542,8 +651,10 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset,
 /// turbulence, shape_kind, shape_radius, half_x, half_y, half_z, subtick]` (floats stored as bits;
 /// `shape_kind` 0 = point, 1 = sphere, 2 = box; `subtick` is the presentation-interpolation time in
-/// seconds since the last tick).
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 26;
+/// seconds since the last tick), followed by the collider block (hybrid roadmap M10): a collider-count
+/// word at index 26, then up to four 10-word collider records from index 27 (see
+/// [`STATEFUL_COLLISION_WGSL`]).
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 67;
 
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
@@ -570,13 +681,20 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
-        state[base + 3u] = vx;
-        state[base + 4u] = vy;
-        state[base + 5u] = vz;
-        state[base + 0u] = state[base + 0u] + vx * dt;
-        state[base + 1u] = state[base + 1u] + vy * dt;
-        state[base + 2u] = state[base + 2u] + vz * dt;
-        let new_age = age + dt;
+        let px = state[base + 0u] + vx * dt;
+        let py = state[base + 1u] + vy * dt;
+        let pz = state[base + 2u] + vz * dt;
+        // Collision: resolve the authored colliders against the freshly integrated state (M10). A kill
+        // forces the death condition below; a bounce rewrites position/velocity.
+        let collision = aestra_resolve_colliders(vec3<f32>(px, py, pz), vec3<f32>(vx, vy, vz));
+        state[base + 0u] = collision.position.x;
+        state[base + 1u] = collision.position.y;
+        state[base + 2u] = collision.position.z;
+        state[base + 3u] = collision.velocity.x;
+        state[base + 4u] = collision.velocity.y;
+        state[base + 5u] = collision.velocity.z;
+        var new_age = age + dt;
+        if (collision.killed) { new_age = lifetime; }
         state[base + 6u] = new_age;
         if (new_age >= lifetime) {
             state[base + 7u] = 0.0; // mark the slot free
@@ -649,7 +767,7 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub fn stateful_simulation_wgsl() -> String {
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
-         {STATEFUL_PRESENT_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
+         {STATEFUL_PRESENT_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
     )
 }
 

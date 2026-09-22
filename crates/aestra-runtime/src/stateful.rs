@@ -11,6 +11,8 @@
 
 use crate::{DEFAULT_PLAYBACK_TICK_RATE, ParticleSample, SimulationClass, SimulationStateLayout};
 
+pub use aestra_core::{Collider, ColliderShape};
+
 /// The volume new particles spawn within (hybrid roadmap M6). Sampled per particle from deterministic
 /// uniforms, trig-free so the GPU reproduces it bit-for-bit.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -22,6 +24,10 @@ pub enum SpawnShape {
     /// An axis-aligned box spanning `[-half_extents, half_extents]`.
     Box { half_extents: [f32; 3] },
 }
+
+/// The maximum colliders one stateful emitter carries (hybrid roadmap M10). Packed into the params
+/// buffer, so kept small; enough for a ground plane plus a few obstacles.
+pub const MAX_COLLIDERS: usize = 4;
 
 /// Fixed configuration for the prototype stateful integrator. Richer than a single speed/lifetime:
 /// per-particle random speed and lifetime ranges, an authored launch direction with a spread cone,
@@ -51,6 +57,11 @@ pub struct StatefulConfig {
     /// Procedural turbulence strength: a per-particle, per-axis value-noise acceleration that evolves
     /// with the particle's age. `0` disables it.
     pub turbulence: f32,
+    /// Collision primitives applied after integration each tick (hybrid roadmap M10). Only the first
+    /// `collider_count` are active; the rest are ignored.
+    pub colliders: [Collider; MAX_COLLIDERS],
+    /// The number of active entries in `colliders` (`0` disables collision).
+    pub collider_count: u32,
     /// Maximum live particles; spawning stops at this bound (bounded allocation).
     pub capacity: u32,
 }
@@ -152,6 +163,21 @@ impl StatefulSimulation {
         turbulence_acceleration(seed, ordinal, age, strength)
     }
 
+    /// Resolves the config's colliders against a particle's post-integration `position`/`velocity`,
+    /// returning whether it was killed. Canonical for both this CPU reference and the GPU death loop.
+    pub fn resolve_colliders(
+        config: &StatefulConfig,
+        position: &mut [f32; 3],
+        velocity: &mut [f32; 3],
+    ) -> bool {
+        resolve_colliders(
+            &config.colliders,
+            config.collider_count,
+            position,
+            velocity,
+        )
+    }
+
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;
@@ -173,7 +199,20 @@ impl StatefulSimulation {
                 particle.velocity[axis] = damped;
                 particle.position[axis] += damped * dt;
             }
-            particle.age += dt;
+            // Collision resolution against the authored colliders, in order. A killed particle is
+            // retired immediately by forcing `age == lifetime` so the shared death check retires it
+            // (matching the GPU death loop, which frees the slot on the same condition).
+            let killed = resolve_colliders(
+                &self.config.colliders,
+                self.config.collider_count,
+                &mut particle.position,
+                &mut particle.velocity,
+            );
+            if killed {
+                particle.age = particle.lifetime;
+            } else {
+                particle.age += dt;
+            }
         }
         self.particles
             .retain(|particle| particle.age < particle.lifetime);
@@ -376,6 +415,113 @@ fn normalize_or(v: [f32; 3], fallback: [f32; 3]) -> [f32; 3] {
     }
 }
 
+/// Applies each active collider to a particle's post-integration `position`/`velocity`, in array
+/// order, returning whether the particle was killed. Canonical for both this CPU reference and the GPU
+/// death-loop kernel: every operation is `+ - * /`, comparison, or `sqrt` (all IEEE-correctly-rounded),
+/// and it reads only the persistent position/velocity, so a checkpoint restore reproduces every bounce.
+fn resolve_colliders(
+    colliders: &[Collider; MAX_COLLIDERS],
+    count: u32,
+    position: &mut [f32; 3],
+    velocity: &mut [f32; 3],
+) -> bool {
+    let count = (count as usize).min(MAX_COLLIDERS);
+    for collider in &colliders[..count] {
+        if resolve_collider(collider, position, velocity) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Resolves a single collider against `position`/`velocity`. Returns `true` when the particle contacts
+/// a `kill` collider (the caller retires it). Bounces push the particle back onto the surface along the
+/// contact normal, reflect the inbound normal velocity scaled by `restitution`, and damp the tangential
+/// velocity by `friction` — a single uniform response shared by every shape.
+fn resolve_collider(collider: &Collider, position: &mut [f32; 3], velocity: &mut [f32; 3]) -> bool {
+    // Each shape reports (contact, outward unit normal, penetration depth ≥ 0).
+    let (contact, normal, penetration) = match collider.shape {
+        ColliderShape::Plane { normal, distance } => {
+            let signed = dot(normal, *position) - distance;
+            (signed < 0.0, normal, -signed)
+        }
+        ColliderShape::Sphere { center, radius } => {
+            let delta = [
+                position[0] - center[0],
+                position[1] - center[1],
+                position[2] - center[2],
+            ];
+            let distance = dot(delta, delta).sqrt();
+            let normal = normalize_or(delta, [0.0, 1.0, 0.0]);
+            (distance < radius, normal, radius - distance)
+        }
+        ColliderShape::Aabb { min, max } => {
+            let inside = position[0] > min[0]
+                && position[0] < max[0]
+                && position[1] > min[1]
+                && position[1] < max[1]
+                && position[2] > min[2]
+                && position[2] < max[2];
+            // Exit along the axis/face of least penetration; strict `<` breaks ties toward the earlier
+            // axis and toward `min` before `max`, deterministically on both CPU and GPU.
+            let mut best_penetration = f32::INFINITY;
+            let mut best_normal = [0.0, 1.0, 0.0];
+            for axis in 0..3 {
+                let to_min = position[axis] - min[axis];
+                if to_min < best_penetration {
+                    best_penetration = to_min;
+                    best_normal = axis_normal(axis, -1.0);
+                }
+                let to_max = max[axis] - position[axis];
+                if to_max < best_penetration {
+                    best_penetration = to_max;
+                    best_normal = axis_normal(axis, 1.0);
+                }
+            }
+            (inside, best_normal, best_penetration)
+        }
+    };
+
+    if !contact {
+        return false;
+    }
+    if collider.kill {
+        return true;
+    }
+
+    // Push out of the collider along the contact normal, then apply the bounce response.
+    for axis in 0..3 {
+        position[axis] += normal[axis] * penetration;
+    }
+    let normal_speed = dot(*velocity, normal);
+    let tangential = [
+        velocity[0] - normal[0] * normal_speed,
+        velocity[1] - normal[1] * normal_speed,
+        velocity[2] - normal[2] * normal_speed,
+    ];
+    // Only reflect when moving into the surface; a particle already separating keeps its normal speed.
+    let reflected_normal_speed = if normal_speed < 0.0 {
+        -collider.restitution * normal_speed
+    } else {
+        normal_speed
+    };
+    let keep_tangential = 1.0 - collider.friction;
+    for axis in 0..3 {
+        velocity[axis] = tangential[axis] * keep_tangential + normal[axis] * reflected_normal_speed;
+    }
+    false
+}
+
+fn axis_normal(axis: usize, sign: f32) -> [f32; 3] {
+    let mut normal = [0.0; 3];
+    normal[axis] = sign;
+    normal
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 fn splitmix64(input: u64) -> u64 {
     let mut z = input.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -404,6 +550,8 @@ mod tests {
             drag: 0.5,
             shape: SpawnShape::Sphere { radius: 3.0 },
             turbulence: 6.0,
+            colliders: [Collider::NONE; MAX_COLLIDERS],
+            collider_count: 0,
             capacity: 128,
         }
     }
@@ -544,6 +692,8 @@ mod tests {
             drag: 0.0,
             shape: SpawnShape::Point,
             turbulence: 0.0,
+            colliders: [Collider::NONE; MAX_COLLIDERS],
+            collider_count: 0,
             capacity: 8,
         };
         let dragged = StatefulConfig { drag: 2.0, ..base };
@@ -623,5 +773,136 @@ mod tests {
             [0.0; 3],
             "zero strength disables turbulence"
         );
+    }
+
+    fn ground_plane(restitution: f32, friction: f32) -> Collider {
+        Collider {
+            shape: ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: 0.0,
+            },
+            restitution,
+            friction,
+            kill: false,
+        }
+    }
+
+    #[test]
+    fn plane_collider_bounces_particles_and_keeps_them_above_it() {
+        // Particles launched downward under gravity hit the ground plane at y = 0, bounce, and never
+        // settle below it. A perfectly elastic frictionless plane also flips downward velocity to up.
+        let config = StatefulConfig {
+            gravity: [0.0, -9.81, 0.0],
+            spawn_per_tick: 2,
+            speed: (5.0, 5.0),
+            lifetime: (1000.0, 1000.0),
+            direction: [0.0, -1.0, 0.0],
+            spread: 0.0,
+            drag: 0.0,
+            shape: SpawnShape::Point,
+            turbulence: 0.0,
+            colliders: {
+                let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+                colliders[0] = ground_plane(1.0, 0.0);
+                colliders
+            },
+            collider_count: 1,
+            capacity: 64,
+        };
+        let mut simulation = StatefulSimulation::new(config, 0xB0_1CE);
+        simulation.advance_to_tick(400);
+        assert!(simulation.live_count() > 0, "particles persist (no kill)");
+        for (_, position) in simulation.alive_particles() {
+            assert!(
+                position[1] >= -1e-3,
+                "particle stays on/above the plane: y = {}",
+                position[1]
+            );
+        }
+    }
+
+    #[test]
+    fn kill_collider_retires_particles_on_contact() {
+        // A kill plane just below the spawn point removes downward-launched particles instead of
+        // bouncing them; with a killing floor and downward launch the population cannot accumulate the
+        // way a bouncing floor allows.
+        let base = StatefulConfig {
+            gravity: [0.0, -20.0, 0.0],
+            spawn_per_tick: 1,
+            speed: (2.0, 2.0),
+            lifetime: (1000.0, 1000.0),
+            direction: [0.0, -1.0, 0.0],
+            spread: 0.0,
+            drag: 0.0,
+            shape: SpawnShape::Point,
+            turbulence: 0.0,
+            colliders: [Collider::NONE; MAX_COLLIDERS],
+            collider_count: 0,
+            capacity: 4096,
+        };
+        let kill_floor = Collider {
+            shape: ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: -1.0,
+            },
+            restitution: 0.0,
+            friction: 0.0,
+            kill: true,
+        };
+        let killing = StatefulConfig {
+            colliders: {
+                let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+                colliders[0] = kill_floor;
+                colliders
+            },
+            collider_count: 1,
+            ..base
+        };
+        let mut bouncing_config = killing;
+        bouncing_config.colliders[0].kill = false;
+        bouncing_config.colliders[0].restitution = 1.0;
+
+        let mut killing_sim = StatefulSimulation::new(killing, 7);
+        let mut bouncing_sim = StatefulSimulation::new(bouncing_config, 7);
+        killing_sim.advance_to_tick(120);
+        bouncing_sim.advance_to_tick(120);
+        assert!(
+            killing_sim.live_count() < bouncing_sim.live_count(),
+            "kill floor retires particles ({} live) vs bounce ({} live)",
+            killing_sim.live_count(),
+            bouncing_sim.live_count()
+        );
+    }
+
+    #[test]
+    fn friction_damps_tangential_velocity_on_bounce() {
+        // A particle moving diagonally into a frictional plane loses horizontal speed on contact; a
+        // frictionless plane preserves it. Restitution is 0 so the vertical component is killed and the
+        // bounce is a pure slide.
+        let mut position = [0.0, 0.0, 0.0];
+        let mut velocity = [4.0, -3.0, 0.0];
+        let mut frictionless = velocity;
+        let mut frictionless_pos = position;
+
+        let plane_friction = ground_plane(0.0, 0.5);
+        let plane_free = ground_plane(0.0, 0.0);
+        // Force contact: start just below the plane.
+        position[1] = -0.5;
+        frictionless_pos[1] = -0.5;
+
+        resolve_collider(&plane_friction, &mut position, &mut velocity);
+        resolve_collider(&plane_free, &mut frictionless_pos, &mut frictionless);
+
+        assert!(
+            velocity[0] < frictionless[0],
+            "friction reduces horizontal speed: {} vs {}",
+            velocity[0],
+            frictionless[0]
+        );
+        assert!(
+            (velocity[0] - frictionless[0] * 0.5).abs() < 1e-5,
+            "friction 0.5 keeps half the tangential speed"
+        );
+        assert!(position[1] >= -1e-6, "push-out lifts to the surface");
     }
 }

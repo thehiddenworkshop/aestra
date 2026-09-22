@@ -24,6 +24,10 @@ pub const MODULE_APPEARANCE: &str = "aestra.update.appearance";
 /// ticks. It carries no inputs of its own — it reuses the emitter's spawn/motion/lifetime modules —
 /// and is the marker the compiler classifies on and the GPU backend runs its persistent path for.
 pub const MODULE_PERSISTENT: &str = "aestra.update.persistent";
+/// Collision primitives (hybrid roadmap M10): like [`MODULE_PERSISTENT`] its presence requires
+/// previous-tick state and so promotes an emitter to a stateful class, but it also carries the authored
+/// colliders (planes, spheres, boxes) the stateful integrator resolves after each tick.
+pub const MODULE_COLLISION: &str = "aestra.update.collision";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
@@ -1697,6 +1701,22 @@ impl ModuleInstance {
         }
     }
 
+    /// Collision primitives (hybrid roadmap M10): like [`persistent`](Self::persistent) this promotes
+    /// the emitter to a stateful class (it requires previous-tick state), and it carries the authored
+    /// colliders the stateful integrator resolves after each tick.
+    pub fn collision(colliders: Vec<Collider>) -> Self {
+        Self {
+            id: ModuleId::new(),
+            module_type: ModuleTypeId::new(MODULE_COLLISION),
+            stage: StageKind::ParticleUpdate,
+            enabled: true,
+            parameters: ModuleParameters::Collision { colliders },
+            property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+        }
+    }
+
     pub fn appearance(size: Curve, opacity: Curve, color: Gradient) -> Self {
         Self {
             id: ModuleId::new(),
@@ -1917,6 +1937,7 @@ impl ModuleInstance {
             ModuleParameters::Initialize { .. } => (MODULE_INITIALIZE, StageKind::ParticleSpawn),
             ModuleParameters::Motion { .. } => (MODULE_MOTION, StageKind::ParticleUpdate),
             ModuleParameters::Persistent {} => (MODULE_PERSISTENT, StageKind::ParticleUpdate),
+            ModuleParameters::Collision { .. } => (MODULE_COLLISION, StageKind::ParticleUpdate),
             ModuleParameters::Appearance { .. } => (MODULE_APPEARANCE, StageKind::ParticleUpdate),
             ModuleParameters::Custom(values) => {
                 if self.module_type.0.trim().is_empty() {
@@ -2031,8 +2052,86 @@ impl ModuleInstance {
                     format!("{path}.color.id"),
                 );
             }
+            ModuleParameters::Collision { colliders } => {
+                for (index, collider) in colliders.iter().enumerate() {
+                    let shape_finite = match collider.shape {
+                        ColliderShape::Plane { normal, distance } => {
+                            normal.iter().all(|value| value.is_finite())
+                                && distance.is_finite()
+                                && normal.iter().any(|value| value.abs() > f32::EPSILON)
+                        }
+                        ColliderShape::Sphere { center, radius } => {
+                            center.iter().all(|value| value.is_finite())
+                                && radius.is_finite()
+                                && radius >= 0.0
+                        }
+                        ColliderShape::Aabb { min, max } => {
+                            min.iter().all(|value| value.is_finite())
+                                && max.iter().all(|value| value.is_finite())
+                                && (0..3).all(|axis| min[axis] <= max[axis])
+                        }
+                    };
+                    if !shape_finite
+                        || !collider.restitution.is_finite()
+                        || !collider.friction.is_finite()
+                    {
+                        invalid_value(
+                            report,
+                            &format!("{path}.colliders.{index}"),
+                            "collider geometry and response must be finite (plane normal non-zero, \
+                             radius non-negative, box min <= max)",
+                        );
+                    }
+                }
+            }
             _ => {}
         }
+    }
+}
+
+/// A collision primitive (hybrid roadmap M10). Authored on a [`MODULE_COLLISION`] module and applied
+/// by the stateful integrator after each tick. All shapes are pure arithmetic (sphere uses `sqrt`, no
+/// trig), so the CPU reference and the GPU kernel resolve them bit-for-bit, and they read only the
+/// persistent position/velocity, so a checkpoint restore reproduces every bounce.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct Collider {
+    pub shape: ColliderShape,
+    /// Bounce energy kept along the contact normal, in `[0, 1]` (`1` = perfectly elastic).
+    pub restitution: f32,
+    /// Tangential velocity damping on contact, in `[0, 1]` (`0` = frictionless slide).
+    pub friction: f32,
+    /// When true, a particle that contacts this collider is retired instead of bouncing.
+    pub kill: bool,
+}
+
+/// A collision shape: a half-space, a solid sphere, or a solid axis-aligned box.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum ColliderShape {
+    /// The half-space below `dot(normal, p) = distance`; a particle with `dot(normal, p) < distance`
+    /// has crossed it. `normal` is assumed unit length.
+    Plane { normal: [f32; 3], distance: f32 },
+    /// The solid sphere; a particle inside it has collided.
+    Sphere { center: [f32; 3], radius: f32 },
+    /// The solid axis-aligned box; a particle inside it has collided.
+    Aabb { min: [f32; 3], max: [f32; 3] },
+}
+
+impl Collider {
+    /// A disabled collider (unused fixed-array slots).
+    pub const NONE: Self = Self {
+        shape: ColliderShape::Sphere {
+            center: [0.0; 3],
+            radius: 0.0,
+        },
+        restitution: 0.0,
+        friction: 0.0,
+        kill: false,
+    };
+}
+
+impl Default for Collider {
+    fn default() -> Self {
+        Self::NONE
     }
 }
 
@@ -2065,6 +2164,12 @@ pub enum ModuleParameters {
     /// The persistent-state solver marker (hybrid roadmap M6). Carries no inputs — it promotes the
     /// emitter to a stateful simulation class, reusing the emitter's other modules for its dynamics.
     Persistent {},
+    /// Collision primitives (hybrid roadmap M10). Like [`Persistent`](Self::Persistent) it requires
+    /// previous-tick state, so it promotes the emitter to a stateful class; the stateful integrator
+    /// applies each collider after integration.
+    Collision {
+        colliders: Vec<Collider>,
+    },
     Custom(BTreeMap<String, Value>),
 }
 

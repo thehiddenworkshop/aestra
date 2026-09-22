@@ -24,10 +24,12 @@
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
 use aestra_gpu::{
-    STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
-    stateful_simulation_wgsl,
+    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL,
+    STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
 };
-use aestra_runtime::{SpawnShape, StatefulConfig, StatefulSimulation};
+use aestra_runtime::{
+    Collider, ColliderShape, SpawnShape, StatefulConfig, StatefulSimulation, MAX_COLLIDERS,
+};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 use wgpu::util::DeviceExt;
@@ -51,7 +53,8 @@ fn stateful_params(
     slot_offset: u32,
 ) -> Vec<u32> {
     let (shape_kind, shape_radius, half) = shape_params(config.shape);
-    vec![
+    let mut words = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    words[..26].copy_from_slice(&[
         config.capacity,
         config.spawn_per_tick,
         seed as u32,
@@ -77,7 +80,30 @@ fn stateful_params(
         half[0].to_bits(),
         half[1].to_bits(),
         half[2].to_bits(),
-    ]
+        0.0_f32.to_bits(), // subtick (unused by death/spawn)
+    ]);
+    // Collider block (M10): count at 26, then up to MAX_COLLIDERS 10-word records from 27.
+    let count = (config.collider_count as usize).min(MAX_COLLIDERS);
+    words[26] = count as u32;
+    for (index, collider) in config.colliders.iter().take(count).enumerate() {
+        let base = 27 + index * 10;
+        let (kind, a, b) = match collider.shape {
+            ColliderShape::Plane { normal, distance } => (0u32, normal, [distance, 0.0, 0.0]),
+            ColliderShape::Sphere { center, radius } => (1u32, center, [radius, 0.0, 0.0]),
+            ColliderShape::Aabb { min, max } => (2u32, min, max),
+        };
+        words[base] = kind;
+        words[base + 1] = a[0].to_bits();
+        words[base + 2] = a[1].to_bits();
+        words[base + 3] = a[2].to_bits();
+        words[base + 4] = b[0].to_bits();
+        words[base + 5] = b[1].to_bits();
+        words[base + 6] = b[2].to_bits();
+        words[base + 7] = collider.restitution.to_bits();
+        words[base + 8] = collider.friction.to_bits();
+        words[base + 9] = u32::from(collider.kill);
+    }
+    words
 }
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
@@ -278,13 +304,19 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
-        state[base + 3u] = vx;
-        state[base + 4u] = vy;
-        state[base + 5u] = vz;
-        state[base + 0u] = state[base + 0u] + vx * dt;
-        state[base + 1u] = state[base + 1u] + vy * dt;
-        state[base + 2u] = state[base + 2u] + vz * dt;
-        let new_age = age + dt;
+        let px = state[base + 0u] + vx * dt;
+        let py = state[base + 1u] + vy * dt;
+        let pz = state[base + 2u] + vz * dt;
+        // Collision against the authored colliders, via the shared production resolver (M10).
+        let collision = aestra_resolve_colliders(vec3<f32>(px, py, pz), vec3<f32>(vx, vy, vz));
+        state[base + 0u] = collision.position.x;
+        state[base + 1u] = collision.position.y;
+        state[base + 2u] = collision.position.z;
+        state[base + 3u] = collision.velocity.x;
+        state[base + 4u] = collision.velocity.y;
+        state[base + 5u] = collision.velocity.z;
+        var new_age = age + dt;
+        if (collision.killed) { new_age = lifetime; }
         state[base + 6u] = new_age;
         if (new_age >= lifetime) {
             state[base + 7u] = 0.0; // mark the slot free
@@ -505,7 +537,8 @@ impl Harness {
         let death_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Aestra death loop"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
-                "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{DEATH_LOOP_WGSL}"
+                "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{STATEFUL_COLLISION_WGSL}\
+                 {DEATH_LOOP_WGSL}"
             ))),
         });
         let death_integrate_pipeline =
@@ -1883,6 +1916,8 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
             half_extents: [4.0, 1.0, 6.0],
         },
         turbulence: 5.0,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
         capacity: 512,
     };
     let ticks = 100_u32;
@@ -1935,6 +1970,8 @@ fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.0 },
         turbulence: 7.0,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
         capacity: 512,
     };
     let seed = 0xC0FF_EE00_1234_5678_u64;
@@ -2019,6 +2056,8 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.5 },
         turbulence: 7.0,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
         capacity: 512,
     };
     let ticks = 90_u32;
@@ -2060,6 +2099,184 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
             assert!(
                 (expected - actual).abs() <= tolerance,
                 "ordinal {id} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
+        }
+    }
+}
+
+/// A config exercising all three collider shapes (M10): a ground plane, a sphere obstacle, and a box
+/// obstacle in the particles' fall path, plus gravity + drag + turbulence so the persistent dynamics
+/// are non-trivial between contacts.
+fn collision_config(colliders: [Collider; MAX_COLLIDERS], collider_count: u32) -> StatefulConfig {
+    StatefulConfig {
+        gravity: [0.0, -18.0, 0.0],
+        spawn_per_tick: 4,
+        speed: (6.0, 10.0),
+        lifetime: (1.2, 1.6),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.7,
+        drag: 0.3,
+        shape: SpawnShape::Sphere { radius: 1.0 },
+        turbulence: 3.0,
+        colliders,
+        collider_count,
+        capacity: 512,
+    }
+}
+
+#[test]
+fn gpu_collision_matches_the_cpu_reference() {
+    // Hybrid roadmap M10: the stateful collision response (plane, sphere, and box colliders; bounce
+    // with restitution + friction) must reproduce the CPU reference bit-for-bit through the shared
+    // production resolver. Match every live GPU particle to StatefulSimulation by spawn ordinal, as the
+    // death-loop test does — collision is deterministic per fixed tick, so the two agree.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    // The ground plane sits below the spawn sphere (radius 1 at the origin) so every particle — even
+    // one spawned on the final tick, before its first collision resolve — starts above it.
+    colliders[0] = Collider {
+        shape: ColliderShape::Plane {
+            normal: [0.0, 1.0, 0.0],
+            distance: -2.0,
+        },
+        restitution: 0.6,
+        friction: 0.3,
+        kill: false,
+    };
+    colliders[1] = Collider {
+        shape: ColliderShape::Sphere {
+            center: [1.5, 3.0, 0.0],
+            radius: 1.4,
+        },
+        restitution: 0.8,
+        friction: 0.1,
+        kill: false,
+    };
+    colliders[2] = Collider {
+        shape: ColliderShape::Aabb {
+            min: [-2.5, 1.0, -1.5],
+            max: [-0.8, 2.2, 1.5],
+        },
+        restitution: 0.4,
+        friction: 0.5,
+        kill: false,
+    };
+    let config = collision_config(colliders, 3);
+    let ticks = 120_u32;
+    let seed = 0x00C0_11DE_0000_0001_u64;
+
+    let gpu = harness
+        .advance_stateful_with_death(&config, seed, ticks)
+        .unwrap();
+
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.advance_to_tick(ticks as u64);
+    let cpu = simulation.alive_particles();
+
+    assert!(!cpu.is_empty(), "particles are alive at the end of the window");
+    assert_eq!(
+        gpu.len(),
+        cpu.len(),
+        "GPU and CPU agree on the live particle count ({} vs {})",
+        gpu.len(),
+        cpu.len()
+    );
+
+    let gpu_by_id: std::collections::HashMap<u64, [f32; 3]> = gpu.into_iter().collect();
+    for (id, cpu_pos) in &cpu {
+        let gpu_pos = gpu_by_id.get(id).unwrap_or_else(|| {
+            panic!("CPU particle with ordinal {id} is missing from the GPU live set")
+        });
+        for axis in 0..3 {
+            let (expected, actual) = (cpu_pos[axis], gpu_pos[axis]);
+            let tolerance = 1e-3 + 1e-4 * expected.abs().max(actual.abs());
+            assert!(
+                (expected - actual).abs() <= tolerance,
+                "ordinal {id} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
+        }
+    }
+
+    // Collision is actually doing something: the ground plane keeps every live particle on/above it,
+    // whereas the same effect without colliders lets particles fall well below it.
+    for (id, position) in &cpu {
+        assert!(
+            position[1] >= -2.05,
+            "ordinal {id} stays on/above the ground plane at y = -2: y = {}",
+            position[1]
+        );
+    }
+    let mut without = StatefulSimulation::new(collision_config([Collider::NONE; MAX_COLLIDERS], 0), seed);
+    without.advance_to_tick(ticks as u64);
+    let lowest = without
+        .alive_particles()
+        .iter()
+        .map(|(_, position)| position[1])
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        lowest < -2.5,
+        "without colliders particles fall below the plane (lowest y = {lowest}), so the plane matters"
+    );
+}
+
+#[test]
+fn gpu_collision_checkpoint_seek_reaches_the_uninterrupted_state() {
+    // Hybrid roadmap M10 acceptance: a backward seek reproduces the uninterrupted forward simulation
+    // *with collision active*. Because collision reads only the persistent position/velocity that the
+    // checkpoint store snapshots, restoring the nearest checkpoint and replaying forward — bounces and
+    // all — lands on the same state as running straight through. Checkpoint at 40, overshoot to 90,
+    // restore + replay to 70, and match the uninterrupted run to 70 by spawn ordinal.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    colliders[0] = Collider {
+        shape: ColliderShape::Plane {
+            normal: [0.0, 1.0, 0.0],
+            distance: -2.0,
+        },
+        restitution: 0.6,
+        friction: 0.3,
+        kill: false,
+    };
+    colliders[1] = Collider {
+        shape: ColliderShape::Sphere {
+            center: [1.5, 3.0, 0.0],
+            radius: 1.4,
+        },
+        restitution: 0.8,
+        friction: 0.1,
+        kill: false,
+    };
+    let config = collision_config(colliders, 2);
+    let seed = 0x00C0_11DE_5EEC_0001_u64;
+
+    let seeked = harness
+        .death_loop_seek_via_checkpoint(&config, seed, 40, 90, 70)
+        .unwrap();
+    let uninterrupted = harness
+        .advance_stateful_with_death(&config, seed, 70)
+        .unwrap();
+
+    assert!(!uninterrupted.is_empty(), "particles are alive at tick 70");
+    assert_eq!(
+        seeked.len(),
+        uninterrupted.len(),
+        "restore+replay and the uninterrupted run agree on the live count with collision active"
+    );
+    let by_id: std::collections::HashMap<u64, [f32; 3]> = uninterrupted.into_iter().collect();
+    for (id, seeked_pos) in seeked {
+        let expected = by_id
+            .get(&id)
+            .unwrap_or_else(|| panic!("ordinal {id} present after seek but not uninterrupted"));
+        for axis in 0..3 {
+            let (a, b) = (seeked_pos[axis], expected[axis]);
+            let tolerance = 1e-3 + 1e-4 * a.abs().max(b.abs());
+            assert!(
+                (a - b).abs() <= tolerance,
+                "ordinal {id} axis {axis}: seek={a:.5} uninterrupted={b:.5}"
             );
         }
     }
