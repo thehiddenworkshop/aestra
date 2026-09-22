@@ -3084,6 +3084,30 @@ and automatically promote their island.
 
 # Milestone 11 — Collision input provider abstraction
 
+> **Status — portable boundary landed (unified M11).** The semantic/backend boundary for collision now
+> exists as a portable abstraction in `aestra-core` (`collision.rs`), with **no engine dependency**.
+> `CollisionInputSource` names where collision inputs come from — `AuthoredColliders` (the only source
+> produced today, hybrid roadmap M10) plus reserved `SignedDistanceField` / `DepthBuffer` /
+> `EnginePhysicsQuery` / `MeshAccelerationStructure` for engine scene collision — and
+> `CollisionInputAvailability` is the **historical-input rule**: `TimeAddressable` / `Recordable` /
+> `Checkpointed` / `ForwardOnly`, ordered least-to-most restrictive so an effect's aggregate is the
+> `max` over its providers. A `CompiledEffect` derives its `CollisionInputs` from its emitters
+> (`collision_provider` → `AUTHORED` when an emitter carries colliders) and exposes
+> `supports_exact_backward_seek()`, which is false as soon as any provider is forward-only — the rule
+> that **exact backward seeking is only advertised when historical collision inputs can be
+> reconstructed**. Authored colliders are time-addressable, so every M10 effect stays exactly seekable
+> (the restart/replay seek remains honest). **Backend capability failure is explicit**:
+> `CollisionBackendCapabilities` describes what a backend can supply (the GPU backend is
+> `authored_only()`), and `CollisionInputs::resolve_against` returns a `CollisionCapabilityError` naming
+> any source the backend lacks; the Bevy render backend resolves against it before building stateful
+> dispatches and refuses (a warning, no dispatches) rather than mis-simulating. Covered by
+> `aestra-core` unit tests (all four availabilities, the forward-only aggregate, explicit capability
+> failure) and the compiler contract (`the_collision_module_promotes_..._and_carries_its_colliders`
+> now also asserts the derived inputs, availability, exact-seek advertising, and backend resolution).
+> **Still to do:** actual engine providers (SDF / depth / physics / mesh) and their `Recordable` /
+> `Checkpointed` recorders live in the Bevy adapter and land when those sources are wired — this
+> milestone is the boundary and the rule they plug into, exercised end to end with the authored source.
+
 **Goal:** Prepare for engine scene collision without coupling portable crates to Bevy.
 
 ### Define semantic/backend boundary

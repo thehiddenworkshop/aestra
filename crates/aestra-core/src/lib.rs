@@ -1,5 +1,6 @@
 //! Engine-independent semantic source model for Aestra effects.
 
+mod collision;
 mod diagnostic;
 mod host_transform;
 mod id;
@@ -8,6 +9,7 @@ mod migration;
 mod model;
 mod transform_curve;
 
+pub use collision::*;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity, ValidationReport};
 pub use host_transform::*;
 pub use id::*;

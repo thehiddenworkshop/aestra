@@ -770,7 +770,26 @@ pub(crate) fn prepare_gpu_effects(
             .count();
         let emitter_count = artifact.emitters.len() as u32;
         let seed = player.instance.seed();
-        let stateful_dispatch: Vec<StatefulDispatch> = if artifact.simulation_state.records > 0 {
+        // Collision input provider boundary (hybrid roadmap M11): this GPU backend supplies only
+        // authored colliders (it resolves them on-GPU, needing no engine scene data). If the effect's
+        // collision inputs need a source this backend cannot provide, refuse the stateful path
+        // explicitly — a warning and no dispatches — rather than silently mis-simulating.
+        let collision_inputs = player.instance.effect().collision_inputs();
+        let collision_supported = match collision_inputs
+            .resolve_against(&aestra_core::CollisionBackendCapabilities::authored_only())
+        {
+            Ok(()) => true,
+            Err(error) => {
+                warn!(
+                    "skipping stateful simulation for effect {:?}: {error}",
+                    player.instance.effect().name
+                );
+                false
+            }
+        };
+        let stateful_dispatch: Vec<StatefulDispatch> = if artifact.simulation_state.records > 0
+            && collision_supported
+        {
             compiled_emitters
                 .iter()
                 .enumerate()

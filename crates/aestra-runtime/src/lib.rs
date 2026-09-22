@@ -674,6 +674,13 @@ impl CompiledEmitter {
     pub fn simulation_state_layout(&self) -> SimulationStateLayout {
         SimulationStateLayout::for_class(self.simulation_class)
     }
+
+    /// The collision input provider this emitter requires, if any (hybrid roadmap M11). Today the only
+    /// source is authored colliders, so an emitter carrying colliders declares
+    /// [`CollisionProvider::AUTHORED`]; engine scene-collision sources would surface here too.
+    pub fn collision_provider(&self) -> Option<aestra_core::CollisionProvider> {
+        (!self.colliders.is_empty()).then_some(aestra_core::CollisionProvider::AUTHORED)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -914,6 +921,26 @@ impl CompiledEffect {
 
     pub fn flipbook(&self, id: AssetId) -> Option<&CompiledFlipbook> {
         self.flipbooks.iter().find(|flipbook| flipbook.source == id)
+    }
+
+    /// The collision inputs this effect requires and their aggregate historical availability (hybrid
+    /// roadmap M11), gathered from every emitter's declared collision provider. Empty for effects that
+    /// do not collide.
+    pub fn collision_inputs(&self) -> aestra_core::CollisionInputs {
+        aestra_core::CollisionInputs::from_providers(
+            self.emitters
+                .iter()
+                .filter_map(CompiledEmitter::collision_provider),
+        )
+    }
+
+    /// Whether this effect can be seeked *backward* exactly (hybrid roadmap M11). True unless it uses a
+    /// collision provider whose past inputs cannot be reconstructed (a forward-only source): the
+    /// restart/replay seek is only exact when every collision input is reproducible for a past tick.
+    /// Effects with no collision — every effect today except authored-collider ones, which are
+    /// time-addressable — are always exactly seekable.
+    pub fn supports_exact_backward_seek(&self) -> bool {
+        self.collision_inputs().supports_exact_backward_seek()
     }
 }
 

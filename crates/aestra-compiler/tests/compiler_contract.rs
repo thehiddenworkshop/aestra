@@ -2168,4 +2168,36 @@ fn the_collision_module_promotes_an_emitter_to_stateful_and_carries_its_collider
             .all(|emitter| emitter.colliders.is_empty()),
         "the analytic emitter carries no colliders"
     );
+
+    // M11: the compiled effect derives its collision input requirement — authored colliders, which are
+    // time-addressable — and, being reconstructible, advertises exact backward seek. The authored-only
+    // GPU backend can supply the requirement, so it resolves without error.
+    use aestra_core::{
+        CollisionBackendCapabilities, CollisionInputAvailability, CollisionInputSource,
+    };
+    let inputs = compiled.collision_inputs();
+    assert_eq!(inputs.sources(), &[CollisionInputSource::AuthoredColliders]);
+    assert_eq!(
+        inputs.availability(),
+        Some(CollisionInputAvailability::TimeAddressable)
+    );
+    assert!(
+        compiled.supports_exact_backward_seek(),
+        "authored colliders are time-addressable, so exact backward seek is advertised"
+    );
+    assert!(
+        inputs
+            .resolve_against(&CollisionBackendCapabilities::authored_only())
+            .is_ok(),
+        "the authored-only backend supplies authored colliders"
+    );
+
+    // A fully analytic effect requires no collision inputs and is trivially exactly seekable.
+    let mut analytic_asset = EffectAsset::new("Just Sparks", 2.0);
+    analytic_asset
+        .emitters
+        .push(Emitter::basic_sprite("Sparks", 2.0));
+    let analytic_compiled = compiler.compile(&analytic_asset).unwrap();
+    assert!(analytic_compiled.collision_inputs().is_empty());
+    assert!(analytic_compiled.supports_exact_backward_seek());
 }
