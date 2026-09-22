@@ -3033,8 +3033,9 @@ and:
 > spawn ordinal through all three shapes), and **backward seek via checkpoint/replay reproduces the
 > uninterrupted forward run with collision active** (`gpu_collision_checkpoint_seek_reaches_the_uninterrupted_state`)
 > — collision reads only the persistent state the checkpoint store already snapshots. The
-> `collision_lab` fixture (`sample-project/effects/collision_lab.aestra.ron`) is a bouncing fountain for
-> editor verification. **Still to do:** the `OnCollision` **event** semantics — surfacing per-contact
+> `collision_lab` fixture (`sample-project/effects/collision_lab.aestra.ron`) is a bouncing fountain,
+> editor-verified to bounce and settle as expected. **Still to do:** the `OnCollision` **event**
+> semantics — surfacing per-contact
 > events from the GPU (an atomic event queue + deterministic ordering) is a separate system deferred to
 > its own increment; the collision *response* (kill/bounce) is complete and is what M11's collider input
 > providers will drive.
