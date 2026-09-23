@@ -6,6 +6,7 @@ use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
+use crate::settings::PropertiesSettings;
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
 use aestra_authoring::{
@@ -5791,9 +5792,7 @@ pub(crate) fn spawn_properties(
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
     localizer: &Localizer,
-    // Card collapse state no longer drives the module stack (compact rows + inspector, §28.2); kept in
-    // the signature for the panel builder's call shape and future stack preferences.
-    _settings: &EditorSettings,
+    settings: &EditorSettings,
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
@@ -5942,16 +5941,22 @@ pub(crate) fn spawn_properties(
             ));
             // The compact module stack (§28.2): emitter chrome and short, selectable stage-grouped
             // rows, each a name plus its descriptor-driven summary. The selected row's full controls
-            // render in the inspector below; the two regions split the panel and scroll independently.
+            // render in the inspector below; the divider between them is a draggable splitter, and its
+            // height persists in settings. The stack takes a fixed (resizable) height; the inspector
+            // grows to fill the rest, so both regions scroll independently.
             panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    flex_basis: Val::Px(0.0),
-                    min_height: Val::Px(120.0),
-                    min_width: Val::Px(0.0),
-                    ..default()
-                })
+                .spawn((
+                    PropertiesStackPane,
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(settings.properties.clamped_stack_height()),
+                        max_height: Val::Percent(72.0),
+                        min_height: Val::Px(PropertiesSettings::MIN_STACK_HEIGHT),
+                        min_width: Val::Px(0.0),
+                        flex_shrink: 0.0,
+                        ..default()
+                    },
+                ))
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
@@ -6056,19 +6061,30 @@ pub(crate) fn spawn_properties(
         });
 }
 
-/// The labelled divider between the compact stack and the focused inspector (extensible-stages M9).
+/// The labelled divider between the compact stack and the focused inspector (extensible-stages M9),
+/// which doubles as the draggable splitter: dragging it vertically resizes the stack region (the drag
+/// observers mutate the [`PropertiesStackPane`] node live and persist the height). Children are marked
+/// `Pickable::IGNORE` so the whole strip is one grab target.
 fn spawn_inspector_divider(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
+            PropertiesSplitGrip::default(),
+            crate::feathers::button::EditorNativeControl,
+            EntityCursor::System(SystemCursorIcon::RowResize),
+            AccessibleLabel("Resize the module stack".into()),
             Node {
                 width: Val::Percent(100.0),
                 align_items: AlignItems::Center,
                 column_gap: Val::Px(6.0),
-                padding: UiRect::axes(Val::Px(14.0), Val::Px(4.0)),
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(5.0)),
+                flex_shrink: 0.0,
                 ..default()
             },
             BackgroundColor(theme::PANEL_DARK),
         ))
+        .observe(begin_properties_split_resize)
+        .observe(drive_properties_split_resize)
+        .observe(finish_properties_split_resize)
         .with_children(|row| {
             row.spawn((
                 Text::new("INSPECTOR"),
@@ -6078,6 +6094,7 @@ fn spawn_inspector_divider(parent: &mut ChildSpawnerCommands) {
                     font_size: FontSize::Px(10.0),
                     ..default()
                 },
+                Pickable::IGNORE,
             ));
             row.spawn((
                 Node {
@@ -6086,8 +6103,79 @@ fn spawn_inspector_divider(parent: &mut ChildSpawnerCommands) {
                     ..default()
                 },
                 BackgroundColor(theme::BORDER),
+                Pickable::IGNORE,
             ));
         });
+}
+
+/// The draggable splitter between the compact stack and the inspector (extensible-stages M9). Records
+/// the stack region's rendered height at drag start so reversing direction reacts immediately.
+#[derive(Component, Default)]
+struct PropertiesSplitGrip {
+    drag_start_height: Option<f32>,
+}
+
+/// Marks the compact-stack region so the splitter's drag observers can resize it live.
+#[derive(Component)]
+struct PropertiesStackPane;
+
+fn begin_properties_split_resize(
+    mut event: On<Pointer<DragStart>>,
+    mut grips: Query<&mut PropertiesSplitGrip>,
+    panes: Query<&ComputedNode, With<PropertiesStackPane>>,
+) {
+    if event.button != PointerButton::Primary {
+        return;
+    }
+    if let Ok(mut grip) = grips.get_mut(event.entity)
+        && let Some(node) = panes.iter().next()
+    {
+        event.propagate(false);
+        grip.drag_start_height = Some(node.size().y * node.inverse_scale_factor());
+    }
+}
+
+fn drive_properties_split_resize(
+    mut event: On<Pointer<Drag>>,
+    grips: Query<&PropertiesSplitGrip>,
+    mut panes: Query<(&mut Node, &ComputedNode), With<PropertiesStackPane>>,
+    mut settings: ResMut<EditorSettings>,
+) {
+    if event.button != PointerButton::Primary {
+        return;
+    }
+    if let Ok(grip) = grips.get(event.entity)
+        && let Some(start_height) = grip.drag_start_height
+        && let Some((mut node, computed)) = panes.iter_mut().next()
+    {
+        event.propagate(false);
+        let height = (start_height + event.distance.y * computed.inverse_scale_factor()).clamp(
+            PropertiesSettings::MIN_STACK_HEIGHT,
+            PropertiesSettings::MAX_STACK_HEIGHT,
+        );
+        // Live feedback: move the region now, and store the value so the next rebuild keeps it.
+        node.height = Val::Px(height);
+        settings.properties.stack_height = height;
+    }
+}
+
+fn finish_properties_split_resize(
+    mut event: On<Pointer<DragEnd>>,
+    mut grips: Query<&mut PropertiesSplitGrip>,
+    settings: Res<EditorSettings>,
+    mut persistence: ResMut<SettingsPersistence>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if event.button != PointerButton::Primary {
+        return;
+    }
+    if let Ok(mut grip) = grips.get_mut(event.entity)
+        && grip.drag_start_height.take().is_some()
+    {
+        event.propagate(false);
+        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
+    }
 }
 
 /// Renders the focused inspector for the current selection (extensible-stages M9, §28.2): the selected
