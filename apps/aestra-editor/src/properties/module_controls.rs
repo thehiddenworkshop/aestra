@@ -509,15 +509,40 @@ fn module_row_at(
     }
 }
 
-/// The floating drag ghost that follows the cursor while a module row is dragged (§28.4).
+/// The floating drag proxy that follows the cursor while a module row is dragged (§28.4) — a full-width
+/// copy of the row, so the whole section appears to lift out and move.
 #[derive(Component)]
 pub(super) struct ModuleDragGhost;
 
-/// Tracks the active module drag so the ghost can be moved and torn down (§28.4).
+/// Tracks the active module drag (§28.4): the floating proxy, the original row hidden while it drags,
+/// the row currently showing an insertion gap, and the dragged module for same-stage checks.
 #[derive(Resource, Default)]
 pub(crate) struct ModuleDragState {
     ghost: Option<Entity>,
+    hidden_row: Option<Entity>,
+    gap_row: Option<Entity>,
+    dragged: Option<ModuleId>,
 }
+
+/// The stack row entity and its module id at `entity` or an ancestor.
+fn module_row_entity(
+    mut entity: Entity,
+    rows: &Query<&ModuleRowDrag>,
+    parents: &Query<&ChildOf>,
+) -> Option<(Entity, ModuleId)> {
+    loop {
+        if let Ok(row) = rows.get(entity) {
+            return Some((entity, row.0));
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+/// The default top margin of a stack row (matches `spawn_module_stack_row`), restored after an
+/// insertion gap is cleared.
+const MODULE_ROW_MARGIN_TOP: f32 = 1.0;
+/// The gap opened above the hovered row so the dragged row has room to drop (§28.4).
+const MODULE_ROW_GAP: f32 = 30.0;
 
 /// Reorders modules by drag-and-drop within the stack (§28.4): when one row is dropped onto another,
 /// the dragged module takes the target's slot. The session enforces same-stage-only and undoability.
@@ -544,22 +569,26 @@ pub(super) fn reorder_modules_on_drop(
     session.reorder_module_onto(dragged, target);
 }
 
-/// Spawns the cursor-following ghost when a module row starts dragging (§28.4): a small floating
-/// name chip at the pointer, so the drag reads like a real reorder. `Pickable::IGNORE` keeps it from
-/// intercepting the drop target beneath the cursor.
+/// Lifts a module row into a floating full-width proxy when it starts dragging (§28.4): the original
+/// row is hidden (so the list closes up) and a copy at the cursor takes its place. `Pickable::IGNORE`
+/// keeps the proxy from intercepting the drop target beneath the cursor.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn begin_module_drag(
     event: On<Pointer<DragStart>>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
+    computed: Query<&ComputedNode>,
+    mut nodes: Query<&mut Node>,
     session: Res<EditorSession>,
     registry: Res<EditorModuleRegistry>,
+    asset_server: Res<AssetServer>,
     mut state: ResMut<ModuleDragState>,
     mut commands: Commands,
 ) {
     if event.button != PointerButton::Primary {
         return;
     }
-    let Some(module_id) = module_row_at(event.entity, &rows, &parents) else {
+    let Some((row_entity, module_id)) = module_row_entity(event.entity, &rows, &parents) else {
         return;
     };
     let Some(layer) = session.selected_layer() else {
@@ -573,6 +602,15 @@ pub(super) fn begin_module_drag(
         .get(&module.module_type)
         .map(|metadata| metadata.display_name.to_string())
         .unwrap_or_else(|| module.module_type.0.clone());
+    let summary = aestra_compiler::module_summary(module);
+    let width = computed
+        .get(row_entity)
+        .map(|node| node.size().x * node.inverse_scale_factor())
+        .unwrap_or(280.0);
+    // Hide the original so the surrounding rows close up around the lifted proxy.
+    if let Ok(mut node) = nodes.get_mut(row_entity) {
+        node.display = Display::None;
+    }
     if let Some(ghost) = state.ghost.take() {
         commands.entity(ghost).try_despawn();
     }
@@ -584,8 +622,11 @@ pub(super) fn begin_module_drag(
             GlobalZIndex(400),
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(position.x + 12.0),
-                top: Val::Px(position.y + 6.0),
+                left: Val::Px(position.x + 6.0),
+                top: Val::Px(position.y - 12.0),
+                width: Val::Px(width),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
                 padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
@@ -594,25 +635,72 @@ pub(super) fn begin_module_drag(
             BackgroundColor(theme::PANEL_LIGHT),
             BorderColor::all(theme::ACCENT),
         ))
-        .with_child((
-            Text::new(name),
-            bevy::feathers::theme::ThemedText,
-            TextColor(theme::TEXT),
-            TextFont {
-                font_size: FontSize::Px(12.0),
-                ..default()
-            },
-            TextLayout {
-                linebreak: LineBreak::NoWrap,
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(10.0),
+                    height: Val::Px(16.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_child((
+                bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+                    &asset_server,
+                    "icons/drag-vertical.svg",
+                )),
+                bevy_resvg::prelude::SvgColor(theme::TEXT_FAINT),
+                Node {
+                    width: Val::Px(10.0),
+                    height: Val::Px(16.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            row.spawn((
+                Text::new(name),
+                bevy::feathers::theme::ThemedText,
+                TextColor(theme::TEXT),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextLayout {
+                    linebreak: LineBreak::NoWrap,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            if !summary.is_empty() {
+                row.spawn((
+                    Text::new(summary),
+                    bevy::feathers::theme::ThemedText,
+                    TextColor(theme::TEXT_FAINT),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextLayout {
+                        linebreak: LineBreak::NoWrap,
+                        ..default()
+                    },
+                    Node {
+                        margin: UiRect::left(Val::Auto),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+            }
+        })
         .id();
     state.ghost = Some(ghost);
+    state.hidden_row = Some(row_entity);
+    state.gap_row = None;
+    state.dragged = Some(module_id);
 }
 
-/// Moves the drag ghost to follow the cursor for the duration of the drag (§28.4).
+/// Moves the drag proxy to follow the cursor for the duration of the drag (§28.4).
 pub(super) fn move_module_drag(
     event: On<Pointer<Drag>>,
     state: Res<ModuleDragState>,
@@ -625,19 +713,72 @@ pub(super) fn move_module_drag(
         return;
     };
     let position = event.pointer_location.position;
-    node.left = Val::Px(position.x + 12.0);
-    node.top = Val::Px(position.y + 6.0);
+    node.left = Val::Px(position.x + 6.0);
+    node.top = Val::Px(position.y - 12.0);
 }
 
-/// Tears down the drag ghost when the drag ends (§28.4), whether or not a reorder happened.
+/// Opens an insertion gap above the row the cursor enters during a drag (§28.4), so the other rows
+/// visibly make room for the drop. Restricted to same-stage rows (reorder is same-stage only).
+pub(super) fn hover_module_drag(
+    event: On<Pointer<DragEnter>>,
+    rows: Query<&ModuleRowDrag>,
+    parents: Query<&ChildOf>,
+    session: Res<EditorSession>,
+    mut nodes: Query<&mut Node>,
+    mut state: ResMut<ModuleDragState>,
+) {
+    let Some(dragged) = state.dragged else {
+        return;
+    };
+    let Some((row_entity, module_id)) = module_row_entity(event.entity, &rows, &parents) else {
+        return;
+    };
+    if Some(row_entity) == state.hidden_row
+        || Some(row_entity) == state.gap_row
+        || module_id == dragged
+    {
+        return;
+    }
+    let same_stage = session.selected_layer().is_some_and(|layer| {
+        let stage_of = |id| layer.modules.iter().find(|module| module.id == id);
+        matches!((stage_of(dragged), stage_of(module_id)), (Some(a), Some(b)) if a.stage == b.stage)
+    });
+    if !same_stage {
+        return;
+    }
+    if let Some(previous) = state.gap_row.take()
+        && let Ok(mut node) = nodes.get_mut(previous)
+    {
+        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
+    }
+    if let Ok(mut node) = nodes.get_mut(row_entity) {
+        node.margin.top = Val::Px(MODULE_ROW_GAP);
+    }
+    state.gap_row = Some(row_entity);
+}
+
+/// Restores the hidden row and any insertion gap, and tears down the proxy when the drag ends (§28.4),
+/// whether or not a reorder happened (a reorder also rebuilds the panel fresh).
 pub(super) fn end_module_drag(
     _event: On<Pointer<DragEnd>>,
+    mut nodes: Query<&mut Node>,
     mut state: ResMut<ModuleDragState>,
     mut commands: Commands,
 ) {
+    if let Some(row) = state.hidden_row.take()
+        && let Ok(mut node) = nodes.get_mut(row)
+    {
+        node.display = Display::Flex;
+    }
+    if let Some(gap) = state.gap_row.take()
+        && let Ok(mut node) = nodes.get_mut(gap)
+    {
+        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
+    }
     if let Some(ghost) = state.ghost.take() {
         commands.entity(ghost).try_despawn();
     }
+    state.dragged = None;
 }
 
 /// A compact, selectable stack row for one module (extensible-stages M9, §28.2): the module's name, its
@@ -651,6 +792,7 @@ pub(super) fn spawn_module_stack_row(
     metadata: Option<&ModuleMetadata>,
     diagnostic_path: &str,
     session: &EditorSession,
+    asset_server: &AssetServer,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
     let help = metadata.map_or(
@@ -690,13 +832,25 @@ pub(super) fn spawn_module_stack_row(
             BorderColor::all(base_border),
         ))
         .with_children(|row| {
-            // Drag handle (§28.4): the six-dot grip marks the row as draggable to reorder.
+            // Drag handle (§28.4): the vertical grip icon marks the row as draggable to reorder.
             row.spawn((
-                Text::new("⠿"),
-                bevy::feathers::theme::ThemedText,
-                TextColor(theme::TEXT_FAINT),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
+                Node {
+                    width: Val::Px(10.0),
+                    height: Val::Px(16.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_child((
+                bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+                    asset_server,
+                    "icons/drag-vertical.svg",
+                )),
+                bevy_resvg::prelude::SvgColor(theme::TEXT_FAINT),
+                Node {
+                    width: Val::Px(10.0),
+                    height: Val::Px(16.0),
                     ..default()
                 },
                 Pickable::IGNORE,

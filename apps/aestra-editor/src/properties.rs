@@ -48,8 +48,8 @@ pub(crate) mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;
 use module_controls::{
-    ModuleDragState, begin_module_drag, end_module_drag, handle_module_action, move_module_drag,
-    numeric_source_limits, properties_curve_limits, reorder_modules_on_drop,
+    ModuleDragState, begin_module_drag, end_module_drag, handle_module_action, hover_module_drag,
+    move_module_drag, numeric_source_limits, properties_curve_limits, reorder_modules_on_drop,
     spawn_module_inspector, spawn_module_stack_row,
 };
 #[cfg(test)]
@@ -141,6 +141,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(reorder_modules_on_drop)
             .add_observer(begin_module_drag)
             .add_observer(move_module_drag)
+            .add_observer(hover_module_drag)
             .add_observer(end_module_drag)
             .add_systems(Update, module_palette_keyboard.in_set(PropertiesSet::Input))
             .add_systems(
@@ -1026,6 +1027,7 @@ mod tests {
             bevy::scene::ScenePlugin,
             bevy::text::TextPlugin,
         ));
+        let assets = app.world().resource::<AssetServer>().clone();
         let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
         let localizer = test_localizer();
         app.world_mut()
@@ -1038,6 +1040,7 @@ mod tests {
                     &EditorModuleRegistry::default(),
                     &ModulePaletteState::default(),
                     &localizer,
+                    &assets,
                 );
             });
         app.world_mut().flush();
@@ -1068,6 +1071,8 @@ mod tests {
         sim.stage = StageKind::Simulation("Fluid".to_string());
         sim.parameters = aestra_core::ModuleParameters::Custom(Default::default());
         session.effect.emitters[layer].modules.push(sim);
+        app.init_asset::<bevy_resvg::prelude::SvgFile>();
+        let assets = app.world().resource::<AssetServer>().clone();
         let localizer = test_localizer();
         app.world_mut()
             .commands()
@@ -1079,6 +1084,7 @@ mod tests {
                     &EditorModuleRegistry::default(),
                     &ModulePaletteState::default(),
                     &localizer,
+                    &assets,
                 );
             });
         app.world_mut().flush();
@@ -6075,6 +6081,7 @@ pub(crate) fn spawn_module_stack_panel(
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     let Some(layer) = session.selected_layer() else {
         parent
@@ -6169,6 +6176,7 @@ pub(crate) fn spawn_module_stack_panel(
                                             "effect.emitters[{emitter_index}].modules[{module_index}]"
                                         ),
                                         session,
+                                        asset_server,
                                     );
                                 }
                                 spawn_stage_diagnostics(
@@ -6204,6 +6212,7 @@ pub(crate) fn spawn_module_stack_panel(
                                             "effect.emitters[{emitter_index}].modules[{module_index}]"
                                         ),
                                         session,
+                                        asset_server,
                                     );
                                 }
                             }

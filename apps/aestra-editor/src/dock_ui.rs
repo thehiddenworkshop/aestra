@@ -565,6 +565,7 @@ fn spawn_panel_content(
                 sources.registry,
                 sources.palette,
                 sources.localizer,
+                sources.asset_server,
             );
         }
         ToolPanel::Properties => {
