@@ -1231,13 +1231,6 @@ pub(super) fn handle_renderer_toggle_change(
     }
 }
 
-pub(super) fn properties_renderer_collapsed(
-    settings: &EditorSettings,
-    renderer: &aestra_core::RendererInstance,
-) -> bool {
-    properties_renderer_card_memory(renderer).collapsed(&settings.properties.section_expansion)
-}
-
 pub(super) fn properties_renderer_card_memory(
     renderer: &aestra_core::RendererInstance,
 ) -> RememberedPanelCard {
@@ -2551,6 +2544,129 @@ fn spawn_semantic_material_texture(
     }
 }
 
+/// The display name for a renderer, shared by the compact stack row and the inspector card.
+fn renderer_display_name(renderer: &aestra_core::RendererInstance) -> &'static str {
+    match renderer.properties {
+        RendererProperties::Ribbon { .. } => "Ribbon Renderer",
+        RendererProperties::Trail { .. } => "Trail Renderer",
+        RendererProperties::Sprite => "Sprite Renderer",
+        RendererProperties::Flipbook { .. } => "Flipbook Renderer",
+        RendererProperties::Mesh { .. } => "Mesh Renderer",
+        _ => "Renderer",
+    }
+}
+
+/// A compact, selectable stack row for one renderer (extensible-stages M9, §28.2): its name plus the
+/// shared enabled/actions controls, and a material drop target. Selecting it shows the renderer's full
+/// controls in the inspector below the stack (via the global `select_properties_header` observer).
+pub(super) fn spawn_renderer_stack_row(
+    parent: &mut ChildSpawnerCommands,
+    renderer: &aestra_core::RendererInstance,
+    session: &EditorSession,
+) {
+    let display_name = renderer_display_name(renderer);
+    let selected = session.selection.primary == SemanticTarget::Renderer(renderer.id);
+    let base_border = if selected {
+        theme::ACCENT_DIM
+    } else {
+        theme::BORDER
+    };
+    parent
+        .spawn((
+            super::asset_drop::RendererDropTarget {
+                effect: session.effect.id,
+                renderer: renderer.id,
+            },
+            PropertiesSemanticTarget {
+                target: SemanticTarget::Renderer(renderer.id),
+                base_border,
+            },
+            PropertiesSelectionTarget(SemanticTarget::Renderer(renderer.id)),
+            crate::feathers::tooltip::EditorTooltip::titled(
+                display_name,
+                "Controls how this emitter is drawn.",
+            ),
+            Node {
+                width: Val::Auto,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                margin: UiRect::axes(Val::Px(7.0), Val::Px(1.0)),
+                min_height: Val::Px(26.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::PANEL_LIGHT
+            } else if renderer.enabled {
+                theme::PANEL
+            } else {
+                theme::PANEL_DARK
+            }),
+            BorderColor::all(base_border),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(display_name),
+                bevy::feathers::theme::ThemedText,
+                TextColor(if renderer.enabled {
+                    theme::TEXT
+                } else {
+                    theme::TEXT_FAINT
+                }),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextLayout {
+                    linebreak: LineBreak::NoWrap,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            row.spawn((
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            spawn_renderer_header_actions(row, renderer);
+        });
+}
+
+/// The enabled checkbox and action menu shared by the renderer stack row and inspector card header.
+fn spawn_renderer_header_actions(
+    header: &mut ChildSpawnerCommands,
+    renderer: &aestra_core::RendererInstance,
+) {
+    let mut enabled = header.spawn_empty();
+    enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+        RendererEnabledControl(renderer.id),
+        AccessibleLabel("Enable renderer".into()),
+    ));
+    if renderer.enabled {
+        enabled.insert(Checked);
+    }
+    spawn_action_menu(
+        header,
+        "Renderer actions",
+        &[
+            ComboOption {
+                label: "Duplicate".into(),
+                selected: false,
+                action: PropertiesAction::DuplicateRenderer(renderer.id),
+            },
+            ComboOption {
+                label: "Delete…".into(),
+                selected: false,
+                action: PropertiesAction::DeleteRenderer(renderer.id),
+            },
+        ],
+    );
+}
+
 pub(super) fn spawn_renderer_card(
     parent: &mut ChildSpawnerCommands,
     renderer: &aestra_core::RendererInstance,
@@ -2562,14 +2678,7 @@ pub(super) fn spawn_renderer_card(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    let display_name = match renderer.properties {
-        RendererProperties::Ribbon { .. } => "Ribbon Renderer",
-        RendererProperties::Trail { .. } => "Trail Renderer",
-        RendererProperties::Sprite => "Sprite Renderer",
-        RendererProperties::Flipbook { .. } => "Flipbook Renderer",
-        RendererProperties::Mesh { .. } => "Mesh Renderer",
-        _ => "Renderer",
-    };
+    let display_name = renderer_display_name(renderer);
     let base_border = if session.selection.primary == SemanticTarget::Renderer(renderer.id) {
         theme::ACCENT_DIM
     } else {

@@ -423,40 +423,27 @@ pub(super) fn properties_curve_limits(
     numeric_source_limits(&input.control)
 }
 
-pub(super) fn properties_module_collapsed(
-    settings: &EditorSettings,
-    module: &ModuleInstance,
-) -> bool {
-    properties_module_card_memory(module).collapsed(&settings.properties.section_expansion)
-}
-
 pub(super) fn properties_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
-    RememberedPanelCard::new(
-        properties_module_key(module),
-        !matches!(module.stage, StageKind::ParticleUpdate),
-    )
+    // Persisted expansion preference for a module (extensible-stages M9). The compact stack no longer
+    // expands modules inline — the selected module's controls live in the inspector below the stack —
+    // so this now backs only the latent ToggleSection persistence; it defaults to collapsed.
+    RememberedPanelCard::new(properties_module_key(module), false)
 }
 
 pub(super) fn properties_module_key(module: &ModuleInstance) -> String {
     format!("module/{}", module.module_type.0)
 }
 
-pub(super) fn spawn_module_card(
-    parent: &mut ChildSpawnerCommands,
+/// The selection/diagnostic border color for a module row (extensible-stages M9): red when the module
+/// has diagnostics, accent when it is the current selection, otherwise the panel border. The panel
+/// rebuilds on selection change (the global select observer bumps `ui_revision`), so this is recomputed
+/// per render rather than needing a live-updating system.
+fn module_row_border(
     module: &ModuleInstance,
-    metadata: Option<&ModuleMetadata>,
     diagnostic_path: &str,
     session: &EditorSession,
-    localizer: &Localizer,
-    collapsed: bool,
-    asset_server: &AssetServer,
-) {
-    let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
-    let help = metadata.map_or(
-        "This module is not available in the current registry.",
-        |item| item.description,
-    );
-    let base_border = if session
+) -> Color {
+    if session
         .diagnostics
         .diagnostics
         .iter()
@@ -467,80 +454,260 @@ pub(super) fn spawn_module_card(
         theme::ACCENT_DIM
     } else {
         theme::BORDER
-    };
+    }
+}
+
+/// The enabled checkbox and per-module action menu shared by the compact stack row and the inspector
+/// header (extensible-stages M9), so a module can be toggled, reordered, duplicated or deleted from
+/// either place.
+fn spawn_module_header_actions(
+    header: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    display_name: &str,
+) {
+    let mut enabled = header.spawn_empty();
+    enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+        ModuleEnabledControl(module.id),
+        AccessibleLabel(format!("Enable {display_name}")),
+    ));
+    if module.enabled {
+        enabled.insert(Checked);
+    }
+    spawn_action_menu(
+        header,
+        &format!("{display_name} actions"),
+        &[
+            ComboOption {
+                label: "Move up".into(),
+                selected: false,
+                action: PropertiesAction::MoveModule(module.id, -1),
+            },
+            ComboOption {
+                label: "Move down".into(),
+                selected: false,
+                action: PropertiesAction::MoveModule(module.id, 1),
+            },
+            ComboOption {
+                label: "Duplicate".into(),
+                selected: false,
+                action: PropertiesAction::DuplicateModule(module.id),
+            },
+            ComboOption {
+                label: "Delete…".into(),
+                selected: false,
+                action: PropertiesAction::DeleteModule(module.id),
+            },
+        ],
+    );
+}
+
+/// A compact, selectable stack row for one module (extensible-stages M9, §28.2): the module's name, its
+/// descriptor-driven summary, and the shared enabled/actions controls — no inline parameter controls.
+/// Selecting the row (via the global `select_properties_header` observer that finds the
+/// `PropertiesSelectionTarget`) shows the module's full controls in the inspector below the stack.
+pub(super) fn spawn_module_stack_row(
+    parent: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    metadata: Option<&ModuleMetadata>,
+    diagnostic_path: &str,
+    session: &EditorSession,
+) {
+    let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
+    let help = metadata.map_or(
+        "This module is not available in the current registry.",
+        |item| item.description,
+    );
     let summary = aestra_compiler::module_summary(module);
-    spawn_remembered_panel_card(
-        parent,
-        PanelCardProps::new(display_name, collapsed)
-            .with_memory_key(properties_module_key(module))
-            .with_help(help)
-            .with_summary(&summary)
-            .with_enabled(module.enabled)
-            .with_background(if module.enabled {
+    let base_border = module_row_border(module, diagnostic_path, session);
+    let selected = session.selection.primary == SemanticTarget::Module(module.id);
+    parent
+        .spawn((
+            PropertiesSemanticTarget {
+                target: SemanticTarget::Module(module.id),
+                base_border,
+            },
+            PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
+            crate::feathers::tooltip::EditorTooltip::titled(display_name, help),
+            Node {
+                width: Val::Auto,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                margin: UiRect::axes(Val::Px(7.0), Val::Px(1.0)),
+                min_height: Val::Px(26.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
                 theme::PANEL_LIGHT
+            } else if module.enabled {
+                theme::PANEL
             } else {
                 theme::PANEL_DARK
-            })
-            .with_border(base_border),
-        PropertiesSemanticTarget {
-            target: SemanticTarget::Module(module.id),
-            base_border,
-        },
-        PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
-        PropertiesAction::ToggleSection(PropertiesSection::Module(module.id)),
-        |header| {
-            let mut enabled = header.spawn_empty();
-            enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
-                ModuleEnabledControl(module.id),
-                AccessibleLabel(format!("Enable {display_name}")),
+            }),
+            BorderColor::all(base_border),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(display_name),
+                bevy::feathers::theme::ThemedText,
+                TextColor(if module.enabled {
+                    theme::TEXT
+                } else {
+                    theme::TEXT_FAINT
+                }),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextLayout {
+                    linebreak: LineBreak::NoWrap,
+                    ..default()
+                },
+                Pickable::IGNORE,
             ));
-            if module.enabled {
-                enabled.insert(Checked);
+            // The descriptor-driven summary, right-aligned and muted, so the row reads at a glance.
+            if !summary.is_empty() {
+                row.spawn((
+                    Text::new(summary),
+                    bevy::feathers::theme::ThemedText,
+                    TextColor(theme::TEXT_FAINT),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextLayout {
+                        linebreak: LineBreak::NoWrap,
+                        ..default()
+                    },
+                    Node {
+                        margin: UiRect::left(Val::Auto),
+                        max_width: Val::Percent(58.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+            } else {
+                row.spawn((
+                    Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
             }
-            spawn_action_menu(
-                header,
-                &format!("{display_name} actions"),
-                &[
-                    ComboOption {
-                        label: "Move up".into(),
-                        selected: false,
-                        action: PropertiesAction::MoveModule(module.id, -1),
+            spawn_module_header_actions(row, module, display_name);
+        });
+}
+
+/// The focused inspector view of a single module (extensible-stages M9, §28.2): a header echoing the
+/// stack row (name, summary, enabled, actions) followed by the module's full parameter controls. Unlike
+/// the old collapsible card this never hides its body — it is the destination for the selected row.
+pub(super) fn spawn_module_inspector(
+    parent: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    metadata: Option<&ModuleMetadata>,
+    diagnostic_path: &str,
+    session: &EditorSession,
+    localizer: &Localizer,
+    asset_server: &AssetServer,
+) {
+    let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
+    let summary = aestra_compiler::module_summary(module);
+    parent
+        .spawn(Node {
+            width: Val::Auto,
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            padding: UiRect::axes(Val::Px(9.0), Val::Px(7.0)),
+            ..default()
+        })
+        .with_children(|card| {
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            })
+            .with_children(|header| {
+                header.spawn((
+                    Text::new(display_name),
+                    bevy::feathers::theme::ThemedText,
+                    TextColor(if module.enabled {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_FAINT
+                    }),
+                    TextFont {
+                        font_size: FontSize::Px(13.0),
+                        ..default()
                     },
-                    ComboOption {
-                        label: "Move down".into(),
-                        selected: false,
-                        action: PropertiesAction::MoveModule(module.id, 1),
-                    },
-                    ComboOption {
-                        label: "Duplicate".into(),
-                        selected: false,
-                        action: PropertiesAction::DuplicateModule(module.id),
-                    },
-                    ComboOption {
-                        label: "Delete…".into(),
-                        selected: false,
-                        action: PropertiesAction::DeleteModule(module.id),
-                    },
-                ],
-            );
-        },
-        |card| {
-            if let Some(metadata) = metadata {
-                for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    spawn_input_control(
-                        card,
-                        module,
-                        input,
-                        input_index as u8,
-                        session,
-                        localizer,
-                        asset_server,
-                    );
+                ));
+                if !summary.is_empty() {
+                    header.spawn((
+                        Text::new(summary),
+                        bevy::feathers::theme::ThemedText,
+                        TextColor(theme::TEXT_FAINT),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextLayout {
+                            linebreak: LineBreak::NoWrap,
+                            ..default()
+                        },
+                        Node {
+                            margin: UiRect::left(Val::Auto),
+                            ..default()
+                        },
+                    ));
+                } else {
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
                 }
-            }
-            spawn_inline_diagnostics(card, diagnostic_path, session);
-        },
-    );
+                spawn_module_header_actions(header, module, display_name);
+            });
+            spawn_module_input_controls(
+                card,
+                module,
+                metadata,
+                diagnostic_path,
+                session,
+                localizer,
+                asset_server,
+            );
+        });
+}
+
+/// The module's parameter controls (extensible-stages M9): every registered input plus inline
+/// diagnostics. Shared so the inspector and any future embedded view render identical controls.
+fn spawn_module_input_controls(
+    card: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    metadata: Option<&ModuleMetadata>,
+    diagnostic_path: &str,
+    session: &EditorSession,
+    localizer: &Localizer,
+    asset_server: &AssetServer,
+) {
+    if let Some(metadata) = metadata {
+        for (input_index, input) in metadata.inputs.iter().enumerate() {
+            spawn_input_control(
+                card,
+                module,
+                input,
+                input_index as u8,
+                session,
+                localizer,
+                asset_server,
+            );
+        }
+    }
+    spawn_inline_diagnostics(card, diagnostic_path, session);
 }
 
 fn spawn_input_control(

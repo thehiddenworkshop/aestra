@@ -102,11 +102,6 @@ impl<'a> PanelCardProps<'a> {
         self
     }
 
-    pub(crate) fn with_background(mut self, background: Color) -> Self {
-        self.background = background;
-        self
-    }
-
     pub(crate) fn with_border(mut self, border: Color) -> Self {
         self.border = border;
         self

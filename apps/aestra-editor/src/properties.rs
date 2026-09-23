@@ -54,7 +54,7 @@ use module_controls::{
 };
 use module_controls::{
     handle_module_action, numeric_source_limits, properties_curve_limits,
-    properties_module_card_memory, properties_module_collapsed, spawn_module_card,
+    properties_module_card_memory, spawn_module_inspector, spawn_module_stack_row,
 };
 pub(crate) use referenced_effect::EffectClipRepairState;
 #[cfg(test)]
@@ -75,9 +75,9 @@ use renderer_controls::{
     handle_renderer_enabled_change, handle_renderer_scalar_change, handle_renderer_toggle_change,
     handle_semantic_material_scalar_change, handle_semantic_material_toggle_change,
     normalize_renderer_uv_scrub_value, properties_renderer_card_memory,
-    properties_renderer_collapsed, renderer_number_input_value, renderer_number_step,
-    renderer_numeric_scrub_command, set_semantic_material_render_state,
-    set_semantic_material_source, spawn_renderer_card, sync_material_stack_property_number_inputs,
+    renderer_number_input_value, renderer_number_step, renderer_numeric_scrub_command,
+    set_semantic_material_render_state, set_semantic_material_source, spawn_renderer_card,
+    spawn_renderer_stack_row, sync_material_stack_property_number_inputs,
     sync_renderer_number_inputs, sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
 };
 
@@ -3004,16 +3004,26 @@ mod tests {
             .unwrap();
         let renderer = session.selected_layer().unwrap().renderers.first().unwrap();
 
-        assert!(!properties_module_collapsed(&settings, emission));
-        assert!(properties_module_collapsed(&settings, motion));
-        assert!(properties_renderer_collapsed(&settings, renderer));
+        // Modules default to collapsed persistence (their controls live in the inspector, §28.2);
+        // renderers still collapse in place. Toggling a module's section persists per type.
+        let module_collapsed = |settings: &EditorSettings, module: &ModuleInstance| {
+            properties_module_card_memory(module).collapsed(&settings.properties.section_expansion)
+        };
+        let renderer_collapsed =
+            |settings: &EditorSettings, renderer: &aestra_core::RendererInstance| {
+                properties_renderer_card_memory(renderer)
+                    .collapsed(&settings.properties.section_expansion)
+            };
+        assert!(module_collapsed(&settings, emission));
+        assert!(module_collapsed(&settings, motion));
+        assert!(renderer_collapsed(&settings, renderer));
 
         assert!(toggle_persisted_properties_section(
             &session,
             &mut settings,
             PropertiesSection::Module(motion.id),
         ));
-        assert!(!properties_module_collapsed(&settings, motion));
+        assert!(!module_collapsed(&settings, motion));
         assert_eq!(
             settings
                 .properties
@@ -3027,7 +3037,7 @@ mod tests {
             &mut settings,
             PropertiesSection::Renderer(renderer.id),
         ));
-        assert!(!properties_renderer_collapsed(&settings, renderer));
+        assert!(!renderer_collapsed(&settings, renderer));
         assert_eq!(
             settings
                 .properties
@@ -5781,7 +5791,9 @@ pub(crate) fn spawn_properties(
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
     localizer: &Localizer,
-    settings: &EditorSettings,
+    // Card collapse state no longer drives the module stack (compact rows + inspector, §28.2); kept in
+    // the signature for the panel builder's call shape and future stack preferences.
+    _settings: &EditorSettings,
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
@@ -5928,11 +5940,15 @@ pub(crate) fn spawn_properties(
                     ..default()
                 },
             ));
+            // The compact module stack (§28.2): emitter chrome and short, selectable stage-grouped
+            // rows, each a name plus its descriptor-driven summary. The selected row's full controls
+            // render in the inspector below; the two regions split the panel and scroll independently.
             panel
                 .spawn(Node {
                     width: Val::Percent(100.0),
                     flex_grow: 1.0,
-                    min_height: Val::Px(0.0),
+                    flex_basis: Val::Px(0.0),
+                    min_height: Val::Px(120.0),
                     min_width: Val::Px(0.0),
                     ..default()
                 })
@@ -5945,67 +5961,92 @@ pub(crate) fn spawn_properties(
                             min_width: Val::Px(0.0),
                             min_height: Val::Px(0.0),
                             flex_direction: FlexDirection::Column,
-                            padding: UiRect::bottom(Val::Px(12.0)),
+                            padding: UiRect::bottom(Val::Px(8.0)),
                             ..default()
                         },
                         |stack| {
-                    spawn_document_controls(stack, session, localizer);
-                    spawn_emitter_transform_controls(stack);
-                    spawn_emitter_timing_controls(stack, session, localizer);
-                    spawn_event_links(stack, session, localizer);
-                    for stage in StackStage::ALL {
-                        spawn_stage_header(stack, stage);
-                        if stage == StackStage::Render {
-                            for (renderer_index, renderer) in layer.renderers.iter().enumerate() {
-                                spawn_renderer_card(
+                            spawn_document_controls(stack, session, localizer);
+                            spawn_emitter_transform_controls(stack);
+                            spawn_emitter_timing_controls(stack, session, localizer);
+                            spawn_event_links(stack, session, localizer);
+                            for stage in StackStage::ALL {
+                                spawn_stage_header(stack, stage);
+                                if stage == StackStage::Render {
+                                    for renderer in &layer.renderers {
+                                        spawn_renderer_stack_row(stack, renderer, session);
+                                    }
+                                    spawn_stage_diagnostics(
+                                        stack,
+                                        stage,
+                                        &format!("effect.emitters[{emitter_index}].renderers"),
+                                        session,
+                                        registry,
+                                    );
+                                    continue;
+                                }
+                                let semantic =
+                                    stage.semantic().expect("module stage has semantics");
+                                for (module_index, module) in layer.modules.iter().enumerate() {
+                                    if module.stage != semantic {
+                                        continue;
+                                    }
+                                    spawn_module_stack_row(
+                                        stack,
+                                        module,
+                                        registry.0.get(&module.module_type),
+                                        &format!(
+                                            "effect.emitters[{emitter_index}].modules[{module_index}]"
+                                        ),
+                                        session,
+                                    );
+                                }
+                                spawn_stage_diagnostics(
                                     stack,
-                                    renderer,
-                                    &format!(
-                                        "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
-                                    ),
+                                    stage,
+                                    &format!("effect.emitters[{emitter_index}].modules"),
                                     session,
-                                    catalog,
-                                    properties_renderer_collapsed(settings, renderer),
-                                    material_stack_inspector,
-                                    asset_server,
-                                    localizer,
+                                    registry,
                                 );
                             }
-                            spawn_stage_diagnostics(
-                                stack,
-                                stage,
-                                &format!("effect.emitters[{emitter_index}].renderers"),
+                        },
+                    );
+                });
+            spawn_inspector_divider(panel);
+            // The focused, selection-following inspector (§28.2): the selected module's or renderer's
+            // full controls, or a hint when nothing in this emitter is selected.
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    flex_basis: Val::Px(0.0),
+                    min_height: Val::Px(120.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        ScrollMemoryKey::PropertiesInspector,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::bottom(Val::Px(12.0)),
+                            ..default()
+                        },
+                        |inspector| {
+                            spawn_selected_inspector(
+                                inspector,
                                 session,
+                                layer,
+                                emitter_index,
                                 registry,
-                            );
-                            continue;
-                        }
-                        let semantic = stage.semantic().expect("module stage has semantics");
-                        for (module_index, module) in layer.modules.iter().enumerate() {
-                            if module.stage != semantic {
-                                continue;
-                            }
-                            spawn_module_card(
-                                stack,
-                                module,
-                                registry.0.get(&module.module_type),
-                                &format!(
-                                    "effect.emitters[{emitter_index}].modules[{module_index}]"
-                                ),
-                                session,
-                                localizer,
-                                properties_module_collapsed(settings, module),
+                                catalog,
+                                material_stack_inspector,
                                 asset_server,
+                                localizer,
                             );
-                        }
-                        spawn_stage_diagnostics(
-                            stack,
-                            stage,
-                            &format!("effect.emitters[{emitter_index}].modules"),
-                            session,
-                            registry,
-                        );
-                    }
                         },
                     );
                 });
@@ -6013,6 +6054,113 @@ pub(crate) fn spawn_properties(
                 spawn_module_palette(panel, registry, palette);
             }
         });
+}
+
+/// The labelled divider between the compact stack and the focused inspector (extensible-stages M9).
+fn spawn_inspector_divider(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new("INSPECTOR"),
+                bevy::feathers::theme::ThemedText,
+                TextColor(theme::TEXT_FAINT),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Node {
+                    flex_grow: 1.0,
+                    height: Val::Px(1.0),
+                    ..default()
+                },
+                BackgroundColor(theme::BORDER),
+            ));
+        });
+}
+
+/// Renders the focused inspector for the current selection (extensible-stages M9, §28.2): the selected
+/// module's or renderer's full controls, or a hint when the selection is not a module/renderer in this
+/// emitter. The panel rebuilds on selection change, so this follows the selection made in the stack.
+#[allow(clippy::too_many_arguments)]
+fn spawn_selected_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    layer: &aestra_core::Emitter,
+    emitter_index: usize,
+    registry: &EditorModuleRegistry,
+    catalog: &ProjectEffectCatalog,
+    material_stack_inspector: &MaterialStackInspectorState,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    match session.selection.primary {
+        SemanticTarget::Module(id) => {
+            if let Some((module_index, module)) = layer
+                .modules
+                .iter()
+                .enumerate()
+                .find(|(_, module)| module.id == id)
+            {
+                spawn_module_inspector(
+                    parent,
+                    module,
+                    registry.0.get(&module.module_type),
+                    &format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
+                    session,
+                    localizer,
+                    asset_server,
+                );
+                return;
+            }
+        }
+        SemanticTarget::Renderer(id) => {
+            if let Some((renderer_index, renderer)) = layer
+                .renderers
+                .iter()
+                .enumerate()
+                .find(|(_, renderer)| renderer.id == id)
+            {
+                spawn_renderer_card(
+                    parent,
+                    renderer,
+                    &format!("effect.emitters[{emitter_index}].renderers[{renderer_index}]"),
+                    session,
+                    catalog,
+                    false,
+                    material_stack_inspector,
+                    asset_server,
+                    localizer,
+                );
+                return;
+            }
+        }
+        _ => {}
+    }
+    parent.spawn((
+        Text::new("Select a module or renderer above to edit its properties."),
+        bevy::feathers::theme::ThemedText,
+        TextColor(theme::TEXT_FAINT),
+        TextFont {
+            font_size: FontSize::Px(12.0),
+            ..default()
+        },
+        Node {
+            margin: UiRect::all(Val::Px(14.0)),
+            ..default()
+        },
+    ));
 }
 
 fn spawn_marker_properties(
