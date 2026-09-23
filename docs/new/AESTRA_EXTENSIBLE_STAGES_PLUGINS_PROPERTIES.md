@@ -2811,6 +2811,36 @@ renderer plan — without adding a `RendererPlanKind` variant to core, and witho
 
 ## Milestone 9 — Properties stack + focused Inspector redesign
 
+> **Status — 9a shell landed; 9b surfacing landed, editable schema controls deferred.** The Properties
+> panel is now the Niagara-style shell (§28.1–28.3): a compact, stage-grouped stack of short rows on
+> top and a focused, selection-following inspector below, split by a **draggable, persisted** divider.
+> - **Data foundation:** `aestra-compiler/src/module_stack.rs` — `EmitterStackProjection` /
+>   `ModuleStackGroup` / `ModuleStackRow` + `EffectCompiler::project_emitter_stack` + `module_summary`
+>   (descriptor-driven one-line summaries), tested engine-independently.
+> - **Shell (9a):** each module/renderer is one ~26px selectable row (name + summary + enabled toggle +
+>   action menu, no inline controls — `spawn_module_stack_row` / `spawn_renderer_stack_row`); the
+>   selected row's full controls render in the inspector (`spawn_module_inspector` / expanded
+>   `spawn_renderer_card`). Selection + border highlight reuse the existing global
+>   `select_properties_header` observer + `PropertiesSemanticTarget`, so the panel rebuild follows the
+>   selection. The stack region is a fixed, resizable height (`PropertiesStackPane`, `PropertiesSplitGrip`
+>   with DragStart/Drag/DragEnd observers); the height persists in `settings.properties.stack_height`
+>   (serde-defaulted, `clamped_stack_height`) and neither region can be dragged shut. Descriptor
+>   summaries also show on the collapsible cards via `PanelCardProps::with_summary`.
+> - **Missing-plugin surfacing (9b, §20):** an unregistered plugin/custom module (no metadata in the
+>   built-in registry) renders its preserved `ModuleParameters::Custom` payload as read-only value rows
+>   with a "not installed / preserved" note (`spawn_custom_module_properties`,
+>   `format_custom_property_value`), so authored data is surfaced rather than dropped.
+>
+> **Deliberately deferred:** *editable* schema-driven controls for plugin/custom modules — the built-in
+> control widgets are keyed by `&'static` input names and `u8` indices, so runtime-String-keyed editable
+> controls need the plugin registry/loading (M10) to publish a real `PropertySchema` to drive and verify
+> them (built-ins already expose `ModuleMetadata::property_schema` / `InputControl::to_property_control`
+> for that convergence). Also deferred, not yet wired into the editor stack: `EMITTER SPAWN` and authored
+> **simulation-stage** sections (the compiler projection already groups them; the editor panel still
+> renders the four fixed `StackStage`s), drag-reorder, stack filtering, repeated-instance disambiguated
+> names, diagnostics badges as chips, keyboard/context move actions, and the `properties.rs` module
+> refactor.
+
 ### Goal
 
 Replace the current vertically expanded card model with a professional scalable projection.
