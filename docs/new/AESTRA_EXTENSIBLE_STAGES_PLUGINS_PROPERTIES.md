@@ -2686,6 +2686,22 @@ and execute through a reference/mock backend with deterministic ordering.
 
 ---
 
+> **Status — the M6 Execution IR runs on the real GPU.** A backend consumes an `ExecutionBlock`
+> (`execution_ir_conformance.rs`): it allocates a GPU buffer per declared `ResourceDescriptor` (bounded
+> by the declared bytes), builds a compute pipeline per distinct op entry point, and walks the ops in
+> order — each `Compute` is a dispatch, each iteration its own compute pass (a real ordering barrier),
+> `Repeat` loops its body, `Copy` copies buffers — timing every pass with GPU timestamp queries. A
+> synthetic multi-pass stage (`set 1 → Barrier → double ×4 → add 100`) passes on the RTX 4070 SUPER
+> with **GPU validation** (the block validates and the kernels compile), **capture** (one timestamp
+> interval per dispatch == `compute_pass_count`), and **deterministic ordering** (the order- and
+> repeat-dependent result is exactly `116` — a wrong order or repeat count could not produce it), and a
+> rerun is identical (`a_synthetic_multi_pass_stage_executes_on_gpu_in_deterministic_order`). No fluid
+> solver required, per the milestone. **Deferred:** baking an `ExecutionBlock` into the artifact DTO for
+> its own round-trip (the runtime types are not serde — serialization lives in the artifact's DTOs;
+> M5/M6 kept blocks runtime-only) and folding block `compute_pass_count` into the profiler's dispatch
+> estimate and the diagnostics' backend-requirement report are the remaining wiring; the reference
+> backend (M6) and this native run pin the ordering/validation the artifact and profiler will report.
+
 ## Milestone 7 — GPU/backend generic stage scheduling
 
 ### Goal
