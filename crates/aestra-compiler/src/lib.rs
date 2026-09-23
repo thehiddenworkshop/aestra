@@ -6,6 +6,7 @@ mod material_graph;
 mod material_ir;
 mod material_reflection;
 mod material_stack;
+mod module_stack;
 mod normal_map;
 pub use normal_map::evaluate_normal_map;
 
@@ -15,6 +16,7 @@ pub use material_graph::*;
 pub use material_ir::*;
 pub use material_reflection::*;
 pub use material_stack::*;
+pub use module_stack::*;
 
 pub use aestra_core::{
     PropertyEvaluationDomain as InputEvaluationDomain, PropertySource as InputSourceKind, ValueType,

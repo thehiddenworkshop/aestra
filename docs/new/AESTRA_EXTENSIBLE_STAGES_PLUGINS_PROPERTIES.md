@@ -2791,6 +2791,24 @@ renderer plan — without adding a `RendererPlanKind` variant to core, and witho
 
 ---
 
+> **Status — design locked; Phase 9a foundation started.** After evaluating UE5 Niagara, Houdini,
+> Unity VFX Graph and Blender, the direction is confirmed as the Niagara-style shape: **viewport stays
+> central**; a Properties dock holds a compact stage-grouped **module stack** on top and a
+> **selection-following inspector** below (a resizable split, §28.1) — the inspector is the current
+> properties panel re-scoped to the selected stack item, not a new panel; the **module stack stays a
+> stack** (it mirrors the fixed lifecycle / `CompiledLifecycleStages`), while the node **graph** is
+> reserved for the material editor (today) and a future emitter-relationship view (M15) — never for the
+> linear module pipeline (§29). **Landed:** the testable data foundation — `EmitterStackProjection` /
+> `ModuleStackGroup` / `ModuleStackRow` and `EffectCompiler::project_emitter_stack` in
+> `aestra-compiler::module_stack` (mirroring `MaterialStackProjection`): stage-grouped compact rows in
+> canonical lifecycle order + first-appearance simulation stages, each with a descriptor-driven one-line
+> `module_summary` (§28.2–28.3), unknown/plugin modules still projected (data preserved, §20). **Still
+> to do (the visual shell, built on this projection and verified in the running editor, per Phase 9a →
+> 9b):** the compact stack rows + stage sections, the focused inspector + resizable splitter, drag
+> reorder, repeated-instance names, diagnostics badges, stack filtering, persisted splitter position,
+> and (9b) swapping the inspector's control rendering onto `PropertySchema` (M2) with plugin/custom-stage
+> rows; plus refactoring `properties.rs` (8.5k lines) into focused modules.
+
 ## Milestone 9 — Properties stack + focused Inspector redesign
 
 ### Goal
