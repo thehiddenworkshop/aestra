@@ -53,8 +53,8 @@ use module_controls::{
     toggle_module_input_public,
 };
 use module_controls::{
-    handle_module_action, numeric_source_limits, properties_curve_limits, spawn_module_inspector,
-    spawn_module_stack_row,
+    handle_module_action, numeric_source_limits, properties_curve_limits, reorder_modules_on_drop,
+    spawn_module_inspector, spawn_module_stack_row,
 };
 pub(crate) use referenced_effect::EffectClipRepairState;
 #[cfg(test)]
@@ -136,6 +136,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
             .add_observer(select_properties_header)
+            .add_observer(reorder_modules_on_drop)
             .add_systems(Update, module_palette_keyboard.in_set(PropertiesSet::Input))
             .add_systems(
                 Update,

@@ -493,12 +493,12 @@ fn spawn_module_header_actions(
 /// Tags a module stack row as a drag source and drop target for reordering (extensible-stages M9,
 /// §28.4). Carries the row's module id so a drop can reorder the dragged module onto this one.
 #[derive(Component, Clone, Copy)]
-struct ModuleRowDrag(ModuleId);
+pub(super) struct ModuleRowDrag(ModuleId);
 
 /// Reorders modules by drag-and-drop within the stack (§28.4): when one row is dropped onto another,
 /// the dragged module takes the target's slot. The session enforces same-stage-only and undoability.
-/// Attached per row, so the observed entity is the drop target; `drop.dropped` is the dragged row.
-fn reorder_modules_on_drop(
+/// Registered globally (like the timeline's drop handlers); it filters to drops between module rows.
+pub(super) fn reorder_modules_on_drop(
     mut drop: On<Pointer<DragDrop>>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
@@ -515,8 +515,7 @@ fn reorder_modules_on_drop(
             entity = parents.get(entity).ok()?.parent();
         }
     };
-    let (Some(dragged), Some(target)) = (module_of(drop.dropped), module_of(drop.event_target()))
-    else {
+    let (Some(dragged), Some(target)) = (module_of(drop.dropped), module_of(drop.entity)) else {
         return;
     };
     if dragged == target {
@@ -575,7 +574,6 @@ pub(super) fn spawn_module_stack_row(
             }),
             BorderColor::all(base_border),
         ))
-        .observe(reorder_modules_on_drop)
         .with_children(|row| {
             row.spawn((
                 Text::new(display_name),
