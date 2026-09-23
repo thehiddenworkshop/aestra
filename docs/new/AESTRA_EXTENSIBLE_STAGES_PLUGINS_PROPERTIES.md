@@ -2731,6 +2731,27 @@ No real fluid solver required yet.
 
 ---
 
+> **Status — renderer registry + generic extension renderer landed.** `RendererDescriptor` (type id,
+> display name, `PropertySchema`, and a built-in-vs-extension flag) and `RendererRegistry`
+> (`ExtensionRegistry.renderers`, with the five core renderer types registered as built-ins + a
+> `register_renderer` for plugins) route renderer creation/validation through one catalog instead of
+> hardcoded type checks. A plugin renderer is authored as a `RendererProperties::Custom` payload on a
+> `RendererInstance` whose `renderer_type` is a registered extension; the compiler validates it through
+> the registry and **lowers it generically** to `aestra_runtime::CompiledExtensionRenderer { source,
+> renderer_type, material, payload: PropertyBag }` — carried in a separate `CompiledEmitter.extension_renderers`
+> list, so **no `RendererPlanKind` variant is added to core** and the live render path is untouched.
+> `material` (and asset references) stay structural on the instance, so a missing-plugin renderer still
+> preserves its bindings, and core's structural renderer↔material check accepts Custom renderers (their
+> deeper compatibility is the plugin's concern). The extension renderers round-trip through the artifact
+> (`ExtensionRendererV1`, serde-defaulted — **no format bump**). Proven by
+> `a_plugin_renderer_registers_compiles_and_produces_an_extension_plan` (a registered `glow` plugin
+> renderer appears in the catalog, compiles to an extension plan with its payload and structural
+> material, and is rejected when unregistered). The fan-out model is preserved (built-in renderer plans
+> are unchanged; extension renderers are an additional list). **Deferred:** a `RendererLowerer` trait for
+> plugin-authored lowering beyond the generic payload path, folding extension-renderer backend/capability
+> requirements into the compatibility report, and a real portable/native renderer backend consuming
+> `extension_renderers` — those arrive with plugin-loading (M25-adjacent) work.
+
 ## Milestone 8 — renderer registry/generalization
 
 ### Goal

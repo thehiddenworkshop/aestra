@@ -2294,6 +2294,68 @@ fn a_third_party_stage_hosts_standard_modules_by_capability() {
 }
 
 #[test]
+fn a_plugin_renderer_registers_compiles_and_produces_an_extension_plan() {
+    use aestra_compiler::{ExtensionRegistry, RendererDescriptor};
+    use aestra_core::{
+        DEFAULT_SPRITE_MATERIAL_ID, PropertySchema, RendererId, RendererInstance,
+        RendererProperties, RendererTypeId,
+    };
+    // Extensible-stages M8: a registered plugin renderer appears in the catalog, compiles, and produces
+    // a validated generic extension renderer plan — with no core RendererPlanKind variant and no format
+    // bump. `material` stays structural.
+    let mut registry = ExtensionRegistry::builtin();
+    let glow = RendererTypeId::new("org.example.plugin::renderer/glow");
+    registry
+        .register_renderer(RendererDescriptor::extension(
+            glow.clone(),
+            "Glow",
+            PropertySchema::new(1, Vec::new()),
+        ))
+        .expect("plugin renderer registers");
+    assert!(
+        registry.renderers.get(&glow).is_some(),
+        "the plugin renderer appears in the catalog for authoring"
+    );
+    let compiler = EffectCompiler::with_extensions(registry);
+
+    let mut asset = EffectAsset::new("Glowing", 2.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+    let mut payload = std::collections::BTreeMap::new();
+    payload.insert("intensity".to_string(), Value::Scalar(2.0));
+    emitter.renderers = vec![RendererInstance {
+        id: RendererId::new(),
+        renderer_type: glow.clone(),
+        enabled: true,
+        material: DEFAULT_SPRITE_MATERIAL_ID,
+        properties: RendererProperties::Custom(payload),
+    }];
+    asset.emitters.push(emitter);
+
+    let compiled = compiler
+        .compile(&asset)
+        .expect("the plugin-renderer effect compiles");
+    let compiled_emitter = &compiled.emitters[0];
+    assert!(
+        compiled_emitter.renderers.is_empty(),
+        "the plugin renderer does not produce a typed built-in plan"
+    );
+    assert_eq!(compiled_emitter.extension_renderers.len(), 1);
+    let extension = &compiled_emitter.extension_renderers[0];
+    assert_eq!(extension.renderer_type, glow);
+    assert_eq!(
+        extension.material, DEFAULT_SPRITE_MATERIAL_ID,
+        "material stays structural, not folded into the payload"
+    );
+    assert_eq!(extension.payload.get_f32("intensity"), Some(2.0));
+
+    // Without the plugin registered, the same effect is rejected (unsupported renderer).
+    assert!(
+        EffectCompiler::default().compile(&asset).is_err(),
+        "an unregistered plugin renderer is rejected"
+    );
+}
+
+#[test]
 fn compiled_emitter_carries_a_stage_id_based_generic_stage_plan() {
     // Extensible-stages M5: the compiler produces a generic, stage-identified plan alongside the legacy
     // three-vector execution plan. It holds the same instructions (CPU behavior unchanged), gives every

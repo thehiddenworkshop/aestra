@@ -254,6 +254,10 @@ impl EffectAsset {
                     .iter()
                     .find(|material| material.id == renderer.material)
                 {
+                    // Extension (plugin) renderers carry a Custom payload; core cannot know their
+                    // material compatibility structurally, so it accepts any material and leaves the
+                    // deeper check to the renderer's registry/plugin (extensible-stages M8).
+                    Some(_) if matches!(renderer.properties, RendererProperties::Custom(_)) => {}
                     Some(material)
                         if matches!(
                             (&renderer.properties, &material.properties),

@@ -659,6 +659,20 @@ impl CompiledLifecycleStages {
     }
 }
 
+/// A compiled *extension* renderer (extensible-stages M8): a community/plugin renderer that the core
+/// backends do not know how to draw. It is carried generically — a renderer-type identity plus a
+/// self-describing property payload — so extension renderers need **no** new `RendererPlanKind` variant
+/// in core. `material` and asset references stay structural (§16), so a missing-plugin renderer still
+/// reports and preserves its bindings. A plugin's native runtime consumes these; the built-in render
+/// path ignores them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledExtensionRenderer {
+    pub source: RendererId,
+    pub renderer_type: aestra_core::RendererTypeId,
+    pub material: MaterialId,
+    pub payload: aestra_core::PropertyBag,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RendererPlan {
     pub source: RendererId,
@@ -776,6 +790,9 @@ pub struct CompiledEmitter {
     /// and what stage-id source navigation resolves against. Derivable from `execution` and vice versa.
     pub stages: CompiledLifecycleStages,
     pub renderers: Vec<RendererPlan>,
+    /// Extension (plugin) renderers on this emitter (extensible-stages M8), carried generically so no
+    /// core `RendererPlanKind` variant is needed. Empty for effects using only built-in renderers.
+    pub extension_renderers: Vec<CompiledExtensionRenderer>,
 }
 
 impl CompiledEmitter {

@@ -27,8 +27,9 @@ use aestra_core::{
     MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE,
     MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters,
     ModuleTypeId, ParameterId, PropertyControl, PropertyDescriptor, PropertySchema,
-    RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange,
-    SpriteColorSource, StageKind, StageTypeId, ValidationReport, Value,
+    RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON, RENDERER_SPRITE, RENDERER_TRAIL,
+    RendererProperties, RendererTypeId, ScalarRange, SpriteColorSource, StageKind, StageTypeId,
+    ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -407,6 +408,97 @@ impl StageTypeDescriptor {
     }
 }
 
+/// Describes a renderer type (extensible-stages M8, §16): its identity, display name, the
+/// [`PropertySchema`] its authored payload follows, and whether it is a core built-in or a plugin
+/// **extension** renderer. Extension renderers lower generically (payload + type id) so they need no
+/// core `RendererPlanKind` variant; `material` and asset references stay structural on the
+/// `RendererInstance`, never in the schema, so a missing-plugin renderer still preserves its bindings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RendererDescriptor {
+    pub type_id: RendererTypeId,
+    pub display_name: String,
+    pub property_schema: PropertySchema,
+    /// True for a community/plugin renderer lowered generically; false for a core built-in.
+    pub extension: bool,
+}
+
+impl RendererDescriptor {
+    /// A core built-in renderer type (lowered by the compiler's typed renderer path).
+    pub fn builtin(type_id: &str, display_name: &str) -> Self {
+        Self {
+            type_id: RendererTypeId::new(type_id),
+            display_name: display_name.to_string(),
+            property_schema: PropertySchema::new(BUILTIN_PROPERTY_SCHEMA_VERSION, Vec::new()),
+            extension: false,
+        }
+    }
+
+    /// A plugin extension renderer type, lowered generically through its payload.
+    pub fn extension(
+        type_id: RendererTypeId,
+        display_name: impl Into<String>,
+        schema: PropertySchema,
+    ) -> Self {
+        Self {
+            type_id,
+            display_name: display_name.into(),
+            property_schema: schema,
+            extension: true,
+        }
+    }
+}
+
+/// The registry of renderer types (extensible-stages M8): built-ins plus registered plugin renderers,
+/// so renderer creation, validation, and lowering route through one catalog rather than hardcoded type
+/// checks.
+#[derive(Debug, Clone, Default)]
+pub struct RendererRegistry {
+    renderers: BTreeMap<RendererTypeId, RendererDescriptor>,
+}
+
+impl RendererRegistry {
+    /// The five core renderer types.
+    pub fn builtin() -> Self {
+        let mut registry = Self::default();
+        for (type_id, name) in [
+            (RENDERER_SPRITE, "Sprite"),
+            (RENDERER_FLIPBOOK, "Flipbook"),
+            (RENDERER_RIBBON, "Ribbon"),
+            (RENDERER_TRAIL, "Trail"),
+            (RENDERER_MESH, "Mesh"),
+        ] {
+            let descriptor = RendererDescriptor::builtin(type_id, name);
+            registry
+                .renderers
+                .insert(descriptor.type_id.clone(), descriptor);
+        }
+        registry
+    }
+
+    /// Registers a renderer descriptor; errors if its type id is already registered.
+    pub fn register(&mut self, descriptor: RendererDescriptor) -> Result<(), RegistryConflict> {
+        let type_id = descriptor.type_id.clone();
+        match self.renderers.insert(type_id.clone(), descriptor) {
+            None => Ok(()),
+            Some(_) => Err(RegistryConflict::DuplicateRenderer(type_id)),
+        }
+    }
+
+    pub fn get(&self, type_id: &RendererTypeId) -> Option<&RendererDescriptor> {
+        self.renderers.get(type_id)
+    }
+
+    /// Whether the type id is a registered *extension* (plugin) renderer.
+    pub fn is_extension(&self, type_id: &RendererTypeId) -> bool {
+        self.get(type_id)
+            .is_some_and(|descriptor| descriptor.extension)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RendererDescriptor> {
+        self.renderers.values()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
@@ -584,6 +676,8 @@ impl CapabilityRegistry {
 pub enum RegistryConflict {
     /// Two module descriptors share a type ID.
     DuplicateModule(ModuleTypeId),
+    /// Two renderer descriptors share a type ID (extensible-stages M8).
+    DuplicateRenderer(RendererTypeId),
     /// Two capability declarations share an ID.
     DuplicateCapability(CapabilityId),
     /// A module descriptor references a capability that is not registered.
@@ -600,23 +694,27 @@ pub enum RegistryConflict {
 pub struct ExtensionRegistry {
     pub modules: ModuleRegistry,
     pub capabilities: CapabilityRegistry,
+    /// Renderer type catalog (extensible-stages M8): built-ins plus registered plugin renderers.
+    pub renderers: RendererRegistry,
 }
 
 impl ExtensionRegistry {
-    /// The built-in registry: every core module and the governed capability vocabulary.
+    /// The built-in registry: every core module, renderer, and the governed capability vocabulary.
     pub fn builtin() -> Self {
         Self {
             modules: ModuleRegistry::builtin(),
             capabilities: CapabilityRegistry::builtin(),
+            renderers: RendererRegistry::builtin(),
         }
     }
 
-    /// Wraps a module registry with the built-in capability vocabulary. Keeps the legacy
+    /// Wraps a module registry with the built-in capability + renderer vocabulary. Keeps the legacy
     /// module-only construction path working while resolution flows through the unified registry.
     pub fn from_modules(modules: ModuleRegistry) -> Self {
         Self {
             modules,
             capabilities: CapabilityRegistry::builtin(),
+            renderers: RendererRegistry::builtin(),
         }
     }
 
@@ -627,6 +725,14 @@ impl ExtensionRegistry {
             None => Ok(()),
             Some(_) => Err(RegistryConflict::DuplicateModule(type_id)),
         }
+    }
+
+    /// Registers a renderer descriptor (extensible-stages M8); errors on a duplicate type id.
+    pub fn register_renderer(
+        &mut self,
+        descriptor: RendererDescriptor,
+    ) -> Result<(), RegistryConflict> {
+        self.renderers.register(descriptor)
     }
 
     /// Checks that every module descriptor only references registered capabilities — the
@@ -1113,81 +1219,105 @@ impl EffectCompiler {
                 );
             }
 
+            // Extensible-stages M8: extension (plugin) renderers lower generically into a separate
+            // list, so no core `RendererPlanKind` variant is needed; built-ins lower through the typed
+            // path below.
+            let mut extension_renderers: Vec<aestra_runtime::CompiledExtensionRenderer> =
+                Vec::new();
             let renderers: Vec<RendererPlan> = emitter
                 .renderers
                 .iter()
                 .filter(|renderer| renderer.enabled)
-                .map(|renderer| match &renderer.properties {
-                    RendererProperties::Sprite => RendererPlan {
-                        source: renderer.id,
-                        material: renderer.material,
-                        kind: RendererPlanKind::Sprite,
-                    },
-                    RendererProperties::Flipbook {
-                        flipbook,
-                        time_source,
-                        playback,
-                        random_start,
-                    } => RendererPlan {
-                        source: renderer.id,
-                        material: renderer.material,
-                        kind: RendererPlanKind::Flipbook {
-                            flipbook: *flipbook,
-                            time_source: *time_source,
-                            playback: *playback,
-                            random_start: *random_start,
+                .filter_map(|renderer| {
+                    Some(match &renderer.properties {
+                        RendererProperties::Custom(values)
+                            if self
+                                .registry
+                                .renderers
+                                .is_extension(&renderer.renderer_type) =>
+                        {
+                            extension_renderers.push(aestra_runtime::CompiledExtensionRenderer {
+                                source: renderer.id,
+                                renderer_type: renderer.renderer_type.clone(),
+                                material: renderer.material,
+                                payload: values
+                                    .iter()
+                                    .map(|(name, value)| (name.clone(), value.clone()))
+                                    .collect(),
+                            });
+                            return None;
+                        }
+                        RendererProperties::Sprite => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Sprite,
                         },
-                    },
-                    RendererProperties::Ribbon {
-                        width,
-                        strand_count,
-                    } => RendererPlan {
-                        source: renderer.id,
-                        material: renderer.material,
-                        kind: RendererPlanKind::Ribbon {
-                            width: *width,
-                            strand_count: *strand_count,
-                        },
-                    },
-                    RendererProperties::Trail {
-                        width,
-                        sample_interval,
-                        lifetime,
-                        max_points,
-                        max_trails,
-                        sampling,
-                        sample_distance,
-                        curve_tolerance,
-                        uv_mode,
-                        tile_length,
-                        end_cap,
-                    } => RendererPlan {
-                        source: renderer.id,
-                        material: renderer.material,
-                        kind: RendererPlanKind::Trail {
-                            width: *width,
-                            sample_interval: *sample_interval,
-                            sampling: *sampling,
-                            sample_distance: *sample_distance,
-                            curve_tolerance: *curve_tolerance,
-                            uv_mode: *uv_mode,
-                            tile_length: *tile_length,
-                            end_cap: *end_cap,
-                            lifetime: *lifetime,
-                            max_points: *max_points,
-                            max_trails: if *max_trails == 0 {
-                                emitter.max_particles
-                            } else {
-                                *max_trails
+                        RendererProperties::Flipbook {
+                            flipbook,
+                            time_source,
+                            playback,
+                            random_start,
+                        } => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Flipbook {
+                                flipbook: *flipbook,
+                                time_source: *time_source,
+                                playback: *playback,
+                                random_start: *random_start,
                             },
                         },
-                    },
-                    RendererProperties::Mesh { asset } => RendererPlan {
-                        source: renderer.id,
-                        material: renderer.material,
-                        kind: RendererPlanKind::Mesh { asset: *asset },
-                    },
-                    _ => unreachable!("compiler validation rejects unsupported renderers"),
+                        RendererProperties::Ribbon {
+                            width,
+                            strand_count,
+                        } => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Ribbon {
+                                width: *width,
+                                strand_count: *strand_count,
+                            },
+                        },
+                        RendererProperties::Trail {
+                            width,
+                            sample_interval,
+                            lifetime,
+                            max_points,
+                            max_trails,
+                            sampling,
+                            sample_distance,
+                            curve_tolerance,
+                            uv_mode,
+                            tile_length,
+                            end_cap,
+                        } => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Trail {
+                                width: *width,
+                                sample_interval: *sample_interval,
+                                sampling: *sampling,
+                                sample_distance: *sample_distance,
+                                curve_tolerance: *curve_tolerance,
+                                uv_mode: *uv_mode,
+                                tile_length: *tile_length,
+                                end_cap: *end_cap,
+                                lifetime: *lifetime,
+                                max_points: *max_points,
+                                max_trails: if *max_trails == 0 {
+                                    emitter.max_particles
+                                } else {
+                                    *max_trails
+                                },
+                            },
+                        },
+                        RendererProperties::Mesh { asset } => RendererPlan {
+                            source: renderer.id,
+                            material: renderer.material,
+                            kind: RendererPlanKind::Mesh { asset: *asset },
+                        },
+                        _ => unreachable!("compiler validation rejects unsupported renderers"),
+                    })
                 })
                 .collect();
             // Every region of an emitter shares its modules, hence its simulation class (hybrid M3).
@@ -1225,6 +1355,7 @@ impl EffectCompiler {
                     ),
                     execution: execution.clone(),
                     renderers: renderers.clone(),
+                    extension_renderers: extension_renderers.clone(),
                 });
             }
         }
@@ -1611,20 +1742,24 @@ impl EffectCompiler {
                         ),
                     );
                 }
-                let supported = matches!(
+                let builtin_supported = matches!(
                     (&renderer.properties, renderer.renderer_type.0.as_str()),
                     (RendererProperties::Sprite, RENDERER_SPRITE)
                         | (RendererProperties::Flipbook { .. }, RENDERER_FLIPBOOK)
                         | (RendererProperties::Mesh { .. }, RENDERER_MESH)
-                        | (
-                            RendererProperties::Trail { .. },
-                            aestra_core::RENDERER_TRAIL
-                        )
-                        | (
-                            RendererProperties::Ribbon { .. },
-                            aestra_core::RENDERER_RIBBON
-                        )
+                        | (RendererProperties::Trail { .. }, RENDERER_TRAIL)
+                        | (RendererProperties::Ribbon { .. }, RENDERER_RIBBON)
                 );
+                // Extensible-stages M8: a registered plugin renderer (a Custom payload whose type id is
+                // a registered extension renderer) is supported — validated through the registry, not a
+                // hardcoded type check.
+                let extension_supported =
+                    matches!(renderer.properties, RendererProperties::Custom(_))
+                        && self
+                            .registry
+                            .renderers
+                            .is_extension(&renderer.renderer_type);
+                let supported = builtin_supported || extension_supported;
                 if renderer.enabled && !supported {
                     push_unique(
                         report,

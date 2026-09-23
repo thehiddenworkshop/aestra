@@ -9,7 +9,8 @@ use aestra_core::{
     ColorKey, Curve, CurveKey, EffectAssetRef, EffectClipId, EffectClipSeed, EffectId,
     EffectPlaybackMode, EmitterId, EmitterRegionId, EmitterShape, EmitterTransform,
     FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId,
-    PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, ValueType, Vec3Range,
+    PropertyBag, PropertyEvaluationDomain, RendererId, RendererTypeId, ScalarRange, UvRect,
+    ValueType, Vec3Range,
     material::{MaterialInstance, MaterialProgram},
 };
 use aestra_runtime::{
@@ -348,6 +349,21 @@ struct EmitterV1 {
     colliders: Vec<Collider>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
+    /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
+    /// extension-renderer support, so older artifacts still decode.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    extension_renderers: Vec<ExtensionRendererV1>,
+}
+
+/// A baked extension (plugin) renderer (extensible-stages M8): the generic renderer-type + structural
+/// material + self-describing payload, so a plugin renderer round-trips without a core plan variant.
+#[derive(Debug, Serialize, Deserialize)]
+struct ExtensionRendererV1 {
+    source: RendererId,
+    renderer_type: RendererTypeId,
+    material: MaterialId,
+    #[serde(default, skip_serializing_if = "PropertyBag::is_empty")]
+    payload: PropertyBag,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1612,6 +1628,16 @@ impl EmitterV1 {
                 &format!("effect.emitters[{index}].execution"),
             )?,
             renderers: emitter.renderers.iter().map(RendererPlanV1::from).collect(),
+            extension_renderers: emitter
+                .extension_renderers
+                .iter()
+                .map(|renderer| ExtensionRendererV1 {
+                    source: renderer.source,
+                    renderer_type: renderer.renderer_type.clone(),
+                    material: renderer.material,
+                    payload: renderer.payload.clone(),
+                })
+                .collect(),
         })
     }
 
@@ -1653,6 +1679,16 @@ impl EmitterV1 {
             stages,
             execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),
+            extension_renderers: self
+                .extension_renderers
+                .into_iter()
+                .map(|renderer| aestra_runtime::CompiledExtensionRenderer {
+                    source: renderer.source,
+                    renderer_type: renderer.renderer_type,
+                    material: renderer.material,
+                    payload: renderer.payload,
+                })
+                .collect(),
         })
     }
 }
