@@ -170,10 +170,11 @@ fn semantic_program_batch_preserves_manual_and_bootstrap_bases_in_one_undo() {
         assert!(!positions[index + 1..].contains(position));
     }
     assert!(
-        app.world()
+        !app.world()
             .resource::<EditorSession>()
             .status
-            .contains("Local spacing unavailable")
+            .contains("Local spacing unavailable"),
+        "the targeted fallback should resolve an unmeasured insertion"
     );
     step(&mut app, true);
     assert_eq!(
@@ -486,16 +487,14 @@ fn semantic_placement_batch_is_deterministic_and_dependency_directed() {
         for (key, node) in &before.nodes {
             area.seed(*key, node.initial, node.size);
         }
-        let created = model
+        let created: BTreeSet<_> = model
             .nodes
             .keys()
             .filter(|key| !before.nodes.contains_key(key))
             .copied()
             .collect();
-        place_batch(&mut area, &model, created)
-            .into_iter()
-            .map(|(key, value)| (key, value.position))
-            .collect::<BTreeMap<_, _>>()
+        place_batch(&mut area, &model, created.clone());
+        targeted_fallback(&area, &model, &created).unwrap()
     };
     let first = run(&after);
     after.expressions.reverse();
@@ -675,12 +674,12 @@ fn semantic_function_creation_uses_measured_view_and_rejects_stale_geometry() {
             for old in old_rects {
                 assert!(rect.intersect(old).is_empty());
             }
-            assert_eq!(
-                app.world()
+            assert!(
+                !app.world()
                     .resource::<EditorSession>()
                     .status
                     .contains("Local spacing unavailable"),
-                stale
+                "the targeted fallback should resolve stale local geometry"
             );
             if stale {
                 assert_eq!(

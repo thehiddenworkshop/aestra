@@ -1125,6 +1125,21 @@ workspace formatting, `git diff --check` and the normal editor build passed.
 - Semantic state and its placement delta remain one chronological Undo/Redo entry. Regression
   coverage exercises creation, replacement, output rewiring, deletion and atomic restoration.
 
-Next: **M11.2 — targeted arrangement fallback** when measured local placement cannot find a
-reasonable bounded slot. The fallback must use the M10 partial planner and keep all unaffected
-nodes frozen.
+## M11.2 implementation — targeted arrangement fallback
+
+- Semantic creation first uses the existing bounded, source/consumer-aware local placement path.
+  A targeted layered-layout fallback runs only when that path cannot establish measured spacing.
+- The semantic graph is adapted directly into the M10 partial planner. Newly created expressions
+  are the complete movable selection; retained expressions and output nodes are exact fixed
+  obstacles and boundary anchors. Duplicate semantic dependencies are collapsed for layout only.
+- The native layered engine arranges the created region synchronously and the partial planner
+  reconciles it against the frozen graph. An invalid, cyclic or unsatisfied candidate is discarded
+  atomically and the valid local fallback remains in place with the existing placement advisory.
+- No toolbar event or background layout job is created. The accepted fallback positions attach to
+  the same presentation snapshot as the semantic command, so one Undo restores both document and
+  layout while unrelated authored positions remain byte-for-byte unchanged.
+- Regression coverage exercises deterministic fallback ordering, dependency direction, measured
+  and stale geometry, preserved manual positions and atomic Undo/Redo.
+
+Next: **M12 — explicit pinning**, persisting user-authored hard layout anchors without treating
+ordinary manual movement as an implicit pin.

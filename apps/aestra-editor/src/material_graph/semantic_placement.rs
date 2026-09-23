@@ -3,6 +3,12 @@
 use super::*;
 use crate::{
     document::DocumentKey,
+    feathers::graph_layout::{
+        GraphDirection, GraphLayoutEdge, GraphLayoutInput, GraphLayoutNode, GraphLayoutNodeId,
+        GraphLayoutRegion,
+        native::AestraLayeredLayout,
+        partial::{PartialLayoutPlan, PartialLayoutScope},
+    },
     feathers::node_graph::placement::{self, Neighborhood},
 };
 use aestra_core::material::MaterialFunction;
@@ -323,13 +329,22 @@ impl Context<'_, '_> {
                 }
             }
         }
-        let placements = place_batch(&mut prepared.area, &after, impact.created);
+        let created = impact.created;
+        let placements = place_batch(&mut prepared.area, &after, created.clone());
         let unassisted = placements.iter().any(|(_, placed)| !placed.assisted);
+        let fallback = unassisted
+            .then(|| targeted_fallback(&prepared.area, &after, &created))
+            .and_then(Result::ok);
         for (key, placed) in placements {
-            memory.place_node(&after.graph, after.node_key(key), placed.position);
+            let position = fallback
+                .as_ref()
+                .and_then(|positions| positions.get(&key))
+                .copied()
+                .unwrap_or(placed.position);
+            memory.place_node(&after.graph, after.node_key(key), position);
         }
         prepared.before.attach(catalog, session, memory);
-        if unassisted {
+        if unassisted && fallback.is_none() {
             session
                 .status
                 .push_str(&format!(" · {}", self.placement.notice()));
@@ -446,6 +461,72 @@ fn place_batch(
         ));
     }
     placed
+}
+
+/// Runs the M10 partial planner synchronously for a failed semantic insertion. Created nodes are
+/// the only movable region; every retained node remains an exact boundary obstacle and anchor.
+/// The caller still owns the one semantic/presentation history transaction.
+fn targeted_fallback(
+    area: &placement::Area,
+    model: &Model,
+    created: &BTreeSet<GraphNodeKey>,
+) -> Result<BTreeMap<GraphNodeKey, Vec2>, String> {
+    if created.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let mut semantic_to_layout = BTreeMap::new();
+    let mut nodes = Vec::with_capacity(model.nodes.len());
+    for (index, (&key, node)) in model.nodes.iter().enumerate() {
+        let layout = GraphLayoutNodeId::from_index(index).map_err(|error| error.to_string())?;
+        let rect = area
+            .rect(key)
+            .unwrap_or_else(|| Rect::from_corners(node.initial, node.initial + node.size));
+        semantic_to_layout.insert(key, layout);
+        nodes.push(GraphLayoutNode {
+            key: layout,
+            position: rect.min,
+            size: rect.size(),
+            pinned: false,
+            selected: created.contains(&key),
+        });
+    }
+    let mut edges = BTreeSet::new();
+    for (&target, node) in &model.nodes {
+        for source in &node.sources {
+            let Some(&source) = semantic_to_layout.get(source) else {
+                continue;
+            };
+            edges.insert(GraphLayoutEdge {
+                source,
+                target: semantic_to_layout[&target],
+                source_port: None,
+                target_port: None,
+            });
+        }
+    }
+    let input = GraphLayoutInput::try_new(
+        GraphDirection::LeftToRight,
+        nodes,
+        edges.into_iter().collect(),
+        GraphLayoutRegion::Full,
+    )
+    .map_err(|error| error.to_string())?;
+    let seeds = created
+        .iter()
+        .filter_map(|key| semantic_to_layout.get(key).copied())
+        .collect();
+    let plan = PartialLayoutPlan::extract(&input, &seeds, PartialLayoutScope::Selection)
+        .map_err(|error| error.to_string())?;
+    let result = plan
+        .layout(&AestraLayeredLayout)
+        .map_err(|error| error.to_string())?;
+    Ok(created
+        .iter()
+        .filter_map(|key| {
+            let layout = semantic_to_layout.get(key)?;
+            Some((*key, result.positions[layout]))
+        })
+        .collect())
 }
 
 #[cfg(test)]
