@@ -1881,10 +1881,10 @@ impl EditorSession {
         );
     }
 
-    /// Drag-reorders `dragged` to the slot of `target` within the selected emitter (§28.4). Both must
-    /// be in the same lifecycle/simulation stage — a module keeps its stage; drag only changes order
-    /// within it. Undoable as a single move.
-    pub fn reorder_module_onto(&mut self, dragged: ModuleId, target: ModuleId) {
+    /// Drag-reorders `dragged` to just before (`after = false`) or just after (`after = true`) `target`
+    /// within the selected emitter (§28.4). Both must be in the same lifecycle/simulation stage — a
+    /// module keeps its stage; drag only changes order within it. Undoable as a single move.
+    pub fn reorder_module_relative(&mut self, dragged: ModuleId, target: ModuleId, after: bool) {
         let Some(emitter) = self.selected_layer() else {
             return;
         };
@@ -1895,18 +1895,26 @@ impl EditorSession {
         else {
             return;
         };
-        let Some(new) = emitter
+        let Some(target_index) = emitter
             .modules
             .iter()
             .position(|module| module.id == target)
         else {
             return;
         };
-        if old == new {
+        if emitter.modules[old].stage != emitter.modules[target_index].stage {
+            self.status = "Modules reorder only within their stage".into();
             return;
         }
-        if emitter.modules[old].stage != emitter.modules[new].stage {
-            self.status = "Modules reorder only within their stage".into();
+        // MoveModule removes `dragged` then inserts at `index`, so account for the shift when the
+        // dragged module sits before the target.
+        let target_after_removal = if old < target_index {
+            target_index - 1
+        } else {
+            target_index
+        };
+        let new = target_after_removal + usize::from(after);
+        if new == old {
             return;
         }
         self.execute(
@@ -2619,7 +2627,7 @@ mod tests {
     }
 
     #[test]
-    fn reorder_module_onto_moves_within_stage_and_is_undoable() {
+    fn reorder_module_relative_moves_within_stage_and_is_undoable() {
         let mut session = test_support::session_with_timing_slack();
         let motion = session
             .selected_layer()
@@ -2645,12 +2653,17 @@ mod tests {
         };
         assert_eq!(particle_update_order(&session), vec![motion, appearance]);
 
-        // Dropping Appearance onto Motion moves it into Motion's slot.
-        session.reorder_module_onto(appearance, motion);
+        // Dropping Appearance before Motion puts it first.
+        session.reorder_module_relative(appearance, motion, false);
         assert_eq!(particle_update_order(&session), vec![appearance, motion]);
 
         session.undo();
         assert_eq!(particle_update_order(&session), vec![motion, appearance]);
+
+        // Dropping Motion after Appearance is the same reorder from the other direction.
+        session.reorder_module_relative(motion, appearance, true);
+        assert_eq!(particle_update_order(&session), vec![appearance, motion]);
+        session.undo();
 
         // A cross-stage drop is rejected (Emission lives in Emitter Update).
         let emission = session
@@ -2659,7 +2672,7 @@ mod tests {
             .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
-        session.reorder_module_onto(emission, motion);
+        session.reorder_module_relative(emission, motion, false);
         assert_eq!(particle_update_order(&session), vec![motion, appearance]);
     }
 

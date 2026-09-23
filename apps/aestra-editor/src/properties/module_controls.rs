@@ -521,6 +521,9 @@ pub(crate) struct ModuleDragState {
     ghost: Option<Entity>,
     hidden_row: Option<Entity>,
     gap_row: Option<Entity>,
+    /// Whether the current gap is below (`true`) or above (`false`) `gap_row`, i.e. whether a drop
+    /// would land after or before that row.
+    gap_after: bool,
     dragged: Option<ModuleId>,
 }
 
@@ -579,14 +582,15 @@ pub(super) fn reorder_modules_on_drop(
     mut drop: On<Pointer<DragDrop>>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
+    state: Res<ModuleDragState>,
     mut session: ResMut<EditorSession>,
 ) {
     if drop.button != PointerButton::Primary {
         return;
     }
-    let (Some(dragged), Some(target)) = (
+    let (Some(dragged), Some((target_entity, target))) = (
         module_row_at(drop.dropped, &rows, &parents),
-        module_row_at(drop.entity, &rows, &parents),
+        module_row_entity(drop.entity, &rows, &parents),
     ) else {
         return;
     };
@@ -594,7 +598,9 @@ pub(super) fn reorder_modules_on_drop(
         return;
     }
     drop.propagate(false);
-    session.reorder_module_onto(dragged, target);
+    // Drop on the side the insertion gap is showing for this row (pointer top/bottom half).
+    let after = state.gap_row == Some(target_entity) && state.gap_after;
+    session.reorder_module_relative(dragged, target, after);
 }
 
 /// Lifts a module row into a floating full-width proxy when it starts dragging (§28.4): the original
@@ -727,10 +733,11 @@ pub(super) fn move_module_drag(
 /// Opens an insertion gap above the row the cursor enters during a drag (§28.4), so the other rows
 /// visibly make room for the drop. Restricted to same-stage rows (reorder is same-stage only).
 pub(super) fn hover_module_drag(
-    event: On<Pointer<DragEnter>>,
+    event: On<Pointer<DragOver>>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
+    geometry: Query<(&ComputedNode, &UiGlobalTransform)>,
     mut nodes: Query<&mut Node>,
     mut state: ResMut<ModuleDragState>,
 ) {
@@ -740,34 +747,36 @@ pub(super) fn hover_module_drag(
     let Some((row_entity, module_id)) = module_row_entity(event.entity, &rows, &parents) else {
         return;
     };
-    if Some(row_entity) == state.hidden_row
-        || Some(row_entity) == state.gap_row
-        || module_id == dragged
-    {
+    if Some(row_entity) == state.hidden_row || module_id == dragged {
         return;
     }
-    // Same stage only, and note the drag direction so the gap opens on the side the row will land.
-    let Some(layer) = session.selected_layer() else {
-        return;
-    };
-    let index_of = |id| layer.modules.iter().position(|module| module.id == id);
-    let (Some(from), Some(onto)) = (index_of(dragged), index_of(module_id)) else {
-        return;
-    };
-    if layer.modules[from].stage != layer.modules[onto].stage {
+    let same_stage = session.selected_layer().is_some_and(|layer| {
+        let stage_of = |id| layer.modules.iter().find(|module| module.id == id);
+        matches!((stage_of(dragged), stage_of(module_id)), (Some(a), Some(b)) if a.stage == b.stage)
+    });
+    if !same_stage {
         return;
     }
-    // Dragging downward drops after the target (gap below); upward drops before it (gap above).
-    let below = from < onto;
+    // Insert before or after the hovered row depending on which half the cursor is over — the
+    // standard, unambiguous drag-reorder rule, and the one the drop respects.
+    let Ok((node, transform)) = geometry.get(row_entity) else {
+        return;
+    };
+    let center_y = transform.translation.y * node.inverse_scale_factor();
+    let after = event.pointer_location.position.y > center_y;
+    if state.gap_row == Some(row_entity) && state.gap_after == after {
+        return;
+    }
     restore_row_margin(&mut nodes, state.gap_row.take());
     if let Ok(mut node) = nodes.get_mut(row_entity) {
-        if below {
+        if after {
             node.margin.bottom = Val::Px(MODULE_ROW_GAP);
         } else {
             node.margin.top = Val::Px(MODULE_ROW_GAP);
         }
     }
     state.gap_row = Some(row_entity);
+    state.gap_after = after;
 }
 
 /// Restores a gapped row's top and bottom margins to the row default (§28.4).
