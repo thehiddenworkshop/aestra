@@ -49,12 +49,12 @@ pub(crate) mod wesl;
 pub(crate) use module_controls::PropertySourceKind;
 #[cfg(test)]
 use module_controls::{
-    expose_module_input, preview_module_deletion, properties_module_key, set_module_input_source,
+    expose_module_input, preview_module_deletion, set_module_input_source,
     toggle_module_input_public,
 };
 use module_controls::{
-    handle_module_action, numeric_source_limits, properties_curve_limits,
-    properties_module_card_memory, spawn_module_inspector, spawn_module_stack_row,
+    handle_module_action, numeric_source_limits, properties_curve_limits, spawn_module_inspector,
+    spawn_module_stack_row,
 };
 pub(crate) use referenced_effect::EffectClipRepairState;
 #[cfg(test)]
@@ -2529,7 +2529,7 @@ mod tests {
     fn properties_disclosure_persists_without_requesting_a_ui_rebuild() {
         let temporary = tempfile::tempdir().unwrap();
         let session = test_support::session_with_timing_slack();
-        let module = session.selected_layer().unwrap().modules[0].id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         let revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(session)
@@ -2547,7 +2547,7 @@ mod tests {
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
-            PropertiesAction::ToggleSection(PropertiesSection::Module(module)),
+            PropertiesAction::ToggleSection(PropertiesSection::Renderer(renderer)),
             BackgroundColor(theme::BUTTON),
         ));
 
@@ -3014,52 +3014,19 @@ mod tests {
     }
 
     #[test]
-    fn properties_sections_use_compact_defaults_and_persist_type_preferences() {
+    fn renderer_sections_default_collapsed_and_persist_type_preferences() {
+        // Modules edit in the inspector (no collapsible card), so only renderer cards persist a
+        // collapse preference. It defaults to collapsed and toggling it persists per renderer type.
         let session = test_support::session_with_timing_slack();
         let mut settings = EditorSettings::default();
-        let emission = session
-            .selected_layer()
-            .unwrap()
-            .modules
-            .iter()
-            .find(|module| module.stage == StageKind::EmitterUpdate)
-            .unwrap();
-        let motion = session
-            .selected_layer()
-            .unwrap()
-            .modules
-            .iter()
-            .find(|module| module.stage == StageKind::ParticleUpdate)
-            .unwrap();
         let renderer = session.selected_layer().unwrap().renderers.first().unwrap();
 
-        // Modules default to collapsed persistence (their controls live in the inspector, §28.2);
-        // renderers still collapse in place. Toggling a module's section persists per type.
-        let module_collapsed = |settings: &EditorSettings, module: &ModuleInstance| {
-            properties_module_card_memory(module).collapsed(&settings.properties.section_expansion)
-        };
         let renderer_collapsed =
             |settings: &EditorSettings, renderer: &aestra_core::RendererInstance| {
-                properties_renderer_card_memory(renderer)
-                    .collapsed(&settings.properties.section_expansion)
+                !properties_renderer_card_memory(renderer)
+                    .expanded(&settings.properties.section_expansion)
             };
-        assert!(module_collapsed(&settings, emission));
-        assert!(module_collapsed(&settings, motion));
         assert!(renderer_collapsed(&settings, renderer));
-
-        assert!(toggle_persisted_properties_section(
-            &session,
-            &mut settings,
-            PropertiesSection::Module(motion.id),
-        ));
-        assert!(!module_collapsed(&settings, motion));
-        assert_eq!(
-            settings
-                .properties
-                .section_expansion
-                .get(&properties_module_key(motion)),
-            Some(&true)
-        );
 
         assert!(toggle_persisted_properties_section(
             &session,
@@ -5935,20 +5902,6 @@ pub(crate) fn spawn_properties(
             ..default()
         })
         .with_children(|panel| {
-            panel_heading(panel, "PROPERTIES", "LIVE COMPILE");
-            panel.spawn((
-                Text::new(inspector_title(session)),
-                PropertiesTitle,
-                TextFont {
-                    font_size: FontSize::Px(17.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-                Node {
-                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                    ..default()
-                },
-            ));
             panel
                 .spawn(Node {
                     width: Val::Percent(100.0),
@@ -5983,17 +5936,6 @@ pub(crate) fn spawn_properties(
                     );
                 });
         });
-}
-
-/// The Properties panel's title: the context name for the current selection (extensible-stages M9).
-fn inspector_title(session: &EditorSession) -> String {
-    match session.selection.primary {
-        SemanticTarget::Effect(_) => session.effect.name.clone(),
-        _ => session
-            .selected_layer()
-            .map(|emitter| emitter.name.clone())
-            .unwrap_or_else(|| session.effect.name.clone()),
-    }
 }
 
 /// Renders the inspector body for the current selection (extensible-stages M9, §28.1): effect / emitter
@@ -6090,7 +6032,6 @@ pub(crate) fn spawn_module_stack_panel(
                 ..default()
             })
             .with_children(|panel| {
-                panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
                 panel.spawn((
                     Text::new(localizer.text("properties-no-emitter")),
                     TextFont {
@@ -6118,7 +6059,6 @@ pub(crate) fn spawn_module_stack_panel(
             ..default()
         })
         .with_children(|panel| {
-            panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
             panel
                 .spawn(Node {
                     width: Val::Percent(100.0),
@@ -6849,21 +6789,11 @@ pub(crate) fn toggle_persisted_properties_section(
     let Some(emitter) = session.selected_layer() else {
         return false;
     };
-    let card = match section {
-        PropertiesSection::Module(id) => {
-            let Some(module) = emitter.modules.iter().find(|module| module.id == id) else {
-                return false;
-            };
-            properties_module_card_memory(module)
-        }
-        PropertiesSection::Renderer(id) => {
-            let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-                return false;
-            };
-            properties_renderer_card_memory(renderer)
-        }
+    let PropertiesSection::Renderer(id) = section;
+    let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+        return false;
     };
-    card.toggle(&mut settings.properties.section_expansion);
+    properties_renderer_card_memory(renderer).toggle(&mut settings.properties.section_expansion);
     true
 }
 
@@ -9072,6 +9002,5 @@ impl Default for ModulePaletteState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PropertiesSection {
-    Module(ModuleId),
     Renderer(RendererId),
 }

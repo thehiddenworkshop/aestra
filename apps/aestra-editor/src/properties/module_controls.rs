@@ -423,17 +423,6 @@ pub(super) fn properties_curve_limits(
     numeric_source_limits(&input.control)
 }
 
-pub(super) fn properties_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
-    // Persisted expansion preference for a module (extensible-stages M9). The compact stack no longer
-    // expands modules inline — the selected module's controls live in the inspector below the stack —
-    // so this now backs only the latent ToggleSection persistence; it defaults to collapsed.
-    RememberedPanelCard::new(properties_module_key(module), false)
-}
-
-pub(super) fn properties_module_key(module: &ModuleInstance) -> String {
-    format!("module/{}", module.module_type.0)
-}
-
 /// The selection/diagnostic border color for a module row (extensible-stages M9): red when the module
 /// has diagnostics, accent when it is the current selection, otherwise the panel border. The panel
 /// rebuilds on selection change (the global select observer bumps `ui_revision`), so this is recomputed

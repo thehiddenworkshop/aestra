@@ -41,10 +41,6 @@ impl RememberedPanelCard {
             .unwrap_or(self.default_expanded)
     }
 
-    pub(crate) fn collapsed(&self, memory: &BTreeMap<String, bool>) -> bool {
-        !self.expanded(memory)
-    }
-
     pub(crate) fn toggle(&self, memory: &mut BTreeMap<String, bool>) -> bool {
         let expanded = !self.expanded(memory);
         memory.insert(self.key.clone(), expanded);
@@ -55,10 +51,6 @@ impl RememberedPanelCard {
 #[derive(Debug, Clone)]
 pub(crate) struct PanelCardProps<'a> {
     pub(crate) title: &'a str,
-    /// A short, descriptor-driven one-line readout of the card's key values (extensible-stages M9,
-    /// §28.2). Shown muted beside the title when the card is collapsed, so the stack reads as a
-    /// compact list of rows at a glance without expanding each one.
-    pub(crate) summary: Option<&'a str>,
     pub(crate) help: Option<&'a str>,
     pub(crate) memory_key: Option<String>,
     pub(crate) collapsed: bool,
@@ -71,7 +63,6 @@ impl<'a> PanelCardProps<'a> {
     pub(crate) fn new(title: &'a str, collapsed: bool) -> Self {
         Self {
             title,
-            summary: None,
             help: None,
             memory_key: None,
             collapsed,
@@ -83,12 +74,6 @@ impl<'a> PanelCardProps<'a> {
 
     pub(crate) fn with_help(mut self, help: &'a str) -> Self {
         self.help = Some(help);
-        self
-    }
-
-    /// Sets the compact one-line summary shown beside the title on the collapsed row (§28.2).
-    pub(crate) fn with_summary(mut self, summary: &'a str) -> Self {
-        self.summary = (!summary.is_empty()).then_some(summary);
         self
     }
 
@@ -325,31 +310,6 @@ fn spawn_disclosure(
             },
             Pickable::IGNORE,
         ));
-        // The compact stack readout (§28.2): the descriptor-driven summary, right-aligned and muted, so
-        // the row reads as a compact list entry at a glance. Kept visible in both states (the disclosure
-        // toggle does not rebuild the card, so a collapse-gated summary would go stale after a toggle).
-        if let Some(summary) = props.summary {
-            button.spawn((
-                Text::new(summary),
-                ThemedText,
-                TextColor(theme::TEXT_FAINT),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextLayout {
-                    linebreak: LineBreak::NoWrap,
-                    ..default()
-                },
-                Node {
-                    margin: UiRect::left(Val::Auto),
-                    max_width: Val::Percent(60.0),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
-        }
     });
     (
         disclosure_entity,
@@ -386,9 +346,9 @@ mod tests {
         let mut memory = BTreeMap::new();
         let card = RememberedPanelCard::new("module/aestra.update.motion", false);
 
-        assert!(card.collapsed(&memory));
+        assert!(!card.expanded(&memory));
         assert!(card.toggle(&mut memory));
-        assert!(!card.collapsed(&memory));
+        assert!(card.expanded(&memory));
         assert_eq!(memory.get(card.key()), Some(&true));
     }
 
@@ -414,23 +374,6 @@ mod tests {
         assert!(!emission.expanded(&memory));
         assert!(!motion.expanded(&memory));
         assert_eq!(memory.len(), 1);
-    }
-
-    #[test]
-    fn with_summary_keeps_only_non_empty_readouts() {
-        // A descriptor-driven summary is shown when present; an empty one leaves the header as just
-        // the title so blank rows do not spawn a stray, invisible readout node.
-        assert_eq!(
-            PanelCardProps::new("Motion", true)
-                .with_summary("Drag 1.6 · Turb 5")
-                .summary,
-            Some("Drag 1.6 · Turb 5")
-        );
-        assert_eq!(
-            PanelCardProps::new("Motion", true).with_summary("").summary,
-            None
-        );
-        assert_eq!(PanelCardProps::new("Motion", true).summary, None);
     }
 
     #[test]
