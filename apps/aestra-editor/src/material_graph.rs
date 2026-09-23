@@ -144,6 +144,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphLayoutPersistence>()
             .add_observer(presentation::node_edit)
             .add_observer(presentation::batch_edit)
+            .add_observer(presentation::pin_edit)
             .add_systems(
                 Update,
                 reset_graph_document_transients.before(EditorSet::UiRebuild),
@@ -897,14 +898,20 @@ fn restore_material_graph_layouts(
                 Vec2::from_array(node.position),
                 node.collapsed,
             );
+            graph_memory.set_pinned(
+                &graph_key,
+                &material_graph_expression_node_key(*expression),
+                node.pinned,
+            );
         }
         if let Some(output) = layout.output {
             graph_memory.set_node(
-                graph_key,
+                graph_key.clone(),
                 MATERIAL_GRAPH_OUTPUT_NODE_KEY,
                 Vec2::from_array(output.position),
                 output.collapsed,
             );
+            graph_memory.set_pinned(&graph_key, MATERIAL_GRAPH_OUTPUT_NODE_KEY, output.pinned);
         }
         previews.restore_layout(
             *program,
@@ -950,6 +957,10 @@ fn update_material_graph_layout_document(
                             MaterialGraphNodeLayout {
                                 position: position.to_array(),
                                 collapsed,
+                                pinned: graph_memory.is_pinned(
+                                    &graph_key,
+                                    &material_graph_expression_node_key(*expression),
+                                ),
                             },
                         )
                     })
@@ -960,6 +971,7 @@ fn update_material_graph_layout_document(
             .map(|(position, collapsed)| MaterialGraphNodeLayout {
                 position: position.to_array(),
                 collapsed,
+                pinned: graph_memory.is_pinned(&graph_key, MATERIAL_GRAPH_OUTPUT_NODE_KEY),
             });
         layout.visible_previews = previews
             .visible_expressions(program.id)
@@ -4620,6 +4632,7 @@ pub(crate) fn spawn_material_graph_workspace(
                             localizer,
                             asset_server,
                             &graph_key,
+                            graph_memory,
                         );
                     }
                     spawn_output_node(
@@ -4632,6 +4645,7 @@ pub(crate) fn spawn_material_graph_workspace(
                         localizer,
                         asset_server,
                         &graph_key,
+                        graph_memory,
                     );
                 },
             );
@@ -5805,6 +5819,7 @@ fn spawn_expression_node(
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
+    graph_memory: &GraphViewportMemory,
 ) {
     let selected = selection.is_expression_selected(scope, program, node.expression);
     let target = MaterialGraphPreviewTarget::Expression(node.expression);
@@ -5821,9 +5836,14 @@ fn spawn_expression_node(
             },
             position,
             selected,
+            pinned: graph_memory.is_pinned(
+                graph_key,
+                &material_graph_expression_node_key(node.expression),
+            ),
             muted: !node.reachable || node.disabled || node.validation_message.is_some(),
             collapse_icon: load_svg_icon(asset_server, "icons/chevron-down.svg"),
             expand_icon: load_svg_icon(asset_server, "icons/chevron-right.svg"),
+            pin_icon: load_svg_icon(asset_server, "icons/pin.svg"),
             collapse_label: localizer.text("material-graph-collapse-node"),
             expand_label: localizer.text("material-graph-expand-node"),
         },
@@ -5992,6 +6012,7 @@ fn spawn_output_node(
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
+    graph_memory: &GraphViewportMemory,
 ) {
     let target = MaterialGraphPreviewTarget::Output;
     let preview_visible = previews.is_visible(program, target);
@@ -6003,9 +6024,11 @@ fn spawn_output_node(
             title: localizer.text("material-graph-outputs"),
             position,
             selected: false,
+            pinned: graph_memory.is_pinned(graph_key, MATERIAL_GRAPH_OUTPUT_NODE_KEY),
             muted: false,
             collapse_icon: load_svg_icon(asset_server, "icons/chevron-down.svg"),
             expand_icon: load_svg_icon(asset_server, "icons/chevron-right.svg"),
+            pin_icon: load_svg_icon(asset_server, "icons/pin.svg"),
             collapse_label: localizer.text("material-graph-collapse-node"),
             expand_label: localizer.text("material-graph-expand-node"),
         },

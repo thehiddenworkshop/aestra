@@ -54,9 +54,11 @@ fn surface(
                                 title: "Node".into(),
                                 position: Vec2::new(0.0, index as f32 * 120.0),
                                 selected: false,
+                                pinned: false,
                                 muted: false,
                                 collapse_icon: default(),
                                 expand_icon: default(),
+                                pin_icon: default(),
                                 collapse_label: "Collapse".into(),
                                 expand_label: "Expand".into(),
                             },
@@ -347,6 +349,7 @@ fn visible_preview_disk_roundtrip_keeps_bases_and_reconstructs_offsets() {
         MaterialGraphNodeLayout {
             position: position.to_array(),
             collapsed,
+            pinned: memory.is_pinned("test", key),
         }
     };
     let mut saved = ProjectEditorLayout::default();

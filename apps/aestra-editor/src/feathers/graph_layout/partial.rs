@@ -286,8 +286,18 @@ fn expand_region(
     if let Some(seed) = seeds.iter().find(|seed| !known.contains(seed)) {
         return Err(GraphLayoutError::MissingRegionNode(*seed));
     }
+    let pinned = input
+        .nodes
+        .iter()
+        .filter(|node| node.pinned)
+        .map(|node| node.key)
+        .collect::<BTreeSet<_>>();
+    let movable_seeds = seeds.difference(&pinned).copied().collect::<BTreeSet<_>>();
+    if movable_seeds.is_empty() {
+        return Err(GraphLayoutError::EmptyRegion);
+    }
     if scope == PartialLayoutScope::Selection {
-        return Ok(seeds.clone());
+        return Ok(movable_seeds);
     }
 
     let mut neighbors = known
@@ -306,10 +316,13 @@ fn expand_region(
             .insert(to);
     }
 
-    let mut region = seeds.clone();
-    let mut queue = VecDeque::from_iter(seeds.iter().copied());
+    let mut region = movable_seeds.clone();
+    let mut queue = VecDeque::from_iter(movable_seeds);
     while let Some(node) = queue.pop_front() {
         for &neighbor in &neighbors[&node] {
+            if pinned.contains(&neighbor) {
+                continue;
+            }
             if region.insert(neighbor) {
                 queue.push_back(neighbor);
             }
@@ -465,6 +478,46 @@ mod tests {
             ),
             Err(GraphLayoutError::MissingRegionNode(key)) if key == id(99)
         ));
+    }
+
+    #[test]
+    fn pinned_nodes_are_fixed_boundaries_and_never_enter_a_movable_region() {
+        let mut graph = input();
+        graph.nodes[2].pinned = true;
+        let pinned_position = graph.nodes[2].position;
+
+        let downstream = PartialLayoutPlan::extract(
+            &graph,
+            &BTreeSet::from([id(1)]),
+            PartialLayoutScope::Downstream,
+        )
+        .unwrap();
+        assert_eq!(downstream.region, BTreeSet::from([id(1)]));
+        assert_eq!(downstream.fixed_nodes[&id(2)].position, pinned_position);
+        assert!(downstream.anchors.iter().any(|anchor| {
+            anchor.movable == id(1)
+                && anchor.fixed == id(2)
+                && anchor.direction == BoundaryDirection::Outgoing
+        }));
+
+        let selection = PartialLayoutPlan::extract(
+            &graph,
+            &BTreeSet::from([id(1), id(2), id(3)]),
+            PartialLayoutScope::Selection,
+        )
+        .unwrap();
+        assert_eq!(selection.region, BTreeSet::from([id(1), id(3)]));
+        let result = selection.layout(&AestraLayeredLayout).unwrap();
+        assert_eq!(result.positions[&id(2)], pinned_position);
+
+        assert_eq!(
+            PartialLayoutPlan::extract(
+                &graph,
+                &BTreeSet::from([id(2)]),
+                PartialLayoutScope::Selection,
+            ),
+            Err(GraphLayoutError::EmptyRegion)
+        );
     }
 
     #[test]

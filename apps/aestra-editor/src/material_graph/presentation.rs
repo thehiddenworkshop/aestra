@@ -1,6 +1,8 @@
 //! Presentation deltas share the existing document chronology, but never shader state.
 use super::*;
-use crate::feathers::node_graph::{GraphPresentationBatchEdit, GraphPresentationEdit};
+use crate::feathers::node_graph::{
+    GraphPinEdit, GraphPresentationBatchEdit, GraphPresentationEdit,
+};
 use crate::history::asset_order::Context;
 use crate::material_document::MaterialEditingTarget;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -55,6 +57,7 @@ pub(crate) struct Snapshot {
     stamp: u64,
     keys: BTreeSet<String>,
     nodes: Nodes,
+    pinned: BTreeSet<String>,
     order_serial: u64,
 }
 
@@ -80,6 +83,8 @@ impl Snapshot {
         let (stamp, keys) = semantic(graph, catalog, session)?;
         let mut nodes = memory.base_nodes(graph);
         nodes.retain(|key, _| keys.contains(key));
+        let mut pinned = memory.pinned_nodes(graph);
+        pinned.retain(|key| keys.contains(key));
         Some(Self {
             root: catalog.root().to_owned(),
             generation: catalog.content_revision().generation,
@@ -87,6 +92,7 @@ impl Snapshot {
             stamp,
             keys,
             nodes,
+            pinned,
             order_serial: session.operation_order.edit_serial(),
         })
     }
@@ -213,7 +219,7 @@ pub(crate) fn arrange(
         world.resource::<GraphViewportMemory>(),
     )
     .ok_or("Arrange result became stale before it could be applied")?;
-    if before.nodes != after.nodes {
+    if before.nodes != after.nodes || before.pinned != after.pinned {
         record(
             world,
             Transaction {
@@ -321,6 +327,11 @@ impl Transaction {
             if memory.node(&expected.graph, &key) != expected.nodes.get(&key).copied() {
                 return Err("Layout changed since this action; history was not applied".into());
             }
+            if memory.is_pinned(&expected.graph, &key) != expected.pinned.contains(&key) {
+                return Err(
+                    "Layout pinning changed since this action; history was not applied".into(),
+                );
+            }
         }
         Ok(())
     }
@@ -331,6 +342,7 @@ impl Transaction {
             .keys()
             .chain(self.after.nodes.keys())
             .filter(|key| self.before.nodes.get(*key) != self.after.nodes.get(*key))
+            .chain(self.before.pinned.symmetric_difference(&self.after.pinned))
             .cloned()
             .collect()
     }
@@ -344,7 +356,8 @@ impl Transaction {
         let target = if undo { &self.before } else { &self.after };
         for key in self.changed_nodes() {
             if let Some((position, collapsed)) = target.nodes.get(&key) {
-                memory.set_node(&target.graph, key, *position, *collapsed);
+                memory.set_node(&target.graph, &key, *position, *collapsed);
+                memory.set_pinned(&target.graph, &key, target.pinned.contains(&key));
             } else {
                 memory.remove_node(&target.graph, &key);
             }
@@ -359,6 +372,43 @@ impl Transaction {
             );
         }
     }
+}
+
+pub(super) fn pin_edit(event: On<GraphPinEdit>, mut commands: Commands) {
+    let edit = event.event().clone();
+    commands.queue(move |world: &mut World| {
+        let Some(mut after) = Snapshot::capture(
+            &edit.graph,
+            world.resource::<ProjectEffectCatalog>(),
+            world.resource::<EditorSession>(),
+            world.resource::<GraphViewportMemory>(),
+        ) else {
+            return;
+        };
+        if !after.keys.contains(&edit.node) || edit.before == edit.after {
+            return;
+        }
+        if edit.after {
+            after.pinned.insert(edit.node.clone());
+        } else {
+            after.pinned.remove(&edit.node);
+        }
+        let mut before = after.clone();
+        if edit.before {
+            before.pinned.insert(edit.node);
+        } else {
+            before.pinned.remove(&edit.node);
+        }
+        record(
+            world,
+            Transaction {
+                before,
+                after,
+                previews: None,
+                invalidated: false,
+            },
+        );
+    });
 }
 
 fn context(graph: &str, catalog: &ProjectEffectCatalog, session: &EditorSession) -> Context {

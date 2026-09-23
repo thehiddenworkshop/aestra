@@ -27,6 +27,7 @@ pub(super) fn restore(
                 Vec2::from_array(node.position),
                 node.collapsed,
             );
+            memory.set_pinned(&key, &expression.to_string(), node.pinned);
         }
         if let Some(node) = layout.output {
             memory.set_node(
@@ -35,6 +36,7 @@ pub(super) fn restore(
                 Vec2::from_array(node.position),
                 node.collapsed,
             );
+            memory.set_pinned(&key, OUTPUT_NODE, node.pinned);
         }
     }
 }
@@ -68,6 +70,7 @@ pub(super) fn update(
                             MaterialGraphNodeLayout {
                                 position: position.to_array(),
                                 collapsed,
+                                pinned: memory.is_pinned(&key, &expression.to_string()),
                             },
                         )
                     })
@@ -79,6 +82,7 @@ pub(super) fn update(
                 .map(|(position, collapsed)| MaterialGraphNodeLayout {
                     position: position.to_array(),
                     collapsed,
+                    pinned: memory.is_pinned(&key, OUTPUT_NODE),
                 });
         layout.viewport = memory
             .view(&key)

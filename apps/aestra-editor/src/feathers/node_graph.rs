@@ -30,7 +30,7 @@ use bevy::{
     window::{CursorMoved, PrimaryWindow, SystemCursorIcon, Window},
 };
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod drag_assist;
 mod framing;
@@ -152,6 +152,7 @@ impl Plugin for FeathersNodeGraphPlugin {
             .init_resource::<GraphNodeDragGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
+            .add_observer(queue_graph_pin_activation)
             .add_observer(begin_graph_node_press)
             .add_observer(begin_graph_node_drag)
             .add_observer(drag_graph_node)
@@ -172,6 +173,7 @@ impl Plugin for FeathersNodeGraphPlugin {
                     sync_graph_nodes_from_memory,
                     handle_graph_frame_buttons,
                     handle_graph_collapse_buttons,
+                    handle_graph_pin_buttons,
                     navigate_graph_viewports,
                     sync_graph_viewport_transforms,
                     update_socket_visuals,
@@ -285,6 +287,7 @@ struct GraphNodeView {
 pub(crate) struct GraphViewportMemory {
     views: HashMap<String, GraphView>,
     nodes: HashMap<(String, String), GraphNodeView>,
+    pinned: HashSet<(String, String)>,
     offsets: HashMap<(String, String), Vec2>,
     placement_revisions: HashMap<(String, String), u64>,
     offset_epochs: HashMap<String, u64>,
@@ -303,10 +306,18 @@ impl GraphViewportMemory {
             .map(|((_, key), node)| (key.clone(), (node.position, node.collapsed)))
             .collect()
     }
+    pub(crate) fn pinned_nodes(&self, graph: &str) -> BTreeSet<String> {
+        self.pinned
+            .iter()
+            .filter(|(key, _)| key == graph)
+            .map(|(_, node)| node.clone())
+            .collect()
+    }
     /// Remove a document and all of its independent view cameras without touching other widgets.
     pub(crate) fn retain_graphs(&mut self, keep: impl Fn(&str) -> bool) {
         self.views.retain(|key, _| keep(key));
         self.nodes.retain(|(key, _), _| keep(key));
+        self.pinned.retain(|(key, _)| keep(key));
         self.offsets.retain(|(key, _), _| keep(key));
         self.placement_revisions.retain(|(key, _), _| keep(key));
         self.offset_epochs.retain(|key, _| keep(key));
@@ -316,6 +327,7 @@ impl GraphViewportMemory {
     pub(crate) fn retain_nodes(&mut self, graph: &str, keep: impl Fn(&str) -> bool) {
         self.nodes
             .retain(|(key, node), _| key != graph || keep(node));
+        self.pinned.retain(|(key, node)| key != graph || keep(node));
         self.offsets
             .retain(|(key, node), _| key != graph || keep(node));
         self.placement_revisions
@@ -361,6 +373,23 @@ impl GraphViewportMemory {
             .map(|node| (node.position, node.collapsed))
     }
 
+    pub(crate) fn is_pinned(&self, graph_key: &str, node_key: &str) -> bool {
+        self.pinned
+            .contains(&(graph_key.to_owned(), node_key.to_owned()))
+    }
+
+    pub(crate) fn set_pinned(&mut self, graph_key: &str, node_key: &str, pinned: bool) {
+        let key = (graph_key.to_owned(), node_key.to_owned());
+        let changed = if pinned {
+            self.pinned.insert(key)
+        } else {
+            self.pinned.remove(&key)
+        };
+        if changed {
+            self.touch_graph(graph_key);
+        }
+    }
+
     pub(crate) fn set_node(
         &mut self,
         graph_key: impl Into<String>,
@@ -400,6 +429,7 @@ impl GraphViewportMemory {
     pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
         let key = (graph_key.to_owned(), node_key.to_owned());
         let changed = self.nodes.remove(&key).is_some()
+            | self.pinned.remove(&key)
             | self.offsets.remove(&key).is_some()
             | self.placement_revisions.remove(&key).is_some();
         if changed {
@@ -532,9 +562,11 @@ pub(crate) struct GraphNodeProps {
     pub(crate) title: String,
     pub(crate) position: Vec2,
     pub(crate) selected: bool,
+    pub(crate) pinned: bool,
     pub(crate) muted: bool,
     pub(crate) collapse_icon: Handle<SvgFile>,
     pub(crate) expand_icon: Handle<SvgFile>,
+    pub(crate) pin_icon: Handle<SvgFile>,
     pub(crate) collapse_label: String,
     pub(crate) expand_label: String,
 }
@@ -560,6 +592,7 @@ pub(crate) struct FeathersGraphNode {
     node_key: String,
     position: Vec2,
     selected: bool,
+    pinned: bool,
     collapsed: bool,
     dragging: bool,
     drag_before: Option<(Vec2, bool)>,
@@ -574,6 +607,14 @@ pub(crate) struct GraphPresentationEdit {
     pub(crate) node: String,
     pub(crate) before: (Vec2, bool),
     pub(crate) after: (Vec2, bool),
+}
+
+#[derive(Event, Clone)]
+pub(crate) struct GraphPinEdit {
+    pub(crate) graph: String,
+    pub(crate) node: String,
+    pub(crate) before: bool,
+    pub(crate) after: bool,
 }
 
 impl FeathersGraphNode {
@@ -624,6 +665,16 @@ struct GraphCollapseIcon {
     node: Entity,
     collapse_icon: Handle<SvgFile>,
     expand_icon: Handle<SvgFile>,
+}
+
+#[derive(Component, Debug, Clone)]
+struct GraphPinAction {
+    node: Entity,
+}
+
+#[derive(Component, Debug, Clone)]
+struct GraphPinIcon {
+    node: Entity,
 }
 
 #[derive(Debug, Clone)]
@@ -969,6 +1020,7 @@ fn restore_graph_nodes(
     mut nodes: Query<(Entity, &mut FeathersGraphNode, &mut Node), Added<FeathersGraphNode>>,
     mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
     mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
+    mut pin_icons: Query<(&GraphPinIcon, &mut SvgColor)>,
 ) {
     for (entity, mut graph_node, mut style) in &mut nodes {
         let key = (graph_node.graph_key.clone(), graph_node.node_key.clone());
@@ -980,9 +1032,11 @@ fn restore_graph_nodes(
             .unwrap();
         graph_node.position = position;
         graph_node.collapsed = saved.collapsed;
+        graph_node.pinned = memory.is_pinned(&graph_node.graph_key, &graph_node.node_key);
         style.left = Val::Px(position.x);
         style.top = Val::Px(position.y);
         apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
+        apply_graph_node_pin(entity, graph_node.pinned, &mut pin_icons);
     }
 }
 
@@ -995,6 +1049,7 @@ fn sync_graph_nodes_from_memory(
     mut nodes: Query<(Entity, &mut FeathersGraphNode, &mut Node)>,
     mut bodies: Query<(&FeathersGraphNodeBody, &mut Node), Without<FeathersGraphNode>>,
     mut icons: Query<(&GraphCollapseIcon, &mut UiSvg)>,
+    mut pin_icons: Query<(&GraphPinIcon, &mut SvgColor)>,
 ) {
     if !memory.is_changed() {
         return;
@@ -1015,6 +1070,11 @@ fn sync_graph_nodes_from_memory(
         if graph_node.collapsed != saved.collapsed {
             graph_node.collapsed = saved.collapsed;
             apply_graph_node_collapse(entity, saved.collapsed, &mut bodies, &mut icons);
+        }
+        let pinned = memory.is_pinned(&graph_node.graph_key, &graph_node.node_key);
+        if graph_node.pinned != pinned {
+            graph_node.pinned = pinned;
+            apply_graph_node_pin(entity, pinned, &mut pin_icons);
         }
     }
 }
@@ -1501,6 +1561,89 @@ fn queue_graph_collapse_activation(
     }
 }
 
+fn queue_graph_pin_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<GraphPinAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn handle_graph_pin_buttons(
+    mut commands: Commands,
+    actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &GraphPinAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    mut nodes: Query<&mut FeathersGraphNode>,
+    mut icons: Query<(&GraphPinIcon, &mut SvgColor)>,
+    mut memory: ResMut<GraphViewportMemory>,
+) {
+    for (entity, interaction, action, pending) in &actions {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        let Ok(mut node) = nodes.get_mut(action.node) else {
+            continue;
+        };
+        // A bootstrap-only node has no authored base yet. Pinning makes its current displayed
+        // position an explicit anchor, so materialize that position before storing the pin.
+        if memory.node(&node.graph_key, &node.node_key).is_none() {
+            memory.set_node(
+                node.graph_key.clone(),
+                node.node_key.clone(),
+                node.position,
+                node.collapsed,
+            );
+        }
+        let before = memory.is_pinned(&node.graph_key, &node.node_key);
+        let after = !before;
+        memory.set_pinned(&node.graph_key, &node.node_key, after);
+        node.pinned = after;
+        apply_graph_node_pin(action.node, after, &mut icons);
+        commands.entity(entity).insert(AccessibleLabel(if after {
+            "Unpin node".into()
+        } else {
+            "Pin node".into()
+        }));
+        commands.trigger(GraphPinEdit {
+            graph: node.graph_key.clone(),
+            node: node.node_key.clone(),
+            before,
+            after,
+        });
+    }
+}
+
+fn apply_graph_node_pin(
+    entity: Entity,
+    pinned: bool,
+    icons: &mut Query<(&GraphPinIcon, &mut SvgColor)>,
+) {
+    for (icon, mut color) in icons.iter_mut() {
+        if icon.node == entity {
+            color.0 = if pinned {
+                theme::ACCENT
+            } else {
+                theme::TEXT_FAINT
+            };
+        }
+    }
+}
+
 fn handle_graph_collapse_buttons(
     mut commands: Commands,
     actions: Query<
@@ -1792,6 +1935,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
     let node_key = props.node_key.clone();
     let collapse_icon = props.collapse_icon.clone();
     let expand_icon = props.expand_icon.clone();
+    let pin_icon = props.pin_icon.clone();
     let collapse_label = props.collapse_label.clone();
     let expand_label = props.expand_label.clone();
     let mut node = parent.spawn((
@@ -1801,6 +1945,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             node_key,
             position: props.position,
             selected: props.selected,
+            pinned: props.pinned,
             collapsed: false,
             dragging: false,
             drag_before: None,
@@ -1874,6 +2019,41 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
                 flex_grow: 1.0,
                 ..default()
             });
+            let mut pin = header.spawn_empty();
+            pin.apply_scene(scenes::feathers_tool_button());
+            pin.insert((
+                GraphPinAction { node: entity },
+                FeathersActionButton,
+                AccessibleLabel(if props.pinned {
+                    "Unpin node".into()
+                } else {
+                    "Pin node".into()
+                }),
+                Node {
+                    width: Val::Px(22.0),
+                    height: Val::Px(22.0),
+                    flex_shrink: 0.0,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                    ..default()
+                },
+            ))
+            .with_child((
+                GraphPinIcon { node: entity },
+                Node {
+                    width: Val::Px(11.0),
+                    height: Val::Px(11.0),
+                    ..default()
+                },
+                UiSvg(pin_icon),
+                SvgColor(if props.pinned {
+                    theme::ACCENT
+                } else {
+                    theme::TEXT_FAINT
+                }),
+                Pickable::IGNORE,
+            ));
             let mut disclosure = header.spawn_empty();
             disclosure.apply_scene(scenes::feathers_tool_button());
             disclosure
@@ -2181,6 +2361,7 @@ mod tests {
                     node_key: "expression:n".into(),
                     position: Vec2::ZERO,
                     selected: false,
+                    pinned: false,
                     collapsed: false,
                     dragging: false,
                     drag_before: None,
@@ -2298,6 +2479,7 @@ mod tests {
             node_key: "node".into(),
             position: Vec2::ZERO,
             selected: false,
+            pinned: false,
             collapsed: false,
             dragging: false,
             drag_before: None,

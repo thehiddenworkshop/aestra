@@ -1749,6 +1749,7 @@ pub(crate) fn spawn(
                     title(expression, &function),
                     positions[&expression.id],
                     selection.is_function_expression_selected(view, function.id, expression.id),
+                    memory.is_pinned(&graph_key, &expression.id.to_string()),
                     assets,
                 );
                 let geometry = GraphGeometryNode::new(
@@ -1929,6 +1930,7 @@ pub(crate) fn spawn(
                     "Function outputs".into(),
                     output_position,
                     false,
+                    memory.is_pinned(&graph_key, "outputs"),
                     assets,
                 ),
                 GraphGeometryNode::new(GraphNodeKey::FunctionOutputs, &function.outputs, false),
@@ -2053,6 +2055,7 @@ fn props(
     title: String,
     position: Vec2,
     selected: bool,
+    pinned: bool,
     assets: &AssetServer,
 ) -> GraphNodeProps {
     GraphNodeProps {
@@ -2061,9 +2064,11 @@ fn props(
         title,
         position,
         selected,
+        pinned,
         muted: false,
         collapse_icon: load_svg_icon(assets, "icons/chevron-down.svg"),
         expand_icon: load_svg_icon(assets, "icons/chevron-right.svg"),
+        pin_icon: load_svg_icon(assets, "icons/pin.svg"),
         collapse_label: "Collapse".into(),
         expand_label: "Expand".into(),
     }

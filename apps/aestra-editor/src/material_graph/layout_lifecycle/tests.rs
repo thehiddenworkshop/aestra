@@ -371,6 +371,7 @@ fn blocked_layout_retry_preserves_file_until_repaired_then_reloads_without_seman
         .output = Some(MaterialGraphNodeLayout {
         position: [10.0, 20.0],
         collapsed: true,
+        pinned: false,
     });
     repaired.save(root.path()).unwrap();
     let effect_before = app.world().resource::<EditorSession>().effect.clone();

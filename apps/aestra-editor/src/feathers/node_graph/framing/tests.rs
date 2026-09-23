@@ -143,9 +143,11 @@ fn spawn(app: &mut App, root: Entity, function: bool, view: u64, zoom: f32) -> F
                                     Vec2::new(480.0, 370.0)
                                 },
                                 selected: index == 0,
+                                pinned: false,
                                 muted: false,
                                 collapse_icon: default(),
                                 expand_icon: default(),
+                                pin_icon: default(),
                                 collapse_label: "Collapse".into(),
                                 expand_label: "Expand".into(),
                             },

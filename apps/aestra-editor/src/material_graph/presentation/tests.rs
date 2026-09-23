@@ -34,7 +34,8 @@ fn fixture() -> (
         .init_resource::<EditorHistoryLedger>()
         .init_resource::<FunctionEditor>()
         .add_observer(execute_history_action)
-        .add_observer(node_edit);
+        .add_observer(node_edit)
+        .add_observer(pin_edit);
     (root, app, program, function)
 }
 
@@ -126,6 +127,73 @@ fn arrangement_is_one_exact_undo_and_redo() {
             .map(|(key, (position, _))| (key, position))
             .collect::<BTreeMap<_, _>>(),
         arranged
+    );
+}
+
+#[test]
+fn explicit_pin_is_one_presentation_undo_and_manual_move_keeps_it() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    let node = MATERIAL_GRAPH_OUTPUT_NODE_KEY;
+    let original = Vec2::new(320.0, 96.0);
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(&graph, node, original, false);
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_pinned(&graph, node, true);
+    app.world_mut().trigger(GraphPinEdit {
+        graph: graph.clone(),
+        node: node.into(),
+        before: false,
+        after: true,
+    });
+    app.world_mut().flush();
+
+    assert!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .is_pinned(&graph, node)
+    );
+    step(&mut app, true);
+    assert!(
+        !app.world()
+            .resource::<GraphViewportMemory>()
+            .is_pinned(&graph, node)
+    );
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .node_position(&graph, node),
+        Some(original)
+    );
+    step(&mut app, false);
+    assert!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .is_pinned(&graph, node)
+    );
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .node_position(&graph, node),
+        Some(original)
+    );
+
+    let moved = Vec2::new(480.0, 128.0);
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(&graph, node, moved, false);
+    assert!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .is_pinned(&graph, node)
+    );
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .node_position(&graph, node),
+        Some(moved)
     );
 }
 

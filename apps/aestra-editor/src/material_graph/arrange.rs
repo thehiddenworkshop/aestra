@@ -165,6 +165,11 @@ fn prepare(
         .mounted_view_snapshot(&view, viewport)
         .cloned()
         .ok_or("node measurements are not stable yet")?;
+    let memory_graph = match view.document.asset {
+        DocumentKey::MaterialProgram(id) => material_graph_view_key(id),
+        DocumentKey::MaterialFunction(id) => function_graph_memory_key(catalog.root(), id),
+        DocumentKey::WeslSource(_) => return Err("WESL documents do not have a node graph".into()),
+    };
     let states = snapshot
         .nodes
         .iter()
@@ -174,7 +179,8 @@ fn prepare(
                 GraphLayoutNodeState {
                     position: node.effective_position,
                     size: node.size,
-                    pinned: false,
+                    pinned: memory_key(view.document.asset, *key)
+                        .is_ok_and(|node| memory.is_pinned(&memory_graph, &node)),
                     selected: seeds.contains(key),
                 },
             )
@@ -216,6 +222,23 @@ fn prepare(
         DocumentKey::WeslSource(_) => return Err("WESL documents do not have a node graph".into()),
     };
     let work = match scope.partial() {
+        None if adapter.input.nodes.iter().any(|node| node.pinned) => {
+            let layout_seeds = adapter
+                .input
+                .nodes
+                .iter()
+                .filter(|node| !node.pinned)
+                .map(|node| node.key)
+                .collect::<BTreeSet<_>>();
+            let plan = PartialLayoutPlan::extract(
+                &adapter.input,
+                &layout_seeds,
+                PartialLayoutScope::Selection,
+            )
+            .map_err(|error| error.to_string())?;
+            adapter.input.region = GraphLayoutRegion::Nodes(plan.region.clone());
+            LayoutWork::Partial(plan)
+        }
         None => LayoutWork::Full(adapter.input.clone()),
         Some(partial_scope) => {
             if seeds.is_empty() {

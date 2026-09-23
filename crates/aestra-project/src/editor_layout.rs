@@ -10,7 +10,7 @@ use std::{
 };
 use tempfile::Builder as TempFileBuilder;
 
-pub const PROJECT_EDITOR_LAYOUT_FORMAT_VERSION: u32 = 2;
+pub const PROJECT_EDITOR_LAYOUT_FORMAT_VERSION: u32 = 3;
 pub const PROJECT_EDITOR_LAYOUT_DIRECTORY: &str = ".aestra";
 pub const PROJECT_EDITOR_LAYOUT_FILE: &str = "editor-layout.ron";
 
@@ -35,6 +35,8 @@ impl Default for MaterialGraphViewportLayout {
 pub struct MaterialGraphNodeLayout {
     pub position: [f32; 2],
     pub collapsed: bool,
+    /// Explicit hard layout anchor. Manual movement never sets this implicitly.
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -184,6 +186,7 @@ mod tests {
                 MaterialGraphNodeLayout {
                     position: [80.0, 35.0],
                     collapsed: true,
+                    pinned: false,
                 },
             );
         let source = format!(
@@ -205,6 +208,7 @@ mod tests {
         graph.output = Some(MaterialGraphNodeLayout {
             position: [900.0, -25.0],
             collapsed: false,
+            pinned: false,
         });
         graph.viewport = Some(MaterialGraphViewportLayout {
             pan: [24.0, -12.0],
@@ -245,11 +249,13 @@ mod tests {
                     MaterialGraphNodeLayout {
                         position: [320.0, 180.0],
                         collapsed: true,
+                        pinned: true,
                     },
                 )]),
                 output: Some(MaterialGraphNodeLayout {
                     position: [640.0, 220.0],
                     collapsed: false,
+                    pinned: false,
                 }),
                 visible_previews: BTreeSet::from([expression]),
                 output_preview_visible: true,
@@ -302,6 +308,7 @@ mod tests {
                 MaterialGraphNodeLayout {
                     position: [80.0, -40.0],
                     collapsed: true,
+                    pinned: false,
                 },
             );
         let mut second = first.clone();
@@ -340,6 +347,7 @@ mod tests {
         let graph = &restored.material_graphs[&program];
         assert_eq!(graph.nodes[&expression].position, [32.0, 64.0]);
         assert!(!graph.nodes[&expression].collapsed);
+        assert!(!graph.nodes[&expression].pinned);
         assert!(graph.viewport.is_none());
         assert!(graph.output.is_none());
         assert!(graph.visible_previews.is_empty());
@@ -412,6 +420,7 @@ mod tests {
                     MaterialGraphNodeLayout {
                         position: [f32::INFINITY, 0.0],
                         collapsed: false,
+                        pinned: false,
                     },
                 )]),
                 ..Default::default()

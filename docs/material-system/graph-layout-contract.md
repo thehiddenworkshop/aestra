@@ -1141,5 +1141,23 @@ workspace formatting, `git diff --check` and the normal editor build passed.
 - Regression coverage exercises deterministic fallback ordering, dependency direction, measured
   and stale geometry, preserved manual positions and atomic Undo/Redo.
 
-Next: **M12 — explicit pinning**, persisting user-authored hard layout anchors without treating
-ordinary manual movement as an implicit pin.
+## M12 implementation — explicit pinning
+
+- Every material and function graph node has an explicit Free/Pinned header control. Pinning is a
+  presentation edit; dragging a node never pins it implicitly and moving an existing pinned node
+  preserves its explicit state.
+- Pin state is stored with the node's project editor-layout metadata. Layout metadata format 3
+  reads older projects as Free and round-trips pins for program expressions, function expressions
+  and their synthetic output nodes.
+- Full arrangement extracts all Free nodes as a movable region whenever pins exist. Targeted
+  selection and branch arrangement remove pinned seeds and stop traversal at each pin, treating
+  its exact rectangle and connecting edges as fixed boundary anchors.
+- The reconciler must return a complete candidate with every pinned position unchanged. An empty
+  movable region, collision conflict or invalid candidate fails atomically; arrangement never
+  silently unpins or downgrades a constraint.
+- Changing a pin advances the graph placement revision, so an in-flight layout result cannot
+  overwrite a newer choice. Pin and unpin actions use the existing presentation-history ledger and
+  restore exactly through Undo/Redo without changing material semantics.
+
+Next: **M13 — Tidy**, exposing deterministic cleanup actions that compose with explicit pins and
+the existing targeted-layout contract.

@@ -50,12 +50,34 @@ fn effective_offsets_survive_ui_rebuild_without_becoming_base_positions() {
     assert_eq!(memory.node_position(key, "n"), Some(base));
 }
 
+#[test]
+fn explicit_pin_survives_manual_moves_and_is_removed_with_the_node() {
+    let graph = "material:p";
+    let node = "expression:n";
+    let mut memory = GraphViewportMemory::default();
+    memory.set_node(graph, node, Vec2::ZERO, false);
+
+    assert!(!memory.is_pinned(graph, node));
+    memory.set_pinned(graph, node, true);
+    memory.set_node(graph, node, Vec2::new(240.0, 80.0), false);
+
+    assert!(memory.is_pinned(graph, node));
+    assert_eq!(
+        memory.node(graph, node),
+        Some((Vec2::new(240.0, 80.0), false))
+    );
+
+    memory.remove_node(graph, node);
+    assert!(!memory.is_pinned(graph, node));
+}
+
 fn node(graph_key: &str, node_key: &str) -> FeathersGraphNode {
     FeathersGraphNode {
         graph_key: graph_key.into(),
         node_key: node_key.into(),
         position: Vec2::ZERO,
         selected: false,
+        pinned: false,
         collapsed: false,
         dragging: false,
         drag_before: None,
@@ -153,6 +175,7 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
                 .init_resource::<GraphViewportMemory>()
                 .init_resource::<OverrideCursor>()
                 .init_resource::<drag_assist::State>()
+                .init_resource::<GraphNodeDragGesture>()
                 .add_observer(drag_graph_node);
             // The other view deliberately has a different zoom. The node key is per document,
             // so matching the key instead of walking the hierarchy would give the wrong scale.
@@ -176,6 +199,11 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
                     ChildOf(owner),
                 ))
                 .id();
+            {
+                let mut gesture = app.world_mut().resource_mut::<GraphNodeDragGesture>();
+                gesture.active = Some(entity);
+                gesture.members.insert(entity);
+            }
             let delta = Vec2::new(35.0, -21.0);
             app.world_mut().trigger(Pointer::new(
                 PointerId::Mouse,
@@ -229,6 +257,7 @@ fn drag_emits_one_base_placement_transaction_and_sibling_views_follow_undo() {
     app.init_resource::<GraphViewportMemory>()
         .init_resource::<OverrideCursor>()
         .init_resource::<drag_assist::State>()
+        .init_resource::<GraphNodeDragGesture>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Edits>()
         .add_observer(begin_graph_node_drag)
