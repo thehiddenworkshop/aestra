@@ -524,6 +524,34 @@ pub(crate) struct ModuleDragState {
     dragged: Option<ModuleId>,
 }
 
+/// The vertical grip icon that marks a row as draggable (§28.4), reused by the row and the drag proxy
+/// so they match. `Pickable::IGNORE` lets drags pass through to the row itself.
+fn spawn_module_drag_handle(parent: &mut ChildSpawnerCommands, asset_server: &AssetServer) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(14.0),
+                height: Val::Px(20.0),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_child((
+            bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
+                asset_server,
+                "icons/drag-vertical.svg",
+            )),
+            bevy_resvg::prelude::SvgColor(theme::TEXT_MUTED),
+            Node {
+                width: Val::Px(14.0),
+                height: Val::Px(20.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+}
+
 /// The stack row entity and its module id at `entity` or an ancestor.
 fn module_row_entity(
     mut entity: Entity,
@@ -636,28 +664,7 @@ pub(super) fn begin_module_drag(
             BorderColor::all(theme::ACCENT),
         ))
         .with_children(|row| {
-            row.spawn((
-                Node {
-                    width: Val::Px(10.0),
-                    height: Val::Px(16.0),
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ))
-            .with_child((
-                bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
-                    &asset_server,
-                    "icons/drag-vertical.svg",
-                )),
-                bevy_resvg::prelude::SvgColor(theme::TEXT_FAINT),
-                Node {
-                    width: Val::Px(10.0),
-                    height: Val::Px(16.0),
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
+            spawn_module_drag_handle(row, &asset_server);
             row.spawn((
                 Text::new(name),
                 bevy::feathers::theme::ThemedText,
@@ -739,22 +746,38 @@ pub(super) fn hover_module_drag(
     {
         return;
     }
-    let same_stage = session.selected_layer().is_some_and(|layer| {
-        let stage_of = |id| layer.modules.iter().find(|module| module.id == id);
-        matches!((stage_of(dragged), stage_of(module_id)), (Some(a), Some(b)) if a.stage == b.stage)
-    });
-    if !same_stage {
+    // Same stage only, and note the drag direction so the gap opens on the side the row will land.
+    let Some(layer) = session.selected_layer() else {
+        return;
+    };
+    let index_of = |id| layer.modules.iter().position(|module| module.id == id);
+    let (Some(from), Some(onto)) = (index_of(dragged), index_of(module_id)) else {
+        return;
+    };
+    if layer.modules[from].stage != layer.modules[onto].stage {
         return;
     }
-    if let Some(previous) = state.gap_row.take()
-        && let Ok(mut node) = nodes.get_mut(previous)
-    {
-        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
-    }
+    // Dragging downward drops after the target (gap below); upward drops before it (gap above).
+    let below = from < onto;
+    restore_row_margin(&mut nodes, state.gap_row.take());
     if let Ok(mut node) = nodes.get_mut(row_entity) {
-        node.margin.top = Val::Px(MODULE_ROW_GAP);
+        if below {
+            node.margin.bottom = Val::Px(MODULE_ROW_GAP);
+        } else {
+            node.margin.top = Val::Px(MODULE_ROW_GAP);
+        }
     }
     state.gap_row = Some(row_entity);
+}
+
+/// Restores a gapped row's top and bottom margins to the row default (§28.4).
+fn restore_row_margin(nodes: &mut Query<&mut Node>, row: Option<Entity>) {
+    if let Some(row) = row
+        && let Ok(mut node) = nodes.get_mut(row)
+    {
+        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
+        node.margin.bottom = Val::Px(MODULE_ROW_MARGIN_TOP);
+    }
 }
 
 /// Restores the hidden row and any insertion gap, and tears down the proxy when the drag ends (§28.4),
@@ -770,11 +793,7 @@ pub(super) fn end_module_drag(
     {
         node.display = Display::Flex;
     }
-    if let Some(gap) = state.gap_row.take()
-        && let Ok(mut node) = nodes.get_mut(gap)
-    {
-        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
-    }
+    restore_row_margin(&mut nodes, state.gap_row.take());
     if let Some(ghost) = state.ghost.take() {
         commands.entity(ghost).try_despawn();
     }
@@ -810,6 +829,7 @@ pub(super) fn spawn_module_stack_row(
             },
             PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
             ModuleRowDrag(module.id),
+            EntityCursor::System(SystemCursorIcon::Grab),
             crate::feathers::tooltip::EditorTooltip::titled(display_name, help),
             Node {
                 width: Val::Auto,
@@ -833,28 +853,7 @@ pub(super) fn spawn_module_stack_row(
         ))
         .with_children(|row| {
             // Drag handle (§28.4): the vertical grip icon marks the row as draggable to reorder.
-            row.spawn((
-                Node {
-                    width: Val::Px(10.0),
-                    height: Val::Px(16.0),
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ))
-            .with_child((
-                bevy_resvg::prelude::UiSvg(crate::feathers::icon::load_svg_icon(
-                    asset_server,
-                    "icons/drag-vertical.svg",
-                )),
-                bevy_resvg::prelude::SvgColor(theme::TEXT_FAINT),
-                Node {
-                    width: Val::Px(10.0),
-                    height: Val::Px(16.0),
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
+            spawn_module_drag_handle(row, asset_server);
             row.spawn((
                 Text::new(display_name),
                 bevy::feathers::theme::ThemedText,
