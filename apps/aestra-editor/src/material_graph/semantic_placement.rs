@@ -11,6 +11,7 @@ struct Node {
     initial: Vec2,
     size: Vec2,
     sources: Vec<GraphNodeKey>,
+    semantic: Option<MaterialExpressionKind>,
 }
 struct Model {
     asset: DocumentKey,
@@ -31,6 +32,11 @@ impl Model {
         );
         let layout = layout_graph(&projection, previews);
         let inline = program.inline_constants();
+        let semantics = program
+            .expressions
+            .iter()
+            .map(|expression| (expression.id, expression.kind.clone()))
+            .collect::<BTreeMap<_, _>>();
         let mut nodes = projection
             .nodes
             .iter()
@@ -56,6 +62,7 @@ impl Model {
                             .iter()
                             .map(|port| GraphNodeKey::Expression(port.source))
                             .collect(),
+                        semantic: semantics.get(&node.expression).cloned(),
                     },
                 )
             })
@@ -78,6 +85,7 @@ impl Model {
                     .iter()
                     .map(|output| GraphNodeKey::Expression(output.source))
                     .collect(),
+                semantic: None,
             },
         );
         Ok(Self {
@@ -99,6 +107,11 @@ impl Model {
         let MaterialFunctionBodyProjection::Graph { nodes, edges } = projection.body else {
             return Err("Custom WESL has no node placement".into());
         };
+        let semantics = function
+            .expressions
+            .iter()
+            .map(|expression| (expression.id, expression.kind.clone()))
+            .collect::<BTreeMap<_, _>>();
         let (positions, output, _) = bootstrap_layout(&nodes, &edges);
         let mut layout = nodes
             .iter()
@@ -109,6 +122,7 @@ impl Model {
                         initial: positions[&node.id],
                         size: estimated_size(node.id, &nodes, &edges),
                         sources: Vec::new(),
+                        semantic: semantics.get(&node.id).cloned(),
                     },
                 )
             })
@@ -119,6 +133,7 @@ impl Model {
                 initial: output,
                 size: Vec2::new(248.0, 62.0 + function.outputs.len().max(1) as f32 * 28.0),
                 sources: Vec::new(),
+                semantic: None,
             },
         );
         for edge in edges {
@@ -150,6 +165,85 @@ impl Model {
             GraphNodeKey::FunctionOutputs => "outputs".into(),
         }
     }
+}
+
+/// Structural delta at the semantic commit boundary. A node may be both replaced and rewired when
+/// its operation and its dependency set change in the same command.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EditImpact {
+    created: BTreeSet<GraphNodeKey>,
+    removed: BTreeSet<GraphNodeKey>,
+    replaced: BTreeSet<GraphNodeKey>,
+    rewired: BTreeSet<GraphNodeKey>,
+    resized: BTreeSet<GraphNodeKey>,
+}
+
+impl EditImpact {
+    fn between(before: &Model, after: &Model) -> Self {
+        let mut impact = Self {
+            created: after
+                .nodes
+                .keys()
+                .filter(|key| !before.nodes.contains_key(key))
+                .copied()
+                .collect(),
+            removed: before
+                .nodes
+                .keys()
+                .filter(|key| !after.nodes.contains_key(key))
+                .copied()
+                .collect(),
+            ..default()
+        };
+        // One sentinel strips edge identity while retaining operation type, parameters and other
+        // semantic payload. This separates a replacement from a pure rewire deterministically.
+        let sentinel = MaterialExpressionId::new();
+        for (key, previous) in &before.nodes {
+            let Some(next) = after.nodes.get(key) else {
+                continue;
+            };
+            if previous.sources != next.sources {
+                impact.rewired.insert(*key);
+            }
+            let previous_shape = previous
+                .semantic
+                .as_ref()
+                .map(|kind| semantic_shape(kind, sentinel));
+            let next_shape = next
+                .semantic
+                .as_ref()
+                .map(|kind| semantic_shape(kind, sentinel));
+            if previous_shape != next_shape {
+                impact.replaced.insert(*key);
+            }
+            if previous.size != next.size {
+                impact.resized.insert(*key);
+            }
+        }
+        impact
+    }
+
+    fn changes_layout_inputs(&self) -> bool {
+        !self.created.is_empty()
+            || !self.removed.is_empty()
+            || !self.replaced.is_empty()
+            || !self.rewired.is_empty()
+            || !self.resized.is_empty()
+    }
+}
+
+fn semantic_shape(
+    kind: &MaterialExpressionKind,
+    sentinel: MaterialExpressionId,
+) -> MaterialExpressionKind {
+    let mut shape = kind.clone();
+    let remapped = kind
+        .dependencies()
+        .into_iter()
+        .map(|source| (source, sentinel))
+        .collect();
+    aestra_authoring::remap_expression_sources(&mut shape, &remapped);
+    shape
 }
 
 struct Prepared {
@@ -211,26 +305,25 @@ impl Context<'_, '_> {
         let (Some(mut prepared), Some(memory)) = (prepared, self.memory.as_deref_mut()) else {
             return;
         };
-        let created = after
-            .nodes
-            .keys()
-            .filter(|key| !prepared.model.nodes.contains_key(key))
-            .copied()
-            .collect::<BTreeSet<_>>();
-        // A creation must freeze bootstrap bases too: otherwise a changed dependency depth
-        // could shift unrelated nodes on the next rebuild. Never store temporary offsets.
-        if !created.is_empty() {
+        let impact = EditImpact::between(&prepared.model, &after);
+        // Every structural semantic edit freezes retained bootstrap bases. Otherwise deletion,
+        // replacement or rewiring can change dependency depth and shift an unrelated node on the
+        // next rebuild even when the command created no node. Never store temporary offsets.
+        if impact.changes_layout_inputs() {
             if let Some(view) = &prepared.view {
                 self.placement.preserve_existing(view, memory);
             }
             for (key, node) in &prepared.model.nodes {
+                if !after.nodes.contains_key(key) {
+                    continue;
+                }
                 let key = prepared.model.node_key(*key);
                 if memory.node(&after.graph, &key).is_none() {
                     memory.set_node(&after.graph, key, node.initial, false);
                 }
             }
         }
-        let placements = place_batch(&mut prepared.area, &after, created);
+        let placements = place_batch(&mut prepared.area, &after, impact.created);
         let unassisted = placements.iter().any(|(_, placed)| !placed.assisted);
         for (key, placed) in placements {
             memory.place_node(&after.graph, after.node_key(key), placed.position);
@@ -297,13 +390,7 @@ impl Context<'_, '_> {
 }
 
 fn validate_batch(before: &Model, after: &Model) -> Result<(), String> {
-    if after
-        .nodes
-        .keys()
-        .filter(|key| !before.nodes.contains_key(key))
-        .count()
-        > 512
-    {
+    if EditImpact::between(before, after).created.len() > 512 {
         return Err("Node creation exceeds the 512-node placement batch limit".into());
     }
     Ok(())

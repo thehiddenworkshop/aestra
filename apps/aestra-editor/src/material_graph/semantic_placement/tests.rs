@@ -207,6 +207,149 @@ fn semantic_program_batch_preserves_manual_and_bootstrap_bases_in_one_undo() {
 }
 
 #[test]
+fn semantic_edit_impact_preserves_unaffected_nodes_for_replace_rewire_and_delete() {
+    let (_root, mut app, before, _) = fixture();
+    let graph = material_graph_view_key(before.id);
+    let color = before.outputs.color;
+    let alternate = MaterialExpressionId::new();
+    let mut expanded = before.clone();
+    expanded.expressions.push(MaterialExpression {
+        id: alternate,
+        kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.2, 0.4, 0.8, 1.0])),
+    });
+    // Keep both colors as explicit graph nodes while they are temporarily disconnected.
+    expanded.node_constants.extend([color, alternate]);
+    let expanded = expanded.normalized();
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    let initial_model = Model::program(&before, catalog, &default()).unwrap();
+    let expanded_model = Model::program(&expanded, catalog, &default()).unwrap();
+    let impact = EditImpact::between(&initial_model, &expanded_model);
+    assert_eq!(
+        impact.created,
+        BTreeSet::from([GraphNodeKey::Expression(alternate)])
+    );
+    assert!(impact.removed.is_empty());
+
+    edit_program(&mut app, before, expanded.clone()).unwrap();
+    let expanded_bases = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .base_nodes(&graph);
+    assert_eq!(expanded_bases.len(), expanded_model.nodes.len());
+
+    let mut replaced = expanded.clone();
+    replaced
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == color)
+        .unwrap()
+        .kind = MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.9, 0.3, 0.1, 1.0]));
+    let replaced = replaced.normalized();
+    let replaced_model = Model::program(
+        &replaced,
+        app.world().resource::<ProjectEffectCatalog>(),
+        &default(),
+    )
+    .unwrap();
+    let impact = EditImpact::between(&expanded_model, &replaced_model);
+    assert_eq!(
+        impact.replaced,
+        BTreeSet::from([GraphNodeKey::Expression(color)])
+    );
+    assert!(impact.created.is_empty() && impact.removed.is_empty() && impact.rewired.is_empty());
+    edit_program(&mut app, expanded, replaced.clone()).unwrap();
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        expanded_bases
+    );
+
+    let mut rewired = replaced.clone();
+    rewired.outputs.color = alternate;
+    let rewired = rewired.normalized();
+    let rewired_model = Model::program(
+        &rewired,
+        app.world().resource::<ProjectEffectCatalog>(),
+        &default(),
+    )
+    .unwrap();
+    let impact = EditImpact::between(&replaced_model, &rewired_model);
+    assert_eq!(
+        impact.rewired,
+        BTreeSet::from([GraphNodeKey::MaterialOutputs])
+    );
+    assert!(impact.created.is_empty() && impact.removed.is_empty() && impact.replaced.is_empty());
+    edit_program(&mut app, replaced, rewired.clone()).unwrap();
+    let rewired_bases = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .base_nodes(&graph);
+    assert_eq!(rewired_bases, expanded_bases);
+
+    let mut deleted = rewired.clone();
+    deleted
+        .expressions
+        .retain(|expression| expression.id != color);
+    deleted
+        .node_constants
+        .retain(|expression| *expression != color);
+    let deleted = deleted.normalized();
+    let deleted_model = Model::program(
+        &deleted,
+        app.world().resource::<ProjectEffectCatalog>(),
+        &default(),
+    )
+    .unwrap();
+    let impact = EditImpact::between(&rewired_model, &deleted_model);
+    assert_eq!(
+        impact.removed,
+        BTreeSet::from([GraphNodeKey::Expression(color)])
+    );
+    edit_program(&mut app, rewired.clone(), deleted.clone()).unwrap();
+    let deleted_bases = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .base_nodes(&graph);
+    assert!(!deleted_bases.contains_key(&material_graph_expression_node_key(color)));
+    for (key, position) in &rewired_bases {
+        if key != &material_graph_expression_node_key(color) {
+            assert_eq!(deleted_bases.get(key), Some(position));
+        }
+    }
+
+    // The semantic command and its layout pruning remain one atomic history entry.
+    step(&mut app, true);
+    assert_eq!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_program(rewired.id)
+            .unwrap(),
+        rewired
+    );
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        rewired_bases
+    );
+    step(&mut app, false);
+    assert_eq!(
+        app.world()
+            .resource::<ProjectEffectCatalog>()
+            .material_program(deleted.id)
+            .unwrap(),
+        deleted
+    );
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .base_nodes(&graph),
+        deleted_bases
+    );
+}
+
+#[test]
 fn semantic_creation_failure_and_noop_do_not_change_history_or_placement() {
     let (_root, mut app, before, _) = fixture();
     let after = replacement(&before);

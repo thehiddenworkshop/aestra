@@ -763,10 +763,9 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
             should_block_lower: true,
             is_hoverable: true,
         },
-        // Primary-drag on blank canvas is marquee selection. Pan gestures switch the global
-        // cursor to `Grabbing` while active, so a resting open hand would advertise the wrong
-        // primary-button action here.
-        EntityCursor::System(SystemCursorIcon::Crosshair),
+        // Empty canvas keeps the ordinary arrow. Marquee selection begins with primary drag,
+        // while pan gestures switch the global cursor to `Grabbing` only while active.
+        EntityCursor::System(SystemCursorIcon::Default),
         FeathersGraphViewport {
             key: props.key,
             pan: props.initial_view.map_or(Vec2::ZERO, |(pan, _)| pan),

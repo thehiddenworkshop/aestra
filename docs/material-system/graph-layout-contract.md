@@ -1103,5 +1103,25 @@ workspace formatting, `git diff --check` and the normal editor build passed.
   interaction model. Function-node context menus expose the same open, duplicate and delete paths;
   optional function arguments can be disconnected back to their declared default, while required
   connections report that they need a replacement source.
-- Resting cursor feedback matches the primary gesture: blank graph canvas and pins use a crosshair,
-  movable nodes use a grab hand, and active node/canvas movement uses the grabbing cursor.
+- Resting cursor feedback matches the hovered target: blank graph canvas uses the normal arrow,
+  pins use a crosshair, movable nodes use a grab hand, and active node/canvas movement uses the
+  grabbing cursor.
+
+## M11.1 implementation — semantic edit-impact planning
+
+- The semantic commit boundary now classifies graph changes as created, removed, replaced, rewired
+  and resized nodes. Dependency identity is stripped only for replacement comparison, so a pure
+  edge change remains distinct from an operation or parameter replacement; reachability-driven
+  node-height changes remain distinct from both.
+- Every structural edit freezes the exact base position of retained nodes before the semantic
+  rebuild. Creation, deletion, replacement and rewiring therefore cannot make an unrelated node
+  fall back to a newly computed bootstrap position.
+- Created nodes continue through the bounded source/consumer-aware local placement path. Removed
+  nodes are pruned by the existing presentation snapshot transaction, while all surviving nodes
+  retain their authored positions.
+- Semantic state and its placement delta remain one chronological Undo/Redo entry. Regression
+  coverage exercises creation, replacement, output rewiring, deletion and atomic restoration.
+
+Next: **M11.2 — targeted arrangement fallback** when measured local placement cannot find a
+reasonable bounded slot. The fallback must use the M10 partial planner and keep all unaffected
+nodes frozen.
