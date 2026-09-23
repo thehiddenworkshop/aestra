@@ -133,42 +133,11 @@ impl Default for AppearanceSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct PropertiesSettings {
     /// User expansion choices keyed by stable module or renderer type.
     pub(crate) section_expansion: BTreeMap<String, bool>,
-    /// Height in logical pixels of the compact module stack region above the focused inspector
-    /// (extensible-stages M9, §28.2). Clamped to a sane range where it is applied so a corrupt or
-    /// stale value never hides a region. Serde-defaulted so older settings files still load.
-    pub(crate) stack_height: f32,
-}
-
-impl Default for PropertiesSettings {
-    fn default() -> Self {
-        Self {
-            section_expansion: BTreeMap::new(),
-            stack_height: PropertiesSettings::DEFAULT_STACK_HEIGHT,
-        }
-    }
-}
-
-impl PropertiesSettings {
-    /// Default split: the stack takes the top ~230px, the inspector the rest.
-    pub(crate) const DEFAULT_STACK_HEIGHT: f32 = 230.0;
-    /// Bounds applied wherever `stack_height` is used, so neither region can be dragged shut.
-    pub(crate) const MIN_STACK_HEIGHT: f32 = 120.0;
-    pub(crate) const MAX_STACK_HEIGHT: f32 = 640.0;
-
-    /// The stack height clamped to its valid range (guards stale or corrupt persisted values).
-    pub(crate) fn clamped_stack_height(&self) -> f32 {
-        if self.stack_height.is_finite() {
-            self.stack_height
-                .clamp(Self::MIN_STACK_HEIGHT, Self::MAX_STACK_HEIGHT)
-        } else {
-            Self::DEFAULT_STACK_HEIGHT
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -565,44 +534,6 @@ mod tests {
         let (settings, state) = SettingsPersistence::load_from(path.clone());
 
         assert!(settings.preview.show_grid);
-        assert!(state.diagnostic().is_none());
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn stack_height_defaults_and_clamps() {
-        let clamped = |stack_height: f32| {
-            PropertiesSettings {
-                stack_height,
-                ..Default::default()
-            }
-            .clamped_stack_height()
-        };
-        assert_eq!(
-            PropertiesSettings::default().clamped_stack_height(),
-            PropertiesSettings::DEFAULT_STACK_HEIGHT
-        );
-        assert_eq!(clamped(5_000.0), PropertiesSettings::MAX_STACK_HEIGHT);
-        assert_eq!(clamped(10.0), PropertiesSettings::MIN_STACK_HEIGHT);
-        assert_eq!(clamped(f32::NAN), PropertiesSettings::DEFAULT_STACK_HEIGHT);
-    }
-
-    #[test]
-    fn missing_stack_height_loads_default() {
-        let path = test_path("stack-height-default");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            &path,
-            format!("(version: {SETTINGS_FORMAT_VERSION}, properties: (section_expansion: {{}}))"),
-        )
-        .unwrap();
-
-        let (settings, state) = SettingsPersistence::load_from(path.clone());
-
-        assert_eq!(
-            settings.properties.stack_height,
-            PropertiesSettings::DEFAULT_STACK_HEIGHT
-        );
         assert!(state.diagnostic().is_none());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

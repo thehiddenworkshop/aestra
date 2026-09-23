@@ -6,7 +6,6 @@ use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
-use crate::settings::PropertiesSettings;
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
 use aestra_authoring::{
@@ -960,7 +959,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_effect_properties_keep_document_controls_and_explain_next_step() {
+    fn empty_effect_properties_show_effect_controls_only() {
+        // With no emitter, the Properties (inspector) panel edits the effect: it shows the Effect name
+        // control and no Emitter control. The "select or create an emitter" hint now lives in the
+        // separate Module Stack panel (see `empty_effect_module_stack_explains_next_step`).
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -979,9 +981,7 @@ mod tests {
                     parent,
                     &session,
                     &EditorModuleRegistry::default(),
-                    &ModulePaletteState::default(),
                     &localizer,
-                    &EditorSettings::default(),
                     &ProjectEffectCatalog::default(),
                     &TimelineState::default(),
                     &EffectClipRepairState::default(),
@@ -998,12 +998,6 @@ mod tests {
         let world = app.world_mut();
         assert!(
             world
-                .query::<&Text>()
-                .iter(world)
-                .any(|text| text.0 == localizer.text("properties-no-emitter"))
-        );
-        assert!(
-            world
                 .query::<&DocumentTextControl>()
                 .iter(world)
                 .any(|control| matches!(control, DocumentTextControl::Effect))
@@ -1013,6 +1007,40 @@ mod tests {
                 .query::<&DocumentTextControl>()
                 .iter(world)
                 .any(|control| matches!(control, DocumentTextControl::Emitter))
+        );
+    }
+
+    #[test]
+    fn empty_effect_module_stack_explains_next_step() {
+        // The Module Stack panel is where an empty effect is guided to add an emitter.
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+            bevy::text::TextPlugin,
+        ));
+        let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
+        let localizer = test_localizer();
+        app.world_mut()
+            .commands()
+            .spawn(Node::default())
+            .with_children(|parent| {
+                spawn_module_stack_panel(
+                    parent,
+                    &session,
+                    &EditorModuleRegistry::default(),
+                    &ModulePaletteState::default(),
+                    &localizer,
+                );
+            });
+        app.world_mut().flush();
+        let world = app.world_mut();
+        assert!(
+            world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| text.0 == localizer.text("properties-no-emitter"))
         );
     }
 
@@ -5790,9 +5818,7 @@ pub(crate) fn spawn_properties(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     registry: &EditorModuleRegistry,
-    palette: &ModulePaletteState,
     localizer: &Localizer,
-    settings: &EditorSettings,
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
@@ -5897,20 +5923,187 @@ pub(crate) fn spawn_properties(
     {
         return;
     }
+    // Inspector panel (§28.1): this panel edits whatever the Module Stack panel has selected. Effect-
+    // and emitter-level settings are reached by selecting the Effect / Emitter items in the stack, so
+    // they are inspector details here rather than always-on chrome.
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel_heading(panel, "PROPERTIES", "LIVE COMPILE");
+            panel.spawn((
+                Text::new(inspector_title(session)),
+                PropertiesTitle,
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                    ..default()
+                },
+            ));
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        ScrollMemoryKey::PropertiesInspector,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::bottom(Val::Px(12.0)),
+                            ..default()
+                        },
+                        |inspector| {
+                            spawn_selection_inspector(
+                                inspector,
+                                session,
+                                registry,
+                                catalog,
+                                material_stack_inspector,
+                                asset_server,
+                                localizer,
+                            );
+                        },
+                    );
+                });
+        });
+}
+
+/// The Properties panel's title: the context name for the current selection (extensible-stages M9).
+fn inspector_title(session: &EditorSession) -> String {
+    match session.selection.primary {
+        SemanticTarget::Effect(_) => session.effect.name.clone(),
+        _ => session
+            .selected_layer()
+            .map(|emitter| emitter.name.clone())
+            .unwrap_or_else(|| session.effect.name.clone()),
+    }
+}
+
+/// Renders the inspector body for the current selection (extensible-stages M9, §28.1): effect / emitter
+/// settings when an Effect or Emitter stack item is selected, the selected module's or renderer's full
+/// controls otherwise, and the emitter's settings as a sensible default. The panel rebuilds on selection
+/// change, so this follows the selection made in the Module Stack panel.
+#[allow(clippy::too_many_arguments)]
+fn spawn_selection_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    catalog: &ProjectEffectCatalog,
+    material_stack_inspector: &MaterialStackInspectorState,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let layer = session.selected_layer();
+    let emitter_index = session.selected_layer_index();
+    match session.selection.primary {
+        SemanticTarget::Effect(_) => {
+            spawn_effect_details(parent, session, localizer);
+            return;
+        }
+        SemanticTarget::Module(id) => {
+            if let (Some(layer), Some(emitter_index)) = (layer, emitter_index)
+                && let Some((module_index, module)) = layer
+                    .modules
+                    .iter()
+                    .enumerate()
+                    .find(|(_, module)| module.id == id)
+            {
+                spawn_module_inspector(
+                    parent,
+                    module,
+                    registry.0.get(&module.module_type),
+                    &format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
+                    session,
+                    localizer,
+                    asset_server,
+                );
+                return;
+            }
+        }
+        SemanticTarget::Renderer(id) => {
+            if let (Some(layer), Some(emitter_index)) = (layer, emitter_index)
+                && let Some((renderer_index, renderer)) = layer
+                    .renderers
+                    .iter()
+                    .enumerate()
+                    .find(|(_, renderer)| renderer.id == id)
+            {
+                spawn_renderer_card(
+                    parent,
+                    renderer,
+                    &format!("effect.emitters[{emitter_index}].renderers[{renderer_index}]"),
+                    session,
+                    catalog,
+                    false,
+                    material_stack_inspector,
+                    asset_server,
+                    localizer,
+                );
+                return;
+            }
+        }
+        // Emitter selected, or a selection not tied to this emitter: show the emitter's settings.
+        _ => {}
+    }
+    if layer.is_some() {
+        spawn_emitter_details(parent, session, localizer);
+    } else {
+        spawn_effect_details(parent, session, localizer);
+    }
+}
+
+/// The Module Stack panel (extensible-stages M9, §28.1): a navigable, selectable list — the Effect and
+/// Emitter items, then the stage-grouped compact module/renderer rows with per-stage add buttons and
+/// diagnostics. Selecting a row drives the Properties panel (via the global `select_properties_header`
+/// observer). Editing lives entirely in the Properties panel; this panel is navigation only.
+pub(crate) fn spawn_module_stack_panel(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    palette: &ModulePaletteState,
+    localizer: &Localizer,
+) {
     let Some(layer) = session.selected_layer() else {
-        spawn_document_controls(parent, session, localizer);
-        parent.spawn((
-            Text::new(localizer.text("properties-no-emitter")),
-            TextFont {
-                font_size: FontSize::Px(13.0),
+        parent
+            .spawn(Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
                 ..default()
-            },
-            TextColor(theme::TEXT),
-            Node {
-                margin: UiRect::all(Val::Px(14.0)),
-                ..default()
-            },
-        ));
+            })
+            .with_children(|panel| {
+                panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
+                panel.spawn((
+                    Text::new(localizer.text("properties-no-emitter")),
+                    TextFont {
+                        font_size: FontSize::Px(13.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Node {
+                        margin: UiRect::all(Val::Px(14.0)),
+                        ..default()
+                    },
+                ));
+            });
         return;
     };
     let Some(emitter_index) = session.selected_layer_index() else {
@@ -5926,37 +6119,14 @@ pub(crate) fn spawn_properties(
         })
         .with_children(|panel| {
             panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
-            panel.spawn((
-                Text::new(&layer.name),
-                PropertiesTitle,
-                TextFont {
-                    font_size: FontSize::Px(17.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-                Node {
-                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                    ..default()
-                },
-            ));
-            // The compact module stack (§28.2): emitter chrome and short, selectable stage-grouped
-            // rows, each a name plus its descriptor-driven summary. The selected row's full controls
-            // render in the inspector below; the divider between them is a draggable splitter, and its
-            // height persists in settings. The stack takes a fixed (resizable) height; the inspector
-            // grows to fill the rest, so both regions scroll independently.
             panel
-                .spawn((
-                    PropertiesStackPane,
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(settings.properties.clamped_stack_height()),
-                        max_height: Val::Percent(72.0),
-                        min_height: Val::Px(PropertiesSettings::MIN_STACK_HEIGHT),
-                        min_width: Val::Px(0.0),
-                        flex_shrink: 0.0,
-                        ..default()
-                    },
-                ))
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
@@ -5966,14 +6136,26 @@ pub(crate) fn spawn_properties(
                             min_width: Val::Px(0.0),
                             min_height: Val::Px(0.0),
                             flex_direction: FlexDirection::Column,
-                            padding: UiRect::bottom(Val::Px(8.0)),
+                            padding: UiRect::bottom(Val::Px(10.0)),
                             ..default()
                         },
                         |stack| {
-                            spawn_document_controls(stack, session, localizer);
-                            spawn_emitter_transform_controls(stack);
-                            spawn_emitter_timing_controls(stack, session, localizer);
-                            spawn_event_links(stack, session, localizer);
+                            // Effect + Emitter as selectable items (Niagara-style): their settings edit
+                            // in the Properties panel, keeping the stack a clean navigable list (§28.1).
+                            spawn_stack_nav_item(
+                                stack,
+                                &localizer.text("properties-effect"),
+                                &session.effect.name,
+                                SemanticTarget::Effect(session.effect.id),
+                                session,
+                            );
+                            spawn_stack_nav_item(
+                                stack,
+                                &localizer.text("properties-emitter"),
+                                &layer.name,
+                                SemanticTarget::Emitter(layer.id),
+                                session,
+                            );
                             for stage in StackStage::ALL {
                                 spawn_stage_header(stack, stage);
                                 if stage == StackStage::Render {
@@ -6016,239 +6198,79 @@ pub(crate) fn spawn_properties(
                         },
                     );
                 });
-            spawn_inspector_divider(panel);
-            // The focused, selection-following inspector (§28.2): the selected module's or renderer's
-            // full controls, or a hint when nothing in this emitter is selected.
-            panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    flex_basis: Val::Px(0.0),
-                    min_height: Val::Px(120.0),
-                    min_width: Val::Px(0.0),
-                    ..default()
-                })
-                .with_children(|body| {
-                    spawn_vertical_scroll_area(
-                        body,
-                        ScrollMemoryKey::PropertiesInspector,
-                        Node {
-                            flex_grow: 1.0,
-                            min_width: Val::Px(0.0),
-                            min_height: Val::Px(0.0),
-                            flex_direction: FlexDirection::Column,
-                            padding: UiRect::bottom(Val::Px(12.0)),
-                            ..default()
-                        },
-                        |inspector| {
-                            spawn_selected_inspector(
-                                inspector,
-                                session,
-                                layer,
-                                emitter_index,
-                                registry,
-                                catalog,
-                                material_stack_inspector,
-                                asset_server,
-                                localizer,
-                            );
-                        },
-                    );
-                });
             if palette.open {
                 spawn_module_palette(panel, registry, palette);
             }
         });
 }
 
-/// The labelled divider between the compact stack and the focused inspector (extensible-stages M9),
-/// which doubles as the draggable splitter: dragging it vertically resizes the stack region (the drag
-/// observers mutate the [`PropertiesStackPane`] node live and persist the height). Children are marked
-/// `Pickable::IGNORE` so the whole strip is one grab target.
-fn spawn_inspector_divider(parent: &mut ChildSpawnerCommands) {
+/// A selectable Effect / Emitter navigation item at the top of the Module Stack panel (extensible-stages
+/// M9, §28.1): a small kind caption and the item's name. Carries the selection/highlight components so
+/// clicking it selects the target (via the global observer) and drives the Properties panel.
+fn spawn_stack_nav_item(
+    parent: &mut ChildSpawnerCommands,
+    kind: &str,
+    name: &str,
+    target: SemanticTarget,
+    session: &EditorSession,
+) {
+    let selected = session.selection.primary == target;
+    let base_border = if selected {
+        theme::ACCENT_DIM
+    } else {
+        theme::BORDER
+    };
     parent
         .spawn((
-            PropertiesSplitGrip::default(),
-            crate::feathers::button::EditorNativeControl,
-            EntityCursor::System(SystemCursorIcon::RowResize),
-            AccessibleLabel("Resize the module stack".into()),
+            PropertiesSemanticTarget {
+                target,
+                base_border,
+            },
+            PropertiesSelectionTarget(target),
             Node {
-                width: Val::Percent(100.0),
+                width: Val::Auto,
                 align_items: AlignItems::Center,
-                column_gap: Val::Px(6.0),
-                padding: UiRect::axes(Val::Px(14.0), Val::Px(5.0)),
-                flex_shrink: 0.0,
+                column_gap: Val::Px(8.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                margin: UiRect::axes(Val::Px(7.0), Val::Px(1.0)),
+                min_height: Val::Px(30.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
-            BackgroundColor(theme::PANEL_DARK),
+            BackgroundColor(if selected {
+                theme::PANEL_LIGHT
+            } else {
+                theme::PANEL
+            }),
+            BorderColor::all(base_border),
         ))
-        .observe(begin_properties_split_resize)
-        .observe(drive_properties_split_resize)
-        .observe(finish_properties_split_resize)
         .with_children(|row| {
             row.spawn((
-                Text::new("INSPECTOR"),
+                Text::new(kind.to_uppercase()),
                 bevy::feathers::theme::ThemedText,
                 TextColor(theme::TEXT_FAINT),
                 TextFont {
-                    font_size: FontSize::Px(10.0),
+                    font_size: FontSize::Px(9.0),
                     ..default()
                 },
                 Pickable::IGNORE,
             ));
             row.spawn((
-                Node {
-                    flex_grow: 1.0,
-                    height: Val::Px(1.0),
+                Text::new(name),
+                bevy::feathers::theme::ThemedText,
+                TextColor(theme::TEXT),
+                TextFont {
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                BackgroundColor(theme::BORDER),
+                TextLayout {
+                    linebreak: LineBreak::NoWrap,
+                    ..default()
+                },
                 Pickable::IGNORE,
             ));
         });
-}
-
-/// The draggable splitter between the compact stack and the inspector (extensible-stages M9). Records
-/// the stack region's rendered height at drag start so reversing direction reacts immediately.
-#[derive(Component, Default)]
-struct PropertiesSplitGrip {
-    drag_start_height: Option<f32>,
-}
-
-/// Marks the compact-stack region so the splitter's drag observers can resize it live.
-#[derive(Component)]
-struct PropertiesStackPane;
-
-fn begin_properties_split_resize(
-    mut event: On<Pointer<DragStart>>,
-    mut grips: Query<&mut PropertiesSplitGrip>,
-    panes: Query<&ComputedNode, With<PropertiesStackPane>>,
-) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    if let Ok(mut grip) = grips.get_mut(event.entity)
-        && let Some(node) = panes.iter().next()
-    {
-        event.propagate(false);
-        grip.drag_start_height = Some(node.size().y * node.inverse_scale_factor());
-    }
-}
-
-fn drive_properties_split_resize(
-    mut event: On<Pointer<Drag>>,
-    grips: Query<&PropertiesSplitGrip>,
-    mut panes: Query<(&mut Node, &ComputedNode), With<PropertiesStackPane>>,
-    mut settings: ResMut<EditorSettings>,
-) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    if let Ok(grip) = grips.get(event.entity)
-        && let Some(start_height) = grip.drag_start_height
-        && let Some((mut node, computed)) = panes.iter_mut().next()
-    {
-        event.propagate(false);
-        let height = (start_height + event.distance.y * computed.inverse_scale_factor()).clamp(
-            PropertiesSettings::MIN_STACK_HEIGHT,
-            PropertiesSettings::MAX_STACK_HEIGHT,
-        );
-        // Live feedback: move the region now, and store the value so the next rebuild keeps it.
-        node.height = Val::Px(height);
-        settings.properties.stack_height = height;
-    }
-}
-
-fn finish_properties_split_resize(
-    mut event: On<Pointer<DragEnd>>,
-    mut grips: Query<&mut PropertiesSplitGrip>,
-    settings: Res<EditorSettings>,
-    mut persistence: ResMut<SettingsPersistence>,
-    mut session: ResMut<EditorSession>,
-    localizer: Res<Localizer>,
-) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    if let Ok(mut grip) = grips.get_mut(event.entity)
-        && grip.drag_start_height.take().is_some()
-    {
-        event.propagate(false);
-        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
-    }
-}
-
-/// Renders the focused inspector for the current selection (extensible-stages M9, §28.2): the selected
-/// module's or renderer's full controls, or a hint when the selection is not a module/renderer in this
-/// emitter. The panel rebuilds on selection change, so this follows the selection made in the stack.
-#[allow(clippy::too_many_arguments)]
-fn spawn_selected_inspector(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    layer: &aestra_core::Emitter,
-    emitter_index: usize,
-    registry: &EditorModuleRegistry,
-    catalog: &ProjectEffectCatalog,
-    material_stack_inspector: &MaterialStackInspectorState,
-    asset_server: &AssetServer,
-    localizer: &Localizer,
-) {
-    match session.selection.primary {
-        SemanticTarget::Module(id) => {
-            if let Some((module_index, module)) = layer
-                .modules
-                .iter()
-                .enumerate()
-                .find(|(_, module)| module.id == id)
-            {
-                spawn_module_inspector(
-                    parent,
-                    module,
-                    registry.0.get(&module.module_type),
-                    &format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
-                    session,
-                    localizer,
-                    asset_server,
-                );
-                return;
-            }
-        }
-        SemanticTarget::Renderer(id) => {
-            if let Some((renderer_index, renderer)) = layer
-                .renderers
-                .iter()
-                .enumerate()
-                .find(|(_, renderer)| renderer.id == id)
-            {
-                spawn_renderer_card(
-                    parent,
-                    renderer,
-                    &format!("effect.emitters[{emitter_index}].renderers[{renderer_index}]"),
-                    session,
-                    catalog,
-                    false,
-                    material_stack_inspector,
-                    asset_server,
-                    localizer,
-                );
-                return;
-            }
-        }
-        _ => {}
-    }
-    parent.spawn((
-        Text::new("Select a module or renderer above to edit its properties."),
-        bevy::feathers::theme::ThemedText,
-        TextColor(theme::TEXT_FAINT),
-        TextFont {
-            font_size: FontSize::Px(12.0),
-            ..default()
-        },
-        Node {
-            margin: UiRect::all(Val::Px(14.0)),
-            ..default()
-        },
-    ));
 }
 
 fn spawn_marker_properties(
@@ -6520,7 +6542,9 @@ fn spawn_choreography_event_payload_control(
     }
 }
 
-fn spawn_document_controls(
+/// The Effect-item inspector details (extensible-stages M9, §28.1): the effect's name. Shown in the
+/// Properties panel when the Effect item is selected in the Module Stack.
+fn spawn_effect_details(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     localizer: &Localizer,
@@ -6555,7 +6579,16 @@ fn spawn_document_controls(
                 DocumentTextControl::Effect,
             );
         });
+}
 
+/// The Emitter-item inspector details (extensible-stages M9, §28.1): name, enabled, capacity, transform,
+/// timing, and event links. Shown in the Properties panel when the Emitter item (or nothing more
+/// specific) is selected in the Module Stack.
+fn spawn_emitter_details(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
     let Some(emitter) = session.selected_layer() else {
         return;
     };
@@ -6619,6 +6652,9 @@ fn spawn_document_controls(
                 },
             );
         });
+    spawn_emitter_transform_controls(parent);
+    spawn_emitter_timing_controls(parent, session, localizer);
+    spawn_event_links(parent, session, localizer);
 }
 
 fn spawn_text_field(

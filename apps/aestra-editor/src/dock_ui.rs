@@ -558,14 +558,21 @@ fn spawn_panel_content(
             asset_browser::spawn_assets_panel(parent, sources.browser, sources.localizer)
         }
         ToolPanel::AssetInspector => asset_browser::spawn_asset_inspector(parent),
-        ToolPanel::Properties => {
-            spawn_properties(
+        ToolPanel::ModuleStack => {
+            spawn_module_stack_panel(
                 parent,
                 sources.session,
                 sources.registry,
                 sources.palette,
                 sources.localizer,
-                sources.settings,
+            );
+        }
+        ToolPanel::Properties => {
+            spawn_properties(
+                parent,
+                sources.session,
+                sources.registry,
+                sources.localizer,
                 sources.catalog,
                 sources.timeline,
                 sources.repair,

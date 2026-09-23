@@ -206,6 +206,7 @@ browser-kind-shader = Shader
 browser-kind-file = Fichier
 browser-kind-link = Lien (non suivi)
 browser-kind-unavailable = Indisponible
+panel-module-stack = PILE DE MODULES
 panel-properties = PROPRIÉTÉS
 panel-timeline = TIMELINE
 panel-curves = COURBES

@@ -398,6 +398,7 @@ pub(crate) enum ToolPanel {
     Viewport,
     Assets,
     AssetInspector,
+    ModuleStack,
     #[serde(alias = "Inspector")]
     Properties,
     Timeline,
@@ -412,10 +413,11 @@ pub(crate) enum ToolPanel {
 }
 
 impl ToolPanel {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Viewport,
         Self::Assets,
         Self::AssetInspector,
+        Self::ModuleStack,
         Self::Properties,
         Self::Timeline,
         Self::Curves,
@@ -432,6 +434,7 @@ impl ToolPanel {
             Self::Viewport => "panel-viewport",
             Self::Assets => "panel-assets",
             Self::AssetInspector => "panel-asset-inspector",
+            Self::ModuleStack => "panel-module-stack",
             Self::Properties => "panel-properties",
             Self::Timeline => "panel-timeline",
             Self::Curves => "panel-curves",
@@ -734,8 +737,13 @@ impl Default for WorkspaceLayout {
         );
         // Roughly square viewport on a typical 16:9 window; the graph takes the rest.
         let left_center = DockNode::split(9, DockAxis::Horizontal, 0.42, viewport, center);
-        let properties = DockNode::tool_tabs(3, &[ToolPanel::Properties], ToolPanel::Properties);
-        let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, properties);
+        // The right column is the Niagara-style navigate/edit split: the module stack on top selects an
+        // item, the properties panel below edits the selection (§28.1).
+        let module_stack =
+            DockNode::tool_tabs(3, &[ToolPanel::ModuleStack], ToolPanel::ModuleStack);
+        let properties = DockNode::tool_tabs(10, &[ToolPanel::Properties], ToolPanel::Properties);
+        let right = DockNode::split(11, DockAxis::Vertical, 0.5, module_stack, properties);
+        let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, right);
         let bottom = DockNode::tool_tabs(
             4,
             &[
@@ -749,7 +757,7 @@ impl Default for WorkspaceLayout {
         Self {
             root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
             floating: Vec::new(),
-            next_node_id: 10,
+            next_node_id: 12,
         }
     }
 }
@@ -1147,7 +1155,28 @@ impl WorkspaceLayout {
         }
         self.root.normalize();
         self.migrate_lonely_settings_panel();
+        self.migrate_add_module_stack();
         self
+    }
+
+    /// Surfaces the Module Stack panel for layouts saved before it existed (§28.1). If the panel is
+    /// absent from a saved workspace, dock it alongside Properties (or beside the viewport as a
+    /// fallback) so the navigate/edit split appears without discarding the user's arrangement.
+    fn migrate_add_module_stack(&mut self) {
+        if self.root.contains(ToolPanel::ModuleStack)
+            || self
+                .floating
+                .iter()
+                .any(|floating| floating.panel == ToolPanel::ModuleStack)
+        {
+            return;
+        }
+        if let Some(target) = self.root.node_containing(ToolPanel::Properties) {
+            // Split the module stack above the properties panel — the navigate/edit column.
+            self.dock(ToolPanel::ModuleStack, target, DockDrop::Top);
+        } else if let Some(target) = self.root.node_containing(ToolPanel::Viewport) {
+            self.dock(ToolPanel::ModuleStack, target, DockDrop::Center);
+        }
     }
 
     fn migrate_lonely_settings_panel(&mut self) {
@@ -1186,7 +1215,10 @@ fn default_floating_size(panel: ToolPanel, available_size: [f32; 2]) -> [f32; 2]
         | ToolPanel::MaterialGraph
         | ToolPanel::Profiler
         | ToolPanel::Changes => [720.0, 320.0],
-        ToolPanel::Assets | ToolPanel::Properties | ToolPanel::AssetInspector => [420.0, 520.0],
+        ToolPanel::Assets
+        | ToolPanel::Properties
+        | ToolPanel::ModuleStack
+        | ToolPanel::AssetInspector => [420.0, 520.0],
         ToolPanel::Settings => [520.0, 620.0],
         ToolPanel::Viewport => [760.0, 540.0],
     };
