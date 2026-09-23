@@ -1044,6 +1044,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn module_stack_shows_emitter_spawn_and_simulation_sections() {
+        // The stack shows every fixed lifecycle section, including empty ones like EMITTER SPAWN
+        // (§31.2), and a section per authored simulation stage (§28.3).
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+            bevy::text::TextPlugin,
+        ));
+        let mut session = test_support::session_with_timing_slack();
+        let layer = session.selected_layer_index().unwrap();
+        let mut sim = ModuleInstance::motion([0.0, 0.0, 0.0], 0.0, 0.0);
+        sim.module_type = aestra_core::ModuleTypeId::new("org.example.fluid::module/advect");
+        sim.stage = StageKind::Simulation("Fluid".to_string());
+        sim.parameters = aestra_core::ModuleParameters::Custom(Default::default());
+        session.effect.emitters[layer].modules.push(sim);
+        let localizer = test_localizer();
+        app.world_mut()
+            .commands()
+            .spawn(Node::default())
+            .with_children(|parent| {
+                spawn_module_stack_panel(
+                    parent,
+                    &session,
+                    &EditorModuleRegistry::default(),
+                    &ModulePaletteState::default(),
+                    &localizer,
+                );
+            });
+        app.world_mut().flush();
+        let world = app.world_mut();
+        let texts: Vec<String> = world
+            .query::<&Text>()
+            .iter(world)
+            .map(|text| text.0.clone())
+            .collect();
+        assert!(
+            texts.iter().any(|text| text == "EMITTER SPAWN"),
+            "empty lifecycle stages are still shown as sections"
+        );
+        assert!(
+            texts.iter().any(|text| text == "FLUID"),
+            "an authored simulation stage renders its own section"
+        );
+    }
+
     fn clear_effect_parameters_and_bindings(session: &mut EditorSession) {
         session.effect.parameters.clear();
         for emitter in &mut session.effect.emitters {
@@ -6096,23 +6144,13 @@ pub(crate) fn spawn_module_stack_panel(
                                 SemanticTarget::Emitter(layer.id),
                                 session,
                             );
-                            for stage in StackStage::ALL {
+                            // Fixed lifecycle sections, including empty ones (§31.2).
+                            let modules_path =
+                                format!("effect.emitters[{emitter_index}].modules");
+                            for stage in StackStage::LIFECYCLE {
                                 spawn_stage_header(stack, stage);
-                                if stage == StackStage::Render {
-                                    for renderer in &layer.renderers {
-                                        spawn_renderer_stack_row(stack, renderer, session);
-                                    }
-                                    spawn_stage_diagnostics(
-                                        stack,
-                                        stage,
-                                        &format!("effect.emitters[{emitter_index}].renderers"),
-                                        session,
-                                        registry,
-                                    );
-                                    continue;
-                                }
                                 let semantic =
-                                    stage.semantic().expect("module stage has semantics");
+                                    stage.semantic().expect("lifecycle stage has semantics");
                                 for (module_index, module) in layer.modules.iter().enumerate() {
                                     if module.stage != semantic {
                                         continue;
@@ -6130,11 +6168,51 @@ pub(crate) fn spawn_module_stack_panel(
                                 spawn_stage_diagnostics(
                                     stack,
                                     stage,
-                                    &format!("effect.emitters[{emitter_index}].modules"),
+                                    &modules_path,
                                     session,
                                     registry,
                                 );
                             }
+                            // Authored simulation stages, in first-appearance order (§28.3).
+                            let mut seen: Vec<&str> = Vec::new();
+                            for module in &layer.modules {
+                                let StageKind::Simulation(name) = &module.stage else {
+                                    continue;
+                                };
+                                if seen.contains(&name.as_str()) {
+                                    continue;
+                                }
+                                seen.push(name);
+                                spawn_simulation_stage_header(stack, name);
+                                for (module_index, sim_module) in
+                                    layer.modules.iter().enumerate()
+                                {
+                                    if sim_module.stage != module.stage {
+                                        continue;
+                                    }
+                                    spawn_module_stack_row(
+                                        stack,
+                                        sim_module,
+                                        registry.0.get(&sim_module.module_type),
+                                        &format!(
+                                            "effect.emitters[{emitter_index}].modules[{module_index}]"
+                                        ),
+                                        session,
+                                    );
+                                }
+                            }
+                            // Render section.
+                            spawn_stage_header(stack, StackStage::Render);
+                            for renderer in &layer.renderers {
+                                spawn_renderer_stack_row(stack, renderer, session);
+                            }
+                            spawn_stage_diagnostics(
+                                stack,
+                                StackStage::Render,
+                                &format!("effect.emitters[{emitter_index}].renderers"),
+                                session,
+                                registry,
+                            );
                         },
                     );
                 });
@@ -7140,6 +7218,45 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
                 ..default()
             });
             mini_button(row, "+", PropertiesAction::OpenModulePalette(stage));
+        });
+}
+
+/// A section header for an authored simulation stage (extensible-stages M9, §28.3). Unlike the fixed
+/// lifecycle stages it carries no add button — authoring modules into a plugin-defined stage arrives
+/// with plugin loading — and its title is the authored stage name.
+fn spawn_simulation_stage_header(parent: &mut ChildSpawnerCommands, name: &str) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(24.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                margin: UiRect::top(Val::Px(3.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new("SIMULATION"),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+            row.spawn((
+                Text::new(name.to_uppercase()),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+            ));
         });
 }
 
@@ -8941,6 +9058,7 @@ struct ModuleEnabledControl(ModuleId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StackStage {
+    EmitterSpawn,
     EmitterUpdate,
     ParticleSpawn,
     ParticleUpdate,
@@ -8948,15 +9066,19 @@ pub(crate) enum StackStage {
 }
 
 impl StackStage {
-    const ALL: [Self; 4] = [
+    /// The fixed lifecycle stages shown as stack sections, in execution order (§28.3, §31.2). Empty
+    /// sections are still shown so the stack has a stable structure. Authored simulation stages render
+    /// as their own sections between `ParticleUpdate` and `Render`; they are not part of this list.
+    const LIFECYCLE: [Self; 4] = [
+        Self::EmitterSpawn,
         Self::EmitterUpdate,
         Self::ParticleSpawn,
         Self::ParticleUpdate,
-        Self::Render,
     ];
 
     fn title(self) -> &'static str {
         match self {
+            Self::EmitterSpawn => "EMITTER SPAWN",
             Self::EmitterUpdate => "EMITTER UPDATE",
             Self::ParticleSpawn => "PARTICLE SPAWN",
             Self::ParticleUpdate => "PARTICLE UPDATE",
@@ -8966,6 +9088,7 @@ impl StackStage {
 
     fn semantic(self) -> Option<StageKind> {
         match self {
+            Self::EmitterSpawn => Some(StageKind::EmitterSpawn),
             Self::EmitterUpdate => Some(StageKind::EmitterUpdate),
             Self::ParticleSpawn => Some(StageKind::ParticleSpawn),
             Self::ParticleUpdate => Some(StageKind::ParticleUpdate),
