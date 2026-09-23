@@ -49,16 +49,6 @@ pub(crate) struct ArrangeGraph {
     pub seeds: BTreeSet<GraphNodeKey>,
 }
 
-impl ArrangeGraph {
-    pub(crate) fn full(view: GraphViewKey) -> Self {
-        Self {
-            view,
-            scope: ArrangeScope::Graph,
-            seeds: BTreeSet::new(),
-        }
-    }
-}
-
 #[derive(Resource, Default)]
 struct ArrangeState {
     job: Option<ArrangeJob>,

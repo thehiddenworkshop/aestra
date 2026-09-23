@@ -334,6 +334,8 @@ fn function_layout_restores_into_the_actual_canvas_after_restart() {
                         &catalog,
                         &assets,
                         &memory,
+                        &crate::material_graph::MaterialGraphSelectionState::default(),
+                        &crate::material_function_editor::graph::FunctionGraphMenuState::default(),
                         &session.material_target,
                         Some(crate::docking::EditorViewId(3)),
                     )

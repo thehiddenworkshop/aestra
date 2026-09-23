@@ -458,6 +458,8 @@ fn semantic_function_creation_uses_measured_view_and_rejects_stale_geometry() {
                                 &catalog,
                                 &assets,
                                 &memory,
+                                &crate::material_graph::MaterialGraphSelectionState::default(),
+                                &crate::material_function_editor::graph::FunctionGraphMenuState::default(),
                                 &session.material_target,
                                 Some(crate::docking::EditorViewId(9)),
                             );
