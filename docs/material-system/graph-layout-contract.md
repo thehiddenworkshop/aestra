@@ -1094,6 +1094,9 @@ workspace formatting, `git diff --check` and the normal editor build passed.
   selection at the dragged offset; Control-drag moves the complete upstream dependency branch and
   Shift-drag moves the complete downstream consumer branch. Each branch move is recorded as one
   presentation-history entry.
+- Ordinary dragging of any selected node moves the complete view-scoped selection with live visual
+  feedback and records the gesture as one presentation-history entry. Dragging an unselected node
+  remains a single-node operation.
 - Pin-to-pin drags retain typed connection validation. Releasing a pin drag on blank canvas opens
   the context-sensitive node search for both graph kinds. Right-click blank canvas opens general
   node search, while right-clicking a node, connected pin, or wire opens the corresponding semantic

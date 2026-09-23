@@ -149,6 +149,7 @@ impl Plugin for FeathersNodeGraphPlugin {
             .init_resource::<drag_assist::State>()
             .init_resource::<GraphPanGesture>()
             .init_resource::<GraphMarqueeGesture>()
+            .init_resource::<GraphNodeDragGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
             .add_observer(begin_graph_node_press)
@@ -456,6 +457,13 @@ struct GraphMarqueeGesture {
     start: Vec2,
     current: Vec2,
     mode: GraphSelectionMode,
+}
+
+#[derive(Resource, Default)]
+struct GraphNodeDragGesture {
+    active: Option<Entity>,
+    members: BTreeSet<Entity>,
+    before: BTreeMap<String, (Vec2, bool)>,
 }
 
 #[derive(Component)]
@@ -1037,12 +1045,13 @@ fn begin_graph_node_press(
 
 fn begin_graph_node_drag(
     mut drag: On<Pointer<DragStart>>,
-    mut nodes: Query<&mut FeathersGraphNode>,
+    mut nodes: Query<(Entity, &mut FeathersGraphNode)>,
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
     modified_targets: Query<(), With<GraphModifiedDragTarget>>,
     keys: Res<ButtonInput<KeyCode>>,
     memory: Res<GraphViewportMemory>,
+    mut gesture: ResMut<GraphNodeDragGesture>,
     mut assistance: drag_assist::Context,
     mut commands: Commands,
 ) {
@@ -1057,15 +1066,7 @@ fn begin_graph_node_drag(
     ) else {
         return;
     };
-    let Ok(mut node) = nodes.get_mut(entity) else {
-        return;
-    };
-    node.drag_before = Some(
-        memory
-            .node(&node.graph_key, &node.node_key)
-            .unwrap_or((node.position, node.collapsed)),
-    );
-    node.drag_modifier = if !modified_targets.contains(entity) {
+    let modifier = if !modified_targets.contains(entity) {
         None
     } else if keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight) {
         Some(GraphNodeDragModifier::Duplicate)
@@ -1076,7 +1077,56 @@ fn begin_graph_node_drag(
     } else {
         None
     };
+    let Ok((_, node)) = nodes.get(entity) else {
+        return;
+    };
+    let graph = node.graph_key.clone();
+    let selected = node.selected;
+    let Some((viewport, _)) = assistance.viewport(entity, &parents) else {
+        return;
+    };
+    let members = if modifier.is_none() && selected {
+        nodes
+            .iter()
+            .filter_map(|(candidate, node)| {
+                (node.selected
+                    && node.graph_key == graph
+                    && std::iter::once(candidate)
+                        .chain(parents.iter_ancestors(candidate))
+                        .any(|ancestor| ancestor == viewport))
+                .then_some(candidate)
+            })
+            .collect::<BTreeSet<_>>()
+    } else {
+        BTreeSet::from([entity])
+    };
+    let before = members
+        .iter()
+        .filter_map(|member| {
+            let (_, node) = nodes.get(*member).ok()?;
+            Some((
+                node.node_key.clone(),
+                memory
+                    .node(&node.graph_key, &node.node_key)
+                    .unwrap_or((node.position, node.collapsed)),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let Ok((_, mut node)) = nodes.get_mut(entity) else {
+        return;
+    };
+    node.drag_before = Some(
+        memory
+            .node(&node.graph_key, &node.node_key)
+            .unwrap_or((node.position, node.collapsed)),
+    );
+    node.drag_modifier = modifier;
     node.begin_drag();
+    *gesture = GraphNodeDragGesture {
+        active: Some(entity),
+        members,
+        before,
+    };
     assistance.begin(entity, &node, &parents, &memory);
     commands.queue(move |world: &mut World| insertion::begin(world, entity));
     drag.propagate(false);
@@ -1088,6 +1138,7 @@ fn drag_graph_node(
     parents: Query<&ChildOf>,
     controls: Query<(), GraphNodeControlFilter>,
     mut assistance: drag_assist::Context,
+    gesture: Res<GraphNodeDragGesture>,
     mut memory: ResMut<GraphViewportMemory>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
@@ -1115,12 +1166,18 @@ fn drag_graph_node(
         .viewport(entity, &parents)
         .map_or(1.0, |(_, zoom)| zoom.max(MIN_ZOOM));
     let delta = graph_drag_delta(drag.delta * computed.inverse_scale_factor, zoom);
+    let moving = if gesture.active == Some(entity) {
+        &gesture.members
+    } else {
+        return;
+    };
     let position = assistance.motion(
         entity,
         delta,
         graph_node.position,
         zoom,
         &memory,
+        moving,
         |id, rect, collapsed| {
             nodes.get(id).is_ok_and(|(node, _, computed)| {
                 node.collapsed == collapsed
@@ -1128,27 +1185,32 @@ fn drag_graph_node(
                         .abs()
                         .max_element()
                         <= 0.5
-                    && (id == entity || node.position.distance(rect.min) <= 0.5)
+                    && (moving.contains(&id) || node.position.distance(rect.min) <= 0.5)
             })
         },
     );
     if !position.is_finite() {
         return;
     }
-    let Ok((mut graph_node, mut style, _)) = nodes.get_mut(entity) else {
-        return;
-    };
-    // Drag is emitted only after picking recognizes real motion. Keep the release click guard.
-    graph_node.note_drag_motion();
-    graph_node.position = position;
-    style.left = Val::Px(graph_node.position.x);
-    style.top = Val::Px(graph_node.position.y);
-    memory.set_node(
-        graph_node.graph_key.clone(),
-        graph_node.node_key.clone(),
-        graph_node.position,
-        graph_node.collapsed,
-    );
+    let movement = position - graph_node.position;
+    for member in moving {
+        let Ok((mut graph_node, mut style, _)) = nodes.get_mut(*member) else {
+            continue;
+        };
+        if *member == entity {
+            // Drag is emitted only after picking recognizes real motion. Keep the release guard.
+            graph_node.note_drag_motion();
+        }
+        graph_node.position += movement;
+        style.left = Val::Px(graph_node.position.x);
+        style.top = Val::Px(graph_node.position.y);
+        memory.set_node(
+            graph_node.graph_key.clone(),
+            graph_node.node_key.clone(),
+            graph_node.position,
+            graph_node.collapsed,
+        );
+    }
     override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
     commands.queue(move |world: &mut World| insertion::motion(world, entity));
     drag.propagate(false);
@@ -1166,6 +1228,7 @@ fn end_graph_node_drag(
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
     mut memory: ResMut<GraphViewportMemory>,
+    mut gesture: ResMut<GraphNodeDragGesture>,
     mut assistance: drag_assist::Context,
 ) {
     if drag.button != PointerButton::Primary {
@@ -1184,6 +1247,7 @@ fn end_graph_node_drag(
     };
     let mut edit = None;
     let mut modified = None;
+    let mut batch = None;
     if let Some(before) = node.drag_before.take() {
         let after = (node.position, node.collapsed);
         if before != after {
@@ -1205,12 +1269,19 @@ fn end_graph_node_drag(
                 // A displaced node's displayed drop location becomes its authored base,
                 // including a drag-start/end with no intervening motion event.
                 memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
-                edit = Some(GraphPresentationEdit {
-                    graph: node.graph_key.clone(),
-                    node: node.node_key.clone(),
-                    before,
-                    after,
-                });
+                if gesture.before.len() > 1 {
+                    batch = Some(GraphPresentationBatchEdit {
+                        graph: node.graph_key.clone(),
+                        before: std::mem::take(&mut gesture.before),
+                    });
+                } else {
+                    edit = Some(GraphPresentationEdit {
+                        graph: node.graph_key.clone(),
+                        node: node.node_key.clone(),
+                        before,
+                        after,
+                    });
+                }
             }
         }
     }
@@ -1221,7 +1292,13 @@ fn end_graph_node_drag(
         if let Some(modified) = modified {
             world.trigger(modified);
         }
+        if let Some(batch) = batch {
+            world.trigger(batch);
+        }
     });
+    gesture.active = None;
+    gesture.members.clear();
+    gesture.before.clear();
     assistance.end(entity);
     override_cursor.0 = None;
     drag.propagate(false);

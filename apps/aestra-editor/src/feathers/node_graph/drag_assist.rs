@@ -212,6 +212,7 @@ impl Context<'_, '_> {
         fallback: Vec2,
         zoom: f32,
         memory: &GraphViewportMemory,
+        moving_entities: &BTreeSet<Entity>,
         valid: impl Fn(Entity, Rect, bool) -> bool,
     ) -> Vec2 {
         let (grid, alignment) = (self.state.grid, self.state.alignment);
@@ -260,7 +261,7 @@ impl Context<'_, '_> {
         let targets = gesture
             .geometry
             .iter()
-            .filter(|(id, _)| **id != entity)
+            .filter(|(id, _)| !moving_entities.contains(id))
             .map(|(_, capture)| capture.shape.clone())
             .collect::<Vec<_>>();
         let (position, guides) = model::snap(gesture.raw, &moving, &targets, zoom, grid, alignment);

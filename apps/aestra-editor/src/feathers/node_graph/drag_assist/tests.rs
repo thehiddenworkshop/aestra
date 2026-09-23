@@ -7,6 +7,9 @@ use bevy::{
 #[derive(Resource, Default)]
 struct Edits(Vec<GraphPresentationEdit>);
 
+#[derive(Resource, Default)]
+struct BatchEdits(Vec<GraphPresentationBatchEdit>);
+
 fn location() -> Location {
     Location {
         target: bevy::camera::NormalizedRenderTarget::None {
@@ -17,18 +20,37 @@ fn location() -> Location {
     }
 }
 
-fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
+fn start(app: &mut App, node: Entity) {
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        location(),
+        DragStart {
+            button: PointerButton::Primary,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        },
+        node,
+    ));
+}
+
+fn setup_scene(zoom: f32, scale: f32) -> (App, Entity, Entity) {
     let mut app = App::new();
     app.init_resource::<State>()
+        .init_resource::<GraphNodeDragGesture>()
         .init_resource::<GraphViewportMemory>()
         .init_resource::<OverrideCursor>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Edits>()
+        .init_resource::<BatchEdits>()
         .add_observer(begin_graph_node_drag)
         .add_observer(drag_graph_node)
         .add_observer(end_graph_node_drag)
         .add_observer(
             |event: On<GraphPresentationEdit>, mut edits: ResMut<Edits>| {
+                edits.0.push(event.event().clone());
+            },
+        )
+        .add_observer(
+            |event: On<GraphPresentationBatchEdit>, mut edits: ResMut<BatchEdits>| {
                 edits.0.push(event.event().clone());
             },
         );
@@ -68,15 +90,12 @@ fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
             ChildOf(view),
         ))
         .id();
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        location(),
-        DragStart {
-            button: PointerButton::Primary,
-            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-        },
-        node,
-    ));
+    (app, node, view)
+}
+
+fn setup(zoom: f32, scale: f32) -> (App, Entity, Entity) {
+    let (mut app, node, view) = setup_scene(zoom, scale);
+    start(&mut app, node);
     (app, node, view)
 }
 
@@ -166,6 +185,64 @@ fn small_pointer_deltas_escape_grid_without_drift_and_emit_one_edit() {
 }
 
 #[test]
+fn dragging_a_selected_node_moves_the_selected_group_as_one_edit() {
+    let (mut app, node, view) = setup_scene(1.0, 1.0);
+    app.world_mut()
+        .get_mut::<FeathersGraphNode>(node)
+        .unwrap()
+        .selected = true;
+    let peer = app
+        .world_mut()
+        .spawn((
+            FeathersGraphNode {
+                graph_key: "function:test".into(),
+                node_key: "peer".into(),
+                position: Vec2::new(100.0, 50.0),
+                selected: true,
+                collapsed: false,
+                dragging: false,
+                drag_before: None,
+                drag_modifier: None,
+                suppress_release_click: false,
+            },
+            Node::default(),
+            ComputedNode::default(),
+            ChildOf(view),
+        ))
+        .id();
+    app.world_mut().resource_mut::<State>().grid = false;
+
+    start(&mut app, node);
+    motion(&mut app, node, Vec2::new(12.0, -7.0));
+    assert_eq!(
+        app.world().get::<FeathersGraphNode>(node).unwrap().position,
+        Vec2::new(27.0, 8.0)
+    );
+    assert_eq!(
+        app.world().get::<FeathersGraphNode>(peer).unwrap().position,
+        Vec2::new(112.0, 43.0)
+    );
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        location(),
+        DragEnd {
+            button: PointerButton::Primary,
+            distance: Vec2::new(12.0, -7.0),
+        },
+        node,
+    ));
+    app.world_mut().flush();
+
+    assert!(app.world().resource::<Edits>().0.is_empty());
+    let batches = &app.world().resource::<BatchEdits>().0;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(
+        batches[0].before.keys().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from(["node".into(), "peer".into()])
+    );
+}
+
+#[test]
 fn guides_are_passive_view_local_and_removed_after_end_or_rebuild() {
     let (mut app, node, view) = setup(1.0, 1.0);
     motion(&mut app, node, Vec2::new(16.0, 0.0));
@@ -221,6 +298,7 @@ fn measured_alignment_is_view_scoped_and_invalidates_changed_targets() {
         for scale in [1.0, 1.25, 2.0] {
             let (mut app, root) = geometry::tests::layout_app(scale);
             app.init_resource::<State>()
+                .init_resource::<GraphNodeDragGesture>()
                 .init_resource::<ButtonInput<KeyCode>>()
                 .init_resource::<OverrideCursor>()
                 .add_observer(begin_graph_node_drag)
