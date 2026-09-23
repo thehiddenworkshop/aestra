@@ -495,6 +495,30 @@ fn spawn_module_header_actions(
 #[derive(Component, Clone, Copy)]
 pub(super) struct ModuleRowDrag(ModuleId);
 
+/// The module id of the stack row at `entity` or an ancestor (drops land on inner children).
+fn module_row_at(
+    mut entity: Entity,
+    rows: &Query<&ModuleRowDrag>,
+    parents: &Query<&ChildOf>,
+) -> Option<ModuleId> {
+    loop {
+        if let Ok(row) = rows.get(entity) {
+            return Some(row.0);
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+/// The floating drag ghost that follows the cursor while a module row is dragged (§28.4).
+#[derive(Component)]
+pub(super) struct ModuleDragGhost;
+
+/// Tracks the active module drag so the ghost can be moved and torn down (§28.4).
+#[derive(Resource, Default)]
+pub(crate) struct ModuleDragState {
+    ghost: Option<Entity>,
+}
+
 /// Reorders modules by drag-and-drop within the stack (§28.4): when one row is dropped onto another,
 /// the dragged module takes the target's slot. The session enforces same-stage-only and undoability.
 /// Registered globally (like the timeline's drop handlers); it filters to drops between module rows.
@@ -507,15 +531,10 @@ pub(super) fn reorder_modules_on_drop(
     if drop.button != PointerButton::Primary {
         return;
     }
-    let module_of = |mut entity: Entity| -> Option<ModuleId> {
-        loop {
-            if let Ok(row) = rows.get(entity) {
-                return Some(row.0);
-            }
-            entity = parents.get(entity).ok()?.parent();
-        }
-    };
-    let (Some(dragged), Some(target)) = (module_of(drop.dropped), module_of(drop.entity)) else {
+    let (Some(dragged), Some(target)) = (
+        module_row_at(drop.dropped, &rows, &parents),
+        module_row_at(drop.entity, &rows, &parents),
+    ) else {
         return;
     };
     if dragged == target {
@@ -523,6 +542,102 @@ pub(super) fn reorder_modules_on_drop(
     }
     drop.propagate(false);
     session.reorder_module_onto(dragged, target);
+}
+
+/// Spawns the cursor-following ghost when a module row starts dragging (§28.4): a small floating
+/// name chip at the pointer, so the drag reads like a real reorder. `Pickable::IGNORE` keeps it from
+/// intercepting the drop target beneath the cursor.
+pub(super) fn begin_module_drag(
+    event: On<Pointer<DragStart>>,
+    rows: Query<&ModuleRowDrag>,
+    parents: Query<&ChildOf>,
+    session: Res<EditorSession>,
+    registry: Res<EditorModuleRegistry>,
+    mut state: ResMut<ModuleDragState>,
+    mut commands: Commands,
+) {
+    if event.button != PointerButton::Primary {
+        return;
+    }
+    let Some(module_id) = module_row_at(event.entity, &rows, &parents) else {
+        return;
+    };
+    let Some(layer) = session.selected_layer() else {
+        return;
+    };
+    let Some(module) = layer.modules.iter().find(|module| module.id == module_id) else {
+        return;
+    };
+    let name = registry
+        .0
+        .get(&module.module_type)
+        .map(|metadata| metadata.display_name.to_string())
+        .unwrap_or_else(|| module.module_type.0.clone());
+    if let Some(ghost) = state.ghost.take() {
+        commands.entity(ghost).try_despawn();
+    }
+    let position = event.pointer_location.position;
+    let ghost = commands
+        .spawn((
+            ModuleDragGhost,
+            Pickable::IGNORE,
+            GlobalZIndex(400),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(position.x + 12.0),
+                top: Val::Px(position.y + 6.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT),
+            BorderColor::all(theme::ACCENT),
+        ))
+        .with_child((
+            Text::new(name),
+            bevy::feathers::theme::ThemedText,
+            TextColor(theme::TEXT),
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .id();
+    state.ghost = Some(ghost);
+}
+
+/// Moves the drag ghost to follow the cursor for the duration of the drag (§28.4).
+pub(super) fn move_module_drag(
+    event: On<Pointer<Drag>>,
+    state: Res<ModuleDragState>,
+    mut ghosts: Query<&mut Node, With<ModuleDragGhost>>,
+) {
+    let Some(ghost) = state.ghost else {
+        return;
+    };
+    let Ok(mut node) = ghosts.get_mut(ghost) else {
+        return;
+    };
+    let position = event.pointer_location.position;
+    node.left = Val::Px(position.x + 12.0);
+    node.top = Val::Px(position.y + 6.0);
+}
+
+/// Tears down the drag ghost when the drag ends (§28.4), whether or not a reorder happened.
+pub(super) fn end_module_drag(
+    _event: On<Pointer<DragEnd>>,
+    mut state: ResMut<ModuleDragState>,
+    mut commands: Commands,
+) {
+    if let Some(ghost) = state.ghost.take() {
+        commands.entity(ghost).try_despawn();
+    }
 }
 
 /// A compact, selectable stack row for one module (extensible-stages M9, §28.2): the module's name, its
@@ -575,6 +690,17 @@ pub(super) fn spawn_module_stack_row(
             BorderColor::all(base_border),
         ))
         .with_children(|row| {
+            // Drag handle (§28.4): the six-dot grip marks the row as draggable to reorder.
+            row.spawn((
+                Text::new("⠿"),
+                bevy::feathers::theme::ThemedText,
+                TextColor(theme::TEXT_FAINT),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
             row.spawn((
                 Text::new(display_name),
                 bevy::feathers::theme::ThemedText,
