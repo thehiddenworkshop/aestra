@@ -468,11 +468,13 @@ pub(super) fn spawn_module_card(
     } else {
         theme::BORDER
     };
+    let summary = aestra_compiler::module_summary(module);
     spawn_remembered_panel_card(
         parent,
         PanelCardProps::new(display_name, collapsed)
             .with_memory_key(properties_module_key(module))
             .with_help(help)
+            .with_summary(&summary)
             .with_enabled(module.enabled)
             .with_background(if module.enabled {
                 theme::PANEL_LIGHT
