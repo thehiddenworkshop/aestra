@@ -1881,6 +1881,45 @@ impl EditorSession {
         );
     }
 
+    /// Drag-reorders `dragged` to the slot of `target` within the selected emitter (§28.4). Both must
+    /// be in the same lifecycle/simulation stage — a module keeps its stage; drag only changes order
+    /// within it. Undoable as a single move.
+    pub fn reorder_module_onto(&mut self, dragged: ModuleId, target: ModuleId) {
+        let Some(emitter) = self.selected_layer() else {
+            return;
+        };
+        let Some(old) = emitter
+            .modules
+            .iter()
+            .position(|module| module.id == dragged)
+        else {
+            return;
+        };
+        let Some(new) = emitter
+            .modules
+            .iter()
+            .position(|module| module.id == target)
+        else {
+            return;
+        };
+        if old == new {
+            return;
+        }
+        if emitter.modules[old].stage != emitter.modules[new].stage {
+            self.status = "Modules reorder only within their stage".into();
+            return;
+        }
+        self.execute(
+            "Reordered module",
+            EffectCommand::MoveModule {
+                emitter: emitter.id,
+                module: dragged,
+                index: new,
+            },
+            true,
+        );
+    }
+
     pub fn duplicate_module(&mut self, id: ModuleId) {
         let Some(selected_layer) = self.selected_layer() else {
             return;
@@ -2577,6 +2616,51 @@ mod tests {
     #[test]
     fn blank_effect_is_valid() {
         blank_effect().validate().unwrap();
+    }
+
+    #[test]
+    fn reorder_module_onto_moves_within_stage_and_is_undoable() {
+        let mut session = test_support::session_with_timing_slack();
+        let motion = session
+            .selected_layer()
+            .unwrap()
+            .module_by_type(aestra_core::MODULE_MOTION)
+            .unwrap()
+            .id;
+        let appearance = session
+            .selected_layer()
+            .unwrap()
+            .module_by_type(aestra_core::MODULE_APPEARANCE)
+            .unwrap()
+            .id;
+        let particle_update_order = |session: &EditorSession| -> Vec<ModuleId> {
+            session
+                .selected_layer()
+                .unwrap()
+                .modules
+                .iter()
+                .filter(|module| module.stage == aestra_core::StageKind::ParticleUpdate)
+                .map(|module| module.id)
+                .collect()
+        };
+        assert_eq!(particle_update_order(&session), vec![motion, appearance]);
+
+        // Dropping Appearance onto Motion moves it into Motion's slot.
+        session.reorder_module_onto(appearance, motion);
+        assert_eq!(particle_update_order(&session), vec![appearance, motion]);
+
+        session.undo();
+        assert_eq!(particle_update_order(&session), vec![motion, appearance]);
+
+        // A cross-stage drop is rejected (Emission lives in Emitter Update).
+        let emission = session
+            .selected_layer()
+            .unwrap()
+            .module_by_type(aestra_core::MODULE_EMISSION)
+            .unwrap()
+            .id;
+        session.reorder_module_onto(emission, motion);
+        assert_eq!(particle_update_order(&session), vec![motion, appearance]);
     }
 
     #[test]

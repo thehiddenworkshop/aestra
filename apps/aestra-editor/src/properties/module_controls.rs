@@ -490,10 +490,47 @@ fn spawn_module_header_actions(
     );
 }
 
+/// Tags a module stack row as a drag source and drop target for reordering (extensible-stages M9,
+/// §28.4). Carries the row's module id so a drop can reorder the dragged module onto this one.
+#[derive(Component, Clone, Copy)]
+struct ModuleRowDrag(ModuleId);
+
+/// Reorders modules by drag-and-drop within the stack (§28.4): when one row is dropped onto another,
+/// the dragged module takes the target's slot. The session enforces same-stage-only and undoability.
+/// Attached per row, so the observed entity is the drop target; `drop.dropped` is the dragged row.
+fn reorder_modules_on_drop(
+    mut drop: On<Pointer<DragDrop>>,
+    rows: Query<&ModuleRowDrag>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+) {
+    if drop.button != PointerButton::Primary {
+        return;
+    }
+    let module_of = |mut entity: Entity| -> Option<ModuleId> {
+        loop {
+            if let Ok(row) = rows.get(entity) {
+                return Some(row.0);
+            }
+            entity = parents.get(entity).ok()?.parent();
+        }
+    };
+    let (Some(dragged), Some(target)) = (module_of(drop.dropped), module_of(drop.event_target()))
+    else {
+        return;
+    };
+    if dragged == target {
+        return;
+    }
+    drop.propagate(false);
+    session.reorder_module_onto(dragged, target);
+}
+
 /// A compact, selectable stack row for one module (extensible-stages M9, §28.2): the module's name, its
 /// descriptor-driven summary, and the shared enabled/actions controls — no inline parameter controls.
 /// Selecting the row (via the global `select_properties_header` observer that finds the
-/// `PropertiesSelectionTarget`) shows the module's full controls in the inspector below the stack.
+/// `PropertiesSelectionTarget`) shows the module's full controls in the inspector below the stack; the
+/// row is also a drag source/target for reordering (`reorder_modules_on_drop`).
 pub(super) fn spawn_module_stack_row(
     parent: &mut ChildSpawnerCommands,
     module: &ModuleInstance,
@@ -516,6 +553,7 @@ pub(super) fn spawn_module_stack_row(
                 base_border,
             },
             PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
+            ModuleRowDrag(module.id),
             crate::feathers::tooltip::EditorTooltip::titled(display_name, help),
             Node {
                 width: Val::Auto,
@@ -537,6 +575,7 @@ pub(super) fn spawn_module_stack_row(
             }),
             BorderColor::all(base_border),
         ))
+        .observe(reorder_modules_on_drop)
         .with_children(|row| {
             row.spawn((
                 Text::new(display_name),
