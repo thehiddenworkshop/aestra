@@ -24,11 +24,11 @@ use aestra_core::{
     CAPABILITY_CPU_REFERENCE, CAPABILITY_PARTICLE_SIMULATION, CapabilityId, Collider, ColorKey,
     Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, Emitter,
     EmitterId, EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_COLLISION,
-    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
-    MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
-    ParameterId, PropertyControl, PropertyDescriptor, PropertySchema, RENDERER_FLIPBOOK,
-    RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
-    StageTypeId, ValidationReport, Value,
+    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE,
+    MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters,
+    ModuleTypeId, ParameterId, PropertyControl, PropertyDescriptor, PropertySchema,
+    RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_SPRITE, RendererProperties, ScalarRange,
+    SpriteColorSource, StageKind, StageTypeId, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -1221,8 +1221,7 @@ impl EffectCompiler {
                     simulation_class,
                     colliders: colliders.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
-                        &execution,
-                        emitter.id,
+                        &execution, emitter.id,
                     ),
                     execution: execution.clone(),
                     renderers: renderers.clone(),

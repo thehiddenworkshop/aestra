@@ -16,22 +16,23 @@ mod profile;
 mod staged;
 mod stateful;
 pub use execution_ir::{
-    execute_reference, lower_stage_fused, ComputeOp, CopyOp, ExecutionBlock, ExecutionError,
-    ExecutionOp, ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode,
-    ResourceDescriptor, ResourceLifetime, AESTRA_RESOURCE_PARTICLES,
+    AESTRA_RESOURCE_PARTICLES, ComputeOp, CopyOp, ExecutionBlock, ExecutionError, ExecutionOp,
+    ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
+    ResourceLifetime, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{
-    diffuse_2d, diffuse_2d_step, StagedDispatch, StagedPass, StagedPlan, StagedPlanError,
-    StagedResource, StagedResourceLifetime,
+    StagedDispatch, StagedPass, StagedPlan, StagedPlanError, StagedResource,
+    StagedResourceLifetime, diffuse_2d, diffuse_2d_step,
 };
 pub use stateful::{
-    Collider, ColliderShape, SpawnShape, StatefulConfig, StatefulSimulation, MAX_COLLIDERS,
+    Collider, ColliderShape, MAX_COLLIDERS, SpawnShape, StatefulConfig, StatefulSimulation,
 };
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
-    SeekPlan, SeekQuality, SimulationClass, SimulationSeekMode, StoredCheckpoint, TemporalSemantics,
+    SeekPlan, SeekQuality, SimulationClass, SimulationSeekMode, StoredCheckpoint,
+    TemporalSemantics,
 };
 pub use compatibility::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
@@ -593,9 +594,18 @@ impl CompiledLifecycleStages {
     pub fn from_execution_plan(plan: &ExecutionPlan, emitter: EmitterId) -> Self {
         let mut stages = Vec::new();
         for (stage_type, instructions) in [
-            (aestra_core::AESTRA_STAGE_EMITTER_UPDATE, &plan.emitter_update),
-            (aestra_core::AESTRA_STAGE_PARTICLE_SPAWN, &plan.particle_spawn),
-            (aestra_core::AESTRA_STAGE_PARTICLE_UPDATE, &plan.particle_update),
+            (
+                aestra_core::AESTRA_STAGE_EMITTER_UPDATE,
+                &plan.emitter_update,
+            ),
+            (
+                aestra_core::AESTRA_STAGE_PARTICLE_SPAWN,
+                &plan.particle_spawn,
+            ),
+            (
+                aestra_core::AESTRA_STAGE_PARTICLE_UPDATE,
+                &plan.particle_update,
+            ),
         ] {
             if instructions.is_empty() {
                 continue;

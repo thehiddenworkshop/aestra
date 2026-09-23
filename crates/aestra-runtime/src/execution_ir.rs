@@ -104,7 +104,10 @@ pub enum ExecutionOp {
     /// A resource-to-resource copy.
     Copy(CopyOp),
     /// Repeat a sub-sequence of ops (e.g. a pressure-solver iteration loop).
-    Repeat { policy: RepeatPolicy, body: Vec<ExecutionOp> },
+    Repeat {
+        policy: RepeatPolicy,
+        body: Vec<ExecutionOp>,
+    },
 }
 
 /// The ordered execution plan of one stage (extensible-stages M6): declared resources plus the ops
@@ -131,8 +134,12 @@ pub enum ExecutionError {
 impl core::fmt::Display for ExecutionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::UnknownResource(id) => write!(f, "op references undeclared resource '{}'", id.as_str()),
-            Self::DuplicateResource(id) => write!(f, "resource '{}' is declared twice", id.as_str()),
+            Self::UnknownResource(id) => {
+                write!(f, "op references undeclared resource '{}'", id.as_str())
+            }
+            Self::DuplicateResource(id) => {
+                write!(f, "resource '{}' is declared twice", id.as_str())
+            }
             Self::EmptyDispatch(name) => write!(f, "compute op '{name}' has a zero dispatch shape"),
             Self::ZeroRepeat => write!(f, "a repeat policy would run its body zero times"),
         }
@@ -245,7 +252,11 @@ fn trace_ops(ops: &[ExecutionOp], steps: &mut Vec<String>) {
 /// single compute pass reading and writing the particle buffer — its modules are *not* forced into
 /// separate dispatches, preserving the current fused execution. Stages that genuinely need multiple
 /// passes (solvers, grids) build their own richer [`ExecutionBlock`] instead.
-pub fn lower_stage_fused(stage: &CompiledStage, particle_capacity: u32, workgroup_size: u32) -> ExecutionBlock {
+pub fn lower_stage_fused(
+    stage: &CompiledStage,
+    particle_capacity: u32,
+    workgroup_size: u32,
+) -> ExecutionBlock {
     let particles = ResourceDescriptor {
         id: ResourceTypeId::new(AESTRA_RESOURCE_PARTICLES),
         bytes: 0, // sized by the backend from the particle layout; identity is what matters here
@@ -311,7 +322,12 @@ mod tests {
         assert_eq!(
             trace.steps,
             vec![
-                "compute:A", "barrier", "compute:B", "compute:B", "compute:B", "compute:B",
+                "compute:A",
+                "barrier",
+                "compute:B",
+                "compute:B",
+                "compute:B",
+                "compute:B",
                 "compute:C",
             ],
             "repeats expand and the barrier stays in place, deterministically"
@@ -374,7 +390,10 @@ mod tests {
             .iter()
             .filter(|op| matches!(op, ExecutionOp::Compute(_)))
             .count();
-        assert_eq!(compute_ops, 1, "the whole stage fuses into a single compute pass");
+        assert_eq!(
+            compute_ops, 1,
+            "the whole stage fuses into a single compute pass"
+        );
         assert_eq!(block.compute_pass_count(), 1);
     }
 }

@@ -297,9 +297,18 @@ fn emitter_from_v4(emitter: V4Emitter) -> Emitter {
             modules.push(module.into_module(stage.clone()));
         }
     };
-    push_stage(emitter.lifecycle.emitter_spawn.modules, StageKind::EmitterSpawn);
-    push_stage(emitter.lifecycle.emitter_update.modules, StageKind::EmitterUpdate);
-    push_stage(emitter.lifecycle.particle_spawn.modules, StageKind::ParticleSpawn);
+    push_stage(
+        emitter.lifecycle.emitter_spawn.modules,
+        StageKind::EmitterSpawn,
+    );
+    push_stage(
+        emitter.lifecycle.emitter_update.modules,
+        StageKind::EmitterUpdate,
+    );
+    push_stage(
+        emitter.lifecycle.particle_spawn.modules,
+        StageKind::ParticleSpawn,
+    );
     push_stage(
         emitter.lifecycle.particle_update.modules,
         StageKind::ParticleUpdate,
@@ -449,8 +458,16 @@ mod tests {
         assert_eq!(emitter.lifecycle.emitter_update.modules.len(), 1); // emission
         assert_eq!(emitter.lifecycle.particle_spawn.modules.len(), 2); // shape + initialize
         assert_eq!(emitter.lifecycle.particle_update.modules.len(), 2); // motion + appearance
-        assert_eq!(emitter.simulation_stages.len(), 1, "one 'solve' simulation stage");
-        assert_eq!(emitter.simulation_stages[0].modules.len(), 2, "both solve modules grouped");
+        assert_eq!(
+            emitter.simulation_stages.len(),
+            1,
+            "one 'solve' simulation stage"
+        );
+        assert_eq!(
+            emitter.simulation_stages[0].modules.len(),
+            2,
+            "both solve modules grouped"
+        );
         assert_eq!(emitter.simulation_stages[0].id, StageId::for_name("solve"));
         assert_eq!(emitter.domain, DomainTypeId::new("org.example.domain/grid"));
 

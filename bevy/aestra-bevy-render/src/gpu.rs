@@ -241,9 +241,7 @@ impl StatefulDispatch {
 /// center, `b.x` = radius), 2 = box (`a` = min, `b` = max).
 fn collider_geometry(collider: &aestra_core::Collider) -> (u32, [f32; 3], [f32; 3]) {
     match collider.shape {
-        aestra_core::ColliderShape::Plane { normal, distance } => {
-            (0, normal, [distance, 0.0, 0.0])
-        }
+        aestra_core::ColliderShape::Plane { normal, distance } => (0, normal, [distance, 0.0, 0.0]),
         aestra_core::ColliderShape::Sphere { center, radius } => (1, center, [radius, 0.0, 0.0]),
         aestra_core::ColliderShape::Aabb { min, max } => (2, min, max),
     }
@@ -791,58 +789,57 @@ pub(crate) fn prepare_gpu_effects(
                 false
             }
         };
-        let stateful_dispatch: Vec<StatefulDispatch> = if artifact.simulation_state.records > 0
-            && collision_supported
-        {
-            compiled_emitters
-                .iter()
-                .enumerate()
-                .filter(|(_, compiled)| {
-                    compiled.enabled && compiled.simulation_class != SimulationClass::Analytic
-                })
-                .filter_map(|(index, compiled)| {
-                    artifact
-                        .emitters
-                        .get(index)
-                        .map(|emitter| StatefulDispatch {
-                            capacity: emitter.max_particles,
-                            slot_offset: emitter.slot_offset,
-                            emitter_index: index as u32,
-                            emitter_count,
-                            spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
-                            speed: (emitter.speed.x, emitter.speed.y),
-                            lifetime: (emitter.lifetime.x, emitter.lifetime.y),
-                            direction: [
-                                emitter.direction.x,
-                                emitter.direction.y,
-                                emitter.direction.z,
-                            ],
-                            // Map the authored spread half-angle to the cone factor: 0 rad -> straight,
-                            // ~90 deg -> factor 1, blending in more of the random unit vector.
-                            spread: emitter.spread_radians / std::f32::consts::FRAC_PI_2,
-                            drag: 0.5 * (emitter.drag.x + emitter.drag.y),
-                            turbulence: 0.5 * (emitter.turbulence.x + emitter.turbulence.y),
-                            // Map the analytic shape encoding to the stateful one (sphere/box/point).
-                            shape_kind: match emitter.shape_kind {
-                                3 => 1, // Sphere
-                                5 => 2, // Box
-                                _ => 0, // Point (and shapes the stateful path does not model yet)
-                            },
-                            shape_radius: emitter.shape_radius,
-                            shape_half_extents: [
-                                emitter.shape_radius,
-                                emitter.shape_depth,
-                                emitter.shape_extent_z,
-                            ],
-                            gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
-                            seed,
-                            colliders: compiled.colliders.clone(),
-                        })
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let stateful_dispatch: Vec<StatefulDispatch> =
+            if artifact.simulation_state.records > 0 && collision_supported {
+                compiled_emitters
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, compiled)| {
+                        compiled.enabled && compiled.simulation_class != SimulationClass::Analytic
+                    })
+                    .filter_map(|(index, compiled)| {
+                        artifact
+                            .emitters
+                            .get(index)
+                            .map(|emitter| StatefulDispatch {
+                                capacity: emitter.max_particles,
+                                slot_offset: emitter.slot_offset,
+                                emitter_index: index as u32,
+                                emitter_count,
+                                spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
+                                speed: (emitter.speed.x, emitter.speed.y),
+                                lifetime: (emitter.lifetime.x, emitter.lifetime.y),
+                                direction: [
+                                    emitter.direction.x,
+                                    emitter.direction.y,
+                                    emitter.direction.z,
+                                ],
+                                // Map the authored spread half-angle to the cone factor: 0 rad -> straight,
+                                // ~90 deg -> factor 1, blending in more of the random unit vector.
+                                spread: emitter.spread_radians / std::f32::consts::FRAC_PI_2,
+                                drag: 0.5 * (emitter.drag.x + emitter.drag.y),
+                                turbulence: 0.5 * (emitter.turbulence.x + emitter.turbulence.y),
+                                // Map the analytic shape encoding to the stateful one (sphere/box/point).
+                                shape_kind: match emitter.shape_kind {
+                                    3 => 1, // Sphere
+                                    5 => 2, // Box
+                                    _ => 0, // Point (and shapes the stateful path does not model yet)
+                                },
+                                shape_radius: emitter.shape_radius,
+                                shape_half_extents: [
+                                    emitter.shape_radius,
+                                    emitter.shape_depth,
+                                    emitter.shape_extent_z,
+                                ],
+                                gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
+                                seed,
+                                colliders: compiled.colliders.clone(),
+                            })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
         let stateful_only =
             !stateful_dispatch.is_empty() && stateful_dispatch.len() == enabled_emitters;
         let indirect_draw_commands = indirect_draw_commands_with_statistics(&artifact.emitters);

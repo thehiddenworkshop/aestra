@@ -181,16 +181,15 @@ impl FluidHarness {
         let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         instance_descriptor.backends = wgpu::Backends::PRIMARY;
         let instance = wgpu::Instance::new(instance_descriptor);
-        let adapter = match pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
+        let adapter =
+            match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
-            },
-        )) {
-            Ok(adapter) => adapter,
-            Err(_) => return Ok(None),
-        };
+            })) {
+                Ok(adapter) => adapter,
+                Err(_) => return Ok(None),
+            };
         if !adapter
             .get_downlevel_capabilities()
             .flags
@@ -698,5 +697,8 @@ fn the_fluid_drives_particles_deterministically() {
     );
 
     let again = harness.sample_particles();
-    assert_eq!(brightness, again, "grid-driven particle sampling is deterministic");
+    assert_eq!(
+        brightness, again,
+        "grid-driven particle sampling is deterministic"
+    );
 }

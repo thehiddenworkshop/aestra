@@ -28,7 +28,7 @@ use aestra_gpu::{
     STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
 };
 use aestra_runtime::{
-    Collider, ColliderShape, SpawnShape, StatefulConfig, StatefulSimulation, MAX_COLLIDERS,
+    Collider, ColliderShape, MAX_COLLIDERS, SpawnShape, StatefulConfig, StatefulSimulation,
 };
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
@@ -2175,7 +2175,10 @@ fn gpu_collision_matches_the_cpu_reference() {
     simulation.advance_to_tick(ticks as u64);
     let cpu = simulation.alive_particles();
 
-    assert!(!cpu.is_empty(), "particles are alive at the end of the window");
+    assert!(
+        !cpu.is_empty(),
+        "particles are alive at the end of the window"
+    );
     assert_eq!(
         gpu.len(),
         cpu.len(),
@@ -2208,7 +2211,8 @@ fn gpu_collision_matches_the_cpu_reference() {
             position[1]
         );
     }
-    let mut without = StatefulSimulation::new(collision_config([Collider::NONE; MAX_COLLIDERS], 0), seed);
+    let mut without =
+        StatefulSimulation::new(collision_config([Collider::NONE; MAX_COLLIDERS], 0), seed);
     without.advance_to_tick(ticks as u64);
     let lowest = without
         .alive_particles()

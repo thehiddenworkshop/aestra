@@ -8,8 +8,9 @@
 //!   particles off a ground plane, a sphere obstacle, and a box obstacle (hybrid roadmap M10).
 
 use aestra_core::{
-    Collider, ColliderShape, EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ScalarRange,
+    Collider, ColliderShape, EffectAsset, EffectPlaybackMode, Emitter, EmitterShape,
+    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, ModuleInstance,
+    ModuleParameters, ScalarRange,
 };
 
 /// A sprite emitter tuned to clean scalar values, since the stateful integrator reads range midpoints.
@@ -209,5 +210,8 @@ fn main() {
         },
     ]));
     collision.emitters.push(fountain);
-    write(&collision, "sample-project/effects/collision_lab.aestra.ron");
+    write(
+        &collision,
+        "sample-project/effects/collision_lab.aestra.ron",
+    );
 }

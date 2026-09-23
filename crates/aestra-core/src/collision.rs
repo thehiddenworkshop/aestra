@@ -209,7 +209,9 @@ mod tests {
 
     #[test]
     fn availability_orders_least_to_most_restrictive_and_gates_exact_seek() {
-        assert!(CollisionInputAvailability::TimeAddressable < CollisionInputAvailability::ForwardOnly);
+        assert!(
+            CollisionInputAvailability::TimeAddressable < CollisionInputAvailability::ForwardOnly
+        );
         assert!(CollisionInputAvailability::Recordable < CollisionInputAvailability::Checkpointed);
         for availability in [
             CollisionInputAvailability::TimeAddressable,
@@ -299,6 +301,9 @@ mod tests {
         let error = needs_sdf
             .resolve_against(&backend)
             .expect_err("SDF is unsupported by the authored-only backend");
-        assert_eq!(error.missing, vec![CollisionInputSource::SignedDistanceField]);
+        assert_eq!(
+            error.missing,
+            vec![CollisionInputSource::SignedDistanceField]
+        );
     }
 }

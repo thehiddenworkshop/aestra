@@ -92,7 +92,11 @@ mod tests {
     fn non_current_versions_are_rejected_without_mutation() {
         // Pre-release: no migrations are carried, so any non-current version is an explicit
         // unsupported-format error rather than a silent best-effort load.
-        for version in ["(format_version: 2)", "(format_version: 3)", "(format_version: 99)"] {
+        for version in [
+            "(format_version: 2)",
+            "(format_version: 3)",
+            "(format_version: 99)",
+        ] {
             let detected = detect_effect_format(version).unwrap();
             if detected == crate::CURRENT_FORMAT_VERSION {
                 continue;

@@ -14,7 +14,7 @@
 
 use aestra_gpu::{STAGED_DIFFUSION_PARAM_WORDS, STAGED_DIFFUSION_WGSL};
 use aestra_runtime::{
-    diffuse_2d, StagedDispatch, StagedPass, StagedPlan, StagedResource, StagedResourceLifetime,
+    StagedDispatch, StagedPass, StagedPlan, StagedResource, StagedResourceLifetime, diffuse_2d,
 };
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 
@@ -69,16 +69,15 @@ impl StagedHarness {
         let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         instance_descriptor.backends = wgpu::Backends::PRIMARY;
         let instance = wgpu::Instance::new(instance_descriptor);
-        let adapter = match pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
+        let adapter =
+            match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
-            },
-        )) {
-            Ok(adapter) => adapter,
-            Err(_) => return Ok(None),
-        };
+            })) {
+                Ok(adapter) => adapter,
+                Err(_) => return Ok(None),
+            };
         if !adapter
             .get_downlevel_capabilities()
             .flags
@@ -86,9 +85,7 @@ impl StagedHarness {
         {
             return Ok(None);
         }
-        let timestamps_supported = adapter
-            .features()
-            .contains(wgpu::Features::TIMESTAMP_QUERY);
+        let timestamps_supported = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
         let required_features = if timestamps_supported {
             wgpu::Features::TIMESTAMP_QUERY
         } else {
@@ -159,7 +156,11 @@ impl StagedHarness {
         let iterations = pass.iterations;
         let grid = plan.resource("grid").expect("plan has a grid resource");
         let grid_bytes = grid.bytes;
-        assert_eq!(grid_bytes as usize, initial.len() * 4, "grid sizing matches");
+        assert_eq!(
+            grid_bytes as usize,
+            initial.len() * 4,
+            "grid sizing matches"
+        );
 
         let make = |label: &str, contents: &[u8], extra: wgpu::BufferUsages| {
             use wgpu::util::DeviceExt;
@@ -221,14 +222,13 @@ impl StagedHarness {
                     },
                 ],
             });
-            let timestamp_writes =
-                query_set
-                    .as_ref()
-                    .map(|set| wgpu::ComputePassTimestampWrites {
-                        query_set: set,
-                        beginning_of_pass_write_index: Some(iteration * 2),
-                        end_of_pass_write_index: Some(iteration * 2 + 1),
-                    });
+            let timestamp_writes = query_set
+                .as_ref()
+                .map(|set| wgpu::ComputePassTimestampWrites {
+                    query_set: set,
+                    beginning_of_pass_write_index: Some(iteration * 2),
+                    end_of_pass_write_index: Some(iteration * 2 + 1),
+                });
             {
                 // Each iteration is its own compute pass, so the write of `back` this iteration is
                 // ordered before the read of it (as next iteration's `front`) by a barrier.
@@ -268,7 +268,13 @@ impl StagedHarness {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            encoder.copy_buffer_to_buffer(&resolved, 0, &mappable, 0, u64::from(iterations * 2) * 8);
+            encoder.copy_buffer_to_buffer(
+                &resolved,
+                0,
+                &mappable,
+                0,
+                u64::from(iterations * 2) * 8,
+            );
             mappable
         });
 
@@ -412,7 +418,13 @@ fn staged_diffusion_checkpoint_and_replay_reproduces_the_uninterrupted_run() {
     let initial = seed_field(width as usize, height as usize);
 
     let (uninterrupted, _) = harness
-        .run_plan(&diffusion_plan(width, height, total), &initial, width, height, rate)
+        .run_plan(
+            &diffusion_plan(width, height, total),
+            &initial,
+            width,
+            height,
+            rate,
+        )
         .unwrap();
 
     // Snapshot the ping-pong grid at the checkpoint tick, then replay the remainder from it.
@@ -436,7 +448,8 @@ fn staged_diffusion_checkpoint_and_replay_reproduces_the_uninterrupted_run() {
         .unwrap();
 
     assert_eq!(
-        uninterrupted, replayed,
+        uninterrupted,
+        replayed,
         "checkpoint at {checkpoint_at} + replay {} == uninterrupted {total}",
         total - checkpoint_at
     );

@@ -354,7 +354,8 @@ mod tests {
         let payload = ExtensionPayload::with_values(1, bag);
 
         let ron = ron::to_string(&payload).expect("serialize");
-        let restored: ExtensionPayload = ron::from_str(&ron).expect("deserialize without plugin code");
+        let restored: ExtensionPayload =
+            ron::from_str(&ron).expect("deserialize without plugin code");
         assert_eq!(payload, restored, "payload round trips losslessly");
         assert_eq!(restored.schema_version, 1);
         assert_eq!(restored.values.get_f32("strength"), Some(2.5));
@@ -383,10 +384,13 @@ mod tests {
         let mut out_of_range = PropertyBag::new();
         out_of_range.set("strength", Value::Scalar(50.0)); // max is 10
         let issues = schema.validate(&out_of_range);
-        assert_eq!(issues, vec![PropertyIssue {
-            property: "strength".to_string(),
-            problem: PropertyInvalid::OutOfRange,
-        }]);
+        assert_eq!(
+            issues,
+            vec![PropertyIssue {
+                property: "strength".to_string(),
+                problem: PropertyInvalid::OutOfRange,
+            }]
+        );
     }
 
     #[test]

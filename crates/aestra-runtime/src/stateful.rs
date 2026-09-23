@@ -170,12 +170,7 @@ impl StatefulSimulation {
         position: &mut [f32; 3],
         velocity: &mut [f32; 3],
     ) -> bool {
-        resolve_colliders(
-            &config.colliders,
-            config.collider_count,
-            position,
-            velocity,
-        )
+        resolve_colliders(&config.colliders, config.collider_count, position, velocity)
     }
 
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.

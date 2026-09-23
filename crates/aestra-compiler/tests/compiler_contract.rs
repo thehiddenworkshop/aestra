@@ -6,9 +6,8 @@ use aestra_core::{
     DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode,
     Emitter, EmitterRegionId, EmitterShape, MODULE_COLLISION, MODULE_EMISSION, MODULE_INITIALIZE,
     MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialId, MaterialInput, MaterialParameterId,
-    MaterialProgramId,
-    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
-    PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
+    MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
+    ParameterId, PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
         MaterialInput as SemanticMaterialInput, MaterialInstance, MaterialParameter,
@@ -2223,9 +2222,9 @@ fn builtin_module_inputs_express_losslessly_as_property_schemas() {
             metadata.type_id.0
         );
         for input in &metadata.inputs {
-            let descriptor = schema
-                .descriptor(input.name)
-                .unwrap_or_else(|| panic!("{} has a descriptor for {}", metadata.type_id.0, input.name));
+            let descriptor = schema.descriptor(input.name).unwrap_or_else(|| {
+                panic!("{} has a descriptor for {}", metadata.type_id.0, input.name)
+            });
             assert_eq!(descriptor.label, input.display_name);
             assert_eq!(descriptor.value_type, input.value_type);
             assert_eq!(&descriptor.default, &input.default_value);
@@ -2257,8 +2256,8 @@ fn builtin_module_inputs_express_losslessly_as_property_schemas() {
 fn a_third_party_stage_hosts_standard_modules_by_capability() {
     use aestra_compiler::{CapabilitySet, LifecycleRole, ModuleMultiplicity, StageTypeDescriptor};
     use aestra_core::{
-        CapabilityId, StageTypeId, CAPABILITY_HOSTS_PARTICLE_UPDATE, MODULE_APPEARANCE,
-        MODULE_PERSISTENT,
+        CAPABILITY_HOSTS_PARTICLE_UPDATE, CapabilityId, MODULE_APPEARANCE, MODULE_PERSISTENT,
+        StageTypeId,
     };
     // Extensible-stages M4 acceptance: a third-party stage that merely *provides* the particle-update
     // capability hosts the standard particle-update modules — with no hardcoded knowledge of its type
@@ -2326,7 +2325,11 @@ fn compiled_emitter_carries_a_stage_id_based_generic_stage_plan() {
     );
     let ids: std::collections::BTreeSet<_> =
         emitter.stages.stages.iter().map(|stage| stage.id).collect();
-    assert_eq!(ids.len(), emitter.stages.stages.len(), "stage ids are distinct");
+    assert_eq!(
+        ids.len(),
+        emitter.stages.stages.len(),
+        "stage ids are distinct"
+    );
 
     // Stage-id source navigation: a module resolves to the stage that runs it.
     let motion_source = emitter.execution.particle_update[0].source();
@@ -2341,7 +2344,10 @@ fn compiled_emitter_carries_a_stage_id_based_generic_stage_plan() {
 
     // Deterministic: recompiling the same asset yields the same stage ids.
     let again = compiler.compile(&asset).unwrap();
-    assert_eq!(emitter.stages.stages[0].id, again.emitters[0].stages.stages[0].id);
+    assert_eq!(
+        emitter.stages.stages[0].id,
+        again.emitters[0].stages.stages[0].id
+    );
 }
 
 #[test]
@@ -2366,5 +2372,8 @@ fn duplicate_singleton_modules_in_one_stage_are_rejected() {
     let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
     emitter.modules.push(ModuleInstance::persistent());
     ok.emitters.push(emitter);
-    assert!(compiler.compile(&ok).is_ok(), "one persistent solver is valid");
+    assert!(
+        compiler.compile(&ok).is_ok(),
+        "one persistent solver is valid"
+    );
 }

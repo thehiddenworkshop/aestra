@@ -8,7 +8,7 @@
 //!
 //! Usage: `cargo run -p aestra-core --example migrate_v3_to_v4 -- <file.aestra.ron>...`
 
-use aestra_core::{detect_effect_format, EffectAsset, CURRENT_FORMAT_VERSION};
+use aestra_core::{CURRENT_FORMAT_VERSION, EffectAsset, detect_effect_format};
 use std::path::Path;
 
 fn main() {
@@ -20,13 +20,17 @@ fn main() {
     let (mut converted, mut skipped) = (0u32, 0u32);
     for path in &paths {
         let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-        let version = detect_effect_format(&source).unwrap_or_else(|e| panic!("detect {path}: {e}"));
+        let version =
+            detect_effect_format(&source).unwrap_or_else(|e| panic!("detect {path}: {e}"));
         if version == CURRENT_FORMAT_VERSION {
             println!("skip (already v{version}): {path}");
             skipped += 1;
             continue;
         }
-        assert_eq!(version, 3, "{path}: only v3 -> v4 conversion is supported (found v{version})");
+        assert_eq!(
+            version, 3,
+            "{path}: only v3 -> v4 conversion is supported (found v{version})"
+        );
         // Read the flat v3 shape directly (not through `from_ron`, which now expects v4).
         let mut asset: EffectAsset =
             ron::from_str(&source).unwrap_or_else(|e| panic!("parse flat v3 {path}: {e}"));
