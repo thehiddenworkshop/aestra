@@ -683,8 +683,12 @@ pub(super) fn spawn_module_inspector(
         });
 }
 
-/// The module's parameter controls (extensible-stages M9): every registered input plus inline
-/// diagnostics. Shared so the inspector and any future embedded view render identical controls.
+/// The module's parameter controls (extensible-stages M9): a registered module renders its schema of
+/// inputs; an unregistered plugin/custom-stage module (no metadata in this build's registry) renders its
+/// preserved [`ModuleParameters::Custom`] payload as read-only value rows so its authored data is
+/// surfaced rather than dropped (§20). Editable, schema-driven controls for such modules arrive with
+/// plugin loading, when a `PropertySchema` describing them is actually available. Inline diagnostics
+/// close out both paths. Shared so the inspector and any future embedded view render identical controls.
 fn spawn_module_input_controls(
     card: &mut ChildSpawnerCommands,
     module: &ModuleInstance,
@@ -694,20 +698,99 @@ fn spawn_module_input_controls(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
-    if let Some(metadata) = metadata {
-        for (input_index, input) in metadata.inputs.iter().enumerate() {
-            spawn_input_control(
-                card,
-                module,
-                input,
-                input_index as u8,
-                session,
-                localizer,
-                asset_server,
-            );
+    match metadata {
+        Some(metadata) => {
+            for (input_index, input) in metadata.inputs.iter().enumerate() {
+                spawn_input_control(
+                    card,
+                    module,
+                    input,
+                    input_index as u8,
+                    session,
+                    localizer,
+                    asset_server,
+                );
+            }
+        }
+        None => {
+            if let aestra_core::ModuleParameters::Custom(values) = &module.parameters {
+                spawn_custom_module_properties(card, values);
+            }
         }
     }
     spawn_inline_diagnostics(card, diagnostic_path, session);
+}
+
+/// Surfaces an unregistered plugin/custom module's preserved payload in the inspector (extensible-stages
+/// M9 phase 9b, §20): a short note that the module is not installed, then one read-only row per authored
+/// property. The data is never dropped; installing the plugin (which publishes a `PropertySchema`) is
+/// what turns these into editable controls.
+fn spawn_custom_module_properties(
+    card: &mut ChildSpawnerCommands,
+    values: &std::collections::BTreeMap<String, Value>,
+) {
+    card.spawn((
+        Text::new("Plugin module not installed — authored values are preserved and read-only."),
+        bevy::feathers::theme::ThemedText,
+        TextColor(theme::TEXT_FAINT),
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        Node {
+            margin: UiRect::axes(Val::Px(2.0), Val::Px(4.0)),
+            ..default()
+        },
+    ));
+    if values.is_empty() {
+        spawn_properties_read_only_control(card, "Properties", "None authored");
+        return;
+    }
+    for (name, value) in values {
+        spawn_properties_read_only_control(card, name, &format_custom_property_value(value));
+    }
+}
+
+/// A concise, read-only rendering of one preserved custom-property [`Value`] (extensible-stages M9
+/// phase 9b). Covers the common authored types; anything richer falls back to its type name so the row
+/// is never blank.
+fn format_custom_property_value(value: &Value) -> String {
+    fn num(value: f32) -> String {
+        if value == value.trunc() && value.abs() < 1.0e7 {
+            format!("{}", value as i64)
+        } else {
+            format!("{value:.3}")
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
+        }
+    }
+    match value {
+        Value::Bool(on) => if *on { "On" } else { "Off" }.to_string(),
+        Value::U32(count) => count.to_string(),
+        Value::Scalar(scalar) => num(*scalar),
+        Value::Vec2(components) => format!("{}, {}", num(components[0]), num(components[1])),
+        Value::Vec3(components) => format!(
+            "{}, {}, {}",
+            num(components[0]),
+            num(components[1]),
+            num(components[2])
+        ),
+        Value::Vec4(components) => format!(
+            "{}, {}, {}, {}",
+            num(components[0]),
+            num(components[1]),
+            num(components[2]),
+            num(components[3])
+        ),
+        Value::Text(text) => text.clone(),
+        Value::Range(range) => format!("{} – {}", num(range.min), num(range.max)),
+        Value::Curve(_) => "Curve".to_string(),
+        Value::Vec3Range(_) => "Vec3 range".to_string(),
+        Value::Vec3Curve(_) => "Vec3 curve".to_string(),
+        Value::Gradient(_) => "Gradient".to_string(),
+        other => format!("{:?}", other.value_type()),
+    }
 }
 
 fn spawn_input_control(
@@ -970,5 +1053,26 @@ mod tests {
             Some((0.25, Some(0.0), Some(2.0)))
         );
         assert_eq!(numeric_source_limits(&InputControl::Toggle), None);
+    }
+
+    #[test]
+    fn custom_property_values_render_concisely_for_the_read_only_inspector() {
+        use aestra_core::ScalarRange;
+        assert_eq!(format_custom_property_value(&Value::Scalar(2.5)), "2.5");
+        assert_eq!(format_custom_property_value(&Value::Scalar(3.0)), "3");
+        assert_eq!(format_custom_property_value(&Value::Bool(true)), "On");
+        assert_eq!(format_custom_property_value(&Value::U32(7)), "7");
+        assert_eq!(
+            format_custom_property_value(&Value::Vec3([0.0, 1.5, -2.0])),
+            "0, 1.5, -2"
+        );
+        assert_eq!(
+            format_custom_property_value(&Value::Text("FLIP".into())),
+            "FLIP"
+        );
+        assert_eq!(
+            format_custom_property_value(&Value::Range(ScalarRange::new(0.2, 0.8))),
+            "0.2 – 0.8"
+        );
     }
 }
