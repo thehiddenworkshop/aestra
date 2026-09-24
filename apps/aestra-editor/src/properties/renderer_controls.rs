@@ -2593,6 +2593,7 @@ pub(super) fn spawn_renderer_stack_row(
                 base_border,
             },
             PropertiesSelectionTarget(SemanticTarget::Renderer(renderer.id)),
+            StackRowSearchText::new(&title, "", &renderer.renderer_type.0),
             crate::feathers::tooltip::EditorTooltip::titled(
                 display_name,
                 "Controls how this emitter is drawn.",

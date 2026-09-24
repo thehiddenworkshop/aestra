@@ -99,6 +99,7 @@ impl Plugin for PropertiesPlugin {
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<ModuleDragState>()
+            .init_resource::<ModuleStackFilter>()
             .init_resource::<EffectClipRepairState>()
             .init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>()
@@ -139,6 +140,8 @@ impl Plugin for PropertiesPlugin {
             .add_observer(finish_numeric_scrub)
             .add_observer(select_properties_header)
             .add_observer(handle_instance_label_change)
+            .add_observer(change_module_stack_filter)
+            .add_systems(Update, apply_module_stack_filter)
             .add_observer(begin_module_drag)
             .add_observer(move_module_drag)
             .add_observer(end_module_drag)
@@ -2494,6 +2497,51 @@ mod tests {
             effect_clip_repair_source(&catalog, &owner, &clip, EffectAssetRef::new(cycle.id))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn stack_filter_hides_non_matching_rows_in_place() {
+        assert!(stack_row_matches("motion \"ground\" drag 1.6", ""));
+        assert!(stack_row_matches("motion \"ground\" drag 1.6", "MOT gro"));
+        assert!(!stack_row_matches(
+            "motion \"ground\" drag 1.6",
+            "motion sphere"
+        ));
+
+        let mut app = App::new();
+        app.init_resource::<ModuleStackFilter>()
+            .add_systems(Update, apply_module_stack_filter);
+        let motion = app
+            .world_mut()
+            .spawn((
+                StackRowSearchText::new("Motion", "Drag 1.6", "aestra.module.motion"),
+                Node::default(),
+            ))
+            .id();
+        let shape = app
+            .world_mut()
+            .spawn((
+                StackRowSearchText::new("Shape", "Sphere · R 14", "aestra.module.shape"),
+                Node::default(),
+            ))
+            .id();
+        let display = |app: &App, entity| app.world().get::<Node>(entity).unwrap().display;
+
+        app.update();
+        assert_eq!(display(&app, motion), Display::Flex);
+        assert_eq!(display(&app, shape), Display::Flex);
+
+        app.world_mut().resource_mut::<ModuleStackFilter>().query = "sphere".into();
+        app.update();
+        assert_eq!(display(&app, motion), Display::None);
+        assert_eq!(display(&app, shape), Display::Flex);
+
+        app.world_mut()
+            .resource_mut::<ModuleStackFilter>()
+            .query
+            .clear();
+        app.update();
+        assert_eq!(display(&app, motion), Display::Flex);
     }
 
     #[test]
@@ -6247,6 +6295,23 @@ pub(crate) fn spawn_module_stack_panel(
             ..default()
         })
         .with_children(|panel| {
+            // Filters rows in place as you type (see `apply_module_stack_filter`).
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(7.0), Val::Px(5.0)),
+                    flex_shrink: 0.0,
+                    ..default()
+                })
+                .with_children(|bar| {
+                    crate::feathers::search_field::spawn_search_field(
+                        bar,
+                        "",
+                        &localizer.text("module-stack-filter"),
+                        &localizer.text("module-stack-filter-clear"),
+                        ModuleStackSearch,
+                    );
+                });
             panel
                 .spawn(Node {
                     width: Val::Percent(100.0),
@@ -6839,6 +6904,77 @@ fn spawn_text_field(
             spawn_text_input(inputs, value, title, control);
         },
     );
+}
+
+/// The Module Stack's filter query. It lives outside the panel so typing filters rows in place
+/// instead of rebuilding the panel, which would drop the search field's keyboard focus.
+#[derive(Resource, Default)]
+pub(crate) struct ModuleStackFilter {
+    query: String,
+}
+
+/// Marks the Module Stack's filter field.
+#[derive(Component)]
+struct ModuleStackSearch;
+
+/// A stack row's lowercased searchable text: its title, summary and type id.
+#[derive(Component)]
+struct StackRowSearchText(String);
+
+impl StackRowSearchText {
+    fn new(title: &str, summary: &str, type_id: &str) -> Self {
+        Self(format!("{title} {summary} {type_id}").to_lowercase())
+    }
+}
+
+/// Whether a row's searchable text contains every whitespace-separated term of the query.
+fn stack_row_matches(text: &str, query: &str) -> bool {
+    query
+        .split_whitespace()
+        .all(|term| text.contains(&term.to_lowercase()))
+}
+
+fn change_module_stack_filter(
+    event: On<ValueChange<String>>,
+    inputs: Query<(), With<ModuleStackSearch>>,
+    mut filter: ResMut<ModuleStackFilter>,
+) {
+    if inputs.contains(event.source) && filter.query != event.value {
+        filter.query.clone_from(&event.value);
+    }
+}
+
+/// Shows or hides stack rows for the filter query, and seeds a freshly built filter field with the
+/// current query (the panel rebuilds on edits; the query survives).
+fn apply_module_stack_filter(
+    filter: Res<ModuleStackFilter>,
+    added_rows: Query<(), Added<StackRowSearchText>>,
+    mut rows: Query<(&StackRowSearchText, &mut Node)>,
+    added_search: Query<&Children, Added<ModuleStackSearch>>,
+    mut editable: Query<&mut EditableText, With<bevy::feathers::controls::FeathersTextInput>>,
+) {
+    for children in &added_search {
+        for child in children.iter() {
+            if let Ok(mut text) = editable.get_mut(child)
+                && text.value().to_string() != filter.query
+            {
+                text.editor_mut().set_text(&filter.query);
+            }
+        }
+    }
+    if !filter.is_changed() && added_rows.is_empty() {
+        return;
+    }
+    for (text, mut node) in &mut rows {
+        let display = if stack_row_matches(&text.0, &filter.query) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != display {
+            node.display = display;
+        }
+    }
 }
 
 /// Which instance an instance-label text field edits (§28.5).

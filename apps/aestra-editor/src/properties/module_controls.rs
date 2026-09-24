@@ -645,7 +645,8 @@ pub(super) fn begin_module_drag(
     let row_top_left = (row_transform.translation - row_node.size() * 0.5) * scale;
     let mut slots: Vec<DragSlot> = row_geometry
         .iter()
-        .filter(|(_, row, _, _)| stage_of(row.0) == Some(&module.stage))
+        // Rows hidden by the stack filter have no size; they are not drop positions.
+        .filter(|(_, row, node, _)| stage_of(row.0) == Some(&module.stage) && node.size().y > 0.0)
         .map(|(entity, row, node, transform)| DragSlot {
             module: row.0,
             entity,
@@ -926,6 +927,7 @@ pub(super) fn spawn_module_stack_row(
             },
             PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
             ModuleRowDrag(module.id),
+            StackRowSearchText::new(&title, &summary, &module.module_type.0),
             EntityCursor::System(SystemCursorIcon::Grab),
             crate::feathers::tooltip::EditorTooltip::titled(display_name, help),
             Node {
