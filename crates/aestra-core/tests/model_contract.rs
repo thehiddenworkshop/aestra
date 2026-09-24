@@ -188,7 +188,7 @@ fn alternate_property_source_values_round_trip_without_changing_the_format_versi
 
     let encoded = effect.to_pretty_ron().unwrap();
     assert!(encoded.contains("property_source_values"));
-    assert!(encoded.contains("version: 3"));
+    assert!(encoded.contains(&format!("version: {}", aestra_core::CURRENT_FORMAT_VERSION)));
     let decoded = EffectAsset::from_ron(&encoded).unwrap();
     let emission = decoded.emitters[0]
         .modules
@@ -625,7 +625,7 @@ fn emitter_transforms_round_trip_and_reject_degenerate_values() {
 }
 
 #[test]
-fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
+fn reusable_effect_clips_round_trip_without_bumping_the_format() {
     let child = EffectId::from_u128(0xC11D);
     let mut effect = EffectAsset::new("Composition", 3.0);
     let mut clip = EffectClip::new(child, 0.5, 1.5);
@@ -644,7 +644,7 @@ fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
     let decoded = EffectAsset::from_ron(&encoded).unwrap();
 
     assert_eq!(decoded, effect);
-    assert_eq!(decoded.format_version, 3);
+    assert_eq!(decoded.format_version, aestra_core::CURRENT_FORMAT_VERSION);
     assert!(encoded.contains("effect_clips"));
     assert!(encoded.contains("parameter_overrides"));
     assert_eq!(

@@ -592,7 +592,9 @@ impl std::fmt::Display for EffectPlaybackMode {
     }
 }
 
-fn deserialize_playback_mode<'de, D>(deserializer: D) -> Result<EffectPlaybackMode, D::Error>
+pub(crate) fn deserialize_playback_mode<'de, D>(
+    deserializer: D,
+) -> Result<EffectPlaybackMode, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

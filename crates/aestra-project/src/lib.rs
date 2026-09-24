@@ -2337,6 +2337,6 @@ mod tests {
 
     #[test]
     fn current_format_constant_matches_the_loader_contract() {
-        assert_eq!(aestra_core::CURRENT_FORMAT_VERSION, 3);
+        assert_eq!(aestra_core::CURRENT_FORMAT_VERSION, 4);
     }
 }

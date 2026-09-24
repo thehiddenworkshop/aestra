@@ -184,7 +184,12 @@ pub struct AuthoredV4Document {
     pub id: EffectId,
     pub name: String,
     pub duration: f32,
-    #[serde(default)]
+    // Accepts the legacy `looping: bool` spelling, like the flat model does.
+    #[serde(
+        default,
+        alias = "looping",
+        deserialize_with = "crate::model::deserialize_playback_mode"
+    )]
     pub playback_mode: EffectPlaybackMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_transform_track: Option<HostTransformTrack>,
