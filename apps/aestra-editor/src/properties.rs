@@ -2497,6 +2497,70 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_attach_to_their_item_on_path_boundaries() {
+        let item = "effect.emitters[0].modules[1]";
+        assert!(diagnostic_belongs_to(item, item));
+        assert!(diagnostic_belongs_to(
+            "effect.emitters[0].modules[1].parameters.drag",
+            item
+        ));
+        assert!(!diagnostic_belongs_to(
+            "effect.emitters[0].modules[10]",
+            item
+        ));
+        assert!(!diagnostic_belongs_to("effect.emitters[0].modules", item));
+    }
+
+    #[test]
+    fn stack_rows_badge_the_number_of_findings_on_their_item() {
+        let mut session = test_support::session_with_timing_slack();
+        session.diagnostics.diagnostics = vec![
+            aestra_core::Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                "effect.emitters[0].modules[1].parameters.drag",
+                "drag must be finite",
+            ),
+            aestra_core::Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                "effect.emitters[0].modules[1]",
+                "bad module",
+            ),
+            // A different module whose index shares a prefix must not count.
+            aestra_core::Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                "effect.emitters[0].modules[10]",
+                "unrelated",
+            ),
+        ];
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::text::TextPlugin,
+        ));
+        app.world_mut()
+            .commands()
+            .spawn(Node::default())
+            .with_children(|parent| {
+                spawn_row_diagnostics_badge(parent, "effect.emitters[0].modules[1]", &session);
+                spawn_row_diagnostics_badge(parent, "effect.emitters[0].modules[2]", &session);
+            });
+        app.world_mut().flush();
+        let world = app.world_mut();
+        let badges: Vec<Entity> = world
+            .query_filtered::<Entity, With<RowDiagnosticsBadge>>()
+            .iter(world)
+            .collect();
+        assert_eq!(badges.len(), 1, "only the item with findings gets a badge");
+        let count = world
+            .query::<(&ChildOf, &Text)>()
+            .iter(world)
+            .find(|(parent, _)| parent.parent() == badges[0])
+            .map(|(_, text)| text.0.clone());
+        assert_eq!(count.as_deref(), Some("2"));
+    }
+
+    #[test]
     fn instance_labels_are_set_trimmed_cleared_and_undoable() {
         let session = test_support::session_with_timing_slack();
         let layer = session.selected_layer().unwrap();
@@ -6281,8 +6345,15 @@ pub(crate) fn spawn_module_stack_panel(
                             }
                             // Render section.
                             spawn_stage_header(stack, StackStage::Render);
-                            for renderer in &layer.renderers {
-                                spawn_renderer_stack_row(stack, renderer, session);
+                            for (renderer_index, renderer) in layer.renderers.iter().enumerate() {
+                                spawn_renderer_stack_row(
+                                    stack,
+                                    renderer,
+                                    &format!(
+                                        "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
+                                    ),
+                                    session,
+                                );
                             }
                             spawn_stage_diagnostics(
                                 stack,
@@ -8658,6 +8729,89 @@ fn spawn_properties_read_only_control(parent: &mut ChildSpawnerCommands, title: 
         });
 }
 
+/// Whether a diagnostic at `diagnostic_path` belongs to the item at `path`: the item itself or
+/// something inside it. Matches on path boundaries so `modules[1]` never claims `modules[10]`.
+fn diagnostic_belongs_to(diagnostic_path: &str, path: &str) -> bool {
+    diagnostic_path
+        .strip_prefix(path)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+}
+
+fn diagnostic_color(severity: DiagnosticSeverity) -> Color {
+    match severity {
+        DiagnosticSeverity::Error => Color::srgb(1.0, 0.38, 0.32),
+        DiagnosticSeverity::Warning => Color::srgb(1.0, 0.72, 0.28),
+        DiagnosticSeverity::Info => theme::TEXT_MUTED,
+    }
+}
+
+/// A compact diagnostics badge for a stack row: the number of findings on the item, colored by the
+/// most severe one, with the messages in its tooltip. Nothing when the item is clean.
+fn spawn_row_diagnostics_badge(
+    parent: &mut ChildSpawnerCommands,
+    path: &str,
+    session: &EditorSession,
+) {
+    let findings: Vec<_> = session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic_belongs_to(&diagnostic.path, path))
+        .collect();
+    let rank = |severity: DiagnosticSeverity| match severity {
+        DiagnosticSeverity::Error => 2,
+        DiagnosticSeverity::Warning => 1,
+        DiagnosticSeverity::Info => 0,
+    };
+    let Some(worst) = findings
+        .iter()
+        .map(|diagnostic| diagnostic.severity)
+        .max_by_key(|severity| rank(*severity))
+    else {
+        return;
+    };
+    let summary = if findings.len() == 1 {
+        "1 issue".to_owned()
+    } else {
+        format!("{} issues", findings.len())
+    };
+    let details = findings
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    parent
+        .spawn((
+            RowDiagnosticsBadge,
+            EditorTooltip::titled(&summary, &details),
+            AccessibleLabel(summary.clone()),
+            Node {
+                min_width: Val::Px(16.0),
+                height: Val::Px(16.0),
+                padding: UiRect::horizontal(Val::Px(4.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_shrink: 0.0,
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(diagnostic_color(worst)),
+        ))
+        .with_child((
+            Text::new(findings.len().to_string()),
+            TextColor(theme::PANEL_DARK),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+}
+
+/// Marks a stack row's diagnostics badge.
+#[derive(Component)]
+struct RowDiagnosticsBadge;
+
 fn spawn_inline_diagnostics(
     parent: &mut ChildSpawnerCommands,
     path: &str,
@@ -8669,11 +8823,7 @@ fn spawn_inline_diagnostics(
         .iter()
         .filter(|diagnostic| diagnostic.path.starts_with(path))
     {
-        let color = match diagnostic.severity {
-            DiagnosticSeverity::Error => Color::srgb(1.0, 0.38, 0.32),
-            DiagnosticSeverity::Warning => Color::srgb(1.0, 0.72, 0.28),
-            DiagnosticSeverity::Info => theme::TEXT_MUTED,
-        };
+        let color = diagnostic_color(diagnostic.severity);
         parent.spawn((
             Text::new(format!("{:?}: {}", diagnostic.code, diagnostic.message)),
             TextLayout::linebreak(bevy::text::LineBreak::WordOrCharacter),

@@ -2571,6 +2571,7 @@ fn renderer_display_name(renderer: &aestra_core::RendererInstance) -> &'static s
 pub(super) fn spawn_renderer_stack_row(
     parent: &mut ChildSpawnerCommands,
     renderer: &aestra_core::RendererInstance,
+    diagnostic_path: &str,
     session: &EditorSession,
 ) {
     let display_name = renderer_display_name(renderer);
@@ -2642,6 +2643,7 @@ pub(super) fn spawn_renderer_stack_row(
                 },
                 Pickable::IGNORE,
             ));
+            spawn_row_diagnostics_badge(row, diagnostic_path, session);
             spawn_renderer_header_actions(row, renderer);
         });
 }

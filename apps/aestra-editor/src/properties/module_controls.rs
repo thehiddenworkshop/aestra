@@ -444,7 +444,7 @@ fn module_row_border(
         .diagnostics
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
+        .any(|diagnostic| diagnostic_belongs_to(&diagnostic.path, diagnostic_path))
     {
         Color::srgb(0.82, 0.28, 0.24)
     } else if session.selection.primary == SemanticTarget::Module(module.id) {
@@ -1000,6 +1000,7 @@ pub(super) fn spawn_module_stack_row(
                     Pickable::IGNORE,
                 ));
             }
+            spawn_row_diagnostics_badge(row, diagnostic_path, session);
             spawn_module_header_actions(row, module, display_name);
         });
 }
