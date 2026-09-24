@@ -1277,6 +1277,10 @@ fn action(
                 },
                 view: action.scope,
             },
+            editing_target: crate::material_document::MaterialEditingTarget::Function {
+                root: catalog.root().to_owned(),
+                id: action.owner,
+            },
             scope: arrange_scope,
             seeds: selection.function_arrange_seeds(action.scope, action.owner),
         });

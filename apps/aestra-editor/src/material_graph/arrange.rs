@@ -45,6 +45,7 @@ impl ArrangeScope {
 #[derive(Event, Debug, Clone)]
 pub(crate) struct ArrangeGraph {
     pub view: GraphViewKey,
+    pub editing_target: crate::material_document::MaterialEditingTarget,
     pub scope: ArrangeScope,
     pub seeds: BTreeSet<GraphNodeKey>,
 }
@@ -103,6 +104,7 @@ fn request(
     let scope = event.event().scope;
     let result = prepare(
         event.event().view.clone(),
+        &event.event().editing_target,
         scope,
         &event.event().seeds,
         &catalog,
@@ -146,6 +148,7 @@ type Prepared = (
 
 fn prepare(
     view: GraphViewKey,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     scope: ArrangeScope,
     seeds: &BTreeSet<GraphNodeKey>,
     catalog: &ProjectEffectCatalog,
@@ -188,7 +191,7 @@ fn prepare(
         .collect::<BTreeMap<_, _>>();
     let (graph, mut adapter) = match view.document.asset {
         DocumentKey::MaterialProgram(id) => {
-            let document = session.graph_authoring_document(catalog)?;
+            let document = material_document_for_arrangement(editing_target, id, session, catalog)?;
             let program = document
                 .programs
                 .iter()
@@ -206,11 +209,10 @@ fn prepare(
             )
         }
         DocumentKey::MaterialFunction(id) => {
-            let target = crate::material_document::MaterialEditingTarget::Function {
-                root: catalog.root().to_owned(),
-                id,
-            };
-            let function = session.graph_function_for(&target, catalog)?;
+            if editing_target.function() != Some(id) {
+                return Err("the function target no longer matches this graph".into());
+            }
+            let function = session.graph_function_for(editing_target, catalog)?;
             let library = catalog.material_function_library()?;
             let projection = MaterialCompiler.project_function_graph(&function, &library);
             (
@@ -261,6 +263,24 @@ fn prepare(
     let before = presentation::Snapshot::capture(&graph, catalog, session, memory)
         .ok_or("the graph presentation is unavailable")?;
     Ok((view, viewport, snapshot, graph, adapter, before, work))
+}
+
+fn material_document_for_arrangement(
+    target: &crate::material_document::MaterialEditingTarget,
+    program: MaterialProgramId,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+) -> Result<MaterialAuthoringDocument, String> {
+    if target.program().is_some_and(|id| id != program) || target.function().is_some() {
+        return Err("the material target no longer matches this graph".into());
+    }
+    let document = session.graph_authoring_document_for(target, catalog)?;
+    document
+        .programs
+        .iter()
+        .any(|candidate| candidate.id == program)
+        .then_some(document)
+        .ok_or_else(|| "the material is no longer available in this document".into())
 }
 
 fn poll(
@@ -329,5 +349,42 @@ fn memory_key(asset: DocumentKey, node: GraphNodeKey) -> Result<String, &'static
         (DocumentKey::MaterialFunction(_), GraphNodeKey::Expression(id)) => Ok(id.to_string()),
         (DocumentKey::MaterialFunction(_), GraphNodeKey::FunctionOutputs) => Ok("outputs".into()),
         _ => Err("layout node kind does not match the graph document"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restored_material_tab_arranges_from_its_explicit_target_before_focus() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Restored arrange graph").normalized();
+        program
+            .save_ron(root.path().join("restored.aestra.material.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let session = crate::test_support::session_with_timing_slack();
+        let target = crate::material_document::MaterialEditingTarget::Program {
+            root: root.path().to_owned(),
+            id: program.id,
+        };
+
+        assert_eq!(
+            session.material_target,
+            crate::material_document::MaterialEditingTarget::EffectInstance
+        );
+        assert!(
+            session
+                .graph_authoring_document(&catalog)
+                .is_ok_and(|document| document
+                    .programs
+                    .iter()
+                    .all(|candidate| candidate.id != program.id))
+        );
+
+        let document =
+            material_document_for_arrangement(&target, program.id, &session, &catalog).unwrap();
+        assert_eq!(document.programs.as_slice(), [program]);
     }
 }

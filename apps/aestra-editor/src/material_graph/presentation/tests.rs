@@ -239,8 +239,14 @@ fn palette_creation_placement_is_one_undo_and_failed_creation_leaves_it_unchange
         .init_resource::<MaterialGraphSelectionState>();
     let graph = material_graph_view_key(program.id);
     let effect = app.world().resource::<EditorSession>().effect.clone();
+    let editing_target = app
+        .world()
+        .resource::<EditorSession>()
+        .material_target
+        .clone();
     let action = MaterialGraphPaletteAction {
         program: program.id,
+        editing_target,
         scope: None,
         kind: MaterialGraphCreateKind::Function(aestra_compiler::MaterialGraphFunction::Multiply),
         source: None,
