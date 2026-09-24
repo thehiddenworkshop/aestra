@@ -48,6 +48,15 @@ enum SocketKind {
     Target(Target),
 }
 
+impl SocketKind {
+    fn side(self) -> GraphSocketSide {
+        match self {
+            Self::Source(_) => GraphSocketSide::Output,
+            Self::Target(_) => GraphSocketSide::Input,
+        }
+    }
+}
+
 fn function_socket_positions(
     viewport: Entity,
     owner: MaterialFunctionId,
@@ -66,8 +75,15 @@ fn function_socket_positions(
         .filter_map(|(socket, transform, anchor)| {
             let (node, computed, node_transform) = graph_nodes.get(socket.node).ok()?;
             let (_, _, world) = transform.to_scale_angle_translation();
-            let offset = anchor.0.unwrap_or_else(|| {
-                crate::material_graph::viewport_local_position(computed, node_transform, world)
+            let offset = crate::feathers::node_graph::compact_graph_socket_offset(
+                node,
+                computed,
+                socket.kind.side(),
+            )
+            .unwrap_or_else(|| {
+                anchor.0.unwrap_or_else(|| {
+                    crate::material_graph::viewport_local_position(computed, node_transform, world)
+                })
             });
             Some((socket.kind, node.position() + offset))
         })
@@ -2155,8 +2171,15 @@ fn update_wires(
             continue;
         }
         let (_, _, world) = transform.to_scale_angle_translation();
-        let offset = *anchor.0.get_or_insert_with(|| {
-            crate::material_graph::viewport_local_position(computed, node_transform, world)
+        let offset = crate::feathers::node_graph::compact_graph_socket_offset(
+            node,
+            computed,
+            socket.kind.side(),
+        )
+        .unwrap_or_else(|| {
+            *anchor.0.get_or_insert_with(|| {
+                crate::material_graph::viewport_local_position(computed, node_transform, world)
+            })
         });
         positions.push((socket, node.position() + offset));
     }

@@ -622,6 +622,10 @@ impl FeathersGraphNode {
         self.position
     }
 
+    pub(crate) fn collapsed(&self) -> bool {
+        self.collapsed
+    }
+
     pub(crate) fn graph_key(&self) -> &str {
         &self.graph_key
     }
@@ -646,6 +650,39 @@ impl FeathersGraphNode {
     pub(crate) fn consume_suppressed_release_click(&mut self) -> bool {
         std::mem::take(&mut self.suppress_release_click)
     }
+}
+
+/// Returns the graph-local proxy anchor used by wires while a node is compact.
+///
+/// A compact node hides its body and therefore its real socket entities. Their cached UI
+/// transforms must not be used: they describe the expanded body and can lag behind the compact
+/// layout. Instead, all inputs converge on the left edge of the header and all outputs on the
+/// right edge. Expanded nodes keep using their measured socket positions.
+pub(crate) fn compact_graph_socket_offset(
+    node: &FeathersGraphNode,
+    computed: &ComputedNode,
+    side: GraphSocketSide,
+) -> Option<Vec2> {
+    let size = computed.size() * computed.inverse_scale_factor;
+    compact_graph_socket_offset_for_size(node.collapsed(), size, side)
+}
+
+fn compact_graph_socket_offset_for_size(
+    collapsed: bool,
+    size: Vec2,
+    side: GraphSocketSide,
+) -> Option<Vec2> {
+    if !collapsed || !size.is_finite() || size.min_element() <= 0.0 {
+        return None;
+    }
+
+    Some(Vec2::new(
+        match side {
+            GraphSocketSide::Input => 0.0,
+            GraphSocketSide::Output => size.x,
+        },
+        size.y * 0.5,
+    ))
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -1196,7 +1233,6 @@ fn drag_graph_node(
     mut drag: On<Pointer<Drag>>,
     mut nodes: Query<(&mut FeathersGraphNode, &mut Node, &ComputedNode)>,
     parents: Query<&ChildOf>,
-    controls: Query<(), GraphNodeControlFilter>,
     mut assistance: drag_assist::Context,
     gesture: Res<GraphNodeDragGesture>,
     mut memory: ResMut<GraphViewportMemory>,
@@ -1206,12 +1242,10 @@ fn drag_graph_node(
     if drag.button != PointerButton::Primary {
         return;
     }
-    let Some(entity) = graph_node_from_target(
-        drag.event_target(),
-        &nodes.as_readonly(),
-        &parents,
-        &controls,
-    ) else {
+    // The press target can be reported through a rebuilt header child after a collapse or preview
+    // action. The gesture captured the actual node at DragStart, so it is the durable owner for
+    // every subsequent motion event.
+    let Some(entity) = gesture.active else {
         return;
     };
     let Ok((graph_node, _, computed)) = nodes.get(entity) else {
@@ -1283,8 +1317,6 @@ fn graph_drag_delta(screen_delta: Vec2, zoom: f32) -> Vec2 {
 fn end_graph_node_drag(
     mut drag: On<Pointer<DragEnd>>,
     mut nodes: Query<(&mut FeathersGraphNode, &mut Node)>,
-    parents: Query<&ChildOf>,
-    controls: Query<(), GraphNodeControlFilter>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
     mut memory: ResMut<GraphViewportMemory>,
@@ -1294,59 +1326,56 @@ fn end_graph_node_drag(
     if drag.button != PointerButton::Primary {
         return;
     }
-    let Some(entity) = graph_node_from_target(
-        drag.event_target(),
-        &nodes.as_readonly(),
-        &parents,
-        &controls,
-    ) else {
-        return;
-    };
-    let Ok((mut node, mut style)) = nodes.get_mut(entity) else {
+    // DragEnd may bubble from a collapse/preview control, or from a freshly rebuilt descendant.
+    // Always finish the node captured at DragStart so the cursor and helper state cannot remain
+    // active after the pointer is released.
+    let Some(entity) = gesture.active else {
         return;
     };
     let mut edit = None;
     let mut modified = None;
     let mut batch = None;
-    if let Some(before) = node.drag_before.take() {
-        let after = (node.position, node.collapsed);
-        if before != after {
-            if let Some(modifier) = node.drag_modifier.take() {
-                modified = Some(GraphModifiedNodeDrag {
-                    graph: node.graph_key.clone(),
-                    node: node.node_key.clone(),
-                    before,
-                    after,
-                    modifier,
-                });
-                if modifier == GraphNodeDragModifier::Duplicate {
-                    node.position = before.0;
-                    style.left = Val::Px(before.0.x);
-                    style.top = Val::Px(before.0.y);
-                    memory.set_node(&node.graph_key, &node.node_key, before.0, before.1);
-                }
-            } else {
-                // A displaced node's displayed drop location becomes its authored base,
-                // including a drag-start/end with no intervening motion event.
-                memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
-                if gesture.before.len() > 1 {
-                    batch = Some(GraphPresentationBatchEdit {
-                        graph: node.graph_key.clone(),
-                        before: std::mem::take(&mut gesture.before),
-                    });
-                } else {
-                    edit = Some(GraphPresentationEdit {
+    if let Ok((mut node, mut style)) = nodes.get_mut(entity) {
+        if let Some(before) = node.drag_before.take() {
+            let after = (node.position, node.collapsed);
+            if before != after {
+                if let Some(modifier) = node.drag_modifier.take() {
+                    modified = Some(GraphModifiedNodeDrag {
                         graph: node.graph_key.clone(),
                         node: node.node_key.clone(),
                         before,
                         after,
+                        modifier,
                     });
+                    if modifier == GraphNodeDragModifier::Duplicate {
+                        node.position = before.0;
+                        style.left = Val::Px(before.0.x);
+                        style.top = Val::Px(before.0.y);
+                        memory.set_node(&node.graph_key, &node.node_key, before.0, before.1);
+                    }
+                } else {
+                    // A displaced node's displayed drop location becomes its authored base,
+                    // including a drag-start/end with no intervening motion event.
+                    memory.set_node(&node.graph_key, &node.node_key, after.0, after.1);
+                    if gesture.before.len() > 1 {
+                        batch = Some(GraphPresentationBatchEdit {
+                            graph: node.graph_key.clone(),
+                            before: std::mem::take(&mut gesture.before),
+                        });
+                    } else {
+                        edit = Some(GraphPresentationEdit {
+                            graph: node.graph_key.clone(),
+                            node: node.node_key.clone(),
+                            before,
+                            after,
+                        });
+                    }
                 }
             }
         }
+        node.drag_modifier = None;
+        node.end_drag();
     }
-    node.drag_modifier = None;
-    node.end_drag();
     commands.queue(move |world: &mut World| {
         insertion::finish(world, entity, edit);
         if let Some(modified) = modified {
@@ -2341,6 +2370,35 @@ mod tests {
         assert!(
             actual.distance(expected) < 0.001,
             "expected {expected:?}, got {actual:?}"
+        );
+    }
+
+    #[test]
+    fn compact_nodes_route_wires_to_header_edges() {
+        let size = Vec2::new(180.0, 42.0);
+        assert_eq!(
+            compact_graph_socket_offset_for_size(true, size, GraphSocketSide::Input),
+            Some(Vec2::new(0.0, 21.0))
+        );
+        assert_eq!(
+            compact_graph_socket_offset_for_size(true, size, GraphSocketSide::Output),
+            Some(Vec2::new(180.0, 21.0))
+        );
+    }
+
+    #[test]
+    fn expanded_or_unmeasured_nodes_do_not_use_compact_proxy_anchors() {
+        assert_eq!(
+            compact_graph_socket_offset_for_size(
+                false,
+                Vec2::new(180.0, 42.0),
+                GraphSocketSide::Input,
+            ),
+            None
+        );
+        assert_eq!(
+            compact_graph_socket_offset_for_size(true, Vec2::ZERO, GraphSocketSide::Output),
+            None
         );
     }
 

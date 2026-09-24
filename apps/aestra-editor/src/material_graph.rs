@@ -1105,6 +1105,15 @@ enum MaterialGraphSocketKind {
     ConnectionInput(MaterialConnectionTarget),
 }
 
+impl MaterialGraphSocketKind {
+    fn side(self) -> GraphSocketSide {
+        match self {
+            Self::ExpressionOutput(_) => GraphSocketSide::Output,
+            Self::ConnectionInput(_) => GraphSocketSide::Input,
+        }
+    }
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 struct MaterialGraphSocket {
     program: MaterialProgramId,
@@ -1123,6 +1132,7 @@ struct MaterialGraphSocketPosition {
     kind: MaterialGraphSocketKind,
     graph: Vec2,
     world: Vec2,
+    interactive: bool,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -2966,14 +2976,22 @@ fn update_material_graph_wires(
             continue;
         };
         let (_, _, world) = transform.to_scale_angle_translation();
-        let offset = *anchor
-            .offset
-            .get_or_insert_with(|| viewport_local_position(computed, node_transform, world));
+        let compact_offset = crate::feathers::node_graph::compact_graph_socket_offset(
+            node,
+            computed,
+            socket.kind.side(),
+        );
+        let offset = compact_offset.unwrap_or_else(|| {
+            *anchor
+                .offset
+                .get_or_insert_with(|| viewport_local_position(computed, node_transform, world))
+        });
         socket_positions.push(MaterialGraphSocketPosition {
             program: socket.program,
             kind: socket.kind,
             graph: node.position() + offset,
             world,
+            interactive: compact_offset.is_none(),
         });
     }
 
@@ -3062,7 +3080,7 @@ fn update_material_graph_wires(
     let document = session.graph_authoring_document(&catalog).ok();
     let mut nearest: Option<(f32, MaterialGraphSocketKind, Vec2)> = None;
     for socket in &socket_positions {
-        if socket.program != *program {
+        if socket.program != *program || !socket.interactive {
             continue;
         }
         let Some((source, target)) = connection_endpoints(*origin, socket.kind) else {
@@ -3172,14 +3190,22 @@ fn collect_socket_positions(
         .filter_map(|(socket, transform, anchor)| {
             let (node, computed, node_transform) = graph_nodes.get(anchor.node).ok()?;
             let (_, _, world) = transform.to_scale_angle_translation();
-            let offset = anchor
-                .offset
-                .unwrap_or_else(|| viewport_local_position(computed, node_transform, world));
+            let compact_offset = crate::feathers::node_graph::compact_graph_socket_offset(
+                node,
+                computed,
+                socket.kind.side(),
+            );
+            let offset = compact_offset.unwrap_or_else(|| {
+                anchor
+                    .offset
+                    .unwrap_or_else(|| viewport_local_position(computed, node_transform, world))
+            });
             Some(MaterialGraphSocketPosition {
                 program: socket.program,
                 kind: socket.kind,
                 graph: node.position() + offset,
                 world,
+                interactive: compact_offset.is_none(),
             })
         })
         .collect()

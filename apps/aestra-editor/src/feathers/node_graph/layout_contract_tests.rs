@@ -248,6 +248,62 @@ fn pointer_drag_uses_own_view_zoom_and_inverse_ui_scale_without_semantic_edits()
     }
 }
 
+#[test]
+fn drag_release_through_a_header_control_clears_the_node_and_cursor_gesture() {
+    let mut app = App::new();
+    app.init_resource::<GraphViewportMemory>()
+        .init_resource::<OverrideCursor>()
+        .init_resource::<drag_assist::State>()
+        .init_resource::<GraphNodeDragGesture>()
+        .add_observer(end_graph_node_drag);
+
+    let mut graph_node = node("material:p", "expression:n");
+    graph_node.begin_drag();
+    let entity = app.world_mut().spawn((graph_node, Node::default())).id();
+    let control = app
+        .world_mut()
+        .spawn((FeathersActionButton, ChildOf(entity)))
+        .id();
+    {
+        let mut gesture = app.world_mut().resource_mut::<GraphNodeDragGesture>();
+        gesture.active = Some(entity);
+        gesture.members.insert(entity);
+    }
+    app.world_mut().resource_mut::<OverrideCursor>().0 =
+        Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        Location {
+            target: bevy::camera::NormalizedRenderTarget::None {
+                width: 800,
+                height: 600,
+            },
+            position: Vec2::new(100.0, 120.0),
+        },
+        DragEnd {
+            button: PointerButton::Primary,
+            distance: Vec2::new(30.0, 12.0),
+        },
+        control,
+    ));
+    app.world_mut().flush();
+
+    assert!(
+        !app.world()
+            .get::<FeathersGraphNode>(entity)
+            .unwrap()
+            .dragging
+    );
+    assert!(
+        app.world()
+            .resource::<GraphNodeDragGesture>()
+            .active
+            .is_none()
+    );
+    assert!(app.world().resource::<OverrideCursor>().0.is_none());
+}
+
 #[derive(Resource, Default)]
 struct Edits(Vec<GraphPresentationEdit>);
 
