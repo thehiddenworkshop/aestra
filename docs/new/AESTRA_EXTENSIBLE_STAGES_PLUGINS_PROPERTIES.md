@@ -2811,35 +2811,35 @@ renderer plan — without adding a `RendererPlanKind` variant to core, and witho
 
 ## Milestone 9 — Properties stack + focused Inspector redesign
 
-> **Status — 9a shell landed; 9b surfacing landed, editable schema controls deferred.** The Properties
-> panel is now the Niagara-style shell (§28.1–28.3): a compact, stage-grouped stack of short rows on
-> top and a focused, selection-following inspector below, split by a **draggable, persisted** divider.
-> - **Data foundation:** `aestra-compiler/src/module_stack.rs` — `EmitterStackProjection` /
->   `ModuleStackGroup` / `ModuleStackRow` + `EffectCompiler::project_emitter_stack` + `module_summary`
->   (descriptor-driven one-line summaries), tested engine-independently.
-> - **Shell (9a):** each module/renderer is one ~26px selectable row (name + summary + enabled toggle +
->   action menu, no inline controls — `spawn_module_stack_row` / `spawn_renderer_stack_row`); the
->   selected row's full controls render in the inspector (`spawn_module_inspector` / expanded
->   `spawn_renderer_card`). Selection + border highlight reuse the existing global
->   `select_properties_header` observer + `PropertiesSemanticTarget`, so the panel rebuild follows the
->   selection. The stack region is a fixed, resizable height (`PropertiesStackPane`, `PropertiesSplitGrip`
->   with DragStart/Drag/DragEnd observers); the height persists in `settings.properties.stack_height`
->   (serde-defaulted, `clamped_stack_height`) and neither region can be dragged shut. Descriptor
->   summaries also show on the collapsible cards via `PanelCardProps::with_summary`.
-> - **Missing-plugin surfacing (9b, §20):** an unregistered plugin/custom module (no metadata in the
->   built-in registry) renders its preserved `ModuleParameters::Custom` payload as read-only value rows
->   with a "not installed / preserved" note (`spawn_custom_module_properties`,
->   `format_custom_property_value`), so authored data is surfaced rather than dropped.
+> **Status — done (9a complete; 9b's editable plugin controls move to M10).** Following review against
+> UE5 Niagara and Houdini, the layout became two dock panels rather than one split panel:
+> - **Module Stack panel** (`ToolPanel::ModuleStack`, `properties/stack_panel.rs`): navigation only —
+>   selectable Effect and Emitter items, then every fixed lifecycle section (EMITTER SPAWN shown even
+>   when empty, §31.2), one section per authored simulation stage (§28.3), and RENDER. Each module or
+>   renderer is one compact row: drag handle, title, descriptor-driven summary (`module_summary`),
+>   diagnostics badge (count + worst severity + tooltip), enabled toggle and action menu. A filter box
+>   narrows rows in place. Default layout docks it above Properties; `migrate_add_module_stack` adds it
+>   to layouts saved before it existed.
+> - **Properties panel** (`properties/inspector.rs`): purely the selected item's details — effect name;
+>   emitter name/enabled/capacity/transform/timing/event links; a module's controls; a renderer's card;
+>   plus an instance **Label** field. No always-on chrome (the dock tab, breadcrumb and status bar
+>   already carry panel name, context and compile state).
+> - **Drag reorder (§28.4)**: rows lift into a shadowed copy that follows the cursor from the grab
+>   point; the rows it passes slide aside with eased `UiTransform` offsets (layout never changes
+>   mid-drag); the drop commits from the tracked insertion point as one undoable `MoveModule`. Same-stage
+>   only. Every from→to move is covered by tests through the session.
+> - **Repeated instances (§28.5)**: optional authored `label` on `ModuleInstance`/`RendererInstance`
+>   (omitted from files when unset; undoable `SetModuleLabel`/`SetRendererLabel`). Titles read
+>   `Collision "Ground"`; unlabelled repeats are numbered `Motion #2` (`instance_title` in
+>   `aestra-compiler/src/module_stack.rs`).
+> - **Data foundation**: `EmitterStackProjection` / `ModuleStackRow` (with `title`) +
+>   `project_emitter_stack`, engine-independent and tested.
+> - **Missing plugins (§20)**: an unregistered module's preserved `Custom` payload renders read-only.
 >
-> **Deliberately deferred:** *editable* schema-driven controls for plugin/custom modules — the built-in
-> control widgets are keyed by `&'static` input names and `u8` indices, so runtime-String-keyed editable
-> controls need the plugin registry/loading (M10) to publish a real `PropertySchema` to drive and verify
-> them (built-ins already expose `ModuleMetadata::property_schema` / `InputControl::to_property_control`
-> for that convergence). Also deferred, not yet wired into the editor stack: `EMITTER SPAWN` and authored
-> **simulation-stage** sections (the compiler projection already groups them; the editor panel still
-> renders the four fixed `StackStage`s), drag-reorder, stack filtering, repeated-instance disambiguated
-> names, diagnostics badges as chips, keyboard/context move actions, and the `properties.rs` module
-> refactor.
+> **Moved to M10:** *editable* schema-driven controls for plugin modules — they need a real registered
+> `PropertySchema`, which M10's example plugin provides. **Left for later:** further splitting of the
+> legacy property-control code in `properties.rs` (the M9 panel code is already in its own modules), and
+> keyboard reordering beyond the existing Move up/down actions.
 
 ### Goal
 
