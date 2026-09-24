@@ -48,8 +48,8 @@ pub(crate) mod wesl;
 
 pub(crate) use module_controls::PropertySourceKind;
 use module_controls::{
-    ModuleDragState, begin_module_drag, end_module_drag, handle_module_action, hover_module_drag,
-    move_module_drag, numeric_source_limits, properties_curve_limits, reorder_modules_on_drop,
+    ModuleDragState, animate_module_row_slides, begin_module_drag, end_module_drag,
+    handle_module_action, move_module_drag, numeric_source_limits, properties_curve_limits,
     spawn_module_inspector, spawn_module_stack_row,
 };
 #[cfg(test)]
@@ -138,11 +138,10 @@ impl Plugin for PropertiesPlugin {
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
             .add_observer(select_properties_header)
-            .add_observer(reorder_modules_on_drop)
             .add_observer(begin_module_drag)
             .add_observer(move_module_drag)
-            .add_observer(hover_module_drag)
             .add_observer(end_module_drag)
+            .add_systems(Update, animate_module_row_slides)
             .add_systems(Update, module_palette_keyboard.in_set(PropertiesSet::Input))
             .add_systems(
                 Update,

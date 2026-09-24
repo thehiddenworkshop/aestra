@@ -490,41 +490,52 @@ fn spawn_module_header_actions(
     );
 }
 
-/// Tags a module stack row as a drag source and drop target for reordering (extensible-stages M9,
-/// §28.4). Carries the row's module id so a drop can reorder the dragged module onto this one.
+/// Tags a module stack row as a drag source for reordering (extensible-stages M9, §28.4). Carries the
+/// row's module id.
 #[derive(Component, Clone, Copy)]
 pub(super) struct ModuleRowDrag(ModuleId);
 
-/// The module id of the stack row at `entity` or an ancestor (drops land on inner children).
-fn module_row_at(
-    mut entity: Entity,
-    rows: &Query<&ModuleRowDrag>,
-    parents: &Query<&ChildOf>,
-) -> Option<ModuleId> {
-    loop {
-        if let Ok(row) = rows.get(entity) {
-            return Some(row.0);
-        }
-        entity = parents.get(entity).ok()?.parent();
-    }
-}
-
-/// The floating drag proxy that follows the cursor while a module row is dragged (§28.4) — a full-width
-/// copy of the row, so the whole section appears to lift out and move.
+/// The floating copy of the dragged row that tracks the cursor (§28.4).
 #[derive(Component)]
 pub(super) struct ModuleDragGhost;
 
-/// Tracks the active module drag (§28.4): the floating proxy, the original row hidden while it drags,
-/// the row currently showing an insertion gap, and the dragged module for same-stage checks.
+/// An animated vertical offset for a row that slides aside during a drag (§28.4). Rows move with a
+/// `UiTransform`, never by changing layout, so nothing shifts under the cursor mid-drag.
+#[derive(Component, Default)]
+pub(super) struct ModuleRowSlide {
+    target: f32,
+    current: f32,
+}
+
+/// One same-stage row captured when a drag starts: its module, entity and (UI-unit) vertical center.
+/// Insertion is computed against these frozen positions, so sliding rows never feed back into it.
+struct DragSlot {
+    module: ModuleId,
+    entity: Entity,
+    center_y: f32,
+}
+
+struct ActiveModuleDrag {
+    /// The entity the drag started on (the row or one of its children); drag events target it.
+    source: Entity,
+    /// The original row, hidden while its copy is dragged.
+    row: Entity,
+    ghost: Entity,
+    /// The ghost's top-left at drag start (the row's own position), in UI units.
+    ghost_origin: Vec2,
+    /// Distance between consecutive rows, in UI units.
+    pitch: f32,
+    /// The dragged row's stage, in visual order (includes the dragged row).
+    slots: Vec<DragSlot>,
+    dragged_slot: usize,
+    /// Where the dragged row would land, as an index into the final order of `slots`.
+    insert_at: usize,
+}
+
+/// Tracks the active module drag (§28.4).
 #[derive(Resource, Default)]
 pub(crate) struct ModuleDragState {
-    ghost: Option<Entity>,
-    hidden_row: Option<Entity>,
-    gap_row: Option<Entity>,
-    /// Whether the current gap is below (`true`) or above (`false`) `gap_row`, i.e. whether a drop
-    /// would land after or before that row.
-    gap_after: bool,
-    dragged: Option<ModuleId>,
+    active: Option<ActiveModuleDrag>,
 }
 
 /// The vertical grip icon that marks a row as draggable (§28.4), reused by the row and the drag proxy
@@ -569,50 +580,15 @@ fn module_row_entity(
     }
 }
 
-/// The default top margin of a stack row (matches `spawn_module_stack_row`), restored after an
-/// insertion gap is cleared.
-const MODULE_ROW_MARGIN_TOP: f32 = 1.0;
-/// The gap opened above the hovered row so the dragged row has room to drop (§28.4).
-const MODULE_ROW_GAP: f32 = 30.0;
-
-/// Reorders modules by drag-and-drop within the stack (§28.4): when one row is dropped onto another,
-/// the dragged module takes the target's slot. The session enforces same-stage-only and undoability.
-/// Registered globally (like the timeline's drop handlers); it filters to drops between module rows.
-pub(super) fn reorder_modules_on_drop(
-    mut drop: On<Pointer<DragDrop>>,
-    rows: Query<&ModuleRowDrag>,
-    parents: Query<&ChildOf>,
-    state: Res<ModuleDragState>,
-    mut session: ResMut<EditorSession>,
-) {
-    if drop.button != PointerButton::Primary {
-        return;
-    }
-    let (Some(dragged), Some((target_entity, target))) = (
-        module_row_at(drop.dropped, &rows, &parents),
-        module_row_entity(drop.entity, &rows, &parents),
-    ) else {
-        return;
-    };
-    if dragged == target {
-        return;
-    }
-    drop.propagate(false);
-    // Drop on the side the insertion gap is showing for this row (pointer top/bottom half).
-    let after = state.gap_row == Some(target_entity) && state.gap_after;
-    session.reorder_module_relative(dragged, target, after);
-}
-
-/// Lifts a module row into a floating full-width proxy when it starts dragging (§28.4): the original
-/// row is hidden (so the list closes up) and a copy at the cursor takes its place. `Pickable::IGNORE`
-/// keeps the proxy from intercepting the drop target beneath the cursor.
+/// Starts a module drag (§28.4). Captures the dragged row's stage in visual order, hides the original
+/// row (keeping its layout slot, so nothing moves), and spawns a copy exactly over it. That copy then
+/// moves by the cursor's travel, so the row is picked up where it is instead of jumping to the pointer.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn begin_module_drag(
-    event: On<Pointer<DragStart>>,
+    mut event: On<Pointer<DragStart>>,
     rows: Query<&ModuleRowDrag>,
     parents: Query<&ChildOf>,
-    computed: Query<&ComputedNode>,
-    mut nodes: Query<&mut Node>,
+    row_geometry: Query<(Entity, &ModuleRowDrag, &ComputedNode, &UiGlobalTransform)>,
     session: Res<EditorSession>,
     registry: Res<EditorModuleRegistry>,
     asset_server: Res<AssetServer>,
@@ -625,10 +601,51 @@ pub(super) fn begin_module_drag(
     let Some((row_entity, module_id)) = module_row_entity(event.entity, &rows, &parents) else {
         return;
     };
+    // Pointer events bubble through the row's ancestors; handle the drag once.
+    event.propagate(false);
+    if state
+        .active
+        .as_ref()
+        .is_some_and(|drag| drag.row == row_entity)
+    {
+        return;
+    }
+    if let Some(stale) = state.active.take() {
+        commands.entity(stale.ghost).try_despawn();
+        commands.entity(stale.row).insert(Visibility::Inherited);
+    }
     let Some(layer) = session.selected_layer() else {
         return;
     };
     let Some(module) = layer.modules.iter().find(|module| module.id == module_id) else {
+        return;
+    };
+    let stage_of = |id: ModuleId| {
+        layer
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .map(|candidate| &candidate.stage)
+    };
+    let Ok((_, _, row_node, row_transform)) = row_geometry.get(row_entity) else {
+        return;
+    };
+    // UiGlobalTransform and ComputedNode are physical pixels; inverse_scale_factor gives UI units,
+    // the same units the ghost's absolute `left`/`top` use.
+    let scale = row_node.inverse_scale_factor();
+    let row_size = row_node.size() * scale;
+    let row_top_left = (row_transform.translation - row_node.size() * 0.5) * scale;
+    let mut slots: Vec<DragSlot> = row_geometry
+        .iter()
+        .filter(|(_, row, _, _)| stage_of(row.0) == Some(&module.stage))
+        .map(|(entity, row, node, transform)| DragSlot {
+            module: row.0,
+            entity,
+            center_y: transform.translation.y * node.inverse_scale_factor(),
+        })
+        .collect();
+    slots.sort_by(|a, b| a.center_y.total_cmp(&b.center_y));
+    let Some(dragged_slot) = slots.iter().position(|slot| slot.entity == row_entity) else {
         return;
     };
     let name = registry
@@ -637,18 +654,17 @@ pub(super) fn begin_module_drag(
         .map(|metadata| metadata.display_name.to_string())
         .unwrap_or_else(|| module.module_type.0.clone());
     let summary = aestra_compiler::module_summary(module);
-    let width = computed
-        .get(row_entity)
-        .map(|node| node.size().x * node.inverse_scale_factor())
-        .unwrap_or(280.0);
-    // Hide the original so the surrounding rows close up around the lifted proxy.
-    if let Ok(mut node) = nodes.get_mut(row_entity) {
-        node.display = Display::None;
+
+    // Hide the original but keep its slot: the neighbours slide over it as the insertion point moves.
+    commands.entity(row_entity).insert(Visibility::Hidden);
+    for slot in &slots {
+        if slot.entity != row_entity {
+            commands.entity(slot.entity).insert((
+                ModuleRowSlide::default(),
+                EntityCursor::System(SystemCursorIcon::Grabbing),
+            ));
+        }
     }
-    if let Some(ghost) = state.ghost.take() {
-        commands.entity(ghost).try_despawn();
-    }
-    let position = event.pointer_location.position;
     let ghost = commands
         .spawn((
             ModuleDragGhost,
@@ -656,9 +672,10 @@ pub(super) fn begin_module_drag(
             GlobalZIndex(400),
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(position.x + 6.0),
-                top: Val::Px(position.y - 12.0),
-                width: Val::Px(width),
+                left: Val::Px(row_top_left.x),
+                top: Val::Px(row_top_left.y),
+                width: Val::Px(row_size.x),
+                height: Val::Px(row_size.y),
                 align_items: AlignItems::Center,
                 column_gap: Val::Px(6.0),
                 padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
@@ -668,6 +685,13 @@ pub(super) fn begin_module_drag(
             },
             BackgroundColor(theme::PANEL_LIGHT),
             BorderColor::all(theme::ACCENT),
+            BoxShadow::new(
+                Color::BLACK.with_alpha(0.45),
+                Val::Px(0.0),
+                Val::Px(4.0),
+                Val::Px(0.0),
+                Val::Px(10.0),
+            ),
         ))
         .with_children(|row| {
             spawn_module_drag_handle(row, &asset_server);
@@ -707,106 +731,160 @@ pub(super) fn begin_module_drag(
             }
         })
         .id();
-    state.ghost = Some(ghost);
-    state.hidden_row = Some(row_entity);
-    state.gap_row = None;
-    state.dragged = Some(module_id);
-}
-
-/// Moves the drag proxy to follow the cursor for the duration of the drag (§28.4).
-pub(super) fn move_module_drag(
-    event: On<Pointer<Drag>>,
-    state: Res<ModuleDragState>,
-    mut ghosts: Query<&mut Node, With<ModuleDragGhost>>,
-) {
-    let Some(ghost) = state.ghost else {
-        return;
-    };
-    let Ok(mut node) = ghosts.get_mut(ghost) else {
-        return;
-    };
-    let position = event.pointer_location.position;
-    node.left = Val::Px(position.x + 6.0);
-    node.top = Val::Px(position.y - 12.0);
-}
-
-/// Opens an insertion gap above the row the cursor enters during a drag (§28.4), so the other rows
-/// visibly make room for the drop. Restricted to same-stage rows (reorder is same-stage only).
-pub(super) fn hover_module_drag(
-    event: On<Pointer<DragOver>>,
-    rows: Query<&ModuleRowDrag>,
-    parents: Query<&ChildOf>,
-    session: Res<EditorSession>,
-    geometry: Query<(&ComputedNode, &UiGlobalTransform)>,
-    mut nodes: Query<&mut Node>,
-    mut state: ResMut<ModuleDragState>,
-) {
-    let Some(dragged) = state.dragged else {
-        return;
-    };
-    let Some((row_entity, module_id)) = module_row_entity(event.entity, &rows, &parents) else {
-        return;
-    };
-    if Some(row_entity) == state.hidden_row || module_id == dragged {
-        return;
-    }
-    let same_stage = session.selected_layer().is_some_and(|layer| {
-        let stage_of = |id| layer.modules.iter().find(|module| module.id == id);
-        matches!((stage_of(dragged), stage_of(module_id)), (Some(a), Some(b)) if a.stage == b.stage)
+    state.active = Some(ActiveModuleDrag {
+        source: event.entity,
+        row: row_entity,
+        ghost,
+        ghost_origin: row_top_left,
+        // Row height plus its 1px top and bottom margins.
+        pitch: row_size.y + 2.0,
+        slots,
+        dragged_slot,
+        insert_at: dragged_slot,
     });
-    if !same_stage {
-        return;
+}
+
+/// Where the dragged row lands for a given ghost center: after every other row whose (captured)
+/// center is above it. Returns an index into the final order of `slots`.
+fn module_drag_insert_index(slots: &[DragSlot], dragged_slot: usize, ghost_center_y: f32) -> usize {
+    slots
+        .iter()
+        .enumerate()
+        .filter(|(index, slot)| *index != dragged_slot && slot.center_y < ghost_center_y)
+        .count()
+}
+
+/// Maps a finished drag of `modules[from]` to final position `to` onto a session reorder: land before
+/// the row now at `to`, or after the last row when dropped at the end. `None` when nothing moved.
+fn module_drag_drop_target(
+    modules: &[ModuleId],
+    from: usize,
+    to: usize,
+) -> Option<(ModuleId, bool)> {
+    if from == to {
+        return None;
     }
-    // Insert before or after the hovered row depending on which half the cursor is over — the
-    // standard, unambiguous drag-reorder rule, and the one the drop respects.
-    let Ok((node, transform)) = geometry.get(row_entity) else {
+    let others: Vec<ModuleId> = modules
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != from)
+        .map(|(_, module)| *module)
+        .collect();
+    match others.get(to) {
+        Some(&before) => Some((before, false)),
+        None => others.last().map(|&last| (last, true)),
+    }
+}
+
+/// The slide target for the row at `index` when the dragged row moves from `from` to `to`: rows it
+/// passes over step one pitch toward the dragged row's old slot; everything else stays put.
+fn module_drag_slide_target(index: usize, from: usize, to: usize, pitch: f32) -> f32 {
+    if from < to && index > from && index <= to {
+        -pitch
+    } else if from > to && index >= to && index < from {
+        pitch
+    } else {
+        0.0
+    }
+}
+
+/// Moves the dragged copy with the cursor (vertically, keeping the grab offset) and slides the other
+/// rows of the stage aside to open a space where it would land (§28.4).
+pub(super) fn move_module_drag(
+    mut event: On<Pointer<Drag>>,
+    ui_scale: Res<UiScale>,
+    mut state: ResMut<ModuleDragState>,
+    mut ghosts: Query<&mut Node, With<ModuleDragGhost>>,
+    mut slides: Query<&mut ModuleRowSlide>,
+) {
+    let Some(drag) = state.active.as_mut() else {
         return;
     };
-    let center_y = transform.translation.y * node.inverse_scale_factor();
-    let after = event.pointer_location.position.y > center_y;
-    if state.gap_row == Some(row_entity) && state.gap_after == after {
+    if event.entity != drag.source {
         return;
     }
-    restore_row_margin(&mut nodes, state.gap_row.take());
-    if let Ok(mut node) = nodes.get_mut(row_entity) {
-        if after {
-            node.margin.bottom = Val::Px(MODULE_ROW_GAP);
-        } else {
-            node.margin.top = Val::Px(MODULE_ROW_GAP);
+    event.propagate(false);
+    // Pointer travel is in logical window pixels; UiScale converts it to UI units.
+    let travel = event.distance.y / ui_scale.0;
+    if let Ok(mut node) = ghosts.get_mut(drag.ghost) {
+        node.top = Val::Px(drag.ghost_origin.y + travel);
+    }
+    let ghost_center = drag.slots[drag.dragged_slot].center_y + travel;
+    let insert_at = module_drag_insert_index(&drag.slots, drag.dragged_slot, ghost_center);
+    if insert_at == drag.insert_at {
+        return;
+    }
+    drag.insert_at = insert_at;
+    for (index, slot) in drag.slots.iter().enumerate() {
+        if index == drag.dragged_slot {
+            continue;
+        }
+        if let Ok(mut slide) = slides.get_mut(slot.entity) {
+            slide.target =
+                module_drag_slide_target(index, drag.dragged_slot, insert_at, drag.pitch);
         }
     }
-    state.gap_row = Some(row_entity);
-    state.gap_after = after;
 }
 
-/// Restores a gapped row's top and bottom margins to the row default (§28.4).
-fn restore_row_margin(nodes: &mut Query<&mut Node>, row: Option<Entity>) {
-    if let Some(row) = row
-        && let Ok(mut node) = nodes.get_mut(row)
-    {
-        node.margin.top = Val::Px(MODULE_ROW_MARGIN_TOP);
-        node.margin.bottom = Val::Px(MODULE_ROW_MARGIN_TOP);
+/// Eases each sliding row toward its target offset every frame, so rows glide aside rather than jump.
+pub(super) fn animate_module_row_slides(
+    time: Res<Time>,
+    mut rows: Query<(&mut UiTransform, &mut ModuleRowSlide)>,
+) {
+    let blend = 1.0 - (-time.delta_secs() * 20.0).exp();
+    for (mut transform, mut slide) in &mut rows {
+        if slide.current == slide.target {
+            continue;
+        }
+        slide.current += (slide.target - slide.current) * blend;
+        if (slide.target - slide.current).abs() < 0.1 {
+            slide.current = slide.target;
+        }
+        transform.translation = Val2::px(0.0, slide.current);
     }
 }
 
-/// Restores the hidden row and any insertion gap, and tears down the proxy when the drag ends (§28.4),
-/// whether or not a reorder happened (a reorder also rebuilds the panel fresh).
+/// Finishes a module drag (§28.4). If the row moved, commits the reorder (one undoable command) and
+/// lets the panel rebuild in the new order; otherwise slides everything back and reveals the row.
+/// Deciding here from the tracked insertion point — not from whatever is under the pointer at
+/// release — is what makes the drop land reliably.
 pub(super) fn end_module_drag(
-    _event: On<Pointer<DragEnd>>,
-    mut nodes: Query<&mut Node>,
+    mut event: On<Pointer<DragEnd>>,
     mut state: ResMut<ModuleDragState>,
+    mut slides: Query<&mut ModuleRowSlide>,
+    mut session: ResMut<EditorSession>,
     mut commands: Commands,
 ) {
-    if let Some(row) = state.hidden_row.take()
-        && let Ok(mut node) = nodes.get_mut(row)
+    if state
+        .active
+        .as_ref()
+        .is_none_or(|drag| event.entity != drag.source)
     {
-        node.display = Display::Flex;
+        return;
     }
-    restore_row_margin(&mut nodes, state.gap_row.take());
-    if let Some(ghost) = state.ghost.take() {
-        commands.entity(ghost).try_despawn();
+    event.propagate(false);
+    let Some(drag) = state.active.take() else {
+        return;
+    };
+    commands.entity(drag.ghost).try_despawn();
+    commands.entity(drag.row).insert(Visibility::Inherited);
+    let modules: Vec<ModuleId> = drag.slots.iter().map(|slot| slot.module).collect();
+    if let Some((target, after)) =
+        module_drag_drop_target(&modules, drag.dragged_slot, drag.insert_at)
+    {
+        session.reorder_module_relative(modules[drag.dragged_slot], target, after);
+        // Rebuild in the new order right away (the slid rows are replaced by it).
+        session.ui_revision += 1;
+        return;
     }
-    state.dragged = None;
+    for slot in &drag.slots {
+        if let Ok(mut slide) = slides.get_mut(slot.entity) {
+            slide.target = 0.0;
+        }
+        commands
+            .entity(slot.entity)
+            .insert(EntityCursor::System(SystemCursorIcon::Grab));
+    }
 }
 
 /// A compact, selectable stack row for one module (extensible-stages M9, §28.2): the module's name, its
@@ -1367,6 +1445,71 @@ mod tests {
             Some((0.25, Some(0.0), Some(2.0)))
         );
         assert_eq!(numeric_source_limits(&InputControl::Toggle), None);
+    }
+
+    #[test]
+    fn drag_insertion_follows_the_ghost_center_against_captured_rows() {
+        let slot = |center_y| DragSlot {
+            module: ModuleId::new(),
+            entity: Entity::PLACEHOLDER,
+            center_y,
+        };
+        let slots = [slot(10.0), slot(40.0), slot(70.0)];
+        // Dragging the first row: it lands after every other row whose center it has passed.
+        assert_eq!(module_drag_insert_index(&slots, 0, 5.0), 0);
+        assert_eq!(module_drag_insert_index(&slots, 0, 30.0), 0);
+        assert_eq!(module_drag_insert_index(&slots, 0, 50.0), 1);
+        assert_eq!(module_drag_insert_index(&slots, 0, 80.0), 2);
+        // Dragging the last row upward.
+        assert_eq!(module_drag_insert_index(&slots, 2, 25.0), 1);
+        assert_eq!(module_drag_insert_index(&slots, 2, 0.0), 0);
+    }
+
+    #[test]
+    fn rows_passed_over_slide_one_pitch_toward_the_vacated_slot() {
+        // Moving the first of three rows to the end: the two rows below it slide up.
+        assert_eq!(module_drag_slide_target(1, 0, 2, 30.0), -30.0);
+        assert_eq!(module_drag_slide_target(2, 0, 2, 30.0), -30.0);
+        // Moving the last row to the top: the two rows above it slide down.
+        assert_eq!(module_drag_slide_target(0, 2, 0, 30.0), 30.0);
+        assert_eq!(module_drag_slide_target(1, 2, 0, 30.0), 30.0);
+        // A partial move leaves rows outside the travelled range alone.
+        assert_eq!(module_drag_slide_target(2, 0, 1, 30.0), 0.0);
+        // No move, no slide.
+        assert_eq!(module_drag_slide_target(0, 1, 1, 30.0), 0.0);
+    }
+
+    #[test]
+    fn every_drag_drop_in_a_stage_produces_the_expected_order() {
+        let stage_order = |session: &EditorSession| -> Vec<ModuleId> {
+            session
+                .selected_layer()
+                .unwrap()
+                .modules
+                .iter()
+                .filter(|module| module.stage == StageKind::ParticleUpdate)
+                .map(|module| module.id)
+                .collect()
+        };
+        for from in 0..3 {
+            for to in 0..3 {
+                let mut session = crate::test_support::session_with_timing_slack();
+                let layer = session.selected_layer_index().unwrap();
+                session.effect.emitters[layer]
+                    .modules
+                    .push(ModuleInstance::persistent());
+                let before = stage_order(&session);
+                assert_eq!(before.len(), 3, "three particle-update modules");
+                let mut expected = before.clone();
+                let moved = expected.remove(from);
+                expected.insert(to, moved);
+
+                if let Some((target, after)) = module_drag_drop_target(&before, from, to) {
+                    session.reorder_module_relative(before[from], target, after);
+                }
+                assert_eq!(stage_order(&session), expected, "drag {from} -> {to}");
+            }
+        }
     }
 
     #[test]
