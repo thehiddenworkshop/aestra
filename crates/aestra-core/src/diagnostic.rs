@@ -36,6 +36,10 @@ pub enum DiagnosticCode {
     MissingResourceDeclaration,
     InvalidRenderState,
     UnreachableExpression,
+    /// A simulation stage names a stage type no linked extension registers (extensible-stages M10).
+    UnknownStage,
+    /// A plugin stage or module lowerer rejected its input, or produced invalid Execution IR.
+    LoweringFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

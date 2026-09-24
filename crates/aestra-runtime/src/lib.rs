@@ -673,6 +673,32 @@ pub struct CompiledExtensionRenderer {
     pub payload: aestra_core::PropertyBag,
 }
 
+/// One plugin module lowered for its extension stage (extensible-stages M10): which kernel entry it
+/// contributes and the resolved property values that kernel reads. Produced by the module type's
+/// registered lowerer; consumed by the host stage's lowerer and, at run time, by the plugin's backend.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtensionModulePlan {
+    pub source: ModuleId,
+    pub module_type: aestra_core::ModuleTypeId,
+    /// The kernel entry point (or kernel fragment) this module contributes.
+    pub entry_point: String,
+    /// The module's resolved property values: its authored payload with schema defaults filled in.
+    pub parameters: aestra_core::PropertyBag,
+}
+
+/// A compiled *extension* stage (extensible-stages M10): an authored simulation stage whose registered
+/// stage type comes from a plugin, lowered by that plugin into a portable [`ExecutionBlock`]. Carried
+/// generically beside the lifecycle stages — like [`CompiledExtensionRenderer`], no core enum grows.
+/// The built-in particle path does not execute these; a backend that supports the stage does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledExtensionStage {
+    pub id: aestra_core::StageId,
+    pub stage_type: aestra_core::StageTypeId,
+    pub name: String,
+    pub modules: Vec<ExtensionModulePlan>,
+    pub block: ExecutionBlock,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RendererPlan {
     pub source: RendererId,
@@ -793,6 +819,9 @@ pub struct CompiledEmitter {
     /// Extension (plugin) renderers on this emitter (extensible-stages M8), carried generically so no
     /// core `RendererPlanKind` variant is needed. Empty for effects using only built-in renderers.
     pub extension_renderers: Vec<CompiledExtensionRenderer>,
+    /// Extension (plugin) stages on this emitter (extensible-stages M10), each lowered by its plugin to
+    /// an execution block. Empty for effects that use no plugin stages.
+    pub extension_stages: Vec<CompiledExtensionStage>,
 }
 
 impl CompiledEmitter {

@@ -536,6 +536,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "diagnostics-code-missing-resource-declaration",
     "diagnostics-code-invalid-render-state",
     "diagnostics-code-unreachable-expression",
+    "diagnostics-code-unknown-stage",
+    "diagnostics-code-lowering-failed",
     "profiler-effect-profile",
     "profiler-status-last-valid",
     "profiler-status-live",

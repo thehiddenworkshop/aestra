@@ -1,5 +1,6 @@
 //! Module discovery, compiler validation, optimization, and typed lowering.
 
+mod extension;
 mod material_function;
 mod material_function_graph;
 mod material_graph;
@@ -10,6 +11,7 @@ mod module_stack;
 mod normal_map;
 pub use normal_map::evaluate_normal_map;
 
+pub use extension::*;
 pub use material_function::*;
 pub use material_function_graph::*;
 pub use material_graph::*;
@@ -519,16 +521,22 @@ pub struct ModuleMetadata {
     /// How many of this module a single stage may host (extensible-stages M4). Defaults to `Multiple`.
     pub multiplicity: ModuleMultiplicity,
     pub approximate_cost: u32,
+    /// An explicit host-stage requirement (extensible-stages M10). Plugin modules that run in a plugin
+    /// stage declare the capability that stage provides; `None` derives it from `stages`.
+    pub requires: Option<CapabilityExpression>,
 }
 
 impl ModuleMetadata {
-    /// The capabilities this module requires from its host stage (extensible-stages M4), derived from
-    /// the lifecycle roles of its declared stages: a module runs in a stage that provides **any** of
-    /// its roles' capabilities. This is the capability-based replacement for the old concrete
-    /// `stages.contains(module.stage)` check — a stage providing the right capability hosts the module
-    /// regardless of its concrete type id. A module declaring only `Simulation` stages is
-    /// `Unconstrained` for now (no built-in does).
+    /// The capabilities this module requires from its host stage (extensible-stages M4). An explicit
+    /// [`requires`](Self::requires) wins; otherwise it is derived from the lifecycle roles of its
+    /// declared stages: a module runs in a stage that provides **any** of its roles' capabilities.
+    /// This is the capability-based replacement for the old concrete `stages.contains(module.stage)`
+    /// check — a stage providing the right capability hosts the module regardless of its concrete
+    /// type id. A module declaring only `Simulation` stages and no requirement is `Unconstrained`.
     pub fn required_capabilities(&self) -> CapabilityExpression {
+        if let Some(requires) = &self.requires {
+            return requires.clone();
+        }
         let roles: Vec<CapabilityId> = self
             .stages
             .iter()
@@ -540,16 +548,6 @@ impl ModuleMetadata {
         } else {
             CapabilityExpression::AnyOf(CapabilitySet::new(roles))
         }
-    }
-}
-
-/// The capabilities a built-in [`StageKind`] provides (extensible-stages M4). A lifecycle stage
-/// provides its role capability; a `Simulation` stage provides none built-in (a simulation module
-/// would declare its own).
-fn stage_provided_capabilities(stage: &StageKind) -> CapabilitySet {
-    match LifecycleRole::from_stage(stage) {
-        Some(role) => CapabilitySet::new([role.capability()]),
-        None => CapabilitySet::default(),
     }
 }
 
@@ -590,7 +588,7 @@ impl ModuleRegistry {
 
     /// Creates an authored instance using the catalog's production-ready defaults.
     pub fn instantiate(&self, type_id: &ModuleTypeId) -> Option<ModuleInstance> {
-        self.get(type_id)?;
+        let metadata = self.get(type_id)?;
         match type_id.0.as_str() {
             MODULE_EMISSION => Some(ModuleInstance::emission(24.0, 0)),
             MODULE_SHAPE => Some(ModuleInstance::shape(EmitterShape::Point)),
@@ -629,7 +627,29 @@ impl ModuleRegistry {
                     ColorKey::new(1.0, [0.15, 0.05, 0.4, 0.0]),
                 ]),
             )),
-            _ => None,
+            // A plugin module (extensible-stages M10): a generic payload seeded from its schema
+            // defaults, placed in the first declared stage (the caller moves it to its host stage).
+            _ => Some(ModuleInstance {
+                id: aestra_core::ModuleId::new(),
+                module_type: type_id.clone(),
+                stage: metadata
+                    .stages
+                    .first()
+                    .cloned()
+                    .unwrap_or(StageKind::ParticleUpdate),
+                enabled: true,
+                parameters: ModuleParameters::Custom(
+                    metadata
+                        .inputs
+                        .iter()
+                        .map(|input| (input.name.to_string(), input.instantiate_default()))
+                        .collect(),
+                ),
+                property_sources: BTreeMap::new(),
+                property_source_values: BTreeMap::new(),
+                bindings: BTreeMap::new(),
+                label: None,
+            }),
         }
     }
 }
@@ -687,37 +707,125 @@ pub enum RegistryConflict {
         module: ModuleTypeId,
         capability: CapabilityId,
     },
+    /// Two stage descriptors share a type ID (extensible-stages M10).
+    DuplicateStage(StageTypeId),
+    /// Two domain descriptors share a type ID.
+    DuplicateDomain(aestra_core::DomainTypeId),
+    /// Two resource descriptors share a type ID.
+    DuplicateResource(aestra_core::ResourceTypeId),
+    /// Two lowerers were registered for the same stage or module type.
+    DuplicateLowerer(String),
+    /// A plugin registered an id outside its own `{plugin_id}::` namespace (§5, §9.1).
+    OutsideNamespace {
+        plugin: aestra_core::PluginId,
+        id: String,
+    },
+    /// The same plugin was installed twice.
+    DuplicateExtension(aestra_core::PluginId),
 }
 
-/// The unified extension registry. Today it hosts modules and capabilities; stage / renderer /
-/// domain / resource sub-registries are added as their descriptor types land (extensible plan §23).
-/// Built-in Aestra functionality registers through this same surface — there is no privileged path.
+impl std::fmt::Display for RegistryConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateModule(id) => write!(f, "module type '{}' is registered twice", id.0),
+            Self::DuplicateRenderer(id) => {
+                write!(f, "renderer type '{}' is registered twice", id.0)
+            }
+            Self::DuplicateCapability(id) => write!(f, "capability '{}' is registered twice", id.0),
+            Self::UnknownModuleCapability { module, capability } => write!(
+                f,
+                "module '{}' references unregistered capability '{}'",
+                module.0, capability.0
+            ),
+            Self::DuplicateStage(id) => write!(f, "stage type '{}' is registered twice", id.0),
+            Self::DuplicateDomain(id) => write!(f, "domain '{}' is registered twice", id.0),
+            Self::DuplicateResource(id) => {
+                write!(f, "resource type '{}' is registered twice", id.0)
+            }
+            Self::DuplicateLowerer(id) => write!(f, "'{id}' has two lowerers"),
+            Self::OutsideNamespace { plugin, id } => write!(
+                f,
+                "plugin '{}' registered '{id}' outside its '{}::' namespace",
+                plugin.0, plugin.0
+            ),
+            Self::DuplicateExtension(plugin) => {
+                write!(f, "extension '{}' is installed twice", plugin.0)
+            }
+        }
+    }
+}
+
+impl std::error::Error for RegistryConflict {}
+
+/// The unified extension registry (extensible plan §23): modules, capabilities, renderers, stage
+/// types, domains and resource types, plus the lowerers that turn plugin stages and modules into
+/// Execution IR. Built-in Aestra functionality registers through this same surface — there is no
+/// privileged path — and linked plugins are added with [`ExtensionRegistry::install`].
 #[derive(Debug, Clone, Default)]
 pub struct ExtensionRegistry {
     pub modules: ModuleRegistry,
     pub capabilities: CapabilityRegistry,
     /// Renderer type catalog (extensible-stages M8): built-ins plus registered plugin renderers.
     pub renderers: RendererRegistry,
+    /// Stage type catalog (extensible-stages M10): lifecycle stages, the generic simulation stage,
+    /// and plugin stages.
+    pub stages: StageRegistry,
+    pub domains: DomainRegistry,
+    pub resources: ResourceTypeRegistry,
+    /// Plugin stage/module lowerers into Execution IR (extensible-stages M10).
+    pub lowering: LoweringRegistry,
+    installed: Vec<ExtensionManifest>,
 }
 
 impl ExtensionRegistry {
-    /// The built-in registry: every core module, renderer, and the governed capability vocabulary.
+    /// The built-in registry: every core module, renderer, stage type, domain, resource type, and the
+    /// governed capability vocabulary. Never includes linked plugins — see [`Self::linked`].
     pub fn builtin() -> Self {
+        Self::from_modules(ModuleRegistry::builtin())
+    }
+
+    /// Wraps a module registry with the built-in capability, renderer, stage, domain and resource
+    /// vocabulary. Keeps the legacy module-only construction path working while resolution flows
+    /// through the unified registry.
+    pub fn from_modules(modules: ModuleRegistry) -> Self {
+        let mut capabilities = CapabilityRegistry::builtin();
+        // Lifecycle-role capabilities are provided by the built-in stages, so they are part of the
+        // governed vocabulary a plugin may reference.
+        for role in [
+            LifecycleRole::EffectSpawn,
+            LifecycleRole::EffectUpdate,
+            LifecycleRole::EmitterSpawn,
+            LifecycleRole::EmitterUpdate,
+            LifecycleRole::ParticleSpawn,
+            LifecycleRole::ParticleUpdate,
+        ] {
+            capabilities
+                .register(role.capability())
+                .expect("built-in capabilities are unique");
+        }
         Self {
-            modules: ModuleRegistry::builtin(),
-            capabilities: CapabilityRegistry::builtin(),
+            modules,
+            capabilities,
             renderers: RendererRegistry::builtin(),
+            stages: StageRegistry::builtin(),
+            domains: DomainRegistry::builtin(),
+            resources: ResourceTypeRegistry::builtin(),
+            lowering: LoweringRegistry::default(),
+            installed: Vec::new(),
         }
     }
 
-    /// Wraps a module registry with the built-in capability + renderer vocabulary. Keeps the legacy
-    /// module-only construction path working while resolution flows through the unified registry.
-    pub fn from_modules(modules: ModuleRegistry) -> Self {
-        Self {
-            modules,
-            capabilities: CapabilityRegistry::builtin(),
-            renderers: RendererRegistry::builtin(),
-        }
+    /// Registers a stage type descriptor (extensible-stages M10); errors on a duplicate type id.
+    pub fn register_stage(
+        &mut self,
+        descriptor: StageTypeDescriptor,
+    ) -> Result<(), RegistryConflict> {
+        self.stages.register(descriptor)
+    }
+
+    /// Registers a capability identity; errors if it is already registered.
+    pub fn register_capability(&mut self, id: CapabilityId) -> Result<(), RegistryConflict> {
+        self.capabilities.register(id)
     }
 
     /// Registers a module descriptor; errors if its type ID is already registered.
@@ -800,8 +908,9 @@ pub struct EffectCompiler {
 }
 
 impl Default for EffectCompiler {
+    /// The built-ins plus every extension linked into this process ([`link_extension`]).
     fn default() -> Self {
-        Self::with_extensions(ExtensionRegistry::builtin())
+        Self::with_extensions(ExtensionRegistry::linked())
     }
 }
 
@@ -863,6 +972,124 @@ impl EffectCompiler {
             }
         }
         (requirements.derived_class(), promoted_by)
+    }
+
+    /// Lowers an emitter's plugin simulation stages (extensible-stages M10): every enabled module in a
+    /// stage whose type has a registered [`StageLowerer`] goes through its [`ModuleLowerer`], then the
+    /// stage lowerer builds the stage's [`aestra_runtime::ExecutionBlock`], which must validate and use
+    /// only registered resource types. Generic simulation stages (no lowerer) produce nothing.
+    fn lower_extension_stages(
+        &self,
+        emitter_index: usize,
+        emitter: &Emitter,
+    ) -> Result<Vec<aestra_runtime::CompiledExtensionStage>, Vec<Diagnostic>> {
+        let mut names: Vec<&str> = Vec::new();
+        for module in &emitter.modules {
+            if let StageKind::Simulation(name) = &module.stage
+                && !names.contains(&name.as_str())
+            {
+                names.push(name);
+            }
+        }
+        let mut stages = Vec::new();
+        let mut diagnostics = Vec::new();
+        for name in names {
+            let stage_type = emitter.simulation_stage_type(name);
+            let Some(stage_lowerer) = self.registry.lowering.stage(&stage_type) else {
+                continue;
+            };
+            let mut plans = Vec::new();
+            for (module_index, module) in emitter.modules.iter().enumerate() {
+                if !module.enabled
+                    || !matches!(&module.stage, StageKind::Simulation(other) if other == name)
+                {
+                    continue;
+                }
+                let path = format!("effect.emitters[{emitter_index}].modules[{module_index}]");
+                let failed = |message: String| {
+                    Diagnostic::error(DiagnosticCode::LoweringFailed, path.clone(), message)
+                };
+                let (Some(lowerer), ModuleParameters::Custom(values)) = (
+                    self.registry.lowering.module(&module.module_type),
+                    &module.parameters,
+                ) else {
+                    diagnostics.push(failed(format!(
+                        "module '{}' has no lowering for stage type '{}'",
+                        module.module_type.0, stage_type.0
+                    )));
+                    continue;
+                };
+                let mut payload: aestra_core::PropertyBag = values
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                if let Some(metadata) = self.registry.modules.get(&module.module_type) {
+                    metadata.property_schema().apply_defaults(&mut payload);
+                }
+                match lowerer.lower(module, &payload) {
+                    Ok(plan) => plans.push(plan),
+                    Err(message) => diagnostics.push(failed(message)),
+                }
+            }
+            let stage_id = aestra_core::StageId::for_name(name);
+            let block = match stage_lowerer.lower(&StageLoweringInput {
+                stage: stage_id,
+                stage_type: &stage_type,
+                name,
+                particle_capacity: emitter.max_particles,
+                modules: &plans,
+            }) {
+                Ok(block) => block,
+                Err(message) => {
+                    diagnostics.push(Diagnostic::error(
+                        DiagnosticCode::LoweringFailed,
+                        format!("effect.emitters[{emitter_index}].simulation_stages.{name}"),
+                        message,
+                    ));
+                    continue;
+                }
+            };
+            let stage_path = format!("effect.emitters[{emitter_index}].simulation_stages.{name}");
+            if let Err(error) = block.validate() {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::LoweringFailed,
+                    stage_path.clone(),
+                    format!(
+                        "stage '{}' lowered to invalid Execution IR: {error}",
+                        stage_type.0
+                    ),
+                ));
+                continue;
+            }
+            if let Some(unknown) = block
+                .resources
+                .iter()
+                .find(|resource| self.registry.resources.get(&resource.id).is_none())
+            {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::LoweringFailed,
+                    stage_path,
+                    format!(
+                        "stage '{}' declares unregistered resource type '{}'",
+                        stage_type.0,
+                        unknown.id.as_str()
+                    ),
+                ));
+                continue;
+            }
+            stages.push(aestra_runtime::CompiledExtensionStage {
+                id: stage_id,
+                stage_type,
+                name: name.to_string(),
+                modules: plans,
+                block,
+            });
+        }
+        if diagnostics.is_empty() {
+            Ok(stages)
+        } else {
+            Err(diagnostics)
+        }
     }
 
     /// The effect's aggregate simulation class — the strongest over its enabled emitters, `Analytic`
@@ -1337,6 +1564,20 @@ impl EffectCompiler {
                 })
                 .flatten()
                 .collect();
+            // Plugin simulation stages (extensible-stages M10) lower through their registered
+            // lowerers into portable Execution IR, carried alongside the built-in lifecycle stages.
+            let extension_stages = if emitter.enabled {
+                self.lower_extension_stages(emitter_index, emitter)
+                    .map_err(|diagnostics| {
+                        let mut report = ValidationReport::default();
+                        for diagnostic in diagnostics {
+                            report.push(diagnostic);
+                        }
+                        CompileError::Validation(report)
+                    })?
+            } else {
+                Vec::new()
+            };
             for region in emitter.timeline_regions() {
                 emitters.push(CompiledEmitter {
                     source: emitter.id,
@@ -1358,6 +1599,7 @@ impl EffectCompiler {
                     execution: execution.clone(),
                     renderers: renderers.clone(),
                     extension_renderers: extension_renderers.clone(),
+                    extension_stages: extension_stages.clone(),
                 });
             }
         }
@@ -1490,8 +1732,24 @@ impl EffectCompiler {
                 // hardcoded stage-type check. For built-ins this is equivalent to the old
                 // `stages.contains(module.stage)`, and it also lets third-party stages host standard
                 // modules by providing the right capabilities.
-                let provided = stage_provided_capabilities(&module.stage);
-                if !metadata.required_capabilities().is_satisfied_by(&provided) {
+                // The host stage's provided capabilities come from its registered stage type
+                // (extensible-stages M10), so a plugin stage hosts exactly what it declares.
+                let stage_type = emitter.stage_type_of(&module.stage);
+                let Some(stage) = self.registry.stages.get(&stage_type) else {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::UnknownStage,
+                            format!("{path}.stage"),
+                            format!(
+                                "stage type '{}' is not registered — is its plugin linked?",
+                                stage_type.0
+                            ),
+                        ),
+                    );
+                    continue;
+                };
+                if !stage.hosts(&metadata.required_capabilities()) {
                     push_unique(
                         report,
                         Diagnostic::error(
@@ -1504,6 +1762,29 @@ impl EffectCompiler {
                             ),
                         ),
                     );
+                }
+                if module.enabled
+                    && let ModuleParameters::Custom(values) = &module.parameters
+                    && !is_builtin_module(&module.module_type)
+                {
+                    // A plugin module's payload is validated against its declared schema (M10).
+                    let bag: aestra_core::PropertyBag = values
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect();
+                    for issue in metadata.property_schema().validate(&bag) {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidValue,
+                                format!("{path}.parameters.{}", issue.property),
+                                format!(
+                                    "module '{}' input '{}': {:?}",
+                                    module.module_type.0, issue.property, issue.problem
+                                ),
+                            ),
+                        );
+                    }
                 }
                 if module.enabled && !parameters_match(module) {
                     push_unique(
@@ -2370,7 +2651,25 @@ fn add_expression_counts(left: (usize, usize), right: (usize, usize)) -> (usize,
     (left.0 + right.0, left.1 + right.1)
 }
 
+/// Whether the type id is one of the core modules the compiler lowers through typed parameters.
+fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
+    matches!(
+        type_id.0.as_str(),
+        MODULE_EMISSION
+            | MODULE_SHAPE
+            | MODULE_INITIALIZE
+            | MODULE_MOTION
+            | MODULE_PERSISTENT
+            | MODULE_COLLISION
+            | MODULE_APPEARANCE
+    )
+}
+
 fn parameters_match(module: &ModuleInstance) -> bool {
+    // A plugin module carries a generic payload validated against its schema (M10).
+    if !is_builtin_module(&module.module_type) {
+        return matches!(module.parameters, ModuleParameters::Custom(_));
+    }
     matches!(
         (&*module.module_type.0, &module.parameters),
         (MODULE_EMISSION, ModuleParameters::Emission { .. })
@@ -2436,6 +2735,18 @@ fn input(
 }
 
 impl InputMetadata {
+    /// An input with the default authoring sources for its control (constant, plus random range /
+    /// curve / gradient where the control supports them) — the builder plugins use (M10).
+    pub fn new(
+        name: &'static str,
+        display_name: &'static str,
+        description: &'static str,
+        default_value: aestra_core::Value,
+        control: InputControl,
+    ) -> Self {
+        input(name, display_name, description, default_value, control)
+    }
+
     /// Clones the catalog default while assigning fresh IDs to nested authored data.
     pub fn instantiate_default(&self) -> aestra_core::Value {
         let mut value = self.default_value.clone();
@@ -2452,7 +2763,7 @@ impl InputMetadata {
         value
     }
 
-    fn with_unit(mut self, unit: &'static str) -> Self {
+    pub fn with_unit(mut self, unit: &'static str) -> Self {
         self.unit = Some(unit);
         self
     }
@@ -2487,38 +2798,75 @@ fn metadata(
         simulation: SimulationRequirements::ANALYTIC,
         multiplicity: ModuleMultiplicity::Multiple,
         approximate_cost: 0,
+        requires: None,
     }
 }
 
 impl ModuleMetadata {
-    fn with_multiplicity(mut self, multiplicity: ModuleMultiplicity) -> Self {
+    /// A plugin module descriptor (extensible-stages M10): no built-in capabilities, hosted wherever
+    /// `requires` is satisfied. Chain the `with_*` builders to describe inputs, flow and cost.
+    pub fn extension(
+        type_id: ModuleTypeId,
+        display_name: &'static str,
+        description: &'static str,
+        category: &'static str,
+        requires: CapabilityExpression,
+    ) -> Self {
+        Self {
+            type_id,
+            display_name,
+            description,
+            category,
+            stages: Vec::new(),
+            inputs: Vec::new(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            tags: Vec::new(),
+            capabilities: Vec::new(),
+            simulation: SimulationRequirements::ANALYTIC,
+            multiplicity: ModuleMultiplicity::Multiple,
+            approximate_cost: 0,
+            requires: Some(requires),
+        }
+    }
+
+    pub fn with_multiplicity(mut self, multiplicity: ModuleMultiplicity) -> Self {
         self.multiplicity = multiplicity;
         self
     }
 
-    fn with_inputs(mut self, inputs: Vec<InputMetadata>) -> Self {
+    pub fn with_inputs(mut self, inputs: Vec<InputMetadata>) -> Self {
         self.inputs = inputs;
         self
     }
 
-    fn with_flow(mut self, reads: Vec<ParticleAttribute>, writes: Vec<ParticleAttribute>) -> Self {
+    pub fn with_flow(
+        mut self,
+        reads: Vec<ParticleAttribute>,
+        writes: Vec<ParticleAttribute>,
+    ) -> Self {
         self.reads = reads;
         self.writes = writes;
         self
     }
 
-    fn with_tags(mut self, tags: Vec<&'static str>) -> Self {
+    pub fn with_tags(mut self, tags: Vec<&'static str>) -> Self {
         self.tags = tags;
         self
     }
 
-    fn with_cost(mut self, approximate_cost: u32) -> Self {
-        self.approximate_cost = approximate_cost;
+    pub fn with_capabilities(mut self, capabilities: Vec<CapabilityId>) -> Self {
+        self.capabilities = capabilities;
         self
     }
 
-    fn with_simulation(mut self, simulation: SimulationRequirements) -> Self {
+    pub fn with_simulation(mut self, simulation: SimulationRequirements) -> Self {
         self.simulation = simulation;
+        self
+    }
+
+    pub fn with_cost(mut self, approximate_cost: u32) -> Self {
+        self.approximate_cost = approximate_cost;
         self
     }
 }

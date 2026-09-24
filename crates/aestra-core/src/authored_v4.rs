@@ -20,6 +20,7 @@ use crate::{
     EmitterTransform, EventLink, FlipbookDefinition, HostTransformTrack, MarkerTimeReference,
     MaterialDefinition, ModuleId, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
     PropertySource, PropertySourceValue, RendererInstance, SimulationDomain, StageId, StageKind,
+    StageTypeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -31,6 +32,9 @@ pub const AESTRA_STAGE_EMITTER_SPAWN: &str = "aestra.stage.emitter_spawn";
 pub const AESTRA_STAGE_EMITTER_UPDATE: &str = "aestra.stage.emitter_update";
 pub const AESTRA_STAGE_PARTICLE_SPAWN: &str = "aestra.stage.particle_spawn";
 pub const AESTRA_STAGE_PARTICLE_UPDATE: &str = "aestra.stage.particle_update";
+/// The generic simulation stage type: an authored simulation stage that names no registered stage
+/// type (extensible-stages M10). Plugin stages name their own namespaced type instead.
+pub const AESTRA_STAGE_SIMULATION: &str = "aestra.stage.simulation";
 
 /// The registered domain identities for the built-in `SimulationDomain`s (extensible-stages M3, §10).
 pub const AESTRA_DOMAIN_PARTICLES: &str = "aestra.domain.particles";
@@ -145,13 +149,27 @@ impl V4StageModules {
     }
 }
 
-/// An explicit simulation stage instance (§6.1): a stable id, its authored name, and its modules.
+/// An explicit simulation stage instance (§6.1): a stable id, its authored name, its registered stage
+/// type (omitted when it is the generic [`AESTRA_STAGE_SIMULATION`]), and its modules.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct V4SimulationStage {
     pub id: StageId,
     pub name: String,
+    #[serde(
+        default = "generic_simulation_stage_type",
+        skip_serializing_if = "is_generic_simulation_stage_type"
+    )]
+    pub stage_type: StageTypeId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modules: Vec<V4Module>,
+}
+
+fn generic_simulation_stage_type() -> StageTypeId {
+    StageTypeId::new(AESTRA_STAGE_SIMULATION)
+}
+
+fn is_generic_simulation_stage_type(stage_type: &StageTypeId) -> bool {
+    stage_type.as_str() == AESTRA_STAGE_SIMULATION
 }
 
 /// The v4 authored shape of one emitter: nested lifecycle containers + explicit simulation stages, and
@@ -267,6 +285,7 @@ fn emitter_to_v4(emitter: &Emitter) -> Result<V4Emitter, V4ConversionError> {
                     None => simulation_stages.push(V4SimulationStage {
                         id: StageId::for_name(name),
                         name: name.clone(),
+                        stage_type: emitter.simulation_stage_type(name),
                         modules: vec![entry],
                     }),
                 }
@@ -322,7 +341,11 @@ fn emitter_from_v4(emitter: V4Emitter) -> Emitter {
         emitter.lifecycle.particle_update.modules,
         StageKind::ParticleUpdate,
     );
+    let mut simulation_stage_types = BTreeMap::new();
     for stage in emitter.simulation_stages {
+        if !is_generic_simulation_stage_type(&stage.stage_type) {
+            simulation_stage_types.insert(stage.name.clone(), stage.stage_type);
+        }
         push_stage(stage.modules, StageKind::Simulation(stage.name));
     }
     Emitter {
@@ -339,6 +362,7 @@ fn emitter_from_v4(emitter: V4Emitter) -> Emitter {
         simulation_domain: id_to_domain(&emitter.domain),
         modules,
         renderers: emitter.renderers,
+        simulation_stage_types,
     }
 }
 
@@ -445,6 +469,10 @@ mod tests {
                 ),
             ],
             renderers: vec![RendererInstance::sprite(DEFAULT_SPRITE_MATERIAL_ID)],
+            simulation_stage_types: BTreeMap::from([(
+                "solve".to_string(),
+                StageTypeId::new("org.example::stage/solver"),
+            )]),
         };
         // Two modules sharing one simulation-stage name, to exercise stage grouping.
         let mut solve_a = ModuleInstance::motion([0.0, 0.0, 0.0], 0.0, 0.0);
@@ -478,6 +506,11 @@ mod tests {
             "both solve modules grouped"
         );
         assert_eq!(emitter.simulation_stages[0].id, StageId::for_name("solve"));
+        assert_eq!(
+            emitter.simulation_stages[0].stage_type,
+            StageTypeId::new("org.example::stage/solver"),
+            "a typed simulation stage keeps its registered stage type"
+        );
         assert_eq!(emitter.domain, DomainTypeId::new("org.example.domain/grid"));
 
         let restored = document.into_effect();

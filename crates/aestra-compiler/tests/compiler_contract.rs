@@ -336,6 +336,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
             capabilities,
             simulation,
             multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
+            requires: None,
             approximate_cost: 0,
         }
     }
@@ -498,6 +499,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
             ..Default::default()
         },
         multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
+        requires: None,
         approximate_cost: 0,
     };
     let mut registry = ExtensionRegistry::builtin();

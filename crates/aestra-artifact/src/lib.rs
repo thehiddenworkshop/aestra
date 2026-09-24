@@ -1689,6 +1689,9 @@ impl EmitterV1 {
                     payload: renderer.payload,
                 })
                 .collect(),
+            // Plugin simulation stages (extensible-stages M10) are not part of artifact format v1 yet:
+            // no runtime backend dispatches them, and a game re-lowers them from the authored effect.
+            extension_stages: Vec::new(),
         })
     }
 }

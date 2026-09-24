@@ -828,6 +828,8 @@ diagnostics-code-evaluation-domain-mismatch = Evaluation domain mismatch
 diagnostics-code-missing-resource-declaration = Missing resource declaration
 diagnostics-code-invalid-render-state = Invalid render state
 diagnostics-code-unreachable-expression = Unreachable expression
+diagnostics-code-unknown-stage = Unknown stage type
+diagnostics-code-lowering-failed = Plugin lowering failed
 diagnostics-code-shader-compile = Shader compile error
 
 profiler-effect-profile = PROJECT PROFILE

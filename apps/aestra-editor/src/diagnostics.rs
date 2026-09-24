@@ -983,6 +983,8 @@ fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
         }
         DiagnosticCode::InvalidRenderState => "diagnostics-code-invalid-render-state",
         DiagnosticCode::UnreachableExpression => "diagnostics-code-unreachable-expression",
+        DiagnosticCode::UnknownStage => "diagnostics-code-unknown-stage",
+        DiagnosticCode::LoweringFailed => "diagnostics-code-lowering-failed",
     }
 }
 

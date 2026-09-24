@@ -1023,6 +1023,35 @@ pub struct Emitter {
     pub simulation_domain: SimulationDomain,
     pub modules: Vec<ModuleInstance>,
     pub renderers: Vec<RendererInstance>,
+    /// The registered stage type of each authored simulation stage, by stage name (extensible-stages
+    /// M10). A stage absent here is the generic [`crate::AESTRA_STAGE_SIMULATION`]; a plugin stage names
+    /// its own namespaced type, which is how the compiler finds its capabilities and lowering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub simulation_stage_types: BTreeMap<String, StageTypeId>,
+}
+
+impl Emitter {
+    /// The registered stage type of a simulation stage by name (the generic type when unset).
+    pub fn simulation_stage_type(&self, name: &str) -> StageTypeId {
+        self.simulation_stage_types
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| StageTypeId::new(crate::AESTRA_STAGE_SIMULATION))
+    }
+
+    /// The registered stage type hosting modules of `stage` on this emitter: the lifecycle stage's
+    /// built-in type, or the simulation stage's authored type.
+    pub fn stage_type_of(&self, stage: &StageKind) -> StageTypeId {
+        StageTypeId::new(match stage {
+            StageKind::EffectSpawn => crate::AESTRA_STAGE_EFFECT_SPAWN,
+            StageKind::EffectUpdate => crate::AESTRA_STAGE_EFFECT_UPDATE,
+            StageKind::EmitterSpawn => crate::AESTRA_STAGE_EMITTER_SPAWN,
+            StageKind::EmitterUpdate => crate::AESTRA_STAGE_EMITTER_UPDATE,
+            StageKind::ParticleSpawn => crate::AESTRA_STAGE_PARTICLE_SPAWN,
+            StageKind::ParticleUpdate => crate::AESTRA_STAGE_PARTICLE_UPDATE,
+            StageKind::Simulation(name) => return self.simulation_stage_type(name),
+        })
+    }
 }
 
 /// One editable occurrence of an emitter definition on the effect timeline.
@@ -1137,6 +1166,7 @@ impl Emitter {
                 ),
             ],
             renderers: vec![RendererInstance::sprite(DEFAULT_SPRITE_MATERIAL_ID)],
+            simulation_stage_types: BTreeMap::new(),
         }
     }
 
