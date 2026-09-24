@@ -441,6 +441,10 @@ fn record(world: &mut World, transaction: Transaction) {
         world.resource::<ProjectEffectCatalog>(),
         world.resource::<EditorSession>(),
     );
+    record_in_context(world, context, transaction);
+}
+
+fn record_in_context(world: &mut World, context: Context, transaction: Transaction) {
     // Fork the existing redo branch as well as the presentation branch. Layout does not execute
     // a material command, install compiled data, or change a document content revision.
     crate::history::clear_presentation_redo(world, &context);
@@ -512,6 +516,7 @@ pub(super) fn batch_edit(event: On<GraphPresentationBatchEdit>, mut commands: Co
 pub(super) fn preview_edit(
     commands: &mut Commands,
     program: MaterialProgramId,
+    editing_target: MaterialEditingTarget,
     before: BTreeSet<MaterialGraphPreviewTarget>,
     after: BTreeSet<MaterialGraphPreviewTarget>,
 ) {
@@ -527,8 +532,12 @@ pub(super) fn preview_edit(
         ) else {
             return;
         };
-        record(
+        record_in_context(
             world,
+            match editing_target {
+                MaterialEditingTarget::EffectInstance => Context::Effect,
+                target => Context::Material(target),
+            },
             Transaction {
                 before: snapshot.clone(),
                 after: snapshot,

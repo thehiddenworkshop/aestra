@@ -995,9 +995,10 @@ struct MaterialGraphPreviewCache {
     image: Handle<Image>,
 }
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 struct MaterialGraphPreviewToggle {
     program: MaterialProgramId,
+    editing_target: crate::material_document::MaterialEditingTarget,
     target: MaterialGraphPreviewTarget,
 }
 
@@ -1011,12 +1012,13 @@ enum MaterialGraphToolbarAction {
         MaterialSelectionScope,
         arrange::ArrangeScope,
     ),
-    ToggleAllPreviews(MaterialProgramId),
+    ToggleAllPreviews(MaterialProgramId, MaterialSelectionScope),
 }
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 struct MaterialGraphPreviewRaster {
     program: MaterialProgramId,
+    editing_target: crate::material_document::MaterialEditingTarget,
     instance: Option<MaterialId>,
     target: MaterialGraphPreviewTarget,
     value_type: Option<MaterialValueType>,
@@ -1888,6 +1890,7 @@ fn handle_material_graph_preview_actions(
         presentation::preview_edit(
             &mut commands,
             toggle.program,
+            toggle.editing_target.clone(),
             before,
             presentation::visible(&previews, toggle.program),
         );
@@ -1986,7 +1989,14 @@ fn handle_material_graph_toolbar_actions(
                 // Rebuilding here would invalidate every result before it can be applied.
                 continue;
             }
-            MaterialGraphToolbarAction::ToggleAllPreviews(program) => {
+            MaterialGraphToolbarAction::ToggleAllPreviews(program, scope) => {
+                let Some((viewport, _, _)) = viewports.iter().find(|(viewport, _, _)| {
+                    viewport.program == program && viewport.scope == scope
+                }) else {
+                    session.status =
+                        "Preview controls unavailable: the graph view is no longer mounted".into();
+                    continue;
+                };
                 let before = presentation::visible(&previews, program);
                 let targets = graph_nodes
                     .iter()
@@ -2001,6 +2011,7 @@ fn handle_material_graph_toolbar_actions(
                 presentation::preview_edit(
                     &mut commands,
                     program,
+                    viewport.editing_target.clone(),
                     before,
                     presentation::visible(&previews, program),
                 );
@@ -3314,14 +3325,15 @@ fn rasterize_material_graph_previews(
     if requests.is_empty() {
         return;
     }
-    let Ok(programs) = session.graph_material_programs(&catalog) else {
-        return;
-    };
     // Built-in + project functions, so graph FunctionCall nodes preview instead of showing checkers.
     let functions = aestra_compiler::MaterialFunctionLibrary::new(
         catalog.material_functions().unwrap_or_default(),
     );
     for (entity, request) in &requests {
+        let Ok(programs) = session.graph_material_programs_for(&request.editing_target, &catalog)
+        else {
+            continue;
+        };
         let key = (request.program, request.target);
         let Some(program) = programs
             .iter()
@@ -4696,6 +4708,7 @@ pub(crate) fn spawn_material_graph_workspace(
                         spawn_expression_node(
                             canvas,
                             projection.program,
+                            target,
                             node,
                             &program_definition,
                             &inline_constants,
@@ -4713,6 +4726,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     spawn_output_node(
                         canvas,
                         projection.program,
+                        target,
                         &projection.outputs,
                         previews,
                         instance,
@@ -5395,7 +5409,7 @@ fn spawn_header(
                     } else {
                         "material-graph-show-all-previews"
                     }),
-                    MaterialGraphToolbarAction::ToggleAllPreviews(graph.program),
+                    MaterialGraphToolbarAction::ToggleAllPreviews(graph.program, scope),
                 );
                 spawn_material_graph_toolbar_button(
                     header,
@@ -5887,6 +5901,7 @@ fn set_material_graph_value_component(
 fn spawn_expression_node(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     node: &MaterialGraphNode,
     program_definition: &MaterialProgram,
     inline_constants: &BTreeSet<MaterialExpressionId>,
@@ -6061,6 +6076,7 @@ fn spawn_expression_node(
                     body,
                     MaterialGraphPreviewRaster {
                         program,
+                        editing_target: editing_target.clone(),
                         instance,
                         target,
                         value_type: node.value_type,
@@ -6076,7 +6092,11 @@ fn spawn_expression_node(
             spawn_graph_node_preview_toggle(
                 graph_node,
                 preview_toggle_props(preview_visible, localizer, asset_server),
-                MaterialGraphPreviewToggle { program, target },
+                MaterialGraphPreviewToggle {
+                    program,
+                    editing_target: editing_target.clone(),
+                    target,
+                },
             );
         });
 }
@@ -6084,6 +6104,7 @@ fn spawn_expression_node(
 fn spawn_output_node(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     outputs: &[MaterialGraphOutput],
     previews: &MaterialGraphPreviewState,
     instance: Option<MaterialId>,
@@ -6164,6 +6185,7 @@ fn spawn_output_node(
                     body,
                     MaterialGraphPreviewRaster {
                         program,
+                        editing_target: editing_target.clone(),
                         instance,
                         target,
                         value_type: Some(MaterialValueType::Color),
@@ -6179,7 +6201,11 @@ fn spawn_output_node(
             spawn_graph_node_preview_toggle(
                 graph_node,
                 preview_toggle_props(preview_visible, localizer, asset_server),
-                MaterialGraphPreviewToggle { program, target },
+                MaterialGraphPreviewToggle {
+                    program,
+                    editing_target: editing_target.clone(),
+                    target,
+                },
             );
         });
 }
@@ -6611,6 +6637,7 @@ mod tests {
             .spawn((
                 MaterialGraphPreviewToggle {
                     program: MaterialProgramId::new(),
+                    editing_target: crate::material_document::MaterialEditingTarget::EffectInstance,
                     target: MaterialGraphPreviewTarget::Output,
                 },
                 FeathersActionButton,
@@ -7885,6 +7912,44 @@ mod tests {
     }
 
     #[test]
+    fn restored_material_tab_rasterizes_previews_from_its_own_target_before_focus() {
+        let root = tempfile::tempdir().unwrap();
+        let program = MaterialProgram::additive_sprite("Restored preview").normalized();
+        program
+            .save_ron(root.path().join("restored.aestra.material.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(root.path());
+        let session = test_support::session_with_timing_slack();
+        assert_eq!(
+            session.material_target,
+            crate::material_document::MaterialEditingTarget::EffectInstance
+        );
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<MaterialGraphPreviewState>()
+            .init_resource::<Assets<Image>>()
+            .add_systems(Update, rasterize_material_graph_previews);
+        let request = app
+            .world_mut()
+            .spawn(MaterialGraphPreviewRaster {
+                program: program.id,
+                editing_target: crate::material_document::MaterialEditingTarget::Program {
+                    root: root.path().to_owned(),
+                    id: program.id,
+                },
+                instance: None,
+                target: MaterialGraphPreviewTarget::Output,
+                value_type: Some(MaterialValueType::Color),
+            })
+            .id();
+
+        app.update();
+
+        assert!(app.world().get::<ImageNode>(request).is_some());
+    }
+
+    #[test]
     fn standalone_preview_cache_tracks_source_edits_without_an_effect_revision() {
         let root = tempfile::tempdir().unwrap();
         let program = MaterialProgram::additive_sprite("Preview").normalized();
@@ -7903,11 +7968,15 @@ mod tests {
             .add_systems(Update, rasterize_material_graph_previews);
         let request = MaterialGraphPreviewRaster {
             program: program.id,
+            editing_target: crate::material_document::MaterialEditingTarget::Program {
+                root: root.path().to_owned(),
+                id: program.id,
+            },
             instance: None,
             target: MaterialGraphPreviewTarget::Output,
             value_type: None,
         };
-        let first = app.world_mut().spawn(request).id();
+        let first = app.world_mut().spawn(request.clone()).id();
         app.update();
         let first_image = app.world().get::<ImageNode>(first).unwrap().image.clone();
         let mut session = app.world_mut().remove_resource::<EditorSession>().unwrap();
