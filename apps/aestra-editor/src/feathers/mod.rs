@@ -31,6 +31,12 @@ pub(crate) mod tooltip;
 use crate::theme;
 use bevy::{feathers::FeathersPlugins, prelude::*};
 
+/// Converts pointer travel (logical window pixels, as Bevy picking reports it) into UI units — the
+/// units of `Val::Px`. Only `UiScale` separates the two; the display scale factor does not.
+pub(crate) fn pointer_travel_to_ui_units(travel: f32, ui_scale: f32) -> f32 {
+    travel / ui_scale.max(0.01)
+}
+
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum AestraFeathersSet {
     Input,
@@ -80,5 +86,19 @@ impl Plugin for AestraFeathersPlugin {
                 )
                     .in_set(AestraFeathersSet::Sync),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pointer_travel_to_ui_units;
+
+    #[test]
+    fn pointer_travel_converts_by_ui_scale_only() {
+        // UI units match logical pixels at the default UI scale, whatever the display scale.
+        assert_eq!(pointer_travel_to_ui_units(24.0, 1.0), 24.0);
+        // A 2x UI scale draws each UI unit over two logical pixels.
+        assert_eq!(pointer_travel_to_ui_units(24.0, 2.0), 12.0);
+        assert_eq!(pointer_travel_to_ui_units(-15.0, 1.5), -10.0);
     }
 }

@@ -693,16 +693,18 @@ pub(super) fn begin_resize_sources(
 
 pub(super) fn resize_sources(
     mut event: On<Pointer<Drag>>,
-    splitters: Query<(&ComputedNode, &SourcesSplitter)>,
+    splitters: Query<&SourcesSplitter>,
+    ui_scale: Res<UiScale>,
     mut state: ResMut<AssetBrowserState>,
 ) {
     if event.button == PointerButton::Primary
-        && let Ok((node, splitter)) = splitters.get(event.entity)
+        && let Ok(splitter) = splitters.get(event.entity)
         && let Some(start_width) = splitter.drag_start_width
     {
         event.propagate(false);
-        state.sources_width =
-            (start_width + event.distance.x * node.inverse_scale_factor()).clamp(90.0, 360.0);
+        // `start_width` and `sources_width` are UI units; the drag distance is logical pixels.
+        let travel = crate::feathers::pointer_travel_to_ui_units(event.distance.x, ui_scale.0);
+        state.sources_width = (start_width + travel).clamp(90.0, 360.0);
     }
 }
 

@@ -515,10 +515,12 @@ fn sources_divider_has_a_full_height_hit_area_and_scales_drag_on_secondary_targe
                     },
                     position: Vec2::ZERO,
                 },
+                // Bevy picking reports pointer travel in logical pixels (the UI backend scales
+                // it up to hit-test), so a 20px drag is 20 at every display scale.
                 Drag {
                     button: PointerButton::Primary,
-                    distance: Vec2::X * 20.0 * scale,
-                    delta: Vec2::X * 20.0 * scale,
+                    distance: Vec2::X * 20.0,
+                    delta: Vec2::X * 20.0,
                 },
                 splitter,
             ));
@@ -564,8 +566,8 @@ fn sources_divider_has_a_full_height_hit_area_and_scales_drag_on_secondary_targe
                 },
                 Drag {
                     button: PointerButton::Primary,
-                    distance: -Vec2::X * 20.0 * scale,
-                    delta: -Vec2::X * 20.0 * scale,
+                    distance: -Vec2::X * 20.0,
+                    delta: -Vec2::X * 20.0,
                 },
                 splitter,
             ));

@@ -804,8 +804,7 @@ pub(super) fn move_module_drag(
         return;
     }
     event.propagate(false);
-    // Pointer travel is in logical window pixels; UiScale converts it to UI units.
-    let travel = event.distance.y / ui_scale.0;
+    let travel = crate::feathers::pointer_travel_to_ui_units(event.distance.y, ui_scale.0);
     if let Ok(mut node) = ghosts.get_mut(drag.ghost) {
         node.top = Val::Px(drag.ghost_origin.y + travel);
     }

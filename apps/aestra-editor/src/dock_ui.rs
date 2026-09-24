@@ -1212,14 +1212,15 @@ fn resize_workspace_pane(
     let Ok(parent_node) = queries.computed.get(parent.parent()) else {
         return;
     };
+    // The split span is the parent's physical size, so convert the (logical) pointer delta to physical.
     let scale = window.scale_factor();
     let (delta, span) = match splitter.axis {
         DockAxis::Horizontal => (
-            screen_delta_to_logical(drag.delta.x, scale),
+            pointer_delta_to_physical(drag.delta.x, scale),
             parent_node.size().x,
         ),
         DockAxis::Vertical => (
-            screen_delta_to_logical(drag.delta.y, scale),
+            pointer_delta_to_physical(drag.delta.y, scale),
             parent_node.size().y,
         ),
     };
@@ -1243,8 +1244,9 @@ fn resize_workspace_pane(
     }
 }
 
-fn screen_delta_to_logical(delta: f32, scale_factor: f32) -> f32 {
-    delta / scale_factor.max(0.01)
+/// Pointer deltas are logical window pixels; `ComputedNode` sizes are physical. Scale up to compare.
+fn pointer_delta_to_physical(delta: f32, scale_factor: f32) -> f32 {
+    delta * scale_factor
 }
 
 fn find_dock_node(node: &DockNode, target: DockNodeId) -> Option<&DockNode> {
@@ -1873,9 +1875,11 @@ mod tests {
     }
 
     #[test]
-    fn splitter_drag_converts_screen_pixels_to_logical_ui_units() {
-        assert_eq!(screen_delta_to_logical(24.0, 1.0), 24.0);
-        assert_eq!(screen_delta_to_logical(24.0, 1.5), 16.0);
-        assert_eq!(screen_delta_to_logical(-30.0, 2.0), -15.0);
+    fn splitter_drag_converts_logical_pointer_travel_to_physical_span_units() {
+        // A 24 logical-pixel drag on a 150% display covers 36 physical pixels of the split span, so
+        // the divider tracks the cursor exactly.
+        assert_eq!(pointer_delta_to_physical(24.0, 1.0), 24.0);
+        assert_eq!(pointer_delta_to_physical(24.0, 1.5), 36.0);
+        assert_eq!(pointer_delta_to_physical(-30.0, 2.0), -60.0);
     }
 }
