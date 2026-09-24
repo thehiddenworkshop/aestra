@@ -53,6 +53,8 @@ const OVERLAY_PROBE_Y: u32 = 96;
 const OVERLAY_PROBE_SIZE: u32 = 144;
 
 fn main() {
+    // Linked extensions (extensible-stages M10) register before any effect is compiled.
+    aestra_example_extension::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");

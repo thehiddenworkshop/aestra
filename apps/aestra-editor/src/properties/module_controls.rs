@@ -1094,12 +1094,12 @@ pub(super) fn spawn_module_inspector(
         });
 }
 
-/// The module's parameter controls (extensible-stages M9): a registered module renders its schema of
-/// inputs; an unregistered plugin/custom-stage module (no metadata in this build's registry) renders its
-/// preserved [`ModuleParameters::Custom`] payload as read-only value rows so its authored data is
-/// surfaced rather than dropped (§20). Editable, schema-driven controls for such modules arrive with
-/// plugin loading, when a `PropertySchema` describing them is actually available. Inline diagnostics
-/// close out both paths. Shared so the inspector and any future embedded view render identical controls.
+/// The module's parameter controls (extensible-stages M9/M10): a registered module — built-in or from a
+/// linked extension — renders editable controls for its declared inputs; an unregistered plugin module
+/// (its extension is not linked into this build) renders its preserved [`ModuleParameters::Custom`]
+/// payload as read-only value rows so its authored data is surfaced rather than dropped (§20). Inline
+/// diagnostics close out both paths. Shared so the inspector and any future embedded view render
+/// identical controls.
 fn spawn_module_input_controls(
     card: &mut ChildSpawnerCommands,
     module: &ModuleInstance,

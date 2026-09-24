@@ -11,6 +11,7 @@ repository.workspace = true
 aestra-project = { path = "../../crates/aestra-project" }
 aestra-authoring = { path = "../../crates/aestra-authoring" }
 aestra-bevy = { path = "../../bevy/aestra-bevy" }
+aestra-example-extension = { path = "../../crates/aestra-example-extension" }
 bevy.workspace = true
 image.workspace = true
 serde.workspace = true

@@ -50,7 +50,10 @@ pub use aestra_bevy_render::{
     EffectRequirements, EffectRuntimeStatus, GpuCapabilities, PresentationMode, PresentedEffect,
     RendererCapability, gpu,
 };
-pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry, ProjectCompileError};
+pub use aestra_compiler::{
+    AestraExtension, CompileError, EffectCompiler, ExtensionManifest, ExtensionRegistry,
+    ModuleRegistry, ProjectCompileError, link_extension,
+};
 pub use aestra_core::*;
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,

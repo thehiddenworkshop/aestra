@@ -1,0 +1,13 @@
+[package]
+name = "aestra-example-extension"
+description = "Reference linked Aestra extension: a plugin stage, module, domain, resource and renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
+aestra-core = { path = "../aestra-core" }
+aestra-runtime = { path = "../aestra-runtime" }

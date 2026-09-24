@@ -199,6 +199,9 @@ fn set_editor_window_icon(world: &mut World) {
 }
 
 fn main() {
+    // Linked extensions (extensible-stages M10) register before the module catalog is built or any
+    // effect is compiled.
+    aestra_example_extension::link();
     let (mut settings, persistence) = SettingsPersistence::load();
     let localization = EditorLocalizationPlugin::new(&settings.language.locale);
     settings.language.locale = localization.locale().into();

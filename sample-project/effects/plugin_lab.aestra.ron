@@ -1,0 +1,196 @@
+(
+    format_version: 4,
+    id: "9bbc02b0-204a-4ee2-bad5-fc3b85707c9b",
+    name: "Plugin Lab",
+    duration: 3.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    emitters: [
+        (
+            id: "47aefb7f-61ee-4c96-a1f5-975be54ce9a0",
+            name: "Swirl",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 3.0,
+            max_particles: 256,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "71b0b9e6-df1b-471b-8076-dfa1ae33981a",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 24.0,
+                                burst_count: 12,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "f610562f-2db0-45e1-94c8-8456139fdd74",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Circle(
+                                    radius: 12.0,
+                                ),
+                            ),
+                        ),
+                        (
+                            id: "70de2b57-9cfd-4025-907a-ff21a8efe3c2",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 0.6,
+                                    max: 1.2,
+                                ),
+                                speed: (
+                                    min: 35.0,
+                                    max: 90.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 180.0,
+                                angular_velocity: (
+                                    min: -2.0,
+                                    max: 2.0,
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "6850e94d-8998-4051-bf01-79015dbbbf77",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -18.0, 0.0),
+                                drag: 0.6,
+                                turbulence: 4.0,
+                            ),
+                        ),
+                        (
+                            id: "a579bcf4-7d41-42bc-98e4-d0ae491efa67",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "09e9eaeb-ab25-4c8d-8df7-58f0ff020f1a",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 4.0,
+                                        ),
+                                        (
+                                            time: 0.35,
+                                            value: 10.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 1.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "d0566f7b-160f-4eec-bd31-25981269d5ce",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.0,
+                                        ),
+                                        (
+                                            time: 0.12,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "0cf8b05e-3db9-4d50-946f-648477e9180f",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.35, 0.75, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 0.5,
+                                            color: (0.62, 0.3, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.15, 0.05, 0.4, 0.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            simulation_stages: [
+                (
+                    id: "fb120488-d95b-6935-5efd-091ab5b69f5c",
+                    name: "Field Forces",
+                    stage_type: "org.example.aestra::stage/field_forces",
+                    modules: [
+                        (
+                            id: "63ccd935-3f21-4b27-af3a-ab8454df8dd7",
+                            module_type: "org.example.aestra::module/vortex",
+                            enabled: true,
+                            parameters: Custom({
+                                "axis": Vec3((0.0, 1.0, 0.0)),
+                                "radius": Scalar(1.0),
+                                "strength": Scalar(6.0),
+                            }),
+                            label: Some("Core"),
+                        ),
+                        (
+                            id: "2fd48693-b18c-4284-8cd8-7ddb070c5302",
+                            module_type: "org.example.aestra::module/vortex",
+                            enabled: true,
+                            parameters: Custom({
+                                "axis": Vec3((0.0, 1.0, 0.25)),
+                                "radius": Scalar(4.0),
+                                "strength": Scalar(2.5),
+                            }),
+                            label: Some("Outer"),
+                        ),
+                    ],
+                ),
+            ],
+            renderers: [
+                (
+                    id: "386bd577-3e42-43df-bd6e-4967d938ed12",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+)

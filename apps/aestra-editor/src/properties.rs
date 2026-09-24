@@ -974,6 +974,86 @@ mod tests {
     }
 
     #[test]
+    fn a_linked_plugin_module_is_catalogued_edited_and_lowered_through_the_generic_path() {
+        // Extensible-stages M10: the editor sees linked plugin modules in its catalog, edits their
+        // inputs through the same schema-driven command path as built-ins, and compiles the plugin
+        // stage with the default compiler.
+        aestra_example_extension::link();
+        let registry = EditorModuleRegistry::default();
+        let vortex_type = aestra_core::ModuleTypeId::new(aestra_example_extension::MODULE_VORTEX);
+        let metadata = registry
+            .0
+            .get(&vortex_type)
+            .expect("linked plugin modules are in the editor catalog");
+        assert_eq!(
+            metadata
+                .inputs
+                .iter()
+                .map(|input| input.name)
+                .collect::<Vec<_>>(),
+            ["strength", "radius", "axis"]
+        );
+
+        let mut session = test_support::session_with_timing_slack();
+        let emitter = session.selected_layer().unwrap().id;
+        let layer = session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|layer| layer.id == emitter)
+            .unwrap();
+        layer.simulation_stage_types.insert(
+            "Field Forces".into(),
+            aestra_core::StageTypeId::new(aestra_example_extension::STAGE_FIELD_FORCES),
+        );
+        let mut vortex = registry.0.instantiate(&vortex_type).unwrap();
+        vortex.stage = StageKind::Simulation("Field Forces".into());
+        let module = vortex.id;
+        let index = session.selected_layer().unwrap().modules.len();
+        assert!(session.execute(
+            "Added Vortex",
+            EffectCommand::AddModule {
+                emitter,
+                module: vortex,
+                index,
+            },
+            false,
+        ));
+
+        let command =
+            properties_module_parameter_command(&session, module, "strength", Value::Scalar(7.5))
+                .unwrap();
+        assert!(session.execute("Changed strength", command, false));
+        let edited = session
+            .selected_layer()
+            .unwrap()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap();
+        assert_eq!(
+            module_parameter(edited, "strength"),
+            Some(Value::Scalar(7.5))
+        );
+
+        let compiled = aestra_compiler::EffectCompiler::default()
+            .compile(&session.effect)
+            .expect("the effect with a plugin stage compiles");
+        let stage = compiled
+            .emitters
+            .iter()
+            .find(|compiled| compiled.source == emitter)
+            .unwrap()
+            .extension_stages
+            .first()
+            .expect("the plugin stage lowers");
+        assert_eq!(
+            stage.modules[0].parameters.get("strength"),
+            Some(&Value::Scalar(7.5))
+        );
+    }
+
+    #[test]
     fn empty_effect_properties_show_effect_controls_only() {
         // With no emitter, the Properties (inspector) panel edits the effect: it shows the Effect name
         // control and no Emitter control. The "select or create an emitter" hint now lives in the
@@ -8825,8 +8905,9 @@ impl StackStage {
 pub(crate) struct EditorModuleRegistry(pub(crate) ModuleRegistry);
 
 impl Default for EditorModuleRegistry {
+    /// The built-in modules plus those of every linked extension (extensible-stages M10).
     fn default() -> Self {
-        Self(ModuleRegistry::builtin())
+        Self(aestra_compiler::ExtensionRegistry::linked().modules)
     }
 }
 

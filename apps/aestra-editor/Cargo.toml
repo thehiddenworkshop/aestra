@@ -12,6 +12,7 @@ aestra-authoring = { path = "../../crates/aestra-authoring" }
 aestra-bevy-render = { path = "../../bevy/aestra-bevy-render" }
 aestra-compiler = { path = "../../crates/aestra-compiler" }
 aestra-core = { path = "../../crates/aestra-core" }
+aestra-example-extension = { path = "../../crates/aestra-example-extension" }
 aestra-gpu = { path = "../../crates/aestra-gpu" }
 aestra-project = { path = "../../crates/aestra-project" }
 aestra-runtime = { path = "../../crates/aestra-runtime" }

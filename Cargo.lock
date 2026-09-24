@@ -198,6 +198,7 @@ dependencies = [
  "aestra-bevy-render",
  "aestra-compiler",
  "aestra-core",
+ "aestra-example-extension",
  "aestra-gpu",
  "aestra-project",
  "aestra-runtime",
@@ -217,6 +218,15 @@ dependencies = [
  "thiserror 2.0.20",
  "unic-langid",
  "winit",
+]
+
+[[package]]
+name = "aestra-example-extension"
+version = "0.1.0"
+dependencies = [
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-runtime",
 ]
 
 [[package]]
@@ -266,6 +276,7 @@ version = "0.1.0"
 dependencies = [
  "aestra-authoring",
  "aestra-bevy",
+ "aestra-example-extension",
  "aestra-project",
  "bevy",
  "image",
