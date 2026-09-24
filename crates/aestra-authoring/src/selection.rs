@@ -395,6 +395,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetModuleEnabled {
             emitter, module, ..
         }
+        | EffectCommand::SetModuleLabel {
+            emitter, module, ..
+        }
         | EffectCommand::SetModuleParameter {
             emitter, module, ..
         }
@@ -444,6 +447,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
             emitter, renderer, ..
         }
         | EffectCommand::SetRendererEnabled {
+            emitter, renderer, ..
+        }
+        | EffectCommand::SetRendererLabel {
             emitter, renderer, ..
         }
         | EffectCommand::SetRendererMaterial {

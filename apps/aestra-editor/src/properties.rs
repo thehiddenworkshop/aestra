@@ -138,6 +138,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
             .add_observer(select_properties_header)
+            .add_observer(handle_instance_label_change)
             .add_observer(begin_module_drag)
             .add_observer(move_module_drag)
             .add_observer(end_module_drag)
@@ -2492,6 +2493,64 @@ mod tests {
         assert!(
             effect_clip_repair_source(&catalog, &owner, &clip, EffectAssetRef::new(cycle.id))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn instance_labels_are_set_trimmed_cleared_and_undoable() {
+        let session = test_support::session_with_timing_slack();
+        let layer = session.selected_layer().unwrap();
+        let module = layer.modules[0].id;
+        let renderer = layer.renderers[0].id;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .add_observer(handle_instance_label_change);
+        let module_field = app
+            .world_mut()
+            .spawn(InstanceLabelControl::Module(module))
+            .id();
+        let renderer_field = app
+            .world_mut()
+            .spawn(InstanceLabelControl::Renderer(renderer))
+            .id();
+        let edit = |app: &mut App, source, value: &str| {
+            app.world_mut().trigger(ValueChange {
+                source,
+                value: value.to_owned(),
+                is_final: true,
+            });
+            app.update();
+        };
+        let labels = |app: &App| {
+            let layer = app
+                .world()
+                .resource::<EditorSession>()
+                .selected_layer()
+                .unwrap();
+            (
+                layer.modules[0].label.clone(),
+                layer.renderers[0].label.clone(),
+            )
+        };
+
+        edit(&mut app, module_field, "  Ground  ");
+        edit(&mut app, renderer_field, "Glow");
+        assert_eq!(
+            labels(&app),
+            (Some("Ground".to_owned()), Some("Glow".to_owned()))
+        );
+
+        // Clearing the field removes the label.
+        edit(&mut app, module_field, "   ");
+        assert_eq!(labels(&app).0, None);
+
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        session.undo();
+        assert_eq!(
+            session.selected_layer().unwrap().modules[0]
+                .label
+                .as_deref(),
+            Some("Ground")
         );
     }
 
@@ -6057,6 +6116,11 @@ fn spawn_selection_inspector(
                     asset_server,
                     localizer,
                 );
+                spawn_instance_label_field(
+                    parent,
+                    renderer.label.as_deref(),
+                    InstanceLabelControl::Renderer(renderer.id),
+                );
                 return;
             }
         }
@@ -6704,6 +6768,86 @@ fn spawn_text_field(
             spawn_text_input(inputs, value, title, control);
         },
     );
+}
+
+/// Which instance an instance-label text field edits (§28.5).
+#[derive(Component, Debug, Clone, Copy)]
+enum InstanceLabelControl {
+    Module(ModuleId),
+    Renderer(RendererId),
+}
+
+/// The optional instance label field (§28.5), shown in the inspector for modules and renderers.
+/// Clearing it removes the label; the semantic type is unaffected.
+fn spawn_instance_label_field(
+    parent: &mut ChildSpawnerCommands,
+    label: Option<&str>,
+    control: InstanceLabelControl,
+) {
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new("Label").with_control_min_width(150.0),
+        EditorTooltip::description(
+            "Optional name telling repeated instances of this type apart, e.g. Collision \
+             \"Ground\". Leave empty for none."
+                .to_owned(),
+        ),
+        |inputs| {
+            spawn_text_input(inputs, label.unwrap_or_default(), "Instance label", control);
+        },
+    );
+}
+
+/// Commits an edited instance label as one undoable command (§28.5).
+fn handle_instance_label_change(
+    change: On<ValueChange<String>>,
+    controls: Query<&InstanceLabelControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(layer) = session.selected_layer() else {
+        return;
+    };
+    let emitter = layer.id;
+    let label = aestra_core::normalize_instance_label(Some(&change.value));
+    let command = match *control {
+        InstanceLabelControl::Module(module) => {
+            let current = layer
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .map(|candidate| candidate.label.clone());
+            if current.is_none() || current == Some(label.clone()) {
+                return;
+            }
+            EffectCommand::SetModuleLabel {
+                emitter,
+                module,
+                label,
+            }
+        }
+        InstanceLabelControl::Renderer(renderer) => {
+            let current = layer
+                .renderers
+                .iter()
+                .find(|candidate| candidate.id == renderer)
+                .map(|candidate| candidate.label.clone());
+            if current.is_none() || current == Some(label.clone()) {
+                return;
+            }
+            EffectCommand::SetRendererLabel {
+                emitter,
+                renderer,
+                label,
+            }
+        }
+    };
+    session.execute("Renamed instance", command, true);
 }
 
 fn spawn_document_toggle(

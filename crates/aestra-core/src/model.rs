@@ -1635,6 +1635,18 @@ pub struct ModuleInstance {
     pub property_source_values: BTreeMap<String, Vec<PropertySourceValue>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, ParameterId>,
+    /// An optional author-given name telling repeated instances of one module type apart, e.g.
+    /// Collision "Ground" and Collision "Characters" (§28.5). The semantic type is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Normalizes an instance label (§28.5): surrounding whitespace is trimmed and an empty label means none.
+pub fn normalize_instance_label(label: Option<&str>) -> Option<String> {
+    label
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
 }
 
 impl ModuleInstance {
@@ -1651,6 +1663,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1664,6 +1677,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1689,6 +1703,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1706,6 +1721,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1722,6 +1738,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1738,6 +1755,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -1755,6 +1773,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            label: None,
         }
     }
 
@@ -2698,6 +2717,10 @@ pub struct RendererInstance {
     pub enabled: bool,
     pub material: MaterialId,
     pub properties: RendererProperties,
+    /// An optional author-given name telling repeated renderers apart, e.g. Sprite Renderer "Core"
+    /// and Sprite Renderer "Glow" (§28.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 impl RendererInstance {
@@ -2708,6 +2731,7 @@ impl RendererInstance {
             enabled: true,
             material,
             properties: RendererProperties::Sprite,
+            label: None,
         }
     }
 
@@ -2723,6 +2747,7 @@ impl RendererInstance {
                 playback: FlipbookPlaybackMode::Forward,
                 random_start: false,
             },
+            label: None,
         }
     }
 

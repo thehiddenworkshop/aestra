@@ -2544,6 +2544,15 @@ fn spawn_semantic_material_texture(
     }
 }
 
+/// The renderer's stack title — type name plus its label or repeat number (§28.5).
+fn renderer_title(session: &EditorSession, renderer: &aestra_core::RendererInstance) -> String {
+    let display_name = renderer_display_name(renderer);
+    session.selected_layer().map_or_else(
+        || display_name.to_owned(),
+        |layer| aestra_compiler::renderer_instance_title(layer, renderer, display_name),
+    )
+}
+
 /// The display name for a renderer, shared by the compact stack row and the inspector card.
 fn renderer_display_name(renderer: &aestra_core::RendererInstance) -> &'static str {
     match renderer.properties {
@@ -2565,6 +2574,7 @@ pub(super) fn spawn_renderer_stack_row(
     session: &EditorSession,
 ) {
     let display_name = renderer_display_name(renderer);
+    let title = renderer_title(session, renderer);
     let selected = session.selection.primary == SemanticTarget::Renderer(renderer.id);
     let base_border = if selected {
         theme::ACCENT_DIM
@@ -2608,7 +2618,7 @@ pub(super) fn spawn_renderer_stack_row(
         ))
         .with_children(|row| {
             row.spawn((
-                Text::new(display_name),
+                Text::new(title),
                 bevy::feathers::theme::ThemedText,
                 TextColor(if renderer.enabled {
                     theme::TEXT
@@ -2678,7 +2688,7 @@ pub(super) fn spawn_renderer_card(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    let display_name = renderer_display_name(renderer);
+    let title = renderer_title(session, renderer);
     let base_border = if session.selection.primary == SemanticTarget::Renderer(renderer.id) {
         theme::ACCENT_DIM
     } else {
@@ -2686,7 +2696,7 @@ pub(super) fn spawn_renderer_card(
     };
     spawn_remembered_panel_card(
         parent,
-        PanelCardProps::new(display_name, collapsed)
+        PanelCardProps::new(&title, collapsed)
             .with_memory_key(properties_renderer_key(renderer))
             .with_help("Controls how this emitter is drawn.")
             .with_enabled(renderer.enabled)

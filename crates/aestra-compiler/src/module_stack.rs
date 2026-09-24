@@ -10,7 +10,8 @@
 
 use crate::{EffectCompiler, InputControl};
 use aestra_core::{
-    Emitter, EmitterShape, ModuleId, ModuleInstance, ModuleParameters, ModuleTypeId, StageKind,
+    Emitter, EmitterShape, ModuleId, ModuleInstance, ModuleParameters, ModuleTypeId,
+    RendererInstance, StageKind,
 };
 
 /// One module's row in the compact stack (§28.2): its identity, display name, enabled state, a
@@ -21,6 +22,8 @@ pub struct ModuleStackRow {
     pub module: ModuleId,
     pub module_type: ModuleTypeId,
     pub display_name: String,
+    /// The row title: the type name plus the instance label or repeat number (§28.5).
+    pub title: String,
     pub enabled: bool,
     pub summary: String,
     pub registered: bool,
@@ -148,6 +151,68 @@ pub fn module_summary(module: &ModuleInstance) -> String {
     }
 }
 
+/// The stack title of an instance (§28.5): `Name "Label"` when the author labelled it. An unlabelled
+/// instance whose type repeats in the emitter is numbered (`Name #2`, the first stays plain) so identical
+/// rows can still be told apart; a unique one is just its type name. The semantic type never changes.
+pub fn instance_title(
+    display_name: &str,
+    label: Option<&str>,
+    occurrence: usize,
+    repeats: bool,
+) -> String {
+    match label {
+        Some(label) => format!("{display_name} \"{label}\""),
+        None if repeats && occurrence > 1 => format!("{display_name} #{occurrence}"),
+        None => display_name.to_string(),
+    }
+}
+
+/// [`instance_title`] for a module, counting same-type modules across the emitter in authored order.
+pub fn module_instance_title(
+    emitter: &Emitter,
+    module: &ModuleInstance,
+    display_name: &str,
+) -> String {
+    let same_type = || {
+        emitter
+            .modules
+            .iter()
+            .filter(|candidate| candidate.module_type == module.module_type)
+    };
+    let occurrence = same_type()
+        .position(|candidate| candidate.id == module.id)
+        .map_or(1, |index| index + 1);
+    instance_title(
+        display_name,
+        module.label.as_deref(),
+        occurrence,
+        same_type().count() > 1,
+    )
+}
+
+/// [`instance_title`] for a renderer, counting same-type renderers across the emitter in order.
+pub fn renderer_instance_title(
+    emitter: &Emitter,
+    renderer: &RendererInstance,
+    display_name: &str,
+) -> String {
+    let same_type = || {
+        emitter
+            .renderers
+            .iter()
+            .filter(|candidate| candidate.renderer_type == renderer.renderer_type)
+    };
+    let occurrence = same_type()
+        .position(|candidate| candidate.id == renderer.id)
+        .map_or(1, |index| index + 1);
+    instance_title(
+        display_name,
+        renderer.label.as_deref(),
+        occurrence,
+        same_type().count() > 1,
+    )
+}
+
 impl EffectCompiler {
     /// Projects one emitter's modules into the compact, stage-grouped stack (extensible-stages M9).
     /// Groups appear in canonical lifecycle order (spawn/update for emitter and particle), then any
@@ -157,12 +222,14 @@ impl EffectCompiler {
         let registry = self.registry();
         let row = |module: &ModuleInstance| {
             let metadata = registry.get(&module.module_type);
+            let display_name = metadata
+                .map(|m| m.display_name.to_string())
+                .unwrap_or_else(|| module.module_type.0.clone());
             ModuleStackRow {
                 module: module.id,
                 module_type: module.module_type.clone(),
-                display_name: metadata
-                    .map(|m| m.display_name.to_string())
-                    .unwrap_or_else(|| module.module_type.0.clone()),
+                title: module_instance_title(emitter, module, &display_name),
+                display_name,
                 enabled: module.enabled,
                 summary: module_summary(module),
                 registered: metadata.is_some(),
@@ -294,6 +361,34 @@ mod tests {
             )),
             "Speed 3–5 · Life 0.7–1.25s"
         );
+    }
+
+    #[test]
+    fn repeated_instances_show_their_label_or_a_repeat_number() {
+        assert_eq!(instance_title("Vortex", None, 1, false), "Vortex");
+        assert_eq!(
+            instance_title("Vortex", Some("Large Orbit"), 1, true),
+            "Vortex \"Large Orbit\""
+        );
+        // Unlabelled repeats: the first stays plain, later ones are numbered.
+        assert_eq!(instance_title("Vortex", None, 1, true), "Vortex");
+        assert_eq!(instance_title("Vortex", None, 2, true), "Vortex #2");
+
+        let compiler = EffectCompiler::default();
+        let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        let mut second = ModuleInstance::motion([0.0, 0.0, 0.0], 0.0, 0.0);
+        second.label = Some("Detail".into());
+        emitter.modules.push(second);
+        emitter
+            .modules
+            .push(ModuleInstance::motion([0.0, 0.0, 0.0], 0.0, 0.0));
+        let titles: Vec<String> = compiler
+            .project_emitter_stack(&emitter)
+            .rows()
+            .filter(|row| row.display_name == "Motion")
+            .map(|row| row.title.clone())
+            .collect();
+        assert_eq!(titles, vec!["Motion", "Motion \"Detail\"", "Motion #3"]);
     }
 
     #[test]

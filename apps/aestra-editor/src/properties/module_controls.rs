@@ -423,6 +423,14 @@ pub(super) fn properties_curve_limits(
     numeric_source_limits(&input.control)
 }
 
+/// The module's stack title — type name plus its label or repeat number (§28.5).
+fn module_title(session: &EditorSession, module: &ModuleInstance, display_name: &str) -> String {
+    session.selected_layer().map_or_else(
+        || display_name.to_owned(),
+        |layer| aestra_compiler::module_instance_title(layer, module, display_name),
+    )
+}
+
 /// The selection/diagnostic border color for a module row (extensible-stages M9): red when the module
 /// has diagnostics, accent when it is the current selection, otherwise the panel border. The panel
 /// rebuilds on selection change (the global select observer bumps `ui_revision`), so this is recomputed
@@ -648,11 +656,13 @@ pub(super) fn begin_module_drag(
     let Some(dragged_slot) = slots.iter().position(|slot| slot.entity == row_entity) else {
         return;
     };
-    let name = registry
+    let type_name = registry
         .0
         .get(&module.module_type)
-        .map(|metadata| metadata.display_name.to_string())
-        .unwrap_or_else(|| module.module_type.0.clone());
+        .map_or(module.module_type.0.as_str(), |metadata| {
+            metadata.display_name
+        });
+    let name = aestra_compiler::module_instance_title(layer, module, type_name);
     let summary = aestra_compiler::module_summary(module);
 
     // Hide the original but keep its slot: the neighbours slide over it as the insertion point moves.
@@ -900,6 +910,7 @@ pub(super) fn spawn_module_stack_row(
     asset_server: &AssetServer,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
+    let title = module_title(session, module, display_name);
     let help = metadata.map_or(
         "This module is not available in the current registry.",
         |item| item.description,
@@ -941,7 +952,7 @@ pub(super) fn spawn_module_stack_row(
             // Drag handle (§28.4): the vertical grip icon marks the row as draggable to reorder.
             spawn_module_drag_handle(row, asset_server);
             row.spawn((
-                Text::new(display_name),
+                Text::new(title.as_str()),
                 bevy::feathers::theme::ThemedText,
                 TextColor(if module.enabled {
                     theme::TEXT
@@ -1006,6 +1017,7 @@ pub(super) fn spawn_module_inspector(
     asset_server: &AssetServer,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
+    let title = module_title(session, module, display_name);
     let summary = aestra_compiler::module_summary(module);
     parent
         .spawn(Node {
@@ -1024,7 +1036,7 @@ pub(super) fn spawn_module_inspector(
             })
             .with_children(|header| {
                 header.spawn((
-                    Text::new(display_name),
+                    Text::new(title),
                     bevy::feathers::theme::ThemedText,
                     TextColor(if module.enabled {
                         theme::TEXT
@@ -1062,6 +1074,11 @@ pub(super) fn spawn_module_inspector(
                 }
                 spawn_module_header_actions(header, module, display_name);
             });
+            spawn_instance_label_field(
+                card,
+                module.label.as_deref(),
+                InstanceLabelControl::Module(module.id),
+            );
             spawn_module_input_controls(
                 card,
                 module,

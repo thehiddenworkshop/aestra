@@ -749,6 +749,20 @@ fn apply_command(
                 enabled: previous,
             }]
         }
+        EffectCommand::SetModuleLabel {
+            emitter,
+            module,
+            label,
+        } => {
+            let module = module_mut(effect, *emitter, *module)?;
+            let label = aestra_core::normalize_instance_label(label.as_deref());
+            let previous = std::mem::replace(&mut module.label, label);
+            vec![EffectCommand::SetModuleLabel {
+                emitter: *emitter,
+                module: module.id,
+                label: previous,
+            }]
+        }
         EffectCommand::SetModuleParameter {
             emitter,
             module,
@@ -1148,6 +1162,20 @@ fn apply_command(
                 emitter: *emitter,
                 renderer: renderer.id,
                 enabled: previous,
+            }]
+        }
+        EffectCommand::SetRendererLabel {
+            emitter,
+            renderer,
+            label,
+        } => {
+            let renderer = renderer_mut(effect, *emitter, *renderer)?;
+            let label = aestra_core::normalize_instance_label(label.as_deref());
+            let previous = std::mem::replace(&mut renderer.label, label);
+            vec![EffectCommand::SetRendererLabel {
+                emitter: *emitter,
+                renderer: renderer.id,
+                label: previous,
             }]
         }
         EffectCommand::SetRendererMaterial {

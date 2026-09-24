@@ -195,6 +195,7 @@ fn synthesize(
                 enabled: true,
                 material: instance_id,
                 properties: RendererProperties::Mesh { asset: mesh_asset },
+                label: None,
             }
         }
         MaterialDomain::Ribbon => RendererInstance {
@@ -207,6 +208,7 @@ fn synthesize(
                 width: 0.35,
                 strand_count: 1,
             },
+            label: None,
         },
         _ => RendererInstance::sprite(instance_id),
     };

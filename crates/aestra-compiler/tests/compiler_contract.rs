@@ -516,6 +516,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
         property_sources: BTreeMap::new(),
         property_source_values: BTreeMap::new(),
         bindings: BTreeMap::new(),
+        label: None,
     });
     asset.emitters.push(debris);
 
@@ -1449,6 +1450,7 @@ fn unregistered_modules_produce_targeted_diagnostics() {
         property_sources: BTreeMap::new(),
         property_source_values: BTreeMap::new(),
         bindings: BTreeMap::new(),
+        label: None,
     });
     asset.emitters.push(emitter);
 
@@ -2328,6 +2330,7 @@ fn a_plugin_renderer_registers_compiles_and_produces_an_extension_plan() {
         enabled: true,
         material: DEFAULT_SPRITE_MATERIAL_ID,
         properties: RendererProperties::Custom(payload),
+        label: None,
     }];
     asset.emitters.push(emitter);
 

@@ -37,6 +37,36 @@ fn emitter_regions_split_and_join_without_changing_source_time() {
 }
 
 #[test]
+fn instance_labels_round_trip_and_are_omitted_when_unset() {
+    let mut effect = EffectAsset::new("Labels", 1.0);
+    effect.emitters.push(Emitter::basic_sprite("Emitter", 1.0));
+    let unlabelled = effect.to_pretty_ron().unwrap();
+    assert!(
+        !unlabelled.contains("label"),
+        "no label field unless one is set"
+    );
+
+    effect.emitters[0].modules[0].label = Some("Ground".into());
+    effect.emitters[0].renderers[0].label = Some("Core".into());
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded, effect);
+    assert_eq!(
+        decoded.emitters[0].modules[0].label.as_deref(),
+        Some("Ground")
+    );
+    assert_eq!(
+        decoded.emitters[0].renderers[0].label.as_deref(),
+        Some("Core")
+    );
+    assert_eq!(
+        aestra_core::normalize_instance_label(Some("  ")),
+        None,
+        "a blank label means none"
+    );
+}
+
+#[test]
 fn semantic_ids_survive_round_trip() {
     let mut effect = EffectAsset::new("Round Trip", 1.5);
     effect.emitters.push(Emitter::basic_sprite("Emitter", 1.5));

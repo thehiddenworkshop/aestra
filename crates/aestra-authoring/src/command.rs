@@ -219,6 +219,12 @@ pub enum EffectCommand {
         module: ModuleId,
         enabled: bool,
     },
+    /// Sets or clears a module's instance label (§28.5); `None` removes it.
+    SetModuleLabel {
+        emitter: EmitterId,
+        module: ModuleId,
+        label: Option<String>,
+    },
     SetModuleParameter {
         emitter: EmitterId,
         module: ModuleId,
@@ -323,6 +329,12 @@ pub enum EffectCommand {
         emitter: EmitterId,
         renderer: RendererId,
         enabled: bool,
+    },
+    /// Sets or clears a renderer's instance label (§28.5); `None` removes it.
+    SetRendererLabel {
+        emitter: EmitterId,
+        renderer: RendererId,
+        label: Option<String>,
     },
     SetRendererMaterial {
         emitter: EmitterId,
