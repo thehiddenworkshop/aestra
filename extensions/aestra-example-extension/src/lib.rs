@@ -219,6 +219,8 @@ impl ModuleLowerer for VortexLowerer {
             module_type: module.module_type.clone(),
             entry_point: "vortex".into(),
             parameters: payload.clone(),
+            // Filled by the compiler from the module's host-bound inputs (host bindings HB4).
+            host_fields: Default::default(),
         })
     }
 }

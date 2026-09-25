@@ -383,3 +383,39 @@ fn a_package_binding_kind_that_retypes_a_core_field_is_rejected() {
         PackageStatus::RegistryConflict(message) if message.contains("aestra.field.position")
     ));
 }
+
+#[test]
+fn a_packaged_module_input_can_read_a_host_binding_field() {
+    let registry = registry_with(&[sample_extensions()], &BTreeSet::new());
+    let mut effect = wind_effect(&registry);
+    let mut target =
+        aestra_core::EffectBinding::spatial("Target", aestra_core::BindingUpdateMode::Live);
+    target
+        .optional_fields
+        .insert(aestra_core::BindingFieldId::new(
+            aestra_core::AESTRA_FIELD_LINEAR_VELOCITY,
+        ));
+    let gust = &mut effect.emitters[0].modules.iter_mut().rev().nth(1).unwrap();
+    gust.property_sources
+        .insert("direction".into(), aestra_core::PropertySource::HostBinding);
+    gust.host_bindings.insert(
+        "direction".into(),
+        aestra_core::HostFieldRef::new(target.id, aestra_core::AESTRA_FIELD_LINEAR_VELOCITY),
+    );
+    effect.bindings.push(target);
+    let compiled = EffectCompiler::with_extensions(registry)
+        .compile(&effect)
+        .expect("a host-bound plugin input compiles");
+    let wind = compiled.emitters[0]
+        .extension_stages
+        .iter()
+        .find(|stage| stage.name == "Wind")
+        .unwrap();
+    let field = &wind.modules[0].host_fields["direction"];
+    assert_eq!(field.binding, aestra_runtime::BindingSlot(0));
+    assert_eq!(field.value_type, aestra_core::ValueType::Vec3);
+    // The plan still carries the authored direction as the fallback.
+    assert!(wind.modules[0].parameters.get("direction").is_some());
+    let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(compiled));
+    assert!(instance.has_forward_only_inputs());
+}

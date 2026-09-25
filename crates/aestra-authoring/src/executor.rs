@@ -1343,6 +1343,7 @@ fn property_source_expected_type(source: aestra_core::PropertySource) -> &'stati
         aestra_core::PropertySource::RandomRange => "range",
         aestra_core::PropertySource::Curve(_) => "curve",
         aestra_core::PropertySource::Gradient(_) => "gradient",
+        aestra_core::PropertySource::HostBinding => "any value (the fallback)",
     }
 }
 

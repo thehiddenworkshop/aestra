@@ -366,6 +366,8 @@ fn initial_property_source_value(
         _ => None,
     };
     match source {
+        // A host-bound input keeps its constant as the fallback (host bindings HB4).
+        PropertySourceKind::HostBinding => Some(current.clone()),
         PropertySourceKind::RandomRange => {
             let (step, min, max) = numeric_source_limits(&input.control)?;
             if let Some(value) = vector {

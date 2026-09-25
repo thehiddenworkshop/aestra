@@ -1741,6 +1741,9 @@ pub struct ModuleInstance {
     pub property_source_values: BTreeMap<String, Vec<PropertySourceValue>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, ParameterId>,
+    /// Inputs read from host binding fields when their source is `HostBinding` (host bindings HB4).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub host_bindings: BTreeMap<String, crate::HostFieldRef>,
     /// An optional author-given name telling repeated instances of one module type apart, e.g.
     /// Collision "Ground" and Collision "Characters" (§28.5). The semantic type is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1774,6 +1777,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1789,6 +1793,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1816,6 +1821,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1835,6 +1841,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1853,6 +1860,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1871,6 +1879,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -1890,6 +1899,7 @@ impl ModuleInstance {
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
             label: None,
             schema_version: None,
         }
@@ -2366,6 +2376,9 @@ pub enum PropertySource {
     RandomRange,
     Curve(PropertyEvaluationDomain),
     Gradient(PropertyEvaluationDomain),
+    /// Read each tick from a host binding field named in `ModuleInstance::host_bindings` (host
+    /// bindings HB4). The input's authored constant is the fallback when the field is absent.
+    HostBinding,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2403,7 +2416,7 @@ impl PropertySource {
     pub fn accepts(self, value: &Value) -> bool {
         matches!(
             (self, value),
-            (Self::Constant, _)
+            (Self::Constant | Self::HostBinding, _)
                 | (Self::RandomRange, Value::Range(_) | Value::Vec3Range(_))
                 | (Self::Curve(_), Value::Curve(_) | Value::Vec3Curve(_))
                 | (Self::Gradient(_), Value::Gradient(_))

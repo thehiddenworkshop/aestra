@@ -162,6 +162,8 @@ impl EffectCompiler {
     /// only registered resource types. Generic simulation stages (no lowerer) produce nothing.
     fn lower_extension_stages(
         &self,
+        asset: &EffectAsset,
+        bindings: &[aestra_runtime::CompiledBinding],
         emitter_index: usize,
         emitter: &Emitter,
     ) -> Result<Vec<aestra_runtime::CompiledExtensionStage>, Vec<Diagnostic>> {
@@ -209,7 +211,21 @@ impl EffectCompiler {
                     metadata.property_schema().apply_defaults(&mut payload);
                 }
                 match lowerer.lower(module, &payload) {
-                    Ok(plan) => plans.push(plan),
+                    Ok(mut plan) => {
+                        // Host-bound inputs keep their authored payload value as the fallback;
+                        // the stage lowerer finds the field through `host_fields` (HB4).
+                        plan.host_fields = module
+                            .host_bindings
+                            .iter()
+                            .filter(|(input, _)| {
+                                module.property_source(input) == Some(InputSourceKind::HostBinding)
+                            })
+                            .filter_map(|(input, reference)| {
+                                Some((input.clone(), host_field_ref(asset, bindings, reference)?))
+                            })
+                            .collect();
+                        plans.push(plan);
+                    }
                     Err(message) => diagnostics.push(failed(message)),
                 }
             }
@@ -542,9 +558,13 @@ impl EffectCompiler {
                     .expect("validated runtime parameter has a concrete default"),
             });
         }
+        let bindings = self.compile_bindings(asset);
+        let (host_fields, host_field_slots) =
+            compile_host_fields(asset, &bindings, parameters.len());
         let context = LoweringContext {
             parameters: &parameter_lookup,
             slots: &parameter_slots,
+            host_fields: &host_field_slots,
         };
 
         let mut source_map = BTreeMap::new();
@@ -775,7 +795,7 @@ impl EffectCompiler {
             // Plugin simulation stages (extensible-stages M10) lower through their registered
             // lowerers into portable Execution IR, carried alongside the built-in lifecycle stages.
             let extension_stages = if emitter.enabled {
-                self.lower_extension_stages(emitter_index, emitter)
+                self.lower_extension_stages(asset, &bindings, emitter_index, emitter)
                     .map_err(|diagnostics| {
                         let mut report = ValidationReport::default();
                         for diagnostic in diagnostics {
@@ -815,7 +835,6 @@ impl EffectCompiler {
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
-        let bindings = self.compile_bindings(asset);
 
         Ok(CompiledEffect {
             source: asset.id,
@@ -878,6 +897,7 @@ impl EffectCompiler {
                 .map(|(index, binding)| (binding.source, aestra_runtime::BindingSlot(index)))
                 .collect(),
             bindings,
+            host_fields,
             particle_layout: ParticleLayout {
                 attributes: stored_attributes.into_iter().collect(),
                 transient_attributes: transient_attributes.into_iter().collect(),
@@ -1215,6 +1235,103 @@ impl EffectCompiler {
                             ),
                         ),
                     );
+                }
+                // Host-bound inputs (host bindings HB4): the input accepts the source, the binding is
+                // declared with the field, and the field's type matches the input's.
+                for (input_name, reference) in &module.host_bindings {
+                    let host_path = format!("{path}.host_bindings.{input_name}");
+                    let Some(input) = metadata
+                        .inputs
+                        .iter()
+                        .find(|input| input.name == input_name)
+                    else {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::UnknownParameter,
+                                host_path,
+                                format!(
+                                    "module '{}' has no registered input named '{input_name}'",
+                                    module.module_type.0
+                                ),
+                            ),
+                        );
+                        continue;
+                    };
+                    if !input.sources.contains(&InputSourceKind::HostBinding) {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidValue,
+                                host_path.clone(),
+                                format!("input '{input_name}' does not accept host bindings"),
+                            ),
+                        );
+                    }
+                    let Some(binding) = asset
+                        .bindings
+                        .iter()
+                        .find(|binding| binding.id == reference.binding)
+                    else {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidReference,
+                                host_path,
+                                format!("binding {} is not declared", reference.binding),
+                            ),
+                        );
+                        continue;
+                    };
+                    if !binding.fields().any(|field| *field == reference.field) {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidReference,
+                                host_path,
+                                format!(
+                                    "binding '{}' does not declare field '{}'",
+                                    binding.name,
+                                    reference.field.as_str()
+                                ),
+                            ),
+                        );
+                        continue;
+                    }
+                    if let Some(field_type) = self.registry.bindings.field_type(&reference.field)
+                        && field_type != input.value_type
+                    {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::ParameterTypeMismatch,
+                                host_path,
+                                format!(
+                                    "input '{input_name}' is {:?} but field '{}' is {field_type:?}",
+                                    input.value_type,
+                                    reference.field.as_str()
+                                ),
+                            ),
+                        );
+                    }
+                }
+                for input in &metadata.inputs {
+                    if module.enabled
+                        && module.property_source(input.name) == Some(InputSourceKind::HostBinding)
+                        && !module.host_bindings.contains_key(input.name)
+                    {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidValue,
+                                format!("{path}.host_bindings.{}", input.name),
+                                format!(
+                                    "input '{}' reads a host binding but names no binding field",
+                                    input.name
+                                ),
+                            ),
+                        );
+                    }
                 }
                 for (input_name, source) in &module.property_sources {
                     let source_path = format!("{path}.property_sources.{input_name}");
@@ -1925,6 +2042,70 @@ struct Liveness {
 struct LoweringContext<'a> {
     parameters: &'a BTreeMap<ParameterId, &'a EffectParameter>,
     slots: &'a BTreeMap<ParameterId, ParameterSlot>,
+    /// Built-in module inputs read from host binding fields (host bindings HB4).
+    host_fields: &'a BTreeMap<(aestra_core::ModuleId, String), aestra_runtime::HostFieldSlot>,
+}
+
+/// Where a host field lives in its compiled binding, or `None` if the reference is not resolvable
+/// (validation reports why).
+fn host_field_ref(
+    asset: &EffectAsset,
+    bindings: &[aestra_runtime::CompiledBinding],
+    reference: &aestra_core::HostFieldRef,
+) -> Option<aestra_runtime::CompiledHostFieldRef> {
+    let slot = asset
+        .bindings
+        .iter()
+        .position(|binding| binding.id == reference.binding)?;
+    let (_, packed) = bindings.get(slot)?.layout.field(&reference.field)?;
+    Some(aestra_runtime::CompiledHostFieldRef {
+        binding: aestra_runtime::BindingSlot(slot),
+        field: reference.field.clone(),
+        value_type: packed.value_type,
+        offset: packed.offset,
+    })
+}
+
+/// Assigns an input-table slot to every enabled built-in module input whose active source is
+/// `HostBinding` (host bindings HB4). Slots follow the parameters; each keeps the input's authored
+/// value as its fallback. Plugin modules get their host fields through `ExtensionModulePlan`.
+fn compile_host_fields(
+    asset: &EffectAsset,
+    bindings: &[aestra_runtime::CompiledBinding],
+    parameter_count: usize,
+) -> (
+    Vec<aestra_runtime::CompiledHostField>,
+    BTreeMap<(aestra_core::ModuleId, String), aestra_runtime::HostFieldSlot>,
+) {
+    let mut fields = Vec::new();
+    let mut slots = BTreeMap::new();
+    for module in asset
+        .emitters
+        .iter()
+        .flat_map(|emitter| emitter.modules.iter())
+        .filter(|module| module.enabled && is_builtin_module(&module.module_type))
+    {
+        for (input, reference) in &module.host_bindings {
+            if module.property_source(input) != Some(InputSourceKind::HostBinding) {
+                continue;
+            }
+            let (Some(source), Some(fallback)) = (
+                host_field_ref(asset, bindings, reference),
+                module
+                    .parameter_value(input)
+                    .as_ref()
+                    .and_then(RuntimeValue::compile),
+            ) else {
+                continue;
+            };
+            slots.insert(
+                (module.id, input.clone()),
+                aestra_runtime::HostFieldSlot(parameter_count + fields.len()),
+            );
+            fields.push(aestra_runtime::CompiledHostField { source, fallback });
+        }
+    }
+    (fields, slots)
 }
 
 fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Option<Instruction> {
@@ -2036,9 +2217,9 @@ fn scalar_source(
     context: &LoweringContext<'_>,
 ) -> Option<ScalarSource> {
     match module.property_source(input)? {
-        InputSourceKind::Constant => Some(ScalarSource::Constant(expression(
-            module, input, fallback, context,
-        ))),
+        InputSourceKind::Constant | InputSourceKind::HostBinding => Some(ScalarSource::Constant(
+            expression(module, input, fallback, context),
+        )),
         InputSourceKind::RandomRange => {
             let aestra_core::Value::Range(range) = module.active_parameter_value(input)? else {
                 return None;
@@ -2067,9 +2248,9 @@ fn vector_source(
     context: &LoweringContext<'_>,
 ) -> Option<VectorSource> {
     match module.property_source(input)? {
-        InputSourceKind::Constant => Some(VectorSource::Constant(expression(
-            module, input, fallback, context,
-        ))),
+        InputSourceKind::Constant | InputSourceKind::HostBinding => Some(VectorSource::Constant(
+            expression(module, input, fallback, context),
+        )),
         InputSourceKind::RandomRange => {
             let aestra_core::Value::Vec3Range(range) = module.active_parameter_value(input)? else {
                 return None;
@@ -2132,6 +2313,11 @@ fn expression<T>(
 where
     T: RuntimeParameterValue + Clone,
 {
+    if module.property_source(input) == Some(InputSourceKind::HostBinding)
+        && let Some(slot) = context.host_fields.get(&(module.id, input.to_string()))
+    {
+        return Expression::HostField(*slot);
+    }
     let Some(parameter_id) = module.bindings.get(input) else {
         return Expression::constant(fallback);
     };
@@ -2186,7 +2372,7 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
     fn one<T>(expression: &Expression<T>) -> (usize, usize) {
         match expression {
             Expression::Constant(_) => (1, 0),
-            Expression::Parameter(_) => (0, 1),
+            Expression::Parameter(_) | Expression::HostField(_) => (0, 1),
         }
     }
     fn sum(values: impl IntoIterator<Item = (usize, usize)>) -> (usize, usize) {
@@ -2247,7 +2433,7 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
 fn expression_count<T>(expression: &Expression<T>) -> (usize, usize) {
     match expression {
         Expression::Constant(_) => (1, 0),
-        Expression::Parameter(_) => (0, 1),
+        Expression::Parameter(_) | Expression::HostField(_) => (0, 1),
     }
 }
 

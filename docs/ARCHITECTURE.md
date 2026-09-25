@@ -113,6 +113,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   required bindings. A slot being acquired, lost or rebound changes `host_input_epoch()`, which keys
   checkpoints (`CheckpointContext::host_input`), so history recorded against one object is never
   restored against another.
+- Resolves module inputs that read binding fields. An input whose schema lists the `HostBinding`
+  source can name a field in `ModuleInstance.host_bindings`, and the compiler lowers it to
+  `Expression::HostField`. The instance's packed input table holds the parameters followed by the
+  current host-field values, falling back to the input's authored constant when the field is absent.
+  The CPU reference and GPU lowering read that same table. Plugin modules get their host fields in
+  `ExtensionModulePlan.host_fields`. Only inputs that read a `Live` binding make seeking forward-only.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
 ### `aestra-artifact`

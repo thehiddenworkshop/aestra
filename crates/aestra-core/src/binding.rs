@@ -30,6 +30,22 @@ pub enum BindingUpdateMode {
     Live,
 }
 
+/// Which binding field a module input reads (host bindings HB4).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct HostFieldRef {
+    pub binding: BindingId,
+    pub field: BindingFieldId,
+}
+
+impl HostFieldRef {
+    pub fn new(binding: BindingId, field: impl Into<String>) -> Self {
+        Self {
+            binding,
+            field: BindingFieldId::new(field),
+        }
+    }
+}
+
 /// A named slot the host fills with a live object (host bindings HB1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EffectBinding {

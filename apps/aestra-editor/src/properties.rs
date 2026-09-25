@@ -5789,7 +5789,10 @@ fn properties_module_parameter_command(
         });
     }
     if let Some(source) = module_instance.property_source(input)
-        && source != PropertySourceKind::Constant
+        && !matches!(
+            source,
+            PropertySourceKind::Constant | PropertySourceKind::HostBinding
+        )
         && module_instance
             .property_source_values
             .get(input)
@@ -7352,7 +7355,10 @@ fn spawn_properties_vector_source_control(
                     );
                 });
 
-            if source != PropertySourceKind::Constant {
+            if !matches!(
+                source,
+                PropertySourceKind::Constant | PropertySourceKind::HostBinding
+            ) {
                 for (axis_index, axis) in ["X", "Y", "Z"].into_iter().enumerate() {
                     column
                         .spawn(Node {
@@ -7830,8 +7836,11 @@ fn spawn_property_source_menu(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
+    // Choosing a host binding needs a binding-field picker, which arrives with the Interface UX
+    // (host bindings HB11); until then the source is shown only when a file already uses it.
     let options = supported
         .iter()
+        .filter(|source| **source != PropertySourceKind::HostBinding || current == **source)
         .map(|source| ComboOption {
             label: property_source_label(*source, localizer),
             selected: *source == current,
@@ -7871,6 +7880,7 @@ fn property_source_label(source: PropertySourceKind, localizer: &Localizer) -> S
         PropertySourceKind::Gradient(InputEvaluationDomain::EmitterTime) => {
             "properties-source-gradient-emitter-time"
         }
+        PropertySourceKind::HostBinding => "properties-source-host-binding",
     })
 }
 
@@ -7880,6 +7890,8 @@ fn property_source_icon(source: PropertySourceKind) -> &'static str {
         PropertySourceKind::RandomRange => "icons/source-random.svg",
         PropertySourceKind::Curve(_) => "icons/source-curve.svg",
         PropertySourceKind::Gradient(_) => "icons/source-gradient.svg",
+        // No dedicated icon yet; the host-binding picker arrives with the Interface UX (HB11).
+        PropertySourceKind::HostBinding => "icons/source-constant.svg",
     }
 }
 

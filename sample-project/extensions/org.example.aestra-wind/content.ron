@@ -72,6 +72,8 @@
                     value_type: Vec3,
                     default: Vec3((1.0, 0.0, 0.0)),
                     control: Vector(step: 0.1, min: Some(-1.0), max: Some(1.0)),
+                    // May follow a bound object's velocity (host bindings HB4).
+                    sources: [Constant, HostBinding],
                 ),
             ],
             entry_point: "gust",

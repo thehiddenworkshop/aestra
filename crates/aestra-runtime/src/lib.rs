@@ -156,6 +156,9 @@ pub struct ParameterSlot(pub usize);
 pub enum Expression<T> {
     Constant(T),
     Parameter(ParameterSlot),
+    /// A host binding field read (host bindings HB4), resolved from the same packed input table as
+    /// parameters: host-field values follow the parameters, and fall back to the authored constant.
+    HostField(HostFieldSlot),
 }
 
 impl<T> Expression<T> {
@@ -170,7 +173,7 @@ impl<T> Expression<T> {
     pub fn constant_value(&self) -> Option<&T> {
         match self {
             Self::Constant(value) => Some(value),
-            Self::Parameter(_) => None,
+            Self::Parameter(_) | Self::HostField(_) => None,
         }
     }
 }
@@ -186,6 +189,12 @@ impl<T: RuntimeParameterValue> Expression<T> {
                     .expect("compiled parameter slot must exist"),
             )
             .expect("compiler guarantees expression parameter types"),
+            Self::HostField(slot) => T::from_runtime(
+                parameters
+                    .get(slot.0)
+                    .expect("compiled host field slot must exist"),
+            )
+            .expect("compiler guarantees host field types"),
         }
     }
 }
@@ -684,6 +693,9 @@ pub struct ExtensionModulePlan {
     pub module_type: aestra_core::ModuleTypeId,
     /// The kernel entry point (or kernel fragment) this module contributes.
     pub entry_point: String,
+    /// Inputs read from host binding fields, by input name (host bindings HB4). The payload keeps
+    /// each input's authored value as the fallback.
+    pub host_fields: BTreeMap<String, CompiledHostFieldRef>,
     /// The module's resolved property values: its authored payload with schema defaults filled in.
     pub parameters: aestra_core::PropertyBag,
 }
@@ -897,6 +909,8 @@ pub struct CompiledEffect {
     /// Host binding slots, in declaration order (host bindings HB2).
     pub bindings: Vec<CompiledBinding>,
     pub binding_slots: BTreeMap<aestra_core::BindingId, BindingSlot>,
+    /// Host-field reads by module inputs, in input-table order after the parameters (HB4).
+    pub host_fields: Vec<CompiledHostField>,
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
     pub effect_clips: Vec<CompiledEffectClip>,
@@ -1309,11 +1323,7 @@ pub struct EffectInstance {
 
 impl EffectInstance {
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
-        let parameters = effect
-            .parameters
-            .iter()
-            .map(|parameter| parameter.default.clone())
-            .collect();
+        let parameters = default_parameter_values(&effect);
         let host_transform_track = effect.host_transform_track.clone();
         let binding_inputs = BindingInputs::new(effect.bindings.len());
         Self {
@@ -1412,7 +1422,8 @@ impl EffectInstance {
             .and_then(|slot| self.parameters.get(slot.0))
     }
 
-    /// Packed values used by compiled expressions and GPU artifact generation.
+    /// Packed values used by compiled expressions and GPU artifact generation: the parameters, then
+    /// the current host-field values (host bindings HB4).
     pub fn parameter_values(&self) -> &[RuntimeValue] {
         &self.parameters
     }
@@ -1626,11 +1637,18 @@ pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<
     evaluate_with_parameters(effect, time, seed, &parameters, output);
 }
 
+/// The packed input table: parameter defaults, then each host field's fallback (host bindings HB4).
 fn default_parameter_values(effect: &CompiledEffect) -> Vec<RuntimeValue> {
     effect
         .parameters
         .iter()
         .map(|parameter| parameter.default.clone())
+        .chain(
+            effect
+                .host_fields
+                .iter()
+                .map(|field| field.fallback.clone()),
+        )
         .collect()
 }
 

@@ -9,11 +9,12 @@ use aestra_core::{
 };
 use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
-    CompiledExtensionStage, ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
-    RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime,
-    StagedDispatch,
+    CompiledExtensionStage, CompiledHostField, CompiledHostFieldRef, ComputeOp, CopyOp,
+    ExecutionBlock, ExecutionOp, ExtensionModulePlan, RepeatPolicy, ResourceAccess,
+    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagedDispatch,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct BindingV4 {
@@ -96,6 +97,92 @@ impl BindingV4 {
     }
 }
 
+/// Where a host field lives: binding slot and field, re-validated against the binding layout.
+#[derive(Debug, Serialize, Deserialize)]
+struct HostFieldRefV4 {
+    binding: u32,
+    field: BindingFieldId,
+    value_type: ValueType,
+    offset: u32,
+}
+
+impl HostFieldRefV4 {
+    fn encode(source: &CompiledHostFieldRef, path: &str) -> Result<Self, ArtifactError> {
+        Ok(Self {
+            binding: encode_u32(source.binding.0, format!("{path}.binding"))?,
+            field: source.field.clone(),
+            value_type: source.value_type,
+            offset: source.offset,
+        })
+    }
+
+    fn decode(
+        self,
+        path: &str,
+        bindings: &[CompiledBinding],
+    ) -> Result<CompiledHostFieldRef, ArtifactError> {
+        let Some(binding) = bindings.get(self.binding as usize) else {
+            return invalid(
+                format!("{path}.binding"),
+                format!("binding slot {} is out of range", self.binding),
+            );
+        };
+        match binding.layout.field(&self.field) {
+            Some((_, packed))
+                if packed.value_type == self.value_type && packed.offset == self.offset => {}
+            _ => {
+                return invalid(
+                    format!("{path}.field"),
+                    format!(
+                        "field '{}' does not match binding '{}''s layout",
+                        self.field.as_str(),
+                        binding.name
+                    ),
+                );
+            }
+        }
+        Ok(CompiledHostFieldRef {
+            binding: BindingSlot(self.binding as usize),
+            field: self.field,
+            value_type: self.value_type,
+            offset: self.offset,
+        })
+    }
+}
+
+/// A module input read from a host binding field, with its authored fallback (host bindings HB4).
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct HostFieldV4 {
+    source: HostFieldRefV4,
+    fallback: crate::RuntimeValueV1,
+}
+
+impl HostFieldV4 {
+    pub(crate) fn encode(field: &CompiledHostField, index: usize) -> Result<Self, ArtifactError> {
+        Ok(Self {
+            source: HostFieldRefV4::encode(&field.source, &format!("effect.host_fields[{index}]"))?,
+            fallback: crate::RuntimeValueV1::from(&field.fallback),
+        })
+    }
+
+    pub(crate) fn decode(
+        self,
+        index: usize,
+        bindings: &[CompiledBinding],
+    ) -> Result<CompiledHostField, ArtifactError> {
+        let path = format!("effect.host_fields[{index}]");
+        let source = self.source.decode(&path, bindings)?;
+        let fallback = self.fallback.decode(format!("{path}.fallback"))?;
+        if fallback.value_type() != source.value_type {
+            return invalid(
+                format!("{path}.fallback"),
+                "the fallback's type differs from the field's",
+            );
+        }
+        Ok(CompiledHostField { source, fallback })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct BindingForwardV4 {
     child: BindingId,
@@ -155,6 +242,8 @@ struct ExtensionModulePlanV4 {
     entry_point: String,
     #[serde(default, skip_serializing_if = "PropertyBag::is_empty")]
     parameters: PropertyBag,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    host_fields: BTreeMap<String, HostFieldRefV4>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -289,6 +378,18 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                     module_type: module.module_type.clone(),
                     entry_point: module.entry_point.clone(),
                     parameters: module.parameters.clone(),
+                    host_fields: module
+                        .host_fields
+                        .iter()
+                        .map(|(input, source)| {
+                            // Slots and names are always 32-bit representable here.
+                            (
+                                input.clone(),
+                                HostFieldRefV4::encode(source, "extension_stage.module")
+                                    .expect("binding slots fit the artifact index range"),
+                            )
+                        })
+                        .collect(),
                 })
                 .collect(),
             block: ExecutionBlockV4 {
@@ -312,7 +413,11 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
 }
 
 impl ExtensionStageV4 {
-    pub(crate) fn decode(self, path: &str) -> Result<CompiledExtensionStage, ArtifactError> {
+    pub(crate) fn decode(
+        self,
+        path: &str,
+        bindings: &[CompiledBinding],
+    ) -> Result<CompiledExtensionStage, ArtifactError> {
         let block = ExecutionBlock {
             resources: self
                 .block
@@ -339,13 +444,28 @@ impl ExtensionStageV4 {
             modules: self
                 .modules
                 .into_iter()
-                .map(|module| ExtensionModulePlan {
-                    source: module.source,
-                    module_type: module.module_type,
-                    entry_point: module.entry_point,
-                    parameters: module.parameters,
+                .enumerate()
+                .map(|(module_index, module)| {
+                    let module_path = format!("{path}.modules[{module_index}]");
+                    Ok(ExtensionModulePlan {
+                        source: module.source,
+                        module_type: module.module_type,
+                        entry_point: module.entry_point,
+                        parameters: module.parameters,
+                        host_fields: module
+                            .host_fields
+                            .into_iter()
+                            .map(|(input, source)| {
+                                let decoded = source.decode(
+                                    &format!("{module_path}.host_fields.{input}"),
+                                    bindings,
+                                )?;
+                                Ok((input, decoded))
+                            })
+                            .collect::<Result<_, ArtifactError>>()?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, ArtifactError>>()?,
             block,
         })
     }

@@ -443,6 +443,7 @@ properties-edit-module-input-command = Modifier la propriété du module
 properties-change-source-command = Modifier la source de la propriété
 properties-source-constant = Constante
 properties-source-random = Plage aléatoire
+properties-source-host-binding = Liaison hôte
 properties-source-curve-particle-life = Courbe sur la vie de la particule
 properties-source-curve-emitter-time = Courbe sur le temps de l’émetteur
 properties-source-gradient-particle-life = Dégradé sur la vie de la particule

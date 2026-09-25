@@ -443,6 +443,7 @@ properties-edit-module-input-command = Edit module property
 properties-change-source-command = Change property source
 properties-source-constant = Constant
 properties-source-random = Random range
+properties-source-host-binding = Host binding
 properties-source-curve-particle-life = Curve over particle life
 properties-source-curve-emitter-time = Curve over emitter time
 properties-source-gradient-particle-life = Gradient over particle life

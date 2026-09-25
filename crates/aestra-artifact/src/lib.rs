@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 mod v4;
-use v4::{BindingForwardV4, BindingV4, ExtensionStageV4};
+use v4::{BindingForwardV4, BindingV4, ExtensionStageV4, HostFieldV4};
 
 pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
 /// v3 added the per-emitter simulation class (hybrid roadmap M2/M3, unified U3). v4 adds compiled
@@ -106,6 +106,9 @@ struct EffectV1 {
     /// Host binding slots, in slot order (v4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     bindings: Vec<BindingV4>,
+    /// Module inputs read from host binding fields, after the parameters in input order (v4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    host_fields: Vec<HostFieldV4>,
     particle_layout: ParticleLayoutV1,
     emitters: Vec<EmitterV1>,
     effect_clips: Vec<EffectClipV1>,
@@ -229,6 +232,8 @@ struct GradientV1 {
 enum ExpressionV1<T> {
     Constant(T),
     Parameter(u32),
+    /// A host-field read by input-table slot (host bindings HB4; artifact v4).
+    HostField(u32),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -522,6 +527,12 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .collect::<Result<_, _>>()?,
             parameters: effect.parameters.iter().map(ParameterV1::from).collect(),
             bindings: effect.bindings.iter().map(BindingV4::from).collect(),
+            host_fields: effect
+                .host_fields
+                .iter()
+                .enumerate()
+                .map(|(index, field)| HostFieldV4::encode(field, index))
+                .collect::<Result<_, _>>()?,
             particle_layout: ParticleLayoutV1::from(&effect.particle_layout),
             emitters: effect
                 .emitters
@@ -595,11 +606,23 @@ impl TryFrom<EffectV1> for CompiledEffect {
             }
         }
 
+        let host_fields = effect
+            .host_fields
+            .into_iter()
+            .enumerate()
+            .map(|(index, field)| field.decode(index, &bindings))
+            .collect::<Result<Vec<_>, _>>()?;
+        let inputs = InputTable {
+            parameters: &parameters,
+            host_fields: &host_fields,
+            bindings: &bindings,
+        };
+
         let materials = effect
             .materials
             .into_iter()
             .enumerate()
-            .map(|(index, material)| material.decode(index, &parameters))
+            .map(|(index, material)| material.decode(index, &inputs))
             .collect::<Result<_, _>>()?;
         let material_programs = effect
             .material_programs
@@ -652,7 +675,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             .emitters
             .into_iter()
             .enumerate()
-            .map(|(index, emitter)| emitter.decode(index, &parameters))
+            .map(|(index, emitter)| emitter.decode(index, &inputs))
             .collect::<Result<_, _>>()?;
         let effect_clips = effect
             .effect_clips
@@ -702,6 +725,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             parameter_slots,
             bindings,
             binding_slots,
+            host_fields,
             particle_layout: effect.particle_layout.into(),
             emitters,
             effect_clips,
@@ -838,7 +862,7 @@ impl MaterialV1 {
     fn decode(
         self,
         index: usize,
-        parameters: &[CompiledParameter],
+        parameters: &InputTable<'_>,
     ) -> Result<CompiledMaterial, ArtifactError> {
         Ok(CompiledMaterial {
             source: self.source,
@@ -1083,6 +1107,14 @@ impl GradientV1 {
     }
 }
 
+/// What an expression may read when an artifact is decoded: the parameters, then the host fields
+/// (host bindings HB4), in input-table order.
+struct InputTable<'a> {
+    parameters: &'a [CompiledParameter],
+    host_fields: &'a [aestra_runtime::CompiledHostField],
+    bindings: &'a [aestra_runtime::CompiledBinding],
+}
+
 fn encode_expression<T, U>(
     expression: &Expression<T>,
     map: impl FnOnce(&T) -> U,
@@ -1091,13 +1123,14 @@ fn encode_expression<T, U>(
     Ok(match expression {
         Expression::Constant(value) => ExpressionV1::Constant(map(value)),
         Expression::Parameter(slot) => ExpressionV1::Parameter(encode_u32(slot.0, path.into())?),
+        Expression::HostField(slot) => ExpressionV1::HostField(encode_u32(slot.0, path.into())?),
     })
 }
 
 fn decode_expression<T, U>(
     expression: ExpressionV1<T>,
     map: impl FnOnce(T) -> Result<U, ArtifactError>,
-    parameters: &[CompiledParameter],
+    parameters: &InputTable<'_>,
     expected: ValueType,
     path: impl Into<String>,
 ) -> Result<Expression<U>, ArtifactError> {
@@ -1106,7 +1139,7 @@ fn decode_expression<T, U>(
         ExpressionV1::Constant(value) => Expression::Constant(map(value)?),
         ExpressionV1::Parameter(slot) => {
             let slot = slot as usize;
-            let Some(parameter) = parameters.get(slot) else {
+            let Some(parameter) = parameters.parameters.get(slot) else {
                 return invalid(path, format!("parameter slot {slot} is out of bounds"));
             };
             if parameter.value_type != expected {
@@ -1119,6 +1152,25 @@ fn decode_expression<T, U>(
                 );
             }
             Expression::Parameter(ParameterSlot(slot))
+        }
+        ExpressionV1::HostField(slot) => {
+            let slot = slot as usize;
+            let Some(field) = slot
+                .checked_sub(parameters.parameters.len())
+                .and_then(|index| parameters.host_fields.get(index))
+            else {
+                return invalid(path, format!("host field slot {slot} is out of bounds"));
+            };
+            if field.source.value_type != expected {
+                return invalid(
+                    path,
+                    format!(
+                        "host field slot {slot} has type {:?}; expected {expected:?}",
+                        field.source.value_type
+                    ),
+                );
+            }
+            Expression::HostField(aestra_runtime::HostFieldSlot(slot))
         }
     })
 }
@@ -1149,7 +1201,7 @@ impl ScalarSourceV1 {
 
     fn decode(
         self,
-        parameters: &[CompiledParameter],
+        parameters: &InputTable<'_>,
         path: &str,
     ) -> Result<ScalarSource, ArtifactError> {
         Ok(match self {
@@ -1213,7 +1265,7 @@ impl VectorSourceV1 {
 
     fn decode(
         self,
-        parameters: &[CompiledParameter],
+        parameters: &InputTable<'_>,
         path: &str,
     ) -> Result<VectorSource, ArtifactError> {
         Ok(match self {
@@ -1332,11 +1384,7 @@ impl InstructionV1 {
         })
     }
 
-    fn decode(
-        self,
-        parameters: &[CompiledParameter],
-        path: &str,
-    ) -> Result<Instruction, ArtifactError> {
+    fn decode(self, parameters: &InputTable<'_>, path: &str) -> Result<Instruction, ArtifactError> {
         Ok(match self {
             Self::Emit {
                 source,
@@ -1450,7 +1498,7 @@ impl InstructionV1 {
 
 fn decode_range_expression(
     expression: ExpressionV1<ScalarRange>,
-    parameters: &[CompiledParameter],
+    parameters: &InputTable<'_>,
     path: &str,
 ) -> Result<Expression<ScalarRange>, ArtifactError> {
     decode_expression(
@@ -1485,7 +1533,7 @@ impl ExecutionPlanV1 {
 
     fn decode(
         self,
-        parameters: &[CompiledParameter],
+        parameters: &InputTable<'_>,
         path: &str,
     ) -> Result<ExecutionPlan, ArtifactError> {
         Ok(ExecutionPlan {
@@ -1521,7 +1569,7 @@ fn encode_instruction_stage(
 
 fn decode_instruction_stage(
     instructions: Vec<InstructionV1>,
-    parameters: &[CompiledParameter],
+    parameters: &InputTable<'_>,
     path: &str,
 ) -> Result<Vec<Instruction>, ArtifactError> {
     instructions
@@ -1685,7 +1733,7 @@ impl EmitterV1 {
     fn decode(
         self,
         index: usize,
-        parameters: &[CompiledParameter],
+        parameters: &InputTable<'_>,
     ) -> Result<CompiledEmitter, ArtifactError> {
         let path = format!("effect.emitters[{index}]");
         require_finite_non_negative(self.start_time, format!("{path}.start_time"))?;
@@ -1735,7 +1783,10 @@ impl EmitterV1 {
                 .into_iter()
                 .enumerate()
                 .map(|(stage_index, stage)| {
-                    stage.decode(&format!("{path}.extension_stages[{stage_index}]"))
+                    stage.decode(
+                        &format!("{path}.extension_stages[{stage_index}]"),
+                        parameters.bindings,
+                    )
                 })
                 .collect::<Result<_, _>>()?,
         })

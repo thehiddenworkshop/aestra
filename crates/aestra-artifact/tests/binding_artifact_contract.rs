@@ -144,3 +144,49 @@ fn plugin_extension_stages_round_trip_with_their_execution_ir() {
         execute_reference(&original[0].block).steps
     );
 }
+
+/// Initialize's `direction` reads `Target`'s velocity (host bindings HB4).
+fn host_field_effect() -> aestra_runtime::CompiledEffect {
+    let mut target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    target
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_LINEAR_VELOCITY));
+    let mut asset = effect("Along", vec![target.clone()]);
+    let initialize = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_INITIALIZE)
+        .unwrap();
+    initialize
+        .property_sources
+        .insert("direction".into(), aestra_core::PropertySource::HostBinding);
+    initialize.host_bindings.insert(
+        "direction".into(),
+        aestra_core::HostFieldRef::new(target.id, AESTRA_FIELD_LINEAR_VELOCITY),
+    );
+    EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&asset)
+        .unwrap()
+}
+
+#[test]
+fn host_field_reads_round_trip_and_bad_slots_are_rejected() {
+    let compiled = host_field_effect();
+    assert_eq!(compiled.host_fields.len(), 1);
+    let bytes = encode_effect(&compiled).unwrap();
+    let reloaded = decode_effect(&bytes).unwrap();
+    assert_eq!(reloaded.host_fields, compiled.host_fields);
+    assert_eq!(
+        reloaded.emitters[0].execution.particle_spawn,
+        compiled.emitters[0].execution.particle_spawn
+    );
+
+    let text = String::from_utf8(bytes).unwrap();
+    let slot = compiled.parameters.len();
+    let read = format!("HostField({slot})");
+    assert!(text.contains(&read));
+    assert!(matches!(
+        decode_effect(text.replacen(&read, "HostField(99)", 1).as_bytes()),
+        Err(ArtifactError::InvalidData { .. })
+    ));
+}

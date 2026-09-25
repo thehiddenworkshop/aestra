@@ -155,10 +155,9 @@ fn missing_bindings_are_reported_and_acquire_or_lose_changes_input_identity() {
     let before = instance.host_input_epoch();
     instance.rebind(TARGET).unwrap();
     assert_ne!(instance.host_input_epoch(), before);
-    assert!(
-        instance.has_forward_only_inputs(),
-        "a Live binding is forward-only"
-    );
+    // Declared bindings nothing reads do not affect the simulation, so seeking stays exact; reads
+    // are covered in binding_input_contract.rs (host bindings HB4, roadmap §7.1).
+    assert!(!instance.has_forward_only_inputs());
 }
 
 #[test]

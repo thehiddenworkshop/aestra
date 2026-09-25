@@ -607,6 +607,7 @@ impl ModuleRegistry {
                 property_sources: BTreeMap::new(),
                 property_source_values: BTreeMap::new(),
                 bindings: BTreeMap::new(),
+                host_bindings: BTreeMap::new(),
                 label: None,
                 // Version 1 is the implicit default and is not written to files.
                 schema_version: (metadata.schema_version > 1).then_some(metadata.schema_version),

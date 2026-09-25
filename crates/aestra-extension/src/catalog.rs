@@ -283,7 +283,12 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
                     min: None,
                     max: None,
                 },
-            ),
+            )
+            // Launch along a bound object's velocity or axis (host bindings HB4).
+            .with_sources(vec![
+                InputSourceKind::Constant,
+                InputSourceKind::HostBinding,
+            ]),
             input(
                 "spread_degrees",
                 "Spread",

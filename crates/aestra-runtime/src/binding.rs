@@ -226,6 +226,42 @@ impl crate::CompiledEffect {
     }
 }
 
+/// A host-field read's index in an instance's packed input table: the parameters come first, then
+/// one entry per [`CompiledHostField`] (host bindings HB4). [`crate::Expression::HostField`] carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HostFieldSlot(pub usize);
+
+/// Where a host field lives in its binding's record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledHostFieldRef {
+    pub binding: BindingSlot,
+    pub field: BindingFieldId,
+    pub value_type: ValueType,
+    pub offset: u32,
+}
+
+/// One module input read from a host binding field (host bindings HB4): its source and the authored
+/// value used whenever the field is absent (binding unbound, lost, or optional field not supplied).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledHostField {
+    pub source: CompiledHostFieldRef,
+    pub fallback: crate::RuntimeValue,
+}
+
+/// Converts packed components to a runtime value of the field's type.
+pub fn host_field_value(value_type: ValueType, components: &[f32]) -> Option<crate::RuntimeValue> {
+    use crate::RuntimeValue;
+    Some(match (value_type, components) {
+        (ValueType::Scalar, [x]) => RuntimeValue::Scalar(*x),
+        (ValueType::Bool, [x]) => RuntimeValue::Bool(*x != 0.0),
+        (ValueType::U32, [x]) => RuntimeValue::U32(x.max(0.0) as u32),
+        (ValueType::Vec2, [x, y]) => RuntimeValue::Vec2([*x, *y]),
+        (ValueType::Vec3, [x, y, z]) => RuntimeValue::Vec3([*x, *y, *z]),
+        (ValueType::Vec4, [x, y, z, w]) => RuntimeValue::Vec4([*x, *y, *z, *w]),
+        _ => return None,
+    })
+}
+
 /// One binding's values for one tick, packed per its compiled [`BindingLayout`] (host bindings HB3).
 ///
 /// `present` marks which layout fields the host supplied (bit `i` = `layout.fields[i]`); required
@@ -561,6 +597,7 @@ impl crate::EffectInstance {
         }
         self.binding_inputs.latched[slot.0] = None;
         self.bump_binding_epoch();
+        self.refresh_host_fields();
         Ok(())
     }
 
@@ -608,14 +645,47 @@ impl crate::EffectInstance {
         self.binding_inputs.epoch
     }
 
-    /// Whether this effect consumes host input that cannot be reconstructed for a backward seek:
-    /// any `Live` binding is forward-only unless the host records its stream (host bindings §7).
-    /// `SnapshotOnSpawn` values are latched and reproducible.
+    /// Whether the simulation reads host input that cannot be reconstructed for a backward seek
+    /// (host bindings §7.1): a module input or plugin module reading a `Live` binding is forward-only
+    /// unless the host records its stream. `SnapshotOnSpawn` values are latched and reproducible, and
+    /// declared-but-unread bindings do not affect the simulation.
     pub fn has_forward_only_inputs(&self) -> bool {
+        let live = |slot: BindingSlot| {
+            self.effect
+                .bindings
+                .get(slot.0)
+                .is_some_and(|binding| binding.update_mode == BindingUpdateMode::Live)
+        };
         self.effect
-            .bindings
+            .host_fields
             .iter()
-            .any(|binding| binding.update_mode == BindingUpdateMode::Live)
+            .any(|field| live(field.source.binding))
+            || self.effect.emitters.iter().any(|emitter| {
+                emitter.extension_stages.iter().any(|stage| {
+                    stage
+                        .modules
+                        .iter()
+                        .flat_map(|module| module.host_fields.values())
+                        .any(|field| live(field.binding))
+                })
+            })
+    }
+
+    /// Rewrites the host-field tail of the input table from the current binding values; absent
+    /// fields take their fallback.
+    fn refresh_host_fields(&mut self) {
+        let start = self.effect.parameters.len();
+        for (index, field) in self.effect.host_fields.iter().enumerate() {
+            let value = self
+                .binding(field.source.binding)
+                .and_then(|snapshot| {
+                    let layout = &self.effect.bindings[field.source.binding.0].layout;
+                    snapshot.field(layout, &field.source.field)
+                })
+                .and_then(|components| host_field_value(field.source.value_type, components))
+                .unwrap_or_else(|| field.fallback.clone());
+            self.parameters[start + index] = value;
+        }
     }
 
     /// Fills this (child) instance's forwarded slots from its parent's resolved values (host
@@ -644,6 +714,7 @@ impl crate::EffectInstance {
             self.binding_inputs.latched[index] = snapshot.clone();
         }
         self.binding_inputs.current[index] = snapshot;
+        self.refresh_host_fields();
     }
 
     fn bump_binding_epoch(&mut self) {
@@ -657,6 +728,7 @@ impl crate::EffectInstance {
         for (latched, current) in inputs.latched.iter_mut().zip(&inputs.current) {
             *latched = current.clone();
         }
+        self.refresh_host_fields();
     }
 }
 impl crate::CompiledEffectProject {

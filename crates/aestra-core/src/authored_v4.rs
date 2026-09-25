@@ -80,6 +80,8 @@ pub struct V4Module {
     pub property_source_values: BTreeMap<String, Vec<PropertySourceValue>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, ParameterId>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub host_bindings: BTreeMap<String, crate::HostFieldRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,6 +98,7 @@ impl V4Module {
             property_sources: module.property_sources.clone(),
             property_source_values: module.property_source_values.clone(),
             bindings: module.bindings.clone(),
+            host_bindings: module.host_bindings.clone(),
             label: module.label.clone(),
             schema_version: module.schema_version,
         }
@@ -111,6 +114,7 @@ impl V4Module {
             property_sources: self.property_sources,
             property_source_values: self.property_source_values,
             bindings: self.bindings,
+            host_bindings: self.host_bindings,
             label: self.label,
             schema_version: self.schema_version,
         }
