@@ -51,6 +51,8 @@ const SOCKET_SIZE: f32 = 10.0;
 // wire layer remain legible at this scale; editing controls are intended for closer zoom levels.
 const MIN_ZOOM: f32 = 0.08;
 const MAX_ZOOM: f32 = 2.0;
+const SELECTED_BORDER_WIDTH: f32 = 2.0;
+const MIN_SELECTED_BORDER_SCREEN_WIDTH: f32 = 2.0;
 const FRAME_PADDING: f32 = 42.0;
 const GRID_SPACING: f32 = 32.0;
 
@@ -178,6 +180,7 @@ impl Plugin for FeathersNodeGraphPlugin {
                     handle_graph_pin_buttons,
                     navigate_graph_viewports,
                     sync_graph_viewport_transforms,
+                    sync_graph_selection_outlines,
                     update_socket_visuals,
                     drag_assist::sync_controls,
                     drag_assist::sync_guides,
@@ -1948,6 +1951,43 @@ fn graph_canvas_transform(pan: Vec2, zoom: f32, content_size: Vec2) -> UiTransfo
     }
 }
 
+/// Keep the selected edge visible when the graph canvas shrinks. The regular border contributes
+/// `SELECTED_BORDER_WIDTH * zoom` screen pixels; an outline supplies only the missing amount and
+/// does not change node layout or socket positions.
+fn selection_outline_width(zoom: f32) -> f32 {
+    (MIN_SELECTED_BORDER_SCREEN_WIDTH / zoom.max(MIN_ZOOM) - SELECTED_BORDER_WIDTH).max(0.0)
+}
+
+fn sync_graph_selection_outlines(
+    viewports: Query<&FeathersGraphViewport>,
+    parents: Query<&ChildOf>,
+    mut nodes: Query<(Entity, &FeathersGraphNode, &mut Outline)>,
+) {
+    for (entity, graph_node, mut outline) in &mut nodes {
+        let color = if graph_node.selected {
+            theme::ACCENT
+        } else {
+            Color::NONE
+        };
+        if outline.color != color {
+            outline.color = color;
+        }
+        if !graph_node.selected {
+            continue;
+        }
+        let Some(viewport) = parents
+            .iter_ancestors(entity)
+            .find_map(|ancestor| viewports.get(ancestor).ok())
+        else {
+            continue;
+        };
+        let width = Val::Px(selection_outline_width(viewport.zoom));
+        if outline.width != width {
+            outline.width = width;
+        }
+    }
+}
+
 pub(crate) fn spawn_graph_node<B: Bundle>(
     parent: &mut ChildSpawnerCommands,
     props: GraphNodeProps,
@@ -2001,12 +2041,25 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             top: Val::Px(props.position.y),
             width: Val::Px(NODE_WIDTH),
             flex_direction: FlexDirection::Column,
-            border: UiRect::all(Val::Px(if props.selected { 2.0 } else { 1.0 })),
+            border: UiRect::all(Val::Px(if props.selected {
+                SELECTED_BORDER_WIDTH
+            } else {
+                1.0
+            })),
             border_radius: BorderRadius::all(Val::Px(5.0)),
             ..default()
         },
         BackgroundColor(background),
         BorderColor::all(border),
+        Outline::new(
+            Val::Px(0.0),
+            Val::ZERO,
+            if props.selected {
+                theme::ACCENT
+            } else {
+                Color::NONE
+            },
+        ),
         BoxShadow::new(
             Color::srgba(0.0, 0.0, 0.0, 0.45),
             Val::Px(0.0),
@@ -2483,6 +2536,74 @@ mod tests {
         assert_vec2_close(
             graph_drag_delta(Vec2::new(8.0, 4.0), after.zoom),
             Vec2::new(100.0, 50.0),
+        );
+    }
+
+    #[test]
+    fn selected_outline_keeps_a_two_pixel_edge_at_overview_zoom() {
+        assert_eq!(selection_outline_width(1.0), 0.0);
+        for zoom in [0.5, 0.25, MIN_ZOOM] {
+            let screen_width = (SELECTED_BORDER_WIDTH + selection_outline_width(zoom)) * zoom;
+            assert!((screen_width - MIN_SELECTED_BORDER_SCREEN_WIDTH).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn selected_outline_tracks_its_own_viewport_zoom() {
+        use bevy::ecs::system::RunSystemOnce;
+
+        let mut app = App::new();
+        let viewport = app
+            .world_mut()
+            .spawn(FeathersGraphViewport {
+                key: "view".into(),
+                pan: Vec2::ZERO,
+                zoom: MIN_ZOOM,
+                content_size: Vec2::new(1000.0, 800.0),
+                selection_bounds: None,
+                frame_request: None,
+                measured_frame: None,
+                suppress_context_click: false,
+            })
+            .id();
+        let node = app
+            .world_mut()
+            .spawn((
+                ChildOf(viewport),
+                FeathersGraphNode {
+                    graph_key: "graph".into(),
+                    node_key: "node".into(),
+                    position: Vec2::ZERO,
+                    selected: true,
+                    pinned: false,
+                    collapsed: false,
+                    dragging: false,
+                    drag_before: None,
+                    drag_modifier: None,
+                    suppress_release_click: false,
+                },
+                Outline::new(Val::Px(0.0), Val::ZERO, theme::ACCENT),
+            ))
+            .id();
+
+        app.world_mut()
+            .run_system_once(sync_graph_selection_outlines)
+            .unwrap();
+        assert_eq!(
+            app.world().get::<Outline>(node).unwrap().width,
+            Val::Px(selection_outline_width(MIN_ZOOM))
+        );
+
+        app.world_mut()
+            .get_mut::<FeathersGraphViewport>(viewport)
+            .unwrap()
+            .zoom = 1.0;
+        app.world_mut()
+            .run_system_once(sync_graph_selection_outlines)
+            .unwrap();
+        assert_eq!(
+            app.world().get::<Outline>(node).unwrap().width,
+            Val::Px(0.0)
         );
     }
 
