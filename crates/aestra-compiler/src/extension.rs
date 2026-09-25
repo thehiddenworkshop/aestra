@@ -21,8 +21,9 @@ use crate::{
     CapabilitySet, ExtensionRegistry, LifecycleRole, RegistryConflict, StageTypeDescriptor,
 };
 use aestra_core::{
-    DomainTypeId, ModuleInstance, ModuleTypeId, PluginId, PropertyBag, ResourceTypeId, StageId,
-    StageTypeId,
+    DomainTypeId, EffectAsset, ExtensionRequirement, ModuleInstance, ModuleParameters,
+    ModuleTypeId, PluginId, PropertyBag, RendererProperties, RendererTypeId, ResourceTypeId,
+    StageId, StageTypeId, Value, plugin_of,
 };
 use aestra_runtime::{ExecutionBlock, ExtensionModulePlan, ResourceLifetime};
 use std::collections::BTreeMap;
@@ -280,6 +281,12 @@ fn registered_ids(registry: &ExtensionRegistry) -> std::collections::BTreeSet<St
             .keys()
             .map(|s| format!("lowering:{}", s.0)),
     );
+    ids.extend(
+        registry
+            .migrations
+            .keys()
+            .map(|id| format!("migration:{id}")),
+    );
     ids
 }
 
@@ -295,12 +302,21 @@ impl ExtensionRegistry {
         {
             return Err(RegistryConflict::DuplicateExtension(manifest.plugin));
         }
+        if semver::Version::parse(&manifest.version).is_err() {
+            return Err(RegistryConflict::InvalidVersion {
+                plugin: manifest.plugin,
+                version: manifest.version,
+            });
+        }
         let mut candidate = self.clone();
         let before = registered_ids(&candidate);
         extension.register(&mut candidate)?;
         let namespace = format!("{}::", manifest.plugin.as_str());
         for id in registered_ids(&candidate).difference(&before) {
-            let id = id.strip_prefix("lowering:").unwrap_or(id);
+            let id = id
+                .strip_prefix("lowering:")
+                .or_else(|| id.strip_prefix("migration:"))
+                .unwrap_or(id);
             if !id.starts_with(&namespace) {
                 return Err(RegistryConflict::OutsideNamespace {
                     plugin: manifest.plugin.clone(),
@@ -367,4 +383,328 @@ pub fn linked_extensions() -> Vec<ExtensionManifest> {
         .iter()
         .map(|extension| extension.manifest())
         .collect()
+}
+
+/// Upgrades one plugin type's stored payload by a single schema version (extensible-stages M11, §35).
+/// A plugin registers one per type whose schema it has bumped; Aestra chains the steps
+/// (`v1 → v2 → v3`) until the payload reaches the installed schema. Migrations are per type, never
+/// per plugin release, so one release can migrate one of several types.
+pub trait PayloadMigration: Send + Sync {
+    /// Rewrites `payload` from schema version `from` to `from + 1`.
+    fn migrate(&self, from: u32, payload: &mut BTreeMap<String, Value>) -> Result<(), String>;
+}
+
+/// The registered payload migrations, keyed by the module or renderer type they upgrade.
+#[derive(Clone, Default)]
+pub struct MigrationRegistry {
+    migrations: BTreeMap<String, Arc<dyn PayloadMigration>>,
+}
+
+impl std::fmt::Debug for MigrationRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.migrations.keys()).finish()
+    }
+}
+
+impl MigrationRegistry {
+    pub fn register_module(
+        &mut self,
+        module_type: ModuleTypeId,
+        migration: Arc<dyn PayloadMigration>,
+    ) -> Result<(), RegistryConflict> {
+        self.register(module_type.0, migration)
+    }
+
+    pub fn register_renderer(
+        &mut self,
+        renderer_type: RendererTypeId,
+        migration: Arc<dyn PayloadMigration>,
+    ) -> Result<(), RegistryConflict> {
+        self.register(renderer_type.0, migration)
+    }
+
+    fn register(
+        &mut self,
+        type_id: String,
+        migration: Arc<dyn PayloadMigration>,
+    ) -> Result<(), RegistryConflict> {
+        if self.migrations.contains_key(&type_id) {
+            return Err(RegistryConflict::DuplicateMigration(type_id));
+        }
+        self.migrations.insert(type_id, migration);
+        Ok(())
+    }
+
+    pub fn get(&self, type_id: &str) -> Option<&Arc<dyn PayloadMigration>> {
+        self.migrations.get(type_id)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.migrations.keys()
+    }
+}
+
+/// One payload upgraded to the installed schema by [`ExtensionRegistry::migrate_effect`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigratedPayload {
+    pub path: String,
+    pub type_id: String,
+    pub from: u32,
+    pub to: u32,
+}
+
+/// A payload that could not be upgraded; it is left exactly as authored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigrationFailure {
+    pub path: String,
+    pub type_id: String,
+    pub from: u32,
+    pub to: u32,
+    pub message: String,
+}
+
+/// What [`ExtensionRegistry::migrate_effect`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PayloadMigrationReport {
+    pub upgraded: Vec<MigratedPayload>,
+    pub failed: Vec<MigrationFailure>,
+}
+
+/// How a stored plugin payload's schema version relates to the installed descriptor's (§35).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaStatus {
+    Current,
+    /// Authored against an older schema: migratable when the plugin registers a migration.
+    Older {
+        stored: u32,
+        current: u32,
+    },
+    /// Authored by a newer plugin: preserved untouched, read-only and not compilable (§35).
+    Newer {
+        stored: u32,
+        current: u32,
+    },
+}
+
+impl SchemaStatus {
+    pub fn of(stored: Option<u32>, current: u32) -> Self {
+        let stored = stored.unwrap_or(1);
+        match stored.cmp(&current) {
+            std::cmp::Ordering::Equal => Self::Current,
+            std::cmp::Ordering::Less => Self::Older { stored, current },
+            std::cmp::Ordering::Greater => Self::Newer { stored, current },
+        }
+    }
+}
+
+/// Whether an installed extension satisfies an effect's [`ExtensionRequirement`] (§21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequirementStatus<'a> {
+    Satisfied(&'a ExtensionManifest),
+    /// The plugin is not installed in this build.
+    Missing,
+    /// The plugin is installed, but its version does not match the requirement.
+    Incompatible(&'a ExtensionManifest),
+    /// The requirement is not a valid semver requirement.
+    Invalid(String),
+}
+
+/// Chains a type's single-step migrations from `stored` up to `current` on a copy, so a failure part
+/// way leaves the authored payload untouched.
+fn run_migration(
+    migration: Option<&Arc<dyn PayloadMigration>>,
+    payload: &BTreeMap<String, Value>,
+    stored: u32,
+    current: u32,
+) -> Result<BTreeMap<String, Value>, String> {
+    let migration = migration
+        .ok_or_else(|| format!("the plugin registers no migration from schema v{stored}"))?;
+    let mut working = payload.clone();
+    for from in stored..current {
+        migration
+            .migrate(from, &mut working)
+            .map_err(|error| format!("migrating schema v{from} → v{}: {error}", from + 1))?;
+    }
+    Ok(working)
+}
+
+impl ExtensionRegistry {
+    /// The installed extension that owns a namespaced type id, if any.
+    pub fn provider_of(&self, type_id: &str) -> Option<&ExtensionManifest> {
+        let plugin = plugin_of(type_id)?;
+        self.installed_manifest(&plugin)
+    }
+
+    /// The manifest of an installed plugin.
+    pub fn installed_manifest(&self, plugin: &PluginId) -> Option<&ExtensionManifest> {
+        self.installed
+            .iter()
+            .find(|manifest| &manifest.plugin == plugin)
+    }
+
+    /// Matches a recorded requirement against the installed extensions.
+    pub fn requirement_status(&self, requirement: &ExtensionRequirement) -> RequirementStatus<'_> {
+        let version_req = match semver::VersionReq::parse(&requirement.version) {
+            Ok(version_req) => version_req,
+            Err(error) => return RequirementStatus::Invalid(error.to_string()),
+        };
+        let Some(manifest) = self.installed_manifest(&requirement.plugin) else {
+            return RequirementStatus::Missing;
+        };
+        // Installed manifests are validated as semver on install.
+        match semver::Version::parse(&manifest.version) {
+            Ok(version) if version_req.matches(&version) => RequirementStatus::Satisfied(manifest),
+            _ => RequirementStatus::Incompatible(manifest),
+        }
+    }
+
+    /// The requirements an effect should record on save (§21): one per referenced plugin — `^version`
+    /// of the installed plugin, or the effect's existing entry (else `*`) for a plugin that is missing.
+    /// An existing requirement the installed plugin does not satisfy is kept, so saving never hides
+    /// an incompatibility.
+    pub fn derive_requirements(&self, asset: &EffectAsset) -> Vec<ExtensionRequirement> {
+        asset
+            .referenced_plugins()
+            .into_iter()
+            .map(|plugin| {
+                let existing = asset.extension_requirement(&plugin);
+                match self.installed_manifest(&plugin) {
+                    Some(manifest)
+                        if existing.is_none_or(|existing| {
+                            matches!(
+                                self.requirement_status(existing),
+                                RequirementStatus::Satisfied(_)
+                            )
+                        }) =>
+                    {
+                        ExtensionRequirement {
+                            plugin,
+                            version: format!("^{}", manifest.version),
+                        }
+                    }
+                    _ => existing.cloned().unwrap_or(ExtensionRequirement {
+                        plugin,
+                        version: "*".into(),
+                    }),
+                }
+            })
+            .collect()
+    }
+
+    /// The schema status of a plugin module's stored payload, or `None` for a built-in or unregistered
+    /// module (nothing to compare against).
+    pub fn module_schema_status(&self, module: &ModuleInstance) -> Option<SchemaStatus> {
+        if !matches!(module.parameters, ModuleParameters::Custom(_)) {
+            return None;
+        }
+        let metadata = self.modules.get(&module.module_type)?;
+        Some(SchemaStatus::of(
+            module.schema_version,
+            metadata.schema_version,
+        ))
+    }
+
+    /// The schema status of an extension renderer's stored payload.
+    pub fn renderer_schema_status(
+        &self,
+        renderer: &aestra_core::RendererInstance,
+    ) -> Option<SchemaStatus> {
+        if !matches!(renderer.properties, RendererProperties::Custom(_)) {
+            return None;
+        }
+        let descriptor = self.renderers.get(&renderer.renderer_type)?;
+        Some(SchemaStatus::of(
+            renderer.schema_version,
+            descriptor.property_schema.schema_version,
+        ))
+    }
+
+    /// Whether any plugin payload in the effect is older than its installed schema.
+    pub fn needs_migration(&self, asset: &EffectAsset) -> bool {
+        asset.emitters.iter().any(|emitter| {
+            emitter.modules.iter().any(|module| {
+                matches!(
+                    self.module_schema_status(module),
+                    Some(SchemaStatus::Older { .. })
+                )
+            }) || emitter.renderers.iter().any(|renderer| {
+                matches!(
+                    self.renderer_schema_status(renderer),
+                    Some(SchemaStatus::Older { .. })
+                )
+            })
+        })
+    }
+
+    /// Upgrades every older plugin payload in the effect to the installed schema through the plugins'
+    /// registered migrations (§35). A payload with no migration path, or whose migration fails, is left
+    /// exactly as authored and reported; newer payloads are never touched.
+    pub fn migrate_effect(&self, asset: &mut EffectAsset) -> PayloadMigrationReport {
+        let mut report = PayloadMigrationReport::default();
+        for (emitter_index, emitter) in asset.emitters.iter_mut().enumerate() {
+            for (module_index, module) in emitter.modules.iter_mut().enumerate() {
+                let Some(SchemaStatus::Older { stored, current }) =
+                    self.module_schema_status(module)
+                else {
+                    continue;
+                };
+                let path = format!("effect.emitters[{emitter_index}].modules[{module_index}]");
+                let type_id = module.module_type.0.clone();
+                let ModuleParameters::Custom(values) = &mut module.parameters else {
+                    continue;
+                };
+                match run_migration(self.migrations.get(&type_id), values, stored, current) {
+                    Ok(migrated) => {
+                        *values = migrated;
+                        module.schema_version = Some(current);
+                        report.upgraded.push(MigratedPayload {
+                            path,
+                            type_id,
+                            from: stored,
+                            to: current,
+                        });
+                    }
+                    Err(message) => report.failed.push(MigrationFailure {
+                        path,
+                        type_id,
+                        from: stored,
+                        to: current,
+                        message,
+                    }),
+                }
+            }
+            for (renderer_index, renderer) in emitter.renderers.iter_mut().enumerate() {
+                let Some(SchemaStatus::Older { stored, current }) =
+                    self.renderer_schema_status(renderer)
+                else {
+                    continue;
+                };
+                let path = format!("effect.emitters[{emitter_index}].renderers[{renderer_index}]");
+                let type_id = renderer.renderer_type.0.clone();
+                let RendererProperties::Custom(values) = &mut renderer.properties else {
+                    continue;
+                };
+                match run_migration(self.migrations.get(&type_id), values, stored, current) {
+                    Ok(migrated) => {
+                        *values = migrated;
+                        renderer.schema_version = Some(current);
+                        report.upgraded.push(MigratedPayload {
+                            path,
+                            type_id,
+                            from: stored,
+                            to: current,
+                        });
+                    }
+                    Err(message) => report.failed.push(MigrationFailure {
+                        path,
+                        type_id,
+                        from: stored,
+                        to: current,
+                        message,
+                    }),
+                }
+            }
+        }
+        report
+    }
 }

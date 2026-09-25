@@ -82,6 +82,8 @@ pub struct V4Module {
     pub bindings: BTreeMap<String, ParameterId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
 }
 
 impl V4Module {
@@ -95,6 +97,7 @@ impl V4Module {
             property_source_values: module.property_source_values.clone(),
             bindings: module.bindings.clone(),
             label: module.label.clone(),
+            schema_version: module.schema_version,
         }
     }
 
@@ -109,6 +112,7 @@ impl V4Module {
             property_source_values: self.property_source_values,
             bindings: self.bindings,
             label: self.label,
+            schema_version: self.schema_version,
         }
     }
 }
@@ -241,6 +245,9 @@ pub struct AuthoredV4Document {
     pub choreography_order: Vec<ChoreographyTrackId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<AssetId>,
+    /// Plugins this effect depends on (extensible-stages M11, §21).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<crate::ExtensionRequirement>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
 }
@@ -395,6 +402,7 @@ impl AuthoredV4Document {
             effect_clips: effect.effect_clips.clone(),
             choreography_order: effect.choreography_order.clone(),
             dependencies: effect.dependencies.clone(),
+            extensions: effect.extensions.clone(),
             metadata: effect.metadata.clone(),
         })
     }
@@ -421,6 +429,7 @@ impl AuthoredV4Document {
             effect_clips: self.effect_clips,
             choreography_order: self.choreography_order,
             dependencies: self.dependencies,
+            extensions: self.extensions,
             metadata: self.metadata,
         }
     }

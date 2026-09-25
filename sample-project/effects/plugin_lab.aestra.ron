@@ -1,6 +1,6 @@
 (
     format_version: 4,
-    id: "9bbc02b0-204a-4ee2-bad5-fc3b85707c9b",
+    id: "dcc46ce9-eb70-4337-b3ee-7c1c24973306",
     name: "Plugin Lab",
     duration: 3.0,
     playback_mode: LoopContinuous,
@@ -17,7 +17,7 @@
     ],
     emitters: [
         (
-            id: "47aefb7f-61ee-4c96-a1f5-975be54ce9a0",
+            id: "435d7434-798b-487a-a308-d6e363f5b401",
             name: "Swirl",
             enabled: true,
             transform: (
@@ -33,7 +33,7 @@
                 emitter_update: (
                     modules: [
                         (
-                            id: "71b0b9e6-df1b-471b-8076-dfa1ae33981a",
+                            id: "707a5a73-c8ea-4f16-8068-6667966d658e",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -46,7 +46,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "f610562f-2db0-45e1-94c8-8456139fdd74",
+                            id: "a5f35739-3bc1-421e-b405-bd9f6753e1fe",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -56,7 +56,7 @@
                             ),
                         ),
                         (
-                            id: "70de2b57-9cfd-4025-907a-ff21a8efe3c2",
+                            id: "5f885770-2e13-48af-9aca-f01d478881bd",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -81,7 +81,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "6850e94d-8998-4051-bf01-79015dbbbf77",
+                            id: "d65bf2fb-3433-4523-b02d-bbcf0eec9883",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -91,12 +91,12 @@
                             ),
                         ),
                         (
-                            id: "a579bcf4-7d41-42bc-98e4-d0ae491efa67",
+                            id: "a4a4c3a4-9669-4a2f-aa81-b796ecafbe35",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "09e9eaeb-ab25-4c8d-8df7-58f0ff020f1a",
+                                    id: "f7f59179-9309-4871-9bf9-34f40907187a",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -113,7 +113,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "d0566f7b-160f-4eec-bd31-25981269d5ce",
+                                    id: "ab9543e9-26e2-4158-8cfb-99c206bd0db8",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -130,7 +130,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "0cf8b05e-3db9-4d50-946f-648477e9180f",
+                                    id: "d98f3d44-80a0-4f5c-b150-d7acd2befe91",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -158,7 +158,7 @@
                     stage_type: "org.example.aestra::stage/field_forces",
                     modules: [
                         (
-                            id: "63ccd935-3f21-4b27-af3a-ab8454df8dd7",
+                            id: "3e5768a1-3d08-40dc-a940-4a76406ce08c",
                             module_type: "org.example.aestra::module/vortex",
                             enabled: true,
                             parameters: Custom({
@@ -167,9 +167,10 @@
                                 "strength": Scalar(6.0),
                             }),
                             label: Some("Core"),
+                            schema_version: Some(2),
                         ),
                         (
-                            id: "2fd48693-b18c-4284-8cd8-7ddb070c5302",
+                            id: "ee8ff6f6-a157-4e83-b18d-eade31ae694d",
                             module_type: "org.example.aestra::module/vortex",
                             enabled: true,
                             parameters: Custom({
@@ -178,19 +179,26 @@
                                 "strength": Scalar(2.5),
                             }),
                             label: Some("Outer"),
+                            schema_version: Some(2),
                         ),
                     ],
                 ),
             ],
             renderers: [
                 (
-                    id: "386bd577-3e42-43df-bd6e-4967d938ed12",
+                    id: "2c83cb7d-d02c-49be-907a-37d149c72b4e",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",
                     properties: Sprite,
                 ),
             ],
+        ),
+    ],
+    extensions: [
+        (
+            plugin: "org.example.aestra",
+            version: "^0.1.0",
         ),
     ],
 )

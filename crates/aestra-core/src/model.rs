@@ -81,6 +81,11 @@ pub struct EffectAsset {
     pub choreography_order: Vec<ChoreographyTrackId>,
     #[serde(default)]
     pub dependencies: Vec<AssetId>,
+    /// The plugins this effect depends on, with version requirements (extensible-stages M11, §21).
+    /// Refreshed from the installed extensions on save; preserved verbatim for plugins that are
+    /// missing, so a host without them can say exactly what is unavailable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<crate::ExtensionRequirement>,
     #[serde(default)]
     pub metadata: BTreeMap<String, String>,
 }
@@ -106,6 +111,7 @@ impl EffectAsset {
             effect_clips: Vec::new(),
             choreography_order: Vec::new(),
             dependencies: Vec::new(),
+            extensions: Vec::new(),
             metadata: BTreeMap::new(),
         }
     }
@@ -138,6 +144,34 @@ impl EffectAsset {
                 "effect.id",
                 "effect ID cannot be nil",
             ));
+        }
+        // Plugin requirements are only checked structurally here; whether they are satisfied is
+        // registry-aware and belongs to the compiler (§20.1).
+        for (index, requirement) in self.extensions.iter().enumerate() {
+            let path = format!("effect.extensions[{index}]");
+            if requirement.plugin.as_str().trim().is_empty() {
+                invalid_value(&mut report, &path, "extension plugin id cannot be empty");
+            }
+            if requirement.version.trim().is_empty() {
+                invalid_value(
+                    &mut report,
+                    &format!("{path}.version"),
+                    "extension version requirement cannot be empty",
+                );
+            }
+            if self.extensions[..index]
+                .iter()
+                .any(|earlier| earlier.plugin == requirement.plugin)
+            {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::DuplicateId,
+                    path,
+                    format!(
+                        "plugin '{}' is listed more than once",
+                        requirement.plugin.as_str()
+                    ),
+                ));
+            }
         }
         if !self.duration.is_finite() || self.duration <= 0.0 {
             report.push(Diagnostic::error(
@@ -1669,6 +1703,11 @@ pub struct ModuleInstance {
     /// Collision "Ground" and Collision "Characters" (§28.5). The semantic type is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// The property-schema version a plugin module's `Custom` payload was authored against
+    /// (extensible-stages M11, §35). `None` means version 1. Older payloads are migrated by the
+    /// plugin; newer ones are preserved untouched and read-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
 }
 
 /// Normalizes an instance label (§28.5): surrounding whitespace is trimmed and an empty label means none.
@@ -1694,6 +1733,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1708,6 +1748,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1734,6 +1775,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1752,6 +1794,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1769,6 +1812,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1786,6 +1830,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -1804,6 +1849,7 @@ impl ModuleInstance {
             property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
             label: None,
+            schema_version: None,
         }
     }
 
@@ -2751,6 +2797,10 @@ pub struct RendererInstance {
     /// and Sprite Renderer "Glow" (§28.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// The property-schema version an extension renderer's `Custom` payload was authored against
+    /// (extensible-stages M11, §35). `None` means version 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
 }
 
 impl RendererInstance {
@@ -2762,6 +2812,7 @@ impl RendererInstance {
             material,
             properties: RendererProperties::Sprite,
             label: None,
+            schema_version: None,
         }
     }
 
@@ -2778,6 +2829,7 @@ impl RendererInstance {
                 random_start: false,
             },
             label: None,
+            schema_version: None,
         }
     }
 

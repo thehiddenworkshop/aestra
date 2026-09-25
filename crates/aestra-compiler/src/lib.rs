@@ -138,7 +138,7 @@ impl ModuleMetadata {
     /// generalization of `ModuleMetadata.inputs` that built-ins and plugins both render/validate through.
     pub fn property_schema(&self) -> PropertySchema {
         PropertySchema::new(
-            BUILTIN_PROPERTY_SCHEMA_VERSION,
+            self.schema_version,
             self.inputs
                 .iter()
                 .map(InputMetadata::to_property_descriptor)
@@ -524,6 +524,10 @@ pub struct ModuleMetadata {
     /// An explicit host-stage requirement (extensible-stages M10). Plugin modules that run in a plugin
     /// stage declare the capability that stage provides; `None` derives it from `stages`.
     pub requires: Option<CapabilityExpression>,
+    /// The version of this module's property schema (extensible-stages M11, §35). Built-ins are
+    /// [BUILTIN_PROPERTY_SCHEMA_VERSION]; a plugin bumps it when its payload shape changes and
+    /// registers a [PayloadMigration] from the previous version.
+    pub schema_version: u32,
 }
 
 impl ModuleMetadata {
@@ -649,6 +653,8 @@ impl ModuleRegistry {
                 property_source_values: BTreeMap::new(),
                 bindings: BTreeMap::new(),
                 label: None,
+                // Version 1 is the implicit default and is not written to files.
+                schema_version: (metadata.schema_version > 1).then_some(metadata.schema_version),
             }),
         }
     }
@@ -722,6 +728,13 @@ pub enum RegistryConflict {
     },
     /// The same plugin was installed twice.
     DuplicateExtension(aestra_core::PluginId),
+    /// A plugin's manifest version is not valid semver (extensible-stages M11).
+    InvalidVersion {
+        plugin: aestra_core::PluginId,
+        version: String,
+    },
+    /// Two payload migrations were registered for the same type.
+    DuplicateMigration(String),
 }
 
 impl std::fmt::Display for RegistryConflict {
@@ -751,6 +764,12 @@ impl std::fmt::Display for RegistryConflict {
             Self::DuplicateExtension(plugin) => {
                 write!(f, "extension '{}' is installed twice", plugin.0)
             }
+            Self::InvalidVersion { plugin, version } => write!(
+                f,
+                "extension '{}' has version '{version}', which is not valid semver",
+                plugin.0
+            ),
+            Self::DuplicateMigration(id) => write!(f, "'{id}' has two payload migrations"),
         }
     }
 }
@@ -774,6 +793,8 @@ pub struct ExtensionRegistry {
     pub resources: ResourceTypeRegistry,
     /// Plugin stage/module lowerers into Execution IR (extensible-stages M10).
     pub lowering: LoweringRegistry,
+    /// Plugin payload schema migrations (extensible-stages M11, §35).
+    pub migrations: MigrationRegistry,
     installed: Vec<ExtensionManifest>,
 }
 
@@ -811,6 +832,7 @@ impl ExtensionRegistry {
             domains: DomainRegistry::builtin(),
             resources: ResourceTypeRegistry::builtin(),
             lowering: LoweringRegistry::default(),
+            migrations: MigrationRegistry::default(),
             installed: Vec::new(),
         }
     }
@@ -1174,7 +1196,31 @@ impl EffectCompiler {
         material_programs: &BTreeMap<MaterialProgramId, MaterialProgram>,
         functions: &MaterialFunctionLibrary,
     ) -> Result<CompiledEffect, CompileError> {
+        // Plugin payloads authored against an older schema compile through the plugin's migrations
+        // (extensible-stages M11, §35) — on a copy, so compiling never rewrites the caller's document.
+        let migrated;
+        let (asset, migration) = if self.registry.needs_migration(asset) {
+            let mut copy = asset.clone();
+            let migration = self.registry.migrate_effect(&mut copy);
+            migrated = copy;
+            (&migrated, migration)
+        } else {
+            (asset, PayloadMigrationReport::default())
+        };
         let mut report = asset.validation_report();
+        for failure in migration.failed {
+            push_unique(
+                &mut report,
+                Diagnostic::error(
+                    DiagnosticCode::IncompatibleExtension,
+                    failure.path,
+                    format!(
+                        "'{}' was authored against schema v{}, but the installed plugin needs v{}: {}",
+                        failure.type_id, failure.from, failure.to, failure.message
+                    ),
+                ),
+            );
+        }
         self.validate_compiler_contracts(asset, &mut report);
         let mut expanded_programs = BTreeMap::new();
         let mut function_expansions = BTreeMap::new();
@@ -1711,44 +1757,173 @@ impl EffectCompiler {
         })
     }
 
+    /// A diagnostic for a type id no registered descriptor provides (extensible-stages M11). When the id
+    /// is namespaced by a plugin that is not installed, it names the plugin and its recorded version
+    /// requirement (`MissingExtension`); otherwise it is the ordinary unknown-type diagnostic.
+    fn unregistered_type_diagnostic(
+        &self,
+        asset: &EffectAsset,
+        type_id: &str,
+        kind: &str,
+        path: String,
+        code: DiagnosticCode,
+    ) -> Diagnostic {
+        let Some(plugin) = aestra_core::plugin_of(type_id) else {
+            return Diagnostic::error(code, path, format!("{kind} '{type_id}' is not registered"));
+        };
+        match self.registry.installed_manifest(&plugin) {
+            None => {
+                let requirement = asset
+                    .extension_requirement(&plugin)
+                    .map(|requirement| format!(" {}", requirement.version))
+                    .unwrap_or_default();
+                Diagnostic::error(
+                    DiagnosticCode::MissingExtension,
+                    path,
+                    format!(
+                        "{kind} '{type_id}' comes from plugin '{}{requirement}', which is not \
+                         installed. Its authored data is preserved; install the plugin to compile it.",
+                        plugin.as_str()
+                    ),
+                )
+            }
+            Some(manifest) => Diagnostic::error(
+                code,
+                path,
+                format!(
+                    "{kind} '{type_id}' is not provided by the installed plugin '{}' {}",
+                    plugin.as_str(),
+                    manifest.version
+                ),
+            ),
+        }
+    }
+
+    /// "plugin 'id' version" for a type's installed provider, or "the installed registry".
+    fn provider_label(&self, type_id: &str) -> String {
+        self.registry.provider_of(type_id).map_or_else(
+            || "the installed registry".to_string(),
+            |manifest| format!("plugin '{}' {}", manifest.plugin.as_str(), manifest.version),
+        )
+    }
+
     fn validate_compiler_contracts(&self, asset: &EffectAsset, report: &mut ValidationReport) {
+        // Recorded plugin requirements (extensible-stages M11, §21). A missing plugin is reported per
+        // type it provides (below), which names exactly what is unavailable; here only a present but
+        // incompatible plugin, or a malformed requirement, is reported.
+        let referenced = asset.referenced_plugins();
+        for (index, requirement) in asset.extensions.iter().enumerate() {
+            let path = format!("effect.extensions[{index}]");
+            match self.registry.requirement_status(requirement) {
+                RequirementStatus::Invalid(error) => push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        format!("{path}.version"),
+                        format!(
+                            "'{}' is not a valid version requirement: {error}",
+                            requirement.version
+                        ),
+                    ),
+                ),
+                RequirementStatus::Incompatible(manifest)
+                    if referenced.contains(&requirement.plugin) =>
+                {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::IncompatibleExtension,
+                            path,
+                            format!(
+                                "the effect requires plugin '{}' {}, but version {} is installed",
+                                requirement.plugin.as_str(),
+                                requirement.version,
+                                manifest.version
+                            ),
+                        ),
+                    )
+                }
+                _ => {}
+            }
+        }
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{emitter_index}]");
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 let path = format!("{emitter_path}.modules[{module_index}]");
+                // The host stage's provided capabilities come from its registered stage type
+                // (extensible-stages M10), so a plugin stage hosts exactly what it declares.
+                let stage_type = emitter.stage_type_of(&module.stage);
+                let stage = self.registry.stages.get(&stage_type);
+                if stage.is_none() {
+                    push_unique(
+                        report,
+                        self.unregistered_type_diagnostic(
+                            asset,
+                            &stage_type.0,
+                            "stage type",
+                            format!("{path}.stage"),
+                            DiagnosticCode::UnknownStage,
+                        ),
+                    );
+                }
                 let Some(metadata) = self.registry.modules.get(&module.module_type) else {
                     push_unique(
                         report,
-                        Diagnostic::error(
-                            DiagnosticCode::UnknownModule,
+                        self.unregistered_type_diagnostic(
+                            asset,
+                            &module.module_type.0,
+                            "module",
                             format!("{path}.module_type"),
-                            format!("module '{}' is not registered", module.module_type.0),
+                            DiagnosticCode::UnknownModule,
                         ),
                     );
                     continue;
                 };
+                let Some(stage) = stage else {
+                    continue;
+                };
+                // A plugin payload must match the installed schema (extensible-stages M11, §35): a
+                // newer one is preserved but not compiled; an older one that could not be migrated
+                // is reported (compilation already tried the plugin's migrations).
+                match self.registry.module_schema_status(module) {
+                    Some(SchemaStatus::Newer { stored, current }) => {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::IncompatibleExtension,
+                                path.clone(),
+                                format!(
+                                    "module '{}' was saved with schema v{stored}, but {} provides v{current}. \
+                                     Its data is preserved; update the plugin to edit or compile it.",
+                                    module.module_type.0,
+                                    self.provider_label(&module.module_type.0)
+                                ),
+                            ),
+                        );
+                        continue;
+                    }
+                    Some(SchemaStatus::Older { stored, current }) => {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::IncompatibleExtension,
+                                path.clone(),
+                                format!(
+                                    "module '{}' was saved with schema v{stored} and cannot be migrated \
+                                     to v{current}",
+                                    module.module_type.0
+                                ),
+                            ),
+                        );
+                        continue;
+                    }
+                    _ => {}
+                }
                 // Capability-based compatibility (extensible-stages M4): the module is valid here when
                 // its required capabilities are satisfied by what its host stage provides — never a
                 // hardcoded stage-type check. For built-ins this is equivalent to the old
                 // `stages.contains(module.stage)`, and it also lets third-party stages host standard
                 // modules by providing the right capabilities.
-                // The host stage's provided capabilities come from its registered stage type
-                // (extensible-stages M10), so a plugin stage hosts exactly what it declares.
-                let stage_type = emitter.stage_type_of(&module.stage);
-                let Some(stage) = self.registry.stages.get(&stage_type) else {
-                    push_unique(
-                        report,
-                        Diagnostic::error(
-                            DiagnosticCode::UnknownStage,
-                            format!("{path}.stage"),
-                            format!(
-                                "stage type '{}' is not registered — is its plugin linked?",
-                                stage_type.0
-                            ),
-                        ),
-                    );
-                    continue;
-                };
                 if !stage.hosts(&metadata.required_capabilities()) {
                     push_unique(
                         report,
@@ -2043,15 +2218,56 @@ impl EffectCompiler {
                             .renderers
                             .is_extension(&renderer.renderer_type);
                 let supported = builtin_supported || extension_supported;
-                if renderer.enabled && !supported {
+                let renderer_path = format!("{emitter_path}.renderers[{renderer_index}]");
+                if renderer.enabled
+                    && !supported
+                    && aestra_core::plugin_of(&renderer.renderer_type.0).is_some()
+                    && self
+                        .registry
+                        .renderers
+                        .get(&renderer.renderer_type)
+                        .is_none()
+                {
+                    // A plugin renderer whose plugin is missing (extensible-stages M11).
+                    push_unique(
+                        report,
+                        self.unregistered_type_diagnostic(
+                            asset,
+                            &renderer.renderer_type.0,
+                            "renderer",
+                            format!("{renderer_path}.renderer_type"),
+                            DiagnosticCode::UnsupportedRenderer,
+                        ),
+                    );
+                } else if renderer.enabled && !supported {
                     push_unique(
                         report,
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedRenderer,
-                            format!("{emitter_path}.renderers[{renderer_index}].renderer_type"),
+                            format!("{renderer_path}.renderer_type"),
                             format!(
                                 "renderer '{}' is not supported by the current runtime",
                                 renderer.renderer_type.0
+                            ),
+                        ),
+                    );
+                }
+                if renderer.enabled
+                    && let Some(
+                        SchemaStatus::Newer { stored, current }
+                        | SchemaStatus::Older { stored, current },
+                    ) = self.registry.renderer_schema_status(renderer)
+                {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::IncompatibleExtension,
+                            renderer_path,
+                            format!(
+                                "renderer '{}' was saved with schema v{stored}, but {} provides \
+                                 v{current} and no migration applies. Its data is preserved.",
+                                renderer.renderer_type.0,
+                                self.provider_label(&renderer.renderer_type.0)
                             ),
                         ),
                     );
@@ -2799,6 +3015,7 @@ fn metadata(
         multiplicity: ModuleMultiplicity::Multiple,
         approximate_cost: 0,
         requires: None,
+        schema_version: BUILTIN_PROPERTY_SCHEMA_VERSION,
     }
 }
 
@@ -2827,6 +3044,7 @@ impl ModuleMetadata {
             multiplicity: ModuleMultiplicity::Multiple,
             approximate_cost: 0,
             requires: Some(requires),
+            schema_version: BUILTIN_PROPERTY_SCHEMA_VERSION,
         }
     }
 
@@ -2862,6 +3080,11 @@ impl ModuleMetadata {
 
     pub fn with_simulation(mut self, simulation: SimulationRequirements) -> Self {
         self.simulation = simulation;
+        self
+    }
+
+    pub fn with_schema_version(mut self, schema_version: u32) -> Self {
+        self.schema_version = schema_version;
         self
     }
 

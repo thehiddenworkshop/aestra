@@ -240,7 +240,7 @@ fn a_missing_plugin_reports_diagnostics_but_preserves_the_authored_data() {
         .compile(&reopened)
         .unwrap_err();
     let codes = codes(error);
-    assert!(codes.contains(&DiagnosticCode::UnknownModule));
+    assert!(codes.contains(&DiagnosticCode::MissingExtension));
 
     // Saving again still carries the plugin's stage and module.
     assert_eq!(reopened.to_pretty_ron().unwrap(), saved);
@@ -260,7 +260,7 @@ fn the_committed_plugin_lab_sample_compiles_with_the_plugin_and_names_it_without
     let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
         .compile(&effect)
         .unwrap_err();
-    assert!(codes(error).contains(&DiagnosticCode::UnknownModule));
+    assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
 }
 
 #[test]

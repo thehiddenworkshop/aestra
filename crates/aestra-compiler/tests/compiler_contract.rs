@@ -337,6 +337,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
             simulation,
             multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
             requires: None,
+            schema_version: 1,
             approximate_cost: 0,
         }
     }
@@ -500,6 +501,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
         },
         multiplicity: aestra_compiler::ModuleMultiplicity::Multiple,
         requires: None,
+        schema_version: 1,
         approximate_cost: 0,
     };
     let mut registry = ExtensionRegistry::builtin();
@@ -519,6 +521,7 @@ fn compiler_classifies_emitters_and_derives_seek_mode_from_requirements() {
         property_source_values: BTreeMap::new(),
         bindings: BTreeMap::new(),
         label: None,
+        schema_version: None,
     });
     asset.emitters.push(debris);
 
@@ -1453,6 +1456,7 @@ fn unregistered_modules_produce_targeted_diagnostics() {
         property_source_values: BTreeMap::new(),
         bindings: BTreeMap::new(),
         label: None,
+        schema_version: None,
     });
     asset.emitters.push(emitter);
 
@@ -2333,6 +2337,7 @@ fn a_plugin_renderer_registers_compiles_and_produces_an_extension_plan() {
         material: DEFAULT_SPRITE_MATERIAL_ID,
         properties: RendererProperties::Custom(payload),
         label: None,
+        schema_version: None,
     }];
     asset.emitters.push(emitter);
 

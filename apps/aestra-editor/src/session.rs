@@ -667,6 +667,11 @@ impl EditorSession {
         self.interaction_source = None;
         self.saved_source_bytes = bytes;
         self.saved_effect = Some(effect.clone());
+        // Plugin payloads authored against an older schema are upgraded through the plugins'
+        // migrations (extensible-stages M11, §35). The file is untouched until the user saves, so the
+        // document opens dirty; payloads that cannot migrate — or are newer — are left as authored.
+        let mut effect = effect;
+        let migration = aestra_compiler::ExtensionRegistry::linked().migrate_effect(&mut effect);
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -681,7 +686,13 @@ impl EditorSession {
         self.pending_change = None;
         self.driver.clock.restart();
         self.playing = false;
-        self.dirty = false;
+        self.dirty = !migration.upgraded.is_empty();
+        if self.dirty {
+            self.status = format!(
+                "Upgraded {} plugin payload(s) to the installed schema — save to keep the upgrade",
+                migration.upgraded.len()
+            );
+        }
         self.history.clear();
         self.operation_order = Default::default();
         self.history_generation = self.history_generation.wrapping_add(1);
@@ -755,6 +766,10 @@ impl EditorSession {
                 "The source changed outside the editor. Use Save As to save a copy, or reopen the source before saving."
             ).into());
         }
+        // Record the plugins the effect depends on (extensible-stages M11, §21): the installed version
+        // for present plugins, the existing requirement verbatim for missing ones.
+        self.effect.extensions =
+            aestra_compiler::ExtensionRegistry::linked().derive_requirements(&self.effect);
         self.effect.save_ron(path)?;
         // Record our own bytes, not a possible external replacement racing the completed write.
         self.saved_source_bytes = Some(self.effect.to_pretty_ron()?.into_bytes());
@@ -2824,6 +2839,65 @@ mod tests {
         session.undo();
         session.save().unwrap();
         assert_eq!(EffectAsset::load_ron(path).unwrap(), effect);
+    }
+
+    #[test]
+    fn opening_upgrades_older_plugin_payloads_and_saving_records_plugin_requirements() {
+        // Extensible-stages M11: an effect saved with an older Vortex schema (v1 called `strength`
+        // `speed`) opens upgraded — and dirty, since the file is untouched until saved — and saving
+        // records the plugin requirement.
+        aestra_example_extension::link();
+        let registry = aestra_compiler::ExtensionRegistry::linked();
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("plugin.aestra.ron");
+        let mut effect = EffectAsset::new("Plugin", 2.0);
+        let mut emitter = aestra_core::Emitter::basic_sprite("Swirl", 2.0);
+        let mut vortex = registry
+            .modules
+            .instantiate(&aestra_core::ModuleTypeId::new(
+                aestra_example_extension::MODULE_VORTEX,
+            ))
+            .unwrap();
+        vortex.stage = aestra_core::StageKind::Simulation("Field Forces".into());
+        vortex.schema_version = None;
+        let aestra_core::ModuleParameters::Custom(values) = &mut vortex.parameters else {
+            unreachable!()
+        };
+        values.remove("strength");
+        values.insert("speed".into(), aestra_core::Value::Scalar(5.0));
+        emitter.modules.push(vortex);
+        emitter.simulation_stage_types.insert(
+            "Field Forces".into(),
+            aestra_core::StageTypeId::new(aestra_example_extension::STAGE_FIELD_FORCES),
+        );
+        effect.emitters.push(emitter);
+        effect.save_ron(&path).unwrap();
+
+        let mut session = test_support::session_with_timing_slack();
+        session.open(&path).unwrap();
+        assert!(session.dirty, "the upgrade is an unsaved change");
+        assert!(session.status.contains("Upgraded 1 plugin payload"));
+        let opened = session.effect.emitters[0].modules.last().unwrap();
+        assert_eq!(
+            opened.schema_version,
+            Some(aestra_example_extension::VORTEX_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            opened.active_parameter_value("strength"),
+            Some(aestra_core::Value::Scalar(5.0))
+        );
+
+        session.save().unwrap();
+        let saved = EffectAsset::load_ron(&path).unwrap();
+        assert_eq!(saved, session.effect);
+        assert_eq!(
+            saved.extensions,
+            vec![aestra_core::ExtensionRequirement::new(
+                aestra_example_extension::PLUGIN_ID,
+                format!("^{}", env!("CARGO_PKG_VERSION")),
+            )]
+        );
+        assert!(!session.dirty);
     }
 
     #[test]

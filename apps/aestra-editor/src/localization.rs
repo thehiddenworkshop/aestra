@@ -538,6 +538,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "diagnostics-code-unreachable-expression",
     "diagnostics-code-unknown-stage",
     "diagnostics-code-lowering-failed",
+    "diagnostics-code-missing-extension",
+    "diagnostics-code-incompatible-extension",
     "profiler-effect-profile",
     "profiler-status-last-valid",
     "profiler-status-live",

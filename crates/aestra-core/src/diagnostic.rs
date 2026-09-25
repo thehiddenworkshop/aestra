@@ -40,6 +40,12 @@ pub enum DiagnosticCode {
     UnknownStage,
     /// A plugin stage or module lowerer rejected its input, or produced invalid Execution IR.
     LoweringFailed,
+    /// A type the effect uses comes from a plugin that is not installed (extensible-stages M11). The
+    /// authored data is preserved; only compilation of that feature is unavailable.
+    MissingExtension,
+    /// An installed plugin does not satisfy the effect's version requirement, or a payload's schema
+    /// version cannot be used with the installed plugin (newer, or no migration path).
+    IncompatibleExtension,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -17,8 +17,8 @@
 use aestra_compiler::{
     AestraExtension, CapabilityExpression, CapabilitySet, DomainDescriptor, ExtensionManifest,
     ExtensionRegistry, InputControl, InputMetadata, ModuleLowerer, ModuleMetadata,
-    RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer, StageLoweringInput,
-    StageTypeDescriptor,
+    PayloadMigration, RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer,
+    StageLoweringInput, StageTypeDescriptor,
 };
 use aestra_core::{
     CapabilityId, DomainTypeId, ModuleInstance, ModuleTypeId, PluginId, PropertyBag,
@@ -29,6 +29,7 @@ use aestra_runtime::{
     AESTRA_RESOURCE_PARTICLES, ComputeOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
     ResourceAccess, ResourceDescriptor, ResourceLifetime, StagedDispatch,
 };
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub const PLUGIN_ID: &str = "org.example.aestra";
@@ -38,6 +39,9 @@ pub const RESOURCE_FORCE_FIELD: &str = "org.example.aestra::resource/force_field
 pub const STAGE_FIELD_FORCES: &str = "org.example.aestra::stage/field_forces";
 pub const MODULE_VORTEX: &str = "org.example.aestra::module/vortex";
 pub const RENDERER_DEBUG_POINTS: &str = "org.example.aestra::renderer/debug_points";
+/// The Vortex payload schema. v1 called the tangential acceleration `speed`; v2 renamed it to
+/// `strength`, and [`VortexMigration`] upgrades v1 payloads.
+pub const VORTEX_SCHEMA_VERSION: u32 = 2;
 
 /// The force field's resolution per axis, and the workgroup edge its build pass uses.
 const FIELD_RESOLUTION: u32 = 32;
@@ -98,6 +102,9 @@ impl AestraExtension for ExampleExtension {
         registry
             .lowering
             .register_module(ModuleTypeId::new(MODULE_VORTEX), Arc::new(VortexLowerer))?;
+        registry
+            .migrations
+            .register_module(ModuleTypeId::new(MODULE_VORTEX), Arc::new(VortexMigration))?;
         Ok(())
     }
 }
@@ -145,6 +152,25 @@ fn vortex_metadata(field_forces: CapabilityId) -> ModuleMetadata {
     ])
     .with_tags(vec!["plugin", "force"])
     .with_cost(3)
+    .with_schema_version(VORTEX_SCHEMA_VERSION)
+}
+
+/// Upgrades Vortex payloads one schema version at a time (extensible-stages M11, §35).
+struct VortexMigration;
+
+impl PayloadMigration for VortexMigration {
+    fn migrate(&self, from: u32, payload: &mut BTreeMap<String, Value>) -> Result<(), String> {
+        match from {
+            // v1 → v2: `speed` was renamed `strength`.
+            1 => {
+                if let Some(speed) = payload.remove("speed") {
+                    payload.insert("strength".into(), speed);
+                }
+                Ok(())
+            }
+            other => Err(format!("no Vortex migration from schema v{other}")),
+        }
+    }
 }
 
 fn debug_points_schema() -> PropertySchema {

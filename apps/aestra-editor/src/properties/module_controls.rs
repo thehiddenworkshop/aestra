@@ -1095,9 +1095,9 @@ pub(super) fn spawn_module_inspector(
 }
 
 /// The module's parameter controls (extensible-stages M9/M10): a registered module — built-in or from a
-/// linked extension — renders editable controls for its declared inputs; an unregistered plugin module
-/// (its extension is not linked into this build) renders its preserved [`ModuleParameters::Custom`]
-/// payload as read-only value rows so its authored data is surfaced rather than dropped (§20). Inline
+/// linked extension — renders editable controls for its declared inputs; a plugin module whose extension
+/// is missing, or whose payload schema the installed plugin cannot read (M11), renders an explanation
+/// and its preserved [`ModuleParameters::Custom`] payload as read-only value rows (§20, §28.7). Inline
 /// diagnostics close out both paths. Shared so the inspector and any future embedded view render
 /// identical controls.
 fn spawn_module_input_controls(
@@ -1109,8 +1109,13 @@ fn spawn_module_input_controls(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
-    match metadata {
-        Some(metadata) => {
+    let extensions = aestra_compiler::ExtensionRegistry::linked();
+    let state = module_extension_state(module, &extensions, &session.effect);
+    match (metadata, &state) {
+        (Some(metadata), ModuleExtensionState::BuiltIn | ModuleExtensionState::Provided { .. }) => {
+            if let ModuleExtensionState::Provided { provider } = &state {
+                spawn_extension_note(card, &format!("Provided by {provider}"), theme::TEXT_FAINT);
+            }
             for (input_index, input) in metadata.inputs.iter().enumerate() {
                 spawn_input_control(
                     card,
@@ -1123,7 +1128,10 @@ fn spawn_module_input_controls(
                 );
             }
         }
-        None => {
+        _ => {
+            // Missing plugin, or a payload the installed plugin cannot read (§20, §28.7, §35): the
+            // authored data is shown read-only and preserved exactly.
+            spawn_extension_unavailable_notice(card, &module.module_type.0, &state);
             if let aestra_core::ModuleParameters::Custom(values) = &module.parameters {
                 spawn_custom_module_properties(card, values);
             }
@@ -1132,18 +1140,71 @@ fn spawn_module_input_controls(
     spawn_inline_diagnostics(card, diagnostic_path, session);
 }
 
-/// Surfaces an unregistered plugin/custom module's preserved payload in the inspector (extensible-stages
-/// M9 phase 9b, §20): a short note that the module is not installed, then one read-only row per authored
-/// property. The data is never dropped; installing the plugin (which publishes a `PropertySchema`) is
-/// what turns these into editable controls.
-fn spawn_custom_module_properties(
-    card: &mut ChildSpawnerCommands,
-    values: &std::collections::BTreeMap<String, Value>,
-) {
+/// How a module relates to the installed extensions (extensible-stages M11, §28.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ModuleExtensionState {
+    /// A core `aestra.*` module.
+    BuiltIn,
+    /// A plugin module whose plugin is installed and can read its payload.
+    Provided { provider: String },
+    /// The plugin that provides this type is not installed (or no longer provides it).
+    Missing {
+        plugin: String,
+        requirement: Option<String>,
+    },
+    /// The plugin is installed but the payload's schema version is newer, or could not be migrated.
+    SchemaMismatch {
+        provider: String,
+        stored: u32,
+        current: u32,
+    },
+}
+
+pub(super) fn module_extension_state(
+    module: &ModuleInstance,
+    extensions: &aestra_compiler::ExtensionRegistry,
+    effect: &aestra_core::EffectAsset,
+) -> ModuleExtensionState {
+    let Some(plugin) = aestra_core::plugin_of(&module.module_type.0) else {
+        return if extensions.modules.get(&module.module_type).is_some() {
+            ModuleExtensionState::BuiltIn
+        } else {
+            ModuleExtensionState::Missing {
+                plugin: String::new(),
+                requirement: None,
+            }
+        };
+    };
+    let manifest = extensions
+        .installed_manifest(&plugin)
+        .filter(|_| extensions.modules.get(&module.module_type).is_some());
+    let Some(manifest) = manifest else {
+        return ModuleExtensionState::Missing {
+            plugin: plugin.as_str().to_string(),
+            requirement: effect
+                .extension_requirement(&plugin)
+                .map(|requirement| requirement.version.clone()),
+        };
+    };
+    let provider = format!("{} {}", manifest.display_name, manifest.version);
+    match extensions.module_schema_status(module) {
+        Some(
+            aestra_compiler::SchemaStatus::Newer { stored, current }
+            | aestra_compiler::SchemaStatus::Older { stored, current },
+        ) => ModuleExtensionState::SchemaMismatch {
+            provider,
+            stored,
+            current,
+        },
+        _ => ModuleExtensionState::Provided { provider },
+    }
+}
+
+fn spawn_extension_note(card: &mut ChildSpawnerCommands, text: &str, color: Color) {
     card.spawn((
-        Text::new("Plugin module not installed — authored values are preserved and read-only."),
+        Text::new(text),
         bevy::feathers::theme::ThemedText,
-        TextColor(theme::TEXT_FAINT),
+        TextColor(color),
         TextFont {
             font_size: FontSize::Px(11.0),
             ..default()
@@ -1153,6 +1214,67 @@ fn spawn_custom_module_properties(
             ..default()
         },
     ));
+}
+
+/// The §28.7 "MISSING EXTENSION" block (or its schema-mismatch variant): what is unavailable, which
+/// plugin provides it, and that the authored data is preserved.
+fn spawn_extension_unavailable_notice(
+    card: &mut ChildSpawnerCommands,
+    type_id: &str,
+    state: &ModuleExtensionState,
+) {
+    let warning = super::stack_panel::diagnostic_color(aestra_core::DiagnosticSeverity::Warning);
+    match state {
+        ModuleExtensionState::SchemaMismatch {
+            provider,
+            stored,
+            current,
+        } => {
+            spawn_extension_note(card, "INCOMPATIBLE EXTENSION DATA", warning);
+            spawn_properties_read_only_control(card, "Type", type_id);
+            spawn_properties_read_only_control(card, "Installed", provider);
+            spawn_properties_read_only_control(
+                card,
+                "Schema",
+                &format!("saved v{stored}, installed v{current}"),
+            );
+            spawn_extension_note(
+                card,
+                "The authored data is preserved read-only. Install a plugin version that supports it \
+                 to edit or compile this module.",
+                theme::TEXT_FAINT,
+            );
+        }
+        ModuleExtensionState::Missing {
+            plugin,
+            requirement,
+        } => {
+            spawn_extension_note(card, "MISSING EXTENSION", warning);
+            spawn_properties_read_only_control(card, "Type", type_id);
+            if !plugin.is_empty() {
+                let required = match requirement {
+                    Some(requirement) => format!("{plugin} {requirement}"),
+                    None => plugin.clone(),
+                };
+                spawn_properties_read_only_control(card, "Required plugin", &required);
+            }
+            spawn_extension_note(
+                card,
+                "The authored data is preserved. Compilation is unavailable until the extension is \
+                 installed.",
+                theme::TEXT_FAINT,
+            );
+        }
+        ModuleExtensionState::BuiltIn | ModuleExtensionState::Provided { .. } => {}
+    }
+}
+
+/// One read-only row per authored property of a preserved plugin payload (extensible-stages M9 phase
+/// 9b, §20). The data is never dropped; a plugin that can read it turns these into editable controls.
+fn spawn_custom_module_properties(
+    card: &mut ChildSpawnerCommands,
+    values: &std::collections::BTreeMap<String, Value>,
+) {
     if values.is_empty() {
         spawn_properties_read_only_control(card, "Properties", "None authored");
         return;
@@ -1451,6 +1573,50 @@ fn spawn_input_control(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The inspector's view of a module against the installed extensions (extensible-stages M11,
+    /// §28.7): built-in, provided (with its provider), missing (with the recorded requirement), or a
+    /// schema the installed plugin cannot read.
+    #[test]
+    fn module_extension_state_explains_plugin_availability() {
+        let mut installed = aestra_compiler::ExtensionRegistry::builtin();
+        installed
+            .install(&aestra_example_extension::ExampleExtension)
+            .unwrap();
+        let missing = aestra_compiler::ExtensionRegistry::builtin();
+        let vortex_type = aestra_core::ModuleTypeId::new(aestra_example_extension::MODULE_VORTEX);
+        let vortex = installed.modules.instantiate(&vortex_type).unwrap();
+        let mut effect = aestra_core::EffectAsset::new("Plugins", 1.0);
+        effect.extensions = vec![aestra_core::ExtensionRequirement::new(
+            aestra_example_extension::PLUGIN_ID,
+            "^0.1.0",
+        )];
+
+        let motion = ModuleInstance::motion([0.0; 3], 0.0, 0.0);
+        assert_eq!(
+            module_extension_state(&motion, &installed, &effect),
+            ModuleExtensionState::BuiltIn
+        );
+        assert!(matches!(
+            module_extension_state(&vortex, &installed, &effect),
+            ModuleExtensionState::Provided { provider } if provider.starts_with("Aestra Example Extension")
+        ));
+        assert_eq!(
+            module_extension_state(&vortex, &missing, &effect),
+            ModuleExtensionState::Missing {
+                plugin: aestra_example_extension::PLUGIN_ID.into(),
+                requirement: Some("^0.1.0".into()),
+            }
+        );
+        let mut newer = vortex.clone();
+        newer.schema_version = Some(aestra_example_extension::VORTEX_SCHEMA_VERSION + 1);
+        assert!(matches!(
+            module_extension_state(&newer, &installed, &effect),
+            ModuleExtensionState::SchemaMismatch { stored, current, .. }
+                if stored == aestra_example_extension::VORTEX_SCHEMA_VERSION + 1
+                    && current == aestra_example_extension::VORTEX_SCHEMA_VERSION
+        ));
+    }
 
     #[test]
     fn source_limits_follow_numeric_control_metadata() {

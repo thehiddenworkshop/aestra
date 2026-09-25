@@ -11,10 +11,10 @@ members = [
     "crates/aestra-core",
     "crates/aestra-authoring",
     "crates/aestra-compiler",
-    "crates/aestra-example-extension",
     "crates/aestra-gpu",
     "crates/aestra-project",
     "crates/aestra-runtime",
+    "extensions/aestra-example-extension",
 ]
 
 [workspace.package]

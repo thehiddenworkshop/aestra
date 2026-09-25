@@ -830,6 +830,8 @@ diagnostics-code-invalid-render-state = État de rendu non valide
 diagnostics-code-unreachable-expression = Expression inaccessible
 diagnostics-code-unknown-stage = Type d’étape inconnu
 diagnostics-code-lowering-failed = Échec de la traduction du plugin
+diagnostics-code-missing-extension = Plugin manquant
+diagnostics-code-incompatible-extension = Plugin incompatible
 diagnostics-code-shader-compile = Erreur de compilation du shader
 
 profiler-effect-profile = PROFIL DU PROJET

@@ -3,6 +3,7 @@
 mod authored_v4;
 mod collision;
 mod diagnostic;
+mod extension_requirement;
 mod host_transform;
 mod id;
 pub mod material;
@@ -14,6 +15,7 @@ mod transform_curve;
 pub use authored_v4::*;
 pub use collision::*;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity, ValidationReport};
+pub use extension_requirement::*;
 pub use host_transform::*;
 pub use id::*;
 pub use migration::*;

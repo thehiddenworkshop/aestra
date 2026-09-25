@@ -45,6 +45,8 @@ fn main() {
         emitter.modules.push(vortex);
     }
     effect.emitters.push(emitter);
+    // Record the plugin requirement exactly as the editor does on save (extensible-stages M11).
+    effect.extensions = registry.derive_requirements(&effect);
 
     effect.save_ron(PATH).expect("write sample");
     let reloaded = EffectAsset::load_ron(PATH).expect("reload sample");

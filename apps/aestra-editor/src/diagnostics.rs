@@ -985,6 +985,8 @@ fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::UnreachableExpression => "diagnostics-code-unreachable-expression",
         DiagnosticCode::UnknownStage => "diagnostics-code-unknown-stage",
         DiagnosticCode::LoweringFailed => "diagnostics-code-lowering-failed",
+        DiagnosticCode::MissingExtension => "diagnostics-code-missing-extension",
+        DiagnosticCode::IncompatibleExtension => "diagnostics-code-incompatible-extension",
     }
 }
 

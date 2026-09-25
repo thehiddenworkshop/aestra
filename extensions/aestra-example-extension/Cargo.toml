@@ -8,6 +8,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-aestra-compiler = { path = "../aestra-compiler" }
-aestra-core = { path = "../aestra-core" }
-aestra-runtime = { path = "../aestra-runtime" }
+aestra-compiler = { path = "../../crates/aestra-compiler" }
+aestra-core = { path = "../../crates/aestra-core" }
+aestra-runtime = { path = "../../crates/aestra-runtime" }

@@ -2935,7 +2935,8 @@ Built-in and third-party items use the same visual language.
 > - The results land on `CompiledEmitter.extension_stages` beside the lifecycle stages. No core enum
 >   grows.
 >
-> The example crate `aestra-example-extension` depends only on the public SDK. It registers:
+> The example crate `extensions/aestra-example-extension` (extension crates live under `extensions/`,
+> apart from core `crates/`) depends only on the public SDK. It registers:
 > - a capability, a field domain and a transient force-field resource;
 > - the *Field Forces* stage, lowered to one field-building pass per module, a barrier, then an apply
 >   pass;
@@ -2994,6 +2995,41 @@ No modification to built-in stage/module/renderer match statements is required t
 ---
 
 ## Milestone 11 — missing-plugin and versioning UX
+
+> **Status — done.**
+> - **Requirements (§21):** `EffectAsset.extensions: Vec<ExtensionRequirement { plugin, version }>`
+>   (format v4 `extensions`, omitted when empty). Core validates them structurally only (§20.1);
+>   `plugin_of` and `EffectAsset::referenced_plugins` derive plugin ids from namespaced type ids with
+>   no registry. On save the editor records `ExtensionRegistry::derive_requirements`: `^version` of
+>   each installed referenced plugin. A missing plugin's entry, or one the installed version does not
+>   satisfy, is kept verbatim, so saving never hides a problem.
+> - **Schema versions and migrations (§35):** `ModuleInstance`/`RendererInstance.schema_version`
+>   (omitted when 1) and `ModuleMetadata.schema_version`. Plugins register per-type single-step
+>   `PayloadMigration`s. `migrate_effect` chains them on a copy, so a failure leaves the payload as
+>   authored. The compiler migrates a copy before validating. The editor migrates on open, and the
+>   document opens dirty with a status message until saved. Newer payloads are never rewritten.
+> - **Diagnostics:**
+>   - `MissingExtension` is reported per unavailable module, stage and renderer, naming the plugin and
+>     its recorded requirement.
+>   - `IncompatibleExtension` covers an installed plugin that fails the requirement, a newer schema,
+>     or a payload with no migration path.
+>   - A malformed requirement is `InvalidValue`.
+>   - A manifest version must be valid semver on install.
+> - **Inspector (§28.7):**
+>   - A plugin module shows "Provided by {name} {version}".
+>   - A missing one shows the MISSING EXTENSION block (type, required plugin + requirement, "data is
+>     preserved") over its read-only values.
+>   - A schema the plugin cannot read shows the incompatible-data block.
+> - **Example plugin:** Vortex is at schema v2 (v1's `speed` became `strength`), with its migration.
+> - **Acceptance:** `missing_plugin_contract.rs` covers the full remove-plugin / reopen / edit
+>   unrelated fields / save / reinstall cycle. Editor tests cover the extension-state classification
+>   and open-migrates / save-records.
+>
+> **Not yet:**
+> - Project dependency report integration. `aestra-project` does not surface plugin requirements;
+>   they are only reported per effect by the compiler.
+> - Renderer rows have no missing-plugin inspector block (their diagnostics are reported).
+> - No "Locate / Install Plugin" action: installation is linking a crate until M12's packaged host.
 
 ### Goal
 
