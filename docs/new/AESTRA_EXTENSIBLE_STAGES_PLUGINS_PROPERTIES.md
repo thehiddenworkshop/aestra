@@ -416,7 +416,7 @@ Introduce strongly typed string IDs for extensible concepts.
 
 ```rust
 #[serde(transparent)]
-pub struct PluginId(pub String);
+pub struct ExtensionId(pub String);
 
 #[serde(transparent)]
 pub struct StageTypeId(pub String);
@@ -554,7 +554,7 @@ Conceptual API:
 ```rust
 pub struct StageTypeDescriptor {
     pub id: StageTypeId,
-    pub provider: PluginId,
+    pub provider: ExtensionId,
 
     pub display_name: LocalizedTextKey,
     pub description: LocalizedTextKey,
@@ -713,7 +713,7 @@ Conceptually:
 ```rust
 pub struct ModuleDescriptor {
     pub id: ModuleTypeId,
-    pub provider: PluginId,
+    pub provider: ExtensionId,
 
     pub display_name: LocalizedTextKey,
     pub description: LocalizedTextKey,
@@ -1290,7 +1290,7 @@ with a registry descriptor:
 ```rust
 pub struct RendererDescriptor {
     pub id: RendererTypeId,
-    pub provider: PluginId,
+    pub provider: ExtensionId,
 
     pub display_name: LocalizedTextKey,
     pub description: LocalizedTextKey,
@@ -1516,7 +1516,7 @@ Conceptually:
 
 ```rust
 pub struct ExtensionRequirement {
-    pub plugin: PluginId,
+    pub plugin: ExtensionId,
     pub version_requirement: String,
 }
 ```
@@ -2360,7 +2360,7 @@ The work should be incremental. Do not attempt dynamic plugin loading, a new exe
 > milestones **S0** and **S1**. Run those once; do not run this plan's M0/M1 separately.
 >
 > S0 freezes a combined correctness + performance baseline. S1 introduces the namespaced identities
-> (`PluginId`, `StageTypeId`, `DomainTypeId`, `ResourceTypeId`, `CapabilityId`) and the unified
+> (`ExtensionId`, `StageTypeId`, `DomainTypeId`, `ResourceTypeId`, `CapabilityId`) and the unified
 > `ExtensionRegistry` from this plan **together with** the hybrid roadmap's derived simulation
 > semantics, and — critically — extends `ModuleMetadata` **exactly once**: this plan's capabilities /
 > reads / writes / multiplicity co-designed with the hybrid roadmap's temporal / synchronization /
@@ -2908,7 +2908,7 @@ Built-in and third-party items use the same visual language.
 ## Milestone 10 — linked plugin SDK vertical slice
 
 > **Status — done.** The SDK lives in `aestra-compiler/src/extension.rs`:
-> - `AestraExtension` (a manifest naming its `PluginId`, plus `register(&mut ExtensionRegistry)`).
+> - `AestraExtension` (a manifest naming its `ExtensionId`, plus `register(&mut ExtensionRegistry)`).
 > - `ExtensionRegistry` now holds stage, domain and resource-type sub-registries and a
 >   `LoweringRegistry` (`ModuleLowerer`, `StageLowerer`), next to modules, capabilities and renderers.
 > - `ExtensionRegistry::install` runs a plugin's `register` against a copy of the registry and rejects
@@ -3561,7 +3561,7 @@ These are merged into one concrete front end in **`aestra_shared_foundation_mile
 ```text
 S0  baseline: combined correctness fixtures (this plan) + performance baselines (hybrid)
 S1  identity + derived semantics + ONE ModuleMetadata extension:
-        this plan: PluginId/StageTypeId/.../CapabilityId + ExtensionRegistry
+        this plan: ExtensionId/StageTypeId/.../CapabilityId + ExtensionRegistry
         hybrid:    SimulationClass/TemporalSemantics (derived)
         merged:    capabilities/reads/writes/multiplicity co-designed with
                    temporal/synchronization/neighborhood (§44.3)

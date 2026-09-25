@@ -5,21 +5,21 @@
 //! Core only stores and structurally validates these; matching them against installed extensions is
 //! registry-aware and lives in the compiler (§20.1).
 
-use crate::{EffectAsset, PluginId, SimulationDomain, StageKind};
+use crate::{EffectAsset, ExtensionId, SimulationDomain, StageKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 /// One plugin an effect depends on: its id and a semver requirement such as `^0.1.0` (§21).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ExtensionRequirement {
-    pub plugin: PluginId,
+    pub plugin: ExtensionId,
     pub version: String,
 }
 
 impl ExtensionRequirement {
     pub fn new(plugin: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
-            plugin: PluginId::new(plugin),
+            plugin: ExtensionId::new(plugin),
             version: version.into(),
         }
     }
@@ -27,15 +27,15 @@ impl ExtensionRequirement {
 
 /// The plugin that owns a namespaced type id — the part before `::` in `{plugin_id}::…` — or `None` for
 /// a core `aestra.*` id, which has no plugin namespace.
-pub fn plugin_of(type_id: &str) -> Option<PluginId> {
+pub fn plugin_of(type_id: &str) -> Option<ExtensionId> {
     let (plugin, rest) = type_id.split_once("::")?;
-    (!plugin.is_empty() && !rest.is_empty()).then(|| PluginId::new(plugin))
+    (!plugin.is_empty() && !rest.is_empty()).then(|| ExtensionId::new(plugin))
 }
 
 impl EffectAsset {
     /// Every plugin this effect references through a namespaced module, renderer, simulation-stage or
     /// domain type id. Structural — no registry needed — so it works while a plugin is missing.
-    pub fn referenced_plugins(&self) -> BTreeSet<PluginId> {
+    pub fn referenced_plugins(&self) -> BTreeSet<ExtensionId> {
         let mut plugins = BTreeSet::new();
         for emitter in &self.emitters {
             for module in &emitter.modules {
@@ -55,7 +55,7 @@ impl EffectAsset {
     }
 
     /// The recorded requirement for `plugin`, if the effect lists one.
-    pub fn extension_requirement(&self, plugin: &PluginId) -> Option<&ExtensionRequirement> {
+    pub fn extension_requirement(&self, plugin: &ExtensionId) -> Option<&ExtensionRequirement> {
         self.extensions
             .iter()
             .find(|requirement| &requirement.plugin == plugin)
@@ -71,7 +71,7 @@ mod tests {
     fn plugin_of_reads_the_namespace_prefix_only_for_namespaced_ids() {
         assert_eq!(
             plugin_of("org.example.aestra::module/vortex"),
-            Some(PluginId::new("org.example.aestra"))
+            Some(ExtensionId::new("org.example.aestra"))
         );
         assert_eq!(plugin_of("aestra.module.motion"), None);
         assert_eq!(plugin_of("::module/x"), None);
@@ -95,7 +95,7 @@ mod tests {
             effect.referenced_plugins(),
             ["org.a", "org.b", "org.c"]
                 .into_iter()
-                .map(PluginId::new)
+                .map(ExtensionId::new)
                 .collect()
         );
     }

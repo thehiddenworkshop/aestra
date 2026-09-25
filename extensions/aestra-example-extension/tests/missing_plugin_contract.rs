@@ -5,8 +5,8 @@
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry, RequirementStatus, SchemaStatus};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, Emitter, ExtensionRequirement, ModuleInstance, ModuleParameters,
-    ModuleTypeId, PluginId, StageKind, StageTypeId, Value,
+    DiagnosticCode, EffectAsset, Emitter, ExtensionId, ExtensionRequirement, ModuleInstance,
+    ModuleParameters, ModuleTypeId, StageKind, StageTypeId, Value,
 };
 use aestra_example_extension::{
     ExampleExtension, MODULE_VORTEX, PLUGIN_ID, STAGE_FIELD_FORCES, VORTEX_SCHEMA_VERSION,
@@ -254,7 +254,7 @@ fn a_payload_with_no_migration_path_is_reported_and_left_as_authored() {
 fn the_provider_of_a_plugin_type_is_its_installed_manifest() {
     let registry = plugin_registry();
     let manifest = registry.provider_of(MODULE_VORTEX).unwrap();
-    assert_eq!(manifest.plugin, PluginId::new(PLUGIN_ID));
+    assert_eq!(manifest.plugin, ExtensionId::new(PLUGIN_ID));
     assert!(registry.provider_of("aestra.module.motion").is_none());
     assert!(
         ExtensionRegistry::builtin()

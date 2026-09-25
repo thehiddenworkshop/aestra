@@ -723,14 +723,14 @@ pub enum RegistryConflict {
     DuplicateLowerer(String),
     /// A plugin registered an id outside its own `{plugin_id}::` namespace (§5, §9.1).
     OutsideNamespace {
-        plugin: aestra_core::PluginId,
+        plugin: aestra_core::ExtensionId,
         id: String,
     },
     /// The same plugin was installed twice.
-    DuplicateExtension(aestra_core::PluginId),
+    DuplicateExtension(aestra_core::ExtensionId),
     /// A plugin's manifest version is not valid semver (extensible-stages M11).
     InvalidVersion {
-        plugin: aestra_core::PluginId,
+        plugin: aestra_core::ExtensionId,
         version: String,
     },
     /// Two payload migrations were registered for the same type.

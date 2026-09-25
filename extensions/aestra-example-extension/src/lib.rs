@@ -21,7 +21,7 @@ use aestra_compiler::{
     StageLoweringInput, StageTypeDescriptor,
 };
 use aestra_core::{
-    CapabilityId, DomainTypeId, ModuleInstance, ModuleTypeId, PluginId, PropertyBag,
+    CapabilityId, DomainTypeId, ExtensionId, ModuleInstance, ModuleTypeId, PropertyBag,
     PropertyControl, PropertyDescriptor, PropertySchema, PropertySource, RendererTypeId,
     ResourceTypeId, StageTypeId, Value, ValueType,
 };
@@ -64,7 +64,7 @@ pub fn link() {
 impl AestraExtension for ExampleExtension {
     fn manifest(&self) -> ExtensionManifest {
         ExtensionManifest {
-            plugin: PluginId::new(PLUGIN_ID),
+            plugin: ExtensionId::new(PLUGIN_ID),
             display_name: "Aestra Example Extension".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         }

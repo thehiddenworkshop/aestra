@@ -7,8 +7,8 @@ use aestra_compiler::{
     StageTypeDescriptor,
 };
 use aestra_core::{
-    DiagnosticCode, EffectAsset, Emitter, ModuleParameters, ModuleTypeId, PluginId, RendererTypeId,
-    StageKind, StageTypeId, Value,
+    DiagnosticCode, EffectAsset, Emitter, ExtensionId, ModuleParameters, ModuleTypeId,
+    RendererTypeId, StageKind, StageTypeId, Value,
 };
 use aestra_example_extension::{
     ExampleExtension, MODULE_VORTEX, PLUGIN_ID, RENDERER_DEBUG_POINTS, STAGE_FIELD_FORCES,
@@ -68,7 +68,7 @@ fn codes(error: aestra_compiler::CompileError) -> Vec<DiagnosticCode> {
 fn the_extension_registers_every_descriptor_kind_under_its_namespace() {
     let registry = plugin_registry();
     assert_eq!(registry.installed().len(), 1);
-    assert_eq!(registry.installed()[0].plugin, PluginId::new(PLUGIN_ID));
+    assert_eq!(registry.installed()[0].plugin, ExtensionId::new(PLUGIN_ID));
     assert!(
         registry
             .stages
@@ -101,7 +101,7 @@ fn installing_the_same_extension_twice_is_rejected() {
     let mut registry = plugin_registry();
     assert_eq!(
         registry.install(&ExampleExtension),
-        Err(RegistryConflict::DuplicateExtension(PluginId::new(
+        Err(RegistryConflict::DuplicateExtension(ExtensionId::new(
             PLUGIN_ID
         )))
     );
@@ -113,7 +113,7 @@ struct Squatter;
 impl AestraExtension for Squatter {
     fn manifest(&self) -> ExtensionManifest {
         ExtensionManifest {
-            plugin: PluginId::new("org.squatter"),
+            plugin: ExtensionId::new("org.squatter"),
             display_name: "Squatter".into(),
             version: "0.0.0".into(),
         }
@@ -136,7 +136,7 @@ fn a_plugin_cannot_register_outside_its_namespace_and_leaves_the_registry_unchan
     assert_eq!(
         error,
         RegistryConflict::OutsideNamespace {
-            plugin: PluginId::new("org.squatter"),
+            plugin: ExtensionId::new("org.squatter"),
             id: "aestra.stage.fluid".into(),
         }
     );
@@ -270,7 +270,7 @@ fn linking_makes_the_default_compiler_include_the_extension() {
     assert!(
         aestra_compiler::linked_extensions()
             .iter()
-            .any(|manifest| manifest.plugin == PluginId::new(PLUGIN_ID))
+            .any(|manifest| manifest.plugin == ExtensionId::new(PLUGIN_ID))
     );
     let registry = ExtensionRegistry::linked();
     let effect = plugin_lab_effect(&registry);

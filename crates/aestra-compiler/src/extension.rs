@@ -1,7 +1,7 @@
 //! The linked-extension SDK (extensible-stages M10; plan §23–25, Phase A).
 //!
 //! A plugin is an ordinary Rust crate linked into an Aestra build. It implements [`AestraExtension`]:
-//! a manifest naming its [`PluginId`], and a `register` call that adds its stage types, module types,
+//! a manifest naming its [`ExtensionId`], and a `register` call that adds its stage types, module types,
 //! renderer types, domains, resource types and capabilities to the [`ExtensionRegistry`] — the same
 //! surface Aestra's built-ins register through — together with the lowerers that turn its authored
 //! stages and modules into portable Execution IR. No built-in stage/module/renderer `match` changes to
@@ -21,9 +21,9 @@ use crate::{
     CapabilitySet, ExtensionRegistry, LifecycleRole, RegistryConflict, StageTypeDescriptor,
 };
 use aestra_core::{
-    DomainTypeId, EffectAsset, ExtensionRequirement, ModuleInstance, ModuleParameters,
-    ModuleTypeId, PluginId, PropertyBag, RendererProperties, RendererTypeId, ResourceTypeId,
-    StageId, StageTypeId, Value, plugin_of,
+    DomainTypeId, EffectAsset, ExtensionId, ExtensionRequirement, ModuleInstance, ModuleParameters,
+    ModuleTypeId, PropertyBag, RendererProperties, RendererTypeId, ResourceTypeId, StageId,
+    StageTypeId, Value, plugin_of,
 };
 use aestra_runtime::{ExecutionBlock, ExtensionModulePlan, ResourceLifetime};
 use std::collections::BTreeMap;
@@ -32,7 +32,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 /// Who a linked extension is (§23).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionManifest {
-    pub plugin: PluginId,
+    pub plugin: ExtensionId,
     pub display_name: String,
     pub version: String,
 }
@@ -536,7 +536,7 @@ impl ExtensionRegistry {
     }
 
     /// The manifest of an installed plugin.
-    pub fn installed_manifest(&self, plugin: &PluginId) -> Option<&ExtensionManifest> {
+    pub fn installed_manifest(&self, plugin: &ExtensionId) -> Option<&ExtensionManifest> {
         self.installed
             .iter()
             .find(|manifest| &manifest.plugin == plugin)

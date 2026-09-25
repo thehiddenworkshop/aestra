@@ -1648,8 +1648,9 @@ macro_rules! namespaced_id {
 }
 
 namespaced_id!(
-    /// Identifies a plugin/extension provider, e.g. `org.someauthor.aestra-fluid`.
-    PluginId
+    /// Identifies an extension (a plugin package), e.g. `org.someauthor.aestra-fluid`. It is also the
+    /// namespace of every id the extension registers (`{extension_id}::…`).
+    ExtensionId
 );
 namespaced_id!(
     /// Identifies a registered stage type, e.g. `aestra.stage.particle_update`.
