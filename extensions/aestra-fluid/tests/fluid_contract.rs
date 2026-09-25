@@ -301,3 +301,64 @@ fn the_committed_smoke_sample_compiles_and_survives_a_missing_plugin_unchanged()
         source.replace("\r\n", "\n")
     );
 }
+
+#[test]
+fn followers_resolve_to_the_domains_velocity_and_are_gpu_only() {
+    let source = include_str!("../../../sample-project/effects/fluid_smoke.aestra.ron");
+    let effect = EffectAsset::from_ron(source).unwrap();
+    let compiled = EffectCompiler::with_extensions(fluid_registry())
+        .compile(&effect)
+        .unwrap();
+    let velocity = compiled.extension_stages[0]
+        .block
+        .field(&aestra_core::ResourceTypeId::new(RESOURCE_VELOCITY))
+        .unwrap();
+    for emitter in &compiled.emitters {
+        let follow = emitter.field_follow.as_ref().expect("both emitters follow");
+        assert_eq!(follow.stage, 0);
+        assert_eq!(&follow.field, velocity);
+        assert_eq!(
+            emitter.simulation_class,
+            aestra_runtime::SimulationClass::Stateful,
+            "following promotes the emitter"
+        );
+    }
+    assert!(compiled.requirements.gpu_fields);
+    let cpu = compiled.requirements.compatibility_report(
+        &aestra_runtime::BackendCapabilities::default(),
+        aestra_runtime::CompatibilityTarget::CpuReference,
+    );
+    assert_eq!(
+        cpu.issues.first().map(|issue| issue.code),
+        Some(aestra_runtime::CompatibilityIssueCode::GpuFieldsUnavailable),
+        "the CPU reference says why it cannot run this"
+    );
+
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+            .unwrap();
+    assert_eq!(
+        decoded.emitters, compiled.emitters,
+        "the follow survives the artifact"
+    );
+    assert!(decoded.requirements.gpu_fields);
+}
+
+#[test]
+fn a_follower_without_a_domain_is_an_invalid_reference() {
+    let mut effect = EffectAsset::new("Lonely", 2.0);
+    let mut emitter = aestra_core::Emitter::basic_sprite("Puffs", 2.0);
+    emitter
+        .modules
+        .push(aestra_core::ModuleInstance::follow_field(4.0));
+    effect.emitters.push(emitter);
+    let error = EffectCompiler::with_extensions(fluid_registry())
+        .compile(&effect)
+        .unwrap_err();
+    assert!(error.report().diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidReference
+            && diagnostic
+                .message
+                .contains("no domain declaring a vector field")
+    }));
+}

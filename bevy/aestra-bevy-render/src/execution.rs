@@ -647,6 +647,22 @@ impl StageTimeline {
             .sum()
     }
 
+    /// Returns the stage to exactly `tick` (fluid F2b's joint seek): tick 0 resets it; any other tick
+    /// restores the checkpoint captured there. False (state unchanged) when there is none.
+    pub fn restore_to(&mut self, encoder: &mut wgpu::CommandEncoder, tick: u32) -> bool {
+        if tick == 0 {
+            self.executor.reset(encoder);
+            self.last_tick = 0;
+            return true;
+        }
+        let Some((_, checkpoint)) = self.checkpoints.iter().find(|(at, _)| *at == tick) else {
+            return false;
+        };
+        self.executor.restore_from(encoder, checkpoint);
+        self.last_tick = tick;
+        true
+    }
+
     /// Drops every checkpoint — when what they were recorded against changed (a rebound host object)
     /// while the live state stays valid.
     pub fn invalidate_checkpoints(&mut self) {
@@ -727,6 +743,74 @@ impl StageTimeline {
         {
             retain_every_other(&mut self.checkpoints);
         }
+    }
+}
+
+/// Follow Field for stateful particles (fluid F2b): pulls each live slot's velocity toward a domain's
+/// vector field (see [`aestra_gpu::FIELD_FOLLOW_WGSL`]). Engine-neutral, like [`StageExecutor`].
+pub struct FieldFollowPipeline {
+    pipeline: wgpu::ComputePipeline,
+}
+
+impl FieldFollowPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("aestra follow field"),
+            source: wgpu::ShaderSource::Wgsl(aestra_gpu::FIELD_FOLLOW_WGSL.into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("aestra follow field"),
+            layout: None,
+            module: &module,
+            entry_point: Some("follow_field"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        Self { pipeline }
+    }
+
+    /// Encodes one pull of `capacity` persistent-state slots toward `follow`'s field.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        state: &wgpu::Buffer,
+        capacity: u32,
+        field: &wgpu::Buffer,
+        follow: &aestra_runtime::CompiledFieldFollow,
+        dt: f32,
+    ) {
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra follow field params"),
+            contents: &words_to_bytes(&aestra_gpu::field_follow_params(capacity, follow, dt)),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra follow field"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: field.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra follow field"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(capacity.div_ceil(64).max(1), 1, 1);
     }
 }
 

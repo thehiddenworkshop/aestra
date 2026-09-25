@@ -9,7 +9,9 @@
 //!
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
-use aestra_bevy_render::execution::{StageExecutor, StageInputs, StageTimeline, TimelinePolicy};
+use aestra_bevy_render::execution::{
+    FieldFollowPipeline, StageExecutor, StageInputs, StageTimeline, TimelinePolicy,
+};
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
     AESTRA_FIELD_POSITION, BindingUpdateMode, EffectAsset, EffectBinding, HostFieldRef,
@@ -502,4 +504,119 @@ fn the_domain_lives_in_effect_space_and_host_inputs_are_converted_into_it() {
         at_origin,
         "an object that did not move is elsewhere in effect space"
     );
+}
+
+/// Persistent-state slots (9 floats: position, velocity, age, lifetime, ordinal) — the stateful ABI.
+fn particle_slots(positions: &[[f32; 3]], dead: usize) -> Vec<f32> {
+    let mut state = Vec::new();
+    for (index, position) in positions.iter().enumerate() {
+        let lifetime = if index == dead { 0.0 } else { 10.0 };
+        state.extend([
+            position[0],
+            position[1],
+            position[2],
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            lifetime,
+            0.0,
+        ]);
+    }
+    state
+}
+
+#[test]
+fn particles_following_the_field_take_the_plumes_velocity() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    fluid.run(&gpu, 0..40);
+    let layout = fluid
+        .stage
+        .block()
+        .field(&aestra_core::ResourceTypeId::new(RESOURCE_VELOCITY))
+        .unwrap()
+        .clone();
+    let follow = aestra_runtime::CompiledFieldFollow {
+        stage: 0,
+        field: layout,
+        strength: 1.0e6, // pull clamps to 1: velocity becomes the sampled field value
+    };
+    // Particles up the plume's axis; slot 1 is dead and must be left alone.
+    let positions: Vec<[f32; 3]> = (0..8).map(|i| [0.0, 0.6 + 0.2 * i as f32, 0.0]).collect();
+    let initial = particle_slots(&positions, 1);
+    let run = || {
+        use wgpu::util::DeviceExt;
+        let state = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("state"),
+                contents: &initial
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let pipeline = FieldFollowPipeline::new(&gpu.device);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let field = fluid.stage.buffer(RESOURCE_VELOCITY).unwrap();
+        pipeline.encode(&gpu.device, &mut encoder, &state, 8, field, &follow, DT);
+        gpu.queue.submit([encoder.finish()]);
+        read_floats(&gpu, &state)
+    };
+    let followed = run();
+    assert_eq!(run(), followed, "a rerun gives the same bits");
+    let velocity = |slot: usize| {
+        [
+            followed[slot * 9 + 3],
+            followed[slot * 9 + 4],
+            followed[slot * 9 + 5],
+        ]
+    };
+    assert_eq!(velocity(1), [0.0; 3], "a dead slot is not touched");
+    // After 40 ticks the plume's head is low: every live particle is carried up, fastest near the
+    // source, the pull fading with height.
+    let live: Vec<usize> = (0..8).filter(|&slot| slot != 1).collect();
+    assert!(
+        live.iter().all(|&slot| velocity(slot)[1] > 0.0),
+        "particles in the plume move up with it: {followed:?}"
+    );
+    assert!(velocity(0)[1] > 0.5, "near the source the plume is fast");
+    assert!(
+        live.windows(2)
+            .all(|pair| velocity(pair[0])[1] > velocity(pair[1])[1]),
+        "the pull fades with height"
+    );
+}
+
+fn read_floats(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<f32> {
+    let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("readback"),
+        size: buffer.size(),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
+    gpu.queue.submit([encoder.finish()]);
+    let slice = readback.slice(..);
+    slice.map_async(wgpu::MapMode::Read, |_| {});
+    gpu.device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(60)),
+        })
+        .unwrap();
+    let values = slice
+        .get_mapped_range()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes))
+        .collect();
+    readback.unmap();
+    values
 }

@@ -100,7 +100,7 @@ fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let registry = ModuleRegistry::builtin();
-    assert_eq!(registry.len(), 7);
+    assert_eq!(registry.len(), 8);
 
     let collision = registry
         .iter()
@@ -202,13 +202,14 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
     };
     use aestra_runtime::{SimulationClass, TemporalSemantics};
 
-    // Every built-in stays analytic except the two that deliberately declare a previous-state
-    // dependency: the Persistent solver (hybrid roadmap M6) and Collision (M10). Existing analytic
-    // effects — which never include those — are unaffected.
+    // Every built-in stays analytic except those that deliberately declare a previous-state
+    // dependency: the Persistent solver (hybrid roadmap M6), Collision (M10) and Follow Field (fluid
+    // F2b). Existing analytic effects — which never include those — are unaffected.
     for metadata in ModuleRegistry::builtin().iter() {
-        if metadata.type_id.0 == "aestra.update.persistent"
-            || metadata.type_id.0 == "aestra.update.collision"
-        {
+        if matches!(
+            metadata.type_id.0.as_str(),
+            "aestra.update.persistent" | "aestra.update.collision" | "aestra.update.follow_field"
+        ) {
             assert_eq!(
                 metadata.simulation.derived_class(),
                 SimulationClass::Stateful,
@@ -294,12 +295,18 @@ fn builtin_capabilities_use_governed_namespaced_ids() {
     // The old closed `Capability` enum is gone: capabilities are now namespaced string IDs, one
     // capability type shared by built-ins and (future) plugins (shared-foundation S1-A2).
     for metadata in ModuleRegistry::builtin().iter() {
-        assert_eq!(
-            metadata.capabilities,
+        // Follow Field (fluid F2b) is the one built-in without a CPU reference: the field it follows
+        // only exists on the GPU, and it says so rather than claiming a capability it lacks.
+        let expected = if metadata.type_id.0 == aestra_core::MODULE_FOLLOW_FIELD {
+            vec![CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION)]
+        } else {
             vec![
                 CapabilityId::new(CAPABILITY_CPU_REFERENCE),
                 CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION),
-            ],
+            ]
+        };
+        assert_eq!(
+            metadata.capabilities, expected,
             "{} must expose its capabilities as governed namespaced IDs",
             metadata.type_id.0
         );
@@ -345,7 +352,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
     // The built-in unified registry is internally consistent and hosts the built-in modules.
     let builtin = ExtensionRegistry::builtin();
     assert!(builtin.validate().is_empty());
-    assert_eq!(builtin.modules.len(), 7);
+    assert_eq!(builtin.modules.len(), 8);
     assert!(
         builtin
             .capabilities

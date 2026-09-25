@@ -363,6 +363,9 @@ struct EmitterV1 {
     /// artifacts baked before collision support, so older artifacts still decode.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     colliders: Vec<Collider>,
+    /// The domain field this emitter follows (fluid F2b, v4 additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    field_follow: Option<FieldFollowV4>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
     /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
@@ -440,6 +443,52 @@ struct RequirementsV1 {
     renderers: Vec<RendererCapabilityV1>,
     gpu_simulation: bool,
     native_gpu_presentation: bool,
+    /// Particles follow a GPU-simulated domain field (fluid F2b, v4 additive).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    gpu_fields: bool,
+}
+
+/// A compiled Follow Field reference (fluid F2b): the domain stage index, the field's layout, and
+/// the strength. Checked against the decoded domains on reload.
+#[derive(Debug, Serialize, Deserialize)]
+struct FieldFollowV4 {
+    stage: u32,
+    resource: aestra_core::ResourceTypeId,
+    dims: [u32; 3],
+    components: u32,
+    origin: [f32; 3],
+    cell_size: f32,
+    strength: f32,
+}
+
+impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
+    fn from(follow: &aestra_runtime::CompiledFieldFollow) -> Self {
+        Self {
+            stage: follow.stage as u32,
+            resource: follow.field.resource.clone(),
+            dims: follow.field.dims,
+            components: follow.field.components,
+            origin: follow.field.origin,
+            cell_size: follow.field.cell_size,
+            strength: follow.strength,
+        }
+    }
+}
+
+impl FieldFollowV4 {
+    fn into_runtime(self) -> aestra_runtime::CompiledFieldFollow {
+        aestra_runtime::CompiledFieldFollow {
+            stage: self.stage as usize,
+            field: aestra_runtime::FieldLayout {
+                resource: self.resource,
+                dims: self.dims,
+                components: self.components,
+                origin: self.origin,
+                cell_size: self.cell_size,
+            },
+            strength: self.strength,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -679,13 +728,13 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 );
             }
         }
-        let emitters = effect
+        let emitters: Vec<CompiledEmitter> = effect
             .emitters
             .into_iter()
             .enumerate()
             .map(|(index, emitter)| emitter.decode(index, &inputs))
             .collect::<Result<_, _>>()?;
-        let extension_stages = effect
+        let extension_stages: Vec<aestra_runtime::CompiledExtensionStage> = effect
             .extension_stages
             .into_iter()
             .enumerate()
@@ -693,6 +742,21 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 stage.decode(&format!("effect.extension_stages[{index}]"), &bindings)
             })
             .collect::<Result<_, _>>()?;
+        // A followed field must be one a decoded domain declares, exactly (fluid F2b).
+        for (index, emitter) in emitters.iter().enumerate() {
+            let Some(follow) = &emitter.field_follow else {
+                continue;
+            };
+            let declared = extension_stages
+                .get(follow.stage)
+                .and_then(|stage| stage.block.field(&follow.field.resource));
+            if declared != Some(&follow.field) {
+                return invalid(
+                    format!("effect.emitters[{index}].field_follow"),
+                    "followed field is not declared by that domain",
+                );
+            }
+        }
         let effect_clips = effect
             .effect_clips
             .into_iter()
@@ -1724,6 +1788,7 @@ impl EmitterV1 {
             max_particles: emitter.max_particles,
             simulation_class: emitter.simulation_class.into(),
             colliders: emitter.colliders.clone(),
+            field_follow: emitter.field_follow.as_ref().map(FieldFollowV4::from),
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -1782,6 +1847,7 @@ impl EmitterV1 {
             max_particles: self.max_particles,
             simulation_class: self.simulation_class.into(),
             colliders: self.colliders,
+            field_follow: self.field_follow.map(FieldFollowV4::into_runtime),
             stages,
             execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),
@@ -2018,6 +2084,7 @@ impl RequirementsV1 {
                 .collect(),
             gpu_simulation: requirements.gpu_simulation,
             native_gpu_presentation: requirements.native_gpu_presentation,
+            gpu_fields: requirements.gpu_fields,
         })
     }
 
@@ -2031,6 +2098,7 @@ impl RequirementsV1 {
                 .collect::<BTreeSet<_>>(),
             gpu_simulation: self.gpu_simulation,
             native_gpu_presentation: self.native_gpu_presentation,
+            gpu_fields: self.gpu_fields,
         })
     }
 }

@@ -27,7 +27,9 @@
 //! as |xyz| × gain. The grid is placed in the effect's space (the domain-space decision is fluid F2).
 
 use super::*;
-use crate::execution::{PassTimestamps, StageExecutor, StageInputs, StageTimeline, TimelinePolicy};
+use crate::execution::{
+    FieldFollowPipeline, PassTimestamps, StageExecutor, StageInputs, StageTimeline, TimelinePolicy,
+};
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
 use aestra_gpu::GpuHostBindings;
@@ -95,7 +97,45 @@ pub(crate) struct ExtractedStages {
     host_epoch: u64,
     /// The effect's placement: world space into its space (fluid F2).
     world_to_effect: [[f32; 4]; 3],
+    /// Stateful emitters follow a domain field (fluid F2b): the stateful path advances the domains in
+    /// lockstep with them, so this system must not advance them on its own.
+    coupled: bool,
     view: Option<FieldViewTarget>,
+}
+
+impl ExtractedStages {
+    /// The host inputs the domains tick with.
+    fn inputs(&self) -> StageInputs<'_> {
+        StageInputs {
+            host_bindings: Some(&self.host),
+            world_to_effect: self.world_to_effect,
+        }
+    }
+}
+
+/// The Follow Field pipeline the stateful path uses for coupled emitters (fluid F2b).
+#[derive(Resource)]
+pub(crate) struct FieldFollow(FieldFollowPipeline);
+
+fn init_field_follow(mut commands: Commands, device: Res<RenderDevice>) {
+    commands.insert_resource(FieldFollow(FieldFollowPipeline::new(device.wgpu_device())));
+}
+
+/// The coupling for an effect whose stateful emitters follow its domains (fluid F2b), when it has one
+/// and its domains are prepared.
+pub(super) fn coupling<'a>(
+    runtimes: &'a mut StageRuntimes,
+    entity: Entity,
+    extracted: Option<&'a ExtractedStages>,
+    follower: Option<&'a FieldFollow>,
+) -> Option<super::Coupling<'a>> {
+    let extracted = extracted.filter(|extracted| extracted.coupled)?;
+    let runtime = runtimes.0.get_mut(&entity)?;
+    Some(super::Coupling {
+        domains: &mut runtime.timelines,
+        inputs: extracted.inputs(),
+        follower: &follower?.0,
+    })
 }
 
 impl SyncComponent for ExtractedStages {
@@ -162,15 +202,20 @@ pub(super) fn install(app: &mut App) {
     render_app
         .insert_resource(mailbox)
         .init_resource::<StageRuntimes>()
-        .add_systems(RenderStartup, init_field_slice_pipeline)
+        .add_systems(
+            RenderStartup,
+            (init_field_slice_pipeline, init_field_follow),
+        )
         .add_systems(
             Render,
             prepare_stage_runtimes.in_set(RenderSystems::PrepareResources),
         )
         .add_systems(
             RenderGraph,
+            // After the particle simulation, which advances coupled domains itself (fluid F2b), so
+            // field views show every domain's final state for the frame.
             run_extension_stages
-                .after(RenderGraphSystems::Begin)
+                .after(super::run_simulation)
                 .before(RenderGraphSystems::Render),
         );
 }
@@ -225,6 +270,10 @@ fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
             seed: instance.seed() as u32,
             host_epoch: instance.host_input_epoch(),
             world_to_effect: transform.map_or(aestra_runtime::IDENTITY_AFFINE, world_to_local),
+            coupled: effect
+                .emitters
+                .iter()
+                .any(|emitter| emitter.enabled && emitter.field_follow.is_some()),
             view: view.map(|view| view.target.clone()),
         });
         if !timed {
@@ -405,7 +454,7 @@ struct EffectStages {
 }
 
 #[derive(Resource, Default)]
-struct StageRuntimes(BTreeMap<Entity, EffectStages>);
+pub(crate) struct StageRuntimes(BTreeMap<Entity, EffectStages>);
 
 /// Builds, keeps or drops each effect's stage timelines.
 fn prepare_stage_runtimes(
@@ -495,15 +544,21 @@ fn run_extension_stages(
             continue;
         };
         let budget = stateful_catchup_budget(extracted.quality);
-        let pending: Vec<usize> = runtime
-            .timelines
-            .iter()
-            .enumerate()
-            .filter_map(|(index, timeline)| {
-                let timeline = timeline.as_ref()?;
-                (timeline.tick_for_time(extracted.time) != timeline.last_tick()).then_some(index)
-            })
-            .collect();
+        // Coupled domains advance in lockstep with their particles, in the stateful path (fluid F2b).
+        let pending: Vec<usize> = if extracted.coupled {
+            Vec::new()
+        } else {
+            runtime
+                .timelines
+                .iter()
+                .enumerate()
+                .filter_map(|(index, timeline)| {
+                    let timeline = timeline.as_ref()?;
+                    (timeline.tick_for_time(extracted.time) != timeline.last_tick())
+                        .then_some(index)
+                })
+                .collect()
+        };
         let timing = (!pending.is_empty())
             .then(|| {
                 batch
@@ -529,10 +584,7 @@ fn run_extension_stages(
                 render_context.command_encoder(),
                 target,
                 budget,
-                StageInputs {
-                    host_bindings: Some(&extracted.host),
-                    world_to_effect: extracted.world_to_effect,
-                },
+                extracted.inputs(),
                 stamps,
             ) {
                 warn!("extension stage stopped: {error}");

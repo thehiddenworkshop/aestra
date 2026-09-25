@@ -22,9 +22,9 @@ pub use module_stack::*;
 use aestra_core::{
     Collider, ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     Emitter, EmitterId, Gradient, MODULE_APPEARANCE, MODULE_COLLISION, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE, MaterialInput,
-    MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId,
-    ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON, RENDERER_SPRITE,
+    MODULE_FOLLOW_FIELD, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE,
+    MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters,
+    ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON, RENDERER_SPRITE,
     RENDERER_TRAIL, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
     ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
@@ -659,6 +659,17 @@ impl EffectCompiler {
         let mut stored_attributes = BTreeSet::new();
         let mut transient_attributes = BTreeSet::new();
         let mut discovered_attributes = BTreeSet::new();
+        // The effect's own simulation stages (fluid F2) lower like an emitter's — first, so emitters can
+        // resolve the domain fields they follow (fluid F2b).
+        let extension_stages =
+            self.lower_effect_stages(asset, &bindings)
+                .map_err(|diagnostics| {
+                    let mut report = ValidationReport::default();
+                    for diagnostic in diagnostics {
+                        report.push(diagnostic);
+                    }
+                    CompileError::Validation(report)
+                })?;
         let mut emitters = Vec::with_capacity(asset.emitters.len());
         let mut optimizations = OptimizationStats::default();
         for id in asset
@@ -870,6 +881,36 @@ impl EffectCompiler {
             // Collision colliders (hybrid roadmap M10): gathered from the emitter's enabled collision
             // modules in order, so the stateful backend resolves them after each tick. Their presence
             // is also what promoted the emitter to a stateful class above.
+            // Follow Field (fluid F2b): resolved against the effect's lowered domains, so the stateful
+            // GPU backend knows which stage's field buffer to sample and how it is laid out.
+            let field_follow = emitter
+                .modules
+                .iter()
+                .enumerate()
+                .filter(|(_, module)| module.enabled)
+                .find_map(|(module_index, module)| match &module.parameters {
+                    ModuleParameters::FollowField {
+                        domain,
+                        field,
+                        strength,
+                    } => Some(
+                        resolve_field_follow(&extension_stages, domain, field, *strength).map_err(
+                            |message| {
+                                let mut report = ValidationReport::default();
+                                report.push(Diagnostic::error(
+                                    DiagnosticCode::InvalidReference,
+                                    format!(
+                                        "effect.emitters[{emitter_index}].modules[{module_index}]"
+                                    ),
+                                    message,
+                                ));
+                                CompileError::Validation(report)
+                            },
+                        ),
+                    ),
+                    _ => None,
+                })
+                .transpose()?;
             let colliders: Vec<Collider> = emitter
                 .modules
                 .iter()
@@ -909,6 +950,7 @@ impl EffectCompiler {
                     max_particles: emitter.max_particles,
                     simulation_class,
                     colliders: colliders.clone(),
+                    field_follow: field_follow.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
                         &execution, emitter.id,
                     ),
@@ -923,16 +965,6 @@ impl EffectCompiler {
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
-        // The effect's own simulation stages (fluid F2) lower like an emitter's.
-        let extension_stages =
-            self.lower_effect_stages(asset, &bindings)
-                .map_err(|diagnostics| {
-                    let mut report = ValidationReport::default();
-                    for diagnostic in diagnostics {
-                        report.push(diagnostic);
-                    }
-                    CompileError::Validation(report)
-                })?;
 
         Ok(CompiledEffect {
             source: asset.id,
@@ -2084,7 +2116,41 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
         gpu_simulation: max_particles > 0,
         native_gpu_presentation: !renderers.is_empty(),
         renderers,
+        gpu_fields: emitters
+            .iter()
+            .any(|emitter| emitter.enabled && emitter.field_follow.is_some()),
     }
+}
+
+/// Resolves a Follow Field module (fluid F2b) to the domain stage and vector field it samples: the
+/// named domain (else any), and the named field (else the first with at least three components).
+fn resolve_field_follow(
+    stages: &[aestra_runtime::CompiledExtensionStage],
+    domain: &str,
+    field: &str,
+    strength: f32,
+) -> Result<aestra_runtime::CompiledFieldFollow, String> {
+    for (index, stage) in stages.iter().enumerate() {
+        if !domain.is_empty() && stage.name != domain {
+            continue;
+        }
+        if let Some(layout) = stage.block.fields.iter().find(|layout| {
+            layout.components >= 3 && (field.is_empty() || layout.resource.as_str() == field)
+        }) {
+            return Ok(aestra_runtime::CompiledFieldFollow {
+                stage: index,
+                field: layout.clone(),
+                strength,
+            });
+        }
+    }
+    Err(match (domain.is_empty(), field.is_empty()) {
+        (true, _) => "Follow Field: the effect has no domain declaring a vector field".into(),
+        (false, true) => format!("Follow Field: domain '{domain}' declares no vector field"),
+        (false, false) => {
+            format!("Follow Field: domain '{domain}' declares no vector field '{field}'")
+        }
+    })
 }
 
 fn populate_project_parameter_overrides(
@@ -2358,6 +2424,9 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         // emitter's class (handled in classification) and its colliders are gathered onto the compiled
         // emitter for the stateful GPU backend to resolve after each tick (hybrid roadmap M10).
         ModuleParameters::Collision { .. } => return None,
+        // Follow Field (fluid F2b) likewise: it promotes the class and is resolved onto the compiled
+        // emitter (`field_follow`) for the stateful GPU backend, which runs it after each tick.
+        ModuleParameters::FollowField { .. } => return None,
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
@@ -2620,6 +2689,7 @@ fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
             | MODULE_MOTION
             | MODULE_PERSISTENT
             | MODULE_COLLISION
+            | MODULE_FOLLOW_FIELD
             | MODULE_APPEARANCE
     )
 }
@@ -2637,6 +2707,7 @@ fn parameters_match(module: &ModuleInstance) -> bool {
             | (MODULE_MOTION, ModuleParameters::Motion { .. })
             | (MODULE_PERSISTENT, ModuleParameters::Persistent {})
             | (MODULE_COLLISION, ModuleParameters::Collision { .. })
+            | (MODULE_FOLLOW_FIELD, ModuleParameters::FollowField { .. })
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
 }

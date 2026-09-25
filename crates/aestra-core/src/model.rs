@@ -28,6 +28,8 @@ pub const MODULE_PERSISTENT: &str = "aestra.update.persistent";
 /// previous-tick state and so promotes an emitter to a stateful class, but it also carries the authored
 /// colliders (planes, spheres, boxes) the stateful integrator resolves after each tick.
 pub const MODULE_COLLISION: &str = "aestra.update.collision";
+/// Particles follow a vector field an effect domain simulates, e.g. a fluid's velocity (fluid F2b).
+pub const MODULE_FOLLOW_FIELD: &str = "aestra.update.follow_field";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
@@ -2021,6 +2023,27 @@ impl ModuleInstance {
         }
     }
 
+    /// Particles follow a domain's vector field (fluid F2b); see [`ModuleParameters::FollowField`].
+    pub fn follow_field(strength: f32) -> Self {
+        Self {
+            id: ModuleId::new(),
+            module_type: ModuleTypeId::new(MODULE_FOLLOW_FIELD),
+            stage: StageKind::ParticleUpdate,
+            enabled: true,
+            parameters: ModuleParameters::FollowField {
+                domain: String::new(),
+                field: String::new(),
+                strength,
+            },
+            property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
+            label: None,
+            schema_version: None,
+        }
+    }
+
     pub fn appearance(size: Curve, opacity: Curve, color: Gradient) -> Self {
         Self {
             id: ModuleId::new(),
@@ -2073,6 +2096,7 @@ impl ModuleInstance {
             (ModuleParameters::Emission { .. }, "spawn_rate") => Some(ValueType::Scalar),
             (ModuleParameters::Emission { .. }, "burst_count") => Some(ValueType::U32),
             (ModuleParameters::Shape { .. }, "shape") => Some(ValueType::Shape),
+            (ModuleParameters::FollowField { .. }, "strength") => Some(ValueType::Scalar),
             (ModuleParameters::Initialize { .. }, "lifetime" | "speed" | "angular_velocity") => {
                 Some(ValueType::Range)
             }
@@ -2096,6 +2120,9 @@ impl ModuleInstance {
                 Some(Value::U32(*burst_count))
             }
             (ModuleParameters::Shape { shape }, "shape") => Some(Value::Shape(*shape)),
+            (ModuleParameters::FollowField { strength, .. }, "strength") => {
+                Some(Value::Scalar(*strength))
+            }
             (ModuleParameters::Initialize { lifetime, .. }, "lifetime") => {
                 Some(Value::Range(*lifetime))
             }
@@ -2245,6 +2272,9 @@ impl ModuleInstance {
             ModuleParameters::Motion { .. } => (MODULE_MOTION, StageKind::ParticleUpdate),
             ModuleParameters::Persistent {} => (MODULE_PERSISTENT, StageKind::ParticleUpdate),
             ModuleParameters::Collision { .. } => (MODULE_COLLISION, StageKind::ParticleUpdate),
+            ModuleParameters::FollowField { .. } => {
+                (MODULE_FOLLOW_FIELD, StageKind::ParticleUpdate)
+            }
             ModuleParameters::Appearance { .. } => (MODULE_APPEARANCE, StageKind::ParticleUpdate),
             ModuleParameters::Custom(values) => {
                 if self.module_type.0.trim().is_empty() {
@@ -2357,6 +2387,15 @@ impl ModuleInstance {
                     semantic_ids,
                     color.id.as_uuid().as_u128(),
                     format!("{path}.color.id"),
+                );
+            }
+            ModuleParameters::FollowField { strength, .. }
+                if !strength.is_finite() || *strength < 0.0 =>
+            {
+                invalid_value(
+                    report,
+                    path,
+                    "follow-field strength must be finite and non-negative",
                 );
             }
             ModuleParameters::Collision { colliders } => {
@@ -2476,6 +2515,18 @@ pub enum ModuleParameters {
     /// applies each collider after integration.
     Collision {
         colliders: Vec<Collider>,
+    },
+    /// Follow a vector field an effect domain simulates (fluid F2b): each tick the particle's velocity
+    /// moves toward the field's value at its position by `strength × dt` (clamped to 1). Empty
+    /// `domain`/`field` pick the effect's first domain stage declaring a vector field, and its first
+    /// such field. Requires previous-tick state, so it promotes the emitter to a stateful class; the
+    /// field lives on the GPU, so the module is GPU-only.
+    FollowField {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        domain: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        field: String,
+        strength: f32,
     },
     Custom(BTreeMap<String, Value>),
 }

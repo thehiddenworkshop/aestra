@@ -495,5 +495,43 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
         })
         .with_tags(vec!["simulation", "stateful", "collision"])
         .with_cost(7),
+        metadata(
+            MODULE_FOLLOW_FIELD,
+            "Follow Field",
+            "Pulls this emitter's particles toward the velocity of a vector field an effect domain \
+             simulates — a fluid, say: each tick their velocity moves toward the field's value at the \
+             particle by strength × dt. The field lives on the GPU, so this runs on GPU simulation only.",
+            "Simulation",
+            StageKind::ParticleUpdate,
+        )
+        .with_inputs(vec![
+            input(
+                "strength",
+                "Strength",
+                "How fast particles adopt the field's velocity, per second (large values follow it \
+                 exactly).",
+                aestra_core::Value::Scalar(4.0),
+                InputControl::Number {
+                    step: 0.1,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("1/s"),
+        ])
+        // It reads and writes previous-tick velocity, so — like collision — it promotes the emitter to
+        // a stateful class. There is no CPU reference: the field only exists on the GPU.
+        .with_flow(
+            vec![A::Position, A::Velocity, A::Age],
+            vec![A::Velocity],
+        )
+        .with_simulation(SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..SimulationRequirements::ANALYTIC
+        })
+        .with_capabilities(vec![CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION)])
+        .with_multiplicity(ModuleMultiplicity::Single)
+        .with_tags(vec!["simulation", "stateful", "field", "fluid"])
+        .with_cost(4),
     ]
 }

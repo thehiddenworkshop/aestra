@@ -760,6 +760,7 @@ fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool
             }
             ModuleParameters::Persistent {}
             | ModuleParameters::Collision { .. }
+            | ModuleParameters::FollowField { .. }
             | ModuleParameters::Custom(_) => {}
         }
     }

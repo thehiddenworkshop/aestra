@@ -17,6 +17,8 @@ tracing.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
+aestra-extension = { path = "../../crates/aestra-extension" }
+aestra-fluid = { path = "../../extensions/aestra-fluid" }
 naga.workspace = true
 aestra-core = { path = "../../crates/aestra-core" }
 encase.workspace = true

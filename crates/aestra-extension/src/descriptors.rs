@@ -588,6 +588,7 @@ impl ModuleRegistry {
             )),
             MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0)),
             MODULE_PERSISTENT => Some(ModuleInstance::persistent()),
+            MODULE_FOLLOW_FIELD => Some(ModuleInstance::follow_field(4.0)),
             MODULE_COLLISION => Some(ModuleInstance::collision(vec![Collider {
                 shape: aestra_core::ColliderShape::Plane {
                     normal: [0.0, 1.0, 0.0],

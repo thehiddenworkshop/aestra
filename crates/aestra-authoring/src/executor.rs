@@ -1245,6 +1245,11 @@ fn set_module_parameter(
         (ModuleParameters::Shape { shape }, Value::Shape(value)) if parameter == "shape" => {
             Some(Value::Shape(std::mem::replace(shape, value)))
         }
+        (ModuleParameters::FollowField { strength, .. }, Value::Scalar(value))
+            if parameter == "strength" =>
+        {
+            Some(Value::Scalar(std::mem::replace(strength, value)))
+        }
         (ModuleParameters::Initialize { lifetime, .. }, Value::Range(value))
             if parameter == "lifetime" =>
         {

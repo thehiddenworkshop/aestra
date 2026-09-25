@@ -27,6 +27,9 @@ pub struct EffectRequirements {
     pub renderers: BTreeSet<RendererCapability>,
     pub gpu_simulation: bool,
     pub native_gpu_presentation: bool,
+    /// Particles follow a field an effect domain simulates on the GPU (fluid F2b): only GPU
+    /// simulation can run it, never the CPU reference.
+    pub gpu_fields: bool,
 }
 
 /// Engine-neutral view of the capabilities supplied by one concrete rendering backend.
@@ -72,6 +75,8 @@ pub enum CompatibilityIssueCode {
     ParticleCapacityExceeded,
     RendererUnsupported,
     BackendRejected,
+    /// Particles follow a GPU-only domain field (fluid F2b).
+    GpuFieldsUnavailable,
 }
 
 /// One actionable incompatibility between a compiled effect and a backend target.
@@ -163,6 +168,15 @@ impl EffectRequirements {
             );
         }
         if target == CompatibilityTarget::CpuReference {
+            if self.gpu_fields {
+                return CompatibilityReport::from_issues(
+                    target,
+                    [CompatibilityIssue::new(
+                        CompatibilityIssueCode::GpuFieldsUnavailable,
+                        "particles follow a GPU-simulated field, which the CPU reference cannot run",
+                    )],
+                );
+            }
             return CompatibilityReport::compatible(target);
         }
 
@@ -250,6 +264,7 @@ mod tests {
             renderers: BTreeSet::from([RendererCapability::SpriteParticles]),
             gpu_simulation: true,
             native_gpu_presentation: true,
+            gpu_fields: false,
         }
     }
 

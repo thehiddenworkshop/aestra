@@ -702,6 +702,17 @@ pub struct ExtensionModulePlan {
     pub parameters: aestra_core::PropertyBag,
 }
 
+/// A stateful emitter following a vector field one of the effect's domains simulates (fluid F2b).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledFieldFollow {
+    /// Index of the domain in [`CompiledEffect::extension_stages`].
+    pub stage: usize,
+    /// The field sampled: its resource and grid layout (3 or 4 components; `xyz` is the vector).
+    pub field: FieldLayout,
+    /// How fast velocity adopts the field's value, per second.
+    pub strength: f32,
+}
+
 /// A compiled *extension* stage (extensible-stages M10): an authored simulation stage whose registered
 /// stage type comes from a plugin, lowered by that plugin into a portable [`ExecutionBlock`]. Carried
 /// generically beside the lifecycle stages — like [`CompiledExtensionRenderer`], no core enum grows.
@@ -828,6 +839,10 @@ pub struct CompiledEmitter {
     /// module order, applied by the stateful integrator after each tick. Empty for emitters without a
     /// collision module.
     pub colliders: Vec<aestra_core::Collider>,
+    /// The domain field this emitter's particles follow (fluid F2b), when a Follow Field module is
+    /// enabled. Only the stateful GPU backend runs it; the CPU reference cannot (the field lives on
+    /// the GPU), which the effect's requirements report as `gpu_fields`.
+    pub field_follow: Option<CompiledFieldFollow>,
     /// The interpreter's execution input (typed, three lifecycle slots).
     pub execution: ExecutionPlan,
     /// The generic, stage-identified compiled stage plan (extensible-stages M5). Holds the same

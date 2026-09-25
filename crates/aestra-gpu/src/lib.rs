@@ -779,6 +779,88 @@ pub fn stateful_simulation_wgsl() -> String {
     )
 }
 
+/// Words of [`FIELD_FOLLOW_WGSL`]'s `params`: `[capacity, dims.x, dims.y, dims.z, cell stride,
+/// origin.x, origin.y, origin.z, cell_size, strength, dt, 0]` (floats as bits).
+pub const FIELD_FOLLOW_PARAM_WORDS: usize = 12;
+
+/// Follow Field for stateful particles (fluid F2b): each live slot of the persistent state
+/// (`AESTRA_STATE_STRIDE` = 9 floats: position, velocity, age, lifetime, ordinal) samples a vector
+/// grid field — a domain's [`aestra_runtime::FieldLayout`] — trilinearly at its position (cell-centred,
+/// clamped to the grid) and moves its velocity toward the sampled `xyz` by `min(strength × dt, 1)`.
+/// A gather over particles: no atomics, so reruns reproduce the same bits. The stateful backend runs it
+/// right after each tick's `death_integrate`/`spawn`, so the pull shapes the next tick's motion.
+pub const FIELD_FOLLOW_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read_write> state: array<f32>;
+@group(0) @binding(1) var<storage, read> field: array<f32>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
+
+const FOLLOW_STATE_STRIDE: u32 = 9u;
+
+fn follow_field_value(cell: vec3<i32>) -> vec3<f32> {
+    let dims = vec3<i32>(i32(params[1]), i32(params[2]), i32(params[3]));
+    let c = clamp(cell, vec3<i32>(0), dims - vec3<i32>(1));
+    let base = (u32((c.z * dims.y + c.y) * dims.x + c.x)) * params[4];
+    return vec3<f32>(field[base], field[base + 1u], field[base + 2u]);
+}
+
+@compute @workgroup_size(64)
+fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let slot = gid.x;
+    if (slot >= params[0]) { return; }
+    let s = slot * FOLLOW_STATE_STRIDE;
+    let age = state[s + 6u];
+    let lifetime = state[s + 7u];
+    if (!(lifetime > 0.0 && age < lifetime)) { return; }
+    let origin = vec3<f32>(bitcast<f32>(params[5]), bitcast<f32>(params[6]), bitcast<f32>(params[7]));
+    let cell_size = bitcast<f32>(params[8]);
+    let position = vec3<f32>(state[s], state[s + 1u], state[s + 2u]);
+    let last = vec3<f32>(f32(params[1]), f32(params[2]), f32(params[3])) - vec3<f32>(1.0);
+    let g = clamp((position - origin) / cell_size - vec3<f32>(0.5), vec3<f32>(0.0), last);
+    let base = floor(g);
+    let t = g - base;
+    let b = vec3<i32>(base);
+    let x0 = mix(follow_field_value(b), follow_field_value(b + vec3<i32>(1, 0, 0)), t.x);
+    let x1 = mix(follow_field_value(b + vec3<i32>(0, 1, 0)), follow_field_value(b + vec3<i32>(1, 1, 0)), t.x);
+    let x2 = mix(follow_field_value(b + vec3<i32>(0, 0, 1)), follow_field_value(b + vec3<i32>(1, 0, 1)), t.x);
+    let x3 = mix(follow_field_value(b + vec3<i32>(0, 1, 1)), follow_field_value(b + vec3<i32>(1, 1, 1)), t.x);
+    let target_velocity = mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
+    let pull = min(bitcast<f32>(params[9]) * bitcast<f32>(params[10]), 1.0);
+    let velocity = vec3<f32>(state[s + 3u], state[s + 4u], state[s + 5u]);
+    let followed = velocity + (target_velocity - velocity) * pull;
+    state[s + 3u] = followed.x;
+    state[s + 4u] = followed.y;
+    state[s + 5u] = followed.z;
+}
+"#;
+
+/// The [`FIELD_FOLLOW_WGSL`] params for one emitter following `follow` with `capacity` slots.
+pub fn field_follow_params(
+    capacity: u32,
+    follow: &aestra_runtime::CompiledFieldFollow,
+    dt: f32,
+) -> [u32; FIELD_FOLLOW_PARAM_WORDS] {
+    let field = &follow.field;
+    let stride = if field.components == 3 {
+        4
+    } else {
+        field.components
+    };
+    [
+        capacity,
+        field.dims[0],
+        field.dims[1],
+        field.dims[2],
+        stride,
+        field.origin[0].to_bits(),
+        field.origin[1].to_bits(),
+        field.origin[2].to_bits(),
+        field.cell_size.to_bits(),
+        follow.strength.to_bits(),
+        dt.to_bits(),
+        0,
+    ]
+}
+
 /// The 2D-diffusion compute pass — the first staged-simulation validation workload (hybrid roadmap
 /// M13). One explicit (Jacobi) diffusion step on a periodic grid: it reads the front grid buffer and
 /// writes the back, and the staged executor ping-pongs them across iterations. Bindings match the

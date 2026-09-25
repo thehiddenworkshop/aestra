@@ -181,6 +181,8 @@ struct StatefulDispatch {
     /// Collision primitives resolved after each tick (hybrid roadmap M10), capped at `MAX_COLLIDERS`
     /// when packed into the params buffer. Empty for emitters without a collision module.
     colliders: Vec<aestra_core::Collider>,
+    /// The domain field these particles follow (fluid F2b); they then advance in lockstep with it.
+    field_follow: Option<aestra_runtime::CompiledFieldFollow>,
 }
 
 impl StatefulDispatch {
@@ -214,6 +216,18 @@ impl StatefulDispatch {
             self.colliders.len() as u32,
         ] {
             hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        // Following a field changes the simulation (fluid F2b).
+        if let Some(follow) = &self.field_follow {
+            for bits in [
+                follow.stage as u32,
+                follow.strength.to_bits(),
+                follow.field.dims[0],
+                follow.field.cell_size.to_bits(),
+                follow.field.origin[1].to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
         }
         // Colliders change the simulation, so fold each one's shape and response into the fingerprint
         // (hybrid roadmap M10): editing a collider invalidates the persistent state and checkpoints.
@@ -837,6 +851,7 @@ pub(crate) fn prepare_gpu_effects(
                                 gravity: [emitter.gravity.x, emitter.gravity.y, emitter.gravity.z],
                                 seed,
                                 colliders: compiled.colliders.clone(),
+                                field_follow: compiled.field_follow.clone(),
                             })
                     })
                     .collect()
@@ -2074,6 +2089,23 @@ impl StatefulPersistentState {
         }
     }
 
+    /// Restores the checkpoint captured exactly at `tick` (fluid F2b's joint seek), setting the last
+    /// tick and spawn carry. False when this store has no checkpoint there.
+    fn restore_at(&mut self, encoder: &mut CommandEncoder, tick: u32) -> bool {
+        if !self
+            .checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.tick == tick)
+        {
+            return false;
+        }
+        if let Some((at, accumulator)) = self.restore_nearest(encoder, tick) {
+            self.last_tick = at;
+            self.spawn_accumulator = accumulator;
+        }
+        true
+    }
+
     /// Restores the nearest checkpoint at or before `target` (copying its four buffers back GPU→GPU),
     /// returning its `(tick, spawn_accumulator)`, or `None` when no checkpoint is at or before `target`.
     fn restore_nearest(&self, encoder: &mut CommandEncoder, target: u32) -> Option<(u32, f32)> {
@@ -2200,14 +2232,146 @@ fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
     }
 }
 
+/// The stateful params words for one dispatch (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`):
+/// `spawn_per_tick` varies across advance ticks and `subtick` is the presentation-interpolation time
+/// `present` uses.
+fn stateful_params_bytes(
+    dispatch: &StatefulDispatch,
+    spawn_per_tick: u32,
+    subtick: f32,
+) -> Vec<u8> {
+    let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    words[..26].copy_from_slice(&[
+        dispatch.capacity,
+        spawn_per_tick,
+        dispatch.seed as u32,
+        (dispatch.seed >> 32) as u32,
+        dispatch.speed.0.to_bits(),
+        dispatch.speed.1.to_bits(),
+        dispatch.lifetime.0.to_bits(),
+        dispatch.lifetime.1.to_bits(),
+        STATEFUL_TICK_DT.to_bits(),
+        dispatch.gravity[0].to_bits(),
+        dispatch.gravity[1].to_bits(),
+        dispatch.gravity[2].to_bits(),
+        dispatch.direction[0].to_bits(),
+        dispatch.direction[1].to_bits(),
+        dispatch.direction[2].to_bits(),
+        dispatch.spread.to_bits(),
+        dispatch.drag.to_bits(),
+        dispatch.emitter_index,
+        dispatch.slot_offset,
+        dispatch.turbulence.to_bits(),
+        dispatch.shape_kind,
+        dispatch.shape_radius.to_bits(),
+        dispatch.shape_half_extents[0].to_bits(),
+        dispatch.shape_half_extents[1].to_bits(),
+        dispatch.shape_half_extents[2].to_bits(),
+        subtick.to_bits(),
+    ]);
+    // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
+    // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
+    pack_colliders(&dispatch.colliders, &mut words);
+    words.into_iter().flat_map(u32::to_le_bytes).collect()
+}
+
+/// The effect-wide render buffers a stateful emitter presents into.
+struct StatefulRenderBuffers<'a> {
+    particles: &'a Buffer,
+    alive: &'a Buffer,
+    indirect: &'a Buffer,
+    counters: &'a Buffer,
+}
+
+/// A bind group over one emitter's persistent buffers, `params`, and the effect's render buffers.
+fn stateful_bind_group(
+    device: &RenderDevice,
+    layout: &BindGroupLayout,
+    persistent: &StatefulPersistentState,
+    params: &Buffer,
+    render: &StatefulRenderBuffers<'_>,
+) -> BindGroup {
+    device.create_bind_group(
+        Some("aestra_gpu_stateful"),
+        layout,
+        &BindGroupEntries::sequential((
+            persistent.state.as_entire_buffer_binding(),
+            persistent.free_list.as_entire_buffer_binding(),
+            persistent.free_count.as_entire_buffer_binding(),
+            persistent.spawn_counter.as_entire_buffer_binding(),
+            params.as_entire_buffer_binding(),
+            render.particles.as_entire_buffer_binding(),
+            render.alive.as_entire_buffer_binding(),
+            render.indirect.as_entire_buffer_binding(),
+            render.counters.as_entire_buffer_binding(),
+        )),
+    )
+}
+
+/// One tick's params (with this tick's spawn count, advancing the fractional spawn carry) and its bind
+/// group.
+fn stateful_tick_group(
+    device: &RenderDevice,
+    layout: &BindGroupLayout,
+    persistent: &mut StatefulPersistentState,
+    dispatch: &StatefulDispatch,
+    render: &StatefulRenderBuffers<'_>,
+) -> BindGroup {
+    persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
+    let spawn_count = persistent.spawn_accumulator.floor();
+    persistent.spawn_accumulator -= spawn_count;
+    let spawn_count = (spawn_count as u32).min(dispatch.capacity);
+    let params = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("aestra stateful tick params"),
+        contents: &stateful_params_bytes(dispatch, spawn_count, 0.0),
+        usage: BufferUsages::STORAGE,
+    });
+    stateful_bind_group(device, layout, persistent, &params, render)
+}
+
+/// Resets one emitter's indirect instance count, then presents + compacts its live slots into the
+/// effect-wide alive/indirect/counters buffers the render path draws. The vertex count (word 0 of the
+/// draw command) is preserved; only the instance count (word 1) is zeroed so the compaction rebuilds
+/// it. Presentation interpolation (hybrid roadmap M8) extrapolates by the sub-tick time — how far past
+/// the last simulated tick the requested time is, bounded to one tick in case the fixed-tick advance
+/// lags the presentation time.
+#[allow(clippy::too_many_arguments)]
+fn present_stateful_emitter(
+    device: &RenderDevice,
+    encoder: &mut CommandEncoder,
+    present: &ComputePipeline,
+    layout: &BindGroupLayout,
+    persistent: &StatefulPersistentState,
+    dispatch: &StatefulDispatch,
+    render: &StatefulRenderBuffers<'_>,
+    simulation_time: f32,
+) {
+    let instance_count_offset = u64::from(dispatch.emitter_index * 4 + 1) * 4;
+    encoder.clear_buffer(render.indirect, instance_count_offset, Some(4));
+    let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
+        .clamp(0.0, STATEFUL_TICK_DT);
+    let params = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("aestra stateful present params"),
+        contents: &stateful_params_bytes(dispatch, 0, subtick),
+        usage: BufferUsages::STORAGE,
+    });
+    let group = stateful_bind_group(device, layout, persistent, &params, render);
+    let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+        label: Some("aestra stateful present"),
+        timestamp_writes: None,
+    });
+    pass.set_bind_group(0, &group, &[]);
+    pass.set_pipeline(present);
+    pass.dispatch_workgroups(dispatch.capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+}
+
 /// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6/M7): advance its persistent
 /// state from its last tick to the tick for `simulation_time` (death loop + spawn per tick), capturing
-/// GPU-resident checkpoints at a fixed cadence, then reset its indirect instance count and run present,
-/// which extracts presentation and compacts its live slots into the effect-wide alive/indirect/counters
-/// buffers the render path draws. A backward seek restores the nearest checkpoint at or before the
-/// target and replays only the remainder forward (the derived restart+replay seek mode; never a reverse
-/// integration). The caller clears the shared live counter once before the emitter loop and stamps the
-/// statistics telemetry once after it. Every kernel here is conformance-proven on real GPU.
+/// GPU-resident checkpoints at a fixed cadence, then present. A backward seek restores the nearest
+/// checkpoint at or before the target and replays only the remainder forward (the derived
+/// restart+replay seek mode; never a reverse integration). The caller clears the shared live counter
+/// once before the emitter loop and stamps the statistics telemetry once after it. Every kernel here is
+/// conformance-proven on real GPU.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_stateful_effect(
     device: &RenderDevice,
@@ -2218,17 +2382,11 @@ fn dispatch_stateful_effect(
     layout: &BindGroupLayout,
     persistent: &mut StatefulPersistentState,
     dispatch: &StatefulDispatch,
-    particles: &Buffer,
-    alive: &Buffer,
-    indirect: &Buffer,
-    counters: &Buffer,
+    render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
     seek_quality: SeekQuality,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
-    // Backward seek (hybrid roadmap M7): restore the nearest checkpoint at or before the target and
-    // replay only the short remainder forward — never integrate in reverse. If no checkpoint is at or
-    // before the target (scrubbing before the earliest one), reset to tick 0 and replay from there.
     if target_tick < persistent.last_tick {
         match persistent.restore_nearest(encoder, target_tick) {
             Some((tick, accumulator)) => {
@@ -2238,96 +2396,18 @@ fn dispatch_stateful_effect(
             None => persistent.reset_to_zero(device),
         }
     }
-    let capacity = dispatch.capacity;
-    let workgroups = capacity.div_ceil(WORKGROUP_SIZE);
-
-    // The production params layout (aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS); `spawn_per_tick`
-    // varies across advance ticks and `subtick` is the presentation-interpolation time used by present.
-    let params_bytes = |spawn_per_tick: u32, subtick: f32| -> Vec<u8> {
-        let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
-        words[..26].copy_from_slice(&[
-            capacity,
-            spawn_per_tick,
-            dispatch.seed as u32,
-            (dispatch.seed >> 32) as u32,
-            dispatch.speed.0.to_bits(),
-            dispatch.speed.1.to_bits(),
-            dispatch.lifetime.0.to_bits(),
-            dispatch.lifetime.1.to_bits(),
-            STATEFUL_TICK_DT.to_bits(),
-            dispatch.gravity[0].to_bits(),
-            dispatch.gravity[1].to_bits(),
-            dispatch.gravity[2].to_bits(),
-            dispatch.direction[0].to_bits(),
-            dispatch.direction[1].to_bits(),
-            dispatch.direction[2].to_bits(),
-            dispatch.spread.to_bits(),
-            dispatch.drag.to_bits(),
-            dispatch.emitter_index,
-            dispatch.slot_offset,
-            dispatch.turbulence.to_bits(),
-            dispatch.shape_kind,
-            dispatch.shape_radius.to_bits(),
-            dispatch.shape_half_extents[0].to_bits(),
-            dispatch.shape_half_extents[1].to_bits(),
-            dispatch.shape_half_extents[2].to_bits(),
-            subtick.to_bits(),
-        ]);
-        // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
-        // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
-        pack_colliders(&dispatch.colliders, &mut words);
-        words.into_iter().flat_map(u32::to_le_bytes).collect()
-    };
-    // Clone the buffer handles (cheap Arc clones) so the bind groups don't borrow `persistent`, which
-    // must stay mutably available to capture checkpoints between advance segments.
-    let state_buffer = persistent.state.clone();
-    let free_list_buffer = persistent.free_list.clone();
-    let free_count_buffer = persistent.free_count.clone();
-    let spawn_counter_buffer = persistent.spawn_counter.clone();
-    let bind_group = |params: &Buffer| {
-        device.create_bind_group(
-            Some("aestra_gpu_stateful"),
-            layout,
-            &BindGroupEntries::sequential((
-                state_buffer.as_entire_buffer_binding(),
-                free_list_buffer.as_entire_buffer_binding(),
-                free_count_buffer.as_entire_buffer_binding(),
-                spawn_counter_buffer.as_entire_buffer_binding(),
-                params.as_entire_buffer_binding(),
-                particles.as_entire_buffer_binding(),
-                alive.as_entire_buffer_binding(),
-                indirect.as_entire_buffer_binding(),
-                counters.as_entire_buffer_binding(),
-            )),
-        )
-    };
-
-    // Advance from last_tick to target in cadence-aligned segments, capturing a GPU-resident
-    // checkpoint at each cadence boundary reached (so a later backward seek restores nearby). Bounded
-    // per frame so a large jump cannot stall the GPU. Resources are kept alive until the encoder is
-    // submitted by the caller.
+    let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
+    // Advance in cadence-aligned segments (one compute pass each), capturing a GPU-resident checkpoint
+    // at each cadence boundary reached. Bounded per frame so a large jump cannot stall the GPU.
     let mut remaining =
         (target_tick - persistent.last_tick).min(stateful_catchup_budget(seek_quality));
-    let mut params_keepalive = Vec::new();
-    let mut group_keepalive = Vec::new();
     while remaining > 0 {
         let to_boundary =
             STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
         let segment = remaining.min(to_boundary);
-        let mut groups = Vec::with_capacity(segment as usize);
-        for _ in 0..segment {
-            persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
-            let spawn_count = persistent.spawn_accumulator.floor();
-            persistent.spawn_accumulator -= spawn_count;
-            let spawn_count = (spawn_count as u32).min(capacity);
-            let params = device.create_buffer_with_data(&BufferInitDescriptor {
-                label: Some("aestra stateful tick params"),
-                contents: &params_bytes(spawn_count, 0.0),
-                usage: BufferUsages::STORAGE,
-            });
-            groups.push(bind_group(&params));
-            params_keepalive.push(params);
-        }
+        let groups: Vec<BindGroup> = (0..segment)
+            .map(|_| stateful_tick_group(device, layout, persistent, dispatch, render))
+            .collect();
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("aestra stateful advance"),
@@ -2349,37 +2429,170 @@ fn dispatch_stateful_effect(
         {
             persistent.capture(device, encoder, persistent.last_tick);
         }
-        group_keepalive.extend(groups);
     }
-
-    // Reset this emitter's indirect instance count, then present + compact. The vertex count (word 0
-    // of the draw command) is preserved; only the instance count (word 1) is zeroed so the compaction
-    // rebuilds it. The shared live counter is cleared once by the caller before the emitter loop.
-    let instance_count_offset = u64::from(dispatch.emitter_index * 4 + 1) * 4;
-    encoder.clear_buffer(indirect, instance_count_offset, Some(4));
-    // Presentation interpolation (hybrid roadmap M8): extrapolate by the sub-tick time — how far past
-    // the last simulated tick the requested time is — so stateful particles move smoothly between the
-    // 60 Hz ticks and stay coherent with the continuous time analytic emitters evaluate at. Bounded to
-    // one tick in case the fixed-tick advance is lagging behind the presentation time.
-    let subtick = (simulation_time - persistent.last_tick as f32 * STATEFUL_TICK_DT)
-        .clamp(0.0, STATEFUL_TICK_DT);
-    let present_params = device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("aestra stateful present params"),
-        contents: &params_bytes(0, subtick),
-        usage: BufferUsages::STORAGE,
-    });
-    let present_group = bind_group(&present_params);
-    {
-        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("aestra stateful present"),
-            timestamp_writes: None,
-        });
-        pass.set_bind_group(0, &present_group, &[]);
-        pass.set_pipeline(present);
-        pass.dispatch_workgroups(workgroups, 1, 1);
-    }
+    present_stateful_emitter(
+        device,
+        encoder,
+        present,
+        layout,
+        persistent,
+        dispatch,
+        render,
+        simulation_time,
+    );
 }
 
+/// What couples an effect's stateful emitters to its domains (fluid F2b): the domains' timelines
+/// (indexed like `CompiledEffect::all_extension_stages`), the host inputs they tick with, and the
+/// Follow Field pipeline.
+pub(super) struct Coupling<'a> {
+    pub domains: &'a mut [Option<crate::execution::StageTimeline>],
+    pub inputs: crate::execution::StageInputs<'a>,
+    pub follower: &'a crate::execution::FieldFollowPipeline,
+}
+
+/// The latest tick at or before `target` that every store holds a checkpoint for.
+fn joint_checkpoint_tick(
+    persistent_states: &[StatefulPersistentState],
+    domains: &[Option<crate::execution::StageTimeline>],
+    target: u32,
+) -> Option<u32> {
+    let first = persistent_states.first()?;
+    first
+        .checkpoints
+        .iter()
+        .rev()
+        .map(|checkpoint| checkpoint.tick)
+        .filter(|tick| *tick <= target)
+        .find(|tick| {
+            persistent_states
+                .iter()
+                .all(|state| state.checkpoints.iter().any(|c| c.tick == *tick))
+                && domains
+                    .iter()
+                    .flatten()
+                    .all(|domain| domain.checkpoint_ticks().contains(tick))
+        })
+}
+
+/// Advances an effect whose stateful emitters follow a domain's field (fluid F2b) — every store in
+/// lockstep, tick by tick: each tick advances the domains one tick, then every stateful emitter one
+/// tick (death loop + spawn), then pulls the following emitters toward their fields. All stores
+/// checkpoint at the same cadence; a backward seek (or stores that fell out of step, e.g. a rebuilt
+/// domain) restores every store at the latest tick they all hold — else resets them all to tick 0 —
+/// and replays, so scrubbing reproduces the uninterrupted run. Then every emitter presents.
+#[allow(clippy::too_many_arguments)]
+fn run_coupled_stateful(
+    device: &RenderDevice,
+    encoder: &mut CommandEncoder,
+    pipelines: (&ComputePipeline, &ComputePipeline, &ComputePipeline),
+    layout: &BindGroupLayout,
+    persistent_states: &mut [StatefulPersistentState],
+    dispatches: &[StatefulDispatch],
+    coupling: Coupling<'_>,
+    render: &StatefulRenderBuffers<'_>,
+    simulation_time: f32,
+    seek_quality: SeekQuality,
+) {
+    let (death_integrate, spawn, present) = pipelines;
+    let domains = coupling.domains;
+    let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
+    let last = persistent_states.first().map_or(0, |state| state.last_tick);
+    let in_step = persistent_states
+        .iter()
+        .all(|state| state.last_tick == last)
+        && domains
+            .iter()
+            .flatten()
+            .all(|domain| domain.last_tick() == last);
+    if !in_step || target < last {
+        match joint_checkpoint_tick(persistent_states, domains, target.min(last)) {
+            Some(tick) => {
+                for state in persistent_states.iter_mut() {
+                    state.restore_at(encoder, tick);
+                }
+                for domain in domains.iter_mut().flatten() {
+                    domain.restore_to(encoder, tick);
+                }
+            }
+            None => {
+                for state in persistent_states.iter_mut() {
+                    state.reset_to_zero(device);
+                }
+                for domain in domains.iter_mut().flatten() {
+                    domain.restore_to(encoder, 0);
+                }
+            }
+        }
+    }
+    let now = persistent_states.first().map_or(0, |state| state.last_tick);
+    let ticks = target
+        .saturating_sub(now)
+        .min(stateful_catchup_budget(seek_quality));
+    for _ in 0..ticks {
+        let next = persistent_states[0].last_tick + 1;
+        for domain in domains.iter_mut().flatten() {
+            if let Err(error) = domain.advance_to(
+                device.wgpu_device(),
+                encoder,
+                next,
+                1,
+                coupling.inputs,
+                None,
+            ) {
+                warn!("coupled domain stopped: {error}");
+            }
+        }
+        for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
+            let group = stateful_tick_group(device, layout, persistent, dispatch, render);
+            {
+                let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
+                let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("aestra coupled stateful tick"),
+                    timestamp_writes: None,
+                });
+                pass.set_bind_group(0, &group, &[]);
+                pass.set_pipeline(death_integrate);
+                pass.dispatch_workgroups(workgroups, 1, 1);
+                pass.set_pipeline(spawn);
+                pass.dispatch_workgroups(workgroups, 1, 1);
+            }
+            if let Some(follow) = &dispatch.field_follow
+                && let Some(Some(domain)) = domains.get(follow.stage)
+                && let Some(field) = domain.executor().buffer(follow.field.resource.as_str())
+            {
+                coupling.follower.encode(
+                    device.wgpu_device(),
+                    encoder,
+                    &persistent.state,
+                    dispatch.capacity,
+                    field,
+                    follow,
+                    STATEFUL_TICK_DT,
+                );
+            }
+            persistent.last_tick += 1;
+            if persistent
+                .last_tick
+                .is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
+            {
+                persistent.capture(device, encoder, persistent.last_tick);
+            }
+        }
+    }
+    for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+        present_stateful_emitter(
+            device,
+            encoder,
+            present,
+            layout,
+            persistent,
+            dispatch,
+            render,
+            simulation_time,
+        );
+    }
+}
 /// Stamps the particle-statistics telemetry trailer the analytic reset writes, so the live-count
 /// readback accepts a stateful frame: `[MAGIC, context token, history epoch, time]` at the indirect
 /// buffer's telemetry offset (`emitter_count * 4`). Called once per effect after every emitter has
@@ -2424,10 +2637,8 @@ fn run_stateful_dispatches(
     layout: &BindGroupLayout,
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
-    particles: &Buffer,
-    alive: &Buffer,
-    indirect: &Buffer,
-    counters: &Buffer,
+    render: &StatefulRenderBuffers<'_>,
+    coupling: Option<Coupling<'_>>,
     simulation_time: f32,
     seek_quality: SeekQuality,
     statistics_token: u32,
@@ -2436,31 +2647,48 @@ fn run_stateful_dispatches(
 ) {
     if owns_shared_reset {
         // Clear the shared live counter once, before any emitter's present bumps it.
-        encoder.clear_buffer(counters, 0, Some(4));
+        encoder.clear_buffer(render.counters, 0, Some(4));
     }
-    for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
-        dispatch_stateful_effect(
+    // Emitters following a domain's field advance in lockstep with it (fluid F2b).
+    let coupled = dispatches
+        .iter()
+        .any(|dispatch| dispatch.field_follow.is_some());
+    match coupling.filter(|_| coupled) {
+        Some(coupling) => run_coupled_stateful(
             device,
             encoder,
-            pipelines.0,
-            pipelines.1,
-            pipelines.2,
+            pipelines,
             layout,
-            persistent,
-            dispatch,
-            particles,
-            alive,
-            indirect,
-            counters,
+            persistent_states,
+            dispatches,
+            coupling,
+            render,
             simulation_time,
             seek_quality,
-        );
+        ),
+        None => {
+            for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
+                dispatch_stateful_effect(
+                    device,
+                    encoder,
+                    pipelines.0,
+                    pipelines.1,
+                    pipelines.2,
+                    layout,
+                    persistent,
+                    dispatch,
+                    render,
+                    simulation_time,
+                    seek_quality,
+                );
+            }
+        }
     }
     if owns_shared_reset && let Some(first) = dispatches.first() {
         stamp_stateful_statistics(
             device,
             encoder,
-            indirect,
+            render.indirect,
             first.emitter_count,
             statistics_token,
             history_epoch,
@@ -2468,6 +2696,17 @@ fn run_stateful_dispatches(
         );
     }
 }
+
+/// What the simulation system keeps across frames: trail histories, the timestamp timer, stateful
+/// pipelines and states, and the domains coupled emitters follow (fluid F2b), with their pipeline.
+type SimulationState<'w, 's> = (
+    Local<'s, TrailHistories>,
+    Local<'s, simulation_timing::SimulationTimer>,
+    Option<Res<'w, StatefulSimulationPipeline>>,
+    ResMut<'w, StatefulStates>,
+    ResMut<'w, extension_stages::StageRuntimes>,
+    Option<Res<'w, extension_stages::FieldFollow>>,
+);
 
 fn run_simulation(
     mut render_context: RenderContext,
@@ -2478,6 +2717,7 @@ fn run_simulation(
         &bevy::render::sync_world::MainEntity,
         &GpuEffectBuffers,
         &GpuBindGroup,
+        Option<&extension_stages::ExtractedStages>,
     )>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
     gpu_resources: (
@@ -2486,19 +2726,21 @@ fn run_simulation(
         Res<bevy::render::renderer::RenderQueue>,
         Res<simulation_timing::TimingMailbox>,
     ),
-    state: (
-        Local<TrailHistories>,
-        Local<simulation_timing::SimulationTimer>,
-        Option<Res<StatefulSimulationPipeline>>,
-        ResMut<StatefulStates>,
-    ),
+    state: SimulationState,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let Some(pipeline) = pipeline else {
         return;
     };
     let (buffers, render_device, queue, timing_mailbox) = gpu_resources;
-    let (mut histories, mut timer, stateful_pipeline, mut stateful_states) = state;
+    let (
+        mut histories,
+        mut timer,
+        stateful_pipeline,
+        mut stateful_states,
+        mut stage_runtimes,
+        follower,
+    ) = state;
     // Resolve the stateful compute pipelines once (present only when the device supports the path and
     // the pipelines have finished compiling). The stateful branch below drives one enabled stateful
     // emitter end-to-end; other effects take the analytic path unchanged.
@@ -2525,9 +2767,13 @@ fn run_simulation(
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
     let mut timing_batch = timer.begin(&render_device, queue.get_timestamp_period());
-    histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, _, e, _)| e.has_trails));
+    histories.retain(|entity, _| {
+        effects
+            .get(*entity)
+            .is_ok_and(|(_, _, e, _, _)| e.has_trails)
+    });
     let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
-    for (entity, main_entity, effect, bind_group) in &effects {
+    for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
         // A fully stateful effect (hybrid roadmap M6) skips the analytic reset+simulate entirely and
         // runs only its persistent path, which owns the shared counter reset and statistics telemetry.
         // A mixed effect falls through to the analytic path and runs its stateful emitters afterward
@@ -2554,10 +2800,18 @@ fn run_simulation(
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
-                    particles,
-                    alive,
-                    indirect,
-                    counters,
+                    &StatefulRenderBuffers {
+                        particles,
+                        alive,
+                        indirect,
+                        counters,
+                    },
+                    extension_stages::coupling(
+                        &mut stage_runtimes,
+                        entity,
+                        extracted_stages,
+                        follower.as_deref(),
+                    ),
                     effect.simulation_time,
                     effect.seek_quality,
                     effect.statistics_token,
@@ -2796,10 +3050,18 @@ fn run_simulation(
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
-                    particles,
-                    alive,
-                    indirect,
-                    counters,
+                    &StatefulRenderBuffers {
+                        particles,
+                        alive,
+                        indirect,
+                        counters,
+                    },
+                    extension_stages::coupling(
+                        &mut stage_runtimes,
+                        entity,
+                        extracted_stages,
+                        follower.as_deref(),
+                    ),
                     effect.simulation_time,
                     effect.seek_quality,
                     effect.statistics_token,
@@ -2926,6 +3188,7 @@ mod tests {
             gravity: [0.0, -9.81, 0.0],
             seed: 42,
             colliders: Vec::new(),
+            field_follow: None,
         };
         assert_eq!(
             base.fingerprint(),
@@ -3608,5 +3871,284 @@ mod tests {
         assert_eq!(random.gravity_source, 1);
         assert_eq!(random.gravity, Vec3::new(-3.0, -6.0, 1.0));
         assert_eq!(random.gravity_max, Vec3::new(4.0, 2.0, 9.0));
+    }
+}
+
+/// Fluid F2b: stateful emitters following a domain's field advance in lockstep with it through the
+/// production coupled loop ([`run_coupled_stateful`]), on a real GPU — and scrubbing back and forth
+/// reproduces the uninterrupted run bit for bit.
+#[cfg(test)]
+mod coupled_tests {
+    use super::*;
+    use crate::execution::{FieldFollowPipeline, StageExecutor, StageInputs, StageTimeline};
+    use aestra_extension::ExtensionRegistry;
+    use bevy::render::render_resource::{PipelineLayoutDescriptor, RawComputePipelineDescriptor};
+    use bevy::render::renderer::WgpuWrapper;
+
+    const CAPACITY: u32 = 256;
+    const STRIDE: u32 = 9;
+
+    struct Scene {
+        device: RenderDevice,
+        queue: wgpu::Queue,
+        layout: BindGroupLayout,
+        pipelines: [ComputePipeline; 3],
+        follower: FieldFollowPipeline,
+        states: Vec<StatefulPersistentState>,
+        dispatches: Vec<StatefulDispatch>,
+        domains: Vec<Option<StageTimeline>>,
+        render: [Buffer; 4],
+    }
+
+    fn scene(follow: bool) -> Option<Scene> {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = wgpu::Backends::PRIMARY;
+        let instance = wgpu::Instance::new(descriptor);
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: None,
+        }))
+        .ok()?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_limits: adapter.limits(),
+            ..Default::default()
+        }))
+        .ok()?;
+        let device = RenderDevice::new(WgpuWrapper::new(device));
+
+        // The fluid domain, lowered by the real plugin and run on a StageTimeline.
+        let mut registry = ExtensionRegistry::builtin();
+        registry.install(&aestra_fluid::FluidExtension).unwrap();
+        let effect = aestra_compiler::EffectCompiler::with_extensions(registry.clone())
+            .compile(&aestra_fluid::smoke_effect(&registry))
+            .unwrap();
+        let block = &effect.extension_stages[0].block;
+        let executor =
+            StageExecutor::new(device.wgpu_device(), &queue, block, &registry.programs, 4).unwrap();
+        let domains = vec![Some(StageTimeline::new(executor, Default::default(), 7))];
+        let field = block
+            .field(&aestra_core::ResourceTypeId::new(
+                aestra_fluid::RESOURCE_VELOCITY,
+            ))
+            .unwrap()
+            .clone();
+
+        // The production stateful program and its explicit 9-binding layout.
+        let layout = device.create_bind_group_layout(
+            "coupled test stateful",
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    storage_buffer::<Vec<f32>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                    storage_buffer_read_only::<Vec<u32>>(false),
+                    storage_buffer::<Vec<GpuParticle>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                    storage_buffer::<Vec<u32>>(false),
+                ),
+            ),
+        );
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let module = device
+            .wgpu_device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(aestra_gpu::stateful_simulation_wgsl().into()),
+            });
+        let pipeline = |entry: &str| {
+            device.create_compute_pipeline(&RawComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        let pipelines = [
+            pipeline("death_integrate"),
+            pipeline("spawn"),
+            pipeline("present"),
+        ];
+
+        // Two emitters sharing the one domain: light smoke puffs and heavier embers.
+        let dispatch = |index: u32, gravity: f32, strength: f32| StatefulDispatch {
+            capacity: CAPACITY,
+            slot_offset: index * CAPACITY,
+            emitter_index: index,
+            emitter_count: 2,
+            spawn_rate: 90.0,
+            speed: (0.0, 4.0),
+            lifetime: (3.0, 4.0),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.6,
+            drag: 0.0,
+            turbulence: 0.0,
+            shape_kind: 1,
+            shape_radius: 8.0,
+            shape_half_extents: [0.0; 3],
+            gravity: [0.0, gravity, 0.0],
+            seed: 42 + u64::from(index),
+            colliders: Vec::new(),
+            field_follow: follow.then(|| aestra_runtime::CompiledFieldFollow {
+                stage: 0,
+                field: field.clone(),
+                strength,
+            }),
+        };
+        let dispatches = vec![dispatch(0, 0.0, 8.0), dispatch(1, -20.0, 3.0)];
+        let states = dispatches
+            .iter()
+            .map(|d| {
+                StatefulPersistentState::allocate(&device, d.capacity, STRIDE, d.fingerprint())
+            })
+            .collect();
+        let buffer = |bytes: u64| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: bytes,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let render = [
+            buffer(u64::from(2 * CAPACITY) * 48),
+            buffer(u64::from(2 * CAPACITY) * 4),
+            buffer(64),
+            buffer(16),
+        ];
+        let follower = FieldFollowPipeline::new(device.wgpu_device());
+        Some(Scene {
+            device,
+            queue,
+            layout,
+            pipelines,
+            follower,
+            states,
+            dispatches,
+            domains,
+            render,
+        })
+    }
+
+    impl Scene {
+        /// One frame at `tick` (mid-tick, so the target is exactly that tick).
+        fn frame(&mut self, tick: u32) {
+            let time = (tick as f32 + 0.5) * STATEFUL_TICK_DT;
+            let mut encoder = self.device.create_command_encoder(&Default::default());
+            let host = aestra_gpu::GpuHostBindings { words: vec![0] };
+            let [particles, alive, indirect, counters] = &self.render;
+            run_coupled_stateful(
+                &self.device,
+                &mut encoder,
+                (&self.pipelines[0], &self.pipelines[1], &self.pipelines[2]),
+                &self.layout,
+                &mut self.states,
+                &self.dispatches,
+                Coupling {
+                    domains: &mut self.domains,
+                    inputs: StageInputs {
+                        host_bindings: Some(&host),
+                        ..Default::default()
+                    },
+                    follower: &self.follower,
+                },
+                &StatefulRenderBuffers {
+                    particles,
+                    alive,
+                    indirect,
+                    counters,
+                },
+                time,
+                SeekQuality::Exact,
+            );
+            self.queue.submit([encoder.finish()]);
+        }
+
+        /// Every emitter's persistent state and the domain's velocity, bit for bit.
+        fn state(&self) -> Vec<Vec<u8>> {
+            let mut buffers: Vec<&wgpu::Buffer> = self.states.iter().map(|s| &*s.state).collect();
+            let domain = self.domains[0].as_ref().unwrap();
+            buffers.push(
+                domain
+                    .executor()
+                    .buffer(aestra_fluid::RESOURCE_VELOCITY)
+                    .unwrap(),
+            );
+            buffers
+                .into_iter()
+                .map(|buffer| read_back(&self.device, &self.queue, buffer))
+                .collect()
+        }
+    }
+
+    fn read_back(device: &RenderDevice, queue: &wgpu::Queue, buffer: &wgpu::Buffer) -> Vec<u8> {
+        let readback = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: buffer.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device
+            .wgpu_device()
+            .create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
+        queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device
+            .wgpu_device()
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_secs(60)),
+            })
+            .unwrap();
+        let bytes = slice.get_mapped_range().to_vec();
+        readback.unmap();
+        bytes
+    }
+
+    fn require(scene: Option<Scene>) -> Option<Scene> {
+        if scene.is_none() {
+            assert!(
+                std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                "AESTRA_REQUIRE_GPU_CONFORMANCE is set but no GPU is available"
+            );
+            eprintln!("skipping coupled conformance: no GPU");
+        }
+        scene
+    }
+
+    #[test]
+    fn coupled_particles_scrub_back_and_forth_to_the_uninterrupted_state() {
+        let Some(mut uninterrupted) = require(scene(true)) else {
+            return;
+        };
+        uninterrupted.frame(90);
+        let at_90 = uninterrupted.state();
+
+        let mut scrubbed = scene(true).unwrap();
+        scrubbed.frame(90);
+        scrubbed.frame(35); // joint restore at tick 20, replay 15
+        assert_eq!(scrubbed.states[0].last_tick, 35);
+        assert_eq!(scrubbed.domains[0].as_ref().unwrap().last_tick(), 35);
+        scrubbed.frame(7); // before the first checkpoint: everything resets to tick 0
+        scrubbed.frame(90);
+        assert_eq!(scrubbed.state(), at_90, "every store, bit for bit");
+
+        // Following the field is what moved them: uncoupled particles end elsewhere.
+        let mut uncoupled = scene(false).unwrap();
+        uncoupled.frame(90);
+        let uncoupled = uncoupled.state();
+        assert_ne!(uncoupled[0], at_90[0], "the smoke puffs follow the plume");
+        assert_ne!(uncoupled[1], at_90[1], "the embers too");
     }
 }

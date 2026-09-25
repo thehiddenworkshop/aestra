@@ -143,6 +143,16 @@ pub fn module_summary(module: &ModuleInstance) -> String {
             1 => "1 collider".to_string(),
             n => format!("{n} colliders"),
         },
+        ModuleParameters::FollowField {
+            domain, strength, ..
+        } => {
+            let domain = if domain.is_empty() {
+                "domain"
+            } else {
+                domain.as_str()
+            };
+            format!("Follows {domain} · {}", num(*strength))
+        }
         ModuleParameters::Custom(values) => match values.len() {
             0 => "No properties".to_string(),
             1 => "1 property".to_string(),

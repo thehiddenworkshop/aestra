@@ -1,13 +1,16 @@
-//! Generates `sample-project/effects/fluid_smoke.aestra.ron` (fluid F1): a looping smoke plume — an
-//! emitter hosting a *Fluid Solver* stage (grid, density source, buoyancy, vorticity). The emitter
-//! spawns no particles: until particles are coupled to the fluid (fluid F2) the plume is shown through
-//! the editor/viewer debug slice of its density field. Written through the real `save_ron`, reloaded,
-//! and compiled with the fluid extension installed.
+//! Generates `sample-project/effects/fluid_smoke.aestra.ron` (fluid F2): a looping smoke plume — an
+//! effect-level *Fluid Solver* domain (grid, density source, buoyancy, vorticity) — and two emitters
+//! whose particles follow it: light "Smoke Puffs" that ride the plume, and heavier "Embers" pulled
+//! more weakly against gravity. The editor/viewer debug slice shows the density field beneath them.
+//! Written through the real `save_ron`, reloaded, and compiled with the fluid extension installed.
 //!
 //! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_smoke`.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
-use aestra_core::{EffectAsset, EffectPlaybackMode, ModuleInstance, ModuleParameters, Value};
+use aestra_core::{
+    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
+    ScalarRange, Value,
+};
 use aestra_fluid::{
     FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VORTICITY, smoke_effect,
 };
@@ -26,6 +29,40 @@ fn set(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
     values.insert(name.into(), value);
 }
 
+/// A sprite emitter spawning around the origin (inside the plume) whose particles follow the domain.
+fn follower(
+    name: &str,
+    rate: f32,
+    lifetime: (f32, f32),
+    speed: (f32, f32),
+    gravity: f32,
+    strength: f32,
+) -> Emitter {
+    let mut emitter = Emitter::basic_sprite(name, 6.0);
+    emitter.max_particles = 512;
+    let appearance = emitter
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .cloned()
+        .expect("a sprite emitter has an appearance");
+    emitter.modules = vec![
+        ModuleInstance::emission(rate, 0),
+        ModuleInstance::shape(EmitterShape::Sphere { radius: 8.0 }),
+        ModuleInstance::initialize(
+            ScalarRange::new(lifetime.0, lifetime.1),
+            ScalarRange::new(speed.0, speed.1),
+            [0.0, 1.0, 0.0],
+            60.0,
+            ScalarRange::new(0.0, 0.0),
+        ),
+        ModuleInstance::motion([0.0, gravity, 0.0], 0.0, 0.0),
+        ModuleInstance::follow_field(strength),
+        appearance,
+    ];
+    emitter
+}
+
 fn main() {
     let mut registry = ExtensionRegistry::builtin();
     registry.install(&FluidExtension).expect("install");
@@ -34,11 +71,11 @@ fn main() {
     effect.name = "Fluid Smoke".into();
     effect.duration = 6.0;
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
-    let emitter = &mut effect.emitters[0];
-    emitter.name = "Smoke Domain".into();
-    emitter.duration = 6.0;
-    // No particles yet: the fluid is presented through its density slice until fluid F2.
-    emitter.modules[0] = ModuleInstance::emission(0.0, 0);
+    // Two emitters following the one domain (fluid F2b): Follow Field makes each stateful.
+    effect.emitters = vec![
+        follower("Smoke Puffs", 60.0, (3.0, 4.0), (0.0, 4.0), 0.0, 8.0),
+        follower("Embers", 25.0, (1.5, 2.5), (10.0, 20.0), -20.0, 3.0),
+    ];
 
     // A 120-unit box (48 cells of 2.5) around the origin; the source near its floor.
     set(&mut effect, MODULE_GRID, "resolution", Value::U32(48));
@@ -84,9 +121,14 @@ fn main() {
         .expect("the sample compiles with the fluid");
     let stage = &compiled.extension_stages[0];
     println!(
-        "wrote {PATH}: stage '{}' ({}), {} dispatches per tick",
+        "wrote {PATH}: domain '{}' ({}), {} dispatches per tick; followers: {:?}",
         stage.name,
         stage.stage_type.as_str(),
-        stage.block.compute_pass_count()
+        stage.block.compute_pass_count(),
+        compiled
+            .emitters
+            .iter()
+            .map(|emitter| (emitter.name.as_str(), emitter.field_follow.is_some()))
+            .collect::<Vec<_>>()
     );
 }

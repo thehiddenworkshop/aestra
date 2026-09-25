@@ -216,6 +216,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   - the same `Preview`/`Exact` catch-up budgets as the stateful particle path;
   - per-instance GPU time as `GpuStageTiming` (the profile's `gpu_stage_time_ns`);
   - an `aestra::gpu::extension_stages` diagnostics span.
+- Couples particles to domains (fluid F2b). A stateful emitter with the built-in **Follow Field**
+  module samples a domain's vector field (`aestra_gpu::FIELD_FOLLOW_WGSL`, trilinear, gather-only)
+  after each tick. Coupled effects advance in lockstep: per tick the domains, then every stateful
+  emitter, then the follow pass. All stores checkpoint at one cadence. A backward seek restores all
+  of them at the latest tick they share (else resets them all to tick 0) and replays, so scrubbing
+  stays bit-exact. The CPU reference cannot run it, which `EffectRequirements::gpu_fields` reports.
 - With `AestraDebugViews::field_slices` or an `AestraFieldView`, draws one slice of a stage's grid
   field. It uses the block's `FieldLayout` and appears as an unlit quad in 3D or a sprite in 2D. This
   is the only presentation of plugin fields until plugin renderers run.
