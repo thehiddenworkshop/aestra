@@ -73,9 +73,20 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Exposes `AestraPlugin` and `EffectPlayer` for direct integration in Bevy applications.
 - Owns no editor or viewer state.
 
+### `aestra-extension`
+
+- Owns the extension SDK (`sdk`): `AestraExtension`, the `ExtensionRegistry` and its descriptors
+  (modules, stages, renderers, domains, resources, capabilities, binding kinds). It also owns the
+  built-in module catalog, lowering and payload-migration contracts, requirements, linking, and
+  `EXTENSION_API_VERSION`.
+- Owns the packaged-extension host (`host`): declarative package format, discovery, version and
+  dependency checks, registration, disabling, and per-package diagnostics.
+- Depends only on `aestra-core` and `aestra-runtime`, so extension authors do not depend on the
+  compiler.
+
 ### `aestra-compiler`
 
-- Owns the extensible module registry and metadata used for discovery and validation.
+- Uses the extension registry (re-exported from `aestra-extension`) for discovery and validation.
 - Validates stages, supported renderer capabilities, and particle attribute flow.
 - Lowers authored constants and parameter bindings into immutable typed expressions.
 - Compiles curves and gradients, folds constants, removes dead particle storage, and retains source mapping.
@@ -327,10 +338,42 @@ absolute or marker-relative time. The compiler orders them by time and semantic 
 dispatches crossed intervals deterministically across loop boundaries, and `AestraPlugin` exposes
 each result as `AestraChoreographyEvent` for normal Bevy observers.
 
-The current file format is version 3. Prototype version 1 is intentionally unsupported
-and has no legacy loader. Version 2 assets are upgraded only through the editor's explicit,
-confirmed, backup-preserving migration path; core loading never silently interprets an
-outdated or future format.
+The current file format is version 4 (`aestra_core::CURRENT_FORMAT_VERSION`). It stores stages
+structurally: effect/emitter lifecycle containers plus authored simulation stages with registered
+stage types. It is the single authored cut of the extensible-stages redesign. Later features add
+**optional fields** to v4 (extension requirements, payload schema versions, host bindings) instead
+of bumping the format. Older formats (1–3) have no runtime loader and fail as an explicit
+`UnsupportedFormat` error; the in-repo v3 assets were converted once by a migration tool. Core
+loading never silently interprets an outdated or future format.
+
+## Host boundary
+
+An effect runs inside a host (a game engine, the editor, the viewer). Four kinds of data cross that
+boundary, and they stay distinct:
+
+| Concept | What it is | Example |
+|---|---|---|
+| **parameter** | A serializable value owned by the effect instance, overridable without recompiling. | `Power = 0.8` |
+| **binding** | A named slot on the effect that the host fills with a live object. The effect declares its **kind** and the **fields** it needs. | `Target: aestra.binding.spatial [position]` |
+| **world input** | A service of the host world, not tied to one bound object. | physics query, depth buffer, SDF |
+| **runtime event** | Discrete information crossing the boundary. | `Impact`, `TargetLost` |
+
+Rules:
+
+- **Engine-native handles never cross into portable data.** Assets, compiled artifacts, and the
+  runtime never contain a Bevy `Entity`, Godot node, Unity `GameObject` or physics handle. An effect
+  declares binding *slots*; each host adapter (`aestra-bevy` first) maps those slots to its own
+  objects.
+- **The boundary is push, not callback.** Once per Aestra tick, the host resolves its objects and
+  pushes a compact snapshot of binding field values. CPU and GPU simulation read that snapshot.
+  Portable code never calls into the engine per module or per particle.
+- **Capability** keeps its extension-SDK meaning: what a stage provides and what a module requires.
+  What a binding supplies is a *field*, not a capability.
+- Particle lifecycle `EventLink`s (`OnSpawn`, `OnDeath`, `OnCollision`) are preserved in assets but
+  **not executed** by the current runtime. Timeline `ChoreographyEvent`s are the working event path.
+
+The design and milestone plan live in `docs/new/AESTRA_HOST_BINDINGS_WORLD_INTERACTION_ROADMAP.md`
+(milestones `HB0`–`HB13`).
 
 ## Roadmap
 
