@@ -24,16 +24,30 @@ pub(crate) struct GraphDropTarget {
 
 impl GraphDropTarget {
     pub(crate) fn program(session: &EditorSession, id: MaterialProgramId) -> Self {
+        Self::program_for(session, id, &session.material_target)
+    }
+    pub(crate) fn program_for(
+        session: &EditorSession,
+        id: MaterialProgramId,
+        context: &MaterialEditingTarget,
+    ) -> Self {
         Self {
             owner: Owner::Program(id),
-            context: session.material_target.clone(),
+            context: context.clone(),
             effect: session.effect.id,
         }
     }
     pub(crate) fn function(session: &EditorSession, id: MaterialFunctionId) -> Self {
+        Self::function_for(session, id, &session.material_target)
+    }
+    pub(crate) fn function_for(
+        session: &EditorSession,
+        id: MaterialFunctionId,
+        context: &MaterialEditingTarget,
+    ) -> Self {
         Self {
             owner: Owner::Function(id),
-            context: session.material_target.clone(),
+            context: context.clone(),
             effect: session.effect.id,
         }
     }
@@ -41,10 +55,23 @@ impl GraphDropTarget {
         if session.pending_change.is_some() {
             return Err("Resolve the pending change before adding a function".into());
         }
-        if self.context != session.material_target || self.effect != session.effect.id {
+        if matches!(self.context, MaterialEditingTarget::EffectInstance)
+            && self.effect != session.effect.id
+        {
             return Err("Graph changed; drag the function again".into());
         }
+        if !matches!(
+            (&self.owner, &self.context),
+            (Owner::Program(_), MaterialEditingTarget::EffectInstance)
+                | (Owner::Program(_), MaterialEditingTarget::Program { .. })
+                | (Owner::Function(_), MaterialEditingTarget::Function { .. })
+        ) {
+            return Err("Graph target changed; drag the function again".into());
+        }
         Ok(())
+    }
+    pub(crate) fn editing_target(&self) -> &MaterialEditingTarget {
+        &self.context
     }
     fn key(&self, catalog: &ProjectEffectCatalog) -> String {
         match self.owner {
@@ -81,7 +108,7 @@ fn plan(
     let library = catalog
         .material_function_library()
         .map_err(|error| error.to_string())?;
-    let mut document = session.graph_authoring_document(catalog)?;
+    let mut document = session.graph_authoring_document_for(&target.context, catalog)?;
     let function = document
         .material_functions
         .iter()
@@ -103,7 +130,11 @@ fn plan(
     // Add every output in one history entry rather than silently losing outputs.
     let replacement = match target.owner {
         Owner::Program(program) => {
-            if selected_projection(session, catalog)?.1.program != program {
+            if selected_projection_for(&target.context, session, catalog)?
+                .1
+                .program
+                != program
+            {
                 return Err("Material selection changed; drag onto the current graph".into());
             }
             let before = document
@@ -138,7 +169,7 @@ fn plan(
             }
         }
         Owner::Function(owner) => {
-            let mut after = session.graph_function(catalog)?;
+            let mut after = session.graph_function_for(&target.context, catalog)?;
             if after.id != owner {
                 return Err("Function graph changed".into());
             }
@@ -314,6 +345,15 @@ fn drop_function(
             return Err("Graph drop position is invalid".into());
         }
         let plan = plan(&payload, &target, &session, &catalog)?;
+        match &target.context {
+            MaterialEditingTarget::EffectInstance => session.return_to_effect_material(),
+            MaterialEditingTarget::Program { id, .. } => {
+                session.open_material_program(&catalog, *id)?;
+            }
+            MaterialEditingTarget::Function { id, .. } => {
+                session.open_material_function(&catalog, *id)?;
+            }
+        }
         let layout_before = super::presentation::Snapshot::capture(
             &target.key(&catalog),
             &catalog,

@@ -232,55 +232,72 @@ fn prepare(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     candidate: &Candidate,
-) -> Result<Replacement, String> {
+    views: &Query<(&GraphGeometryView, &asset_drop::GraphDropTarget)>,
+) -> Result<(Replacement, crate::material_document::MaterialEditingTarget), String> {
     candidate.spacing.as_ref().map_err(Clone::clone)?;
     if candidate.view.document.project != catalog.root() {
         return Err("Project changed".into());
     }
-    match candidate.view.document.asset {
-        crate::document::DocumentKey::MaterialFunction(id)
-            if session.standalone_function() != Some(id) =>
-        {
-            return Err("Function editing target changed".into());
-        }
-        crate::document::DocumentKey::MaterialProgram(id)
-            if session
-                .standalone_material()
-                .is_some_and(|active| active != id)
-                || session.standalone_function().is_some() =>
-        {
-            return Err("Material editing target changed".into());
-        }
-        _ => {}
+    let target = views
+        .iter()
+        .find(|(view, _)| view.key == candidate.view)
+        .map(|(_, marker)| marker.editing_target().clone())
+        .ok_or("Graph view is unavailable")?;
+    let matches_asset = matches!(
+        (&candidate.view.document.asset, &target),
+        (
+            crate::document::DocumentKey::MaterialProgram(_),
+            crate::material_document::MaterialEditingTarget::EffectInstance
+        )
+    ) || match (&candidate.view.document.asset, &target) {
+        (
+            crate::document::DocumentKey::MaterialProgram(asset),
+            crate::material_document::MaterialEditingTarget::Program { id, root },
+        ) => asset == id && root == catalog.root(),
+        (
+            crate::document::DocumentKey::MaterialFunction(asset),
+            crate::material_document::MaterialEditingTarget::Function { id, root },
+        ) => asset == id && root == catalog.root(),
+        _ => false,
+    };
+    if !matches_asset {
+        return Err("Graph editing target changed".into());
     }
-    plan(&session.graph_authoring_document(catalog)?, candidate)
+    Ok((
+        plan(
+            &session.graph_authoring_document_for(&target, catalog)?,
+            candidate,
+        )?,
+        target,
+    ))
 }
 
 fn probe(
     event: On<widget::Probe>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
+    views: Query<(&GraphGeometryView, &asset_drop::GraphDropTarget)>,
     mut state: ResMut<widget::State>,
     mut commands: Commands,
 ) {
-    let message = event
-        .0
-        .as_ref()
-        .map(|candidate| match prepare(&session, &catalog, candidate) {
-            Ok(_) => {
-                state.allowed = true;
-                let count = candidate.spacing.as_ref().unwrap().count();
-                if count == 0 {
-                    "Release to insert node · Alt: move only".to_string()
-                } else {
-                    format!("Release to insert and move {count} nearby nodes · Alt: move only")
+    let message =
+        event.0.as_ref().map(
+            |candidate| match prepare(&session, &catalog, candidate, &views) {
+                Ok(_) => {
+                    state.allowed = true;
+                    let count = candidate.spacing.as_ref().unwrap().count();
+                    if count == 0 {
+                        "Release to insert node · Alt: move only".to_string()
+                    } else {
+                        format!("Release to insert and move {count} nearby nodes · Alt: move only")
+                    }
                 }
-            }
-            Err(error) => {
-                state.allowed = false;
-                format!("Cannot insert: {error} · Alt: move only")
-            }
-        });
+                Err(error) => {
+                    state.allowed = false;
+                    format!("Cannot insert: {error} · Alt: move only")
+                }
+            },
+        );
     commands.queue(move |world: &mut World| {
         world.resource_mut::<EditorSession>().status =
             message.unwrap_or_else(|| "Move node".into());
@@ -295,6 +312,7 @@ fn drop_node(
     mut history: ResMut<MaterialProgramEditHistory>,
     mut ledger: ResMut<EditorHistoryLedger>,
     functions: Option<ResMut<crate::material_function_editor::FunctionEditor>>,
+    views: Query<(&GraphGeometryView, &asset_drop::GraphDropTarget)>,
 ) {
     let edit = &event.edit;
     // The widget has displayed the drag already. Restore its base before capturing the compound
@@ -302,13 +320,22 @@ fn drop_node(
     memory.set_node(&edit.graph, &edit.node, edit.before.0, edit.before.1);
     let mut preserved = false;
     let result = (|| {
-        let replacement = prepare(&session, &catalog, &event.candidate)?;
+        let (replacement, target) = prepare(&session, &catalog, &event.candidate, &views)?;
         let spacing = event.candidate.spacing.as_ref().map_err(Clone::clone)?;
         spacing.validate(&edit.graph, &memory)?;
         spacing.preserve(&edit.graph, &mut memory);
         preserved = true;
         let before = presentation::Snapshot::capture(&edit.graph, &catalog, &session, &memory)
             .ok_or("Graph history is unavailable")?;
+        match (&event.candidate.view.document.asset, &target) {
+            (crate::document::DocumentKey::MaterialProgram(id), _) => {
+                activate_material_graph_target(&mut session, &catalog, &target, *id)?;
+            }
+            (crate::document::DocumentKey::MaterialFunction(id), _) => {
+                session.open_material_function(&catalog, *id)?;
+            }
+            _ => return Err("Graph target is unavailable".into()),
+        }
         match replacement {
             Replacement::Program(current, after) => {
                 history.execute_replacement(

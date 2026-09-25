@@ -22,7 +22,7 @@ impl Context {
             Self::Effect
         }
     }
-    pub(super) fn select(&self, session: &mut EditorSession) {
+    pub(crate) fn select(&self, session: &mut EditorSession) {
         match self {
             Self::Effect => {
                 session.material_target = MaterialEditingTarget::EffectInstance;

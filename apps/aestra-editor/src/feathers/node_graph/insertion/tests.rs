@@ -231,6 +231,7 @@ fn wire_insertion_hit_testing_is_view_local_dpi_independent_and_alt_bypasses() {
                 node: "2".into(),
                 before: (original, false),
                 after: (position, false),
+                origin: None,
             };
             finish(app.world_mut(), moving, Some(edit.clone()));
             assert_eq!(app.world().resource::<Events>().moves, 1);

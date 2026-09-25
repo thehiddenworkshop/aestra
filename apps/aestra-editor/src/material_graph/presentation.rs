@@ -180,6 +180,7 @@ pub(crate) fn arrange(
     before: Snapshot,
     expected_placement_revision: u64,
     positions: BTreeMap<String, Vec2>,
+    editing_target: MaterialEditingTarget,
 ) -> Result<(), String> {
     if !before.is_current(
         world.resource::<ProjectEffectCatalog>(),
@@ -220,8 +221,12 @@ pub(crate) fn arrange(
     )
     .ok_or("Arrange result became stale before it could be applied")?;
     if before.nodes != after.nodes || before.pinned != after.pinned {
-        record(
+        record_in_context(
             world,
+            match editing_target {
+                MaterialEditingTarget::EffectInstance => Context::Effect,
+                target => Context::Material(target),
+            },
             Transaction {
                 before,
                 after,
@@ -407,24 +412,26 @@ pub(super) fn pin_edit(event: On<GraphPinEdit>, mut commands: Commands) {
                 previews: None,
                 invalidated: false,
             },
+            edit.origin,
         );
     });
 }
 
 fn context(graph: &str, catalog: &ProjectEffectCatalog, session: &EditorSession) -> Context {
-    if let Ok(functions) = catalog.material_functions()
+    if let Some(id) = session.standalone_function()
+        && let Ok(functions) = catalog.material_functions()
         && let Some(function) = functions
             .iter()
-            .find(|f| function_graph_memory_key(catalog.root(), f.id) == graph)
+            .find(|f| f.id == id && function_graph_memory_key(catalog.root(), f.id) == graph)
     {
         return Context::Material(MaterialEditingTarget::Function {
             root: catalog.root().to_owned(),
             id: function.id,
         });
     }
-    if let Some(id) = session
-        .standalone_material()
-        .filter(|id| material_graph_view_key(*id) == graph)
+    if let Some(id) = session.standalone_material()
+        && material_graph_view_key(id) == graph
+        && catalog.material_program(id).is_ok()
     {
         Context::Material(MaterialEditingTarget::Program {
             root: catalog.root().to_owned(),
@@ -435,12 +442,28 @@ fn context(graph: &str, catalog: &ProjectEffectCatalog, session: &EditorSession)
     }
 }
 
-fn record(world: &mut World, transaction: Transaction) {
-    let context = context(
-        &transaction.before.graph,
-        world.resource::<ProjectEffectCatalog>(),
-        world.resource::<EditorSession>(),
-    );
+fn context_for_origin(world: &World, mut origin: Entity) -> Option<Context> {
+    loop {
+        if let Some(marker) = world.get::<super::asset_drop::GraphDropTarget>(origin) {
+            return Some(match marker.editing_target() {
+                MaterialEditingTarget::EffectInstance => Context::Effect,
+                target => Context::Material(target.clone()),
+            });
+        }
+        origin = world.get::<ChildOf>(origin)?.parent();
+    }
+}
+
+fn record(world: &mut World, transaction: Transaction, origin: Option<Entity>) {
+    let context = origin
+        .and_then(|entity| context_for_origin(world, entity))
+        .unwrap_or_else(|| {
+            context(
+                &transaction.before.graph,
+                world.resource::<ProjectEffectCatalog>(),
+                world.resource::<EditorSession>(),
+            )
+        });
     record_in_context(world, context, transaction);
 }
 
@@ -449,6 +472,7 @@ fn record_in_context(world: &mut World, context: Context, transaction: Transacti
     // a material command, install compiled data, or change a document content revision.
     crate::history::clear_presentation_redo(world, &context);
     let mut session = world.resource_mut::<EditorSession>();
+    context.select(&mut session);
     session.operation_order.record_layout(context, transaction);
     session.status = "Changed graph layout".into();
 }
@@ -478,6 +502,7 @@ pub(super) fn node_edit(event: On<GraphPresentationEdit>, mut commands: Commands
                 previews: None,
                 invalidated: false,
             },
+            edit.origin,
         );
     });
 }
@@ -508,6 +533,7 @@ pub(super) fn batch_edit(event: On<GraphPresentationBatchEdit>, mut commands: Co
                     previews: None,
                     invalidated: false,
                 },
+                edit.origin,
             );
         }
     });

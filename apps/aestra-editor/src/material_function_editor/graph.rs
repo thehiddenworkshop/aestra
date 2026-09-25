@@ -208,6 +208,20 @@ pub(super) fn register(app: &mut App) {
         );
 }
 
+fn activate_function_graph_target(
+    session: &mut EditorSession,
+    catalog: &ProjectEffectCatalog,
+    owner: MaterialFunctionId,
+) -> bool {
+    match session.open_material_function(catalog, owner) {
+        Ok(()) => true,
+        Err(error) => {
+            session.status = format!("Function unavailable: {error}");
+            false
+        }
+    }
+}
+
 // Picking may target a child of the socket hit area (for example its visual dot).
 // Resolve the semantic endpoint consistently for every phase of the gesture.
 fn socket_entity(
@@ -240,7 +254,13 @@ fn start_connection(
         preview.2 = None;
         if let (Some(session), Some(catalog), Ok((_, origin))) =
             (session, catalog, sockets.get(entity))
-            && let Ok(document) = session.graph_authoring_document(&catalog)
+            && let Ok(document) = session.graph_authoring_document_for(
+                &crate::material_document::MaterialEditingTarget::Function {
+                    root: catalog.root().to_owned(),
+                    id: origin.owner,
+                },
+                &catalog,
+            )
         {
             for (entity, candidate) in &sockets {
                 if parents
@@ -327,7 +347,7 @@ fn end_connection(
         if let (Some(target), Some(mut editor), Some(mut session), Some(mut catalog)) =
             (snap, editor, session, catalog)
             && let (Ok((_, from)), Ok((_, to))) = (sockets.get(entity), sockets.get(target))
-            && session.standalone_function() == Some(from.owner)
+            && activate_function_graph_target(&mut session, &catalog, from.owner)
             && let Some((source, target)) = socket_pair(from, to)
         {
             let result = editor.edit_body(
@@ -407,7 +427,8 @@ fn drop_socket(
     let (Ok((_, from)), Ok((_, to))) = (sockets.get(source), sockets.get(destination)) else {
         return;
     };
-    if from.owner != to.owner || session.standalone_function() != Some(from.owner) {
+    if from.owner != to.owner || !activate_function_graph_target(&mut session, &catalog, from.owner)
+    {
         return;
     }
     if parents
@@ -554,7 +575,13 @@ fn open_nested_function_call(
         };
         entity = parent.parent();
     };
-    let Ok(function) = session.graph_function(&catalog) else {
+    let Ok(function) = session.graph_function_for(
+        &crate::material_document::MaterialEditingTarget::Function {
+            root: catalog.root().to_owned(),
+            id: action.owner,
+        },
+        &catalog,
+    ) else {
         return;
     };
     if function.id != action.owner {
@@ -871,7 +898,7 @@ fn handle_function_graph_context_action(
     let Some(open) = menus.open.clone() else {
         return;
     };
-    if session.standalone_function() != Some(open.owner) {
+    if !activate_function_graph_target(&mut session, &catalog, open.owner) {
         menus.open = None;
         return;
     }
@@ -1119,6 +1146,9 @@ fn handle_modified_function_node_drag(
     else {
         return;
     };
+    if !activate_function_graph_target(&mut session, &catalog, action.owner) {
+        return;
+    }
     if !selection.is_function_expression_selected(action.scope, action.owner, action.expression) {
         selection.select_function_expression(
             action.scope,
@@ -1199,6 +1229,7 @@ fn handle_modified_function_node_drag(
             commands.trigger(GraphPresentationBatchEdit {
                 graph: event.graph.clone(),
                 before,
+                origin: None,
             });
         }
     }
@@ -1255,7 +1286,7 @@ fn action(
     let Ok(action) = actions.get(event.entity) else {
         return;
     };
-    if session.standalone_function() != Some(action.owner) {
+    if !activate_function_graph_target(&mut session, &catalog, action.owner) {
         return;
     }
     if matches!(action.kind, BodyActionKind::Back) {
@@ -1364,7 +1395,7 @@ fn replace_constant(
     session: &mut EditorSession,
     catalog: &mut ProjectEffectCatalog,
 ) {
-    if session.standalone_function() != Some(control.owner) {
+    if !activate_function_graph_target(session, catalog, control.owner) {
         return;
     }
     let result = session.graph_function(catalog).and_then(|function| {
@@ -1985,7 +2016,11 @@ pub(crate) fn spawn(
         },
         View(function.id),
         ViewScope(view),
-        crate::material_graph::asset_drop::GraphDropTarget::function(session, function.id),
+        crate::material_graph::asset_drop::GraphDropTarget::function_for(
+            session,
+            function.id,
+            editing_target,
+        ),
     ));
     if let Some(open) = menus
         .open

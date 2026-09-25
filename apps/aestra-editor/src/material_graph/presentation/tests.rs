@@ -40,6 +40,134 @@ fn fixture() -> (
 }
 
 #[test]
+fn restored_material_layout_history_resolves_the_graph_owner() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .return_to_effect_material();
+    let target = MaterialEditingTarget::Program {
+        root: app
+            .world()
+            .resource::<ProjectEffectCatalog>()
+            .root()
+            .to_owned(),
+        id: program.id,
+    };
+    let marker = super::super::asset_drop::GraphDropTarget::program_for(
+        app.world().resource::<EditorSession>(),
+        program.id,
+        &target,
+    );
+    let owner = app.world_mut().spawn(marker).id();
+    let origin = app.world_mut().spawn(ChildOf(owner)).id();
+    assert_eq!(
+        context_for_origin(app.world(), origin),
+        Some(Context::Material(target.clone()))
+    );
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(&graph, "output", Vec2::ONE, false);
+    app.world_mut().trigger(GraphPresentationEdit {
+        graph: graph.clone(),
+        node: "output".into(),
+        before: (Vec2::ZERO, false),
+        after: (Vec2::ONE, false),
+        origin: Some(origin),
+    });
+    app.world_mut().flush();
+    assert_eq!(
+        app.world().resource::<EditorSession>().material_target,
+        target
+    );
+    step(&mut app, true);
+    assert_eq!(
+        app.world()
+            .resource::<GraphViewportMemory>()
+            .node(&graph, "output"),
+        Some((Vec2::ZERO, false))
+    );
+}
+
+#[test]
+fn effect_graph_layout_history_does_not_inherit_the_open_material_target() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    let marker = super::super::asset_drop::GraphDropTarget::program_for(
+        app.world().resource::<EditorSession>(),
+        program.id,
+        &MaterialEditingTarget::EffectInstance,
+    );
+    let owner = app.world_mut().spawn(marker).id();
+    let origin = app.world_mut().spawn(ChildOf(owner)).id();
+    app.world_mut()
+        .resource_mut::<GraphViewportMemory>()
+        .set_node(&graph, "output", Vec2::ONE, false);
+    app.world_mut().trigger(GraphPresentationEdit {
+        graph: graph.clone(),
+        node: "output".into(),
+        before: (Vec2::ZERO, false),
+        after: (Vec2::ONE, false),
+        origin: Some(origin),
+    });
+    app.world_mut().flush();
+    let session = app.world().resource::<EditorSession>();
+    assert_eq!(
+        session.material_target,
+        MaterialEditingTarget::EffectInstance
+    );
+    assert!(
+        session
+            .operation_order
+            .layout(&Context::Effect, true)
+            .is_some()
+    );
+}
+
+#[test]
+fn restored_material_arrange_records_undo_for_its_view_target() {
+    let (_root, mut app, program, _) = fixture();
+    let graph = material_graph_view_key(program.id);
+    let target = app
+        .world()
+        .resource::<EditorSession>()
+        .material_target
+        .clone();
+    let before = Snapshot::capture(
+        &graph,
+        app.world().resource::<ProjectEffectCatalog>(),
+        app.world().resource::<EditorSession>(),
+        app.world().resource::<GraphViewportMemory>(),
+    )
+    .unwrap();
+    let revision = app
+        .world()
+        .resource::<GraphViewportMemory>()
+        .placement_revision(&graph);
+    let positions = before
+        .keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (key.clone(), Vec2::new(100.0 + index as f32 * 50.0, 80.0)))
+        .collect();
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .return_to_effect_material();
+    arrange(app.world_mut(), before, revision, positions, target.clone()).unwrap();
+    assert_eq!(
+        app.world().resource::<EditorSession>().material_target,
+        target
+    );
+    assert!(
+        app.world()
+            .resource::<EditorSession>()
+            .operation_order
+            .layout(&Context::Material(target), true)
+            .is_some()
+    );
+}
+
+#[test]
 fn arrangement_uses_projected_canvas_nodes_not_inline_semantic_constants() {
     let root = tempfile::tempdir().unwrap();
     let mut program = MaterialProgram::additive_sprite("Inline arrangement");
@@ -100,7 +228,12 @@ fn arrangement_is_one_exact_undo_and_redo() {
         .enumerate()
         .map(|(index, key)| (key.clone(), Vec2::new(index as f32 * 240.0, 80.0)))
         .collect::<BTreeMap<_, _>>();
-    arrange(app.world_mut(), before, revision, arranged.clone()).unwrap();
+    let target = app
+        .world()
+        .resource::<EditorSession>()
+        .material_target
+        .clone();
+    arrange(app.world_mut(), before, revision, arranged.clone(), target).unwrap();
     assert_eq!(
         app.world()
             .resource::<GraphViewportMemory>()
@@ -147,6 +280,7 @@ fn explicit_pin_is_one_presentation_undo_and_manual_move_keeps_it() {
         node: node.into(),
         before: false,
         after: true,
+        origin: None,
     });
     app.world_mut().flush();
 
@@ -221,7 +355,12 @@ fn arrangement_rejects_manual_placement_changes_without_mutating_other_nodes() {
         .iter()
         .map(|key| (key.clone(), Vec2::new(500.0, 500.0)))
         .collect();
-    assert!(arrange(app.world_mut(), before, revision, arranged).is_err());
+    let target = app
+        .world()
+        .resource::<EditorSession>()
+        .material_target
+        .clone();
+    assert!(arrange(app.world_mut(), before, revision, arranged, target).is_err());
     assert_eq!(
         app.world()
             .resource::<GraphViewportMemory>()
@@ -336,6 +475,7 @@ fn move_node(app: &mut App, graph: &str, node: &str, before: (Vec2, bool), after
         node: node.into(),
         before,
         after,
+        origin: None,
     });
     app.world_mut().flush();
 }
@@ -430,6 +570,7 @@ fn mixed_semantic_move_collapse_and_preview_follow_one_chronology_without_compil
             previews: Some((original.id, BTreeSet::new(), visible)),
             invalidated: false,
         },
+        None,
     );
     app.world_mut()
         .resource_mut::<GraphViewportMemory>()
@@ -749,6 +890,7 @@ fn deleting_a_previewed_node_restores_its_visibility_before_undoing_the_toggle()
             previews: Some((program.id, BTreeSet::new(), BTreeSet::from([target]))),
             invalidated: false,
         },
+        None,
     );
     edit_material(&mut app, &inserted, program.clone(), None);
     assert!(

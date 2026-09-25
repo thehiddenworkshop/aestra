@@ -304,13 +304,17 @@ fn open_at(
     let Some(catalog) = world.get_resource::<ProjectEffectCatalog>() else {
         return;
     };
-    if session.standalone_function() != Some(owner) || catalog.root() != view.document.project {
+    if catalog.root() != view.document.project {
         return;
     }
-    let Ok(before) = session.graph_function(catalog) else {
+    let target = crate::material_document::MaterialEditingTarget::Function {
+        root: catalog.root().to_owned(),
+        id: owner,
+    };
+    let Ok(before) = session.graph_function_for(&target, catalog) else {
         return;
     };
-    let Ok(document) = session.graph_authoring_document(catalog) else {
+    let Ok(document) = session.graph_authoring_document_for(&target, catalog) else {
         return;
     };
     let choices = choices(&document, &before, origin);
@@ -399,7 +403,18 @@ fn maintain(world: &mut World) {
             })
         && world
             .get_resource::<EditorSession>()
-            .is_some_and(|session| session.standalone_function() == Some(open.before.id));
+            .zip(world.get_resource::<ProjectEffectCatalog>())
+            .is_some_and(|(session, catalog)| {
+                session
+                    .graph_function_for(
+                        &crate::material_document::MaterialEditingTarget::Function {
+                            root: open.view.document.project.clone(),
+                            id: open.before.id,
+                        },
+                        catalog,
+                    )
+                    .is_ok()
+            });
     let anchor = open.anchor;
     let input = open.input;
     let pressed = world
@@ -482,14 +497,23 @@ fn choose(
     let result: Result<(), String> = (|| {
         if catalog.root() != open.view.document.project
             || catalog.content_revision().generation != open.generation
-            || session.standalone_function() != Some(open.before.id)
             || !views
                 .get(open.viewport)
                 .is_ok_and(|view| view.key == open.view)
-            || session.graph_function(&catalog)?.normalized() != open.before.normalized()
+            || session
+                .graph_function_for(
+                    &crate::material_document::MaterialEditingTarget::Function {
+                        root: open.view.document.project.clone(),
+                        id: open.before.id,
+                    },
+                    &catalog,
+                )?
+                .normalized()
+                != open.before.normalized()
         {
             return Err("Function or view changed; open the node menu again".into());
         }
+        session.open_material_function(&catalog, open.before.id)?;
         let choice = open
             .choices
             .get(action.0)

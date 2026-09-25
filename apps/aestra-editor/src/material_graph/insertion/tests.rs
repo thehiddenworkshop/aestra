@@ -245,6 +245,7 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
             },
             before: (Vec2::new(20.0, 350.0), false),
             after: (Vec2::new(260.0, 70.0), false),
+            origin: None,
         };
         let mut app = App::new();
         app.insert_resource(session)
@@ -255,6 +256,21 @@ fn insertion_drop_is_one_undo_redo_and_failed_drop_restores_placement() {
             .init_resource::<crate::material_function_editor::FunctionEditor>()
             .add_observer(crate::history::execute_history_action)
             .add_observer(drop_node);
+        let marker = {
+            let session = app.world().resource::<EditorSession>();
+            if function {
+                asset_drop::GraphDropTarget::function(session, document.material_functions[0].id)
+            } else {
+                asset_drop::GraphDropTarget::program(session, document.programs[0].id)
+            }
+        };
+        app.world_mut().spawn((
+            GraphGeometryView {
+                key: candidate.view.clone(),
+                nodes: default(),
+            },
+            marker,
+        ));
         let neighbor = if function {
             "outputs"
         } else {

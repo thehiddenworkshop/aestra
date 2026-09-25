@@ -57,6 +57,7 @@ struct ArrangeState {
 
 struct ArrangeJob {
     view: GraphViewKey,
+    editing_target: crate::material_document::MaterialEditingTarget,
     viewport: Entity,
     document_generation: Option<DocumentId>,
     geometry_revision: u64,
@@ -123,6 +124,7 @@ fn request(
     let task = AsyncComputeTaskPool::get().spawn(async move { work.run() });
     state.job = Some(ArrangeJob {
         view,
+        editing_target: event.event().editing_target.clone(),
         viewport,
         document_generation: snapshot.document_generation,
         geometry_revision: snapshot.geometry_revision,
@@ -327,7 +329,13 @@ fn poll(
         }
     };
     commands.queue(move |world: &mut World| {
-        match presentation::arrange(world, job.before, job.placement_revision, positions) {
+        match presentation::arrange(
+            world,
+            job.before,
+            job.placement_revision,
+            positions,
+            job.editing_target,
+        ) {
             Ok(()) => {
                 world.resource_mut::<EditorSession>().ui_revision += 1;
             }

@@ -307,6 +307,31 @@ fn function_drop_on_effect_material_uses_material_history_without_changing_effec
 }
 
 #[test]
+fn restored_graph_drop_uses_view_target_even_when_effect_is_active() {
+    for function in [false, true] {
+        let mut fixture = Fixture::new(function, false);
+        let before = fixture.expressions(function);
+        fixture
+            .app
+            .world_mut()
+            .resource_mut::<EditorSession>()
+            .return_to_effect_material();
+        assert!(
+            fixture.plan().is_ok(),
+            "restored graph should accept the drop"
+        );
+        fixture.drop();
+        let session = fixture.app.world().resource::<EditorSession>();
+        if function {
+            assert_eq!(session.standalone_function(), Some(fixture.caller.id));
+        } else {
+            assert_eq!(session.standalone_material(), Some(fixture.program.id));
+        }
+        assert_ne!(fixture.expressions(function), before, "{}", session.status);
+    }
+}
+
+#[test]
 fn both_graphs_accept_child_target_drops_with_one_undo_redo_and_no_file_changes() {
     for function in [false, true] {
         for multi in [false, true] {
@@ -384,8 +409,10 @@ fn both_graphs_accept_child_target_drops_with_one_undo_redo_and_no_file_changes(
 }
 
 #[test]
-fn stale_wrong_type_switched_target_and_pending_drops_do_not_edit() {
-    for case in 0..6 {
+fn stale_wrong_type_pending_and_guarded_drops_do_not_edit() {
+    // A background tab is still a valid target; restored_graph_drop_uses_view_target_even_when_effect_is_active
+    // covers that case. These cases are genuinely invalid or blocked.
+    for case in [0, 1, 3, 4, 5] {
         let mut fixture = Fixture::new(false, false);
         match case {
             0 => {
@@ -411,13 +438,6 @@ fn stale_wrong_type_switched_target_and_pending_drops_do_not_edit() {
                     .world_mut()
                     .entity_mut(fixture.source)
                     .insert(payload);
-            }
-            2 => {
-                fixture
-                    .app
-                    .world_mut()
-                    .resource_mut::<EditorSession>()
-                    .return_to_effect_material();
             }
             3 => {
                 fixture

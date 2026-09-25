@@ -202,6 +202,37 @@ fn enter_chooses_the_filtered_input_without_mutating_on_cancel() {
     );
 }
 
+#[test]
+fn restored_function_view_opens_and_chooses_socket_node_from_its_own_target() {
+    let (mut app, _root, viewport, source, _) = setup(1.0, 1.0);
+    let function = app.world().get::<Socket>(source).unwrap().owner;
+    app.world_mut()
+        .resource_mut::<EditorSession>()
+        .return_to_effect_material();
+    let (screen, _) = pointer(app.world(), viewport);
+    open(app.world_mut(), source, screen);
+    let open = app.world().resource::<Palette>().0.as_ref().unwrap();
+    assert!(!open.choices.is_empty());
+    let input = open.input;
+    app.world_mut().trigger(ValueChange {
+        source: input,
+        value: "multiply — b".to_string(),
+        is_final: false,
+    });
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Enter);
+    maintain(app.world_mut());
+    app.world_mut().flush();
+    assert!(app.world().resource::<Palette>().0.is_none());
+    assert_eq!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_function(),
+        Some(function)
+    );
+}
+
 fn setup(scale: f32, zoom: f32) -> (App, tempfile::TempDir, Entity, Entity, Entity) {
     use bevy::ecs::system::RunSystemOnce;
     let root = tempfile::tempdir().unwrap();

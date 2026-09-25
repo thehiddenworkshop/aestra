@@ -257,6 +257,17 @@ pub(crate) struct MaterialGraphViewport {
     scope: MaterialSelectionScope,
 }
 
+fn material_graph_target(
+    viewports: &Query<&MaterialGraphViewport>,
+    program: MaterialProgramId,
+    scope: MaterialSelectionScope,
+) -> Option<crate::material_document::MaterialEditingTarget> {
+    viewports
+        .iter()
+        .find(|viewport| viewport.program == program && viewport.scope == scope)
+        .map(|viewport| viewport.editing_target.clone())
+}
+
 /// Records the selection scope of an interactive graph-node button, so the node-background system
 /// and node-click handler resolve selection per view without walking the entity hierarchy.
 #[derive(Component, Debug, Clone, Copy)]
@@ -1027,14 +1038,16 @@ struct MaterialGraphPreviewRaster {
 #[derive(Component, Debug, Clone)]
 struct MaterialGraphDefaultNumberControl {
     program: MaterialProgramId,
+    editing_target: crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: MaterialValue,
     component: u8,
 }
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 struct MaterialGraphDefaultToggleControl {
     program: MaterialProgramId,
+    editing_target: crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: bool,
 }
@@ -1268,6 +1281,8 @@ fn select_material_graph_node(
 fn open_material_graph_function_call(
     mut click: On<Pointer<Click>>,
     actions: Query<&MaterialGraphAction>,
+    scopes: Query<&MaterialGraphNodeScope>,
+    viewports: Query<&MaterialGraphViewport>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
@@ -1277,16 +1292,22 @@ fn open_material_graph_function_call(
         return;
     }
     let mut entity = click.event_target();
-    let action = loop {
+    let (action, scope) = loop {
         if let Ok(action) = actions.get(entity) {
-            break *action;
+            break (
+                *action,
+                scopes.get(entity).ok().map(|scope| scope.0).unwrap_or(None),
+            );
         }
         let Ok(parent) = parents.get(entity) else {
             return;
         };
         entity = parent.parent();
     };
-    let Ok(document) = session.graph_authoring_document(&catalog) else {
+    let Some(target) = material_graph_target(&viewports, action.program, scope) else {
+        return;
+    };
+    let Ok(document) = session.graph_authoring_document_for(&target, &catalog) else {
         return;
     };
     let Some(expression) = document
@@ -1356,6 +1377,7 @@ fn handle_modified_material_node_drag(
         Option<&MaterialGraphNodeScope>,
     )>,
     graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    viewports: Query<&MaterialGraphViewport>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
@@ -1373,6 +1395,9 @@ fn handle_modified_material_node_drag(
         return;
     };
     let scope = scope.map(|scope| scope.0).unwrap_or(None);
+    let Some(target) = material_graph_target(&viewports, action.program, scope) else {
+        return;
+    };
     if !selection.is_expression_selected(scope, action.program, action.expression) {
         selection.select_single(scope, action.program, action.expression);
     }
@@ -1383,6 +1408,7 @@ fn handle_modified_material_node_drag(
                 MaterialGraphSelectionEdit::Duplicate,
                 scope,
                 action.program,
+                &target,
                 &graph_nodes,
                 &mut session,
                 &mut catalog,
@@ -1396,7 +1422,7 @@ fn handle_modified_material_node_drag(
             );
         }
         GraphNodeDragModifier::Upstream | GraphNodeDragModifier::Downstream => {
-            let Ok(document) = session.graph_authoring_document(&catalog) else {
+            let Ok(document) = session.graph_authoring_document_for(&target, &catalog) else {
                 return;
             };
             let Some(program) = document
@@ -1448,6 +1474,7 @@ fn handle_modified_material_node_drag(
             commands.trigger(GraphPresentationBatchEdit {
                 graph: event.graph.clone(),
                 before,
+                origin: None,
             });
         }
     }
@@ -2259,15 +2286,18 @@ fn finish_material_connection_drag(
         }
     }
     if let Some((source, target)) = snap.and_then(|snap| connection_endpoints(origin, snap)) {
-        apply_material_connection(
-            &mut session,
-            &mut catalog,
-            &mut material_history,
-            &mut history_ledger,
-            program,
-            source,
-            target,
-        );
+        if let Ok((marker, _, _, _)) = viewports.get(origin_viewport) {
+            apply_material_connection(
+                &mut session,
+                &mut catalog,
+                &mut material_history,
+                &mut history_ledger,
+                &marker.editing_target,
+                program,
+                source,
+                target,
+            );
+        }
     } else if let Ok((marker, viewport, computed, transform)) = viewports.get(origin_viewport) {
         let menu_position =
             pointer_position_in_node(event.pointer_location.position, computed, transform);
@@ -2326,10 +2356,16 @@ fn apply_material_connection(
     catalog: &mut ProjectEffectCatalog,
     material_history: &mut MaterialProgramEditHistory,
     history_ledger: &mut EditorHistoryLedger,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     program: MaterialProgramId,
     source: MaterialExpressionId,
     target: MaterialConnectionTarget,
 ) {
+    if let Err(error) = activate_material_graph_target(session, catalog, editing_target, program) {
+        session.status = format!("Material connection failed: {error}");
+        session.ui_revision += 1;
+        return;
+    }
     if current_material_connection_source(session, catalog, program, target) == Some(source) {
         session.status = "Material connection unchanged".into();
         session.ui_revision += 1;
@@ -2526,6 +2562,7 @@ fn handle_material_graph_context_actions(
         (Changed<Interaction>, With<FeathersActionButton>),
     >,
     graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    viewports: Query<&MaterialGraphViewport>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
@@ -2569,10 +2606,15 @@ fn handle_material_graph_context_actions(
             .map(|menu| menu.scope)
             .or_else(|| palette.connection_menu.as_ref().map(|menu| menu.scope))
             .unwrap_or(None);
+        let Some(target) = material_graph_target(&viewports, program, scope) else {
+            session.status = "The material graph is no longer available".into();
+            continue;
+        };
         apply_material_graph_selection_edit(
             edit,
             scope,
             program,
+            &target,
             &graph_nodes,
             &mut session,
             &mut catalog,
@@ -2615,10 +2657,12 @@ fn material_graph_keyboard_input(
         return;
     }
     // Keyboard edits act on the graph under the cursor, in that viewport's own selection scope.
-    let Some((program, scope)) = viewports.iter().find_map(|(viewport, cursor)| {
-        cursor
-            .cursor_over()
-            .then_some((viewport.program, viewport.scope))
+    let Some((program, scope, target)) = viewports.iter().find_map(|(viewport, cursor)| {
+        cursor.cursor_over().then_some((
+            viewport.program,
+            viewport.scope,
+            viewport.editing_target.clone(),
+        ))
     }) else {
         return;
     };
@@ -2654,6 +2698,7 @@ fn material_graph_keyboard_input(
             edit,
             scope,
             program,
+            &target,
             &graph_nodes,
             &mut session,
             &mut catalog,
@@ -2710,6 +2755,7 @@ fn apply_material_graph_selection_edit(
     edit: MaterialGraphSelectionEdit,
     scope: MaterialSelectionScope,
     program: MaterialProgramId,
+    target: &crate::material_document::MaterialEditingTarget,
     graph_nodes: &Query<(&MaterialGraphAction, &FeathersGraphNode)>,
     session: &mut EditorSession,
     catalog: &mut ProjectEffectCatalog,
@@ -2722,6 +2768,10 @@ fn apply_material_graph_selection_edit(
     duplicate_offset: Option<Vec2>,
 ) {
     if selection.program(scope) != Some(program) {
+        return;
+    }
+    if let Err(error) = activate_material_graph_target(session, catalog, target, program) {
+        session.status = format!("Could not edit material nodes: {error}");
         return;
     }
     let selected = selection.get(scope);
@@ -3137,7 +3187,14 @@ fn update_material_graph_wires(
         return;
     };
 
-    let document = session.graph_authoring_document(&catalog).ok();
+    let document = viewports
+        .get(*origin_viewport)
+        .ok()
+        .and_then(|(marker, _, _, _)| {
+            session
+                .graph_authoring_document_for(&marker.editing_target, &catalog)
+                .ok()
+        });
     let mut nearest: Option<(f32, MaterialGraphSocketKind, Vec2)> = None;
     for socket in &socket_positions {
         if socket.program != *program || !socket.interactive {
@@ -4761,7 +4818,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     editing_target: target.clone(),
                     scope: view,
                 },
-                asset_drop::GraphDropTarget::program(session, projection.program),
+                asset_drop::GraphDropTarget::program_for(session, projection.program, target),
             ));
             if let Some(open) = palette.open.as_ref().filter(|open| {
                 open.program == projection.program
@@ -5539,6 +5596,7 @@ fn inline_material_graph_default<'a>(
 fn spawn_material_graph_default_control(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: &MaterialValue,
 ) {
@@ -5559,6 +5617,7 @@ fn spawn_material_graph_default_control(
                         .insert((
                             MaterialGraphDefaultNumberControl {
                                 program,
+                                editing_target: editing_target.clone(),
                                 expression,
                                 value: value.clone(),
                                 component: 0,
@@ -5573,6 +5632,7 @@ fn spawn_material_graph_default_control(
             checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
                 MaterialGraphDefaultToggleControl {
                     program,
+                    editing_target: editing_target.clone(),
                     expression,
                     value: *enabled,
                 },
@@ -5593,6 +5653,7 @@ fn spawn_material_graph_default_control(
 fn spawn_material_graph_constant_editor(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: &MaterialValue,
 ) {
@@ -5628,6 +5689,7 @@ fn spawn_material_graph_constant_editor(
                     checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
                         MaterialGraphDefaultToggleControl {
                             program,
+                            editing_target: editing_target.clone(),
                             expression,
                             value: *enabled,
                         },
@@ -5684,6 +5746,7 @@ fn spawn_material_graph_constant_editor(
                         .insert((
                             MaterialGraphDefaultNumberControl {
                                 program,
+                                editing_target: editing_target.clone(),
                                 expression,
                                 value: value.clone(),
                                 component: component as u8,
@@ -5790,6 +5853,7 @@ fn handle_material_graph_default_number_change(
         &mut material_history,
         &mut history_ledger,
         control.program,
+        &control.editing_target,
         control.expression,
         value,
     );
@@ -5818,6 +5882,7 @@ fn handle_material_graph_default_toggle_change(
         &mut material_history,
         &mut history_ledger,
         control.program,
+        &control.editing_target,
         control.expression,
         MaterialValue::Bool(change.value),
     );
@@ -5829,9 +5894,15 @@ fn commit_material_graph_default(
     material_history: &mut MaterialProgramEditHistory,
     history_ledger: &mut EditorHistoryLedger,
     program: MaterialProgramId,
+    editing_target: &crate::material_document::MaterialEditingTarget,
     expression: MaterialExpressionId,
     value: MaterialValue,
 ) {
+    if let Err(error) = activate_material_graph_target(session, catalog, editing_target, program) {
+        session.status = format!("Could not edit material input default: {error}");
+        session.ui_revision += 1;
+        return;
+    }
     match apply_material_tool_command(
         session,
         catalog,
@@ -5966,7 +6037,13 @@ fn spawn_expression_node(
                         _ => None,
                     })
             {
-                spawn_material_graph_constant_editor(body, program, node.expression, value);
+                spawn_material_graph_constant_editor(
+                    body,
+                    program,
+                    editing_target,
+                    node.expression,
+                    value,
+                );
             }
             if node.disabled || !node.reachable || node.validation_message.is_some() {
                 let state = node.validation_message.clone().unwrap_or_else(|| {
@@ -6042,7 +6119,13 @@ fn spawn_expression_node(
                     ),
                     |row| {
                         if let Some(value) = inline_default {
-                            spawn_material_graph_default_control(row, program, port.source, value);
+                            spawn_material_graph_default_control(
+                                row,
+                                program,
+                                editing_target,
+                                port.source,
+                                value,
+                            );
                         }
                     },
                 );

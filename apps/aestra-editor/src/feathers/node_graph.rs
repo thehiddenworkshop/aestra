@@ -539,6 +539,7 @@ pub(crate) struct GraphModifiedNodeDrag {
 pub(crate) struct GraphPresentationBatchEdit {
     pub graph: String,
     pub before: BTreeMap<String, (Vec2, bool)>,
+    pub origin: Option<Entity>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -607,6 +608,7 @@ pub(crate) struct GraphPresentationEdit {
     pub(crate) node: String,
     pub(crate) before: (Vec2, bool),
     pub(crate) after: (Vec2, bool),
+    pub(crate) origin: Option<Entity>,
 }
 
 #[derive(Event, Clone)]
@@ -615,6 +617,7 @@ pub(crate) struct GraphPinEdit {
     pub(crate) node: String,
     pub(crate) before: bool,
     pub(crate) after: bool,
+    pub(crate) origin: Option<Entity>,
 }
 
 impl FeathersGraphNode {
@@ -1361,6 +1364,7 @@ fn end_graph_node_drag(
                         batch = Some(GraphPresentationBatchEdit {
                             graph: node.graph_key.clone(),
                             before: std::mem::take(&mut gesture.before),
+                            origin: Some(entity),
                         });
                     } else {
                         edit = Some(GraphPresentationEdit {
@@ -1368,6 +1372,7 @@ fn end_graph_node_drag(
                             node: node.node_key.clone(),
                             before,
                             after,
+                            origin: Some(entity),
                         });
                     }
                 }
@@ -1653,6 +1658,7 @@ fn handle_graph_pin_buttons(
             node: node.node_key.clone(),
             before,
             after,
+            origin: Some(action.node),
         });
     }
 }
@@ -1711,6 +1717,7 @@ fn handle_graph_collapse_buttons(
             node: node.node_key.clone(),
             before,
             after: (before.0, collapsed),
+            origin: Some(action.node),
         });
         apply_graph_node_collapse(action.node, collapsed, &mut bodies, &mut icons);
         commands
