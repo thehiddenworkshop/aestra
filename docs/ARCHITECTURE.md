@@ -71,6 +71,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Re-exports the public semantic types for convenient Bevy integration.
 - Adapts compiled runtime instances and particle samples to Bevy ECS and rendering.
 - Exposes `AestraPlugin` and `EffectPlayer` for direct integration in Bevy applications.
+- Is the reference host-binding adapter. `AestraBindings` maps an effect's binding names to
+  entities. Once per frame, in `AestraSet::ResolveHostInputs` before playback, each bound entity's
+  `GlobalTransform` (and optional `AestraLinearVelocity`) is pushed as a spatial snapshot. Despawned
+  or incomplete targets leave the slot unbound, and a slot moved to another entity is announced as a
+  rebind. Nested clips receive forwarded bindings from their parents, so games bind only the root
+  player. No Bevy type crosses into the runtime.
 - Owns no editor or viewer state.
 
 ### `aestra-extension`

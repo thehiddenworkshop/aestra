@@ -230,3 +230,37 @@ fn a_child_instance_reads_its_forwarded_slot_from_the_parent() {
         Some(&[4.0, 0.0, 0.0][..])
     );
 }
+
+#[test]
+fn forwarding_repacks_between_different_field_sets() {
+    // The parent Target declares position + velocity; the child's Aim declares only position.
+    let mut parent = instance();
+    let mut moving = SpatialBindingSnapshot::at([8.0, 0.0, 0.0]);
+    moving.linear_velocity = Some([1.0, 0.0, 0.0]);
+    parent.set_spatial_binding("Target", moving).unwrap();
+
+    let mut child_effect = EffectAsset::new("Child", 2.0);
+    child_effect
+        .emitters
+        .push(Emitter::basic_sprite("Sparks", 2.0));
+    child_effect.bindings = vec![EffectBinding::spatial("Aim", BindingUpdateMode::Live)];
+    let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&child_effect)
+        .unwrap();
+    let aim = compiled.bindings[0].source;
+    let mut child = EffectInstance::new(Arc::new(compiled));
+    child.apply_forwarded_bindings(
+        parent.effect(),
+        &parent.resolved_bindings(),
+        &[CompiledBindingForward {
+            child: aim,
+            child_slot: BindingSlot(0),
+            parent_slot: TARGET,
+        }],
+    );
+    assert_eq!(
+        child.binding_field(BindingSlot(0), &position()),
+        Some(&[8.0, 0.0, 0.0][..])
+    );
+    assert_eq!(child.effect().bindings[0].layout.stride, 3);
+}

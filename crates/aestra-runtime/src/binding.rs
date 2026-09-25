@@ -695,11 +695,47 @@ impl crate::EffectInstance {
         parent: &crate::EffectInstance,
         forwards: &[CompiledBindingForward],
     ) {
+        self.apply_forwarded_bindings(&parent.effect, &parent.resolved_bindings(), forwards);
+    }
+
+    /// Every slot's value as readers see it (`Live`: current; `SnapshotOnSpawn`: latched). Hosts
+    /// pass this down a clip hierarchy with [`Self::apply_forwarded_bindings`].
+    pub fn resolved_bindings(&self) -> Vec<Option<BindingSnapshot>> {
+        (0..self.effect.bindings.len())
+            .map(|index| self.binding(BindingSlot(index)).cloned())
+            .collect()
+    }
+
+    /// Fills forwarded slots from a parent's [`Self::resolved_bindings`]. Parent and child may declare
+    /// different field sets of the same kind, so each value is repacked field by field into the
+    /// child's layout; if a field the child requires is missing, the slot stays unbound.
+    pub fn apply_forwarded_bindings(
+        &mut self,
+        parent: &crate::CompiledEffect,
+        parent_values: &[Option<BindingSnapshot>],
+        forwards: &[CompiledBindingForward],
+    ) {
         for forward in forwards {
-            let value = parent.binding(forward.parent_slot).cloned();
-            if forward.child_slot.0 < self.effect.bindings.len() {
-                self.store_binding(forward.child_slot, value);
-            }
+            let (Some(binding), Some(parent_binding)) = (
+                self.effect.bindings.get(forward.child_slot.0),
+                parent.bindings.get(forward.parent_slot.0),
+            ) else {
+                continue;
+            };
+            let value = parent_values
+                .get(forward.parent_slot.0)
+                .and_then(Option::as_ref)
+                .map(|source| {
+                    let mut repacked = BindingSnapshot::new(&binding.layout);
+                    for field in &binding.layout.fields {
+                        if let Some(values) = source.field(&parent_binding.layout, &field.field) {
+                            let _ = repacked.set(&binding.layout, &field.field, values);
+                        }
+                    }
+                    repacked
+                })
+                .filter(|value| value.validate(forward.child_slot, binding).is_ok());
+            self.store_binding(forward.child_slot, value);
         }
     }
 

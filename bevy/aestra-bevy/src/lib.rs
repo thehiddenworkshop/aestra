@@ -18,7 +18,8 @@
 //!
 //! Everything a host drives at runtime — play/pause, [`EffectPlayer::seek`],
 //! [`EffectPlayer::set_parameter`], choreography events — goes through the
-//! `EffectPlayer` handle.
+//! `EffectPlayer` handle. Live objects an effect follows (a target, a weapon tip) are bound
+//! with [`AestraBindings`] on the player entity; see `examples/live_target_binding.rs`.
 //!
 //! # Minimal host
 //!
@@ -35,10 +36,12 @@
 //! (`cargo run -p aestra-bevy --example minimal_player`). For a demanding
 //! real-world host, `apps/aestra-viewer` drives the same API with capture,
 //! diagnostics, and GPU benchmarking layered on top.
+mod bindings;
 #[cfg(test)]
 mod choreography_tests;
 mod project;
 mod project_profile;
+pub use bindings::{AestraBindings, AestraLinearVelocity, binding_frame, spatial_snapshot};
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
 
@@ -55,6 +58,10 @@ pub use aestra_compiler::{
     ModuleRegistry, ProjectCompileError, link_extension,
 };
 pub use aestra_core::*;
+pub use aestra_runtime::{
+    BindingError, BindingFrame, BindingSlot, BindingSnapshot, BindingState, BindingStatus,
+    HostRequirements, SpatialBindingSnapshot,
+};
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
@@ -83,6 +90,9 @@ pub struct AestraPlugin;
 /// Aestra playback.
 #[derive(bevy::ecs::schedule::SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AestraSet {
+    /// Resolves bound host objects (`AestraBindings`) into binding snapshots, once per frame, before
+    /// playback (host bindings HB5).
+    ResolveHostInputs,
     /// Advances effect clocks and updates their presentation for the current frame.
     Playback,
     /// Current presentation snapshots and project totals, after render preparation.
@@ -106,7 +116,15 @@ impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(AestraRenderPlugin)
             .init_resource::<TextureAssetCache>()
-            .configure_sets(Update, AestraRenderSet::Prepare.after(AestraSet::Playback));
+            .configure_sets(Update, AestraRenderSet::Prepare.after(AestraSet::Playback))
+            .configure_sets(
+                Update,
+                AestraSet::ResolveHostInputs.before(AestraSet::Playback),
+            );
+        app.add_systems(
+            Update,
+            bindings::resolve_host_bindings.in_set(AestraSet::ResolveHostInputs),
+        );
         app.add_systems(
             Update,
             (
@@ -115,6 +133,7 @@ impl Plugin for AestraPlugin {
                 update_asset_diagnostics,
                 play_effects,
                 project::sync_project_instances,
+                bindings::forward_project_bindings,
                 sync_player_presentations,
             )
                 .chain()
