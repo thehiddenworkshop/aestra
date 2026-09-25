@@ -237,6 +237,9 @@ pub struct CompiledHostFieldRef {
     pub binding: BindingSlot,
     pub field: BindingFieldId,
     pub value_type: ValueType,
+    /// The field's position in the binding layout — its bit in a snapshot's presence mask, which is
+    /// how GPU programs tell an absent optional field from a present one (extensible-stages M13).
+    pub field_index: u32,
     pub offset: u32,
 }
 

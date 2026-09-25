@@ -2278,6 +2278,7 @@ fn a_third_party_stage_hosts_standard_modules_by_capability() {
         display_name: "Custom Update".to_string(),
         role: None,
         provides: CapabilitySet::new([CapabilityId::new(CAPABILITY_HOSTS_PARTICLE_UPDATE)]),
+        backend: Default::default(),
     };
 
     let motion = registry.get(&ModuleTypeId::new(MODULE_MOTION)).unwrap();

@@ -334,6 +334,7 @@ fn require_harness() -> Option<IrHarness> {
 fn one_dispatch(entry: &str) -> ExecutionOp {
     ExecutionOp::Compute(ComputeOp {
         name: entry.to_string(),
+        program: None,
         entry_point: entry.to_string(),
         accesses: vec![ResourceAccess::read_write(VALUE_RESOURCE)],
         dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
@@ -357,6 +358,7 @@ fn synthetic_block() -> ExecutionBlock {
             },
             one_dispatch("add_hundred"),
         ],
+        constants: Vec::new(),
     }
 }
 

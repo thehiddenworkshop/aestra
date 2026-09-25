@@ -79,6 +79,7 @@ impl StageRegistry {
             display_name: "Simulation".into(),
             role: None,
             provides: CapabilitySet::default(),
+            backend: crate::BackendSupport::default(),
         };
         registry.stages.insert(generic.type_id.clone(), generic);
         registry
@@ -183,6 +184,24 @@ impl ResourceTypeRegistry {
         registry
             .resources
             .insert(host_bindings.type_id.clone(), host_bindings);
+        // Stage constants and the per-tick frame (extensible-stages M13).
+        for (type_id, name) in [
+            (
+                aestra_runtime::AESTRA_RESOURCE_STAGE_CONSTANTS,
+                "Stage Constants",
+            ),
+            (aestra_runtime::AESTRA_RESOURCE_FRAME, "Frame"),
+        ] {
+            let descriptor = ResourceTypeDescriptor {
+                type_id: ResourceTypeId::new(type_id),
+                display_name: name.into(),
+                domain: DomainTypeId::new(aestra_runtime::AESTRA_DOMAIN_HOST_INPUT),
+                lifetime: ResourceLifetime::Persistent,
+            };
+            registry
+                .resources
+                .insert(descriptor.type_id.clone(), descriptor);
+        }
         registry
     }
 
@@ -285,6 +304,7 @@ fn registered_ids(registry: &ExtensionRegistry) -> std::collections::BTreeSet<St
     ids.extend(registry.resources.resources.keys().map(|r| r.0.clone()));
     ids.extend(registry.capabilities.iter().map(|c| c.0.clone()));
     ids.extend(registry.bindings.iter().map(|kind| kind.type_id.0.clone()));
+    ids.extend(registry.programs.iter().map(|program| program.id.0.clone()));
     ids.extend(
         registry
             .lowering

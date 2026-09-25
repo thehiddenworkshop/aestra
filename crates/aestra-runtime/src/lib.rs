@@ -18,8 +18,9 @@ mod staged;
 mod stateful;
 pub use binding::*;
 pub use execution_ir::{
-    AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_PARTICLES, ComputeOp,
-    CopyOp, ExecutionBlock, ExecutionError, ExecutionOp, ReferenceExecutionTrace, RepeatPolicy,
+    AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
+    AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, ComputeOp, CopyOp, ExecutionBlock,
+    ExecutionError, ExecutionOp, FrameConstants, ReferenceExecutionTrace, RepeatPolicy,
     ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime, execute_reference,
     lower_stage_fused,
 };
@@ -712,6 +713,9 @@ pub struct CompiledExtensionStage {
     pub name: String,
     pub modules: Vec<ExtensionModulePlan>,
     pub block: ExecutionBlock,
+    /// Whether the stage type declares a CPU reference evaluator (extensible plan §13.3). `false` for
+    /// GPU-only plugin stages: the CPU runtime skips them and tools must say so, never pretend.
+    pub cpu_reference: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

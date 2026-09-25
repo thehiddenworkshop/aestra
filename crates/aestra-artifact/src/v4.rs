@@ -4,8 +4,8 @@
 
 use crate::{ArtifactError, encode_u32, invalid};
 use aestra_core::{
-    BindingFieldId, BindingId, BindingKindId, BindingUpdateMode, ModuleId, ModuleTypeId,
-    PropertyBag, ResourceTypeId, StageId, StageTypeId, ValueType,
+    BindingFieldId, BindingId, BindingKindId, BindingUpdateMode, ComputeProgramId, ModuleId,
+    ModuleTypeId, PropertyBag, ResourceTypeId, StageId, StageTypeId, ValueType,
 };
 use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
@@ -127,9 +127,12 @@ impl HostFieldRefV4 {
                 format!("binding slot {} is out of range", self.binding),
             );
         };
-        match binding.layout.field(&self.field) {
-            Some((_, packed))
-                if packed.value_type == self.value_type && packed.offset == self.offset => {}
+        let field_index = match binding.layout.field(&self.field) {
+            Some((index, packed))
+                if packed.value_type == self.value_type && packed.offset == self.offset =>
+            {
+                index as u32
+            }
             _ => {
                 return invalid(
                     format!("{path}.field"),
@@ -140,11 +143,12 @@ impl HostFieldRefV4 {
                     ),
                 );
             }
-        }
+        };
         Ok(CompiledHostFieldRef {
             binding: BindingSlot(self.binding as usize),
             field: self.field,
             value_type: self.value_type,
+            field_index,
             offset: self.offset,
         })
     }
@@ -233,6 +237,13 @@ pub(crate) struct ExtensionStageV4 {
     name: String,
     modules: Vec<ExtensionModulePlanV4>,
     block: ExecutionBlockV4,
+    /// Whether the stage type has a CPU reference; plugin stages without one omit it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    cpu_reference: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -250,6 +261,8 @@ struct ExtensionModulePlanV4 {
 struct ExecutionBlockV4 {
     resources: Vec<ResourceDescriptorV4>,
     ops: Vec<ExecutionOpV4>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    constants: Vec<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -282,6 +295,8 @@ struct ResourceAccessV4 {
 enum ExecutionOpV4 {
     Compute {
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        program: Option<ComputeProgramId>,
         entry_point: String,
         accesses: Vec<ResourceAccessV4>,
         dispatch: (u32, u32, u32),
@@ -302,6 +317,7 @@ impl From<&ExecutionOp> for ExecutionOpV4 {
         match op {
             ExecutionOp::Compute(compute) => Self::Compute {
                 name: compute.name.clone(),
+                program: compute.program.clone(),
                 entry_point: compute.entry_point.clone(),
                 accesses: compute
                     .accesses
@@ -335,11 +351,13 @@ impl From<ExecutionOpV4> for ExecutionOp {
         match op {
             ExecutionOpV4::Compute {
                 name,
+                program,
                 entry_point,
                 accesses,
                 dispatch: (x, y, z),
             } => Self::Compute(ComputeOp {
                 name,
+                program,
                 entry_point,
                 accesses: accesses
                     .into_iter()
@@ -407,7 +425,9 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                     })
                     .collect(),
                 ops: stage.block.ops.iter().map(ExecutionOpV4::from).collect(),
+                constants: stage.block.constants.clone(),
             },
+            cpu_reference: stage.cpu_reference,
         }
     }
 }
@@ -433,6 +453,7 @@ impl ExtensionStageV4 {
                 })
                 .collect(),
             ops: self.block.ops.into_iter().map(ExecutionOp::from).collect(),
+            constants: self.block.constants,
         };
         if let Err(error) = block.validate() {
             return invalid(format!("{path}.block"), error.to_string());
@@ -467,6 +488,7 @@ impl ExtensionStageV4 {
                 })
                 .collect::<Result<_, ArtifactError>>()?,
             block,
+            cpu_reference: self.cpu_reference,
         })
     }
 }

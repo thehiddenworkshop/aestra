@@ -3162,6 +3162,89 @@ An externally installed example extension can be discovered, version checked, re
 
 ## Milestone 13 — real fluid plugin proof
 
+> **Status — 13a done: plugin, lowering and native GPU execution, proven outside the frame loop.
+> 13b (running it in the Bevy frame loop, presentation, editor) is next.**
+>
+> **SDK and IR additions**, all generic, with nothing fluid-specific in core:
+> - `ComputeProgramId` names a registered `ComputeProgram` (WGSL source plus declared entry
+>   points). `ComputeOp.program` references it (§13.2). Programs are namespaced like every other
+>   contribution. The compiler rejects an op that names an unregistered program or an undeclared entry.
+> - **Binding convention:** the `i`-th declared resource of a block is `@group(0) @binding(i)`. An
+>   op's `accesses` must be exactly what its entry uses.
+>   `aestra_gpu::check_program_block` proves this from the WGSL with naga, no GPU needed, and also
+>   rejects a write to a resource declared read-only. The hazard information the IR trusts is
+>   therefore checked, not assumed.
+> - Two host-written built-in resources:
+>   - `aestra.resource.stage_constants` holds `ExecutionBlock.constants`, which a lowerer packs
+>     from module parameters.
+>   - `aestra.resource.frame` holds `FrameConstants` (tick, dt, time, seed) and is written every
+>     tick.
+>   - `validate()` enforces their size and lifetime.
+> - `StageTypeDescriptor.backend: BackendSupport`, with `gpu_only(...)` for stages like the fluid.
+>   `CompiledExtensionStage.cpu_reference` records it, and it survives the artifact round trip.
+>   The example Field Forces stage and declarative template stages now declare GPU-only too,
+>   truthfully.
+> - `CompiledHostFieldRef.field_index`: the presence bit a GPU program needs to tell an absent
+>   optional host field from a present one.
+> - Artifact v4 gains `program`, `constants` and `cpu_reference` as additive serde-default fields.
+>
+> **Executor:** `aestra_bevy_render::execution::StageExecutor` promotes the M7 harness into a
+> library that runs on a plain `wgpu` device:
+> - It allocates the declared resources (bounded), uploads constants once, and uploads the frame
+>   and host bindings each tick.
+> - It **zeroes transient resources every tick**, so restore plus replay is exact.
+> - It runs each compute op as its own pass, loops `Repeat`, and copies `Copy`.
+> - It takes checkpoints and restores them. A checkpoint holds only persistent stage-owned
+>   resources.
+>
+> **The plugin:** `extensions/aestra-fluid` (`org.example.aestra-fluid`) is linked-extension code
+> that depends only on the SDK, the IR and the host-binding ABI. It registers:
+> - the GPU-only stage *Fluid Solver*;
+> - the domain `grid3d`;
+> - resources: persistent velocity and density; transient scratch, pressure, divergence and
+>   vorticity;
+> - four schema-driven modules:
+>   - *Fluid Grid*, one per stage: resolution 8–96 (a multiple of 4), cell size, centre, pressure
+>     iterations, dissipation;
+>   - *Density Source*: position and velocity can be driven by a host binding;
+>   - *Buoyancy*;
+>   - *Vorticity* (confinement).
+> - one `solver.wgsl` program.
+>
+> One authored stage lowers to:
+>
+> ```text
+> add_sources → [vorticity → confine] → advect velocity → divergence → repeat N {relax, copy}
+> → project → advect density
+> ```
+>
+> Barriers separate the steps. Every pass is a gather (no atomics). The pressure solve uses the wide
+> Laplacian, which is the D·G operator the collocated central-difference projection applies. The
+> compact 7-point stencil was tried first. It left about 64% of the divergence, whatever the
+> iteration count.
+>
+> **Acceptance proven** (`fluid_contract.rs` without a GPU; `fluid_gpu.rs` on an RTX 4070 SUPER
+> with `AESTRA_REQUIRE_GPU_CONFORMANCE=1`):
+> - no `Fluid` in core and no fluid branch in the Properties panel;
+> - lowers through the shared Execution IR, with checked accesses;
+> - diagnosed (`MissingExtension`) when absent, with data preserved;
+> - `cpu_reference = Unavailable`, declared and carried to the compiled stage;
+> - **same asset + seed + frames → the same bits** across two independent executions;
+> - checkpoint (only velocity and density) plus restore/replay reaches the uninterrupted state;
+> - smoke rises;
+> - projection cuts interior divergence about 40×;
+> - a source bound to a host object follows it (density centroid x ≈ ±1.0 m for targets at ±1.0 m;
+>   0 when unbound);
+> - the compiled solver round-trips through the artifact.
+>
+> **Not yet (13b):**
+> - The executor does not run in the Bevy frame loop, and nothing presents the grid (debug slice,
+>   volume renderer).
+> - No particle coupling (grid → particle advection, particle → grid deposit / FLIP).
+> - The editor does not link the plugin or surface "GPU only".
+> - No sample-project effect.
+> - Declarative packages cannot ship programs yet.
+
 ### Goal
 
 Use fluids as the architecture stress test, not as hardcoded core functionality.

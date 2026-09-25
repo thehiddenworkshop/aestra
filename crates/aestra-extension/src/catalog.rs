@@ -71,7 +71,9 @@ impl InputMetadata {
         self
     }
 
-    fn with_sources(mut self, sources: Vec<InputSourceKind>) -> Self {
+    /// Replaces the authoring sources the input offers — e.g. `[Constant, HostBinding]` for an input a
+    /// host object can drive (host bindings HB4).
+    pub fn with_sources(mut self, sources: Vec<InputSourceKind>) -> Self {
         self.sources = sources;
         self
     }

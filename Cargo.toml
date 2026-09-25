@@ -16,6 +16,7 @@ members = [
     "crates/aestra-project",
     "crates/aestra-runtime",
     "extensions/aestra-example-extension",
+    "extensions/aestra-fluid",
 ]
 
 [workspace.package]

@@ -1,0 +1,21 @@
+[package]
+name = "aestra-fluid"
+description = "Experimental GPU-only fluid extension for Aestra: a grid solver stage lowered to Execution IR"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-core = { path = "../../crates/aestra-core" }
+aestra-extension = { path = "../../crates/aestra-extension" }
+aestra-gpu = { path = "../../crates/aestra-gpu" }
+aestra-runtime = { path = "../../crates/aestra-runtime" }
+
+[dev-dependencies]
+aestra-artifact = { path = "../../crates/aestra-artifact" }
+aestra-bevy-render = { path = "../../bevy/aestra-bevy-render" }
+aestra-compiler = { path = "../../crates/aestra-compiler" }
+pollster.workspace = true
+wgpu.workspace = true

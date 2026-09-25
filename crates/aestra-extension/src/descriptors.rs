@@ -218,6 +218,19 @@ pub struct BackendSupport {
     pub gpu_compute: SupportLevel,
 }
 
+impl BackendSupport {
+    /// GPU compute only: no CPU reference evaluator exists (§13.3, §44.6).
+    pub const GPU_ONLY: Self = Self {
+        cpu_reference: SupportLevel::Unavailable,
+        gpu_compute: SupportLevel::Required,
+    };
+
+    /// Whether a CPU reference evaluator exists.
+    pub fn has_cpu_reference(self) -> bool {
+        self.cpu_reference != SupportLevel::Unavailable
+    }
+}
+
 impl Default for BackendSupport {
     /// Built-in default: fully supported on both the CPU reference and GPU compute backends.
     fn default() -> Self {
@@ -338,6 +351,9 @@ pub struct StageTypeDescriptor {
     pub display_name: String,
     pub role: Option<LifecycleRole>,
     pub provides: CapabilitySet,
+    /// The backends the stage runs on (§13.3). A plugin stage whose lowering emits compute programs
+    /// and ships no separate CPU evaluator declares `cpu_reference: Unavailable` — truthfully.
+    pub backend: BackendSupport,
 }
 
 impl StageTypeDescriptor {
@@ -356,6 +372,18 @@ impl StageTypeDescriptor {
             display_name: format!("{role:?}"),
             role: Some(role),
             provides: CapabilitySet::new([role.capability()]),
+            backend: BackendSupport::default(),
+        }
+    }
+
+    /// A plugin stage that runs only as GPU compute programs, with no CPU reference (§13.3).
+    pub fn gpu_only(type_id: StageTypeId, display_name: &str, provides: CapabilitySet) -> Self {
+        Self {
+            type_id,
+            display_name: display_name.into(),
+            role: None,
+            provides,
+            backend: BackendSupport::GPU_ONLY,
         }
     }
 
@@ -691,6 +719,10 @@ pub enum RegistryConflict {
     },
     /// Two payload migrations were registered for the same type.
     DuplicateMigration(String),
+    /// Two compute programs share an id (extensible-stages M13).
+    DuplicateProgram(ComputeProgramId),
+    /// A compute program declares no entry points.
+    EmptyProgram(ComputeProgramId),
     /// Two binding kind descriptors share a type id (host bindings HB1).
     DuplicateBindingKind(BindingKindId),
     /// A binding kind lists the same field twice.
@@ -745,6 +777,12 @@ impl std::fmt::Display for RegistryConflict {
                 plugin.0
             ),
             Self::DuplicateMigration(id) => write!(f, "'{id}' has two payload migrations"),
+            Self::DuplicateProgram(id) => {
+                write!(f, "compute program '{}' is registered twice", id.0)
+            }
+            Self::EmptyProgram(id) => {
+                write!(f, "compute program '{}' declares no entry points", id.0)
+            }
             Self::DuplicateBindingKind(id) => {
                 write!(f, "binding kind '{}' is registered twice", id.0)
             }
@@ -792,6 +830,8 @@ pub struct ExtensionRegistry {
     pub bindings: BindingKindRegistry,
     /// Plugin payload schema migrations (extensible-stages M11, §35).
     pub migrations: MigrationRegistry,
+    /// Portable compute programs plugin stages lower to (extensible-stages M13, §13.2).
+    pub programs: ComputeProgramRegistry,
     pub(crate) installed: Vec<ExtensionManifest>,
 }
 
@@ -831,8 +871,14 @@ impl ExtensionRegistry {
             lowering: LoweringRegistry::default(),
             bindings: BindingKindRegistry::builtin(),
             migrations: MigrationRegistry::default(),
+            programs: ComputeProgramRegistry::default(),
             installed: Vec::new(),
         }
+    }
+
+    /// Registers a compute program (extensible-stages M13); errors on a duplicate id or no entries.
+    pub fn register_program(&mut self, program: ComputeProgram) -> Result<(), RegistryConflict> {
+        self.programs.register(program)
     }
 
     /// Registers a host binding kind (host bindings HB1); errors on a duplicate id or a field whose
@@ -1016,5 +1062,43 @@ impl BindingKindRegistry {
             .values()
             .find_map(|kind| kind.field(id))
             .map(|field| field.value_type)
+    }
+}
+
+/// A portable compute program a plugin ships (extensible-stages M13, §13.2): WGSL source whose entry
+/// points its lowered compute ops name. Resources are bound per the Execution IR binding convention —
+/// `@group(0) @binding(i)` for the stage block's `i`-th declared resource. Aestra validates and
+/// translates the program; the plugin never touches a GPU API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeProgram {
+    pub id: ComputeProgramId,
+    pub wgsl: String,
+    pub entry_points: Vec<String>,
+}
+
+/// The registered compute programs (extensible-stages M13).
+#[derive(Debug, Clone, Default)]
+pub struct ComputeProgramRegistry {
+    programs: BTreeMap<ComputeProgramId, ComputeProgram>,
+}
+
+impl ComputeProgramRegistry {
+    pub fn register(&mut self, program: ComputeProgram) -> Result<(), RegistryConflict> {
+        if self.programs.contains_key(&program.id) {
+            return Err(RegistryConflict::DuplicateProgram(program.id));
+        }
+        if program.entry_points.is_empty() {
+            return Err(RegistryConflict::EmptyProgram(program.id));
+        }
+        self.programs.insert(program.id.clone(), program);
+        Ok(())
+    }
+
+    pub fn get(&self, id: &ComputeProgramId) -> Option<&ComputeProgram> {
+        self.programs.get(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ComputeProgram> {
+        self.programs.values()
     }
 }

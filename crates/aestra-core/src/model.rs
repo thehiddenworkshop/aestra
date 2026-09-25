@@ -1686,6 +1686,11 @@ namespaced_id!(
     ResourceTypeId
 );
 namespaced_id!(
+    /// Identifies a portable compute program (WGSL source) a plugin registers and its lowered compute
+    /// ops reference, e.g. `org.example.aestra-fluid::program/solver` (extensible plan §13.2).
+    ComputeProgramId
+);
+namespaced_id!(
     /// Identifies a capability contract, e.g. `aestra.capability.cpu_reference`. Capabilities decide
     /// compatibility (which modules a stage may host), never execution order.
     CapabilityId

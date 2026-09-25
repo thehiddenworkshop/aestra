@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod cpu;
+pub mod execution;
 pub mod gpu;
 mod host_transform;
 pub mod material;

@@ -178,6 +178,8 @@ impl DeclarativeExtension {
                         display_name: stage.name.clone(),
                         role: None,
                         provides: capability_set(&stage.provides),
+                        // Templates lower to GPU-shaped IR; a package ships no CPU evaluator.
+                        backend: crate::BackendSupport::GPU_ONLY,
                     },
                     stage.lowering.clone().map(|template| {
                         Arc::new(TemplateStageLowerer { template }) as Arc<dyn StageLowerer>
@@ -424,6 +426,7 @@ impl StageLowerer for TemplateStageLowerer {
                 })
                 .collect(),
             ops: expand(&self.template.ops, input, None),
+            constants: Vec::new(),
         })
     }
 }
@@ -450,6 +453,8 @@ fn expand(
         match op {
             OpTemplate::Compute(compute) => expanded.push(ExecutionOp::Compute(ComputeOp {
                 name: substitute(&compute.name, input, module),
+                // Declarative packages ship no programs yet; a backend supplies the entry.
+                program: None,
                 entry_point: substitute(&compute.entry_point, input, module),
                 accesses: compute
                     .accesses

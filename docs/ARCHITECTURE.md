@@ -87,8 +87,18 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   `EXTENSION_API_VERSION`.
 - Owns the packaged-extension host (`host`): declarative package format, discovery, version and
   dependency checks, registration, disabling, and per-package diagnostics.
+- Registers plugin compute programs (`ComputeProgram`: WGSL plus declared entry points) that lowered
+  compute ops reference. Stage types declare their `BackendSupport`, so GPU-only plugin stages say
+  they have no CPU reference.
 - Depends only on `aestra-core` and `aestra-runtime`, so extension authors do not depend on the
   compiler.
+
+### Extensions (`extensions/`)
+
+- `aestra-example-extension` is the reference linked extension (a stage, module, domain, resource
+  and renderer).
+- `aestra-fluid` is an experimental GPU-only fluid: a grid-solver stage and four modules lowered to
+  one checked multi-pass Execution IR block over a registered WGSL program. It adds nothing to core.
 
 ### `aestra-compiler`
 
@@ -154,6 +164,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   per-slot headers (bound flag, presence mask, stride, values offset), then packed `f32` values.
   Offsets depend only on compiled layouts. `HOST_BINDINGS_WGSL` gives kernels their accessors.
   Plugin stages declare the `aestra.resource.host_bindings` IR resource to read it.
+- Checks a lowered Execution IR block against its compute programs with naga
+  (`check_program_block`). Each op's declared accesses must be exactly the bindings its entry uses
+  (resource `i` is `@group(0) @binding(i)`), and it must not write a resource declared read-only.
 - Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
 
 ### `aestra-bevy-render`
@@ -178,6 +191,13 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   native GPU simulation consume the same playback clock across once, restart-loop, and continuous
   playback, while backend-independent tests cover exact boundaries, multi-loop steps, seek, pause,
   restart, and equal-time event ordering.
+- Owns `execution::StageExecutor`, the native executor for program-backed plugin stages, on any
+  `wgpu` device:
+  - It allocates declared resources and uploads stage constants, the per-tick frame and host
+    bindings.
+  - It zeroes transient resources every tick.
+  - It runs each compute op as its own pass, and checkpoints and restores persistent stage state.
+  - It is not yet driven by the Bevy frame loop.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

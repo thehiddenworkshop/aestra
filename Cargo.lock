@@ -249,6 +249,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aestra-fluid"
+version = "0.1.0"
+dependencies = [
+ "aestra-artifact",
+ "aestra-bevy-render",
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-extension",
+ "aestra-gpu",
+ "aestra-runtime",
+ "pollster",
+ "wgpu",
+]
+
+[[package]]
 name = "aestra-gpu"
 version = "0.1.0"
 dependencies = [

@@ -125,6 +125,7 @@ impl AestraExtension for Squatter {
             display_name: "Fluid".into(),
             role: None,
             provides: Default::default(),
+            backend: Default::default(),
         })
     }
 }

@@ -275,12 +275,26 @@ impl EffectCompiler {
                 ));
                 continue;
             }
+            if let Some(problem) = unresolved_program(&self.registry, &block.ops) {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::LoweringFailed,
+                    stage_path,
+                    format!("stage '{}' {problem}", stage_type.0),
+                ));
+                continue;
+            }
+            let cpu_reference = self
+                .registry
+                .stages
+                .get(&stage_type)
+                .is_some_and(|descriptor| descriptor.backend.has_cpu_reference());
             stages.push(aestra_runtime::CompiledExtensionStage {
                 id: stage_id,
                 stage_type,
                 name: name.to_string(),
                 modules: plans,
                 block,
+                cpu_reference,
             });
         }
         if diagnostics.is_empty() {
@@ -2057,11 +2071,12 @@ fn host_field_ref(
         .bindings
         .iter()
         .position(|binding| binding.id == reference.binding)?;
-    let (_, packed) = bindings.get(slot)?.layout.field(&reference.field)?;
+    let (index, packed) = bindings.get(slot)?.layout.field(&reference.field)?;
     Some(aestra_runtime::CompiledHostFieldRef {
         binding: aestra_runtime::BindingSlot(slot),
         field: reference.field.clone(),
         value_type: packed.value_type,
+        field_index: index as u32,
         offset: packed.offset,
     })
 }
@@ -2489,4 +2504,32 @@ fn push_unique(report: &mut ValidationReport, diagnostic: Diagnostic) {
     {
         report.push(diagnostic);
     }
+}
+
+/// The first compute op naming a program that is not registered, or an entry point its program does
+/// not declare (extensible-stages M13, §13.2). Recurses into repeat bodies.
+fn unresolved_program(
+    registry: &ExtensionRegistry,
+    ops: &[aestra_runtime::ExecutionOp],
+) -> Option<String> {
+    ops.iter().find_map(|op| match op {
+        aestra_runtime::ExecutionOp::Compute(compute) => {
+            let program_id = compute.program.as_ref()?;
+            let Some(program) = registry.programs.get(program_id) else {
+                return Some(format!(
+                    "references unregistered compute program '{}'",
+                    program_id.as_str()
+                ));
+            };
+            (!program.entry_points.contains(&compute.entry_point)).then(|| {
+                format!(
+                    "calls entry point '{}', which program '{}' does not declare",
+                    compute.entry_point,
+                    program_id.as_str()
+                )
+            })
+        }
+        aestra_runtime::ExecutionOp::Repeat { body, .. } => unresolved_program(registry, body),
+        _ => None,
+    })
 }

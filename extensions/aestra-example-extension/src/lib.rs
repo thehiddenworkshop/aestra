@@ -83,12 +83,12 @@ impl AestraExtension for ExampleExtension {
             domain: DomainTypeId::new(DOMAIN_FIELD),
             lifetime: ResourceLifetime::Transient,
         })?;
-        registry.register_stage(StageTypeDescriptor {
-            type_id: StageTypeId::new(STAGE_FIELD_FORCES),
-            display_name: "Field Forces".into(),
-            role: None,
-            provides: CapabilitySet::new([field_forces.clone()]),
-        })?;
+        // Field Forces lowers to compute passes and ships no CPU evaluator (§13.3).
+        registry.register_stage(StageTypeDescriptor::gpu_only(
+            StageTypeId::new(STAGE_FIELD_FORCES),
+            "Field Forces",
+            CapabilitySet::new([field_forces.clone()]),
+        ))?;
         registry.register_module(vortex_metadata(field_forces))?;
         registry.register_renderer(RendererDescriptor::extension(
             RendererTypeId::new(RENDERER_DEBUG_POINTS),
@@ -247,6 +247,7 @@ impl StageLowerer for FieldForcesLowerer {
             .map(|module| {
                 ExecutionOp::Compute(ComputeOp {
                     name: format!("field_forces/{}", module.entry_point),
+                    program: None,
                     entry_point: module.entry_point.clone(),
                     accesses: vec![ResourceAccess::read_write(RESOURCE_FORCE_FIELD)],
                     dispatch: field_dispatch,
@@ -256,6 +257,7 @@ impl StageLowerer for FieldForcesLowerer {
         ops.push(ExecutionOp::Barrier);
         ops.push(ExecutionOp::Compute(ComputeOp {
             name: "field_forces/apply".into(),
+            program: None,
             entry_point: "apply_field".into(),
             accesses: vec![
                 ResourceAccess::read(RESOURCE_FORCE_FIELD),
@@ -281,6 +283,7 @@ impl StageLowerer for FieldForcesLowerer {
                 },
             ],
             ops,
+            constants: Vec::new(),
         })
     }
 }

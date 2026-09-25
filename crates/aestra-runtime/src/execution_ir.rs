@@ -8,9 +8,18 @@
 //! Nothing here depends on a GPU API; a reference backend ([`execute_reference`]) runs a block into a
 //! deterministic ordered trace so the IR's ordering and repeat/barrier semantics can be validated
 //! without hardware. The native GPU backend consumes the same IR in M7.
+//!
+//! ## Binding convention
+//!
+//! A compute op's program sees the block's resources as storage buffers at `@group(0)`, each at
+//! `@binding(i)` where `i` is the resource's index in [`ExecutionBlock::resources`]. An op's
+//! [`ComputeOp::accesses`] must name exactly the resources its entry point statically uses: the backend
+//! binds those and nothing else. Two host-written built-ins complete the inputs a program can read:
+//! [`AESTRA_RESOURCE_STAGE_CONSTANTS`] (the block's [`ExecutionBlock::constants`], fixed at compile
+//! time) and [`AESTRA_RESOURCE_FRAME`] (a [`FrameConstants`] written every tick).
 
 use crate::{CompiledStage, StagedDispatch};
-use aestra_core::ResourceTypeId;
+use aestra_core::{ComputeProgramId, ResourceTypeId};
 
 /// The built-in resource id for an emitter's particle buffer — what the standard fused particle stages
 /// read and write.
@@ -23,6 +32,46 @@ pub const AESTRA_RESOURCE_HOST_BINDINGS: &str = "aestra.resource.host_bindings";
 
 /// The domain of host-supplied inputs (host bindings HB6).
 pub const AESTRA_DOMAIN_HOST_INPUT: &str = "aestra.domain.host_input";
+
+/// The built-in resource holding a block's [`ExecutionBlock::constants`] — the words a stage lowerer
+/// packed from its modules' resolved parameters (extensible-stages M13). Uploaded once, read-only.
+pub const AESTRA_RESOURCE_STAGE_CONSTANTS: &str = "aestra.resource.stage_constants";
+
+/// The built-in resource holding the current tick's [`FrameConstants`] (extensible-stages M13).
+/// Host-written before every tick, read-only to stages.
+pub const AESTRA_RESOURCE_FRAME: &str = "aestra.resource.frame";
+
+/// Per-tick values the host writes to [`AESTRA_RESOURCE_FRAME`] (extensible-stages M13), as four
+/// 32-bit words: `tick: u32`, `dt: f32`, `time: f32`, `seed: u32`. A staged simulation is a pure
+/// function of its asset, its seed and this sequence — which is what makes GPU-vs-GPU reruns
+/// reproducible.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameConstants {
+    pub tick: u32,
+    pub dt: f32,
+    pub time: f32,
+    pub seed: u32,
+}
+
+impl FrameConstants {
+    /// Size of the frame resource in bytes.
+    pub const BYTES: u64 = 16;
+
+    /// The fixed-step frame for `tick`: `time = tick * dt`.
+    pub fn fixed_step(tick: u32, dt: f32, seed: u32) -> Self {
+        Self {
+            tick,
+            dt,
+            time: tick as f32 * dt,
+            seed,
+        }
+    }
+
+    /// The words uploaded to [`AESTRA_RESOURCE_FRAME`].
+    pub fn to_words(self) -> [u32; 4] {
+        [self.tick, self.dt.to_bits(), self.time.to_bits(), self.seed]
+    }
+}
 
 /// How an [`ExecutionOp`] accesses a resource (extensible-stages M6). Drives barrier/hazard reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +93,13 @@ impl ResourceAccess {
         Self {
             resource: ResourceTypeId::new(resource),
             mode: ResourceAccessMode::Read,
+        }
+    }
+
+    pub fn write(resource: impl Into<String>) -> Self {
+        Self {
+            resource: ResourceTypeId::new(resource),
+            mode: ResourceAccessMode::Write,
         }
     }
 
@@ -74,6 +130,9 @@ pub struct ResourceDescriptor {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputeOp {
     pub name: String,
+    /// The registered program holding `entry_point` (extensible plan §13.2), or `None` for a
+    /// backend-provided kernel (the built-in fused particle stages).
+    pub program: Option<ComputeProgramId>,
     pub entry_point: String,
     pub accesses: Vec<ResourceAccess>,
     pub dispatch: StagedDispatch,
@@ -124,6 +183,9 @@ pub enum ExecutionOp {
 pub struct ExecutionBlock {
     pub resources: Vec<ResourceDescriptor>,
     pub ops: Vec<ExecutionOp>,
+    /// The contents of [`AESTRA_RESOURCE_STAGE_CONSTANTS`] when the block declares it: parameters
+    /// the stage lowerer packed at compile time, in a layout private to the stage's programs.
+    pub constants: Vec<u32>,
 }
 
 /// Why an [`ExecutionBlock`] is invalid.
@@ -137,6 +199,8 @@ pub enum ExecutionError {
     EmptyDispatch(String),
     /// A repeat policy would run its body zero times.
     ZeroRepeat,
+    /// A built-in host-written resource is declared with the wrong size or lifetime.
+    InvalidBuiltinResource(ResourceTypeId),
 }
 
 impl core::fmt::Display for ExecutionError {
@@ -150,6 +214,11 @@ impl core::fmt::Display for ExecutionError {
             }
             Self::EmptyDispatch(name) => write!(f, "compute op '{name}' has a zero dispatch shape"),
             Self::ZeroRepeat => write!(f, "a repeat policy would run its body zero times"),
+            Self::InvalidBuiltinResource(id) => write!(
+                f,
+                "built-in resource '{}' must be declared persistent with its fixed size",
+                id.as_str()
+            ),
         }
     }
 }
@@ -166,8 +235,44 @@ impl ExecutionBlock {
             if !declared.insert(resource.id.clone()) {
                 return Err(ExecutionError::DuplicateResource(resource.id.clone()));
             }
+            let fixed_bytes = match resource.id.as_str() {
+                AESTRA_RESOURCE_FRAME => Some(FrameConstants::BYTES),
+                AESTRA_RESOURCE_STAGE_CONSTANTS => Some(self.constants.len() as u64 * 4),
+                _ => None,
+            };
+            if let Some(bytes) = fixed_bytes
+                && (resource.bytes != bytes || resource.lifetime != ResourceLifetime::Persistent)
+            {
+                return Err(ExecutionError::InvalidBuiltinResource(resource.id.clone()));
+            }
         }
         validate_ops(&self.ops, &declared)
+    }
+
+    /// The binding index of a declared resource — its position in [`Self::resources`].
+    pub fn binding_of(&self, id: &ResourceTypeId) -> Option<u32> {
+        self.resources
+            .iter()
+            .position(|resource| &resource.id == id)
+            .map(|index| index as u32)
+    }
+
+    /// The descriptor for the stage-constants resource holding [`Self::constants`].
+    pub fn constants_resource(&self) -> ResourceDescriptor {
+        ResourceDescriptor {
+            id: ResourceTypeId::new(AESTRA_RESOURCE_STAGE_CONSTANTS),
+            bytes: self.constants.len() as u64 * 4,
+            lifetime: ResourceLifetime::Persistent,
+        }
+    }
+
+    /// The descriptor for the per-tick frame resource.
+    pub fn frame_resource() -> ResourceDescriptor {
+        ResourceDescriptor {
+            id: ResourceTypeId::new(AESTRA_RESOURCE_FRAME),
+            bytes: FrameConstants::BYTES,
+            lifetime: ResourceLifetime::Persistent,
+        }
     }
 
     /// The number of compute passes a run of this block performs, with repeats expanded — the count of
@@ -274,6 +379,7 @@ pub fn lower_stage_fused(
         resources: vec![particles],
         ops: vec![ExecutionOp::Compute(ComputeOp {
             name: stage.stage_type.as_str().to_string(),
+            program: None,
             entry_point: stage.stage_type.as_str().to_string(),
             accesses: vec![ResourceAccess::read_write(AESTRA_RESOURCE_PARTICLES)],
             dispatch: StagedDispatch {
@@ -282,6 +388,7 @@ pub fn lower_stage_fused(
                 z: 1,
             },
         })],
+        constants: Vec::new(),
     }
 }
 
@@ -294,6 +401,7 @@ mod tests {
     fn compute(name: &str) -> ExecutionOp {
         ExecutionOp::Compute(ComputeOp {
             name: name.to_string(),
+            program: None,
             entry_point: name.to_string(),
             accesses: vec![ResourceAccess::read_write("res.field")],
             dispatch: StagedDispatch { x: 8, y: 1, z: 1 },
@@ -308,6 +416,7 @@ mod tests {
                 lifetime: ResourceLifetime::Persistent,
             }],
             ops,
+            constants: Vec::new(),
         }
     }
 
@@ -347,6 +456,7 @@ mod tests {
         let undeclared = ExecutionBlock {
             resources: Vec::new(),
             ops: vec![compute("A")],
+            constants: Vec::new(),
         };
         assert!(matches!(
             undeclared.validate(),
@@ -355,6 +465,7 @@ mod tests {
 
         let zero_dispatch = field_block(vec![ExecutionOp::Compute(ComputeOp {
             name: "A".to_string(),
+            program: None,
             entry_point: "A".to_string(),
             accesses: vec![ResourceAccess::read_write("res.field")],
             dispatch: StagedDispatch { x: 0, y: 1, z: 1 },
@@ -369,6 +480,47 @@ mod tests {
             body: vec![compute("A")],
         }]);
         assert_eq!(zero_repeat.validate(), Err(ExecutionError::ZeroRepeat));
+    }
+
+    #[test]
+    fn host_written_builtins_must_be_declared_persistent_at_their_fixed_size() {
+        let mut block = field_block(vec![compute("A")]);
+        block.constants = vec![1, 2, 3];
+        block.resources.push(block.constants_resource());
+        block.resources.push(ExecutionBlock::frame_resource());
+        block
+            .validate()
+            .expect("correctly sized built-ins validate");
+        assert_eq!(
+            block.binding_of(&ResourceTypeId::new(AESTRA_RESOURCE_FRAME)),
+            Some(2),
+            "bindings follow declaration order"
+        );
+
+        let mut wrong_size = block.clone();
+        wrong_size.constants.push(4);
+        assert_eq!(
+            wrong_size.validate(),
+            Err(ExecutionError::InvalidBuiltinResource(ResourceTypeId::new(
+                AESTRA_RESOURCE_STAGE_CONSTANTS
+            )))
+        );
+        let mut transient_frame = block;
+        transient_frame.resources[2].lifetime = ResourceLifetime::Transient;
+        assert!(matches!(
+            transient_frame.validate(),
+            Err(ExecutionError::InvalidBuiltinResource(_))
+        ));
+    }
+
+    #[test]
+    fn frame_constants_pack_tick_dt_time_and_seed() {
+        let frame = FrameConstants::fixed_step(30, 0.5, 9);
+        assert_eq!(frame.time, 15.0);
+        assert_eq!(
+            frame.to_words(),
+            [30, 0.5f32.to_bits(), 15.0f32.to_bits(), 9]
+        );
     }
 
     fn motion_instruction() -> Instruction {
