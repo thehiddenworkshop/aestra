@@ -206,7 +206,7 @@ fn main() {
     // Packaged extensions (extensible-stages M12) are discovered in the project's `extensions/` folder
     // and the user's config directory, version-checked and registered — installing one needs no
     // rebuild. Disabled ids come from settings; the report feeds the Extensions settings page.
-    let extension_report = aestra_extension_host::link_packages(
+    let extension_report = aestra_extension::host::link_packages(
         &[
             project_content::default_project_root().join("extensions"),
             settings::config_dir().join("extensions"),

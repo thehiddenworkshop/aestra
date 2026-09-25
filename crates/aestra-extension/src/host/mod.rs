@@ -1,4 +1,4 @@
-//! The packaged-extension host (extensible-stages M12).
+//! The packaged-extension host (extensible-stages M12), `aestra_extension::host`.
 //!
 //! Installs extensions without rebuilding Aestra: a package directory dropped into a search directory
 //! is **discovered**, its manifest **version-checked** against the extension API and its dependencies,
@@ -16,7 +16,7 @@ pub mod package;
 pub use declarative::DeclarativeExtension;
 pub use package::*;
 
-use aestra_compiler::{AestraExtension, EXTENSION_API_VERSION, ExtensionRegistry};
+use crate::{AestraExtension, EXTENSION_API_VERSION, ExtensionRegistry};
 use aestra_core::ExtensionId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -417,7 +417,7 @@ pub fn link_packages(search_dirs: &[PathBuf], disabled: &BTreeSet<ExtensionId>) 
     let mut report = loaded.report;
     for extension in loaded.extensions {
         let id = extension.package_manifest().id.clone();
-        if let Err(error) = aestra_compiler::link_extension(extension as Arc<dyn AestraExtension>)
+        if let Err(error) = crate::link_extension(extension as Arc<dyn AestraExtension>)
             && let Some(package) = report
                 .packages
                 .iter_mut()

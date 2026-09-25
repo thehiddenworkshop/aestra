@@ -9,9 +9,9 @@ repository.workspace = true
 
 [dependencies]
 aestra-core = { path = "../aestra-core" }
+aestra-extension = { path = "../aestra-extension" }
 aestra-project = { path = "../aestra-project" }
 aestra-runtime = { path = "../aestra-runtime" }
-semver = "1"
 serde.workspace = true
 thiserror.workspace = true
 

@@ -62,8 +62,8 @@ fn main() {
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
     if let Some(effect_path) = &config.effect_path {
-        let report = aestra_extension_host::link_packages(
-            &aestra_extension_host::project_extension_dirs(effect_path),
+        let report = aestra_extension::host::link_packages(
+            &aestra_extension::host::project_extension_dirs(effect_path),
             &Default::default(),
         );
         for package in report.problems() {

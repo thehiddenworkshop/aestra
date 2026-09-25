@@ -1615,7 +1615,20 @@ The exact trait is provisional; do not freeze a Rust ABI around it for dynamic l
 
 # 24. Extension API vs host implementation
 
-Recommended code organization:
+> **As built (after M12):** one crate, `crates/aestra-extension`, holds everything extension-related,
+> as two modules rather than two crates:
+> - `aestra_extension::sdk` is the contract: identities in use, descriptors and registries (including
+>   the built-in module catalog), lowering and migration traits, requirements, linking, and
+>   `EXTENSION_API_VERSION`. It is also re-exported at the crate root.
+> - `aestra_extension::host` is the declarative package format, discovery, version and dependency
+>   resolution, and registration.
+>
+> The crate depends only on `aestra-core`, `aestra-runtime`, `ron` and `semver`, so extension authors
+> no longer depend on the compiler. `aestra-compiler` depends on it and re-exports `sdk`. The host is a
+> module, not a crate: its dependencies are tiny, and a split (or a `host` feature) remains possible if
+> code hosting (WASM/IPC) brings heavy ones.
+
+Originally recommended code organization:
 
 ```text
 crates/
@@ -2907,7 +2920,7 @@ Built-in and third-party items use the same visual language.
 
 ## Milestone 10 — linked plugin SDK vertical slice
 
-> **Status — done.** The SDK lives in `aestra-compiler/src/extension.rs`:
+> **Status — done.** The SDK lived in `aestra-compiler/src/extension.rs` (since extracted to `crates/aestra-extension`, see §24):
 > - `AestraExtension` (a manifest naming its `ExtensionId`, plus `register(&mut ExtensionRegistry)`).
 > - `ExtensionRegistry` now holds stage, domain and resource-type sub-registries and a
 >   `LoweringRegistry` (`ModuleLowerer`, `StageLowerer`), next to modules, capabilities and renderers.
@@ -3077,7 +3090,7 @@ Create an effect with the example plugin, remove the plugin, reopen the project:
 >     (`Rename` / `Remove` / `Insert`);
 >   - renderers with schemas.
 >
-> `crates/aestra-extension-host` implements the host:
+> The host was built as `crates/aestra-extension-host` and now lives in `aestra_extension::host` (§24):
 > - `DeclarativeExtension` turns a package into an ordinary `AestraExtension`, so the compiler and
 >   editor treat it exactly like a linked one. Descriptors are prepared once per load.
 > - `load_packages`/`link_packages` **discover** packages (immediate subfolders with `extension.ron`).

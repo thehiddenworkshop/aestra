@@ -1,6 +1,6 @@
 //! The reference linked Aestra extension (extensible-stages M10, §23–25 Phase A).
 //!
-//! It is an ordinary crate that depends on the public SDK only — `aestra-compiler`'s
+//! It is an ordinary crate that depends on the public SDK only — `aestra-extension`'s
 //! [`AestraExtension`] / [`ExtensionRegistry`] and `aestra-runtime`'s Execution IR — and adds, under its
 //! own `org.example.aestra::` namespace:
 //!
@@ -14,16 +14,16 @@
 //!
 //! No core enum or `match` changes for any of it. Call [`link`] once at startup.
 
-use aestra_compiler::{
-    AestraExtension, CapabilityExpression, CapabilitySet, DomainDescriptor, ExtensionManifest,
-    ExtensionRegistry, InputControl, InputMetadata, ModuleLowerer, ModuleMetadata,
-    PayloadMigration, RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer,
-    StageLoweringInput, StageTypeDescriptor,
-};
 use aestra_core::{
     CapabilityId, DomainTypeId, ExtensionId, ModuleInstance, ModuleTypeId, PropertyBag,
     PropertyControl, PropertyDescriptor, PropertySchema, PropertySource, RendererTypeId,
     ResourceTypeId, StageTypeId, Value, ValueType,
+};
+use aestra_extension::{
+    AestraExtension, CapabilityExpression, CapabilitySet, DomainDescriptor, ExtensionManifest,
+    ExtensionRegistry, InputControl, InputMetadata, ModuleLowerer, ModuleMetadata,
+    PayloadMigration, RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer,
+    StageLoweringInput, StageTypeDescriptor,
 };
 use aestra_runtime::{
     AESTRA_RESOURCE_PARTICLES, ComputeOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
@@ -57,7 +57,7 @@ pub struct ExampleExtension;
 /// Links the example extension into this process, so `EffectCompiler::default()` and
 /// `ExtensionRegistry::linked()` include it. Idempotent.
 pub fn link() {
-    aestra_compiler::link_extension(Arc::new(ExampleExtension))
+    aestra_extension::link_extension(Arc::new(ExampleExtension))
         .expect("the example extension registers only namespaced, unique ids");
 }
 

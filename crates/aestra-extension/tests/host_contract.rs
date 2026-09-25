@@ -6,7 +6,7 @@ use aestra_core::{
     DiagnosticCode, EffectAsset, Emitter, ExtensionId, ModuleParameters, ModuleTypeId, StageKind,
     StageTypeId, Value,
 };
-use aestra_extension_host::{PackageStatus, load_packages};
+use aestra_extension::host::{PackageStatus, load_packages};
 use aestra_runtime::execute_reference;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -337,11 +337,11 @@ fn invalid_content_is_rejected_before_registration() {
 #[test]
 fn an_effect_finds_its_projects_extensions_directory() {
     let effect = sample_extensions().join("../effects/plugin_lab.aestra.ron");
-    let dirs = aestra_extension_host::project_extension_dirs(&effect);
+    let dirs = aestra_extension::host::project_extension_dirs(&effect);
     assert_eq!(dirs.len(), 1);
     assert!(dirs[0].ends_with("extensions"));
     assert_eq!(
-        aestra_extension_host::discover(&dirs).len(),
+        aestra_extension::host::discover(&dirs).len(),
         1,
         "the sample project's wind package"
     );

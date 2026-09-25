@@ -2,11 +2,11 @@
 //! become the same descriptors, lowerers and migrations a linked Rust extension registers, so the
 //! compiler, editor and every other consumer cannot tell the two apart.
 
-use crate::package::{
+use super::package::{
     AccessModeDecl, DispatchDecl, LifetimeDecl, MigrationOp, MigrationStep, OpTemplate,
     PackageContent, PackageManifest, RequiresDecl, StageTemplate,
 };
-use aestra_compiler::{
+use crate::{
     AestraExtension, CapabilityExpression, CapabilitySet, DomainDescriptor, ExtensionManifest,
     ExtensionRegistry, InputControl, InputMetadata, ModuleLowerer, ModuleMetadata,
     PayloadMigration, RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer,

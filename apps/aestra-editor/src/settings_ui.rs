@@ -91,7 +91,7 @@ enum SettingsNumber {
 pub(crate) struct SettingsPanelState {
     category: SettingsCategory,
     /// What happened to each discovered extension package at startup (extensible-stages M12).
-    pub(crate) extension_report: aestra_extension_host::HostReport,
+    pub(crate) extension_report: aestra_extension::host::HostReport,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -109,7 +109,7 @@ struct SettingsNumberControl(SettingsNumber);
 
 impl SettingsPanelState {
     pub(crate) fn with_extension_report(
-        extension_report: aestra_extension_host::HostReport,
+        extension_report: aestra_extension::host::HostReport,
     ) -> Self {
         Self {
             extension_report,
@@ -123,8 +123,8 @@ fn log_extension_report(state: Res<SettingsPanelState>) {
     for package in &state.extension_report.packages {
         let id = package.id.as_ref().map_or("<unknown>", |id| id.as_str());
         match package.status {
-            aestra_extension_host::PackageStatus::Registered
-            | aestra_extension_host::PackageStatus::Disabled => info!(
+            aestra_extension::host::PackageStatus::Registered
+            | aestra_extension::host::PackageStatus::Disabled => info!(
                 "extension {id} {} ({}): {}",
                 package.version,
                 package.root.display(),
@@ -311,7 +311,7 @@ fn spawn_settings_category(
     parent: &mut ChildSpawnerCommands,
     settings: &EditorSettings,
     category: SettingsCategory,
-    extension_report: &aestra_extension_host::HostReport,
+    extension_report: &aestra_extension::host::HostReport,
     localizer: &Localizer,
 ) {
     spawn_settings_heading(parent, &localizer.text(category.message_id()));
@@ -432,7 +432,7 @@ fn spawn_settings_category(
 fn spawn_extension_settings(
     parent: &mut ChildSpawnerCommands,
     settings: &EditorSettings,
-    report: &aestra_extension_host::HostReport,
+    report: &aestra_extension::host::HostReport,
     localizer: &Localizer,
 ) {
     parent

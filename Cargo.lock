@@ -172,9 +172,9 @@ name = "aestra-compiler"
 version = "0.1.0"
 dependencies = [
  "aestra-core",
+ "aestra-extension",
  "aestra-project",
  "aestra-runtime",
- "semver",
  "serde",
  "tempfile",
  "thiserror 2.0.20",
@@ -200,7 +200,7 @@ dependencies = [
  "aestra-compiler",
  "aestra-core",
  "aestra-example-extension",
- "aestra-extension-host",
+ "aestra-extension",
  "aestra-gpu",
  "aestra-project",
  "aestra-runtime",
@@ -228,11 +228,12 @@ version = "0.1.0"
 dependencies = [
  "aestra-compiler",
  "aestra-core",
+ "aestra-extension",
  "aestra-runtime",
 ]
 
 [[package]]
-name = "aestra-extension-host"
+name = "aestra-extension"
 version = "0.1.0"
 dependencies = [
  "aestra-compiler",
@@ -293,7 +294,7 @@ dependencies = [
  "aestra-authoring",
  "aestra-bevy",
  "aestra-example-extension",
- "aestra-extension-host",
+ "aestra-extension",
  "aestra-project",
  "bevy",
  "image",
