@@ -25,6 +25,63 @@ pub enum SpawnShape {
     Box { half_extents: [f32; 3] },
 }
 
+/// Where an emitter's spawns land in effect space: the emitter transform. Stateful particles simulate
+/// in effect space (gravity, colliders and followed fields are effect-space), so the transform places
+/// only what a spawn creates — the shape sample becomes `translation + rotation(scale × local)` and the
+/// launch velocity is rotated (not scaled). Moving an emitter therefore moves where new particles
+/// appear while the ones in flight keep their motion, like a world-space emitter. Trig-free (explicit
+/// quaternion rotation of a unit `rotation`), so the GPU spawn kernel reproduces it bit-for-bit;
+/// [`SpawnPlacement::IDENTITY`] is skipped entirely on both sides.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpawnPlacement {
+    pub translation: [f32; 3],
+    /// A unit quaternion `[x, y, z, w]`.
+    pub rotation: [f32; 4],
+    pub scale: [f32; 3],
+}
+
+impl SpawnPlacement {
+    pub const IDENTITY: Self = Self {
+        translation: [0.0; 3],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+        scale: [1.0; 3],
+    };
+
+    /// A shape-local spawn position placed in effect space.
+    pub fn point(&self, local: [f32; 3]) -> [f32; 3] {
+        let rotated = self.vector([
+            local[0] * self.scale[0],
+            local[1] * self.scale[1],
+            local[2] * self.scale[2],
+        ]);
+        [
+            self.translation[0] + rotated[0],
+            self.translation[1] + rotated[1],
+            self.translation[2] + rotated[2],
+        ]
+    }
+
+    /// A launch direction/velocity rotated into effect space: `v + w·t + q × t` with `t = 2 q × v`,
+    /// in the exact operation order the GPU kernel uses.
+    pub fn vector(&self, v: [f32; 3]) -> [f32; 3] {
+        let [x, y, z, w] = self.rotation;
+        let tx = 2.0 * (y * v[2] - z * v[1]);
+        let ty = 2.0 * (z * v[0] - x * v[2]);
+        let tz = 2.0 * (x * v[1] - y * v[0]);
+        [
+            v[0] + w * tx + (y * tz - z * ty),
+            v[1] + w * ty + (z * tx - x * tz),
+            v[2] + w * tz + (x * ty - y * tx),
+        ]
+    }
+}
+
+impl Default for SpawnPlacement {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
 /// The maximum colliders one stateful emitter carries (hybrid roadmap M10). Packed into the params
 /// buffer, so kept small; enough for a ground plane plus a few obstacles.
 pub const MAX_COLLIDERS: usize = 4;
@@ -54,6 +111,8 @@ pub struct StatefulConfig {
     pub drag: f32,
     /// The volume particles spawn within.
     pub shape: SpawnShape,
+    /// The emitter transform placing each spawn in effect space.
+    pub placement: SpawnPlacement,
     /// Procedural turbulence strength: a per-particle, per-axis value-noise acceleration that evolves
     /// with the particle's age. `0` disables it.
     pub turbulence: f32,
@@ -216,8 +275,13 @@ impl StatefulSimulation {
         let spawn = (self.config.spawn_per_tick as usize).min(room);
         for _ in 0..spawn {
             let ordinal = self.spawned;
-            let velocity = launch_velocity(&self.config, self.seed, ordinal);
-            let position = launch_position(&self.config, self.seed, ordinal);
+            let mut velocity = launch_velocity(&self.config, self.seed, ordinal);
+            let mut position = launch_position(&self.config, self.seed, ordinal);
+            let placement = self.config.placement;
+            if placement != SpawnPlacement::IDENTITY {
+                position = placement.point(position);
+                velocity = placement.vector(velocity);
+            }
             let lifetime = lerp(
                 self.config.lifetime.0,
                 self.config.lifetime.1,
@@ -544,6 +608,7 @@ mod tests {
             spread: 0.4,
             drag: 0.5,
             shape: SpawnShape::Sphere { radius: 3.0 },
+            placement: SpawnPlacement::IDENTITY,
             turbulence: 6.0,
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,
@@ -686,6 +751,7 @@ mod tests {
             spread: 0.0,
             drag: 0.0,
             shape: SpawnShape::Point,
+            placement: SpawnPlacement::IDENTITY,
             turbulence: 0.0,
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,
@@ -746,6 +812,38 @@ mod tests {
     }
 
     #[test]
+    fn the_placement_moves_new_spawns_into_effect_space() {
+        // A quarter turn about +Z maps +Y to -X; the shape sample is scaled before rotating.
+        let half = std::f32::consts::FRAC_1_SQRT_2;
+        let placement = SpawnPlacement {
+            translation: [30.0, 7.0, -2.0],
+            rotation: [0.0, 0.0, half, half],
+            scale: [2.0, 2.0, 2.0],
+        };
+        let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-4);
+        assert!(near(placement.vector([0.0, 1.0, 0.0]), [-1.0, 0.0, 0.0]));
+        assert!(near(placement.point([0.0, 1.0, 0.0]), [28.0, 7.0, -2.0]));
+
+        let config = StatefulConfig {
+            placement,
+            gravity: [0.0; 3],
+            drag: 0.0,
+            turbulence: 0.0,
+            spread: 0.0,
+            ..config()
+        };
+        let mut placed = StatefulSimulation::new(config, 3);
+        placed.advance_to_tick(1);
+        for particle in &placed.particles {
+            // Spawned this tick: at the placed shape sample, launched along the rotated direction.
+            let local = StatefulSimulation::launch_position(&config, 3, particle.id);
+            assert_eq!(particle.position, placement.point(local));
+            assert!(particle.velocity[0] < 0.0 && particle.velocity[1].abs() < 1e-3);
+        }
+        assert!(placed.live_count() > 0);
+    }
+
+    #[test]
     fn turbulence_is_bounded_evolves_with_age_and_disables_at_zero() {
         let seed = 0x7B_u64;
         let ordinal = 11;
@@ -795,6 +893,7 @@ mod tests {
             spread: 0.0,
             drag: 0.0,
             shape: SpawnShape::Point,
+            placement: SpawnPlacement::IDENTITY,
             turbulence: 0.0,
             colliders: {
                 let mut colliders = [Collider::NONE; MAX_COLLIDERS];
@@ -830,6 +929,7 @@ mod tests {
             spread: 0.0,
             drag: 0.0,
             shape: SpawnShape::Point,
+            placement: SpawnPlacement::IDENTITY,
             turbulence: 0.0,
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,

@@ -30,7 +30,8 @@ pub use staged::{
     StagedResourceLifetime, diffuse_2d, diffuse_2d_step,
 };
 pub use stateful::{
-    Collider, ColliderShape, MAX_COLLIDERS, SpawnShape, StatefulConfig, StatefulSimulation,
+    Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
+    StatefulSimulation,
 };
 
 pub use checkpoint::{

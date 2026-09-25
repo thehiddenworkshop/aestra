@@ -211,7 +211,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   restores the nearest checkpoint and replays forward. Scrubbing reproduces the uninterrupted run bit
   for bit.
 - Runs every presented effect's extension stages in the render world (`gpu::extension_stages`):
-  - one timeline per stage, rebuilt only when the compiled effect or seed changes;
+  - one timeline per stage, rebuilt only when a stage's execution block, the seed or the host-binding
+    size changes, so recompiles that leave the stages alone (a gizmo drag) keep them running;
   - a rebound host object drops the checkpoints;
   - the same `Preview`/`Exact` catch-up budgets as the stateful particle path;
   - per-instance GPU time as `GpuStageTiming` (the profile's `gpu_stage_time_ns`);
@@ -222,6 +223,13 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   emitter, then the follow pass. All stores checkpoint at one cadence. A backward seek restores all
   of them at the latest tick they share (else resets them all to tick 0) and replays, so scrubbing
   stays bit-exact. The CPU reference cannot run it, which `EffectRequirements::gpu_fields` reports.
+- Places stateful spawns with the emitter transform (`aestra_runtime::SpawnPlacement`, packed at
+  params 67..78). Stateful particles simulate in effect space, so the transform places only new spawns:
+  the shape sample becomes `translation + rotation(scale × local)` and the launch velocity is rotated.
+  The CPU reference and GPU kernel apply it identically and skip the identity.
+  - Moving an emitter keeps the live state and re-places only future spawns, so dragging stays live.
+  - Checkpoints are dropped, and none is captured while the state mixes two placements. The next
+    backward seek resets and replays under one placement.
 - With `AestraDebugViews::field_slices` or an `AestraFieldView`, draws one slice of a stage's grid
   field. It uses the block's `FieldLayout` and appears as an unlit quad in 3D or a sprite in 2D. This
   is the only presentation of plugin fields until plugin renderers run.

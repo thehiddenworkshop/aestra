@@ -444,10 +444,40 @@ fn receive_stage_timings(
     }
 }
 
+/// What one effect's stage timelines were built for: every stage's execution block, the seed and the
+/// host-binding size. Content, not the compiled effect's identity — an edit that leaves the stages
+/// alone (moving an emitter with the gizmo recompiles every frame) keeps the running simulation.
+#[derive(PartialEq)]
+struct StagesKey {
+    blocks: Vec<aestra_runtime::ExecutionBlock>,
+    seed: u32,
+    host_bytes: u64,
+}
+
+impl StagesKey {
+    fn of(extracted: &ExtractedStages) -> Self {
+        Self {
+            blocks: stages(&extracted.effect)
+                .map(|stage| stage.block.clone())
+                .collect(),
+            seed: extracted.seed,
+            host_bytes: extracted.host.byte_len(),
+        }
+    }
+
+    fn matches(&self, extracted: &ExtractedStages) -> bool {
+        self.seed == extracted.seed
+            && self.host_bytes == extracted.host.byte_len()
+            && self
+                .blocks
+                .iter()
+                .eq(stages(&extracted.effect).map(|stage| &stage.block))
+    }
+}
+
 /// One effect's stage timelines in the render world.
 struct EffectStages {
-    /// Identity of the compiled effect and seed the timelines were built for.
-    key: (usize, u32),
+    key: StagesKey,
     host_epoch: u64,
     /// One per stage; `None` when the stage could not be prepared (logged once).
     timelines: Vec<Option<StageTimeline>>,
@@ -465,9 +495,8 @@ fn prepare_stage_runtimes(
 ) {
     runtimes.0.retain(|entity, _| effects.contains(*entity));
     for (entity, extracted) in &effects {
-        let key = (Arc::as_ptr(&extracted.effect) as usize, extracted.seed);
         if let Some(existing) = runtimes.0.get_mut(&entity)
-            && existing.key == key
+            && existing.key.matches(extracted)
         {
             if existing.host_epoch != extracted.host_epoch {
                 // Recorded against another host object: never restore it under this one.
@@ -506,7 +535,7 @@ fn prepare_stage_runtimes(
         runtimes.0.insert(
             entity,
             EffectStages {
-                key,
+                key: StagesKey::of(extracted),
                 host_epoch: extracted.host_epoch,
                 timelines,
             },

@@ -661,8 +661,65 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// `shape_kind` 0 = point, 1 = sphere, 2 = box; `subtick` is the presentation-interpolation time in
 /// seconds since the last tick), followed by the collider block (hybrid roadmap M10): a collider-count
 /// word at index 26, then up to four 10-word collider records from index 27 (see
-/// [`STATEFUL_COLLISION_WGSL`]).
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 67;
+/// [`STATEFUL_COLLISION_WGSL`]), then the spawn placement (the emitter transform,
+/// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
+/// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78.
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 78;
+
+/// Packs a spawn placement into its [`STATEFUL_SIMULATION_PARAM_WORDS`] slots (67..78); the identity
+/// leaves the flag clear so the kernel skips it, exactly as the CPU reference does.
+pub fn pack_spawn_placement(placement: &aestra_runtime::SpawnPlacement, words: &mut [u32]) {
+    words[67] = u32::from(*placement != aestra_runtime::SpawnPlacement::IDENTITY);
+    let values = placement
+        .translation
+        .iter()
+        .chain(&placement.rotation)
+        .chain(&placement.scale);
+    for (word, value) in words[68..78].iter_mut().zip(values) {
+        *word = value.to_bits();
+    }
+}
+
+/// Spawn placement for the stateful GPU backend: the emitter transform packed at
+/// [`STATEFUL_SIMULATION_PARAM_WORDS`]' 67..78 (see [`pack_spawn_placement`]), applied by `spawn` when
+/// the flag word is set. The GPU counterpart of `aestra_runtime::SpawnPlacement`, operation for
+/// operation. The including shader must declare the `params: array<u32>` binding.
+pub const STATEFUL_PLACEMENT_WGSL: &str = r#"
+const AESTRA_PLACEMENT_INDEX: u32 = 67u;
+
+fn aestra_param_f32(index: u32) -> f32 {
+    return bitcast<f32>(params[index]);
+}
+
+// Rotates by the unit placement quaternion: v + w t + q x t with t = 2 q x v, in the operation order of
+// aestra_runtime::SpawnPlacement::vector.
+fn aestra_place_vector(v: vec3<f32>) -> vec3<f32> {
+    let x = aestra_param_f32(71u);
+    let y = aestra_param_f32(72u);
+    let z = aestra_param_f32(73u);
+    let w = aestra_param_f32(74u);
+    let tx = 2.0 * (y * v.z - z * v.y);
+    let ty = 2.0 * (z * v.x - x * v.z);
+    let tz = 2.0 * (x * v.y - y * v.x);
+    return vec3<f32>(
+        v.x + w * tx + (y * tz - z * ty),
+        v.y + w * ty + (z * tx - x * tz),
+        v.z + w * tz + (x * ty - y * tx));
+}
+
+// Places a shape-local spawn position: translation + rotation(scale * local). Mirrors
+// aestra_runtime::SpawnPlacement::point.
+fn aestra_place_point(local: vec3<f32>) -> vec3<f32> {
+    let rotated = aestra_place_vector(vec3<f32>(
+        local.x * aestra_param_f32(75u),
+        local.y * aestra_param_f32(76u),
+        local.z * aestra_param_f32(77u)));
+    return vec3<f32>(
+        aestra_param_f32(68u) + rotated.x,
+        aestra_param_f32(69u) + rotated.y,
+        aestra_param_f32(70u) + rotated.z);
+}
+"#;
 
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
 @compute @workgroup_size(64)
@@ -730,14 +787,19 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
-    let position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
+    var position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
+    var launch = velocity;
+    if (params[AESTRA_PLACEMENT_INDEX] != 0u) {
+        position = aestra_place_point(position);
+        launch = aestra_place_vector(velocity);
+    }
     let base = slot * AESTRA_STATE_STRIDE;
     state[base + 0u] = position.x;
     state[base + 1u] = position.y;
     state[base + 2u] = position.z;
-    state[base + 3u] = velocity.x;
-    state[base + 4u] = velocity.y;
-    state[base + 5u] = velocity.z;
+    state[base + 3u] = launch.x;
+    state[base + 4u] = launch.y;
+    state[base + 5u] = launch.z;
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
@@ -775,7 +837,8 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub fn stateful_simulation_wgsl() -> String {
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
-         {STATEFUL_PRESENT_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
+         {STATEFUL_PRESENT_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
+         {STATEFUL_SIMULATION_ENTRIES}"
     )
 }
 

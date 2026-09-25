@@ -24,11 +24,12 @@
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
 use aestra_gpu::{
-    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_PRESENT_WGSL,
-    STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
+    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_PLACEMENT_WGSL,
+    STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
 };
 use aestra_runtime::{
-    Collider, ColliderShape, MAX_COLLIDERS, SpawnShape, StatefulConfig, StatefulSimulation,
+    Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
+    StatefulSimulation,
 };
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{borrow::Cow, sync::mpsc, time::Duration};
@@ -103,6 +104,7 @@ fn stateful_params(
         words[base + 8] = collider.friction.to_bits();
         words[base + 9] = u32::from(collider.kill);
     }
+    aestra_gpu::pack_spawn_placement(&config.placement, &mut words);
     words
 }
 
@@ -344,14 +346,19 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
-    let position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
+    var position = spawn_launch_position(seed, ordinal, params[20], bitcast<f32>(params[21]), half_extents);
+    var launch = velocity;
+    if (params[AESTRA_PLACEMENT_INDEX] != 0u) {
+        position = aestra_place_point(position);
+        launch = aestra_place_vector(velocity);
+    }
     let base = slot * 9u;
     state[base + 0u] = position.x;
     state[base + 1u] = position.y;
     state[base + 2u] = position.z;
-    state[base + 3u] = velocity.x;
-    state[base + 4u] = velocity.y;
-    state[base + 5u] = velocity.z;
+    state[base + 3u] = launch.x;
+    state[base + 4u] = launch.y;
+    state[base + 5u] = launch.z;
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
@@ -538,7 +545,7 @@ impl Harness {
             label: Some("Aestra death loop"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
                 "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{STATEFUL_COLLISION_WGSL}\
-                 {DEATH_LOOP_WGSL}"
+                 {STATEFUL_PLACEMENT_WGSL}{DEATH_LOOP_WGSL}"
             ))),
         });
         let death_integrate_pipeline =
@@ -1916,6 +1923,7 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
             half_extents: [4.0, 1.0, 6.0],
         },
         turbulence: 5.0,
+        placement: SpawnPlacement::IDENTITY,
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
@@ -1970,6 +1978,7 @@ fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.0 },
         turbulence: 7.0,
+        placement: SpawnPlacement::IDENTITY,
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
@@ -2056,6 +2065,7 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.5 },
         turbulence: 7.0,
+        placement: SpawnPlacement::IDENTITY,
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
@@ -2104,6 +2114,69 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
     }
 }
 
+#[test]
+fn gpu_spawn_placement_matches_the_cpu_reference() {
+    // A moved, rotated and scaled emitter: the GPU spawn kernel places each spawn exactly as
+    // `SpawnPlacement` does on the CPU, through a window with death and reuse.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let (sin, cos) = (0.6_f32.sin(), 0.6_f32.cos());
+    let axis = [0.48_f32, 0.6, 0.64];
+    let config = StatefulConfig {
+        gravity: [0.0, -9.81, 0.0],
+        spawn_per_tick: 4,
+        speed: (9.0, 15.0),
+        lifetime: (0.45, 0.6),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.5,
+        drag: 0.8,
+        shape: SpawnShape::Box {
+            half_extents: [3.0, 1.0, 2.0],
+        },
+        turbulence: 7.0,
+        placement: SpawnPlacement {
+            translation: [30.0, 7.5, -12.0],
+            rotation: [axis[0] * sin, axis[1] * sin, axis[2] * sin, cos],
+            scale: [2.0, 0.5, 1.5],
+        },
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 512,
+    };
+    let seed = 0x0DD5_EED5_1234_5678_u64;
+    let ticks = 90_u32;
+
+    let gpu = harness
+        .advance_stateful_with_death(&config, seed, ticks)
+        .unwrap();
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.advance_to_tick(ticks as u64);
+    let cpu = simulation.alive_particles();
+
+    assert!(!cpu.is_empty());
+    assert_eq!(gpu.len(), cpu.len());
+    let count = cpu.len() as f32;
+    let centroid_x = cpu.iter().map(|(_, p)| p[0]).sum::<f32>() / count;
+    let centroid_z = cpu.iter().map(|(_, p)| p[2]).sum::<f32>() / count;
+    assert!(
+        (centroid_x - 30.0).abs() < 10.0 && (centroid_z + 12.0).abs() < 10.0,
+        "the particles live around the moved emitter ({centroid_x}, {centroid_z})"
+    );
+    let gpu_by_id: std::collections::HashMap<u64, [f32; 3]> = gpu.into_iter().collect();
+    for (id, cpu_pos) in cpu {
+        let gpu_pos = gpu_by_id[&id];
+        for axis in 0..3 {
+            let (expected, actual) = (cpu_pos[axis], gpu_pos[axis]);
+            let tolerance = 1e-3 + 1e-4 * expected.abs().max(actual.abs());
+            assert!(
+                (expected - actual).abs() <= tolerance,
+                "ordinal {id} axis {axis}: CPU={expected:.5} GPU={actual:.5}"
+            );
+        }
+    }
+}
+
 /// A config exercising all three collider shapes (M10): a ground plane, a sphere obstacle, and a box
 /// obstacle in the particles' fall path, plus gravity + drag + turbulence so the persistent dynamics
 /// are non-trivial between contacts.
@@ -2118,6 +2191,7 @@ fn collision_config(colliders: [Collider; MAX_COLLIDERS], collider_count: u32) -
         drag: 0.3,
         shape: SpawnShape::Sphere { radius: 1.0 },
         turbulence: 3.0,
+        placement: SpawnPlacement::IDENTITY,
         colliders,
         collider_count,
         capacity: 512,

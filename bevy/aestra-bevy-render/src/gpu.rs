@@ -183,6 +183,25 @@ struct StatefulDispatch {
     colliders: Vec<aestra_core::Collider>,
     /// The domain field these particles follow (fluid F2b); they then advance in lockstep with it.
     field_follow: Option<aestra_runtime::CompiledFieldFollow>,
+    /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
+    /// an emitter changes only future spawns, so the live state survives (see
+    /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
+    placement: aestra_runtime::SpawnPlacement,
+}
+
+/// The spawn placement of an emitter transform, with the rotation normalized for the trig-free kernel.
+fn spawn_placement(transform: aestra_core::EmitterTransform) -> aestra_runtime::SpawnPlacement {
+    let rotation = Quat::from_array(transform.rotation);
+    let rotation = if rotation.length_squared() > 1e-12 {
+        rotation.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    aestra_runtime::SpawnPlacement {
+        translation: transform.translation,
+        rotation: rotation.to_array(),
+        scale: transform.scale,
+    }
 }
 
 impl StatefulDispatch {
@@ -852,6 +871,7 @@ pub(crate) fn prepare_gpu_effects(
                                 seed,
                                 colliders: compiled.colliders.clone(),
                                 field_follow: compiled.field_follow.clone(),
+                                placement: spawn_placement(compiled.transform),
                             })
                     })
                     .collect()
@@ -1263,6 +1283,16 @@ fn update_gpu_inputs(
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
     for (mut player, mut gpu, runtime, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
+        // A transform-only edit (a gizmo drag) swaps the effect in place: re-place future spawns.
+        for index in 0..gpu.stateful_dispatch.len() {
+            let emitter = gpu.stateful_dispatch[index].emitter_index as usize;
+            if let Some(emitter) = player.effect().emitters.get(emitter) {
+                let placement = spawn_placement(emitter.transform);
+                if gpu.stateful_dispatch[index].placement != placement {
+                    gpu.stateful_dispatch[index].placement = placement;
+                }
+            }
+        }
         // Only emitter and renderer inputs change per frame; use the dynamics
         // builder so we never reallocate the capacity-sized particle scratch buffer
         // here (its cost scales with capacity, not with what actually changed).
@@ -1973,6 +2003,11 @@ struct StatefulPersistentState {
     spawn_accumulator: f32,
     /// GPU-resident checkpoints, ascending by tick (hybrid roadmap M7).
     checkpoints: Vec<StatefulCheckpoint>,
+    /// The spawn placement the live state is advancing under.
+    placement: aestra_runtime::SpawnPlacement,
+    /// The live state mixes spawns from more than one placement (the emitter moved mid-run), so it is
+    /// no longer what a replay reproduces: no checkpoint is captured from it until the next reset.
+    mixed_placement: bool,
 }
 
 /// Fixed tick cadence between checkpoints (~1/3 s at 60 Hz).
@@ -1999,7 +2034,22 @@ impl StatefulPersistentState {
             last_tick: 0,
             spawn_accumulator: 0.0,
             checkpoints: Vec::new(),
+            placement: aestra_runtime::SpawnPlacement::IDENTITY,
+            mixed_placement: false,
         }
+    }
+
+    /// Moves future spawns to `placement` without restarting (a gizmo drag stays live). Particles
+    /// already in flight keep their motion, so the checkpoints — recorded under the old placement —
+    /// are dropped and none is captured until a reset replays under a single placement.
+    fn set_placement(&mut self, placement: aestra_runtime::SpawnPlacement) {
+        if self.placement == placement {
+            return;
+        }
+        self.placement = placement;
+        self.checkpoints.clear();
+        // A state still at tick 0 holds no spawns yet, so it is not mixed.
+        self.mixed_placement = self.last_tick > 0;
     }
 
     /// Creates the four persistent buffers initialised to tick 0.
@@ -2047,15 +2097,17 @@ impl StatefulPersistentState {
         self.spawn_counter = spawn_counter;
         self.last_tick = 0;
         self.spawn_accumulator = 0.0;
+        self.mixed_placement = false;
     }
 
     /// Captures a GPU-resident checkpoint of the current state at `tick` (copying all four buffers
     /// GPU→GPU), unless one already exists at that tick. Coarsens the store when it exceeds the budget.
     fn capture(&mut self, render_device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
-        if self
-            .checkpoints
-            .iter()
-            .any(|checkpoint| checkpoint.tick == tick)
+        if self.mixed_placement
+            || self
+                .checkpoints
+                .iter()
+                .any(|checkpoint| checkpoint.tick == tick)
         {
             return;
         }
@@ -2196,15 +2248,22 @@ fn prepare_stateful_states(
                 .stateful_dispatch
                 .iter()
                 .map(|dispatch| {
-                    StatefulPersistentState::allocate(
+                    let mut state = StatefulPersistentState::allocate(
                         &render_device,
                         dispatch.capacity,
                         stride,
                         dispatch.fingerprint(),
-                    )
+                    );
+                    state.placement = dispatch.placement;
+                    state
                 })
                 .collect();
             states.0.insert(entity, allocated);
+        } else if let Some(states) = states.0.get_mut(&entity) {
+            // Only the emitter transform changed: keep simulating (see `set_placement`).
+            for (state, dispatch) in states.iter_mut().zip(&effect.stateful_dispatch) {
+                state.set_placement(dispatch.placement);
+            }
         }
     }
 }
@@ -2272,6 +2331,7 @@ fn stateful_params_bytes(
     // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
     pack_colliders(&dispatch.colliders, &mut words);
+    aestra_gpu::pack_spawn_placement(&dispatch.placement, &mut words);
     words.into_iter().flat_map(u32::to_le_bytes).collect()
 }
 
@@ -3189,6 +3249,7 @@ mod tests {
             seed: 42,
             colliders: Vec::new(),
             field_follow: None,
+            placement: aestra_runtime::SpawnPlacement::IDENTITY,
         };
         assert_eq!(
             base.fingerprint(),
@@ -4003,6 +4064,7 @@ mod coupled_tests {
                 field: field.clone(),
                 strength,
             }),
+            placement: aestra_runtime::SpawnPlacement::IDENTITY,
         };
         let dispatches = vec![dispatch(0, 0.0, 8.0), dispatch(1, -20.0, 3.0)];
         let states = dispatches
@@ -4150,5 +4212,61 @@ mod coupled_tests {
         let uncoupled = uncoupled.state();
         assert_ne!(uncoupled[0], at_90[0], "the smoke puffs follow the plume");
         assert_ne!(uncoupled[1], at_90[1], "the embers too");
+    }
+
+    fn place(scene: &mut Scene, placement: aestra_runtime::SpawnPlacement) {
+        for (state, dispatch) in scene.states.iter_mut().zip(&mut scene.dispatches) {
+            dispatch.placement = placement;
+            state.set_placement(placement);
+        }
+    }
+
+    #[test]
+    fn moving_an_emitter_keeps_the_run_live_and_a_seek_replays_the_new_placement() {
+        let Some(mut moved) = require(scene(true)) else {
+            return;
+        };
+        let placement = aestra_runtime::SpawnPlacement {
+            translation: [12.0, 3.0, -4.0],
+            rotation: Quat::from_rotation_z(0.8).to_array(),
+            scale: [1.5; 3],
+        };
+        moved.frame(60);
+        let before = moved.state();
+        place(&mut moved, placement);
+        moved.frame(61);
+        // A gizmo drag re-places the spawns without restarting anything: one more tick.
+        assert_eq!(moved.states[0].last_tick, 61);
+        assert_eq!(moved.domains[0].as_ref().unwrap().last_tick(), 61);
+        moved.frame(90);
+        assert!(
+            moved
+                .states
+                .iter()
+                .all(|state| state.checkpoints.is_empty()),
+            "a history mixing two placements is never checkpointed"
+        );
+        // Seeking back replays from tick 0 under the one placement.
+        moved.frame(30);
+        moved.frame(90);
+
+        let mut placed = scene(true).unwrap();
+        place(&mut placed, placement);
+        placed.frame(90);
+        let placed = placed.state();
+        assert_eq!(
+            moved.state(),
+            placed,
+            "the replay equals a run placed from the start"
+        );
+        assert_ne!(placed[0], before[0]);
+
+        let mut unplaced = scene(true).unwrap();
+        unplaced.frame(90);
+        assert_ne!(
+            unplaced.state()[0],
+            placed[0],
+            "the placement moved the spawns"
+        );
     }
 }
