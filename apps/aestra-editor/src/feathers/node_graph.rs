@@ -47,7 +47,9 @@ pub(crate) const PORT_ROW_HEIGHT: f32 = 24.0;
 pub(crate) const NODE_PREVIEW_SIZE: f32 = 208.0;
 pub(crate) const SOCKET_HIT_SIZE: f32 = 20.0;
 const SOCKET_SIZE: f32 = 10.0;
-const MIN_ZOOM: f32 = 0.25;
+// Overview navigation should reach well beyond the old 25% floor. The adaptive grid and fixed
+// wire layer remain legible at this scale; editing controls are intended for closer zoom levels.
+const MIN_ZOOM: f32 = 0.08;
 const MAX_ZOOM: f32 = 2.0;
 const FRAME_PADDING: f32 = 42.0;
 const GRID_SPACING: f32 = 32.0;
@@ -2467,6 +2469,37 @@ mod tests {
     }
 
     #[test]
+    fn graph_can_zoom_out_to_overview_scale_without_losing_cursor_anchor() {
+        let cursor = Vec2::new(430.0, 260.0);
+        let before = GraphView {
+            pan: Vec2::new(-180.0, 75.0),
+            zoom: 0.25,
+        };
+        let anchor = (cursor - before.pan) / before.zoom;
+
+        let after = zoomed_graph_view_at(before, cursor, -20.0);
+        assert_eq!(after.zoom, MIN_ZOOM);
+        assert_vec2_close(after.pan + anchor * after.zoom, cursor);
+        assert_vec2_close(
+            graph_drag_delta(Vec2::new(8.0, 4.0), after.zoom),
+            Vec2::new(100.0, 50.0),
+        );
+    }
+
+    #[test]
+    fn frame_view_uses_overview_scale_for_wide_graphs() {
+        let bounds = Rect::from_corners(Vec2::ZERO, Vec2::new(8_000.0, 2_000.0));
+        let viewport = Vec2::new(960.0, 540.0);
+        let view = framed_graph_view(bounds, viewport, 1.0);
+        assert!(view.zoom < 0.25);
+        assert!(view.zoom >= MIN_ZOOM);
+        let visible_min = bounds.min * view.zoom + view.pan;
+        let visible_max = bounds.max * view.zoom + view.pan;
+        assert!(visible_min.x >= 0.0 && visible_min.y >= 0.0);
+        assert!(visible_max.x <= viewport.x && visible_max.y <= viewport.y);
+    }
+
+    #[test]
     fn frame_view_centers_bounds_and_keeps_them_inside_the_viewport() {
         let bounds = Rect::from_corners(Vec2::new(200.0, 120.0), Vec2::new(1_400.0, 720.0));
         let viewport = Vec2::new(960.0, 540.0);
@@ -2499,7 +2532,7 @@ mod tests {
         let content_size = Vec2::new(1_800.0, 960.0);
         let graph_point = Vec2::new(725.0, 318.0);
 
-        for zoom in [0.25, 0.7, 1.0, 1.8] {
+        for zoom in [MIN_ZOOM, 0.25, 0.7, 1.0, 1.8] {
             let canvas = graph_canvas_transform(pan, zoom, content_size);
             let canvas_translation = canvas.translation.resolve(1.0, content_size, content_size);
             let canvas_top_left = canvas_translation + content_size * (1.0 - canvas.scale.x) * 0.5;
