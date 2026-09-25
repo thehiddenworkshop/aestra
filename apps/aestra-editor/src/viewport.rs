@@ -2844,6 +2844,14 @@ fn update_preview(
         ),
         With<PreviewPresentedEffect>,
     >,
+    stage_timings: Query<
+        (
+            &PresentedEffect,
+            &PreviewEffectInstancePath,
+            &aestra_bevy_render::gpu::GpuStageTiming,
+        ),
+        With<PreviewPresentedEffect>,
+    >,
 ) {
     session.samples.clear();
     let desired = desired_preview_instances(
@@ -2892,6 +2900,13 @@ fn update_preview(
             if desired.path.is_empty() {
                 session.samples.extend_from_slice(samples);
             }
+        }
+        // Extension stages (a fluid) always run on the GPU, whatever the particle backend.
+        if let Some((p, _, timing)) = stage_timings
+            .iter()
+            .find(|(p, path, _)| path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect))
+        {
+            profile.gpu_stage_time_ns = timing.time_ns(&p.instance);
         }
         profile.record_trail_usage(observed.and_then(|(p, stats, _, _, _, _, _)| {
             stats.and_then(|stats| stats.usage(&p.instance))

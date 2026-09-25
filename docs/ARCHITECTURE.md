@@ -196,8 +196,22 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   - It allocates declared resources and uploads stage constants, the per-tick frame and host
     bindings.
   - It zeroes transient resources every tick.
-  - It runs each compute op as its own pass, and checkpoints and restores persistent stage state.
-  - It is not yet driven by the Bevy frame loop.
+  - It encodes consecutive compute ops into one pass, and uploads per-tick inputs inside the command
+    encoder, so several ticks fit in one submission.
+  - It checkpoints and restores persistent stage state, on the GPU or read back.
+- Owns `execution::StageTimeline`: a stage on a fixed 60 Hz tick. It catches up within a per-frame
+  budget, keeps GPU-resident checkpoints within a count and memory policy, and on a backward seek
+  restores the nearest checkpoint and replays forward. Scrubbing reproduces the uninterrupted run bit
+  for bit.
+- Runs every presented effect's extension stages in the render world (`gpu::extension_stages`):
+  - one timeline per stage, rebuilt only when the compiled effect or seed changes;
+  - a rebound host object drops the checkpoints;
+  - the same `Preview`/`Exact` catch-up budgets as the stateful particle path;
+  - per-instance GPU time as `GpuStageTiming` (the profile's `gpu_stage_time_ns`);
+  - an `aestra::gpu::extension_stages` diagnostics span.
+- With `AestraDebugViews::field_slices` or an `AestraFieldView`, draws one slice of a stage's grid
+  field. It uses the block's `FieldLayout` and appears as an unlit quad in 3D or a sprite in 2D. This
+  is the only presentation of plugin fields until plugin renderers run.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

@@ -178,6 +178,11 @@ pub(super) struct TimingBatch {
 }
 
 impl TimingBatch {
+    /// The query set pass timestamps write into.
+    pub(super) fn query_set(&self) -> &wgpu::QuerySet {
+        &self.slot.queries
+    }
+
     pub(super) fn instance(&mut self, owner: Entity, token: u32, time: f32) -> Option<u32> {
         if self.samples.len() == MAX_INSTANCES {
             return None;

@@ -272,3 +272,32 @@ fn a_missing_fluid_extension_is_diagnosed_and_the_data_preserved() {
     assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
     assert_eq!(reopened.to_pretty_ron().unwrap(), saved);
 }
+
+#[test]
+fn the_committed_smoke_sample_compiles_and_survives_a_missing_plugin_unchanged() {
+    let source = include_str!("../../../sample-project/effects/fluid_smoke.aestra.ron");
+    let effect = EffectAsset::from_ron(source).expect("the sample loads without plugin code");
+    let compiled = EffectCompiler::with_extensions(fluid_registry())
+        .compile(&effect)
+        .expect("the sample compiles with the plugin");
+    let stage = &compiled.emitters[0].extension_stages[0];
+    assert!(!stage.cpu_reference);
+    let density = stage
+        .block
+        .field(&aestra_core::ResourceTypeId::new(
+            aestra_fluid::RESOURCE_DENSITY,
+        ))
+        .expect("the density grid declares its field layout");
+    assert_eq!(density.dims, [48; 3]);
+    assert_eq!(density.components, 1);
+
+    // Opened where the plugin is not linked: named, not dropped, and saved back unchanged.
+    let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&effect)
+        .unwrap_err();
+    assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
+    assert_eq!(
+        effect.to_pretty_ron().unwrap().replace("\r\n", "\n"),
+        source.replace("\r\n", "\n")
+    );
+}

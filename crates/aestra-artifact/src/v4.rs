@@ -10,7 +10,7 @@ use aestra_core::{
 use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
     CompiledExtensionStage, CompiledHostField, CompiledHostFieldRef, ComputeOp, CopyOp,
-    ExecutionBlock, ExecutionOp, ExtensionModulePlan, RepeatPolicy, ResourceAccess,
+    ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout, RepeatPolicy, ResourceAccess,
     ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagedDispatch,
 };
 use serde::{Deserialize, Serialize};
@@ -263,6 +263,17 @@ struct ExecutionBlockV4 {
     ops: Vec<ExecutionOpV4>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     constants: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    fields: Vec<FieldLayoutV4>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FieldLayoutV4 {
+    resource: ResourceTypeId,
+    dims: [u32; 3],
+    components: u32,
+    origin: [f32; 3],
+    cell_size: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -426,6 +437,18 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                     .collect(),
                 ops: stage.block.ops.iter().map(ExecutionOpV4::from).collect(),
                 constants: stage.block.constants.clone(),
+                fields: stage
+                    .block
+                    .fields
+                    .iter()
+                    .map(|field| FieldLayoutV4 {
+                        resource: field.resource.clone(),
+                        dims: field.dims,
+                        components: field.components,
+                        origin: field.origin,
+                        cell_size: field.cell_size,
+                    })
+                    .collect(),
             },
             cpu_reference: stage.cpu_reference,
         }
@@ -454,6 +477,18 @@ impl ExtensionStageV4 {
                 .collect(),
             ops: self.block.ops.into_iter().map(ExecutionOp::from).collect(),
             constants: self.block.constants,
+            fields: self
+                .block
+                .fields
+                .into_iter()
+                .map(|field| FieldLayout {
+                    resource: field.resource,
+                    dims: field.dims,
+                    components: field.components,
+                    origin: field.origin,
+                    cell_size: field.cell_size,
+                })
+                .collect(),
         };
         if let Err(error) = block.validate() {
             return invalid(format!("{path}.block"), error.to_string());

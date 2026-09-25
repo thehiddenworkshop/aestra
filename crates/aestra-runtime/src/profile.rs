@@ -71,6 +71,9 @@ pub struct EffectProfile {
     pub gpu_trail_compaction_time_ns: ProfileValue<u64>,
     /// Trail visibility compute work summed across eligible views; excludes drawing.
     pub gpu_trail_culling_time_ns: ProfileValue<u64>,
+    /// Plugin extension stages (a fluid solver, fluid F1): every tick simulated in the sampled frame,
+    /// catch-up and replay included. A known zero for effects without extension stages.
+    pub gpu_stage_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
     pub submitted_instances: ProfileValue<u32>,
     /// Submitted vertex/index references, not unique vertices or visible pixels.
@@ -149,8 +152,13 @@ impl EffectProfile {
             .filter(|r| matches!(r.kind, crate::RendererPlanKind::Trail { .. }))
             .count() as u32;
         // Three stable compaction dispatches per trail renderer; view culling remains separate.
+        // Plugin extension stages add their own per-tick dispatches (extensible M7 / fluid F1).
+        let stage_dispatches: u32 = extension_stages(effect)
+            .map(|stage| stage.block.compute_pass_count())
+            .sum();
         let dispatch_count = u32::from(effect.max_particles > 0)
-            * (2 + u32::from(has_ribbons) + u32::from(has_trails) + 3 * trail_renderers);
+            * (2 + u32::from(has_ribbons) + u32::from(has_trails) + 3 * trail_renderers)
+            + stage_dispatches;
         Self {
             trail_capacity: ProfileValue::Measured(trail_capacity(effect)),
             occupied_trails: ProfileValue::Unavailable,
@@ -162,6 +170,11 @@ impl EffectProfile {
             gpu_simulation_time_ns: ProfileValue::Unavailable,
             gpu_trail_compaction_time_ns: ProfileValue::Unavailable,
             gpu_trail_culling_time_ns: ProfileValue::Unavailable,
+            gpu_stage_time_ns: if extension_stages(effect).next().is_none() {
+                ProfileValue::Measured(0)
+            } else {
+                ProfileValue::Unavailable
+            },
             alive_particles: ProfileValue::Unavailable,
             submitted_instances: ProfileValue::Unavailable,
             submitted_vertices: ProfileValue::Unavailable,
@@ -353,11 +366,28 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
     };
     let counters = counter_words * size_of::<u32>() as u64;
     let indirect_commands = effect.emitters.len() as u64 * 4 * size_of::<u32>() as u64;
+    // Extension-stage resources (a fluid's grids); backend-sized resources declare 0.
+    let stage_storage = extension_stages(effect)
+        .flat_map(|stage| &stage.block.resources)
+        .map(|resource| resource.bytes)
+        .sum::<u64>();
     particle_storage
         .saturating_add(history_storage)
         .saturating_add(alive_and_dead_indices)
         .saturating_add(counters)
         .saturating_add(indirect_commands)
+        .saturating_add(stage_storage)
+}
+
+/// The effect's plugin extension stages, over its enabled emitters.
+fn extension_stages(
+    effect: &CompiledEffect,
+) -> impl Iterator<Item = &crate::CompiledExtensionStage> {
+    effect
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.enabled)
+        .flat_map(|emitter| &emitter.extension_stages)
 }
 
 const fn particle_attribute_bytes(attribute: ParticleAttribute) -> u64 {

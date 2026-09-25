@@ -202,6 +202,7 @@ fn main() {
     // Linked extensions (extensible-stages M10) register before the module catalog is built or any
     // effect is compiled.
     aestra_example_extension::link();
+    aestra_fluid::link();
     let (mut settings, persistence) = SettingsPersistence::load();
     // Packaged extensions (extensible-stages M12) are discovered in the project's `extensions/` folder
     // and the user's config directory, version-checked and registered — installing one needs no
@@ -232,6 +233,8 @@ fn main() {
             extension_report,
         ))
         .insert_resource(UiScale(ui_scale))
+        // Show a slice through plugin grid fields (a fluid's density) in the preview (fluid F1).
+        .insert_resource(aestra_bevy_render::gpu::AestraDebugViews { field_slices: true })
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {

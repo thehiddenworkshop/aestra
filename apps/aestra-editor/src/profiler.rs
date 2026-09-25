@@ -152,6 +152,7 @@ enum ProfilerMetric {
     GpuTime,
     GpuTrailCompaction,
     GpuTrailCulling,
+    GpuStages,
     AliveParticles,
     SubmittedInstances,
     SubmittedVertices,
@@ -373,7 +374,7 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
         .map(|instance| {
             let profile = &instance.profile;
             format!(
-                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} ({})",
+                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} ({})",
                 instance.label(),
                 localizer.text("profiler-metric-live-particles"),
                 format_profile_count(profile.alive_particles).0,
@@ -389,6 +390,8 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
                 format_profile_duration(profile.gpu_trail_compaction_time_ns).0,
                 localizer.text("profiler-metric-gpu-trail-culling"),
                 format_profile_duration(profile.gpu_trail_culling_time_ns).0,
+                localizer.text("profiler-metric-gpu-stages"),
+                format_profile_duration(profile.gpu_stage_time_ns).0,
                 localizer.text("profiler-metric-submitted-instances"),
                 format_profile_count(profile.submitted_instances).0,
                 localizer.text("profiler-metric-submitted-vertices"),
@@ -466,6 +469,7 @@ fn spawn_profiler_metric_grid(
                 ProfilerMetric::GpuTime,
                 ProfilerMetric::GpuTrailCompaction,
                 ProfilerMetric::GpuTrailCulling,
+                ProfilerMetric::GpuStages,
                 ProfilerMetric::AliveParticles,
                 ProfilerMetric::SubmittedInstances,
                 ProfilerMetric::SubmittedVertices,
@@ -669,6 +673,7 @@ fn spawn_profiler_availability(
             if profile.gpu_simulation_time_ns.source() == ProfileValueSource::Unavailable
                 || profile.gpu_trail_compaction_time_ns.source() == ProfileValueSource::Unavailable
                 || profile.gpu_trail_culling_time_ns.source() == ProfileValueSource::Unavailable
+                || profile.gpu_stage_time_ns.source() == ProfileValueSource::Unavailable
                 || profile.submitted_vertices.source() == ProfileValueSource::Unavailable
             {
                 spawn_panel_label_value(
@@ -707,6 +712,7 @@ fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
         ProfilerMetric::GpuTime => "profiler-metric-gpu-time",
         ProfilerMetric::GpuTrailCompaction => "profiler-metric-gpu-trail-compaction",
         ProfilerMetric::GpuTrailCulling => "profiler-metric-gpu-trail-culling",
+        ProfilerMetric::GpuStages => "profiler-metric-gpu-stages",
         ProfilerMetric::AliveParticles => "profiler-metric-live-particles",
         ProfilerMetric::SubmittedInstances => "profiler-metric-submitted-instances",
         ProfilerMetric::SubmittedVertices => "profiler-metric-submitted-vertices",
@@ -738,6 +744,7 @@ fn profiler_metric_display(
         ProfilerMetric::GpuTrailCulling => {
             format_profile_duration(profile.gpu_trail_culling_time_ns)
         }
+        ProfilerMetric::GpuStages => format_profile_duration(profile.gpu_stage_time_ns),
         ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
         ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
         ProfilerMetric::SubmittedVertices => format_profile_count(profile.submitted_vertices),

@@ -177,6 +177,36 @@ pub enum ExecutionOp {
     },
 }
 
+/// Declares that a resource holds a regular 3-D grid field (fluid F1): `dims` cells, x fastest, each
+/// `components` consecutive `f32`s (a 3-component field is padded to 4 — GPU `vec4` alignment), placed
+/// in space at `origin` (the grid's minimum corner) with cubic cells of `cell_size`. Generic metadata:
+/// tools and renderers use it to interpret the bytes (debug slices now; field sampling and volume
+/// rendering later) without knowing what the field means.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldLayout {
+    pub resource: ResourceTypeId,
+    pub dims: [u32; 3],
+    pub components: u32,
+    pub origin: [f32; 3],
+    pub cell_size: f32,
+}
+
+impl FieldLayout {
+    /// Cells in the grid.
+    pub fn cells(&self) -> u64 {
+        self.dims.iter().map(|&dim| u64::from(dim)).product()
+    }
+
+    /// Bytes one cell occupies (`vec4` alignment for 3 components).
+    pub fn cell_bytes(&self) -> u64 {
+        u64::from(if self.components == 3 {
+            4
+        } else {
+            self.components
+        }) * 4
+    }
+}
+
 /// The ordered execution plan of one stage (extensible-stages M6): declared resources plus the ops
 /// that run over them, in order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -186,6 +216,8 @@ pub struct ExecutionBlock {
     /// The contents of [`AESTRA_RESOURCE_STAGE_CONSTANTS`] when the block declares it: parameters
     /// the stage lowerer packed at compile time, in a layout private to the stage's programs.
     pub constants: Vec<u32>,
+    /// Grid-field layouts of some of the block's resources (fluid F1).
+    pub fields: Vec<FieldLayout>,
 }
 
 /// Why an [`ExecutionBlock`] is invalid.
@@ -201,6 +233,8 @@ pub enum ExecutionError {
     ZeroRepeat,
     /// A built-in host-written resource is declared with the wrong size or lifetime.
     InvalidBuiltinResource(ResourceTypeId),
+    /// A field layout names an undeclared resource, is empty, or does not fit its resource.
+    InvalidField(ResourceTypeId),
 }
 
 impl core::fmt::Display for ExecutionError {
@@ -214,6 +248,11 @@ impl core::fmt::Display for ExecutionError {
             }
             Self::EmptyDispatch(name) => write!(f, "compute op '{name}' has a zero dispatch shape"),
             Self::ZeroRepeat => write!(f, "a repeat policy would run its body zero times"),
+            Self::InvalidField(id) => write!(
+                f,
+                "field layout of '{}' is empty or does not fit the declared resource",
+                id.as_str()
+            ),
             Self::InvalidBuiltinResource(id) => write!(
                 f,
                 "built-in resource '{}' must be declared persistent with its fixed size",
@@ -246,7 +285,27 @@ impl ExecutionBlock {
                 return Err(ExecutionError::InvalidBuiltinResource(resource.id.clone()));
             }
         }
+        for field in &self.fields {
+            let fits = self
+                .resources
+                .iter()
+                .find(|resource| resource.id == field.resource)
+                .is_some_and(|resource| {
+                    (1..=4).contains(&field.components)
+                        && field.cells() > 0
+                        && field.cell_size > 0.0
+                        && resource.bytes >= field.cells() * field.cell_bytes()
+                });
+            if !fits {
+                return Err(ExecutionError::InvalidField(field.resource.clone()));
+            }
+        }
         validate_ops(&self.ops, &declared)
+    }
+
+    /// The field layout of a resource, if the block declares one.
+    pub fn field(&self, id: &ResourceTypeId) -> Option<&FieldLayout> {
+        self.fields.iter().find(|field| &field.resource == id)
     }
 
     /// The binding index of a declared resource — its position in [`Self::resources`].
@@ -389,6 +448,7 @@ pub fn lower_stage_fused(
             },
         })],
         constants: Vec::new(),
+        fields: Vec::new(),
     }
 }
 
@@ -417,6 +477,7 @@ mod tests {
             }],
             ops,
             constants: Vec::new(),
+            fields: Vec::new(),
         }
     }
 
@@ -457,6 +518,7 @@ mod tests {
             resources: Vec::new(),
             ops: vec![compute("A")],
             constants: Vec::new(),
+            fields: Vec::new(),
         };
         assert!(matches!(
             undeclared.validate(),

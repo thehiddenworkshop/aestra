@@ -146,7 +146,13 @@ pub(crate) fn spawn_module_stack_panel(
                                     continue;
                                 }
                                 seen.push(name);
-                                spawn_simulation_stage_header(stack, name);
+                                // Stages without a CPU reference say so (extensible plan §13.3).
+                                let gpu_only = aestra_compiler::ExtensionRegistry::linked()
+                                    .stages
+                                    .get(&layer.simulation_stage_type(name))
+                                    .is_some_and(|stage| !stage.backend.has_cpu_reference())
+                                    .then(|| localizer.text("properties-stage-gpu-only"));
+                                spawn_simulation_stage_header(stack, name, gpu_only.as_deref());
                                 for (module_index, sim_module) in
                                     layer.modules.iter().enumerate()
                                 {
@@ -336,7 +342,12 @@ pub(super) fn apply_module_stack_filter(
 /// A section header for an authored simulation stage (extensible-stages M9, §28.3). Unlike the fixed
 /// lifecycle stages it carries no add button — authoring modules into a plugin-defined stage arrives
 /// with plugin loading — and its title is the authored stage name.
-pub(super) fn spawn_simulation_stage_header(parent: &mut ChildSpawnerCommands, name: &str) {
+/// A simulation-stage section header; gpu_only labels a stage with no CPU reference.
+pub(super) fn spawn_simulation_stage_header(
+    parent: &mut ChildSpawnerCommands,
+    name: &str,
+    gpu_only: Option<&str>,
+) {
     parent
         .spawn((
             Node {
@@ -369,6 +380,16 @@ pub(super) fn spawn_simulation_stage_header(parent: &mut ChildSpawnerCommands, n
                 },
                 TextColor(theme::ACCENT),
             ));
+            if let Some(label) = gpu_only {
+                row.spawn((
+                    Text::new(label),
+                    TextFont {
+                        font_size: FontSize::Px(8.0),
+                        ..default()
+                    },
+                    TextColor(diagnostic_color(DiagnosticSeverity::Warning)),
+                ));
+            }
         });
 }
 

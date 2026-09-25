@@ -20,6 +20,7 @@ pub(super) fn update_project_profiles(
         Option<&gpu::GpuParticleStatistics>,
         Option<&gpu::GpuSimulationTiming>,
         Option<&gpu::GpuPreparationTiming>,
+        Option<&gpu::GpuStageTiming>,
     )>,
     children: Query<
         (
@@ -30,6 +31,7 @@ pub(super) fn update_project_profiles(
             Option<&gpu::GpuParticleStatistics>,
             Option<&gpu::GpuSimulationTiming>,
             Option<&gpu::GpuPreparationTiming>,
+            Option<&gpu::GpuStageTiming>,
         ),
         Without<EffectPlayer>,
     >,
@@ -40,7 +42,7 @@ pub(super) fn update_project_profiles(
         commands.entity(entity).remove::<ProjectProfiler>();
     }
     let mut by_root: BTreeMap<Entity, Vec<ProjectInstanceProfile>> = BTreeMap::new();
-    for (child, presented, runtime, trails, particles, timing, preparation) in &children {
+    for (child, presented, runtime, trails, particles, timing, preparation, stages) in &children {
         let mut profile = runtime.map_or_else(
             || EffectProfile::from_compiled(presented.effect()),
             |runtime| bevy_profile(presented.effect(), &capabilities, runtime),
@@ -55,6 +57,9 @@ pub(super) fn update_project_profiles(
             );
         }
         profile.record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if let Some(stages) = stages {
+            profile.gpu_stage_time_ns = stages.time_ns(&presented.instance);
+        }
         if runtime
             .is_some_and(|r| matches!(r.active, ActiveBackend::Gpu | ActiveBackend::GpuReadback))
             && let Some((timing, context)) = timing.zip(particles)
@@ -99,6 +104,7 @@ pub(super) fn update_project_profiles(
         particles,
         timing,
         preparation,
+        stages,
     ) in &mut roots
     {
         record_presented_profile(
@@ -111,6 +117,9 @@ pub(super) fn update_project_profiles(
         root_profile
             .0
             .record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if let Some(stages) = stages {
+            root_profile.0.gpu_stage_time_ns = stages.time_ns(&presented.instance);
+        }
         if matches!(
             runtime.active,
             ActiveBackend::Gpu | ActiveBackend::GpuReadback

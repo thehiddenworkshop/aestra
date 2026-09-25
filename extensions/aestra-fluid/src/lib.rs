@@ -42,7 +42,8 @@ use aestra_extension::{
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
     CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
-    RepeatPolicy, ResourceAccess, ResourceDescriptor, ResourceLifetime, StagedDispatch,
+    FieldLayout, RepeatPolicy, ResourceAccess, ResourceDescriptor, ResourceLifetime,
+    StagedDispatch,
 };
 use std::sync::Arc;
 
@@ -283,18 +284,18 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "cell_size",
             "Cell Size",
             "Edge length of one grid cell.",
-            Value::Scalar(0.1),
-            number(0.01, 0.001, None),
+            Value::Scalar(3.0),
+            number(0.1, 0.001, None),
         )
-        .with_unit("m"),
+        .with_unit("units"),
         InputMetadata::new(
             "center",
             "Center",
             "Where the grid's centre sits.",
-            Value::Vec3([0.0, 1.6, 0.0]),
+            Value::Vec3([0.0, 48.0, 0.0]),
             vector(),
         )
-        .with_unit("m"),
+        .with_unit("units"),
         InputMetadata::new(
             "pressure_iterations",
             "Pressure Iterations",
@@ -333,19 +334,19 @@ fn density_source_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "position",
             "Position",
             "Centre of the source; a host object can drive it.",
-            Value::Vec3([0.0, 0.5, 0.0]),
+            Value::Vec3([0.0, 15.0, 0.0]),
             vector(),
         )
-        .with_unit("m")
+        .with_unit("units")
         .with_sources(bindable.clone()),
         InputMetadata::new(
             "radius",
             "Radius",
             "Radius of the source sphere.",
-            Value::Scalar(0.4),
-            number(0.01, 0.01, None),
+            Value::Scalar(12.0),
+            number(0.5, 0.01, None),
         )
-        .with_unit("m"),
+        .with_unit("units"),
         InputMetadata::new(
             "density_rate",
             "Density Rate",
@@ -357,10 +358,10 @@ fn density_source_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "velocity",
             "Velocity",
             "Velocity the source imparts; a host object's motion can drive it.",
-            Value::Vec3([0.0, 1.5, 0.0]),
+            Value::Vec3([0.0, 40.0, 0.0]),
             vector(),
         )
-        .with_unit("m/s")
+        .with_unit("units/s")
         .with_sources(bindable),
     ])
     .with_cost(2)
@@ -378,8 +379,8 @@ fn buoyancy_metadata(requires: CapabilityExpression) -> ModuleMetadata {
         "strength",
         "Strength",
         "Upward acceleration per unit density.",
-        Value::Scalar(1.5),
-        number(0.1, 0.0, None),
+        Value::Scalar(40.0),
+        number(1.0, 0.0, None),
     )])
     .with_cost(1)
 }
@@ -547,8 +548,17 @@ fn modules_of<'a>(
         .filter(move |module| module.module_type.0 == type_id)
 }
 
+/// A stage's packed constants plus the grid placement its field layouts declare.
+struct PackedStage {
+    resolution: u32,
+    iterations: u32,
+    cell_size: f32,
+    origin: [f32; 3],
+    constants: Vec<u32>,
+}
+
 /// Packs the stage constants `solver.wgsl` reads.
-fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<(u32, u32, Vec<u32>), String> {
+fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String> {
     let of = |type_id: &'static str| modules_of(modules, type_id);
 
     let mut grids = of(MODULE_GRID);
@@ -576,11 +586,12 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<(u32, u32, Vec<u32>
     let cell_size = scalar(&grid.parameters, "cell_size")?;
     let center = vec3(&grid.parameters, "center")?;
     let half_extent = resolution as f32 * cell_size * 0.5;
+    let origin = center.map(|axis| axis - half_extent);
     let mut words = vec![0u32; SOURCE_BASE + sources.len() * SOURCE_WORDS];
     words[0] = resolution;
     words[1] = cell_size.to_bits();
     for axis in 0..3 {
-        words[2 + axis] = (center[axis] - half_extent).to_bits();
+        words[2 + axis] = origin[axis].to_bits();
     }
     words[5] = scalar(&grid.parameters, "density_dissipation")?.to_bits();
     words[6] = scalar(&grid.parameters, "velocity_dissipation")?.to_bits();
@@ -600,7 +611,13 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<(u32, u32, Vec<u32>
         words[base + 8..base + 11].copy_from_slice(&host_ref(source.host_fields.get("position"))?);
         words[base + 11..base + 14].copy_from_slice(&host_ref(source.host_fields.get("velocity"))?);
     }
-    Ok((resolution, iterations, words))
+    Ok(PackedStage {
+        resolution,
+        iterations,
+        cell_size,
+        origin,
+        constants: words,
+    })
 }
 
 /// Lowers a Fluid Solver stage into the solver's passes (see the crate docs).
@@ -608,7 +625,13 @@ struct FluidSolverLowerer;
 
 impl StageLowerer for FluidSolverLowerer {
     fn lower(&self, input: &StageLoweringInput<'_>) -> Result<ExecutionBlock, String> {
-        let (resolution, iterations, constants) = pack_constants(input.modules)?;
+        let PackedStage {
+            resolution,
+            iterations,
+            cell_size,
+            origin,
+            constants,
+        } = pack_constants(input.modules)?;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
             x: groups,
@@ -728,6 +751,16 @@ impl StageLowerer for FluidSolverLowerer {
             resources: resources(resolution, constants.len()),
             ops: with_barriers(steps),
             constants,
+            // The persistent grids, for debug views, field sampling and renderers.
+            fields: [(RESOURCE_VELOCITY, 4), (RESOURCE_DENSITY, 1)]
+                .map(|(resource, components)| FieldLayout {
+                    resource: ResourceTypeId::new(resource),
+                    dims: [resolution; 3],
+                    components,
+                    origin,
+                    cell_size,
+                })
+                .into(),
         })
     }
 }

@@ -55,6 +55,7 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     // Linked extensions (extensible-stages M10) register before any effect is compiled.
     aestra_example_extension::link();
+    aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
@@ -116,6 +117,8 @@ fn main() {
         })
         .insert_resource(prepared)
         .insert_resource(config)
+        // Show a slice through plugin grid fields (a fluid's density) (fluid F1).
+        .insert_resource(aestra_bevy::gpu::AestraDebugViews { field_slices: true })
         .add_plugins((
             DefaultPlugins
                 .set(AssetPlugin {

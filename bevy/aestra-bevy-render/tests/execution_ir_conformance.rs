@@ -359,6 +359,7 @@ fn synthetic_block() -> ExecutionBlock {
             one_dispatch("add_hundred"),
         ],
         constants: Vec::new(),
+        fields: Vec::new(),
     }
 }
 

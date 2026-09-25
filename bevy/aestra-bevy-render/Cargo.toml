@@ -17,6 +17,7 @@ tracing.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
+naga.workspace = true
 aestra-core = { path = "../../crates/aestra-core" }
 encase.workspace = true
 pollster.workspace = true

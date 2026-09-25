@@ -1,6 +1,7 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
 mod bounds;
+mod extension_stages;
 mod geometry_statistics;
 mod mesh_inputs;
 mod particle_statistics;
@@ -68,6 +69,7 @@ use bevy::{
         sync_component::SyncComponent,
     },
 };
+pub use extension_stages::{AestraDebugViews, AestraFieldView, GpuStageTiming};
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
 pub use simulation_timing::GpuSimulationTiming;
@@ -442,6 +444,7 @@ struct StatefulSimulationPipeline {
 
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
+    extension_stages::install(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
     let preparation_mailboxes = preparation_timing::PreparationMailboxes::default();
     app.insert_resource(preparation_mailboxes.clone())

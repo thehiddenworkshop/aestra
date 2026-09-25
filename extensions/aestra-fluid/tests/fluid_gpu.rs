@@ -9,15 +9,15 @@
 //!
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
-use aestra_bevy_render::execution::StageExecutor;
+use aestra_bevy_render::execution::{StageExecutor, StageTimeline, TimelinePolicy};
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
     AESTRA_FIELD_POSITION, BindingUpdateMode, EffectAsset, EffectBinding, HostFieldRef,
     ModuleParameters, PropertySource, Value,
 };
 use aestra_fluid::{
-    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, RESOURCE_DENSITY, RESOURCE_DIVERGENCE,
-    RESOURCE_VELOCITY, smoke_effect,
+    FluidExtension, MODULE_BUOYANCY, MODULE_DENSITY_SOURCE, MODULE_GRID, RESOURCE_DENSITY,
+    RESOURCE_DIVERGENCE, RESOURCE_VELOCITY, smoke_effect,
 };
 use aestra_gpu::GpuHostBindings;
 use aestra_runtime::{EffectInstance, FrameConstants, SpatialBindingSnapshot};
@@ -109,6 +109,15 @@ fn effect(registry: &ExtensionRegistry, bound: bool, iterations: u32) -> EffectA
         "pressure_iterations",
         Value::U32(iterations),
     );
+    // A small-scale scene: the source sits low in the 3.2-unit box.
+    for (name, value) in [
+        ("position", Value::Vec3([0.0, 0.5, 0.0])),
+        ("radius", Value::Scalar(0.4)),
+        ("velocity", Value::Vec3([0.0, 1.5, 0.0])),
+    ] {
+        set_input(&mut effect, MODULE_DENSITY_SOURCE, name, value);
+    }
+    set_input(&mut effect, MODULE_BUOYANCY, "strength", Value::Scalar(1.5));
     if bound {
         let emitter = EffectBinding::spatial("Emitter", BindingUpdateMode::Live);
         let emitter_id = emitter.id;
@@ -332,4 +341,115 @@ fn a_host_bound_source_follows_its_target() {
     eprintln!("centroid x: left {left}, right {right}, unbound {unbound}");
     assert!(left < -0.5 && right > 0.5, "left {left}, right {right}");
     assert!(unbound.abs() < 0.1, "unbound {unbound}");
+}
+
+/// A timeline over the smoke stage, as the render world drives it.
+fn timeline(gpu: &Gpu, registry: &ExtensionRegistry, policy: TimelinePolicy) -> StageTimeline {
+    let fluid = Fluid::new(gpu, registry, &effect(registry, false, 24));
+    StageTimeline::new(fluid.stage, policy, SEED)
+}
+
+/// One frame: advance toward `target` within `budget`, submitted like a render-graph frame.
+fn advance(gpu: &Gpu, timeline: &mut StageTimeline, target: u32, budget: u32) -> u32 {
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    let report = timeline
+        .advance_to(&gpu.device, &mut encoder, target, budget, None, None)
+        .unwrap();
+    gpu.queue.submit([encoder.finish()]);
+    report.ticks
+}
+
+fn timeline_state(gpu: &Gpu, timeline: &StageTimeline) -> (Vec<u8>, Vec<u8>) {
+    let read = |id| {
+        timeline
+            .executor()
+            .read_resource(&gpu.device, &gpu.queue, id)
+            .unwrap()
+    };
+    (read(RESOURCE_VELOCITY), read(RESOURCE_DENSITY))
+}
+
+#[test]
+fn consecutive_dispatches_share_passes_without_changing_the_result() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    let passes = fluid.stage.passes_per_tick();
+    let dispatches = fluid.stage.block().compute_pass_count() as usize;
+    // Every pressure-iteration copy ends a pass: sources..advect | divergence+relax | 23 relax |
+    // project+advect density.
+    assert_eq!((dispatches, passes), (31, 26));
+    // Many ticks encoded into ONE submission each see their own frame: the result equals ticking
+    // with one submission per tick.
+    let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());
+    assert_eq!(advance(&gpu, &mut timeline, 40, 1000), 40);
+    fluid.run(&gpu, 0..40);
+    assert_eq!(timeline_state(&gpu, &timeline), fluid.state(&gpu));
+}
+
+#[test]
+fn scrubbing_reproduces_the_uninterrupted_run_bit_for_bit() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let uninterrupted = |target: u32| {
+        let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());
+        advance(&gpu, &mut timeline, target, u32::MAX);
+        timeline_state(&gpu, &timeline)
+    };
+    let (at_35, at_90) = (uninterrupted(35), uninterrupted(90));
+
+    let mut scrubbed = timeline(&gpu, &registry, TimelinePolicy::default());
+    // Play forward in small per-frame budgets, as a preview catch-up does.
+    while advance(&gpu, &mut scrubbed, 90, 24) > 0 {}
+    assert_eq!(scrubbed.last_tick(), 90);
+    assert_eq!(scrubbed.checkpoint_ticks(), [20, 40, 60, 80]);
+    // Scrub back: restores the checkpoint at 20 and replays 15 ticks.
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    let report = scrubbed
+        .advance_to(&gpu.device, &mut encoder, 35, u32::MAX, None, None)
+        .unwrap();
+    gpu.queue.submit([encoder.finish()]);
+    assert_eq!(report.restored_from, Some(20));
+    assert_eq!(report.ticks, 15);
+    assert_eq!(
+        timeline_state(&gpu, &scrubbed),
+        at_35,
+        "scrubbed back to 35"
+    );
+    // Before the first checkpoint: reset to tick 0 and replay.
+    advance(&gpu, &mut scrubbed, 7, u32::MAX);
+    advance(&gpu, &mut scrubbed, 90, u32::MAX);
+    assert_eq!(
+        timeline_state(&gpu, &scrubbed),
+        at_90,
+        "scrubbed forward again"
+    );
+}
+
+#[test]
+fn checkpoint_memory_stays_within_the_policy() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let per_checkpoint = (RESOLUTION as u64).pow(3) * (16 + 4);
+    let policy = TimelinePolicy {
+        cadence: 5,
+        max_checkpoints: 64,
+        max_bytes: per_checkpoint * 5 / 2,
+        ..TimelinePolicy::default()
+    };
+    let mut timeline = timeline(&gpu, &registry, policy);
+    advance(&gpu, &mut timeline, 120, u32::MAX);
+    assert!(timeline.checkpoint_bytes() <= policy.max_bytes);
+    assert!(
+        !timeline.checkpoint_ticks().is_empty(),
+        "coarsened, not emptied"
+    );
+    // Seeking still reproduces the uninterrupted run from the coarser store.
+    let mut reference = self::timeline(&gpu, &registry, TimelinePolicy::default());
+    advance(&gpu, &mut reference, 77, u32::MAX);
+    advance(&gpu, &mut timeline, 77, u32::MAX);
+    assert_eq!(
+        timeline_state(&gpu, &timeline),
+        timeline_state(&gpu, &reference)
+    );
 }

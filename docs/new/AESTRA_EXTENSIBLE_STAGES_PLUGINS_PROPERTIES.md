@@ -3237,13 +3237,24 @@ An externally installed example extension can be discovered, version checked, re
 >   0 when unbound);
 > - the compiled solver round-trips through the artifact.
 >
-> **Not yet (13b):**
-> - The executor does not run in the Bevy frame loop, and nothing presents the grid (debug slice,
->   volume renderer).
-> - No particle coupling (grid → particle advection, particle → grid deposit / FLIP).
-> - The editor does not link the plugin or surface "GPU only".
-> - No sample-project effect.
-> - Declarative packages cannot ship programs yet.
+> **13b (= fluid roadmap F1) — done.**
+> - Plugin stages run in the Bevy frame loop on a `StageTimeline`, with the same catch-up budgets as
+>   the stateful particle path.
+> - Backward seeks restore GPU-resident checkpoints and replay. Scrubbing is bit-exact, proven on
+>   the real GPU.
+> - Consecutive dispatches share one pass. The smoke's 31 dispatches take 26 passes per tick,
+>   because every pressure-iteration copy ends a pass. Ping-ponged relaxation without copies would
+>   merge them (fluid F5).
+> - Per-instance GPU time reaches the profiler.
+> - Blocks declare `FieldLayout`s, and a debug slice shows a grid field in the editor and viewer.
+> - The editor and viewer link `aestra-fluid`, and GPU-only stages carry a badge.
+> - Sample: `sample-project/effects/fluid_smoke.aestra.ron`.
+> - The compiled `seek_mode` is unchanged: it governs CPU players. The GPU timeline seeks on its
+>   own, as the stateful particle path does.
+>
+> **Still not done:**
+> - Particle coupling (fluid F2), a volume renderer (F3), programs in declarative packages (F5).
+> - Replay reuses the current host input, not a recorded history (host bindings HB8).
 
 ### Goal
 

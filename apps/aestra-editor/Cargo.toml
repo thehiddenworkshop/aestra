@@ -13,6 +13,7 @@ aestra-bevy-render = { path = "../../bevy/aestra-bevy-render" }
 aestra-compiler = { path = "../../crates/aestra-compiler" }
 aestra-core = { path = "../../crates/aestra-core" }
 aestra-example-extension = { path = "../../extensions/aestra-example-extension" }
+aestra-fluid = { path = "../../extensions/aestra-fluid" }
 aestra-extension = { path = "../../crates/aestra-extension" }
 aestra-gpu = { path = "../../crates/aestra-gpu" }
 aestra-project = { path = "../../crates/aestra-project" }

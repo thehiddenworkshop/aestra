@@ -20,9 +20,9 @@ pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
     AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, ComputeOp, CopyOp, ExecutionBlock,
-    ExecutionError, ExecutionOp, FrameConstants, ReferenceExecutionTrace, RepeatPolicy,
-    ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime, execute_reference,
-    lower_stage_fused,
+    ExecutionError, ExecutionOp, FieldLayout, FrameConstants, ReferenceExecutionTrace,
+    RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime,
+    execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{
