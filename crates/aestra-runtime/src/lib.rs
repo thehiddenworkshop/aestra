@@ -1,5 +1,6 @@
 //! Engine-independent compiled effect contracts and deterministic CPU execution.
 
+mod binding;
 mod checkpoint;
 mod compatibility;
 mod host_transform;
@@ -15,6 +16,7 @@ mod execution_ir;
 mod profile;
 mod staged;
 mod stateful;
+pub use binding::*;
 pub use execution_ir::{
     AESTRA_RESOURCE_PARTICLES, ComputeOp, CopyOp, ExecutionBlock, ExecutionError, ExecutionOp,
     ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
@@ -892,6 +894,9 @@ pub struct CompiledEffect {
     pub material_instances: Vec<MaterialInstance>,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
+    /// Host binding slots, in declaration order (host bindings HB2).
+    pub bindings: Vec<CompiledBinding>,
+    pub binding_slots: BTreeMap<aestra_core::BindingId, BindingSlot>,
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
     pub effect_clips: Vec<CompiledEffectClip>,
@@ -940,6 +945,8 @@ pub struct CompiledEffectClip {
     pub transform: EmitterTransform,
     pub seed: EffectClipSeed,
     pub parameter_overrides: Vec<CompiledParameterOverride>,
+    /// Child bindings filled from the parent instance's slots (host bindings HB2).
+    pub binding_forwards: Vec<CompiledBindingForward>,
 }
 
 /// A validated, packed value replacing one exposed parameter on a child instance.

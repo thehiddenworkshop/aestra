@@ -2970,8 +2970,8 @@ Built-in and third-party items use the same visual language.
 > - an editor test for catalogue → edit → lower.
 >
 > **Not yet:** no runtime backend dispatches extension stages (the built-in particle path ignores them).
-> They are also not part of artifact format v1: decode yields none, and a game re-lowers from the
-> authored effect. The editor cannot yet *create* a plugin simulation stage; it displays and edits
+> (Extension stages have been encoded in compiled artifacts since artifact v4, host bindings HB2, and
+> their Execution IR is validated on reload.) The editor cannot yet *create* a plugin simulation stage; it displays and edits
 > existing ones. Stage authoring UI is still open.
 
 ### Goal

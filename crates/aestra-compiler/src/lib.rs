@@ -301,6 +301,7 @@ impl EffectCompiler {
         resolved: &ResolvedEffectProject,
     ) -> Result<CompiledEffectProject, ProjectCompileError> {
         self.validate_project_parameter_overrides(resolved)?;
+        self.validate_project_binding_forwards(resolved)?;
         let function_library =
             MaterialFunctionLibrary::new(resolved.material_functions.values().cloned());
         let compiled_root = Arc::new(
@@ -330,6 +331,7 @@ impl EffectCompiler {
             dependencies,
         };
         populate_project_parameter_overrides(resolved, &mut project);
+        populate_project_binding_forwards(resolved, &mut project);
         Ok(project)
     }
 
@@ -813,6 +815,7 @@ impl EffectCompiler {
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
+        let bindings = self.compile_bindings(asset);
 
         Ok(CompiledEffect {
             source: asset.id,
@@ -869,6 +872,12 @@ impl EffectCompiler {
             material_instances: asset.material_instances.clone(),
             parameters,
             parameter_slots,
+            binding_slots: bindings
+                .iter()
+                .enumerate()
+                .map(|(index, binding)| (binding.source, aestra_runtime::BindingSlot(index)))
+                .collect(),
+            bindings,
             particle_layout: ParticleLayout {
                 attributes: stored_attributes.into_iter().collect(),
                 transient_attributes: transient_attributes.into_iter().collect(),
@@ -891,6 +900,8 @@ impl EffectCompiler {
                     transform: clip.transform,
                     seed: clip.seed,
                     parameter_overrides: Vec::new(),
+                    // Resolved against the child effect at project compilation (host bindings HB2).
+                    binding_forwards: Vec::new(),
                 })
                 .collect(),
             choreography_events: {
@@ -915,6 +926,41 @@ impl EffectCompiler {
             source_map,
             optimizations,
         })
+    }
+
+    /// Compiles the effect's host bindings into dense slots in declaration order (host bindings HB2).
+    /// Each binding's layout packs its declared fields in the kind's field order, so the same
+    /// declaration always yields the same record regardless of how the author listed its fields.
+    fn compile_bindings(&self, asset: &EffectAsset) -> Vec<aestra_runtime::CompiledBinding> {
+        asset
+            .bindings
+            .iter()
+            .map(|binding| {
+                let kind = self
+                    .registry
+                    .bindings
+                    .get(&binding.kind)
+                    .expect("validation rejects unregistered binding kinds");
+                let declared: BTreeSet<_> = binding.fields().collect();
+                let layout = aestra_runtime::BindingLayout::pack(
+                    kind.fields
+                        .iter()
+                        .filter(|field| declared.contains(&field.id))
+                        .map(|field| (field.id.clone(), field.value_type)),
+                )
+                .expect("registered binding kinds only declare packable fields");
+                aestra_runtime::CompiledBinding {
+                    source: binding.id,
+                    name: binding.name.clone(),
+                    kind: binding.kind.clone(),
+                    update_mode: binding.update_mode,
+                    required: binding.required,
+                    required_fields: binding.required_fields.clone(),
+                    optional_fields: binding.optional_fields.clone(),
+                    layout,
+                }
+            })
+            .collect()
     }
 
     /// A diagnostic for a type id no registered descriptor provides (extensible-stages M11). When the id
@@ -1532,6 +1578,100 @@ impl EffectCompiler {
         Ok(())
     }
 
+    /// Validates child-effect binding forwards (host bindings HB2, roadmap §9.6): every forward names
+    /// a child binding of the same kind whose required fields the parent binding also requires, and
+    /// every required child binding is forwarded — otherwise the host, which binds only the root,
+    /// could never fill it.
+    fn validate_project_binding_forwards(
+        &self,
+        project: &ResolvedEffectProject,
+    ) -> Result<(), ProjectCompileError> {
+        for owner in std::iter::once(&project.root).chain(project.dependencies.values()) {
+            let mut report = ValidationReport::default();
+            for (clip_index, clip) in owner.effect_clips.iter().enumerate() {
+                let Some(child) = project.effect(clip.source.id) else {
+                    continue;
+                };
+                let clip_path = format!("effect.effect_clips[{clip_index}]");
+                for (child_id, parent_id) in &clip.binding_forwards {
+                    let path = format!("{clip_path}.binding_forwards.{child_id}");
+                    let Some(child_binding) = child
+                        .bindings
+                        .iter()
+                        .find(|binding| binding.id == *child_id)
+                    else {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            path,
+                            format!(
+                                "child effect '{}' declares no binding {child_id}",
+                                child.name
+                            ),
+                        ));
+                        continue;
+                    };
+                    // A missing parent binding is reported by the owner's own validation.
+                    let Some(parent_binding) = owner
+                        .bindings
+                        .iter()
+                        .find(|binding| binding.id == *parent_id)
+                    else {
+                        continue;
+                    };
+                    if child_binding.kind != parent_binding.kind {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            path,
+                            format!(
+                                "child binding '{}' is {} but parent binding '{}' is {}",
+                                child_binding.name,
+                                child_binding.kind.as_str(),
+                                parent_binding.name,
+                                parent_binding.kind.as_str()
+                            ),
+                        ));
+                        continue;
+                    }
+                    if let Some(field) = child_binding
+                        .required_fields
+                        .iter()
+                        .find(|field| !parent_binding.required_fields.contains(*field))
+                    {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            path,
+                            format!(
+                                "child binding '{}' requires field '{}', which parent binding '{}' does not require",
+                                child_binding.name,
+                                field.as_str(),
+                                parent_binding.name
+                            ),
+                        ));
+                    }
+                }
+                for binding in child.bindings.iter().filter(|binding| binding.required) {
+                    if !clip.binding_forwards.contains_key(&binding.id) {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            format!("{clip_path}.binding_forwards"),
+                            format!(
+                                "child effect '{}' requires binding '{}'; forward one of this effect's bindings to it",
+                                child.name, binding.name
+                            ),
+                        ));
+                    }
+                }
+            }
+            if !report.is_valid() {
+                return Err(ProjectCompileError::Effect {
+                    effect: owner.id,
+                    source: CompileError::Validation(report),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn validate_attribute_flow(
         &self,
         emitter_index: usize,
@@ -1680,6 +1820,58 @@ fn populate_project_parameter_overrides(
             .get_mut(&id)
             .expect("resolved dependency must have a compiled artifact");
         apply_parameter_overrides(Arc::make_mut(effect), &overrides);
+    }
+}
+
+/// Resolves every clip's binding forwards into child and parent slots (host bindings HB2).
+fn populate_project_binding_forwards(
+    authored: &ResolvedEffectProject,
+    compiled: &mut CompiledEffectProject,
+) {
+    let owners: Vec<&EffectAsset> = std::iter::once(&authored.root)
+        .chain(authored.dependencies.values())
+        .collect();
+    for owner in owners {
+        let forwards: BTreeMap<
+            aestra_core::EffectClipId,
+            Vec<aestra_runtime::CompiledBindingForward>,
+        > = owner
+            .effect_clips
+            .iter()
+            .map(|clip| {
+                let child = compiled
+                    .effect(clip.source.id)
+                    .expect("project resolution guarantees the child artifact exists");
+                let parent = compiled
+                    .effect(owner.id)
+                    .expect("every owner in the project is compiled");
+                let forwards = clip
+                    .binding_forwards
+                    .iter()
+                    .filter_map(|(child_id, parent_id)| {
+                        Some(aestra_runtime::CompiledBindingForward {
+                            child: *child_id,
+                            child_slot: *child.binding_slots.get(child_id)?,
+                            parent_slot: *parent.binding_slots.get(parent_id)?,
+                        })
+                    })
+                    .collect();
+                (clip.id, forwards)
+            })
+            .collect();
+        let effect = if compiled.root.source == owner.id {
+            Arc::make_mut(&mut compiled.root)
+        } else {
+            Arc::make_mut(
+                compiled
+                    .dependencies
+                    .get_mut(&owner.id)
+                    .expect("resolved dependency must have a compiled artifact"),
+            )
+        };
+        for clip in &mut effect.effect_clips {
+            clip.binding_forwards = forwards.get(&clip.source_clip).cloned().unwrap_or_default();
+        }
     }
 }
 

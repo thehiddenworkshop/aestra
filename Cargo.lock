@@ -100,7 +100,9 @@ version = "0.1.0"
 dependencies = [
  "aestra-compiler",
  "aestra-core",
+ "aestra-example-extension",
  "aestra-gpu",
+ "aestra-project",
  "aestra-runtime",
  "ron",
  "serde",

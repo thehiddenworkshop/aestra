@@ -103,6 +103,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   effects declare direct seek, checkpoint restore, or restart-and-replay semantics so
   stateful backends cannot silently use stateless seeking.
 - Resolves indexed, type-checked parameter overrides without recompiling an effect.
+- Owns compiled host bindings: dense `BindingSlot`s, each with a packed `BindingLayout` of its
+  declared fields. It also owns child-clip `CompiledBindingForward`s, which fill a child's slot from
+  its parent's so the host binds only the root, and a derived `HostRequirements` view that is kept
+  separate from renderer/GPU requirements.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
 ### `aestra-artifact`
@@ -113,6 +117,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   ranges, and rejects invalid magic or unsupported versions with structured errors.
 - Round-trips runtime execution plans, resources, renderers, parameters, reusable clips, events,
   requirements, source maps, and optimization metadata without Bevy or WGPU.
+- Artifact v4 also carries host bindings (validated layouts), clip binding forwards (validated
+  parent slots), and plugin extension stages with their Execution IR (validated on reload). Older
+  artifacts are rejected and recompiled from source, never migrated.
 - Proves reloaded plans retain CPU evaluation, GPU artifact lowering, and `EffectPlayer` playback.
 
 ### `aestra-gpu`

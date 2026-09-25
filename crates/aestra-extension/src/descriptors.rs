@@ -697,6 +697,12 @@ pub enum RegistryConflict {
         kind: BindingKindId,
         field: BindingFieldId,
     },
+    /// A binding kind declares a field whose type cannot be packed into a snapshot (curves, text…),
+    /// or more fields than a snapshot can mark (host bindings HB2).
+    UnsupportedBindingField {
+        kind: BindingKindId,
+        message: String,
+    },
     /// A binding field id is declared with different value types by different kinds.
     BindingFieldTypeMismatch {
         field: BindingFieldId,
@@ -746,6 +752,9 @@ impl std::fmt::Display for RegistryConflict {
                 "binding kind '{}' lists field '{}' twice",
                 kind.0, field.0
             ),
+            Self::UnsupportedBindingField { kind, message } => {
+                write!(f, "binding kind '{}': {message}", kind.0)
+            }
             Self::BindingFieldTypeMismatch {
                 field,
                 registered,
@@ -955,6 +964,18 @@ impl BindingKindRegistry {
     pub fn register(&mut self, descriptor: BindingKindDescriptor) -> Result<(), RegistryConflict> {
         if self.kinds.contains_key(&descriptor.type_id) {
             return Err(RegistryConflict::DuplicateBindingKind(descriptor.type_id));
+        }
+        // Every field must pack into a snapshot record (host bindings HB2).
+        if let Err(message) = aestra_runtime::BindingLayout::pack(
+            descriptor
+                .fields
+                .iter()
+                .map(|field| (field.id.clone(), field.value_type)),
+        ) {
+            return Err(RegistryConflict::UnsupportedBindingField {
+                kind: descriptor.type_id.clone(),
+                message,
+            });
         }
         for (index, field) in descriptor.fields.iter().enumerate() {
             if descriptor.fields[..index]

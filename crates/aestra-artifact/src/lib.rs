@@ -25,10 +25,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
+mod v4;
+use v4::{BindingForwardV4, BindingV4, ExtensionStageV4};
+
 pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
-/// v3 adds the per-emitter simulation class (hybrid roadmap M2/M3, unified U3). Bumped once as the
-/// coordinated compiled-artifact change (see docs/new §44.5).
-pub const CURRENT_ARTIFACT_VERSION: u32 = 3;
+/// v3 added the per-emitter simulation class (hybrid roadmap M2/M3, unified U3). v4 adds compiled
+/// host bindings and clip binding forwards (host bindings HB2) together with plugin extension stages
+/// and their Execution IR (extensible-stages M10), as one coordinated bump. Artifacts are compiled
+/// output: older versions are recompiled from source, never migrated.
+pub const CURRENT_ARTIFACT_VERSION: u32 = 4;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -98,6 +103,9 @@ struct EffectV1 {
     material_programs: Vec<SemanticMaterialProgramV2>,
     material_instances: Vec<SemanticMaterialInstanceV2>,
     parameters: Vec<ParameterV1>,
+    /// Host binding slots, in slot order (v4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    bindings: Vec<BindingV4>,
     particle_layout: ParticleLayoutV1,
     emitters: Vec<EmitterV1>,
     effect_clips: Vec<EffectClipV1>,
@@ -353,6 +361,9 @@ struct EmitterV1 {
     /// extension-renderer support, so older artifacts still decode.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     extension_renderers: Vec<ExtensionRendererV1>,
+    /// Plugin simulation stages lowered to Execution IR (extensible-stages M10; artifact v4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    extension_stages: Vec<ExtensionStageV4>,
 }
 
 /// A baked extension (plugin) renderer (extensible-stages M8): the generic renderer-type + structural
@@ -376,6 +387,9 @@ struct EffectClipV1 {
     transform: EmitterTransform,
     seed: EffectClipSeed,
     parameter_overrides: Vec<ParameterOverrideV1>,
+    /// Child bindings filled from this effect's slots (host bindings HB2; artifact v4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    binding_forwards: Vec<BindingForwardV4>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -507,6 +521,7 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .map(|(index, instance)| SemanticMaterialInstanceV2::encode(instance, index))
                 .collect::<Result<_, _>>()?,
             parameters: effect.parameters.iter().map(ParameterV1::from).collect(),
+            bindings: effect.bindings.iter().map(BindingV4::from).collect(),
             particle_layout: ParticleLayoutV1::from(&effect.particle_layout),
             emitters: effect
                 .emitters
@@ -557,6 +572,25 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 return invalid(
                     format!("effect.parameters[{index}].source"),
                     "duplicate parameter identity",
+                );
+            }
+        }
+
+        let bindings = effect
+            .bindings
+            .into_iter()
+            .enumerate()
+            .map(|(index, binding)| binding.decode(index))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut binding_slots = BTreeMap::new();
+        for (index, binding) in bindings.iter().enumerate() {
+            if binding_slots
+                .insert(binding.source, aestra_runtime::BindingSlot(index))
+                .is_some()
+            {
+                return invalid(
+                    format!("effect.bindings[{index}].source"),
+                    "duplicate binding identity",
                 );
             }
         }
@@ -624,7 +658,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             .effect_clips
             .into_iter()
             .enumerate()
-            .map(|(index, clip)| clip.decode(index))
+            .map(|(index, clip)| clip.decode(index, bindings.len()))
             .collect::<Result<_, _>>()?;
         let mut source_map = BTreeMap::new();
         for (index, entry) in effect.source_map.into_iter().enumerate() {
@@ -666,6 +700,8 @@ impl TryFrom<EffectV1> for CompiledEffect {
             material_instances,
             parameters,
             parameter_slots,
+            bindings,
+            binding_slots,
             particle_layout: effect.particle_layout.into(),
             emitters,
             effect_clips,
@@ -1638,6 +1674,11 @@ impl EmitterV1 {
                     payload: renderer.payload.clone(),
                 })
                 .collect(),
+            extension_stages: emitter
+                .extension_stages
+                .iter()
+                .map(ExtensionStageV4::from)
+                .collect(),
         })
     }
 
@@ -1689,9 +1730,14 @@ impl EmitterV1 {
                     payload: renderer.payload,
                 })
                 .collect(),
-            // Plugin simulation stages (extensible-stages M10) are not part of artifact format v1 yet:
-            // no runtime backend dispatches them, and a game re-lowers them from the authored effect.
-            extension_stages: Vec::new(),
+            extension_stages: self
+                .extension_stages
+                .into_iter()
+                .enumerate()
+                .map(|(stage_index, stage)| {
+                    stage.decode(&format!("{path}.extension_stages[{stage_index}]"))
+                })
+                .collect::<Result<_, _>>()?,
         })
     }
 }
@@ -1714,10 +1760,21 @@ impl EffectClipV1 {
                     ParameterOverrideV1::encode(parameter, index, override_index)
                 })
                 .collect::<Result<_, _>>()?,
+            binding_forwards: clip
+                .binding_forwards
+                .iter()
+                .enumerate()
+                .map(|(forward_index, forward)| {
+                    BindingForwardV4::encode(
+                        forward,
+                        &format!("effect.effect_clips[{index}].binding_forwards[{forward_index}]"),
+                    )
+                })
+                .collect::<Result<_, _>>()?,
         })
     }
 
-    fn decode(self, index: usize) -> Result<CompiledEffectClip, ArtifactError> {
+    fn decode(self, index: usize, bindings: usize) -> Result<CompiledEffectClip, ArtifactError> {
         let path = format!("effect.effect_clips[{index}]");
         require_finite_non_negative(self.start_time, format!("{path}.start_time"))?;
         require_finite_non_negative(self.source_offset, format!("{path}.source_offset"))?;
@@ -1735,6 +1792,17 @@ impl EffectClipV1 {
                 .into_iter()
                 .enumerate()
                 .map(|(override_index, parameter)| parameter.decode(index, override_index))
+                .collect::<Result<_, _>>()?,
+            binding_forwards: self
+                .binding_forwards
+                .into_iter()
+                .enumerate()
+                .map(|(forward_index, forward)| {
+                    forward.decode(
+                        &format!("{path}.binding_forwards[{forward_index}]"),
+                        bindings,
+                    )
+                })
                 .collect::<Result<_, _>>()?,
         })
     }

@@ -16,4 +16,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 aestra-compiler = { path = "../aestra-compiler" }
+aestra-example-extension = { path = "../../extensions/aestra-example-extension" }
 aestra-gpu = { path = "../aestra-gpu" }
+aestra-project = { path = "../aestra-project" }

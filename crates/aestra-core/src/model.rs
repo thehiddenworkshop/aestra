@@ -445,6 +445,17 @@ impl EffectAsset {
                 format!("{path}.id"),
             );
             clip.validate(&path, self, &mut report, &mut semantic_ids);
+            // The parent side of a binding forward is checkable here; the child side needs the
+            // resolved child effect and is checked at project compilation (host bindings HB2).
+            for (child, parent) in &clip.binding_forwards {
+                if !self.bindings.iter().any(|binding| binding.id == *parent) {
+                    report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("{path}.binding_forwards.{child}"),
+                        format!("forwarded binding {parent} is not declared by this effect"),
+                    ));
+                }
+            }
         }
         for (material_index, material) in self.materials.iter().enumerate() {
             let path = format!("effect.materials[{material_index}].properties");
@@ -920,6 +931,10 @@ pub struct EffectClip {
     /// Concrete values replacing exposed parameters on this referenced instance.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_overrides: BTreeMap<ParameterId, Value>,
+    /// Child-effect bindings filled from this effect's bindings, child id → parent id (host bindings
+    /// HB2). The host binds only the root; nested effects read their parents' slots.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub binding_forwards: BTreeMap<crate::BindingId, crate::BindingId>,
 }
 
 impl EffectClip {
@@ -934,6 +949,7 @@ impl EffectClip {
             transform: EmitterTransform::default(),
             seed: EffectClipSeed::Inherit,
             parameter_overrides: BTreeMap::new(),
+            binding_forwards: BTreeMap::new(),
         }
     }
 
