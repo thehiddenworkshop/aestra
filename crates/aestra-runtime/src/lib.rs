@@ -1303,6 +1303,8 @@ pub struct EffectInstance {
     history_revision: u64,
     host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
     inherited_host_transform: Arc<InheritedHostTransform>,
+    /// Host binding snapshots, by slot (host bindings HB3).
+    binding_inputs: BindingInputs,
 }
 
 impl EffectInstance {
@@ -1313,7 +1315,9 @@ impl EffectInstance {
             .map(|parameter| parameter.default.clone())
             .collect();
         let host_transform_track = effect.host_transform_track.clone();
+        let binding_inputs = BindingInputs::new(effect.bindings.len());
         Self {
+            binding_inputs,
             effect,
             host_transform_track,
             inherited_host_transform: Arc::default(),
@@ -1502,6 +1506,8 @@ impl EffectInstance {
         self.mark_history_discontinuity();
         self.time = 0.0;
         self.choreography_started = false;
+        // A restart is a new spawn: `SnapshotOnSpawn` bindings latch again (host bindings HB3).
+        self.relatch_spawn_bindings();
     }
 
     pub fn advance(&mut self, delta_seconds: f32) {

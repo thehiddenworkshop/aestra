@@ -551,6 +551,7 @@ impl EditorSession {
                 ),
             seed: self.preview_seed,
             backend: CheckpointBackendId::new("cpu-reference"),
+            host_input: self.driver.instance.host_input_epoch(),
         }
     }
 

@@ -390,6 +390,7 @@ impl EffectPlayer {
             revision: self.revision,
             seed: self.driver.instance.seed(),
             backend: CheckpointBackendId::new("cpu-reference"),
+            host_input: self.driver.instance.host_input_epoch(),
         }
     }
 

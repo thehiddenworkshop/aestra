@@ -22,7 +22,9 @@ pub const RESERVED_SELF_BINDING: &str = "Self";
 /// When the host's value is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum BindingUpdateMode {
-    /// Captured once, when a particle or emitter spawns, and kept in simulation state.
+    /// Latched once when the effect instance starts (and again on restart), then held: a staff tip
+    /// the projectile left from. A per-particle capture is simply a particle-spawn module reading a
+    /// `Live` field, which is written into each particle's state at its spawn (host bindings HB3/HB4).
     SnapshotOnSpawn,
     /// Read every Aestra tick.
     Live,

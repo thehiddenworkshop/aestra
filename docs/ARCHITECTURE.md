@@ -107,6 +107,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   declared fields. It also owns child-clip `CompiledBindingForward`s, which fill a child's slot from
   its parent's so the host binds only the root, and a derived `HostRequirements` view that is kept
   separate from renderer/GPU requirements.
+- Holds each instance's binding inputs. Hosts push validated `BindingSnapshot`s once per tick, either
+  a whole `BindingFrame` atomically or one slot at a time. `Live` slots expose the latest value;
+  `SnapshotOnSpawn` slots latch at instance start and restart. `binding_status()` reports missing
+  required bindings. A slot being acquired, lost or rebound changes `host_input_epoch()`, which keys
+  checkpoints (`CheckpointContext::host_input`), so history recorded against one object is never
+  restored against another.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
 ### `aestra-artifact`

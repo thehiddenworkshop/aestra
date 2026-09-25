@@ -81,6 +81,9 @@ pub struct CheckpointContext {
     pub revision: u64,
     pub seed: u64,
     pub backend: CheckpointBackendId,
+    /// Identity of the host input observed (host bindings HB3): EffectInstance::host_input_epoch.
+    /// A checkpoint taken while one object was bound is never restored under another.
+    pub host_input: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -288,6 +291,7 @@ mod tests {
             revision,
             seed,
             backend: CheckpointBackendId::new("test"),
+            host_input: 0,
         }
     }
 
@@ -303,6 +307,20 @@ mod tests {
         let checkpoint = store.nearest_at_or_before(&current, 70).unwrap();
         assert_eq!(checkpoint.frame, 60);
         assert_eq!(checkpoint.state, "sixty");
+    }
+
+    #[test]
+    fn checkpoints_taken_under_other_host_input_are_not_restored() {
+        // Host bindings HB3: a checkpoint recorded while another object was bound (a different
+        // host-input epoch) must not be reused after a rebind.
+        let mut store = CheckpointStore::default();
+        let before = context(2, 7);
+        store.insert(before.clone(), 30, "old target", 8);
+        let after = CheckpointContext {
+            host_input: before.host_input + 1,
+            ..before
+        };
+        assert!(store.nearest_at_or_before(&after, 60).is_none());
     }
 
     #[test]

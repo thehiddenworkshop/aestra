@@ -50,6 +50,7 @@ fn playback_driver_seek_scrub_and_advance() {
         revision: 0,
         seed: 0,
         backend: CheckpointBackendId::new("test"),
+        host_input: 0,
     };
     let effect = checkpoint_effect("Driver", 4.0);
 
