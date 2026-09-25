@@ -1,0 +1,101 @@
+// Everything "Aestra Wind" registers. Every id lives under the package's own namespace; the Gust
+// module may also run in the linked example extension's Field Forces stage, through its capability.
+(
+    capabilities: ["org.example.aestra-wind::capability/wind"],
+    resources: [
+        (
+            id: "org.example.aestra-wind::resource/wind_grid",
+            name: "Wind Grid",
+            domain: "org.example.aestra::domain/field",
+            lifetime: Transient,
+        ),
+    ],
+    stages: [
+        (
+            id: "org.example.aestra-wind::stage/wind",
+            name: "Wind",
+            provides: ["org.example.aestra-wind::capability/wind"],
+            // Each module splats into the wind grid, a barrier, then one pass advects the particles.
+            lowering: Some((
+                resources: [
+                    (id: "aestra.resource.particles", lifetime: Persistent),
+                    (id: "org.example.aestra-wind::resource/wind_grid", bytes: 65536, lifetime: Transient),
+                ],
+                ops: [
+                    ForEachModule([
+                        Compute((
+                            name: "{stage}/{module}",
+                            entry_point: "{module}",
+                            accesses: [(resource: "org.example.aestra-wind::resource/wind_grid", mode: ReadWrite)],
+                            dispatch: Fixed(8, 8, 1),
+                        )),
+                    ]),
+                    Barrier,
+                    Compute((
+                        name: "{stage}/advect",
+                        entry_point: "advect_by_wind",
+                        accesses: [
+                            (resource: "org.example.aestra-wind::resource/wind_grid", mode: Read),
+                            (resource: "aestra.resource.particles", mode: ReadWrite),
+                        ],
+                        dispatch: Particles(64),
+                    )),
+                ],
+            )),
+        ),
+    ],
+    modules: [
+        (
+            id: "org.example.aestra-wind::module/gust",
+            name: "Gust",
+            description: "A directional push that rises and falls.",
+            category: "Forces",
+            requires: AnyOf([
+                "org.example.aestra-wind::capability/wind",
+                "org.example.aestra::capability/field_forces",
+            ]),
+            // v1 called `strength` `power`.
+            schema_version: 2,
+            inputs: [
+                (
+                    name: "strength",
+                    label: "Strength",
+                    description: "Peak acceleration of the gust.",
+                    value_type: Scalar,
+                    default: Scalar(3.0),
+                    control: Number(step: 0.1, min: Some(0.0), max: None),
+                ),
+                (
+                    name: "direction",
+                    label: "Direction",
+                    description: "Where the gust blows.",
+                    value_type: Vec3,
+                    default: Vec3((1.0, 0.0, 0.0)),
+                    control: Vector(step: 0.1, min: Some(-1.0), max: Some(1.0)),
+                ),
+            ],
+            entry_point: "gust",
+            migrations: [
+                (from: 1, ops: [Rename(from: "power", to: "strength")]),
+            ],
+        ),
+    ],
+    renderers: [
+        (
+            id: "org.example.aestra-wind::renderer/streaks",
+            name: "Wind Streaks",
+            schema: (
+                schema_version: 1,
+                properties: [
+                    (
+                        name: "length",
+                        label: "Length",
+                        value_type: Scalar,
+                        default: Scalar(2.0),
+                        control: Number(step: 0.1, min: Some(0.0), max: None),
+                    ),
+                ],
+            ),
+        ),
+    ],
+)

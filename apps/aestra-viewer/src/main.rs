@@ -60,6 +60,21 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
+    // Packaged extensions (extensible-stages M12) installed in the effect's project.
+    if let Some(effect_path) = &config.effect_path {
+        let report = aestra_extension_host::link_packages(
+            &aestra_extension_host::project_extension_dirs(effect_path),
+            &Default::default(),
+        );
+        for package in report.problems() {
+            eprintln!(
+                "aestra-viewer: extension {} ({}): {}",
+                package.id.as_ref().map_or("<unknown>", |id| id.as_str()),
+                package.root.display(),
+                package.status.describe()
+            );
+        }
+    }
     let preview_seed = config.resolved_seed();
     let prepared = prepare_viewer(&config).unwrap_or_else(|failure| {
         report_preparation_failure(&config, &failure);

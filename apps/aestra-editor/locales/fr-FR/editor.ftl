@@ -352,6 +352,11 @@ settings-capture = CAPTURE
 settings-appearance = APPARENCE
 settings-language = LANGUE
 settings-keybindings = RACCOURCIS
+settings-extensions = EXTENSIONS
+settings-extensions-description = Les extensions ajoutent des étapes, des modules et des rendus. Les paquets sont chargés depuis le dossier extensions du projet et votre dossier de configuration Aestra ; les changements s’appliquent au prochain démarrage.
+settings-extensions-built-in = Intégrée
+settings-extensions-none = Aucun paquet d’extension trouvé.
+settings-extensions-restart = Redémarrez Aestra pour appliquer les changements d’extensions.
 
 settings-confirm-unsaved = Confirmer les modifications non enregistrées
 settings-confirm-unsaved-description = Demander confirmation avant de fermer ou remplacer un effet modifié.

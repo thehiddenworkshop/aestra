@@ -29,6 +29,12 @@ use aestra_runtime::{ExecutionBlock, ExtensionModulePlan, ResourceLifetime};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
+/// The version of the public extension contract this build implements (extensible-stages M12). A
+/// packaged extension declares the range it targets (`aestra_api: "^0.1"`) and is only registered when
+/// this version satisfies it. Bump the minor version for additive contract changes and the major (or,
+/// before 1.0, the minor) version for breaking ones.
+pub const EXTENSION_API_VERSION: &str = "0.1.0";
+
 /// Who a linked extension is (§23).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionManifest {

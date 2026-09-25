@@ -1,0 +1,17 @@
+// A packaged (declarative) Aestra extension: installed by placing this folder in a project's
+// `extensions/` directory — no rebuild of Aestra. See `content.ron` for what it registers.
+(
+    id: "org.example.aestra-wind",
+    name: "Aestra Wind",
+    version: "0.2.0",
+    aestra_api: "^0.1",
+    description: "Wind gusts for the Field Forces stage, a Wind stage, and a streak renderer.",
+    dependencies: {
+        // Builds on the linked example extension's Field Forces stage.
+        "org.example.aestra": "^0.1",
+    },
+    permissions: (
+        filesystem_project: false,
+        network: false,
+    ),
+)

@@ -16,6 +16,7 @@ impl Plugin for EditorSettingsUiPlugin {
             .add_observer(handle_settings_toggle_change)
             .add_observer(handle_settings_integer_change)
             .add_observer(handle_settings_scalar_change)
+            .add_observer(handle_extension_toggle_change)
             .add_systems(
                 Update,
                 handle_settings_actions
@@ -25,7 +26,8 @@ impl Plugin for EditorSettingsUiPlugin {
             .add_systems(
                 Update,
                 sync_settings_number_inputs.in_set(crate::EditorSet::UiSync),
-            );
+            )
+            .add_systems(Startup, log_extension_report);
     }
 }
 
@@ -39,10 +41,11 @@ enum SettingsCategory {
     Appearance,
     Language,
     Keybindings,
+    Extensions,
 }
 
 impl SettingsCategory {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::General,
         Self::Preview,
         Self::Performance,
@@ -50,6 +53,7 @@ impl SettingsCategory {
         Self::Appearance,
         Self::Language,
         Self::Keybindings,
+        Self::Extensions,
     ];
 
     fn message_id(self) -> &'static str {
@@ -61,6 +65,7 @@ impl SettingsCategory {
             Self::Appearance => "settings-appearance",
             Self::Language => "settings-language",
             Self::Keybindings => "settings-keybindings",
+            Self::Extensions => "settings-extensions",
         }
     }
 }
@@ -85,6 +90,8 @@ enum SettingsNumber {
 #[derive(Resource, Default)]
 pub(crate) struct SettingsPanelState {
     category: SettingsCategory,
+    /// What happened to each discovered extension package at startup (extensible-stages M12).
+    pub(crate) extension_report: aestra_extension_host::HostReport,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -99,6 +106,42 @@ struct SettingsToggleControl(SettingsToggle);
 
 #[derive(Component)]
 struct SettingsNumberControl(SettingsNumber);
+
+impl SettingsPanelState {
+    pub(crate) fn with_extension_report(
+        extension_report: aestra_extension_host::HostReport,
+    ) -> Self {
+        Self {
+            extension_report,
+            ..default()
+        }
+    }
+}
+
+/// Logs what happened to each discovered extension package, so a failure is visible at startup.
+fn log_extension_report(state: Res<SettingsPanelState>) {
+    for package in &state.extension_report.packages {
+        let id = package.id.as_ref().map_or("<unknown>", |id| id.as_str());
+        match package.status {
+            aestra_extension_host::PackageStatus::Registered
+            | aestra_extension_host::PackageStatus::Disabled => info!(
+                "extension {id} {} ({}): {}",
+                package.version,
+                package.root.display(),
+                package.status.describe()
+            ),
+            _ => warn!(
+                "extension {id} ({}): {}",
+                package.root.display(),
+                package.status.describe()
+            ),
+        }
+    }
+}
+
+/// The enable toggle of one packaged extension, by id.
+#[derive(Component)]
+struct ExtensionToggleControl(String);
 
 #[derive(SystemParam)]
 struct SettingsActionResources<'w> {
@@ -227,6 +270,7 @@ pub(crate) fn spawn_settings_workspace(
                                     settings_body,
                                     settings,
                                     state.category,
+                                    &state.extension_report,
                                     localizer,
                                 );
                             },
@@ -267,6 +311,7 @@ fn spawn_settings_category(
     parent: &mut ChildSpawnerCommands,
     settings: &EditorSettings,
     category: SettingsCategory,
+    extension_report: &aestra_extension_host::HostReport,
     localizer: &Localizer,
 ) {
     spawn_settings_heading(parent, &localizer.text(category.message_id()));
@@ -376,7 +421,121 @@ fn spawn_settings_category(
                 );
             }
         }
+        SettingsCategory::Extensions => {
+            spawn_extension_settings(parent, settings, extension_report, localizer);
+        }
     }
+}
+
+/// The Extensions page (extensible-stages M12): extensions built into this application, then every
+/// discovered package with its status and an enable toggle. Toggles apply at the next start.
+fn spawn_extension_settings(
+    parent: &mut ChildSpawnerCommands,
+    settings: &EditorSettings,
+    report: &aestra_extension_host::HostReport,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(label_dim(localizer.text("settings-extensions-description")));
+    let packaged: std::collections::BTreeSet<_> = report
+        .packages
+        .iter()
+        .filter_map(|package| package.id.clone())
+        .collect();
+    for manifest in aestra_compiler::linked_extensions()
+        .into_iter()
+        .filter(|manifest| !packaged.contains(&manifest.plugin))
+    {
+        spawn_settings_read_only(
+            parent,
+            &format!("{} {}", manifest.display_name, manifest.version),
+            &localizer.text("settings-extensions-built-in"),
+            manifest.plugin.as_str(),
+        );
+    }
+    for package in &report.packages {
+        let title = if package.version.is_empty() {
+            package.name.clone()
+        } else {
+            format!("{} {}", package.name, package.version)
+        };
+        let mut description = match &package.id {
+            Some(id) => format!("{} · {}", id.as_str(), package.status.describe()),
+            None => package.status.describe(),
+        };
+        if !package.permissions.is_empty() {
+            description.push_str(&format!(
+                " · permissions: {}",
+                package.permissions.join(", ")
+            ));
+        }
+        description.push_str(&format!(" · {}", package.root.display()));
+        let Some(id) = &package.id else {
+            spawn_settings_read_only(parent, &title, "—", &description);
+            continue;
+        };
+        let enabled = !settings
+            .extensions
+            .disabled
+            .iter()
+            .any(|disabled| disabled == id.as_str());
+        settings_row(parent, &title, &description, |controls| {
+            let mut checkbox = controls.spawn_empty();
+            checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+                ExtensionToggleControl(id.as_str().to_string()),
+                AccessibleLabel(localizer.text(if enabled { "common-on" } else { "common-off" })),
+            ));
+            if enabled {
+                checkbox.insert(Checked);
+            }
+        });
+    }
+    if report.packages.is_empty() {
+        parent
+            .spawn_empty()
+            .apply_scene(label_dim(localizer.text("settings-extensions-none")));
+    }
+}
+
+/// Enables or disables a packaged extension for the next start (extensible-stages M12).
+fn handle_extension_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&ExtensionToggleControl>,
+    mut commands: Commands,
+    mut settings: ResMut<EditorSettings>,
+    mut persistence: ResMut<SettingsPersistence>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    if set_extension_enabled(&mut settings, &control.0, change.value) {
+        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
+        session.status = localizer.text("settings-extensions-restart");
+        session.ui_revision += 1;
+    }
+}
+
+fn set_extension_enabled(settings: &mut EditorSettings, id: &str, enabled: bool) -> bool {
+    let disabled = &mut settings.extensions.disabled;
+    let was_enabled = !disabled.iter().any(|entry| entry == id);
+    if enabled == was_enabled {
+        return false;
+    }
+    if enabled {
+        disabled.retain(|entry| entry != id);
+    } else {
+        disabled.push(id.to_string());
+        disabled.sort();
+    }
+    true
 }
 
 fn spawn_settings_heading(parent: &mut ChildSpawnerCommands, title: &str) {
@@ -804,6 +963,27 @@ fn settings_number_input_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_toggles_maintain_a_sorted_disabled_list() {
+        let mut settings = EditorSettings::default();
+        assert!(set_extension_enabled(&mut settings, "org.b", false));
+        assert!(set_extension_enabled(&mut settings, "org.a", false));
+        assert!(
+            !set_extension_enabled(&mut settings, "org.a", false),
+            "already disabled"
+        );
+        assert_eq!(settings.extensions.disabled, ["org.a", "org.b"]);
+        assert!(set_extension_enabled(&mut settings, "org.a", true));
+        assert!(
+            !set_extension_enabled(&mut settings, "org.a", true),
+            "already enabled"
+        );
+        assert_eq!(settings.extensions.disabled, ["org.b"]);
+        // Settings written before extensions existed still load.
+        let legacy: EditorSettings = ron::from_str("(version: 4)").unwrap();
+        assert!(legacy.extensions.disabled.is_empty());
+    }
 
     #[test]
     fn controls_apply_persisted_constraints() {

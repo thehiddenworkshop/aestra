@@ -22,6 +22,7 @@ pub(crate) struct EditorSettings {
     #[serde(alias = "inspector")]
     pub(crate) properties: PropertiesSettings,
     pub(crate) language: LanguageSettings,
+    pub(crate) extensions: ExtensionSettings,
 }
 
 impl Default for EditorSettings {
@@ -35,6 +36,7 @@ impl Default for EditorSettings {
             appearance: AppearanceSettings::default(),
             properties: PropertiesSettings::default(),
             language: LanguageSettings::default(),
+            extensions: ExtensionSettings::default(),
         }
     }
 }
@@ -53,6 +55,8 @@ impl EditorSettings {
         if self.language.locale.is_empty() {
             self.language.locale = "en-US".into();
         }
+        self.extensions.disabled.sort();
+        self.extensions.disabled.dedup();
         self
     }
 }
@@ -152,6 +156,14 @@ impl Default for LanguageSettings {
             locale: "en-US".into(),
         }
     }
+}
+
+/// Packaged extensions the user turned off (extensible-stages M12), by extension id. Applied when the
+/// editor starts, since extensions register before any effect is compiled.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct ExtensionSettings {
+    pub(crate) disabled: Vec<String>,
 }
 
 #[derive(Resource, Debug)]

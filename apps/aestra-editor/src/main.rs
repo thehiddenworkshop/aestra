@@ -203,6 +203,21 @@ fn main() {
     // effect is compiled.
     aestra_example_extension::link();
     let (mut settings, persistence) = SettingsPersistence::load();
+    // Packaged extensions (extensible-stages M12) are discovered in the project's `extensions/` folder
+    // and the user's config directory, version-checked and registered — installing one needs no
+    // rebuild. Disabled ids come from settings; the report feeds the Extensions settings page.
+    let extension_report = aestra_extension_host::link_packages(
+        &[
+            project_content::default_project_root().join("extensions"),
+            settings::config_dir().join("extensions"),
+        ],
+        &settings
+            .extensions
+            .disabled
+            .iter()
+            .map(aestra_core::ExtensionId::new)
+            .collect(),
+    );
     let localization = EditorLocalizationPlugin::new(&settings.language.locale);
     settings.language.locale = localization.locale().into();
     let session = EditorSession::from_embedded_sample(EFFECT_SOURCE);
@@ -213,6 +228,9 @@ fn main() {
         .insert_resource(session)
         .insert_resource(settings)
         .insert_resource(persistence)
+        .insert_resource(settings_ui::SettingsPanelState::with_extension_report(
+            extension_report,
+        ))
         .insert_resource(UiScale(ui_scale))
         .add_plugins(
             DefaultPlugins

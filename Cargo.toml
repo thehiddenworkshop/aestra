@@ -11,6 +11,7 @@ members = [
     "crates/aestra-core",
     "crates/aestra-authoring",
     "crates/aestra-compiler",
+    "crates/aestra-extension-host",
     "crates/aestra-gpu",
     "crates/aestra-project",
     "crates/aestra-runtime",

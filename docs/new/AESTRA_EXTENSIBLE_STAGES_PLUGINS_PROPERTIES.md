@@ -3060,6 +3060,60 @@ Create an effect with the example plugin, remove the plugin, reopen the project:
 
 ## Milestone 12 — packaged plugin manifest and host
 
+> **Status — done, declaratively (the code-execution boundary is deferred by decision).**
+>
+> Packages are **declarative**. No package code runs on the host, so this milestone needed no
+> sandbox and adds no new dependency. The choice between a WASM component, process/IPC and stable
+> FFI waits until a package needs logic that data cannot express.
+>
+> A package is a folder holding two RON files (RON, like every other Aestra asset):
+> - `extension.ron`, the manifest: id, name, version, `aestra_api` range, description, dependencies
+>   (id → version requirement), requested permissions, and the content file.
+> - `content.ron`, the declarations:
+>   - capabilities, domains and resources;
+>   - stages with an optional **Execution IR template**: `Compute` / `Barrier` / `Copy` / `Repeat` /
+>     `ForEachModule`, with `{stage}`/`{module}` substitution and `Fixed` or per-`Particles` dispatch;
+>   - modules with property descriptors, schema version, entry point and **declarative migrations**
+>     (`Rename` / `Remove` / `Insert`);
+>   - renderers with schemas.
+>
+> `crates/aestra-extension-host` implements the host:
+> - `DeclarativeExtension` turns a package into an ordinary `AestraExtension`, so the compiler and
+>   editor treat it exactly like a linked one. Descriptors are prepared once per load.
+> - `load_packages`/`link_packages` **discover** packages (immediate subfolders with `extension.ron`).
+> - They **version-check** each package: the host implements `EXTENSION_API_VERSION` (0.1.0), and
+>   dependency ranges are checked against linked or packaged extensions, including cascading failures
+>   and cycles.
+> - They **register** packages in dependency order. Namespace, duplicate and unregistered-capability
+>   problems are rejected.
+> - They honour a **disabled** set.
+> - They **diagnose** every package with a `PackageStatus`: `describe()` explains it; problems are
+>   logged at startup and listed in the settings UI.
+>
+> The editor loads packages from the project's `extensions/` folder and `<config>/extensions`. A new
+> **Settings → Extensions** page lists built-in extensions and each package with its id, status,
+> requested permissions, location and an enable toggle; disabled ids persist in settings and apply at
+> the next start. The viewer loads the effect's project packages.
+>
+> The sample package `sample-project/extensions/org.example.aestra-wind`:
+> - depends on the linked example extension;
+> - adds a Wind stage (template-lowered), a Gust module (schema v2 with a v1 migration) that also runs
+>   in the linked Field Forces stage, and a streak renderer.
+>
+> **Acceptance:** `host_contract.rs` covers discovery, API and dependency checks (missing, incompatible,
+> disabled, cycle), registration including cross-extension hosting, disabling (its effects then report
+> `MissingExtension`), namespace, duplicate and linked-id rejection, invalid content, and declarative
+> migration.
+>
+> **Not yet:**
+> - The editor loads packages only for the project open at startup; switching projects does not
+>   reload them.
+> - Toggles need a restart; there is no unlinking at runtime.
+> - WESL compute programs are not packaged yet. Templates name entry points, and nothing executes
+>   extension stages yet.
+> - Permissions are recorded only.
+> - No lockfile or signatures (M14).
+
 ### Goal
 
 Separate plugin installation from rebuilding Aestra.

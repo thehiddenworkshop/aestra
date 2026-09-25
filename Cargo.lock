@@ -200,6 +200,7 @@ dependencies = [
  "aestra-compiler",
  "aestra-core",
  "aestra-example-extension",
+ "aestra-extension-host",
  "aestra-gpu",
  "aestra-project",
  "aestra-runtime",
@@ -228,6 +229,20 @@ dependencies = [
  "aestra-compiler",
  "aestra-core",
  "aestra-runtime",
+]
+
+[[package]]
+name = "aestra-extension-host"
+version = "0.1.0"
+dependencies = [
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-example-extension",
+ "aestra-runtime",
+ "ron",
+ "semver",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]
@@ -278,6 +293,7 @@ dependencies = [
  "aestra-authoring",
  "aestra-bevy",
  "aestra-example-extension",
+ "aestra-extension-host",
  "aestra-project",
  "bevy",
  "image",

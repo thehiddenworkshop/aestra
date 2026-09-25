@@ -1,0 +1,20 @@
+[package]
+name = "aestra-extension-host"
+description = "Discovery, version checking and registration of packaged (declarative) Aestra extensions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
+aestra-core = { path = "../aestra-core" }
+aestra-runtime = { path = "../aestra-runtime" }
+ron.workspace = true
+semver = "1"
+serde.workspace = true
+
+[dev-dependencies]
+aestra-example-extension = { path = "../../extensions/aestra-example-extension" }
+tempfile.workspace = true
