@@ -663,6 +663,62 @@ fn save_all_writes_every_dirty_open_material_document() {
 }
 
 #[test]
+fn save_follows_active_material_view_when_session_target_is_another_material() {
+    use crate::document::{DocumentKey, DocumentManager};
+    use crate::editor_view::{
+        ActiveEditorContext, EditorViewKind, EditorViewManager, open_document_view,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, first, second) = setup(directory.path());
+    let mut documents = DocumentManager::default();
+    let mut views = EditorViewManager::default();
+    let mut active = ActiveEditorContext::default();
+    open_document_view(
+        &mut documents,
+        &mut views,
+        &mut active,
+        DocumentKey::MaterialProgram(first.id),
+        EditorViewKind::MaterialGraph,
+    );
+    open_document_view(
+        &mut documents,
+        &mut views,
+        &mut active,
+        DocumentKey::MaterialProgram(second.id),
+        EditorViewKind::MaterialGraph,
+    );
+    app.insert_resource(documents)
+        .insert_resource(views)
+        .insert_resource(active);
+    edit(&mut app, &first, "First draft");
+    let changed_second = edit(&mut app, &second, "Second saved");
+    assert_eq!(
+        app.world()
+            .resource::<EditorSession>()
+            .standalone_material(),
+        Some(first.id)
+    );
+
+    app.world_mut().trigger(DocumentAction::Save);
+    io::drain(app.world_mut());
+    assert_eq!(
+        MaterialProgram::load_ron(directory.path().join("first.aestra.material.ron")).unwrap(),
+        first
+    );
+    assert_eq!(
+        MaterialProgram::load_ron(directory.path().join("second.aestra.material.ron")).unwrap(),
+        changed_second
+    );
+    let drafts = &app
+        .world()
+        .resource::<ProjectEffectCatalog>()
+        .material_drafts
+        .programs;
+    assert!(drafts.contains_key(&first.id));
+    assert!(!drafts.contains_key(&second.id));
+}
+
+#[test]
 fn save_all_reports_nothing_to_save_when_no_document_is_dirty() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, _first, _second) = setup(directory.path());

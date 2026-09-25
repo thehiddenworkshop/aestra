@@ -168,7 +168,17 @@ impl FunctionEditor {
     pub(crate) fn available(&self, session: &EditorSession, undo: bool) -> bool {
         key(session)
             .ok()
-            .and_then(|key| self.histories.get(&key))
+            .is_some_and(|(root, id)| self.available_for_function(&root, id, undo))
+    }
+
+    pub(crate) fn available_for_function(
+        &self,
+        root: &std::path::Path,
+        id: MaterialFunctionId,
+        undo: bool,
+    ) -> bool {
+        self.histories
+            .get(&(root.to_owned(), id))
             .is_some_and(|history| {
                 if undo {
                     !history.undo.is_empty()

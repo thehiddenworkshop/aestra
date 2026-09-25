@@ -589,6 +589,7 @@ fn execute_document_action(
     io_tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     documents: Option<Res<crate::document::DocumentManager>>,
     active_editor: Option<Res<crate::editor_view::ActiveEditorContext>>,
+    editor_views: Option<Res<crate::editor_view::EditorViewManager>>,
     wesl: Option<Res<crate::wesl_document::WeslDocuments>>,
 ) {
     if !crate::project_content::io::idle(io_tasks) || protection.is_open() {
@@ -632,6 +633,21 @@ fn execute_document_action(
             && let Some(id) = active_wesl_source(active_editor.as_deref(), documents.as_deref())
         {
             commands.trigger(crate::wesl_editor::SaveWeslSource(id));
+            return;
+        }
+        if let Some(target) = active_editor
+            .as_deref()
+            .zip(editor_views.as_deref())
+            .zip(documents.as_deref())
+            .and_then(|((active, views), documents)| {
+                crate::editor_view::active_material_target(active, views, documents, catalog.root())
+            })
+        {
+            if *action == DocumentAction::SaveAs {
+                session.status = localizer.text("material-save-as-unavailable");
+            } else {
+                queue_save_target(&mut commands, &session, &catalog, target);
+            }
             return;
         }
         if session.standalone_function().is_some() {

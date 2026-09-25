@@ -181,6 +181,23 @@ impl MaterialProgramEditHistory {
             }
         }
     }
+
+    fn available_for_program(
+        &self,
+        root: &std::path::Path,
+        id: aestra_core::MaterialProgramId,
+        undo: bool,
+    ) -> bool {
+        self.standalone
+            .get(&(root.to_owned(), id))
+            .is_some_and(|history| {
+                if undo {
+                    !history.undo.is_empty()
+                } else {
+                    !history.redo.is_empty()
+                }
+            })
+    }
     pub(crate) fn execute_replacement(
         &mut self,
         session: &mut EditorSession,
@@ -652,6 +669,9 @@ pub(crate) fn execute_history_action(
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::DocumentProtectionState>>,
     active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
+    active_document: Option<Res<crate::editor_view::ActiveEditorContext>>,
+    editor_views: Option<Res<crate::editor_view::EditorViewManager>>,
+    documents: Option<Res<crate::document::DocumentManager>>,
     mut code_editors: Query<&mut crate::feathers::code_editor::CodeEditor>,
     mut presentation: crate::material_graph::presentation::State,
     mut commands: Commands,
@@ -706,6 +726,19 @@ pub(crate) fn execute_history_action(
     let previous_active = session.material_history_active;
     if let Some(asset_order::Entry::Document(context)) = &next {
         context.select(&mut session);
+    } else if !active && session.material_history_active {
+        // Normal material Undo/Redo follows the focused editor view. A pointer focus on the
+        // viewport/timeline turns material_history_active off and intentionally keeps Effect Undo.
+        if let Some(target) = active_document
+            .as_deref()
+            .zip(editor_views.as_deref())
+            .zip(documents.as_deref())
+            .and_then(|((active, views), documents)| {
+                crate::editor_view::active_material_target(active, views, documents, catalog.root())
+            })
+        {
+            asset_order::Context::Material(target).select(&mut session);
+        }
     }
     let context = asset_order::Context::current(&session);
     let layout = session
@@ -892,6 +925,7 @@ fn history_keyboard_input(
 #[allow(clippy::too_many_arguments)]
 fn update_history_availability(
     session: Res<EditorSession>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
     ledger: Res<EditorHistoryLedger>,
     material_history: Res<MaterialProgramEditHistory>,
     functions: Res<crate::material_function_editor::FunctionEditor>,
@@ -899,6 +933,9 @@ fn update_history_availability(
     tasks: Option<Res<crate::project_content::io::ProjectIoTasks>>,
     protection: Option<Res<crate::DocumentProtectionState>>,
     active_editor: Option<Res<crate::feathers::code_editor::ActiveCodeEditor>>,
+    active_document: Option<Res<crate::editor_view::ActiveEditorContext>>,
+    editor_views: Option<Res<crate::editor_view::EditorViewManager>>,
+    documents: Option<Res<crate::document::DocumentManager>>,
     code_editors: Query<&crate::feathers::code_editor::CodeEditor>,
     mut commands: Commands,
     items: Query<
@@ -913,6 +950,27 @@ fn update_history_availability(
         .as_deref()
         .and_then(|active| active.0)
         .and_then(|entity| code_editors.get(entity).ok());
+    let active_target = session
+        .material_history_active
+        .then(|| {
+            active_document
+                .as_deref()
+                .zip(editor_views.as_deref())
+                .zip(documents.as_deref())
+                .zip(catalog.as_deref())
+                .and_then(|(((active, views), documents), catalog)| {
+                    crate::editor_view::active_material_target(
+                        active,
+                        views,
+                        documents,
+                        catalog.root(),
+                    )
+                })
+        })
+        .flatten();
+    let context = active_target
+        .map(asset_order::Context::Material)
+        .unwrap_or_else(|| asset_order::Context::current(&session));
     for (entity, undo, redo) in &items {
         let ordered = order.as_ref().filter(|order| order.active());
         let enabled = if blocked {
@@ -923,21 +981,18 @@ fn update_history_availability(
             true
         } else if ordered.is_some() {
             false
-        } else if session
-            .operation_order
-            .layout(&asset_order::Context::current(&session), undo)
-            .is_some()
-        {
+        } else if session.operation_order.layout(&context, undo).is_some() {
             true
-        } else if session.standalone_function().is_some() && session.material_history_active {
-            (undo && functions.available(&session, true))
-                || (redo && functions.available(&session, false))
-        } else if session.standalone_material().is_some() && session.material_history_active {
-            material_history
-                .for_target(&session)
-                .is_some_and(|history| {
-                    (undo && !history.undo.is_empty()) || (redo && !history.redo.is_empty())
-                })
+        } else if let asset_order::Context::Material(
+            crate::material_document::MaterialEditingTarget::Function { root, id },
+        ) = &context
+        {
+            functions.available_for_function(root, *id, undo)
+        } else if let asset_order::Context::Material(
+            crate::material_document::MaterialEditingTarget::Program { root, id },
+        ) = &context
+        {
+            material_history.available_for_program(root, *id, undo)
         } else {
             (undo && (ledger.can_undo() || session.can_undo()))
                 || (redo && (ledger.can_redo() || session.can_redo()))
@@ -1238,6 +1293,85 @@ mod tests {
     }
 
     #[test]
+    fn material_history_follows_active_view_instead_of_session_target() {
+        use crate::document::{DocumentKey, DocumentManager};
+        use crate::editor_view::{
+            ActiveEditorContext, EditorViewKind, EditorViewManager, open_document_view,
+        };
+
+        let root = tempfile::tempdir().unwrap();
+        let first = MaterialProgram::additive_sprite("First").normalized();
+        let second = MaterialProgram::additive_sprite("Second").normalized();
+        first
+            .save_ron(root.path().join("first.aestra.material.ron"))
+            .unwrap();
+        second
+            .save_ron(root.path().join("second.aestra.material.ron"))
+            .unwrap();
+
+        let mut app = App::new();
+        app.insert_resource(test_support::session_with_timing_slack());
+        add_history_resources(&mut app);
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()));
+        app.add_observer(execute_history_action);
+        edit_shared(&mut app, &first, "First edit");
+        edit_shared(&mut app, &second, "Second edit");
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .standalone_material(),
+            Some(second.id)
+        );
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+        open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            DocumentKey::MaterialProgram(first.id),
+            EditorViewKind::MaterialGraph,
+        );
+        open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            DocumentKey::MaterialProgram(second.id),
+            EditorViewKind::MaterialGraph,
+        );
+        open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            DocumentKey::MaterialProgram(first.id),
+            EditorViewKind::MaterialGraph,
+        );
+        app.insert_resource(documents)
+            .insert_resource(views)
+            .insert_resource(active);
+
+        app.world_mut().trigger(HistoryAction::Undo);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(catalog.material_program(first.id).unwrap(), first);
+        assert_eq!(
+            catalog.material_program(second.id).unwrap().name,
+            "Second edit"
+        );
+
+        app.world_mut().trigger(HistoryAction::Redo);
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(
+            catalog.material_program(first.id).unwrap().name,
+            "First edit"
+        );
+        assert_eq!(
+            catalog.material_program(second.id).unwrap().name,
+            "Second edit"
+        );
+    }
+
+    #[test]
     fn failed_standalone_history_does_not_pop_entries_or_touch_effect() {
         let root = tempfile::tempdir().unwrap();
         let before = MaterialProgram::additive_sprite("Before").normalized();
@@ -1433,6 +1567,55 @@ mod tests {
         );
         assert!(!world.entity(particle).contains::<InteractionDisabled>());
         assert!(world.entity(undo).contains::<InteractionDisabled>());
+    }
+
+    #[test]
+    fn undo_menu_availability_follows_active_material_view() {
+        use crate::document::{DocumentKey, DocumentManager};
+        use crate::editor_view::{
+            ActiveEditorContext, EditorViewKind, EditorViewManager, open_document_view,
+        };
+
+        let root = tempfile::tempdir().unwrap();
+        let first = MaterialProgram::additive_sprite("First").normalized();
+        let second = MaterialProgram::additive_sprite("Second").normalized();
+        first
+            .save_ron(root.path().join("first.aestra.material.ron"))
+            .unwrap();
+        second
+            .save_ron(root.path().join("second.aestra.material.ron"))
+            .unwrap();
+        let mut app = App::new();
+        app.insert_resource(test_support::session_with_timing_slack());
+        add_history_resources(&mut app);
+        app.insert_resource(ProjectEffectCatalog::scan(root.path()));
+        edit_shared(&mut app, &first, "First edit");
+        let catalog = app.world().resource::<ProjectEffectCatalog>().clone();
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .open_material_program(&catalog, second.id)
+            .unwrap();
+
+        let mut documents = DocumentManager::default();
+        let mut views = EditorViewManager::default();
+        let mut active = ActiveEditorContext::default();
+        open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            DocumentKey::MaterialProgram(first.id),
+            EditorViewKind::MaterialGraph,
+        );
+        app.insert_resource(documents)
+            .insert_resource(views)
+            .insert_resource(active);
+        app.add_systems(Update, update_history_availability);
+        let undo = app.world_mut().spawn(UndoMenuItem).id();
+        let redo = app.world_mut().spawn(RedoMenuItem).id();
+
+        app.update();
+        assert!(!app.world().entity(undo).contains::<InteractionDisabled>());
+        assert!(app.world().entity(redo).contains::<InteractionDisabled>());
     }
 
     #[test]

@@ -202,6 +202,22 @@ pub(crate) fn view_editing_target(
     }
 }
 
+/// The shared-material document currently focused in an editor view. Unlike the session's
+/// compatibility target, this follows the view/document registry even if another operation last
+/// changed `material_target`.
+pub(crate) fn active_material_target(
+    active: &ActiveEditorContext,
+    views: &EditorViewManager,
+    documents: &DocumentManager,
+    root: &std::path::Path,
+) -> Option<MaterialEditingTarget> {
+    let view = active.active_view?;
+    let document = active.active_document?;
+    (views.document_of(view) == Some(document))
+        .then(|| view_editing_target(view, views, documents, root))
+        .flatten()
+}
+
 /// The editor kind a view renders (material graph vs WESL source), so the dock can pick the pane.
 pub(crate) fn view_kind(view: EditorViewId, views: &EditorViewManager) -> Option<EditorViewKind> {
     views.view(view).map(|view| view.kind)
@@ -292,8 +308,19 @@ pub(crate) fn sync_active_document_from_target(
     mut documents: ResMut<DocumentManager>,
     mut views: ResMut<EditorViewManager>,
     mut active: ResMut<ActiveEditorContext>,
+    mut previous_target: Local<Option<MaterialEditingTarget>>,
 ) {
-    if !session.is_changed() {
+    let first_run = previous_target.is_none();
+    let target_changed = previous_target.as_ref() != Some(&session.material_target);
+    if !target_changed {
+        return;
+    }
+    let valid_active_view = active.active_view.and_then(|view| views.document_of(view))
+        == active.active_document
+        && active.active_document.is_some();
+    *previous_target = Some(session.material_target.clone());
+    // On restoration, the persisted active tab is more precise than the compatibility target.
+    if first_run && valid_active_view {
         return;
     }
     reconcile_active_from_target(
@@ -876,6 +903,81 @@ mod tests {
         );
         assert_eq!(active.active_document, None);
         assert_eq!(active.active_view, None);
+    }
+
+    #[test]
+    fn status_change_does_not_override_focused_material_view() {
+        use aestra_core::MaterialProgramId;
+        use std::path::PathBuf;
+
+        let first = MaterialEditingTarget::Program {
+            root: PathBuf::from("project"),
+            id: MaterialProgramId::from_u128(0xa),
+        };
+        let second_id = MaterialProgramId::from_u128(0xb);
+        let mut session = crate::test_support::session_with_timing_slack();
+        session.material_target = first.clone();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<DocumentManager>()
+            .init_resource::<EditorViewManager>()
+            .init_resource::<ActiveEditorContext>();
+        app.add_systems(Update, sync_active_document_from_target);
+        app.update();
+
+        let mut documents = app
+            .world_mut()
+            .remove_resource::<DocumentManager>()
+            .unwrap();
+        let mut views = app
+            .world_mut()
+            .remove_resource::<EditorViewManager>()
+            .unwrap();
+        let mut active = app
+            .world_mut()
+            .remove_resource::<ActiveEditorContext>()
+            .unwrap();
+        let second_view = open_document_view(
+            &mut documents,
+            &mut views,
+            &mut active,
+            DocumentKey::MaterialProgram(second_id),
+            EditorViewKind::MaterialGraph,
+        );
+        app.insert_resource(documents)
+            .insert_resource(views)
+            .insert_resource(active);
+        app.world_mut().resource_mut::<EditorSession>().status = "Saved".into();
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveEditorContext>().active_view,
+            Some(second_view),
+            "a status-only session change must not refocus the old material"
+        );
+
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .material_target = MaterialEditingTarget::EffectInstance;
+        app.update();
+        assert_eq!(
+            app.world().resource::<ActiveEditorContext>().active_view,
+            None
+        );
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .material_target = first;
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<ActiveEditorContext>()
+                .active_document
+                .and_then(|id| app.world().resource::<DocumentManager>().document(id))
+                .map(|document| document.key),
+            Some(DocumentKey::MaterialProgram(MaterialProgramId::from_u128(
+                0xa
+            ))),
+            "an actual target change still selects its material document"
+        );
     }
 
     #[test]
