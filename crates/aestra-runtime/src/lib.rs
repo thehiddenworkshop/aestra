@@ -18,9 +18,10 @@ mod staged;
 mod stateful;
 pub use binding::*;
 pub use execution_ir::{
-    AESTRA_RESOURCE_PARTICLES, ComputeOp, CopyOp, ExecutionBlock, ExecutionError, ExecutionOp,
-    ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
-    ResourceLifetime, execute_reference, lower_stage_fused,
+    AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_PARTICLES, ComputeOp,
+    CopyOp, ExecutionBlock, ExecutionError, ExecutionOp, ReferenceExecutionTrace, RepeatPolicy,
+    ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime, execute_reference,
+    lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{

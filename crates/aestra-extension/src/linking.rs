@@ -120,6 +120,7 @@ impl DomainRegistry {
         for (type_id, name) in [
             (aestra_core::AESTRA_DOMAIN_PARTICLES, "Particles"),
             (aestra_core::AESTRA_DOMAIN_STRIP, "Strip"),
+            (aestra_runtime::AESTRA_DOMAIN_HOST_INPUT, "Host Input"),
         ] {
             let descriptor = DomainDescriptor {
                 type_id: DomainTypeId::new(type_id),
@@ -172,6 +173,16 @@ impl ResourceTypeRegistry {
         registry
             .resources
             .insert(particles.type_id.clone(), particles);
+        // Host binding snapshots, written by the host each tick (host bindings HB6).
+        let host_bindings = ResourceTypeDescriptor {
+            type_id: ResourceTypeId::new(aestra_runtime::AESTRA_RESOURCE_HOST_BINDINGS),
+            display_name: "Host Bindings".into(),
+            domain: DomainTypeId::new(aestra_runtime::AESTRA_DOMAIN_HOST_INPUT),
+            lifetime: ResourceLifetime::Persistent,
+        };
+        registry
+            .resources
+            .insert(host_bindings.type_id.clone(), host_bindings);
         registry
     }
 

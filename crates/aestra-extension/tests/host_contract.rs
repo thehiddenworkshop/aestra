@@ -419,3 +419,34 @@ fn a_packaged_module_input_can_read_a_host_binding_field() {
     let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(compiled));
     assert!(instance.has_forward_only_inputs());
 }
+
+#[test]
+fn a_packaged_stage_can_read_the_host_bindings_resource() {
+    let registry = registry_with(&[sample_extensions()], &BTreeSet::new());
+    let effect = wind_effect(&registry);
+    let compiled = EffectCompiler::with_extensions(registry)
+        .compile(&effect)
+        .expect("a stage reading host bindings compiles");
+    let wind = compiled.emitters[0]
+        .extension_stages
+        .iter()
+        .find(|stage| stage.name == "Wind")
+        .unwrap();
+    let host_bindings =
+        aestra_core::ResourceTypeId::new(aestra_runtime::AESTRA_RESOURCE_HOST_BINDINGS);
+    assert!(
+        wind.block
+            .resources
+            .iter()
+            .any(|resource| resource.id == host_bindings)
+    );
+    let reads_bindings = wind.block.ops.iter().any(|op| match op {
+        aestra_runtime::ExecutionOp::Compute(compute) => compute.accesses.iter().any(|access| {
+            access.resource == host_bindings
+                && access.mode == aestra_runtime::ResourceAccessMode::Read
+        }),
+        _ => false,
+    });
+    assert!(reads_bindings, "the advect pass reads bound wind sources");
+    wind.block.validate().unwrap();
+}

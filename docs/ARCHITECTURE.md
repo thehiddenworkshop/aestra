@@ -150,6 +150,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   pipeline keys without engine resource handles.
 - Keeps generated WGSL snapshots tied to representative compiled artifacts.
 - Derives conservative effect bounds and stable GPU seed/index contracts.
+- Owns the host-binding GPU ABI (`GpuHostBindings`): one `array<u32>` holding a slot count,
+  per-slot headers (bound flag, presence mask, stride, values offset), then packed `f32` values.
+  Offsets depend only on compiled layouts. `HOST_BINDINGS_WGSL` gives kernels their accessors.
+  Plugin stages declare the `aestra.resource.host_bindings` IR resource to read it.
 - Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
 
 ### `aestra-bevy-render`

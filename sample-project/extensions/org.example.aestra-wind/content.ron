@@ -20,6 +20,8 @@
                 resources: [
                     (id: "aestra.resource.particles", lifetime: Persistent),
                     (id: "org.example.aestra-wind::resource/wind_grid", bytes: 65536, lifetime: Transient),
+                    // Bound wind sources, uploaded by the host each tick (host bindings HB6).
+                    (id: "aestra.resource.host_bindings", lifetime: Persistent),
                 ],
                 ops: [
                     ForEachModule([
@@ -36,6 +38,7 @@
                         entry_point: "advect_by_wind",
                         accesses: [
                             (resource: "org.example.aestra-wind::resource/wind_grid", mode: Read),
+                            (resource: "aestra.resource.host_bindings", mode: Read),
                             (resource: "aestra.resource.particles", mode: ReadWrite),
                         ],
                         dispatch: Particles(64),

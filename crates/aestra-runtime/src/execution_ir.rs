@@ -16,6 +16,14 @@ use aestra_core::ResourceTypeId;
 /// read and write.
 pub const AESTRA_RESOURCE_PARTICLES: &str = "aestra.resource.particles";
 
+/// The built-in resource holding an effect instance's host binding snapshots, packed per the
+/// `aestra_gpu` host-binding ABI (host bindings HB6). Host-written once per tick, read-only to stages:
+/// a plugin stage that reads bound objects declares it and a `Read` access on its compute ops.
+pub const AESTRA_RESOURCE_HOST_BINDINGS: &str = "aestra.resource.host_bindings";
+
+/// The domain of host-supplied inputs (host bindings HB6).
+pub const AESTRA_DOMAIN_HOST_INPUT: &str = "aestra.domain.host_input";
+
 /// How an [`ExecutionOp`] accesses a resource (extensible-stages M6). Drives barrier/hazard reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceAccessMode {

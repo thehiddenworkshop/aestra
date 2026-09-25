@@ -4,11 +4,17 @@
 //! GPU simulation and rendering. It intentionally contains no Bevy, WGPU,
 //! windowing, ECS, shader loading, dispatch, or drawing integration.
 
+mod host_bindings;
 pub mod material;
 pub mod mesh_bounds;
 pub mod particle_attributes;
 pub mod ribbon_bounds;
 pub mod shader;
+
+pub use host_bindings::{
+    GpuHostBindings, HOST_BINDING_BOUND, HOST_BINDING_HEADER_WORDS, HOST_BINDINGS_WGSL,
+    host_binding_value_offsets, host_binding_value_word,
+};
 
 use aestra_core::{
     BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, PropertyEvaluationDomain,
