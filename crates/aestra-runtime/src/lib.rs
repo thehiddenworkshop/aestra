@@ -20,9 +20,9 @@ pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
     AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, ComputeOp, CopyOp, ExecutionBlock,
-    ExecutionError, ExecutionOp, FieldLayout, FrameConstants, ReferenceExecutionTrace,
-    RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime,
-    execute_reference, lower_stage_fused,
+    ExecutionError, ExecutionOp, FieldLayout, FrameConstants, IDENTITY_AFFINE,
+    ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
+    ResourceLifetime, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{
@@ -918,6 +918,8 @@ pub struct CompiledEffect {
     pub host_fields: Vec<CompiledHostField>,
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
+    /// The effect's own simulation stages (fluid F2) — shared domains, lowered like emitter stages.
+    pub extension_stages: Vec<CompiledExtensionStage>,
     pub effect_clips: Vec<CompiledEffectClip>,
     pub choreography_events: Vec<CompiledChoreographyEvent>,
     pub requirements: EffectRequirements,
@@ -1085,6 +1087,17 @@ pub struct ProjectParticleSample {
 }
 
 impl CompiledEffect {
+    /// Every plugin extension stage the effect runs, in a stable order: its own (effect-level)
+    /// stages first, then each enabled emitter's (fluid F2).
+    pub fn all_extension_stages(&self) -> impl Iterator<Item = &CompiledExtensionStage> {
+        self.extension_stages.iter().chain(
+            self.emitters
+                .iter()
+                .filter(|emitter| emitter.enabled)
+                .flat_map(|emitter| &emitter.extension_stages),
+        )
+    }
+
     pub fn material(&self, id: MaterialId) -> Option<&CompiledMaterial> {
         self.materials.iter().find(|material| material.source == id)
     }

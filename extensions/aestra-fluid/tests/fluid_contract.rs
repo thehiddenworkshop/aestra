@@ -29,7 +29,7 @@ fn module_mut<'a>(
     effect: &'a mut EffectAsset,
     type_id: &str,
 ) -> &'a mut aestra_core::ModuleInstance {
-    effect.emitters[0]
+    effect.simulation_stages[0]
         .modules
         .iter_mut()
         .find(|module| module.module_type.0 == type_id)
@@ -47,7 +47,7 @@ fn compile_stage(registry: &ExtensionRegistry, effect: &EffectAsset) -> Compiled
     let compiled = EffectCompiler::with_extensions(registry.clone())
         .compile(effect)
         .expect("the fluid effect compiles");
-    compiled.emitters[0].extension_stages[0].clone()
+    compiled.extension_stages[0].clone()
 }
 
 fn codes(error: aestra_compiler::CompileError) -> Vec<DiagnosticCode> {
@@ -91,7 +91,7 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
         SimulationSeekMode::RestartReplay,
         "a fluid is history-dependent"
     );
-    let stage = &compiled.emitters[0].extension_stages[0];
+    let stage = &compiled.extension_stages[0];
     assert!(
         !stage.cpu_reference,
         "the compiled stage says it has no CPU path"
@@ -129,7 +129,7 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
 fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
     let registry = fluid_registry();
     let mut effect = smoke_effect(&registry);
-    effect.emitters[0]
+    effect.simulation_stages[0]
         .modules
         .retain(|module| module.module_type.0 != MODULE_VORTICITY);
     let stage = compile_stage(&registry, &effect);
@@ -148,7 +148,7 @@ fn invalid_grids_and_missing_grids_fail_lowering() {
     assert!(codes(error).contains(&DiagnosticCode::LoweringFailed));
 
     let mut effect = smoke_effect(&registry);
-    effect.emitters[0]
+    effect.simulation_stages[0]
         .modules
         .retain(|module| module.module_type.0 != MODULE_GRID);
     let error = EffectCompiler::with_extensions(registry)
@@ -255,7 +255,7 @@ fn the_compiled_solver_survives_the_artifact_round_trip() {
     let bytes = aestra_artifact::encode_effect(&compiled).unwrap();
     let decoded = aestra_artifact::decode_effect(&bytes).unwrap();
     assert_eq!(
-        decoded.emitters[0].extension_stages, compiled.emitters[0].extension_stages,
+        decoded.extension_stages, compiled.extension_stages,
         "programs, constants and the GPU-only flag round-trip"
     );
 }
@@ -280,7 +280,7 @@ fn the_committed_smoke_sample_compiles_and_survives_a_missing_plugin_unchanged()
     let compiled = EffectCompiler::with_extensions(fluid_registry())
         .compile(&effect)
         .expect("the sample compiles with the plugin");
-    let stage = &compiled.emitters[0].extension_stages[0];
+    let stage = &compiled.extension_stages[0];
     assert!(!stage.cpu_reference);
     let density = stage
         .block

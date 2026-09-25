@@ -43,6 +43,12 @@ impl EffectAsset {
                 plugins.extend(plugin_of(field.as_str()));
             }
         }
+        for stage in &self.simulation_stages {
+            plugins.extend(plugin_of(stage.stage_type.as_str()));
+            for module in &stage.modules {
+                plugins.extend(plugin_of(&module.module_type.0));
+            }
+        }
         for emitter in &self.emitters {
             for module in &emitter.modules {
                 plugins.extend(plugin_of(&module.module_type.0));

@@ -68,6 +68,11 @@ pub struct EffectAsset {
     /// Live host objects the effect expects, as named, engine-independent slots (host bindings HB1).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bindings: Vec<crate::EffectBinding>,
+    /// Simulation stages the effect itself owns, beside its emitters (fluid F2): a domain — such as a
+    /// fluid solver — that several emitters share. Their modules are addressed with the owner
+    /// [`EmitterId::EFFECT_SCOPE`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub simulation_stages: Vec<EffectSimulationStage>,
     #[serde(default)]
     pub emitters: Vec<Emitter>,
     #[serde(default)]
@@ -108,6 +113,7 @@ impl EffectAsset {
             material_instances: Vec::new(),
             parameters: Vec::new(),
             bindings: Vec::new(),
+            simulation_stages: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
             markers: Vec::new(),
@@ -276,8 +282,29 @@ impl EffectAsset {
             }
         }
         crate::binding::validate_bindings(&self.bindings, &mut report, &mut semantic_ids);
+        for (index, stage) in self.simulation_stages.iter().enumerate() {
+            let path = format!("effect.simulation_stages[{index}]");
+            stage.validate(&path, &mut report, &mut semantic_ids);
+            if self.simulation_stages[..index]
+                .iter()
+                .any(|earlier| earlier.name == stage.name)
+            {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.name"),
+                    format!("simulation stage '{}' is declared twice", stage.name),
+                ));
+            }
+        }
         for (index, emitter) in self.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{index}]");
+            if emitter.id == EmitterId::EFFECT_SCOPE {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{emitter_path}.id"),
+                    "the nil id is reserved for the effect's own simulation stages",
+                ));
+            }
             emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
             validate_marker_time_reference(
                 emitter.start_reference,
@@ -576,6 +603,52 @@ impl EffectAsset {
         self.validation_report().into_result()
     }
 
+    /// A module by owner: an emitter's, or — for [`EmitterId::EFFECT_SCOPE`] — one in the effect's
+    /// own simulation stages (fluid F2).
+    pub fn module(&self, owner: EmitterId, module: ModuleId) -> Option<&ModuleInstance> {
+        if owner == EmitterId::EFFECT_SCOPE {
+            return self
+                .simulation_stages
+                .iter()
+                .flat_map(|stage| &stage.modules)
+                .find(|item| item.id == module);
+        }
+        self.emitters
+            .iter()
+            .find(|emitter| emitter.id == owner)?
+            .modules
+            .iter()
+            .find(|item| item.id == module)
+    }
+
+    /// Mutable [`Self::module`].
+    pub fn module_mut(
+        &mut self,
+        owner: EmitterId,
+        module: ModuleId,
+    ) -> Option<&mut ModuleInstance> {
+        if owner == EmitterId::EFFECT_SCOPE {
+            return self
+                .simulation_stages
+                .iter_mut()
+                .flat_map(|stage| &mut stage.modules)
+                .find(|item| item.id == module);
+        }
+        self.emitters
+            .iter_mut()
+            .find(|emitter| emitter.id == owner)?
+            .modules
+            .iter_mut()
+            .find(|item| item.id == module)
+    }
+
+    /// The effect-level simulation stage named `name`.
+    pub fn simulation_stage(&self, name: &str) -> Option<&EffectSimulationStage> {
+        self.simulation_stages
+            .iter()
+            .find(|stage| stage.name == name)
+    }
+
     pub fn from_ron(source: &str) -> Result<Self, AssetError> {
         let found = crate::detect_effect_format(source)?;
         if found != crate::CURRENT_FORMAT_VERSION {
@@ -610,6 +683,64 @@ impl EffectAsset {
     pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), AssetError> {
         atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
         Ok(())
+    }
+}
+
+/// A simulation stage the effect owns (fluid F2): a named instance of a registered stage type — a
+/// fluid solver, say — whose modules configure it. Unlike an emitter's simulation stage it belongs to
+/// no emitter, so several emitters can share it. Its modules carry `StageKind::Simulation(name)`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EffectSimulationStage {
+    pub id: crate::StageId,
+    pub name: String,
+    pub stage_type: StageTypeId,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<ModuleInstance>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl EffectSimulationStage {
+    /// An empty stage of `stage_type` named `name`.
+    pub fn new(name: impl Into<String>, stage_type: StageTypeId) -> Self {
+        let name = name.into();
+        Self {
+            id: crate::StageId::for_name(&name),
+            name,
+            stage_type,
+            enabled: true,
+            modules: Vec::new(),
+        }
+    }
+
+    fn validate(
+        &self,
+        path: &str,
+        report: &mut ValidationReport,
+        semantic_ids: &mut BTreeMap<u128, String>,
+    ) {
+        if self.name.trim().is_empty() {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.name"),
+                "simulation stage name cannot be empty",
+            ));
+        }
+        for (index, module) in self.modules.iter().enumerate() {
+            let module_path = format!("{path}.modules[{index}]");
+            module.validate(&module_path, report, semantic_ids);
+            if module.stage != StageKind::Simulation(self.name.clone()) {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::StageMismatch,
+                    format!("{module_path}.stage"),
+                    format!("a module of stage '{}' must be in that stage", self.name),
+                ));
+            }
+        }
     }
 }
 

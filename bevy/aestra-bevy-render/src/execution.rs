@@ -568,6 +568,25 @@ impl Default for TimelinePolicy {
     }
 }
 
+/// The host inputs a timeline hands every tick it simulates (fluid F2): the effect's host binding
+/// snapshots and its placement (`world_to_effect`, see [`FrameConstants`]). Catch-up and replay ticks
+/// reuse the current inputs — recorded host history is host-bindings HB8.
+#[derive(Clone, Copy)]
+pub struct StageInputs<'a> {
+    pub host_bindings: Option<&'a GpuHostBindings>,
+    pub world_to_effect: [[f32; 4]; 3],
+}
+
+impl Default for StageInputs<'_> {
+    /// No host bindings; the effect at the world origin.
+    fn default() -> Self {
+        Self {
+            host_bindings: None,
+            world_to_effect: aestra_runtime::IDENTITY_AFFINE,
+        }
+    }
+}
+
 /// What one [`StageTimeline::advance_to`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AdvanceReport {
@@ -644,7 +663,7 @@ impl StageTimeline {
         encoder: &mut wgpu::CommandEncoder,
         target: u32,
         budget: u32,
-        host_bindings: Option<&GpuHostBindings>,
+        inputs: StageInputs<'_>,
         timestamps: Option<PassTimestamps<'_>>,
     ) -> Result<AdvanceReport, String> {
         let mut report = AdvanceReport::default();
@@ -674,9 +693,10 @@ impl StageTimeline {
                 begin: stamps.begin.filter(|_| index == 0),
                 end: stamps.end.filter(|_| index + 1 == ticks),
             });
-            let frame = FrameConstants::fixed_step(self.last_tick, self.policy.tick_dt, self.seed);
+            let frame = FrameConstants::fixed_step(self.last_tick, self.policy.tick_dt, self.seed)
+                .with_world_to_effect(inputs.world_to_effect);
             self.executor
-                .encode_tick(device, encoder, frame, host_bindings, stamps)?;
+                .encode_tick(device, encoder, frame, inputs.host_bindings, stamps)?;
             self.last_tick += 1;
             if self.last_tick.is_multiple_of(self.policy.cadence) {
                 self.capture(device, encoder);

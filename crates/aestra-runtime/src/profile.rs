@@ -379,15 +379,11 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
         .saturating_add(stage_storage)
 }
 
-/// The effect's plugin extension stages, over its enabled emitters.
+/// The effect's plugin extension stages: its own, then its enabled emitters'.
 fn extension_stages(
     effect: &CompiledEffect,
 ) -> impl Iterator<Item = &crate::CompiledExtensionStage> {
-    effect
-        .emitters
-        .iter()
-        .filter(|emitter| emitter.enabled)
-        .flat_map(|emitter| &emitter.extension_stages)
+    effect.all_extension_stages()
 }
 
 const fn particle_attribute_bytes(attribute: ParticleAttribute) -> u64 {

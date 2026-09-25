@@ -700,22 +700,17 @@ fn apply_command(
             module,
             index,
         } => {
-            let target = emitter_mut(effect, *emitter)?;
-            checked_insert(
-                &mut target.modules,
-                *index,
-                module.clone(),
-                "emitter modules",
-            )?;
+            let target = owner_modules_mut(effect, *emitter, OwnerSlot::Stage(&module.stage))?;
+            checked_insert(target, *index, module.clone(), "emitter modules")?;
             vec![EffectCommand::RemoveModule {
                 emitter: *emitter,
                 module: module.id,
             }]
         }
         EffectCommand::RemoveModule { emitter, module } => {
-            let target = emitter_mut(effect, *emitter)?;
-            let index = module_index(target, *module)?;
-            let removed = target.modules.remove(index);
+            let target = owner_modules_mut(effect, *emitter, OwnerSlot::Holding(*module))?;
+            let index = position_of(target, *module)?;
+            let removed = target.remove(index);
             vec![EffectCommand::AddModule {
                 emitter: *emitter,
                 module: removed,
@@ -727,9 +722,9 @@ fn apply_command(
             module,
             index,
         } => {
-            let target = emitter_mut(effect, *emitter)?;
-            let old_index = module_index(target, *module)?;
-            checked_move(&mut target.modules, old_index, *index, "emitter modules")?;
+            let target = owner_modules_mut(effect, *emitter, OwnerSlot::Holding(*module))?;
+            let old_index = position_of(target, *module)?;
+            checked_move(target, old_index, *index, "emitter modules")?;
             vec![EffectCommand::MoveModule {
                 emitter: *emitter,
                 module: *module,
@@ -1461,14 +1456,6 @@ fn emitter_mut(effect: &mut EffectAsset, id: EmitterId) -> Result<&mut Emitter, 
         .ok_or_else(|| not_found("emitter", &id))
 }
 
-fn module_index(emitter: &Emitter, id: ModuleId) -> Result<usize, CommandError> {
-    emitter
-        .modules
-        .iter()
-        .position(|module| module.id == id)
-        .ok_or_else(|| not_found("module", &id))
-}
-
 fn renderer_index(emitter: &Emitter, id: RendererId) -> Result<usize, CommandError> {
     emitter
         .renderers
@@ -1477,15 +1464,58 @@ fn renderer_index(emitter: &Emitter, id: RendererId) -> Result<usize, CommandErr
         .ok_or_else(|| not_found("renderer", &id))
 }
 
+/// A module by owner: an emitter's, or — for `EmitterId::EFFECT_SCOPE` — one in the effect's own
+/// simulation stages (fluid F2).
 fn module_mut(
     effect: &mut EffectAsset,
     emitter: EmitterId,
     module: ModuleId,
 ) -> Result<&mut aestra_core::ModuleInstance, CommandError> {
-    emitter_mut(effect, emitter)?
-        .modules
+    if emitter != EmitterId::EFFECT_SCOPE {
+        emitter_mut(effect, emitter)?;
+    }
+    effect
+        .module_mut(emitter, module)
+        .ok_or_else(|| not_found("module", &module))
+}
+
+/// Which effect-level stage an `EFFECT_SCOPE` module command addresses.
+enum OwnerSlot<'a> {
+    /// The stage a module being added names.
+    Stage(&'a aestra_core::StageKind),
+    /// The stage holding an existing module.
+    Holding(ModuleId),
+}
+
+/// The module list a command edits: an emitter's, or an effect-level stage's (fluid F2).
+fn owner_modules_mut<'a>(
+    effect: &'a mut EffectAsset,
+    emitter: EmitterId,
+    slot: OwnerSlot<'_>,
+) -> Result<&'a mut Vec<aestra_core::ModuleInstance>, CommandError> {
+    if emitter != EmitterId::EFFECT_SCOPE {
+        return Ok(&mut emitter_mut(effect, emitter)?.modules);
+    }
+    let stage = effect
+        .simulation_stages
         .iter_mut()
-        .find(|item| item.id == module)
+        .find(|stage| match &slot {
+            OwnerSlot::Stage(aestra_core::StageKind::Simulation(name)) => &stage.name == name,
+            OwnerSlot::Stage(_) => false,
+            OwnerSlot::Holding(module) => stage.modules.iter().any(|item| item.id == *module),
+        });
+    stage
+        .map(|stage| &mut stage.modules)
+        .ok_or_else(|| not_found("effect simulation stage", &emitter))
+}
+
+fn position_of(
+    modules: &[aestra_core::ModuleInstance],
+    module: ModuleId,
+) -> Result<usize, CommandError> {
+    modules
+        .iter()
+        .position(|item| item.id == module)
         .ok_or_else(|| not_found("module", &module))
 }
 

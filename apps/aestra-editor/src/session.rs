@@ -1168,6 +1168,25 @@ impl EditorSession {
         self.effect.emitters.get(self.selected_layer_index()?)
     }
 
+    /// A module and the owner its commands address: `EmitterId::EFFECT_SCOPE` for a module in one of
+    /// the effect's own simulation stages (fluid F2), else the emitter holding it.
+    pub fn owned_module(
+        &self,
+        module: ModuleId,
+    ) -> Option<(EmitterId, &aestra_core::ModuleInstance)> {
+        let scope = EmitterId::EFFECT_SCOPE;
+        if let Some(found) = self.effect.module(scope, module) {
+            return Some((scope, found));
+        }
+        self.effect.emitters.iter().find_map(|emitter| {
+            emitter
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .map(|found| (emitter.id, found))
+        })
+    }
+
     pub fn select_emitter(&mut self, id: EmitterId) -> bool {
         let Some(emitter) = self.effect.emitters.iter().find(|emitter| emitter.id == id) else {
             self.status = "Emitter no longer exists".into();
@@ -1843,20 +1862,17 @@ impl EditorSession {
     }
 
     pub fn toggle_module(&mut self, id: ModuleId) {
-        let Some(selected_layer) = self.selected_layer() else {
-            return;
-        };
-        let emitter = selected_layer;
-        let Some(module) = emitter.modules.iter().find(|module| module.id == id) else {
+        let Some((owner, module)) = self.owned_module(id) else {
             self.status = "Module no longer exists".into();
             return;
         };
+        let enabled = !module.enabled;
         self.execute(
             "Toggled module",
             EffectCommand::SetModuleEnabled {
-                emitter: emitter.id,
+                emitter: owner,
                 module: id,
-                enabled: !module.enabled,
+                enabled,
             },
             true,
         );
@@ -2840,6 +2856,31 @@ mod tests {
         session.undo();
         session.save().unwrap();
         assert_eq!(EffectAsset::load_ron(path).unwrap(), effect);
+    }
+
+    #[test]
+    fn effect_level_domain_modules_are_edited_through_the_effect_scope() {
+        // Fluid F2: a module in the effect's own simulation stage resolves to the effect scope, and
+        // toggling it edits the domain — never an emitter.
+        let mut session = test_support::session_with_timing_slack();
+        let mut stage = aestra_core::EffectSimulationStage::new(
+            "Fluid",
+            aestra_core::StageTypeId::new(aestra_core::AESTRA_STAGE_SIMULATION),
+        );
+        let mut module = aestra_core::ModuleInstance::motion([0.0; 3], 0.0, 0.0);
+        module.module_type = aestra_core::ModuleTypeId::new("org.x::module/grid");
+        module.parameters = aestra_core::ModuleParameters::Custom(Default::default());
+        module.stage = aestra_core::StageKind::Simulation("Fluid".into());
+        let id = module.id;
+        stage.modules.push(module);
+        session.effect.simulation_stages.push(stage);
+        let emitters = session.effect.emitters.clone();
+
+        let (owner, _) = session.owned_module(id).unwrap();
+        assert_eq!(owner, EmitterId::EFFECT_SCOPE);
+        session.toggle_module(id);
+        assert!(!session.effect.simulation_stages[0].modules[0].enabled);
+        assert_eq!(session.effect.emitters, emitters, "no emitter changed");
     }
 
     #[test]

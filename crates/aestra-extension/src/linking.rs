@@ -676,19 +676,65 @@ impl ExtensionRegistry {
 
     /// Whether any plugin payload in the effect is older than its installed schema.
     pub fn needs_migration(&self, asset: &EffectAsset) -> bool {
-        asset.emitters.iter().any(|emitter| {
-            emitter.modules.iter().any(|module| {
-                matches!(
-                    self.module_schema_status(module),
-                    Some(SchemaStatus::Older { .. })
-                )
-            }) || emitter.renderers.iter().any(|renderer| {
-                matches!(
-                    self.renderer_schema_status(renderer),
-                    Some(SchemaStatus::Older { .. })
-                )
+        let older = |module: &ModuleInstance| {
+            matches!(
+                self.module_schema_status(module),
+                Some(SchemaStatus::Older { .. })
+            )
+        };
+        asset
+            .simulation_stages
+            .iter()
+            .any(|stage| stage.modules.iter().any(older))
+            || asset.emitters.iter().any(|emitter| {
+                emitter.modules.iter().any(|module| {
+                    matches!(
+                        self.module_schema_status(module),
+                        Some(SchemaStatus::Older { .. })
+                    )
+                }) || emitter.renderers.iter().any(|renderer| {
+                    matches!(
+                        self.renderer_schema_status(renderer),
+                        Some(SchemaStatus::Older { .. })
+                    )
+                })
             })
-        })
+    }
+
+    /// Upgrades one module's older plugin payload (see [`Self::migrate_effect`]).
+    fn migrate_module(
+        &self,
+        path: String,
+        module: &mut ModuleInstance,
+        report: &mut PayloadMigrationReport,
+    ) {
+        let Some(SchemaStatus::Older { stored, current }) = self.module_schema_status(module)
+        else {
+            return;
+        };
+        let type_id = module.module_type.0.clone();
+        let ModuleParameters::Custom(values) = &mut module.parameters else {
+            return;
+        };
+        match run_migration(self.migrations.get(&type_id), values, stored, current) {
+            Ok(migrated) => {
+                *values = migrated;
+                module.schema_version = Some(current);
+                report.upgraded.push(MigratedPayload {
+                    path,
+                    type_id,
+                    from: stored,
+                    to: current,
+                });
+            }
+            Err(message) => report.failed.push(MigrationFailure {
+                path,
+                type_id,
+                from: stored,
+                to: current,
+                message,
+            }),
+        }
     }
 
     /// Upgrades every older plugin payload in the effect to the installed schema through the plugins'
@@ -696,37 +742,22 @@ impl ExtensionRegistry {
     /// exactly as authored and reported; newer payloads are never touched.
     pub fn migrate_effect(&self, asset: &mut EffectAsset) -> PayloadMigrationReport {
         let mut report = PayloadMigrationReport::default();
+        for (stage_index, stage) in asset.simulation_stages.iter_mut().enumerate() {
+            for (module_index, module) in stage.modules.iter_mut().enumerate() {
+                self.migrate_module(
+                    format!("effect.simulation_stages[{stage_index}].modules[{module_index}]"),
+                    module,
+                    &mut report,
+                );
+            }
+        }
         for (emitter_index, emitter) in asset.emitters.iter_mut().enumerate() {
             for (module_index, module) in emitter.modules.iter_mut().enumerate() {
-                let Some(SchemaStatus::Older { stored, current }) =
-                    self.module_schema_status(module)
-                else {
-                    continue;
-                };
-                let path = format!("effect.emitters[{emitter_index}].modules[{module_index}]");
-                let type_id = module.module_type.0.clone();
-                let ModuleParameters::Custom(values) = &mut module.parameters else {
-                    continue;
-                };
-                match run_migration(self.migrations.get(&type_id), values, stored, current) {
-                    Ok(migrated) => {
-                        *values = migrated;
-                        module.schema_version = Some(current);
-                        report.upgraded.push(MigratedPayload {
-                            path,
-                            type_id,
-                            from: stored,
-                            to: current,
-                        });
-                    }
-                    Err(message) => report.failed.push(MigrationFailure {
-                        path,
-                        type_id,
-                        from: stored,
-                        to: current,
-                        message,
-                    }),
-                }
+                self.migrate_module(
+                    format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
+                    module,
+                    &mut report,
+                );
             }
             for (renderer_index, renderer) in emitter.renderers.iter_mut().enumerate() {
                 let Some(SchemaStatus::Older { stored, current }) =

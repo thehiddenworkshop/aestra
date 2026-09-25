@@ -28,9 +28,9 @@
 //! same GPU. Call [`link`] once at startup.
 
 use aestra_core::{
-    CapabilityId, ComputeProgramId, DomainTypeId, EffectAsset, Emitter, ExtensionId,
-    ModuleInstance, ModuleTypeId, PropertyBag, ResourceTypeId, StageKind, StageTypeId, Value,
-    ValueType,
+    CapabilityId, ComputeProgramId, DomainTypeId, EffectAsset, EffectSimulationStage, Emitter,
+    ExtensionId, ModuleInstance, ModuleTypeId, PropertyBag, ResourceTypeId, StageKind, StageTypeId,
+    Value, ValueType,
 };
 use aestra_extension::{
     AestraExtension, CapabilityExpression, CapabilitySet, ComputeProgram, DomainDescriptor,
@@ -110,11 +110,12 @@ pub fn program_wgsl() -> String {
 /// The simulation-stage name [`smoke_effect`] authors.
 pub const SMOKE_STAGE: &str = "Fluid";
 
-/// A sprite emitter with a *Fluid Solver* stage hosting a Fluid Grid, a Density Source, Buoyancy and
-/// Vorticity, every input at its schema default. `registry` must have the extension installed.
+/// An effect whose own *Fluid Solver* domain (an effect-level simulation stage, fluid F2) hosts a
+/// Fluid Grid, a Density Source, Buoyancy and Vorticity — every input at its schema default — beside a
+/// sprite emitter. `registry` must have the extension installed.
 pub fn smoke_effect(registry: &ExtensionRegistry) -> EffectAsset {
     let mut effect = EffectAsset::new("Fluid Smoke", 4.0);
-    let mut emitter = Emitter::basic_sprite("Smoke", 4.0);
+    let mut domain = EffectSimulationStage::new(SMOKE_STAGE, StageTypeId::new(STAGE_FLUID_SOLVER));
     for type_id in [
         MODULE_GRID,
         MODULE_DENSITY_SOURCE,
@@ -126,12 +127,10 @@ pub fn smoke_effect(registry: &ExtensionRegistry) -> EffectAsset {
             .instantiate(&ModuleTypeId::new(type_id))
             .expect("the fluid extension is installed in the registry");
         module.stage = StageKind::Simulation(SMOKE_STAGE.into());
-        emitter.modules.push(module);
+        domain.modules.push(module);
     }
-    emitter
-        .simulation_stage_types
-        .insert(SMOKE_STAGE.into(), StageTypeId::new(STAGE_FLUID_SOLVER));
-    effect.emitters.push(emitter);
+    effect.simulation_stages.push(domain);
+    effect.emitters.push(Emitter::basic_sprite("Smoke", 4.0));
     effect
 }
 

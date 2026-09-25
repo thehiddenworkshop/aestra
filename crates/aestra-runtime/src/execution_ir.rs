@@ -41,38 +41,61 @@ pub const AESTRA_RESOURCE_STAGE_CONSTANTS: &str = "aestra.resource.stage_constan
 /// Host-written before every tick, read-only to stages.
 pub const AESTRA_RESOURCE_FRAME: &str = "aestra.resource.frame";
 
-/// Per-tick values the host writes to [`AESTRA_RESOURCE_FRAME`] (extensible-stages M13), as four
-/// 32-bit words: `tick: u32`, `dt: f32`, `time: f32`, `seed: u32`. A staged simulation is a pure
-/// function of its asset, its seed and this sequence — which is what makes GPU-vs-GPU reruns
-/// reproducible.
+/// Per-tick values the host writes to [`AESTRA_RESOURCE_FRAME`] (extensible-stages M13, fluid F2), as
+/// sixteen 32-bit words: `tick: u32`, `dt: f32`, `time: f32`, `seed: u32`, then `world_to_effect` — the
+/// 3×4 affine (rows, `f32`) taking world space into the effect's space. A stage's domain lives in its
+/// effect's space and so moves rigidly with it; world-space host inputs (bound positions and
+/// velocities) are converted with this. A staged simulation is a pure function of its asset, its seed
+/// and this sequence — which is what makes GPU-vs-GPU reruns reproducible.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameConstants {
     pub tick: u32,
     pub dt: f32,
     pub time: f32,
     pub seed: u32,
+    pub world_to_effect: [[f32; 4]; 3],
 }
+
+/// The identity 3×4 affine.
+pub const IDENTITY_AFFINE: [[f32; 4]; 3] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+];
 
 impl FrameConstants {
     /// Size of the frame resource in bytes.
-    pub const BYTES: u64 = 16;
+    pub const BYTES: u64 = 64;
 
-    /// The fixed-step frame for `tick`: `time = tick * dt`.
+    /// The fixed-step frame for `tick`: `time = tick * dt`, the effect placed at the world origin.
     pub fn fixed_step(tick: u32, dt: f32, seed: u32) -> Self {
         Self {
             tick,
             dt,
             time: tick as f32 * dt,
             seed,
+            world_to_effect: IDENTITY_AFFINE,
         }
     }
 
+    /// The same frame with the effect placed by `world_to_effect`.
+    pub fn with_world_to_effect(mut self, world_to_effect: [[f32; 4]; 3]) -> Self {
+        self.world_to_effect = world_to_effect;
+        self
+    }
+
     /// The words uploaded to [`AESTRA_RESOURCE_FRAME`].
-    pub fn to_words(self) -> [u32; 4] {
-        [self.tick, self.dt.to_bits(), self.time.to_bits(), self.seed]
+    pub fn to_words(self) -> [u32; 16] {
+        let mut words = [0u32; 16];
+        words[..4].copy_from_slice(&[self.tick, self.dt.to_bits(), self.time.to_bits(), self.seed]);
+        for (row, values) in self.world_to_effect.iter().enumerate() {
+            for (column, value) in values.iter().enumerate() {
+                words[4 + row * 4 + column] = value.to_bits();
+            }
+        }
+        words
     }
 }
-
 /// How an [`ExecutionOp`] accesses a resource (extensible-stages M6). Drives barrier/hazard reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceAccessMode {
@@ -579,9 +602,12 @@ mod tests {
     fn frame_constants_pack_tick_dt_time_and_seed() {
         let frame = FrameConstants::fixed_step(30, 0.5, 9);
         assert_eq!(frame.time, 15.0);
+        let words = frame.to_words();
+        assert_eq!(words[..4], [30, 0.5f32.to_bits(), 15.0f32.to_bits(), 9]);
         assert_eq!(
-            frame.to_words(),
-            [30, 0.5f32.to_bits(), 15.0f32.to_bits(), 9]
+            words[4..8],
+            [1.0f32.to_bits(), 0, 0, 0],
+            "identity placement, row-major"
         );
     }
 

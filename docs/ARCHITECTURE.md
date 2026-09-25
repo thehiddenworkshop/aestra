@@ -52,6 +52,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Owns the engine-independent `EffectClip` and serializable `EffectAssetRef` value types; project
   source discovery remains outside the semantic model.
 - Validates assets at import/save boundaries.
+- Owns effect-level simulation stages (`EffectAsset::simulation_stages`): domains such as a fluid
+  solver that the effect owns and its emitters share. Module commands and selections address them
+  with the reserved owner `EmitterId::EFFECT_SCOPE`; `EffectAsset::module(owner, id)` resolves
+  both kinds of owner.
 - Has no dependency on Bevy, editor UI, or an AI provider.
 
 ### `aestra-project`
@@ -199,6 +203,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   - It encodes consecutive compute ops into one pass, and uploads per-tick inputs inside the command
     encoder, so several ticks fit in one submission.
   - It checkpoints and restores persistent stage state, on the GPU or read back.
+- Stage domains are effect-local: the grid lives in its effect's space and moves rigidly with it.
+  Each tick's `FrameConstants` carries the world-to-effect affine, so stages convert world-space host
+  inputs (bound positions and velocities).
 - Owns `execution::StageTimeline`: a stage on a fixed 60 Hz tick. It catches up within a per-frame
   budget, keeps GPU-resident checkpoints within a count and memory policy, and on a backward seek
   restores the nearest checkpoint and replays forward. Scrubbing reproduces the uninterrupted run bit

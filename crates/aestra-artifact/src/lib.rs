@@ -109,6 +109,9 @@ struct EffectV1 {
     /// Module inputs read from host binding fields, after the parameters in input order (v4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     host_fields: Vec<HostFieldV4>,
+    /// The effect's own simulation stages (fluid F2, v4 additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    extension_stages: Vec<ExtensionStageV4>,
     particle_layout: ParticleLayoutV1,
     emitters: Vec<EmitterV1>,
     effect_clips: Vec<EffectClipV1>,
@@ -527,6 +530,11 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .collect::<Result<_, _>>()?,
             parameters: effect.parameters.iter().map(ParameterV1::from).collect(),
             bindings: effect.bindings.iter().map(BindingV4::from).collect(),
+            extension_stages: effect
+                .extension_stages
+                .iter()
+                .map(ExtensionStageV4::from)
+                .collect(),
             host_fields: effect
                 .host_fields
                 .iter()
@@ -677,6 +685,14 @@ impl TryFrom<EffectV1> for CompiledEffect {
             .enumerate()
             .map(|(index, emitter)| emitter.decode(index, &inputs))
             .collect::<Result<_, _>>()?;
+        let extension_stages = effect
+            .extension_stages
+            .into_iter()
+            .enumerate()
+            .map(|(index, stage)| {
+                stage.decode(&format!("effect.extension_stages[{index}]"), &bindings)
+            })
+            .collect::<Result<_, _>>()?;
         let effect_clips = effect
             .effect_clips
             .into_iter()
@@ -728,6 +744,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             host_fields,
             particle_layout: effect.particle_layout.into(),
             emitters,
+            extension_stages,
             effect_clips,
             choreography_events: effect
                 .choreography_events

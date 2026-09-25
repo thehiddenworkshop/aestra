@@ -180,6 +180,54 @@ fn is_generic_simulation_stage_type(stage_type: &StageTypeId) -> bool {
     stage_type.as_str() == AESTRA_STAGE_SIMULATION
 }
 
+/// An effect-level simulation stage in v4 (fluid F2): like [`V4SimulationStage`], with an enable
+/// flag, and always naming its stage type (an effect stage is never the generic one by default).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct V4EffectSimulationStage {
+    pub id: StageId,
+    pub name: String,
+    pub stage_type: StageTypeId,
+    #[serde(default = "enabled_default", skip_serializing_if = "is_enabled")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<V4Module>,
+}
+
+fn enabled_default() -> bool {
+    true
+}
+
+fn is_enabled(enabled: &bool) -> bool {
+    *enabled
+}
+
+impl V4EffectSimulationStage {
+    fn from_stage(stage: &crate::EffectSimulationStage) -> Self {
+        Self {
+            id: stage.id,
+            name: stage.name.clone(),
+            stage_type: stage.stage_type.clone(),
+            enabled: stage.enabled,
+            modules: stage.modules.iter().map(V4Module::from_module).collect(),
+        }
+    }
+
+    fn into_stage(self) -> crate::EffectSimulationStage {
+        let stage = StageKind::Simulation(self.name.clone());
+        crate::EffectSimulationStage {
+            id: self.id,
+            name: self.name,
+            stage_type: self.stage_type,
+            enabled: self.enabled,
+            modules: self
+                .modules
+                .into_iter()
+                .map(|module| module.into_module(stage.clone()))
+                .collect(),
+        }
+    }
+}
+
 /// The v4 authored shape of one emitter: nested lifecycle containers + explicit simulation stages, and
 /// a namespaced `domain` in place of `simulation_domain`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -238,6 +286,9 @@ pub struct AuthoredV4Document {
     pub bindings: Vec<crate::EffectBinding>,
     #[serde(default, skip_serializing_if = "V4EffectLifecycle::is_empty")]
     pub lifecycle: V4EffectLifecycle,
+    /// The effect's own simulation stages (fluid F2), shared by its emitters; omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub simulation_stages: Vec<V4EffectSimulationStage>,
     #[serde(default)]
     pub emitters: Vec<V4Emitter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -403,6 +454,11 @@ impl AuthoredV4Document {
             parameters: effect.parameters.clone(),
             bindings: effect.bindings.clone(),
             lifecycle: V4EffectLifecycle::default(),
+            simulation_stages: effect
+                .simulation_stages
+                .iter()
+                .map(V4EffectSimulationStage::from_stage)
+                .collect(),
             emitters,
             events: effect.events.clone(),
             markers: effect.markers.clone(),
@@ -431,6 +487,11 @@ impl AuthoredV4Document {
             material_instances: self.material_instances,
             parameters: self.parameters,
             bindings: self.bindings,
+            simulation_stages: self
+                .simulation_stages
+                .into_iter()
+                .map(V4EffectSimulationStage::into_stage)
+                .collect(),
             emitters: self.emitters.into_iter().map(emitter_from_v4).collect(),
             events: self.events,
             markers: self.markers,

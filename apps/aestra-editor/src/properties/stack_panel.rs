@@ -99,6 +99,37 @@ pub(crate) fn spawn_module_stack_panel(
                                 SemanticTarget::Effect(session.effect.id),
                                 session,
                             );
+                            // Stages without a CPU reference say so (extensible plan §13.3).
+                            let stage_types = aestra_compiler::ExtensionRegistry::linked().stages;
+                            let gpu_only = |stage_type: &aestra_core::StageTypeId| {
+                                stage_types
+                                    .get(stage_type)
+                                    .is_some_and(|stage| !stage.backend.has_cpu_reference())
+                                    .then(|| localizer.text("properties-stage-gpu-only"))
+                            };
+                            // The effect's own simulation stages (fluid F2): domains its emitters
+                            // share, listed with the effect rather than inside an emitter.
+                            for (stage_index, stage) in
+                                session.effect.simulation_stages.iter().enumerate()
+                            {
+                                spawn_simulation_stage_header(
+                                    stack,
+                                    &stage.name,
+                                    gpu_only(&stage.stage_type).as_deref(),
+                                );
+                                for (module_index, module) in stage.modules.iter().enumerate() {
+                                    spawn_module_stack_row(
+                                        stack,
+                                        module,
+                                        registry.0.get(&module.module_type),
+                                        &format!(
+                                            "effect.simulation_stages[{stage_index}].modules[{module_index}]"
+                                        ),
+                                        session,
+                                        asset_server,
+                                    );
+                                }
+                            }
                             spawn_stack_nav_item(
                                 stack,
                                 &localizer.text("properties-emitter"),
@@ -146,13 +177,11 @@ pub(crate) fn spawn_module_stack_panel(
                                     continue;
                                 }
                                 seen.push(name);
-                                // Stages without a CPU reference say so (extensible plan §13.3).
-                                let gpu_only = aestra_compiler::ExtensionRegistry::linked()
-                                    .stages
-                                    .get(&layer.simulation_stage_type(name))
-                                    .is_some_and(|stage| !stage.backend.has_cpu_reference())
-                                    .then(|| localizer.text("properties-stage-gpu-only"));
-                                spawn_simulation_stage_header(stack, name, gpu_only.as_deref());
+                                spawn_simulation_stage_header(
+                                    stack,
+                                    name,
+                                    gpu_only(&layer.simulation_stage_type(name)).as_deref(),
+                                );
                                 for (module_index, sim_module) in
                                     layer.modules.iter().enumerate()
                                 {

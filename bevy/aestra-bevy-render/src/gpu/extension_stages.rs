@@ -27,7 +27,7 @@
 //! as |xyz| × gain. The grid is placed in the effect's space (the domain-space decision is fluid F2).
 
 use super::*;
-use crate::execution::{PassTimestamps, StageExecutor, StageTimeline, TimelinePolicy};
+use crate::execution::{PassTimestamps, StageExecutor, StageInputs, StageTimeline, TimelinePolicy};
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
 use aestra_gpu::GpuHostBindings;
@@ -93,6 +93,8 @@ pub(crate) struct ExtractedStages {
     host: GpuHostBindings,
     seed: u32,
     host_epoch: u64,
+    /// The effect's placement: world space into its space (fluid F2).
+    world_to_effect: [[f32; 4]; 3],
     view: Option<FieldViewTarget>,
 }
 
@@ -137,13 +139,9 @@ struct FieldViewQuad;
 #[derive(Resource, Default, Clone)]
 struct StageTimingMailbox(TimingMailbox);
 
-/// The effect's extension stages, over its enabled emitters, in a stable order.
+/// The effect's extension stages — its own domains, then its enabled emitters' — in a stable order.
 fn stages(effect: &CompiledEffect) -> impl Iterator<Item = &CompiledExtensionStage> {
-    effect
-        .emitters
-        .iter()
-        .filter(|emitter| emitter.enabled)
-        .flat_map(|emitter| &emitter.extension_stages)
+    effect.all_extension_stages()
 }
 
 pub(super) fn install(app: &mut App) {
@@ -184,15 +182,32 @@ type StageInputQuery<'w, 's> = Query<
     (
         Entity,
         &'static PresentedEffect,
+        Option<&'static GlobalTransform>,
         Option<&'static FieldViewState>,
         Has<ExtractedStages>,
         Has<GpuStageTiming>,
     ),
 >;
 
+/// The 3×4 affine taking world space into the space `transform` places (rows).
+fn world_to_local(transform: &GlobalTransform) -> [[f32; 4]; 3] {
+    let inverse = transform.affine().inverse();
+    let (x, y, z, t) = (
+        inverse.matrix3.x_axis,
+        inverse.matrix3.y_axis,
+        inverse.matrix3.z_axis,
+        inverse.translation,
+    );
+    [
+        [x.x, y.x, z.x, t.x],
+        [x.y, y.y, z.y, t.y],
+        [x.z, y.z, z.z, t.z],
+    ]
+}
+
 /// Mirrors each presented effect's stage inputs for extraction (or removes them).
 fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
-    for (entity, presented, view, extracted, timed) in &effects {
+    for (entity, presented, transform, view, extracted, timed) in &effects {
         let effect = presented.effect();
         if stages(effect).next().is_none() {
             if extracted {
@@ -209,6 +224,7 @@ fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
             host: GpuHostBindings::from_instance(instance),
             seed: instance.seed() as u32,
             host_epoch: instance.host_input_epoch(),
+            world_to_effect: transform.map_or(aestra_runtime::IDENTITY_AFFINE, world_to_local),
             view: view.map(|view| view.target.clone()),
         });
         if !timed {
@@ -513,7 +529,10 @@ fn run_extension_stages(
                 render_context.command_encoder(),
                 target,
                 budget,
-                Some(&extracted.host),
+                StageInputs {
+                    host_bindings: Some(&extracted.host),
+                    world_to_effect: extracted.world_to_effect,
+                },
                 stamps,
             ) {
                 warn!("extension stage stopped: {error}");

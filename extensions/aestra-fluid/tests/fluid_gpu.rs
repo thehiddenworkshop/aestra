@@ -9,7 +9,7 @@
 //!
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
-use aestra_bevy_render::execution::{StageExecutor, StageTimeline, TimelinePolicy};
+use aestra_bevy_render::execution::{StageExecutor, StageInputs, StageTimeline, TimelinePolicy};
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
     AESTRA_FIELD_POSITION, BindingUpdateMode, EffectAsset, EffectBinding, HostFieldRef,
@@ -76,7 +76,7 @@ fn registry() -> ExtensionRegistry {
 }
 
 fn set_input(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
-    let module = effect.emitters[0]
+    let module = effect.simulation_stages[0]
         .modules
         .iter_mut()
         .find(|module| module.module_type.0 == type_id)
@@ -122,7 +122,7 @@ fn effect(registry: &ExtensionRegistry, bound: bool, iterations: u32) -> EffectA
         let emitter = EffectBinding::spatial("Emitter", BindingUpdateMode::Live);
         let emitter_id = emitter.id;
         effect.bindings = vec![emitter];
-        let source = effect.emitters[0]
+        let source = effect.simulation_stages[0]
             .modules
             .iter_mut()
             .find(|module| module.module_type.0 == MODULE_DENSITY_SOURCE)
@@ -149,7 +149,7 @@ impl Fluid {
         let compiled = EffectCompiler::with_extensions(registry.clone())
             .compile(effect)
             .expect("the fluid effect compiles");
-        let block = compiled.emitters[0].extension_stages[0].block.clone();
+        let block = compiled.extension_stages[0].block.clone();
         let instance = EffectInstance::new(Arc::new(compiled));
         let host_bytes = GpuHostBindings::from_instance(&instance).byte_len();
         let stage = StageExecutor::new(
@@ -164,12 +164,18 @@ impl Fluid {
     }
 
     fn run(&self, gpu: &Gpu, ticks: std::ops::Range<u32>) {
+        self.run_placed(gpu, ticks, aestra_runtime::IDENTITY_AFFINE);
+    }
+
+    /// Runs with the effect placed in the world by `world_to_effect`.
+    fn run_placed(&self, gpu: &Gpu, ticks: std::ops::Range<u32>, world_to_effect: [[f32; 4]; 3]) {
         for tick in ticks {
             self.stage
                 .run_tick(
                     &gpu.device,
                     &gpu.queue,
-                    FrameConstants::fixed_step(tick, DT, SEED),
+                    FrameConstants::fixed_step(tick, DT, SEED)
+                        .with_world_to_effect(world_to_effect),
                     Some(&GpuHostBindings::from_instance(&self.instance)),
                 )
                 .unwrap();
@@ -353,7 +359,14 @@ fn timeline(gpu: &Gpu, registry: &ExtensionRegistry, policy: TimelinePolicy) -> 
 fn advance(gpu: &Gpu, timeline: &mut StageTimeline, target: u32, budget: u32) -> u32 {
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     let report = timeline
-        .advance_to(&gpu.device, &mut encoder, target, budget, None, None)
+        .advance_to(
+            &gpu.device,
+            &mut encoder,
+            target,
+            budget,
+            StageInputs::default(),
+            None,
+        )
         .unwrap();
     gpu.queue.submit([encoder.finish()]);
     report.ticks
@@ -406,7 +419,14 @@ fn scrubbing_reproduces_the_uninterrupted_run_bit_for_bit() {
     // Scrub back: restores the checkpoint at 20 and replays 15 ticks.
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     let report = scrubbed
-        .advance_to(&gpu.device, &mut encoder, 35, u32::MAX, None, None)
+        .advance_to(
+            &gpu.device,
+            &mut encoder,
+            35,
+            u32::MAX,
+            StageInputs::default(),
+            None,
+        )
         .unwrap();
     gpu.queue.submit([encoder.finish()]);
     assert_eq!(report.restored_from, Some(20));
@@ -451,5 +471,35 @@ fn checkpoint_memory_stays_within_the_policy() {
     assert_eq!(
         timeline_state(&gpu, &timeline),
         timeline_state(&gpu, &reference)
+    );
+}
+
+#[test]
+fn the_domain_lives_in_effect_space_and_host_inputs_are_converted_into_it() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let run = |host: [f32; 3], world_to_effect: [[f32; 4]; 3]| {
+        let mut fluid = Fluid::new(&gpu, &registry, &effect(&registry, true, 24));
+        fluid
+            .instance
+            .set_spatial_binding("Emitter", SpatialBindingSnapshot::at(host))
+            .unwrap();
+        fluid.run_placed(&gpu, 0..30, world_to_effect);
+        fluid.state(&gpu)
+    };
+    // The effect at the origin with its host object at (-1, 0.5, 0)…
+    let at_origin = run([-1.0, 0.5, 0.0], aestra_runtime::IDENTITY_AFFINE);
+    // …equals the effect placed at x = 5 with the object moved the same way: the grid moved with the
+    // effect and the world-space host position was brought into effect space.
+    let moved = [
+        [1.0, 0.0, 0.0, -5.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ];
+    assert_eq!(run([4.0, 0.5, 0.0], moved), at_origin, "bit for bit");
+    assert_ne!(
+        run([-1.0, 0.5, 0.0], moved),
+        at_origin,
+        "an object that did not move is elsewhere in effect space"
     );
 }

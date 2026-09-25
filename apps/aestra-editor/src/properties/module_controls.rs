@@ -69,10 +69,9 @@ pub(super) fn handle_module_action(
 }
 
 pub(super) fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
-    let Some(selected_layer) = session.selected_layer() else {
+    let Some((emitter, _)) = session.owned_module(module) else {
         return false;
     };
-    let emitter = selected_layer.id;
     session.preview_transaction(EffectTransaction::single(
         "Delete module",
         EffectCommand::RemoveModule { emitter, module },
@@ -200,13 +199,7 @@ fn properties_module_input_target<'a>(
     module: ModuleId,
     input: u8,
 ) -> Option<(EmitterId, &'a str)> {
-    let (emitter, module) = session.effect.emitters.iter().find_map(|emitter| {
-        emitter
-            .modules
-            .iter()
-            .find(|candidate| candidate.id == module)
-            .map(|module| (emitter.id, module))
-    })?;
+    let (emitter, module) = session.owned_module(module)?;
     let metadata = registry.get(&module.module_type)?;
     metadata
         .inputs
@@ -228,11 +221,8 @@ pub(super) fn set_module_input_source(
         return false;
     };
     let Some((module_instance, input)) = session
-        .effect
-        .emitters
-        .iter()
-        .flat_map(|emitter| emitter.modules.iter())
-        .find(|candidate| candidate.id == module)
+        .owned_module(module)
+        .map(|(_, module)| module)
         .and_then(|module| {
             registry
                 .get(&module.module_type)

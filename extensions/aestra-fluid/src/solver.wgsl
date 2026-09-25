@@ -33,6 +33,24 @@ fn confinement_strength() -> f32 { return bitcast<f32>(constants[8]); }
 fn source_count() -> u32 { return constants[9]; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 
+// World space into the effect's space (frame words 4..15, rows): the grid lives in the effect's space
+// and moves with it; host inputs arrive in world space. `w` is 1 for a point, 0 for a vector.
+fn world_to_effect(v: vec3<f32>, w: f32) -> vec3<f32> {
+    let h = vec4<f32>(v, w);
+    var out: vec3<f32>;
+    for (var row = 0u; row < 3u; row += 1u) {
+        let base = 4u + row * 4u;
+        let r = vec4<f32>(
+            bitcast<f32>(frame[base]),
+            bitcast<f32>(frame[base + 1u]),
+            bitcast<f32>(frame[base + 2u]),
+            bitcast<f32>(frame[base + 3u]),
+        );
+        out[row] = r.x * h.x + r.y * h.y + r.z * h.z + r.w * h.w;
+    }
+    return out;
+}
+
 fn in_grid(cell: vec3<u32>) -> bool {
     return all(cell < vec3<u32>(grid_res()));
 }
@@ -57,9 +75,10 @@ const X: vec3<i32> = vec3<i32>(1, 0, 0);
 const Y: vec3<i32> = vec3<i32>(0, 1, 0);
 const Z: vec3<i32> = vec3<i32>(0, 0, 1);
 
-// A source vec3 parameter: the authored value, or the host binding field it is bound to when that
-// field is present this tick.
-fn source_vec3(base: u32, value_word: u32, ref_word: u32) -> vec3<f32> {
+// A source vec3 parameter: the authored value (effect space), or the host binding field it is bound
+// to when that field is present this tick, brought from world into effect space (`w`: 1 for a point,
+// 0 for a vector).
+fn source_vec3(base: u32, value_word: u32, ref_word: u32, w: f32) -> vec3<f32> {
     let fallback = vec3<f32>(
         bitcast<f32>(constants[base + value_word]),
         bitcast<f32>(constants[base + value_word + 1u]),
@@ -69,7 +88,7 @@ fn source_vec3(base: u32, value_word: u32, ref_word: u32) -> vec3<f32> {
     if (slot == NO_SLOT || !aestra_binding_present(slot, constants[base + ref_word + 1u])) {
         return fallback;
     }
-    return aestra_binding_vec3(slot, constants[base + ref_word + 2u]);
+    return world_to_effect(aestra_binding_vec3(slot, constants[base + ref_word + 2u]), w);
 }
 
 // Injects density and velocity from every source, then applies buoyancy.
@@ -84,11 +103,11 @@ fn add_sources(@builtin(global_invocation_id) cell: vec3<u32>) {
     for (var s = 0u; s < source_count(); s += 1u) {
         let base = SOURCE_BASE + s * SOURCE_WORDS;
         let radius = bitcast<f32>(constants[base + 3u]);
-        let distance_to_source = length(center - source_vec3(base, 0u, 8u));
+        let distance_to_source = length(center - source_vec3(base, 0u, 8u, 1.0));
         if (distance_to_source < radius) {
             let falloff = 1.0 - distance_to_source / radius;
             d += bitcast<f32>(constants[base + 7u]) * falloff * delta;
-            let emitted = source_vec3(base, 4u, 11u);
+            let emitted = source_vec3(base, 4u, 11u, 0.0);
             v += (emitted - v) * clamp(falloff * delta * 8.0, 0.0, 1.0);
         }
     }

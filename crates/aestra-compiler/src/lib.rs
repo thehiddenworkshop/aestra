@@ -156,10 +156,8 @@ impl EffectCompiler {
         (requirements.derived_class(), promoted_by)
     }
 
-    /// Lowers an emitter's plugin simulation stages (extensible-stages M10): every enabled module in a
-    /// stage whose type has a registered [`StageLowerer`] goes through its [`ModuleLowerer`], then the
-    /// stage lowerer builds the stage's [`aestra_runtime::ExecutionBlock`], which must validate and use
-    /// only registered resource types. Generic simulation stages (no lowerer) produce nothing.
+    /// Lowers an emitter's plugin simulation stages (extensible-stages M10): see [`Self::lower_stage`].
+    /// Generic simulation stages (no lowerer) produce nothing.
     fn lower_extension_stages(
         &self,
         asset: &EffectAsset,
@@ -178,124 +176,30 @@ impl EffectCompiler {
         let mut stages = Vec::new();
         let mut diagnostics = Vec::new();
         for name in names {
-            let stage_type = emitter.simulation_stage_type(name);
-            let Some(stage_lowerer) = self.registry.lowering.stage(&stage_type) else {
-                continue;
-            };
-            let mut plans = Vec::new();
-            for (module_index, module) in emitter.modules.iter().enumerate() {
-                if !module.enabled
-                    || !matches!(&module.stage, StageKind::Simulation(other) if other == name)
-                {
-                    continue;
-                }
-                let path = format!("effect.emitters[{emitter_index}].modules[{module_index}]");
-                let failed = |message: String| {
-                    Diagnostic::error(DiagnosticCode::LoweringFailed, path.clone(), message)
-                };
-                let (Some(lowerer), ModuleParameters::Custom(values)) = (
-                    self.registry.lowering.module(&module.module_type),
-                    &module.parameters,
-                ) else {
-                    diagnostics.push(failed(format!(
-                        "module '{}' has no lowering for stage type '{}'",
-                        module.module_type.0, stage_type.0
-                    )));
-                    continue;
-                };
-                let mut payload: aestra_core::PropertyBag = values
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect();
-                if let Some(metadata) = self.registry.modules.get(&module.module_type) {
-                    metadata.property_schema().apply_defaults(&mut payload);
-                }
-                match lowerer.lower(module, &payload) {
-                    Ok(mut plan) => {
-                        // Host-bound inputs keep their authored payload value as the fallback;
-                        // the stage lowerer finds the field through `host_fields` (HB4).
-                        plan.host_fields = module
-                            .host_bindings
-                            .iter()
-                            .filter(|(input, _)| {
-                                module.property_source(input) == Some(InputSourceKind::HostBinding)
-                            })
-                            .filter_map(|(input, reference)| {
-                                Some((input.clone(), host_field_ref(asset, bindings, reference)?))
-                            })
-                            .collect();
-                        plans.push(plan);
-                    }
-                    Err(message) => diagnostics.push(failed(message)),
-                }
-            }
-            let stage_id = aestra_core::StageId::for_name(name);
-            let block = match stage_lowerer.lower(&StageLoweringInput {
-                stage: stage_id,
-                stage_type: &stage_type,
-                name,
-                particle_capacity: emitter.max_particles,
-                modules: &plans,
-            }) {
-                Ok(block) => block,
-                Err(message) => {
-                    diagnostics.push(Diagnostic::error(
-                        DiagnosticCode::LoweringFailed,
-                        format!("effect.emitters[{emitter_index}].simulation_stages.{name}"),
-                        message,
-                    ));
-                    continue;
-                }
-            };
-            let stage_path = format!("effect.emitters[{emitter_index}].simulation_stages.{name}");
-            if let Err(error) = block.validate() {
-                diagnostics.push(Diagnostic::error(
-                    DiagnosticCode::LoweringFailed,
-                    stage_path.clone(),
-                    format!(
-                        "stage '{}' lowered to invalid Execution IR: {error}",
-                        stage_type.0
-                    ),
-                ));
-                continue;
-            }
-            if let Some(unknown) = block
-                .resources
+            let modules = emitter
+                .modules
                 .iter()
-                .find(|resource| self.registry.resources.get(&resource.id).is_none())
-            {
-                diagnostics.push(Diagnostic::error(
-                    DiagnosticCode::LoweringFailed,
-                    stage_path,
-                    format!(
-                        "stage '{}' declares unregistered resource type '{}'",
-                        stage_type.0,
-                        unknown.id.as_str()
-                    ),
-                ));
-                continue;
-            }
-            if let Some(problem) = unresolved_program(&self.registry, &block.ops) {
-                diagnostics.push(Diagnostic::error(
-                    DiagnosticCode::LoweringFailed,
-                    stage_path,
-                    format!("stage '{}' {problem}", stage_type.0),
-                ));
-                continue;
-            }
-            let cpu_reference = self
-                .registry
-                .stages
-                .get(&stage_type)
-                .is_some_and(|descriptor| descriptor.backend.has_cpu_reference());
-            stages.push(aestra_runtime::CompiledExtensionStage {
-                id: stage_id,
-                stage_type,
-                name: name.to_string(),
-                modules: plans,
-                block,
-                cpu_reference,
-            });
+                .enumerate()
+                .filter(|(_, module)| {
+                    matches!(&module.stage, StageKind::Simulation(other) if other == name)
+                })
+                .map(|(index, module)| {
+                    (
+                        format!("effect.emitters[{emitter_index}].modules[{index}]"),
+                        module,
+                    )
+                })
+                .collect();
+            stages.extend(self.lower_stage(
+                asset,
+                bindings,
+                name,
+                emitter.simulation_stage_type(name),
+                modules,
+                format!("effect.emitters[{emitter_index}].simulation_stages.{name}"),
+                emitter.max_particles,
+                &mut diagnostics,
+            ));
         }
         if diagnostics.is_empty() {
             Ok(stages)
@@ -304,12 +208,182 @@ impl EffectCompiler {
         }
     }
 
+    /// Lowers the effect's own simulation stages (fluid F2): shared domains, with no particles of
+    /// their own (`particle_capacity` 0).
+    fn lower_effect_stages(
+        &self,
+        asset: &EffectAsset,
+        bindings: &[aestra_runtime::CompiledBinding],
+    ) -> Result<Vec<aestra_runtime::CompiledExtensionStage>, Vec<Diagnostic>> {
+        let mut stages = Vec::new();
+        let mut diagnostics = Vec::new();
+        for (stage_index, stage) in asset.simulation_stages.iter().enumerate() {
+            if !stage.enabled {
+                continue;
+            }
+            let path = format!("effect.simulation_stages[{stage_index}]");
+            let modules = stage
+                .modules
+                .iter()
+                .enumerate()
+                .map(|(index, module)| (format!("{path}.modules[{index}]"), module))
+                .collect();
+            stages.extend(self.lower_stage(
+                asset,
+                bindings,
+                &stage.name,
+                stage.stage_type.clone(),
+                modules,
+                path,
+                0,
+                &mut diagnostics,
+            ));
+        }
+        if diagnostics.is_empty() {
+            Ok(stages)
+        } else {
+            Err(diagnostics)
+        }
+    }
+
+    /// Lowers one plugin simulation stage (extensible-stages M10): every enabled module goes through
+    /// its [`ModuleLowerer`], then the stage's [`StageLowerer`] builds its
+    /// [`aestra_runtime::ExecutionBlock`], which must validate, use only registered resource types,
+    /// and name only registered programs. `None` when the stage type has no lowerer (a generic
+    /// stage) or lowering failed (diagnosed).
+    #[allow(clippy::too_many_arguments)]
+    fn lower_stage(
+        &self,
+        asset: &EffectAsset,
+        bindings: &[aestra_runtime::CompiledBinding],
+        name: &str,
+        stage_type: aestra_core::StageTypeId,
+        modules: Vec<(String, &ModuleInstance)>,
+        stage_path: String,
+        particle_capacity: u32,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<aestra_runtime::CompiledExtensionStage> {
+        let stage_lowerer = self.registry.lowering.stage(&stage_type)?;
+        let mut plans = Vec::new();
+        for (path, module) in modules {
+            if !module.enabled {
+                continue;
+            }
+            let failed = |message: String| {
+                Diagnostic::error(DiagnosticCode::LoweringFailed, path.clone(), message)
+            };
+            let (Some(lowerer), ModuleParameters::Custom(values)) = (
+                self.registry.lowering.module(&module.module_type),
+                &module.parameters,
+            ) else {
+                diagnostics.push(failed(format!(
+                    "module '{}' has no lowering for stage type '{}'",
+                    module.module_type.0, stage_type.0
+                )));
+                continue;
+            };
+            let mut payload: aestra_core::PropertyBag = values
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            if let Some(metadata) = self.registry.modules.get(&module.module_type) {
+                metadata.property_schema().apply_defaults(&mut payload);
+            }
+            match lowerer.lower(module, &payload) {
+                Ok(mut plan) => {
+                    // Host-bound inputs keep their authored payload value as the fallback;
+                    // the stage lowerer finds the field through `host_fields` (HB4).
+                    plan.host_fields = module
+                        .host_bindings
+                        .iter()
+                        .filter(|(input, _)| {
+                            module.property_source(input) == Some(InputSourceKind::HostBinding)
+                        })
+                        .filter_map(|(input, reference)| {
+                            Some((input.clone(), host_field_ref(asset, bindings, reference)?))
+                        })
+                        .collect();
+                    plans.push(plan);
+                }
+                Err(message) => diagnostics.push(failed(message)),
+            }
+        }
+        let stage_id = aestra_core::StageId::for_name(name);
+        let block = match stage_lowerer.lower(&StageLoweringInput {
+            stage: stage_id,
+            stage_type: &stage_type,
+            name,
+            particle_capacity,
+            modules: &plans,
+        }) {
+            Ok(block) => block,
+            Err(message) => {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::LoweringFailed,
+                    stage_path,
+                    message,
+                ));
+                return None;
+            }
+        };
+        let problem = if let Err(error) = block.validate() {
+            Some(format!(
+                "stage '{}' lowered to invalid Execution IR: {error}",
+                stage_type.0
+            ))
+        } else if let Some(unknown) = block
+            .resources
+            .iter()
+            .find(|resource| self.registry.resources.get(&resource.id).is_none())
+        {
+            Some(format!(
+                "stage '{}' declares unregistered resource type '{}'",
+                stage_type.0,
+                unknown.id.as_str()
+            ))
+        } else {
+            unresolved_program(&self.registry, &block.ops)
+                .map(|problem| format!("stage '{}' {problem}", stage_type.0))
+        };
+        if let Some(problem) = problem {
+            diagnostics.push(Diagnostic::error(
+                DiagnosticCode::LoweringFailed,
+                stage_path,
+                problem,
+            ));
+            return None;
+        }
+        let cpu_reference = self
+            .registry
+            .stages
+            .get(&stage_type)
+            .is_some_and(|descriptor| descriptor.backend.has_cpu_reference());
+        Some(aestra_runtime::CompiledExtensionStage {
+            id: stage_id,
+            stage_type,
+            name: name.to_string(),
+            modules: plans,
+            block,
+            cpu_reference,
+        })
+    }
+
     /// The effect's aggregate simulation class — the strongest over its enabled emitters, `Analytic`
     /// when it has none. This is what determines the resolved seek strategy.
     fn aggregate_simulation_class(&self, asset: &EffectAsset) -> SimulationClass {
+        // The effect's own enabled simulation stages count too (fluid F2): a fluid domain makes the
+        // effect history-dependent even when every emitter is analytic.
+        let domains = asset
+            .simulation_stages
+            .iter()
+            .filter(|stage| stage.enabled)
+            .flat_map(|stage| stage.modules.iter().filter(|module| module.enabled))
+            .filter_map(|module| self.registry.modules.get(&module.module_type))
+            .map(|metadata| metadata.simulation.derived_class());
         self.classify_simulation(asset)
             .into_iter()
             .map(|classified| classified.class)
+            .chain(domains)
             .max()
             .unwrap_or(SimulationClass::Analytic)
     }
@@ -849,6 +923,16 @@ impl EffectCompiler {
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
+        // The effect's own simulation stages (fluid F2) lower like an emitter's.
+        let extension_stages =
+            self.lower_effect_stages(asset, &bindings)
+                .map_err(|diagnostics| {
+                    let mut report = ValidationReport::default();
+                    for diagnostic in diagnostics {
+                        report.push(diagnostic);
+                    }
+                    CompileError::Validation(report)
+                })?;
 
         Ok(CompiledEffect {
             source: asset.id,
@@ -922,6 +1006,7 @@ impl EffectCompiler {
                 .map(|emitter| emitter.max_particles as usize)
                 .sum(),
             emitters,
+            extension_stages,
             effect_clips: asset
                 .effect_clips
                 .iter()
@@ -962,6 +1047,350 @@ impl EffectCompiler {
         })
     }
 
+    /// Validates one module in its host stage (extensible-stages M4/M10, host bindings HB4): the stage
+    /// type and module type are registered (or name a missing extension), the payload schema matches,
+    /// the stage provides the module's required capabilities, and every input source, host binding and
+    /// parameter binding is well formed. Shared by emitter modules and the effect's own simulation
+    /// stages (fluid F2).
+    fn validate_module(
+        &self,
+        asset: &EffectAsset,
+        path: &str,
+        stage_type: aestra_core::StageTypeId,
+        module: &ModuleInstance,
+        report: &mut ValidationReport,
+    ) {
+        let path = path.to_string();
+        let stage = self.registry.stages.get(&stage_type);
+        if stage.is_none() {
+            push_unique(
+                report,
+                self.unregistered_type_diagnostic(
+                    asset,
+                    &stage_type.0,
+                    "stage type",
+                    format!("{path}.stage"),
+                    DiagnosticCode::UnknownStage,
+                ),
+            );
+        }
+        let Some(metadata) = self.registry.modules.get(&module.module_type) else {
+            push_unique(
+                report,
+                self.unregistered_type_diagnostic(
+                    asset,
+                    &module.module_type.0,
+                    "module",
+                    format!("{path}.module_type"),
+                    DiagnosticCode::UnknownModule,
+                ),
+            );
+            return;
+        };
+        let Some(stage) = stage else {
+            return;
+        };
+        // A plugin payload must match the installed schema (extensible-stages M11, §35): a
+        // newer one is preserved but not compiled; an older one that could not be migrated
+        // is reported (compilation already tried the plugin's migrations).
+        match self.registry.module_schema_status(module) {
+            Some(SchemaStatus::Newer { stored, current }) => {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::IncompatibleExtension,
+                        path.clone(),
+                        format!(
+                            "module '{}' was saved with schema v{stored}, but {} provides v{current}. \
+                             Its data is preserved; update the plugin to edit or compile it.",
+                            module.module_type.0,
+                            self.provider_label(&module.module_type.0)
+                        ),
+                    ),
+                );
+                return;
+            }
+            Some(SchemaStatus::Older { stored, current }) => {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::IncompatibleExtension,
+                        path.clone(),
+                        format!(
+                            "module '{}' was saved with schema v{stored} and cannot be migrated \
+                             to v{current}",
+                            module.module_type.0
+                        ),
+                    ),
+                );
+                return;
+            }
+            _ => {}
+        }
+        // Capability-based compatibility (extensible-stages M4): the module is valid here when
+        // its required capabilities are satisfied by what its host stage provides — never a
+        // hardcoded stage-type check. For built-ins this is equivalent to the old
+        // `stages.contains(module.stage)`, and it also lets third-party stages host standard
+        // modules by providing the right capabilities.
+        if !stage.hosts(&metadata.required_capabilities()) {
+            push_unique(
+                report,
+                Diagnostic::error(
+                    DiagnosticCode::StageMismatch,
+                    format!("{path}.stage"),
+                    format!(
+                        "module '{}' cannot execute in stage {:?}: its required capabilities \
+                         are not provided there",
+                        module.module_type.0, module.stage
+                    ),
+                ),
+            );
+        }
+        if module.enabled
+            && let ModuleParameters::Custom(values) = &module.parameters
+            && !is_builtin_module(&module.module_type)
+        {
+            // A plugin module's payload is validated against its declared schema (M10).
+            let bag: aestra_core::PropertyBag = values
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            for issue in metadata.property_schema().validate(&bag) {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        format!("{path}.parameters.{}", issue.property),
+                        format!(
+                            "module '{}' input '{}': {:?}",
+                            module.module_type.0, issue.property, issue.problem
+                        ),
+                    ),
+                );
+            }
+        }
+        if module.enabled && !parameters_match(module) {
+            push_unique(
+                report,
+                Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.parameters"),
+                    format!(
+                        "module '{}' has parameters that its compiler lowering does not support",
+                        module.module_type.0
+                    ),
+                ),
+            );
+        }
+        // Host-bound inputs (host bindings HB4): the input accepts the source, the binding is
+        // declared with the field, and the field's type matches the input's.
+        for (input_name, reference) in &module.host_bindings {
+            let host_path = format!("{path}.host_bindings.{input_name}");
+            let Some(input) = metadata
+                .inputs
+                .iter()
+                .find(|input| input.name == input_name)
+            else {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownParameter,
+                        host_path,
+                        format!(
+                            "module '{}' has no registered input named '{input_name}'",
+                            module.module_type.0
+                        ),
+                    ),
+                );
+                continue;
+            };
+            if !input.sources.contains(&InputSourceKind::HostBinding) {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        host_path.clone(),
+                        format!("input '{input_name}' does not accept host bindings"),
+                    ),
+                );
+            }
+            let Some(binding) = asset
+                .bindings
+                .iter()
+                .find(|binding| binding.id == reference.binding)
+            else {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        host_path,
+                        format!("binding {} is not declared", reference.binding),
+                    ),
+                );
+                continue;
+            };
+            if !binding.fields().any(|field| *field == reference.field) {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        host_path,
+                        format!(
+                            "binding '{}' does not declare field '{}'",
+                            binding.name,
+                            reference.field.as_str()
+                        ),
+                    ),
+                );
+                continue;
+            }
+            if let Some(field_type) = self.registry.bindings.field_type(&reference.field)
+                && field_type != input.value_type
+            {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::ParameterTypeMismatch,
+                        host_path,
+                        format!(
+                            "input '{input_name}' is {:?} but field '{}' is {field_type:?}",
+                            input.value_type,
+                            reference.field.as_str()
+                        ),
+                    ),
+                );
+            }
+        }
+        for input in &metadata.inputs {
+            if module.enabled
+                && module.property_source(input.name) == Some(InputSourceKind::HostBinding)
+                && !module.host_bindings.contains_key(input.name)
+            {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        format!("{path}.host_bindings.{}", input.name),
+                        format!(
+                            "input '{}' reads a host binding but names no binding field",
+                            input.name
+                        ),
+                    ),
+                );
+            }
+        }
+        for (input_name, source) in &module.property_sources {
+            let source_path = format!("{path}.property_sources.{input_name}");
+            let Some(input) = metadata
+                .inputs
+                .iter()
+                .find(|input| input.name == input_name)
+            else {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownParameter,
+                        source_path,
+                        format!(
+                            "module '{}' has no registered input named '{input_name}'",
+                            module.module_type.0
+                        ),
+                    ),
+                );
+                continue;
+            };
+            if !input.sources.contains(source) {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        source_path,
+                        format!("input '{input_name}' does not support source {source:?}"),
+                    ),
+                );
+            }
+        }
+        for (input_name, values) in &module.property_source_values {
+            let source_path = format!("{path}.property_source_values.{input_name}");
+            let Some(input) = metadata
+                .inputs
+                .iter()
+                .find(|input| input.name == input_name)
+            else {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownParameter,
+                        source_path,
+                        format!(
+                            "module '{}' has no registered input named '{input_name}'",
+                            module.module_type.0
+                        ),
+                    ),
+                );
+                continue;
+            };
+            for (value_index, value) in values.iter().enumerate() {
+                if !input.sources.contains(&value.source) {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidValue,
+                            format!("{source_path}[{value_index}].source"),
+                            format!(
+                                "input '{input_name}' does not support stored source {:?}",
+                                value.source
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
+        for (input_name, parameter_id) in &module.bindings {
+            let binding_path = format!("{path}.bindings.{input_name}");
+            let Some(input) = metadata
+                .inputs
+                .iter()
+                .find(|input| input.name == input_name)
+            else {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownParameter,
+                        binding_path,
+                        format!(
+                            "module '{}' has no registered input named '{input_name}'",
+                            module.module_type.0
+                        ),
+                    ),
+                );
+                continue;
+            };
+            if let Some(parameter) = asset
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *parameter_id)
+            {
+                let expected = module
+                    .active_parameter_value(input_name)
+                    .map_or(input.value_type, |value| value.value_type());
+                let actual = parameter.default.value_type();
+                if actual != expected {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::ParameterTypeMismatch,
+                            binding_path,
+                            format!(
+                                "input '{input_name}' expects {:?}, but parameter '{}' is {actual:?}",
+                                expected, parameter.name
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
+    }
     /// Compiles the effect's host bindings into dense slots in declaration order (host bindings HB2).
     /// Each binding's layout packs its declared fields in the kind's field order, so the same
     /// declaration always yields the same record regardless of how the author listed its fields.
@@ -1122,342 +1551,67 @@ impl EffectCompiler {
                 }
             }
         }
-        for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
-            let emitter_path = format!("effect.emitters[{emitter_index}]");
-            for (module_index, module) in emitter.modules.iter().enumerate() {
-                let path = format!("{emitter_path}.modules[{module_index}]");
-                // The host stage's provided capabilities come from its registered stage type
-                // (extensible-stages M10), so a plugin stage hosts exactly what it declares.
-                let stage_type = emitter.stage_type_of(&module.stage);
-                let stage = self.registry.stages.get(&stage_type);
-                if stage.is_none() {
-                    push_unique(
-                        report,
-                        self.unregistered_type_diagnostic(
-                            asset,
-                            &stage_type.0,
-                            "stage type",
-                            format!("{path}.stage"),
-                            DiagnosticCode::UnknownStage,
-                        ),
-                    );
-                }
-                let Some(metadata) = self.registry.modules.get(&module.module_type) else {
-                    push_unique(
-                        report,
-                        self.unregistered_type_diagnostic(
-                            asset,
-                            &module.module_type.0,
-                            "module",
-                            format!("{path}.module_type"),
-                            DiagnosticCode::UnknownModule,
-                        ),
-                    );
-                    continue;
-                };
-                let Some(stage) = stage else {
-                    continue;
-                };
-                // A plugin payload must match the installed schema (extensible-stages M11, §35): a
-                // newer one is preserved but not compiled; an older one that could not be migrated
-                // is reported (compilation already tried the plugin's migrations).
-                match self.registry.module_schema_status(module) {
-                    Some(SchemaStatus::Newer { stored, current }) => {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::IncompatibleExtension,
-                                path.clone(),
-                                format!(
-                                    "module '{}' was saved with schema v{stored}, but {} provides v{current}. \
-                                     Its data is preserved; update the plugin to edit or compile it.",
-                                    module.module_type.0,
-                                    self.provider_label(&module.module_type.0)
-                                ),
-                            ),
-                        );
-                        continue;
-                    }
-                    Some(SchemaStatus::Older { stored, current }) => {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::IncompatibleExtension,
-                                path.clone(),
-                                format!(
-                                    "module '{}' was saved with schema v{stored} and cannot be migrated \
-                                     to v{current}",
-                                    module.module_type.0
-                                ),
-                            ),
-                        );
-                        continue;
-                    }
-                    _ => {}
-                }
-                // Capability-based compatibility (extensible-stages M4): the module is valid here when
-                // its required capabilities are satisfied by what its host stage provides — never a
-                // hardcoded stage-type check. For built-ins this is equivalent to the old
-                // `stages.contains(module.stage)`, and it also lets third-party stages host standard
-                // modules by providing the right capabilities.
-                if !stage.hosts(&metadata.required_capabilities()) {
-                    push_unique(
-                        report,
-                        Diagnostic::error(
-                            DiagnosticCode::StageMismatch,
-                            format!("{path}.stage"),
-                            format!(
-                                "module '{}' cannot execute in stage {:?}: its required capabilities \
-                                 are not provided there",
-                                module.module_type.0, module.stage
-                            ),
-                        ),
-                    );
-                }
-                if module.enabled
-                    && let ModuleParameters::Custom(values) = &module.parameters
-                    && !is_builtin_module(&module.module_type)
-                {
-                    // A plugin module's payload is validated against its declared schema (M10).
-                    let bag: aestra_core::PropertyBag = values
+        // The effect's own simulation stages (fluid F2): the stage type must be registered (or name a
+        // missing extension) even when the stage is empty, and each module validates like an
+        // emitter's, against the stage it sits in.
+        for (stage_index, stage) in asset.simulation_stages.iter().enumerate() {
+            let stage_path = format!("effect.simulation_stages[{stage_index}]");
+            if self.registry.stages.get(&stage.stage_type).is_none() {
+                push_unique(
+                    report,
+                    self.unregistered_type_diagnostic(
+                        asset,
+                        stage.stage_type.as_str(),
+                        "stage type",
+                        format!("{stage_path}.stage_type"),
+                        DiagnosticCode::UnknownStage,
+                    ),
+                );
+            }
+            for (module_index, module) in stage.modules.iter().enumerate() {
+                self.validate_module(
+                    asset,
+                    &format!("{stage_path}.modules[{module_index}]"),
+                    stage.stage_type.clone(),
+                    module,
+                    report,
+                );
+                let single = self
+                    .registry
+                    .modules
+                    .get(&module.module_type)
+                    .is_some_and(|metadata| metadata.multiplicity == ModuleMultiplicity::Single);
+                if single
+                    && stage.modules[..module_index]
                         .iter()
-                        .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect();
-                    for issue in metadata.property_schema().validate(&bag) {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidValue,
-                                format!("{path}.parameters.{}", issue.property),
-                                format!(
-                                    "module '{}' input '{}': {:?}",
-                                    module.module_type.0, issue.property, issue.problem
-                                ),
-                            ),
-                        );
-                    }
-                }
-                if module.enabled && !parameters_match(module) {
+                        .any(|earlier| earlier.module_type == module.module_type)
+                {
                     push_unique(
                         report,
                         Diagnostic::error(
                             DiagnosticCode::InvalidValue,
-                            format!("{path}.parameters"),
+                            format!("{stage_path}.modules[{module_index}]"),
                             format!(
-                                "module '{}' has parameters that its compiler lowering does not support",
-                                module.module_type.0
+                                "module '{}' is a singleton but appears more than once in stage '{}'",
+                                module.module_type.0, stage.name
                             ),
                         ),
                     );
                 }
-                // Host-bound inputs (host bindings HB4): the input accepts the source, the binding is
-                // declared with the field, and the field's type matches the input's.
-                for (input_name, reference) in &module.host_bindings {
-                    let host_path = format!("{path}.host_bindings.{input_name}");
-                    let Some(input) = metadata
-                        .inputs
-                        .iter()
-                        .find(|input| input.name == input_name)
-                    else {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::UnknownParameter,
-                                host_path,
-                                format!(
-                                    "module '{}' has no registered input named '{input_name}'",
-                                    module.module_type.0
-                                ),
-                            ),
-                        );
-                        continue;
-                    };
-                    if !input.sources.contains(&InputSourceKind::HostBinding) {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidValue,
-                                host_path.clone(),
-                                format!("input '{input_name}' does not accept host bindings"),
-                            ),
-                        );
-                    }
-                    let Some(binding) = asset
-                        .bindings
-                        .iter()
-                        .find(|binding| binding.id == reference.binding)
-                    else {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidReference,
-                                host_path,
-                                format!("binding {} is not declared", reference.binding),
-                            ),
-                        );
-                        continue;
-                    };
-                    if !binding.fields().any(|field| *field == reference.field) {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidReference,
-                                host_path,
-                                format!(
-                                    "binding '{}' does not declare field '{}'",
-                                    binding.name,
-                                    reference.field.as_str()
-                                ),
-                            ),
-                        );
-                        continue;
-                    }
-                    if let Some(field_type) = self.registry.bindings.field_type(&reference.field)
-                        && field_type != input.value_type
-                    {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::ParameterTypeMismatch,
-                                host_path,
-                                format!(
-                                    "input '{input_name}' is {:?} but field '{}' is {field_type:?}",
-                                    input.value_type,
-                                    reference.field.as_str()
-                                ),
-                            ),
-                        );
-                    }
-                }
-                for input in &metadata.inputs {
-                    if module.enabled
-                        && module.property_source(input.name) == Some(InputSourceKind::HostBinding)
-                        && !module.host_bindings.contains_key(input.name)
-                    {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidValue,
-                                format!("{path}.host_bindings.{}", input.name),
-                                format!(
-                                    "input '{}' reads a host binding but names no binding field",
-                                    input.name
-                                ),
-                            ),
-                        );
-                    }
-                }
-                for (input_name, source) in &module.property_sources {
-                    let source_path = format!("{path}.property_sources.{input_name}");
-                    let Some(input) = metadata
-                        .inputs
-                        .iter()
-                        .find(|input| input.name == input_name)
-                    else {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::UnknownParameter,
-                                source_path,
-                                format!(
-                                    "module '{}' has no registered input named '{input_name}'",
-                                    module.module_type.0
-                                ),
-                            ),
-                        );
-                        continue;
-                    };
-                    if !input.sources.contains(source) {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::InvalidValue,
-                                source_path,
-                                format!("input '{input_name}' does not support source {source:?}"),
-                            ),
-                        );
-                    }
-                }
-                for (input_name, values) in &module.property_source_values {
-                    let source_path = format!("{path}.property_source_values.{input_name}");
-                    let Some(input) = metadata
-                        .inputs
-                        .iter()
-                        .find(|input| input.name == input_name)
-                    else {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::UnknownParameter,
-                                source_path,
-                                format!(
-                                    "module '{}' has no registered input named '{input_name}'",
-                                    module.module_type.0
-                                ),
-                            ),
-                        );
-                        continue;
-                    };
-                    for (value_index, value) in values.iter().enumerate() {
-                        if !input.sources.contains(&value.source) {
-                            push_unique(
-                                report,
-                                Diagnostic::error(
-                                    DiagnosticCode::InvalidValue,
-                                    format!("{source_path}[{value_index}].source"),
-                                    format!(
-                                        "input '{input_name}' does not support stored source {:?}",
-                                        value.source
-                                    ),
-                                ),
-                            );
-                        }
-                    }
-                }
-                for (input_name, parameter_id) in &module.bindings {
-                    let binding_path = format!("{path}.bindings.{input_name}");
-                    let Some(input) = metadata
-                        .inputs
-                        .iter()
-                        .find(|input| input.name == input_name)
-                    else {
-                        push_unique(
-                            report,
-                            Diagnostic::error(
-                                DiagnosticCode::UnknownParameter,
-                                binding_path,
-                                format!(
-                                    "module '{}' has no registered input named '{input_name}'",
-                                    module.module_type.0
-                                ),
-                            ),
-                        );
-                        continue;
-                    };
-                    if let Some(parameter) = asset
-                        .parameters
-                        .iter()
-                        .find(|parameter| parameter.id == *parameter_id)
-                    {
-                        let expected = module
-                            .active_parameter_value(input_name)
-                            .map_or(input.value_type, |value| value.value_type());
-                        let actual = parameter.default.value_type();
-                        if actual != expected {
-                            push_unique(
-                                report,
-                                Diagnostic::error(
-                                    DiagnosticCode::ParameterTypeMismatch,
-                                    binding_path,
-                                    format!(
-                                        "input '{input_name}' expects {:?}, but parameter '{}' is {actual:?}",
-                                        expected, parameter.name
-                                    ),
-                                ),
-                            );
-                        }
-                    }
-                }
+            }
+        }
+        for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
+            let emitter_path = format!("effect.emitters[{emitter_index}]");
+            for (module_index, module) in emitter.modules.iter().enumerate() {
+                // The host stage's provided capabilities come from its registered stage type
+                // (extensible-stages M10), so a plugin stage hosts exactly what it declares.
+                self.validate_module(
+                    asset,
+                    &format!("{emitter_path}.modules[{module_index}]"),
+                    emitter.stage_type_of(&module.stage),
+                    module,
+                    report,
+                );
             }
 
             // Singleton validation (extensible-stages M4): a `Single`-multiplicity module may appear

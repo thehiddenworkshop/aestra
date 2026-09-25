@@ -55,6 +55,13 @@ semantic_id!(EffectClipId);
 semantic_id!(MarkerId);
 semantic_id!(ChoreographyEventId);
 semantic_id!(EmitterId);
+
+impl EmitterId {
+    /// The owner of an effect's own simulation stages (fluid F2): module commands and selections
+    /// addressed to this id resolve in `EffectAsset::simulation_stages` rather than in an emitter. The
+    /// nil id, which no emitter may use.
+    pub const EFFECT_SCOPE: Self = Self::from_u128(0);
+}
 semantic_id!(EmitterRegionId);
 semantic_id!(ModuleId);
 semantic_id!(RendererId);

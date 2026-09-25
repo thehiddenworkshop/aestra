@@ -15,7 +15,7 @@ use aestra_fluid::{
 const PATH: &str = "sample-project/effects/fluid_smoke.aestra.ron";
 
 fn set(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
-    let module = effect.emitters[0]
+    let module = effect.simulation_stages[0]
         .modules
         .iter_mut()
         .find(|module| module.module_type.0 == type_id)
@@ -82,7 +82,7 @@ fn main() {
     let compiled = EffectCompiler::with_extensions(registry)
         .compile(&reloaded)
         .expect("the sample compiles with the fluid");
-    let stage = &compiled.emitters[0].extension_stages[0];
+    let stage = &compiled.extension_stages[0];
     println!(
         "wrote {PATH}: stage '{}' ({}), {} dispatches per tick",
         stage.name,

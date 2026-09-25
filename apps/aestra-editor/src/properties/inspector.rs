@@ -25,6 +25,39 @@ pub(super) fn spawn_selection_inspector(
             return;
         }
         SemanticTarget::Module(id) => {
+            // A module of the effect's own simulation stages (fluid F2).
+            if let Some((path, module)) = session
+                .effect
+                .simulation_stages
+                .iter()
+                .enumerate()
+                .find_map(|(stage_index, stage)| {
+                    stage
+                        .modules
+                        .iter()
+                        .enumerate()
+                        .find(|(_, module)| module.id == id)
+                        .map(|(module_index, module)| {
+                            (
+                                format!(
+                                    "effect.simulation_stages[{stage_index}].modules[{module_index}]"
+                                ),
+                                module,
+                            )
+                        })
+                })
+            {
+                spawn_module_inspector(
+                    parent,
+                    module,
+                    registry.0.get(&module.module_type),
+                    &path,
+                    session,
+                    localizer,
+                    asset_server,
+                );
+                return;
+            }
             if let (Some(layer), Some(emitter_index)) = (layer, emitter_index)
                 && let Some((module_index, module)) = layer
                     .modules
@@ -236,19 +269,14 @@ pub(super) fn handle_instance_label_change(
     let Ok(control) = controls.get(change.source) else {
         return;
     };
-    let Some(layer) = session.selected_layer() else {
-        return;
-    };
-    let emitter = layer.id;
     let label = aestra_core::normalize_instance_label(Some(&change.value));
     let command = match *control {
         InstanceLabelControl::Module(module) => {
-            let current = layer
-                .modules
-                .iter()
-                .find(|candidate| candidate.id == module)
-                .map(|candidate| candidate.label.clone());
-            if current.is_none() || current == Some(label.clone()) {
+            // An emitter's module, or one in the effect's own simulation stages (fluid F2).
+            let Some((emitter, current)) = session.owned_module(module) else {
+                return;
+            };
+            if current.label == label {
                 return;
             }
             EffectCommand::SetModuleLabel {
@@ -258,6 +286,10 @@ pub(super) fn handle_instance_label_change(
             }
         }
         InstanceLabelControl::Renderer(renderer) => {
+            let Some(layer) = session.selected_layer() else {
+                return;
+            };
+            let emitter = layer.id;
             let current = layer
                 .renderers
                 .iter()

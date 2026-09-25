@@ -5748,11 +5748,7 @@ fn properties_module_parameter(
     module: ModuleId,
     parameter: &str,
 ) -> Option<Value> {
-    let module = session
-        .selected_layer()?
-        .modules
-        .iter()
-        .find(|candidate| candidate.id == module)?;
+    let (_, module) = session.owned_module(module)?;
     if let Some(parameter_id) = module.bindings.get(parameter) {
         return session
             .effect
@@ -5770,11 +5766,7 @@ fn properties_module_parameter_command(
     input: &str,
     value: Value,
 ) -> Option<EffectCommand> {
-    let module_instance = session
-        .selected_layer()?
-        .modules
-        .iter()
-        .find(|candidate| candidate.id == module)?;
+    let (owner, module_instance) = session.owned_module(module)?;
     if let Some(parameter_id) = module_instance.bindings.get(input) {
         let mut parameter = session
             .effect
@@ -5799,7 +5791,7 @@ fn properties_module_parameter_command(
             .is_some_and(|values| values.iter().any(|value| value.source == source))
     {
         return Some(EffectCommand::SetModulePropertySourceValue {
-            emitter: session.selected_layer()?.id,
+            emitter: owner,
             module,
             parameter: input.to_owned(),
             source,
@@ -5807,7 +5799,7 @@ fn properties_module_parameter_command(
         });
     }
     Some(EffectCommand::SetModuleParameter {
-        emitter: session.selected_layer()?.id,
+        emitter: owner,
         module,
         parameter: input.to_owned(),
         value,

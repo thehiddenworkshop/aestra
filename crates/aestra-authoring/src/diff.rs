@@ -154,6 +154,16 @@ impl EffectDiff {
                 format!("{:?}", after.flipbooks),
             );
         }
+        // The effect's own simulation stages (fluid F2).
+        if before.simulation_stages != after.simulation_stages {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.simulation_stages",
+                format!("{:?}", before.simulation_stages),
+                format!("{:?}", after.simulation_stages),
+            );
+        }
         if before.events != after.events {
             modified(
                 &mut changes,
