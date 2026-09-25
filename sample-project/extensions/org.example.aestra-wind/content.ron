@@ -98,4 +98,16 @@
             ),
         ),
     ],
+    // A host object that blows wind: the game binds e.g. a fan or a spell caster to it. Reuses the
+    // core position field and adds its own strength field (host bindings HB1).
+    binding_kinds: [
+        (
+            id: "org.example.aestra-wind::binding/wind_source",
+            name: "Wind Source",
+            fields: [
+                (id: "aestra.field.position", name: "Position", value_type: Vec3),
+                (id: "org.example.aestra-wind::field/gust_strength", name: "Gust Strength", value_type: Scalar),
+            ],
+        ),
+    ],
 )

@@ -65,6 +65,9 @@ pub struct EffectAsset {
     pub material_instances: Vec<MaterialInstance>,
     #[serde(default)]
     pub parameters: Vec<EffectParameter>,
+    /// Live host objects the effect expects, as named, engine-independent slots (host bindings HB1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<crate::EffectBinding>,
     #[serde(default)]
     pub emitters: Vec<Emitter>,
     #[serde(default)]
@@ -104,6 +107,7 @@ impl EffectAsset {
             materials: vec![MaterialDefinition::default_sprite()],
             material_instances: Vec::new(),
             parameters: Vec::new(),
+            bindings: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
             markers: Vec::new(),
@@ -271,6 +275,7 @@ impl EffectAsset {
                 ));
             }
         }
+        crate::binding::validate_bindings(&self.bindings, &mut report, &mut semantic_ids);
         for (index, emitter) in self.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{index}]");
             emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
@@ -1669,6 +1674,26 @@ namespaced_id!(
     /// compatibility (which modules a stage may host), never execution order.
     CapabilityId
 );
+namespaced_id!(
+    /// Identifies a host binding kind — what sort of host object fills a binding slot, e.g.
+    /// `aestra.binding.spatial` (host bindings HB1).
+    BindingKindId
+);
+namespaced_id!(
+    /// Identifies one typed field a binding kind supplies, e.g. `aestra.field.position`.
+    BindingFieldId
+);
+
+/// The built-in spatial binding kind: any host object with a world transform (host bindings HB1).
+pub const AESTRA_BINDING_SPATIAL: &str = "aestra.binding.spatial";
+/// World-space position, `Vec3`.
+pub const AESTRA_FIELD_POSITION: &str = "aestra.field.position";
+/// World-space rotation as a unit quaternion `xyzw`, `Vec4`.
+pub const AESTRA_FIELD_ROTATION: &str = "aestra.field.rotation";
+/// World-space scale, `Vec3`.
+pub const AESTRA_FIELD_SCALE: &str = "aestra.field.scale";
+/// World-space linear velocity in units per second, `Vec3`.
+pub const AESTRA_FIELD_LINEAR_VELOCITY: &str = "aestra.field.linear_velocity";
 
 /// Built-in capability identities. These are a governed public contract (extensible plan §9.1): the
 /// `aestra.*` capability namespace is owned by core; renaming or removing one is a breaking change.
@@ -3345,7 +3370,7 @@ pub enum AssetError {
     V4Conversion(String),
 }
 
-fn register_id(
+pub(crate) fn register_id(
     report: &mut ValidationReport,
     semantic_ids: &mut BTreeMap<u128, String>,
     id: u128,

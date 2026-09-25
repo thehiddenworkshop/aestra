@@ -33,10 +33,16 @@ pub fn plugin_of(type_id: &str) -> Option<ExtensionId> {
 }
 
 impl EffectAsset {
-    /// Every plugin this effect references through a namespaced module, renderer, simulation-stage or
-    /// domain type id. Structural — no registry needed — so it works while a plugin is missing.
+    /// Every plugin this effect references through a namespaced module, renderer, simulation-stage,
+    /// domain, binding-kind or binding-field id. Structural — no registry needed — so it works while a plugin is missing.
     pub fn referenced_plugins(&self) -> BTreeSet<ExtensionId> {
         let mut plugins = BTreeSet::new();
+        for binding in &self.bindings {
+            plugins.extend(plugin_of(binding.kind.as_str()));
+            for field in binding.fields() {
+                plugins.extend(plugin_of(field.as_str()));
+            }
+        }
         for emitter in &self.emitters {
             for module in &emitter.modules {
                 plugins.extend(plugin_of(&module.module_type.0));

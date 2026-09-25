@@ -5,14 +5,15 @@
 //! ```text
 //! org.example.aestra-wind/
 //!   extension.ron     manifest: identity, version, API range, dependencies, permissions
-//!   content.ron       declarations: capabilities, domains, resources, stages, modules, renderers
+//!   content.ron       declarations: capabilities, domains, resources, stages, modules, renderers,
+//!                     binding kinds
 //! ```
 //!
 //! Packages are **declarative**: they carry descriptors, property schemas, Execution IR templates and
 //! payload migrations as data, and no code runs on the host. Both files are RON, like every other
 //! Aestra asset.
 
-use aestra_core::{ExtensionId, PropertyDescriptor, PropertySchema, Value};
+use aestra_core::{ExtensionId, PropertyDescriptor, PropertySchema, Value, ValueType};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -85,6 +86,26 @@ pub struct PackageContent {
     pub stages: Vec<StageDecl>,
     pub modules: Vec<ModuleDecl>,
     pub renderers: Vec<RendererDecl>,
+    /// Host binding kinds (host bindings HB1).
+    pub binding_kinds: Vec<BindingKindDecl>,
+}
+
+/// A host binding kind and its typed fields. Fields may reuse already-registered ids (e.g.
+/// `aestra.field.position`, with the same value type) or declare new ones under the package namespace.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindingKindDecl {
+    pub id: String,
+    pub name: String,
+    pub fields: Vec<BindingFieldDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindingFieldDecl {
+    pub id: String,
+    pub name: String,
+    pub value_type: ValueType,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

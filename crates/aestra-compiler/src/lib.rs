@@ -1006,6 +1006,42 @@ impl EffectCompiler {
                 _ => {}
             }
         }
+        // Host binding declarations (host bindings HB1): the kind must be registered — a plugin kind
+        // whose extension is missing is a `MissingExtension`, with the declaration preserved — and
+        // every declared field must be one the kind supplies.
+        for (index, binding) in asset.bindings.iter().enumerate() {
+            let path = format!("effect.bindings[{index}]");
+            let Some(kind) = self.registry.bindings.get(&binding.kind) else {
+                push_unique(
+                    report,
+                    self.unregistered_type_diagnostic(
+                        asset,
+                        binding.kind.as_str(),
+                        "binding kind",
+                        format!("{path}.kind"),
+                        DiagnosticCode::InvalidReference,
+                    ),
+                );
+                continue;
+            };
+            for field in binding.fields() {
+                if kind.field(field).is_none() {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            format!("{path}.fields.{}", field.as_str()),
+                            format!(
+                                "binding '{}': kind '{}' does not supply field '{}'",
+                                binding.name,
+                                kind.type_id.as_str(),
+                                field.as_str()
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{emitter_index}]");
             for (module_index, module) in emitter.modules.iter().enumerate() {

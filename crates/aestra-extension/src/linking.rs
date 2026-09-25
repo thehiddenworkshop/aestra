@@ -273,6 +273,7 @@ fn registered_ids(registry: &ExtensionRegistry) -> std::collections::BTreeSet<St
     ids.extend(registry.domains.domains.keys().map(|d| d.0.clone()));
     ids.extend(registry.resources.resources.keys().map(|r| r.0.clone()));
     ids.extend(registry.capabilities.iter().map(|c| c.0.clone()));
+    ids.extend(registry.bindings.iter().map(|kind| kind.type_id.0.clone()));
     ids.extend(
         registry
             .lowering
@@ -327,6 +328,23 @@ impl ExtensionRegistry {
                 return Err(RegistryConflict::OutsideNamespace {
                     plugin: manifest.plugin.clone(),
                     id: id.to_string(),
+                });
+            }
+        }
+        // A plugin binding kind may reuse core `aestra.*` fields (a fluid source has a position) but
+        // declares its own fields only under its namespace (host bindings HB1).
+        for kind in candidate
+            .bindings
+            .iter()
+            .filter(|kind| self.bindings.get(&kind.type_id).is_none())
+        {
+            if let Some(field) = kind.fields.iter().find(|field| {
+                !field.id.as_str().starts_with(&namespace)
+                    && self.bindings.field_type(&field.id).is_none()
+            }) {
+                return Err(RegistryConflict::OutsideNamespace {
+                    plugin: manifest.plugin.clone(),
+                    id: field.id.as_str().to_string(),
                 });
             }
         }

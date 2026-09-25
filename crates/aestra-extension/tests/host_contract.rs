@@ -346,3 +346,40 @@ fn an_effect_finds_its_projects_extensions_directory() {
         "the sample project's wind package"
     );
 }
+
+#[test]
+fn a_package_can_declare_binding_kinds() {
+    let registry = registry_with(&[sample_extensions()], &BTreeSet::new());
+    let kind = registry
+        .bindings
+        .get(&aestra_core::BindingKindId::new(
+            "org.example.aestra-wind::binding/wind_source",
+        ))
+        .expect("the package's binding kind is registered");
+    assert_eq!(kind.fields.len(), 2);
+    assert_eq!(
+        registry
+            .bindings
+            .field_type(&aestra_core::BindingFieldId::new(
+                "org.example.aestra-wind::field/gust_strength"
+            )),
+        Some(aestra_core::ValueType::Scalar)
+    );
+}
+
+#[test]
+fn a_package_binding_kind_that_retypes_a_core_field_is_rejected() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().to_path_buf();
+    write_package(
+        &dir,
+        "retype",
+        &manifest("org.x.retype", "^0.1", ""),
+        r#"(binding_kinds: [(id: "org.x.retype::binding/k", name: "K",
+            fields: [(id: "aestra.field.position", name: "P", value_type: Scalar)])])"#,
+    );
+    assert!(matches!(
+        status_of(&[dir], &BTreeSet::new(), "org.x.retype"),
+        PackageStatus::RegistryConflict(message) if message.contains("aestra.field.position")
+    ));
+}

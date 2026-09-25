@@ -1,6 +1,7 @@
 //! Engine-independent semantic source model for Aestra effects.
 
 mod authored_v4;
+mod binding;
 mod collision;
 mod diagnostic;
 mod extension_requirement;
@@ -13,6 +14,7 @@ mod property_schema;
 mod transform_curve;
 
 pub use authored_v4::*;
+pub use binding::*;
 pub use collision::*;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity, ValidationReport};
 pub use extension_requirement::*;

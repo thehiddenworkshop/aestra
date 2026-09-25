@@ -7,15 +7,16 @@ use super::package::{
     PackageContent, PackageManifest, RequiresDecl, StageTemplate,
 };
 use crate::{
-    AestraExtension, CapabilityExpression, CapabilitySet, DomainDescriptor, ExtensionManifest,
-    ExtensionRegistry, InputControl, InputMetadata, ModuleLowerer, ModuleMetadata,
-    PayloadMigration, RegistryConflict, RendererDescriptor, ResourceTypeDescriptor, StageLowerer,
-    StageLoweringInput, StageTypeDescriptor,
+    AestraExtension, BindingFieldDescriptor, BindingKindDescriptor, CapabilityExpression,
+    CapabilitySet, DomainDescriptor, ExtensionManifest, ExtensionRegistry, InputControl,
+    InputMetadata, ModuleLowerer, ModuleMetadata, PayloadMigration, RegistryConflict,
+    RendererDescriptor, ResourceTypeDescriptor, StageLowerer, StageLoweringInput,
+    StageTypeDescriptor,
 };
 use aestra_core::{
-    CapabilityId, DomainTypeId, ModuleInstance, ModuleTypeId, PropertyBag, PropertyControl,
-    PropertyDescriptor, PropertySchema, PropertySource, RendererTypeId, ResourceTypeId,
-    StageTypeId, Value,
+    BindingFieldId, BindingKindId, CapabilityId, DomainTypeId, ModuleInstance, ModuleTypeId,
+    PropertyBag, PropertyControl, PropertyDescriptor, PropertySchema, PropertySource,
+    RendererTypeId, ResourceTypeId, StageTypeId, Value,
 };
 use aestra_runtime::{
     ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan, RepeatPolicy,
@@ -34,6 +35,7 @@ pub struct DeclarativeExtension {
     stages: Vec<(StageTypeDescriptor, Option<Arc<dyn StageLowerer>>)>,
     modules: Vec<PreparedModule>,
     renderers: Vec<(RendererDescriptor, Option<Arc<dyn PayloadMigration>>)>,
+    binding_kinds: Vec<BindingKindDescriptor>,
     required_capabilities: Vec<CapabilityId>,
 }
 
@@ -263,6 +265,23 @@ impl DeclarativeExtension {
             stages,
             modules,
             renderers,
+            binding_kinds: content
+                .binding_kinds
+                .iter()
+                .map(|kind| BindingKindDescriptor {
+                    type_id: BindingKindId::new(&kind.id),
+                    display_name: kind.name.clone(),
+                    fields: kind
+                        .fields
+                        .iter()
+                        .map(|field| BindingFieldDescriptor {
+                            id: BindingFieldId::new(&field.id),
+                            display_name: field.name.clone(),
+                            value_type: field.value_type,
+                        })
+                        .collect(),
+                })
+                .collect(),
             required_capabilities,
             manifest,
         })
@@ -321,6 +340,9 @@ impl AestraExtension for DeclarativeExtension {
                     .migrations
                     .register_module(metadata.type_id.clone(), migration.clone())?;
             }
+        }
+        for kind in &self.binding_kinds {
+            registry.register_binding_kind(kind.clone())?;
         }
         for (renderer, migration) in &self.renderers {
             registry.register_renderer(renderer.clone())?;

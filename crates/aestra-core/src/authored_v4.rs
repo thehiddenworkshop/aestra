@@ -229,6 +229,9 @@ pub struct AuthoredV4Document {
     pub material_instances: Vec<crate::material::MaterialInstance>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parameters: Vec<EffectParameter>,
+    /// Live host binding slots (host bindings HB1); omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<crate::EffectBinding>,
     #[serde(default, skip_serializing_if = "V4EffectLifecycle::is_empty")]
     pub lifecycle: V4EffectLifecycle,
     #[serde(default)]
@@ -394,6 +397,7 @@ impl AuthoredV4Document {
             materials: effect.materials.clone(),
             material_instances: effect.material_instances.clone(),
             parameters: effect.parameters.clone(),
+            bindings: effect.bindings.clone(),
             lifecycle: V4EffectLifecycle::default(),
             emitters,
             events: effect.events.clone(),
@@ -422,6 +426,7 @@ impl AuthoredV4Document {
             materials: self.materials,
             material_instances: self.material_instances,
             parameters: self.parameters,
+            bindings: self.bindings,
             emitters: self.emitters.into_iter().map(emitter_from_v4).collect(),
             events: self.events,
             markers: self.markers,

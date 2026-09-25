@@ -690,6 +690,19 @@ pub enum RegistryConflict {
     },
     /// Two payload migrations were registered for the same type.
     DuplicateMigration(String),
+    /// Two binding kind descriptors share a type id (host bindings HB1).
+    DuplicateBindingKind(BindingKindId),
+    /// A binding kind lists the same field twice.
+    DuplicateBindingField {
+        kind: BindingKindId,
+        field: BindingFieldId,
+    },
+    /// A binding field id is declared with different value types by different kinds.
+    BindingFieldTypeMismatch {
+        field: BindingFieldId,
+        registered: ValueType,
+        declared: ValueType,
+    },
 }
 
 impl std::fmt::Display for RegistryConflict {
@@ -725,6 +738,23 @@ impl std::fmt::Display for RegistryConflict {
                 plugin.0
             ),
             Self::DuplicateMigration(id) => write!(f, "'{id}' has two payload migrations"),
+            Self::DuplicateBindingKind(id) => {
+                write!(f, "binding kind '{}' is registered twice", id.0)
+            }
+            Self::DuplicateBindingField { kind, field } => write!(
+                f,
+                "binding kind '{}' lists field '{}' twice",
+                kind.0, field.0
+            ),
+            Self::BindingFieldTypeMismatch {
+                field,
+                registered,
+                declared,
+            } => write!(
+                f,
+                "binding field '{}' is {registered:?} elsewhere but declared {declared:?}",
+                field.0
+            ),
         }
     }
 }
@@ -748,6 +778,8 @@ pub struct ExtensionRegistry {
     pub resources: ResourceTypeRegistry,
     /// Plugin stage/module lowerers into Execution IR (extensible-stages M10).
     pub lowering: LoweringRegistry,
+    /// Host binding kinds and their typed fields (host bindings HB1).
+    pub bindings: BindingKindRegistry,
     /// Plugin payload schema migrations (extensible-stages M11, §35).
     pub migrations: MigrationRegistry,
     pub(crate) installed: Vec<ExtensionManifest>,
@@ -787,9 +819,19 @@ impl ExtensionRegistry {
             domains: DomainRegistry::builtin(),
             resources: ResourceTypeRegistry::builtin(),
             lowering: LoweringRegistry::default(),
+            bindings: BindingKindRegistry::builtin(),
             migrations: MigrationRegistry::default(),
             installed: Vec::new(),
         }
+    }
+
+    /// Registers a host binding kind (host bindings HB1); errors on a duplicate id or a field whose
+    /// value type disagrees with another kind's.
+    pub fn register_binding_kind(
+        &mut self,
+        descriptor: BindingKindDescriptor,
+    ) -> Result<(), RegistryConflict> {
+        self.bindings.register(descriptor)
     }
 
     /// Registers a stage type descriptor (extensible-stages M10); errors on a duplicate type id.
@@ -837,5 +879,120 @@ impl ExtensionRegistry {
             }
         }
         conflicts
+    }
+}
+
+/// One typed field a binding kind supplies (host bindings HB1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingFieldDescriptor {
+    pub id: BindingFieldId,
+    pub display_name: String,
+    pub value_type: ValueType,
+}
+
+impl BindingFieldDescriptor {
+    pub fn new(id: &str, display_name: &str, value_type: ValueType) -> Self {
+        Self {
+            id: BindingFieldId::new(id),
+            display_name: display_name.into(),
+            value_type,
+        }
+    }
+}
+
+/// A host binding kind: what sort of host object fills a binding slot, and the typed fields it
+/// supplies. Drives validation now, and the snapshot layout, GPU record and editor source picker in
+/// later milestones (host bindings HB1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingKindDescriptor {
+    pub type_id: BindingKindId,
+    pub display_name: String,
+    pub fields: Vec<BindingFieldDescriptor>,
+}
+
+impl BindingKindDescriptor {
+    /// The built-in spatial kind: any host object with a world transform.
+    pub fn spatial() -> Self {
+        Self {
+            type_id: BindingKindId::new(AESTRA_BINDING_SPATIAL),
+            display_name: "Spatial".into(),
+            fields: vec![
+                BindingFieldDescriptor::new(AESTRA_FIELD_POSITION, "Position", ValueType::Vec3),
+                // A unit quaternion, xyzw; Aestra has no dedicated quaternion value type.
+                BindingFieldDescriptor::new(AESTRA_FIELD_ROTATION, "Rotation", ValueType::Vec4),
+                BindingFieldDescriptor::new(AESTRA_FIELD_SCALE, "Scale", ValueType::Vec3),
+                BindingFieldDescriptor::new(
+                    AESTRA_FIELD_LINEAR_VELOCITY,
+                    "Linear Velocity",
+                    ValueType::Vec3,
+                ),
+            ],
+        }
+    }
+
+    pub fn field(&self, id: &BindingFieldId) -> Option<&BindingFieldDescriptor> {
+        self.fields.iter().find(|field| &field.id == id)
+    }
+}
+
+/// The registered host binding kinds (host bindings HB1). A field id means the same thing wherever
+/// it appears, so every kind listing it must agree on its value type.
+#[derive(Debug, Clone, Default)]
+pub struct BindingKindRegistry {
+    kinds: BTreeMap<BindingKindId, BindingKindDescriptor>,
+}
+
+impl BindingKindRegistry {
+    /// The built-in kinds: `aestra.binding.spatial`.
+    pub fn builtin() -> Self {
+        let mut registry = Self::default();
+        registry
+            .register(BindingKindDescriptor::spatial())
+            .expect("built-in binding kinds are consistent");
+        registry
+    }
+
+    pub fn register(&mut self, descriptor: BindingKindDescriptor) -> Result<(), RegistryConflict> {
+        if self.kinds.contains_key(&descriptor.type_id) {
+            return Err(RegistryConflict::DuplicateBindingKind(descriptor.type_id));
+        }
+        for (index, field) in descriptor.fields.iter().enumerate() {
+            if descriptor.fields[..index]
+                .iter()
+                .any(|earlier| earlier.id == field.id)
+            {
+                return Err(RegistryConflict::DuplicateBindingField {
+                    kind: descriptor.type_id.clone(),
+                    field: field.id.clone(),
+                });
+            }
+            if let Some(registered) = self.field_type(&field.id)
+                && registered != field.value_type
+            {
+                return Err(RegistryConflict::BindingFieldTypeMismatch {
+                    field: field.id.clone(),
+                    registered,
+                    declared: field.value_type,
+                });
+            }
+        }
+        self.kinds.insert(descriptor.type_id.clone(), descriptor);
+        Ok(())
+    }
+
+    pub fn get(&self, type_id: &BindingKindId) -> Option<&BindingKindDescriptor> {
+        self.kinds.get(type_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &BindingKindDescriptor> {
+        self.kinds.values()
+    }
+
+    /// The value type of a field id, as declared by any registered kind.
+    pub fn field_type(&self, id: &BindingFieldId) -> Option<ValueType> {
+        self.kinds
+            .values()
+            .find_map(|kind| kind.field(id))
+            .map(|field| field.value_type)
     }
 }
