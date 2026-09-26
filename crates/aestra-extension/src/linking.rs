@@ -805,4 +805,44 @@ impl ExtensionRegistry {
         }
         report
     }
+
+    /// Writes the installed schema's default into every input a current plugin module payload leaves
+    /// out — a file saved before the input existed — so editors show and edit it like any other. The
+    /// compiler already lowers with these defaults, so the effect behaves exactly as before. Older
+    /// payloads are left to [`Self::migrate_effect`], newer ones untouched. Returns how many values
+    /// were filled.
+    pub fn fill_missing_inputs(&self, asset: &mut EffectAsset) -> usize {
+        let fill = |module: &mut ModuleInstance| {
+            if self.module_schema_status(module) != Some(SchemaStatus::Current) {
+                return 0;
+            }
+            let Some(metadata) = self.modules.get(&module.module_type) else {
+                return 0;
+            };
+            let ModuleParameters::Custom(values) = &mut module.parameters else {
+                return 0;
+            };
+            let mut filled = 0;
+            for input in &metadata.inputs {
+                if !values.contains_key(input.name) {
+                    values.insert(input.name.to_owned(), input.default_value.clone());
+                    filled += 1;
+                }
+            }
+            filled
+        };
+        let staged: usize = asset
+            .simulation_stages
+            .iter_mut()
+            .flat_map(|stage| stage.modules.iter_mut())
+            .map(fill)
+            .sum();
+        let emitted: usize = asset
+            .emitters
+            .iter_mut()
+            .flat_map(|emitter| emitter.modules.iter_mut())
+            .map(fill)
+            .sum();
+        staged + emitted
+    }
 }

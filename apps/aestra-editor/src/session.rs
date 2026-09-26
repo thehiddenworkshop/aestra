@@ -667,12 +667,17 @@ impl EditorSession {
         self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = bytes;
+        // Inputs a file predates show and edit with their schema default — the value the compiler
+        // already used — rather than as missing. It changes nothing the effect does, so the saved
+        // baseline gets them too and the document does not open dirty.
+        let registry = aestra_compiler::ExtensionRegistry::linked();
+        let mut effect = effect;
+        registry.fill_missing_inputs(&mut effect);
         self.saved_effect = Some(effect.clone());
         // Plugin payloads authored against an older schema are upgraded through the plugins'
         // migrations (extensible-stages M11, §35). The file is untouched until the user saves, so the
         // document opens dirty; payloads that cannot migrate — or are newer — are left as authored.
-        let mut effect = effect;
-        let migration = aestra_compiler::ExtensionRegistry::linked().migrate_effect(&mut effect);
+        let migration = registry.migrate_effect(&mut effect);
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -2722,6 +2727,45 @@ mod tests {
         assert_eq!(
             session.selection.primary,
             aestra_authoring::SemanticTarget::Module(source)
+        );
+    }
+
+    /// A file saved before a plugin input existed opens with that input at its schema default — the
+    /// value the compiler used — so it is editable, and the document is not dirty for it.
+    #[test]
+    fn inputs_a_file_predates_open_at_their_default() {
+        aestra_fluid::link();
+        let registry = aestra_compiler::ExtensionRegistry::linked();
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("fire.aestra.ron");
+        let mut effect = aestra_fluid::fire_effect(&registry);
+        fn grid(effect: &mut EffectAsset) -> &mut BTreeMap<String, aestra_core::Value> {
+            let module = effect.simulation_stages[0]
+                .modules
+                .iter_mut()
+                .find(|module| module.module_type.0 == aestra_fluid::MODULE_GRID)
+                .unwrap();
+            let aestra_core::ModuleParameters::Custom(values) = &mut module.parameters else {
+                unreachable!()
+            };
+            values
+        }
+        grid(&mut effect).remove("sharp_advection");
+        grid(&mut effect).insert("open_top".into(), aestra_core::Value::Bool(false));
+        effect.save_ron(&path).unwrap();
+
+        let mut session = test_support::session_with_timing_slack();
+        session.open(&path).unwrap();
+        assert!(!session.dirty, "filling a default is not an edit");
+        let values = grid(&mut session.effect);
+        assert_eq!(
+            values.get("sharp_advection"),
+            Some(&aestra_core::Value::Bool(true))
+        );
+        assert_eq!(
+            values.get("open_top"),
+            Some(&aestra_core::Value::Bool(false)),
+            "an authored value is kept"
         );
     }
 
