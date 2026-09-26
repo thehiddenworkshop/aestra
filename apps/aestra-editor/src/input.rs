@@ -9,6 +9,7 @@ pub(crate) struct EditorKeyboardPlugin;
 impl Plugin for EditorKeyboardPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<KeyboardPresses>()
+            .add_observer(tab_navigation::restore_opening_menu_tab_indices)
             .add_systems(
                 PreUpdate,
                 tab_navigation::sync_tab_eligibility

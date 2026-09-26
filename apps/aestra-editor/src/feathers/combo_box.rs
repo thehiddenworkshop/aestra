@@ -261,6 +261,96 @@ mod searchable_tests {
     }
 
     #[test]
+    fn retained_arrange_icon_menu_restores_focus_before_open_and_reopen() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+            InputFocusPlugin,
+            TabNavigationPlugin,
+            MenuPlugin,
+            crate::input::EditorKeyboardPlugin,
+        ))
+        .add_message::<bevy::input_focus::KeyboardInputSnapshot>()
+        .init_asset::<bevy_resvg::prelude::SvgFile>();
+        let root = app.world_mut().spawn(Node::default()).id();
+        let assets = app.world().resource::<AssetServer>().clone();
+        app.world_mut()
+            .commands()
+            .entity(root)
+            .with_children(|parent| {
+                spawn_icon_action_menu(
+                    parent,
+                    &assets,
+                    "icons/chevron-down.svg",
+                    "Arrange nodes",
+                    "Arrange nodes",
+                    &[ComboOption {
+                        label: "Arrange selection".into(),
+                        selected: false,
+                        action: TestMenuAction,
+                    }],
+                );
+            });
+        app.update();
+        app.update();
+        let button = app
+            .world_mut()
+            .query_filtered::<Entity, With<bevy::ui_widgets::MenuButton>>()
+            .single(app.world())
+            .unwrap();
+        let popup = app
+            .world_mut()
+            .query_filtered::<Entity, With<MenuPopup>>()
+            .single(app.world())
+            .unwrap();
+        let option = app
+            .world_mut()
+            .query_filtered::<Entity, With<TestMenuAction>>()
+            .single(app.world())
+            .unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                app.world().get::<Visibility>(popup),
+                Some(&Visibility::Hidden)
+            );
+            assert_eq!(
+                app.world()
+                    .get::<bevy::input_focus::tab_navigation::TabIndex>(option)
+                    .unwrap()
+                    .0,
+                -1
+            );
+            // Pointer/keyboard activation occurs after eligibility sync in PreUpdate.
+            // The popup must acquire focus in this frame, not close before the next sync.
+            app.world_mut().run_schedule(PreUpdate);
+            app.world_mut()
+                .trigger(bevy::ui_widgets::Activate { entity: button });
+            app.world_mut().flush();
+            app.world_mut().run_schedule(Update);
+            assert_eq!(
+                app.world().get::<Visibility>(popup),
+                Some(&Visibility::Visible)
+            );
+            assert_eq!(
+                app.world().get::<MenuFocusState>(popup),
+                Some(&MenuFocusState::Open)
+            );
+            assert_eq!(app.world().resource::<InputFocus>().get(), Some(option));
+
+            app.world_mut().trigger(bevy::ui_widgets::MenuEvent {
+                source: popup,
+                action: bevy::ui_widgets::MenuAction::CloseAll,
+            });
+            app.world_mut().flush();
+            app.update();
+        }
+    }
+
+    #[test]
     fn search_filters_only_its_own_menu_case_insensitively() {
         let mut app = App::new();
         let input = app.world_mut().spawn_empty().observe(filter_actions).id();
