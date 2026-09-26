@@ -286,6 +286,41 @@ fn spawn_browser_fixture(
         });
 }
 
+#[test]
+fn trash_toolbar_uses_white_bin_svg_with_accessible_label_and_tooltip() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = browser_app(root.path());
+    let world = app.world_mut();
+    let trash = world
+        .query::<(Entity, &BrowserAction)>()
+        .iter(world)
+        .find(|(_, action)| matches!(action, BrowserAction::DeletedItems))
+        .unwrap()
+        .0;
+    assert_eq!(
+        world.get::<AccessibleLabel>(trash).unwrap().0,
+        world.resource::<Localizer>().text("browser-deleted-items")
+    );
+    assert!(world.get::<EditorTooltip>(trash).is_some());
+    let children = world.get::<Children>(trash).unwrap();
+    let icon = children
+        .iter()
+        .find(|child| world.get::<bevy_resvg::prelude::UiSvg>(*child).is_some())
+        .expect("Trash must be an SVG icon button");
+    let svg = world.get::<bevy_resvg::prelude::UiSvg>(icon).unwrap();
+    assert_eq!(svg.0.path().unwrap().path().to_str(), Some("icons/bin.svg"));
+    assert_eq!(
+        world.get::<bevy_resvg::prelude::SvgColor>(icon).unwrap().0,
+        Color::WHITE
+    );
+    assert_eq!(world.get::<Node>(trash).unwrap().width, Val::Px(26.0));
+    assert!(
+        !children
+            .iter()
+            .any(|child| world.get::<Text>(child).is_some())
+    );
+}
+
 pub(super) fn rows(app: &mut App) -> BTreeMap<aestra_project::ProjectSourceId, Entity> {
     let world = app.world_mut();
     world

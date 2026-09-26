@@ -805,12 +805,17 @@ fn sync_chrome(
     if ui.toolbar_actions.is_empty() {
         commands.entity(ui.toolbar).with_children(|parent| {
             super::relocation_recovery::spawn_reopen_button(parent, localizer);
-            spawn_feathers_action_button(
+            let trash = tool(
                 parent,
-                &localizer.text("browser-deleted-items"),
+                assets,
+                localizer.text("browser-deleted-items"),
+                "icons/bin.svg",
                 BrowserAction::DeletedItems,
                 false,
+                false,
             );
+            ui.toolbar_actions
+                .push((trash, BrowserAction::DeletedItems));
             // Text arrows use the same Feathers button as the icon controls.
             for (label, action, disabled) in [
                 ("←", BrowserAction::Back, state.back.is_empty()),
