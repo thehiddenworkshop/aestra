@@ -3,18 +3,20 @@
 //! inputs for the GPU, survives the artifact round trip, and is diagnosed — not dropped — when absent.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
+use aestra_core::ResourceTypeId;
 use aestra_core::{
     AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, BindingUpdateMode, DiagnosticCode,
     EffectAsset, EffectBinding, HostFieldRef, ModuleParameters, PropertySource, StageTypeId, Value,
 };
 use aestra_fluid::{
-    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VORTICITY, PROGRAM_SOLVER,
-    RESOURCE_VELOCITY, STAGE_FLUID_SOLVER, smoke_effect,
+    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VOLUME_LOOK, MODULE_VORTICITY,
+    PROGRAM_SOLVER, PROGRAM_VOLUME, RESOURCE_DENSITY, RESOURCE_VELOCITY, STAGE_FLUID_SOLVER,
+    VOLUME_ENTRY, smoke_effect,
 };
 use aestra_gpu::check_program_block;
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, CompiledExtensionStage, ExecutionOp,
-    ResourceAccessMode, SimulationSeekMode,
+    ResourceAccessMode, SimulationSeekMode, StagePresentation,
 };
 
 fn fluid_registry() -> ExtensionRegistry {
@@ -96,7 +98,7 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
         !stage.cpu_reference,
         "the compiled stage says it has no CPU path"
     );
-    assert_eq!(stage.modules.len(), 4);
+    assert_eq!(stage.modules.len(), 5);
     stage.block.validate().unwrap();
     // Every op's declared accesses match what its WGSL entry actually uses.
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
@@ -258,6 +260,103 @@ fn the_compiled_solver_survives_the_artifact_round_trip() {
         decoded.extension_stages, compiled.extension_stages,
         "programs, constants and the GPU-only flag round-trip"
     );
+}
+
+#[test]
+fn the_volume_look_presents_the_density_and_never_touches_the_solver() {
+    let registry = fluid_registry();
+    let effect = smoke_effect(&registry);
+    let stage = compile_stage(&registry, &effect);
+    let [StagePresentation::Volume(volume)] = stage.presentations.as_slice() else {
+        panic!("one volume presentation");
+    };
+    assert_eq!(volume.program.as_str(), PROGRAM_VOLUME);
+    assert_eq!(volume.entry_point, VOLUME_ENTRY);
+    assert_eq!(volume.fields, [ResourceTypeId::new(RESOURCE_DENSITY)]);
+    assert_eq!(volume.layouts(&stage.block).unwrap()[0].dims, [32; 3]);
+    assert_eq!(volume.constants[0], 64, "march steps");
+
+    // A look edit changes only the presentation: the running simulation is untouched.
+    let mut brighter = effect.clone();
+    set_input(
+        &mut brighter,
+        MODULE_VOLUME_LOOK,
+        "light_intensity",
+        Value::Scalar(3.0),
+    );
+    let brighter = compile_stage(&registry, &brighter);
+    assert_eq!(brighter.block, stage.block);
+    assert_ne!(brighter.presentations, stage.presentations);
+
+    // Without a look there is nothing to draw, and still the same solver.
+    let mut plain = effect;
+    plain.simulation_stages[0]
+        .modules
+        .retain(|module| module.module_type.0 != MODULE_VOLUME_LOOK);
+    let plain = compile_stage(&registry, &plain);
+    assert!(plain.presentations.is_empty());
+    assert_eq!(plain.block, stage.block);
+}
+
+#[test]
+fn the_volume_program_is_valid_wgsl_against_the_volume_interface() {
+    let registry = fluid_registry();
+    let program = registry
+        .programs
+        .get(&aestra_core::ComputeProgramId::new(PROGRAM_VOLUME))
+        .unwrap();
+    assert_eq!(program.entry_points, [VOLUME_ENTRY]);
+    let source = format!(
+        "{}\n{}\n@fragment fn main(@builtin(position) pixel: vec4<f32>) -> @location(0) vec4<f32> {{\n    \
+         return {VOLUME_ENTRY}(AestraVolumeRay(vec3<f32>(0.5, 0.0, 0.5), vec3<f32>(0.0, 0.01, 0.0), \
+         0.0, 100.0, vec3<f32>(100.0), pixel.xy));\n}}",
+        aestra_gpu::volume::volume_interface_wgsl("0"),
+        program.wgsl
+    );
+    let module = naga::front::wgsl::parse_str(&source).expect("parses");
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::default(),
+    )
+    .validate(&module)
+    .expect("the march function validates against the interface");
+}
+
+#[test]
+fn invalid_looks_and_presentations_fail_to_compile() {
+    let registry = fluid_registry();
+    for (input, value) in [
+        ("steps", Value::U32(0)),
+        ("shadow_steps", Value::U32(99)),
+        ("light_direction", Value::Vec3([0.0; 3])),
+        ("opacity", Value::Scalar(-1.0)),
+    ] {
+        // Out-of-range inputs fail schema validation or lowering; either way nothing compiles.
+        let mut effect = smoke_effect(&registry);
+        set_input(&mut effect, MODULE_VOLUME_LOOK, input, value);
+        let result = EffectCompiler::with_extensions(registry.clone()).compile(&effect);
+        assert!(result.is_err(), "{input} is rejected");
+    }
+
+    // A presentation must bind grid fields of its block, on one grid.
+    let stage = compile_stage(&registry, &smoke_effect(&registry));
+    let StagePresentation::Volume(volume) = &stage.presentations[0];
+    let mut unknown = volume.clone();
+    unknown.fields = vec![ResourceTypeId::new(aestra_fluid::RESOURCE_PRESSURE)];
+    assert!(
+        unknown
+            .layouts(&stage.block)
+            .unwrap_err()
+            .contains("not a grid field")
+    );
+    let mut crowded = volume.clone();
+    crowded.fields = vec![ResourceTypeId::new(RESOURCE_DENSITY); 5];
+    assert!(crowded.layouts(&stage.block).is_err());
+    let mut velocity_and_density = volume.clone();
+    velocity_and_density
+        .fields
+        .push(ResourceTypeId::new(RESOURCE_VELOCITY));
+    assert_eq!(velocity_and_density.layouts(&stage.block).unwrap().len(), 2);
 }
 
 #[test]

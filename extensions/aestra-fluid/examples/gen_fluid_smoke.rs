@@ -1,7 +1,7 @@
-//! Generates `sample-project/effects/fluid_smoke.aestra.ron` (fluid F2): a looping smoke plume — an
-//! effect-level *Fluid Solver* domain (grid, density source, buoyancy, vorticity) — and two emitters
-//! whose particles follow it: light "Smoke Puffs" that ride the plume, and heavier "Embers" pulled
-//! more weakly against gravity. The editor/viewer debug slice shows the density field beneath them.
+//! Generates `sample-project/effects/fluid_smoke.aestra.ron` (fluid F2/F3): a looping smoke plume — an
+//! effect-level *Fluid Solver* domain (grid, density source, buoyancy, vorticity), drawn as lit volumetric
+//! smoke by its Volume Look — and two emitters whose particles follow it: light "Smoke Puffs" that ride
+//! the plume, and heavier "Embers" pulled more weakly against gravity.
 //! Written through the real `save_ron`, reloaded, and compiled with the fluid extension installed.
 //!
 //! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_smoke`.

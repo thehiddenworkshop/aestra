@@ -13,6 +13,7 @@ mod trail_checkpoints;
 mod trail_compaction;
 mod trail_culling;
 mod trail_replay;
+mod volume;
 mod wireframe;
 
 use crate::{
@@ -478,6 +479,7 @@ struct StatefulSimulationPipeline {
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
     extension_stages::install(app);
+    volume::install(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
     let preparation_mailboxes = preparation_timing::PreparationMailboxes::default();
     app.insert_resource(preparation_mailboxes.clone())

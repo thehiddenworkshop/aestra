@@ -309,13 +309,14 @@ impl EffectCompiler {
             }
         }
         let stage_id = aestra_core::StageId::for_name(name);
-        let block = match stage_lowerer.lower(&StageLoweringInput {
+        let input = StageLoweringInput {
             stage: stage_id,
             stage_type: &stage_type,
             name,
             particle_capacity,
             modules: &plans,
-        }) {
+        };
+        let block = match stage_lowerer.lower(&input) {
             Ok(block) => block,
             Err(message) => {
                 diagnostics.push(Diagnostic::error(
@@ -345,6 +346,26 @@ impl EffectCompiler {
             unresolved_program(&self.registry, &block.ops)
                 .map(|problem| format!("stage '{}' {problem}", stage_type.0))
         };
+        let presentations = match (problem.is_none())
+            .then(|| stage_lowerer.present(&input, &block))
+            .transpose()
+        {
+            Ok(presentations) => presentations.unwrap_or_default(),
+            Err(message) => {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::LoweringFailed,
+                    stage_path,
+                    message,
+                ));
+                return None;
+            }
+        };
+        let problem = problem.or_else(|| {
+            presentations.iter().find_map(|presentation| {
+                invalid_presentation(&self.registry, presentation, &block)
+                    .map(|problem| format!("stage '{}' {problem}", stage_type.0))
+            })
+        });
         if let Some(problem) = problem {
             diagnostics.push(Diagnostic::error(
                 DiagnosticCode::LoweringFailed,
@@ -365,6 +386,7 @@ impl EffectCompiler {
             modules: plans,
             block,
             cpu_reference,
+            presentations,
         })
     }
 
@@ -2757,4 +2779,28 @@ fn unresolved_program(
         aestra_runtime::ExecutionOp::Repeat { body, .. } => unresolved_program(registry, body),
         _ => None,
     })
+}
+
+/// What is wrong with a stage presentation (fluid F3): an unregistered program or march function, or
+/// fields the block does not provide on one grid.
+fn invalid_presentation(
+    registry: &ExtensionRegistry,
+    presentation: &aestra_runtime::StagePresentation,
+    block: &aestra_runtime::ExecutionBlock,
+) -> Option<String> {
+    let aestra_runtime::StagePresentation::Volume(volume) = presentation;
+    let Some(program) = registry.programs.get(&volume.program) else {
+        return Some(format!(
+            "presents through unregistered program '{}'",
+            volume.program.as_str()
+        ));
+    };
+    if !program.entry_points.contains(&volume.entry_point) {
+        return Some(format!(
+            "presents through '{}', which program '{}' does not declare",
+            volume.entry_point,
+            volume.program.as_str()
+        ));
+    }
+    volume.layouts(block).err()
 }

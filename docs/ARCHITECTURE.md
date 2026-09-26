@@ -94,6 +94,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Registers plugin compute programs (`ComputeProgram`: WGSL plus declared entry points) that lowered
   compute ops reference. Stage types declare their `BackendSupport`, so GPU-only plugin stages say
   they have no CPU reference.
+- A `StageLowerer` may also `present` its lowered stage (fluid F3): `StagePresentation`s beside the
+  block, such as a volume ray-marched through its grid fields by a registered march function. The
+  compiler checks the program, the march function, and that the fields are grid fields of the block on
+  one grid.
 - Depends only on `aestra-core` and `aestra-runtime`, so extension authors do not depend on the
   compiler.
 
@@ -102,7 +106,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - `aestra-example-extension` is the reference linked extension (a stage, module, domain, resource
   and renderer).
 - `aestra-fluid` is an experimental GPU-only fluid: a grid-solver stage and four modules lowered to
-  one checked multi-pass Execution IR block over a registered WGSL program. It adds nothing to core.
+  one checked multi-pass Execution IR block over a registered WGSL program, plus a *Volume Look*
+  module presented as lit, self-shadowed volumetric smoke. It adds nothing to core.
 
 ### `aestra-compiler`
 
@@ -150,8 +155,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Round-trips runtime execution plans, resources, renderers, parameters, reusable clips, events,
   requirements, source maps, and optimization metadata without Bevy or WGPU.
 - Artifact v4 also carries host bindings (validated layouts), clip binding forwards (validated
-  parent slots), and plugin extension stages with their Execution IR (validated on reload). Older
-  artifacts are rejected and recompiled from source, never migrated.
+  parent slots), and plugin extension stages with their Execution IR and presentations (validated
+  on reload). Older artifacts are rejected and recompiled from source, never migrated.
 - Proves reloaded plans retain CPU evaluation, GPU artifact lowering, and `EffectPlayer` playback.
 
 ### `aestra-gpu`
@@ -171,6 +176,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Checks a lowered Execution IR block against its compute programs with naga
   (`check_program_block`). Each op's declared accesses must be exactly the bindings its entry uses
   (resource `i` is `@group(0) @binding(i)`), and it must not write a resource declared read-only.
+- Owns the volume-presentation interface (`volume`): the bindings, the `AestraVolumeRay`, and the
+  field, constant and box helpers a plugin's march function is written against, plus the pass that
+  copies a grid field into a 3D texture.
 - Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
 
 ### `aestra-bevy-render`
@@ -231,8 +239,20 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   - Checkpoints are dropped, and none is captured while the state mixes two placements. The next
     backward seek resets and replays under one placement.
 - With `AestraDebugViews::field_slices` or an `AestraFieldView`, draws one slice of a stage's grid
-  field. It uses the block's `FieldLayout` and appears as an unlit quad in 3D or a sprite in 2D. This
-  is the only presentation of plugin fields until plugin renderers run.
+  field. It uses the block's `FieldLayout` and appears as an unlit quad in 3D or a sprite in 2D.
+  Automatic slices stay off for an effect whose volumes are drawn.
+- Draws stage presentations (fluid F3). A stage lowerer may return, beside its block,
+  `StagePresentation::Volume` plans (`StageLowerer::present`); they are never state, so a look edit
+  never restarts the simulation. For each volume (`gpu::volume`):
+  - every bound field is copied after the stages advance into an `rgba16float` 3D texture
+    (`execution::FieldVolumePipeline`), sampled with hardware trilinear filtering;
+  - a unit cube, a child of the effect scaled to the grid, draws with the one generic
+    `VolumeMaterial`. Only back faces are rasterized, with the depth test off. The fragment rebuilds
+    the view ray in the box's space and clips it to the box (the camera may be inside) and to the
+    opaque scene through the depth prepass, then calls the plugin's march function;
+  - the shader is Bevy's prelude, the portable interface (`aestra_gpu::volume`), the plugin's WGSL
+    and the entry points, composed once per program and swapped in at specialization;
+  - volumes need a 3D camera and Bevy's PBR plugin; otherwise the debug slices remain.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

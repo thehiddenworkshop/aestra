@@ -11,6 +11,7 @@ pub mod mesh_bounds;
 pub mod particle_attributes;
 pub mod ribbon_bounds;
 pub mod shader;
+pub mod volume;
 
 pub use compute_program::{BindingUse, ProgramInterface, check_program_block, program_interface};
 pub use host_bindings::{

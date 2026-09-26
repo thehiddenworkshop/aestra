@@ -9,10 +9,14 @@
 //!   §44.6): there is no CPU fluid and none is faked;
 //! - a **domain** (`grid3d`) and its **resources** — persistent velocity and density grids, transient
 //!   scratch for advection, pressure, divergence and vorticity;
-//! - four **modules**, edited by the schema-driven inspector like any built-in: *Fluid Grid* (one per
-//!   stage: resolution, cell size, pressure iterations, dissipation), *Density Source* (whose position
-//!   and velocity a host object can drive), *Buoyancy* and *Vorticity*;
-//! - one **compute program** (`solver.wgsl`) whose entry points the stage lowers to.
+//! - four solver **modules**, edited by the schema-driven inspector like any built-in: *Fluid Grid*
+//!   (one per stage: resolution, cell size, pressure iterations, dissipation), *Density Source* (whose
+//!   position and velocity a host object can drive), *Buoyancy* and *Vorticity*;
+//! - one presentation module, *Volume Look* (fluid F3): the stage lowerer turns it into a volume
+//!   presentation — the density ray-marched as lit, self-shadowed smoke — never into the solver, so a
+//!   look edit never restarts the simulation;
+//! - two **programs**: the solver (`solver.wgsl`) whose entry points the stage lowers to, and the
+//!   volume look's march function (`volume.wgsl`).
 //!
 //! The authored stage stays one semantic object; lowering expands it into the solver's passes:
 //!
@@ -43,7 +47,7 @@ use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
     CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
     FieldLayout, RepeatPolicy, ResourceAccess, ResourceDescriptor, ResourceLifetime,
-    StagedDispatch,
+    StagePresentation, StagedDispatch, VolumePresentation,
 };
 use std::sync::Arc;
 
@@ -55,7 +59,11 @@ pub const MODULE_GRID: &str = "org.example.aestra-fluid::module/grid";
 pub const MODULE_DENSITY_SOURCE: &str = "org.example.aestra-fluid::module/density_source";
 pub const MODULE_BUOYANCY: &str = "org.example.aestra-fluid::module/buoyancy";
 pub const MODULE_VORTICITY: &str = "org.example.aestra-fluid::module/vorticity";
+pub const MODULE_VOLUME_LOOK: &str = "org.example.aestra-fluid::module/volume_look";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
+pub const PROGRAM_VOLUME: &str = "org.example.aestra-fluid::program/volume";
+/// The march function [`PROGRAM_VOLUME`] defines.
+pub const VOLUME_ENTRY: &str = "fluid_volume";
 
 pub const RESOURCE_VELOCITY: &str = "org.example.aestra-fluid::resource/velocity_grid";
 pub const RESOURCE_DENSITY: &str = "org.example.aestra-fluid::resource/density_grid";
@@ -68,6 +76,8 @@ pub const RESOURCE_VORTICITY: &str = "org.example.aestra-fluid::resource/vortici
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
+/// The volume look's march function, composed after the backend's volume interface.
+pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
 
 /// The grid resolution per axis is bounded (plan §11.1): at 96³ every grid together is ~60 MB.
 pub const MIN_RESOLUTION: u32 = 8;
@@ -111,8 +121,8 @@ pub fn program_wgsl() -> String {
 pub const SMOKE_STAGE: &str = "Fluid";
 
 /// An effect whose own *Fluid Solver* domain (an effect-level simulation stage, fluid F2) hosts a
-/// Fluid Grid, a Density Source, Buoyancy and Vorticity — every input at its schema default — beside a
-/// sprite emitter. `registry` must have the extension installed.
+/// Fluid Grid, a Density Source, Buoyancy, Vorticity and a Volume Look — every input at its schema
+/// default — beside a sprite emitter. `registry` must have the extension installed.
 pub fn smoke_effect(registry: &ExtensionRegistry) -> EffectAsset {
     let mut effect = EffectAsset::new("Fluid Smoke", 4.0);
     let mut domain = EffectSimulationStage::new(SMOKE_STAGE, StageTypeId::new(STAGE_FLUID_SOLVER));
@@ -121,6 +131,7 @@ pub fn smoke_effect(registry: &ExtensionRegistry) -> EffectAsset {
         MODULE_DENSITY_SOURCE,
         MODULE_BUOYANCY,
         MODULE_VORTICITY,
+        MODULE_VOLUME_LOOK,
     ] {
         let mut module = registry
             .modules
@@ -205,7 +216,8 @@ impl AestraExtension for FluidExtension {
             grid_metadata(requires.clone()),
             density_source_metadata(requires.clone()),
             buoyancy_metadata(requires.clone()),
-            vorticity_metadata(requires),
+            vorticity_metadata(requires.clone()),
+            volume_look_metadata(requires),
         ] {
             let type_id = metadata.type_id.clone();
             registry.register_module(metadata)?;
@@ -217,6 +229,11 @@ impl AestraExtension for FluidExtension {
             id: ComputeProgramId::new(PROGRAM_SOLVER),
             wgsl: program_wgsl(),
             entry_points: ENTRY_POINTS.iter().map(|entry| entry.to_string()).collect(),
+        })?;
+        registry.register_program(ComputeProgram {
+            id: ComputeProgramId::new(PROGRAM_VOLUME),
+            wgsl: VOLUME_WGSL.into(),
+            entry_points: vec![VOLUME_ENTRY.into()],
         })?;
         registry.lowering.register_stage(
             StageTypeId::new(STAGE_FLUID_SOLVER),
@@ -402,6 +419,91 @@ fn vorticity_metadata(requires: CapabilityExpression) -> ModuleMetadata {
     .with_cost(2)
 }
 
+fn colour() -> InputControl {
+    InputControl::Vector {
+        step: 0.01,
+        min: Some(0.0),
+        max: Some(1.0),
+    }
+}
+
+/// The domain's look (fluid F3). A presentation module: it lowers into the stage's volume
+/// presentation, never into the solver, so editing it never restarts the simulation.
+fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    ModuleMetadata::extension(
+        ModuleTypeId::new(MODULE_VOLUME_LOOK),
+        "Volume Look",
+        "Draws the domain as lit smoke: the density ray-marched with self-shadowing.",
+        "Fluid",
+        requires,
+    )
+    .with_tags(vec!["plugin", "fluid", "render"])
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        InputMetadata::new(
+            "opacity",
+            "Opacity",
+            "Extinction per unit of density per unit of length.",
+            Value::Scalar(0.06),
+            number(0.01, 0.0, None),
+        ),
+        InputMetadata::new(
+            "color",
+            "Smoke Color",
+            "How much light the smoke scatters, per channel.",
+            Value::Vec3([0.72, 0.74, 0.78]),
+            colour(),
+        ),
+        InputMetadata::new(
+            "ambient",
+            "Ambient",
+            "Light reaching the smoke from every direction.",
+            Value::Scalar(0.3),
+            number(0.01, 0.0, None),
+        ),
+        InputMetadata::new(
+            "light_direction",
+            "Light Direction",
+            "Direction towards the light, in the effect's space.",
+            Value::Vec3([-0.55, 0.75, -0.35]),
+            vector(),
+        ),
+        InputMetadata::new(
+            "light_color",
+            "Light Color",
+            "Colour of the light.",
+            Value::Vec3([1.0, 0.96, 0.9]),
+            colour(),
+        ),
+        InputMetadata::new(
+            "light_intensity",
+            "Light Intensity",
+            "Brightness of the light.",
+            Value::Scalar(1.2),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "steps",
+            "March Steps",
+            "Samples along each view ray.",
+            Value::U32(64),
+            number(1.0, 4.0, Some(MAX_VOLUME_STEPS as f32)),
+        ),
+        InputMetadata::new(
+            "shadow_steps",
+            "Shadow Steps",
+            "Samples towards the light per view sample (0 disables self-shadowing).",
+            Value::U32(8),
+            number(1.0, 0.0, Some(MAX_SHADOW_STEPS as f32)),
+        ),
+    ])
+    .with_cost(4)
+}
+
+/// Bounds of the volume look's sample counts.
+pub const MAX_VOLUME_STEPS: u32 = 256;
+pub const MAX_SHADOW_STEPS: u32 = 32;
+
 fn scalar(payload: &PropertyBag, name: &str) -> Result<f32, String> {
     payload
         .get_f32(name)
@@ -476,6 +578,10 @@ impl ModuleLowerer for FluidModuleLowerer {
             MODULE_VORTICITY => {
                 scalar(payload, "strength")?;
                 "confine_vorticity"
+            }
+            MODULE_VOLUME_LOOK => {
+                pack_volume(payload)?;
+                VOLUME_ENTRY
             }
             other => return Err(format!("'{other}' is not a fluid module")),
         };
@@ -619,10 +725,72 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     })
 }
 
+/// Packs a Volume Look's inputs into the constant words `volume.wgsl` reads.
+fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
+    let steps = count(payload, "steps")?;
+    if !(1..=MAX_VOLUME_STEPS).contains(&steps) {
+        return Err(format!(
+            "march steps must be between 1 and {MAX_VOLUME_STEPS}, got {steps}"
+        ));
+    }
+    let shadow_steps = count(payload, "shadow_steps")?;
+    if shadow_steps > MAX_SHADOW_STEPS {
+        return Err(format!(
+            "shadow steps must be at most {MAX_SHADOW_STEPS}, got {shadow_steps}"
+        ));
+    }
+    let non_negative = |name: &str| {
+        let value = scalar(payload, name)?;
+        if value < 0.0 {
+            return Err(format!("'{name}' must not be negative"));
+        }
+        Ok(value)
+    };
+    let direction = vec3(payload, "light_direction")?;
+    let length = direction.iter().map(|axis| axis * axis).sum::<f32>().sqrt();
+    if length <= 1e-6 {
+        return Err("the light direction must not be zero".into());
+    }
+    let mut words = vec![0u32; 16];
+    words[0] = steps;
+    words[1] = shadow_steps;
+    words[2] = non_negative("opacity")?.to_bits();
+    words[3] = non_negative("ambient")?.to_bits();
+    for (axis, value) in vec3(payload, "color")?.into_iter().enumerate() {
+        words[4 + axis] = value.to_bits();
+    }
+    words[7] = non_negative("light_intensity")?.to_bits();
+    for axis in 0..3 {
+        words[8 + axis] = (direction[axis] / length).to_bits();
+    }
+    for (axis, value) in vec3(payload, "light_color")?.into_iter().enumerate() {
+        words[12 + axis] = value.to_bits();
+    }
+    Ok(words)
+}
+
 /// Lowers a Fluid Solver stage into the solver's passes (see the crate docs).
 struct FluidSolverLowerer;
 
 impl StageLowerer for FluidSolverLowerer {
+    /// A Volume Look draws the density grid as a lit volume.
+    fn present(
+        &self,
+        input: &StageLoweringInput<'_>,
+        _block: &ExecutionBlock,
+    ) -> Result<Vec<StagePresentation>, String> {
+        modules_of(input.modules, MODULE_VOLUME_LOOK)
+            .map(|look| {
+                Ok(StagePresentation::Volume(VolumePresentation {
+                    program: ComputeProgramId::new(PROGRAM_VOLUME),
+                    entry_point: VOLUME_ENTRY.into(),
+                    fields: vec![ResourceTypeId::new(RESOURCE_DENSITY)],
+                    constants: pack_volume(&look.parameters)?,
+                }))
+            })
+            .collect()
+    }
+
     fn lower(&self, input: &StageLoweringInput<'_>) -> Result<ExecutionBlock, String> {
         let PackedStage {
             resolution,

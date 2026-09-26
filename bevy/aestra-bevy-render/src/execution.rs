@@ -814,6 +814,81 @@ impl FieldFollowPipeline {
     }
 }
 
+/// Copies a grid field into an `rgba16float` 3-D storage texture of the grid's size (fluid F3), so
+/// volume presentations sample it with hardware trilinear filtering (see
+/// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]). Engine-neutral, like [`StageExecutor`].
+pub struct FieldVolumePipeline {
+    pipeline: wgpu::ComputePipeline,
+}
+
+impl FieldVolumePipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("aestra field volume"),
+            source: wgpu::ShaderSource::Wgsl(aestra_gpu::volume::FIELD_TO_VOLUME_WGSL.into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("aestra field volume"),
+            layout: None,
+            module: &module,
+            entry_point: Some("copy_field"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        Self { pipeline }
+    }
+
+    /// Encodes the copy of `field`, laid out as `layout`, into the 3-D texture `volume`.
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        field: &wgpu::Buffer,
+        volume: &wgpu::TextureView,
+        layout: &aestra_runtime::FieldLayout,
+    ) {
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra field volume params"),
+            contents: &words_to_bytes(&[
+                layout.dims[0],
+                layout.dims[1],
+                layout.dims[2],
+                layout.components,
+            ]),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra field volume"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: field.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(volume),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra field volume"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(
+            layout.dims[0].div_ceil(4),
+            layout.dims[1].div_ceil(4),
+            layout.dims[2].div_ceil(4),
+        );
+    }
+}
+
 /// Halves a store by keeping entries 0, 2, 4… — doubling the effective cadence while keeping
 /// full-timeline coverage.
 fn retain_every_other<T>(items: &mut Vec<T>) {

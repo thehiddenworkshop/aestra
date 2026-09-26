@@ -242,6 +242,18 @@ pub struct StageLoweringInput<'a> {
 /// many passes, barriers and repeats over declared resources.
 pub trait StageLowerer: Send + Sync {
     fn lower(&self, input: &StageLoweringInput<'_>) -> Result<ExecutionBlock, String>;
+
+    /// How the backend draws the lowered stage's fields (fluid F3), from the same input and the block
+    /// [`lower`](Self::lower) returned. Presentations are never state, so they stay out of the block.
+    /// Defaults to none.
+    fn present(
+        &self,
+        input: &StageLoweringInput<'_>,
+        block: &ExecutionBlock,
+    ) -> Result<Vec<aestra_runtime::StagePresentation>, String> {
+        let _ = (input, block);
+        Ok(Vec::new())
+    }
 }
 
 /// The registered lowerers, keyed by the type they lower.

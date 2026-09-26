@@ -11,7 +11,8 @@ use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
     CompiledExtensionStage, CompiledHostField, CompiledHostFieldRef, ComputeOp, CopyOp,
     ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout, RepeatPolicy, ResourceAccess,
-    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagedDispatch,
+    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagePresentation, StagedDispatch,
+    VolumePresentation,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -240,6 +241,49 @@ pub(crate) struct ExtensionStageV4 {
     /// Whether the stage type has a CPU reference; plugin stages without one omit it.
     #[serde(default, skip_serializing_if = "is_false")]
     cpu_reference: bool,
+    /// How the stage draws its fields (fluid F3); additive, so older artifacts decode with none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    presentations: Vec<StagePresentationV4>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+enum StagePresentationV4 {
+    Volume {
+        program: ComputeProgramId,
+        entry_point: String,
+        fields: Vec<ResourceTypeId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        constants: Vec<u32>,
+    },
+}
+
+impl From<&StagePresentation> for StagePresentationV4 {
+    fn from(presentation: &StagePresentation) -> Self {
+        let StagePresentation::Volume(volume) = presentation;
+        Self::Volume {
+            program: volume.program.clone(),
+            entry_point: volume.entry_point.clone(),
+            fields: volume.fields.clone(),
+            constants: volume.constants.clone(),
+        }
+    }
+}
+
+impl From<StagePresentationV4> for StagePresentation {
+    fn from(presentation: StagePresentationV4) -> Self {
+        let StagePresentationV4::Volume {
+            program,
+            entry_point,
+            fields,
+            constants,
+        } = presentation;
+        Self::Volume(VolumePresentation {
+            program,
+            entry_point,
+            fields,
+            constants,
+        })
+    }
 }
 
 fn is_false(value: &bool) -> bool {
@@ -451,6 +495,11 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                     .collect(),
             },
             cpu_reference: stage.cpu_reference,
+            presentations: stage
+                .presentations
+                .iter()
+                .map(StagePresentationV4::from)
+                .collect(),
         }
     }
 }
@@ -493,6 +542,17 @@ impl ExtensionStageV4 {
         if let Err(error) = block.validate() {
             return invalid(format!("{path}.block"), error.to_string());
         }
+        let presentations: Vec<StagePresentation> = self
+            .presentations
+            .into_iter()
+            .map(StagePresentation::from)
+            .collect();
+        for (index, presentation) in presentations.iter().enumerate() {
+            let StagePresentation::Volume(volume) = presentation;
+            if let Err(error) = volume.layouts(&block) {
+                return invalid(format!("{path}.presentations[{index}]"), error);
+            }
+        }
         Ok(CompiledExtensionStage {
             id: self.id,
             stage_type: self.stage_type,
@@ -524,6 +584,7 @@ impl ExtensionStageV4 {
                 .collect::<Result<_, ArtifactError>>()?,
             block,
             cpu_reference: self.cpu_reference,
+            presentations,
         })
     }
 }

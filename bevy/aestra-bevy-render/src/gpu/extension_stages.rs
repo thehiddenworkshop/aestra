@@ -101,6 +101,8 @@ pub(crate) struct ExtractedStages {
     /// lockstep with them, so this system must not advance them on its own.
     coupled: bool,
     view: Option<FieldViewTarget>,
+    /// Fields copied into volume textures after the stages advance (fluid F3).
+    volumes: Vec<super::volume::VolumeFieldTarget>,
 }
 
 impl ExtractedStages {
@@ -167,7 +169,7 @@ struct FieldViewTarget {
 /// Main-world state of an effect's field view: its quad (whose material keeps the image alive) and
 /// what the render world copies into the image.
 #[derive(Component)]
-struct FieldViewState {
+pub(super) struct FieldViewState {
     quad: Entity,
     target: FieldViewTarget,
 }
@@ -229,6 +231,7 @@ type StageInputQuery<'w, 's> = Query<
         &'static PresentedEffect,
         Option<&'static GlobalTransform>,
         Option<&'static FieldViewState>,
+        Option<&'static super::volume::VolumeViews>,
         Has<ExtractedStages>,
         Has<GpuStageTiming>,
     ),
@@ -251,8 +254,8 @@ fn world_to_local(transform: &GlobalTransform) -> [[f32; 4]; 3] {
 }
 
 /// Mirrors each presented effect's stage inputs for extraction (or removes them).
-fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
-    for (entity, presented, transform, view, extracted, timed) in &effects {
+pub(super) fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
+    for (entity, presented, transform, view, volumes, extracted, timed) in &effects {
         let effect = presented.effect();
         if stages(effect).next().is_none() {
             if extracted {
@@ -275,6 +278,9 @@ fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
                 .iter()
                 .any(|emitter| emitter.enabled && emitter.field_follow.is_some()),
             view: view.map(|view| view.target.clone()),
+            volumes: volumes
+                .map(super::volume::VolumeViews::targets)
+                .unwrap_or_default(),
         });
         if !timed {
             entity.insert(GpuStageTiming::default());
@@ -312,6 +318,7 @@ fn sync_field_views(
         Option<&AestraFieldView>,
         Option<&mut FieldViewState>,
         Option<&RenderLayers>,
+        Option<&super::volume::VolumeViews>,
     )>,
     cameras_3d: Query<(), With<Camera3d>>,
     mut assets: (
@@ -320,8 +327,10 @@ fn sync_field_views(
         Option<ResMut<Assets<StandardMaterial>>>,
     ),
 ) {
-    for (entity, presented, request, state, layers) in effects {
-        let wanted = (debug.field_slices || request.is_some())
+    for (entity, presented, request, state, layers, volumes) in effects {
+        // An effect drawn as a volume shows slices only on request.
+        let automatic = debug.field_slices && !volumes.is_some_and(|views| views.draws_any());
+        let wanted = (automatic || request.is_some())
             .then(|| {
                 pick_field(
                     presented.effect(),
@@ -554,6 +563,7 @@ fn run_extension_stages(
     mailbox: Res<StageTimingMailbox>,
     mut timer: Local<SimulationTimer>,
     slice_pipeline: Option<Res<FieldSlicePipeline>>,
+    volume_pipeline: Option<Res<super::volume::FieldVolume>>,
     images: Res<RenderAssets<GpuImage>>,
 ) {
     if effects.is_empty() {
@@ -633,6 +643,23 @@ fn run_extension_stages(
                 &image.texture_view,
                 view,
             );
+        }
+        // Volume textures (fluid F3), from every stage's final state for the frame.
+        if let Some(pipeline) = &volume_pipeline {
+            for target in &extracted.volumes {
+                if let Some(Some(timeline)) = runtime.timelines.get(target.stage)
+                    && let Some(field) = timeline.executor().buffer(target.layout.resource.as_str())
+                    && let Some(image) = images.get(target.image)
+                {
+                    pipeline.0.encode(
+                        wgpu_device,
+                        render_context.command_encoder(),
+                        field,
+                        &image.texture_view,
+                        &target.layout,
+                    );
+                }
+            }
         }
     }
     gpu_span.end(render_context.command_encoder());

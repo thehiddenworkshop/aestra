@@ -728,6 +728,79 @@ pub struct CompiledExtensionStage {
     /// Whether the stage type declares a CPU reference evaluator (extensible plan §13.3). `false` for
     /// GPU-only plugin stages: the CPU runtime skips them and tools must say so, never pretend.
     pub cpu_reference: bool,
+    /// How the backend draws the stage's fields (fluid F3). Kept apart from `block`: presentation is
+    /// never state, so editing a look never restarts the simulation.
+    pub presentations: Vec<StagePresentation>,
+}
+
+/// One way an extension stage presents itself (fluid F3), returned by its lowerer beside the block.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StagePresentation {
+    Volume(VolumePresentation),
+}
+
+/// Fields a volume presentation binds at most.
+pub const MAX_VOLUME_FIELDS: usize = 4;
+/// Constant words a volume presentation passes its program at most.
+pub const MAX_VOLUME_CONSTANTS: usize = 64;
+
+/// A volume ray-marched through a stage's grid fields (fluid F3). The backend draws the fields' box,
+/// uploads each field into a 3-D texture sampled with trilinear filtering, and calls the program's
+/// march function for every covered pixel, with a ray already clipped to the box and the scene. The
+/// plugin owns the look (absorption, lighting, emission); core owns only the geometry.
+///
+/// The march function has the signature `fn(ray: AestraVolumeRay) -> vec4<f32>` and returns a
+/// premultiplied colour. It samples field slot `i` with `aestra_volume_field(i, uvw)` and reads constant
+/// word `i` with `aestra_volume_constant(i)` (see the backend's volume prelude).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VolumePresentation {
+    /// The registered program whose WGSL defines the march function.
+    pub program: aestra_core::ComputeProgramId,
+    /// The march function's name.
+    pub entry_point: String,
+    /// The fields bound as slots `0..`, in order: grid fields the block declares, sharing one grid.
+    pub fields: Vec<aestra_core::ResourceTypeId>,
+    /// Words the march function reads, in a layout private to the program.
+    pub constants: Vec<u32>,
+}
+
+impl VolumePresentation {
+    /// The field layouts bound, in slot order; an error names what the block does not provide.
+    pub fn layouts<'a>(&self, block: &'a ExecutionBlock) -> Result<Vec<&'a FieldLayout>, String> {
+        if self.fields.is_empty() || self.fields.len() > MAX_VOLUME_FIELDS {
+            return Err(format!(
+                "a volume binds between 1 and {MAX_VOLUME_FIELDS} fields, got {}",
+                self.fields.len()
+            ));
+        }
+        if self.constants.len() > MAX_VOLUME_CONSTANTS {
+            return Err(format!(
+                "a volume passes at most {MAX_VOLUME_CONSTANTS} constant words, got {}",
+                self.constants.len()
+            ));
+        }
+        let layouts = self
+            .fields
+            .iter()
+            .map(|resource| {
+                block.field(resource).ok_or_else(|| {
+                    format!(
+                        "volume field '{}' is not a grid field of the stage",
+                        resource.as_str()
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let first = layouts[0];
+        if layouts.iter().any(|layout| {
+            layout.dims != first.dims
+                || layout.origin != first.origin
+                || layout.cell_size != first.cell_size
+        }) {
+            return Err("a volume's fields must share one grid".into());
+        }
+        Ok(layouts)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

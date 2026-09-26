@@ -10,7 +10,8 @@
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
 use aestra_bevy_render::execution::{
-    FieldFollowPipeline, StageExecutor, StageInputs, StageTimeline, TimelinePolicy,
+    FieldFollowPipeline, FieldVolumePipeline, StageExecutor, StageInputs, StageTimeline,
+    TimelinePolicy,
 };
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
@@ -259,7 +260,148 @@ fn the_solver_builds_on_every_available_backend() {
             "{backends:?}: {:?} {error:?}",
             executor.err()
         );
+        // The volume look's march function, with the interface it is composed with (fluid F3).
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        volume_pipeline(&device);
+        let error = pollster::block_on(scope.pop());
+        assert!(error.is_none(), "{backends:?} volume: {error:?}");
     }
+}
+
+/// A render pipeline around the volume look's march function: the interface, the plugin's WGSL and
+/// a full-screen triangle whose fragment marches a fixed ray.
+fn volume_pipeline(device: &wgpu::Device) -> wgpu::RenderPipeline {
+    let source = format!(
+        "{}\n{}\n\
+         @vertex fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {{\n    \
+         let uv = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u));\n    \
+         return vec4<f32>(uv * 2.0 - 1.0, 0.0, 1.0);\n}}\n\
+         @fragment fn fragment(@builtin(position) pixel: vec4<f32>) -> @location(0) vec4<f32> {{\n    \
+         let u = pixel.x / 16.0;\n    \
+         return {}(AestraVolumeRay(vec3<f32>(u, 0.5, 0.0), vec3<f32>(0.0, 0.0, 1.0 / 3.2), 0.0, 3.2, \
+         vec3<f32>(3.2), pixel.xy));\n}}",
+        aestra_gpu::volume::volume_interface_wgsl("0"),
+        aestra_fluid::VOLUME_WGSL,
+        aestra_fluid::VOLUME_ENTRY,
+    );
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("fluid volume test"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("fluid volume test"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vertex"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fragment"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::TextureFormat::Rgba16Float.into())],
+        }),
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// An IEEE half as `f32` (normal, subnormal and zero; the fields hold no infinities).
+fn half_to_f32(bits: u16) -> f32 {
+    let sign = if bits & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let exponent = i32::from((bits >> 10) & 0x1f);
+    let mantissa = f32::from(bits & 0x3ff);
+    sign * if exponent == 0 {
+        mantissa * 2f32.powi(-24)
+    } else {
+        (1.0 + mantissa / 1024.0) * 2f32.powi(exponent - 15)
+    }
+}
+
+#[test]
+fn the_density_reaches_its_volume_texture_cell_for_cell() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    fluid.run(&gpu, 0..30);
+    let density = fluid.floats(&gpu, RESOURCE_DENSITY);
+    let layout = aestra_runtime::FieldLayout {
+        resource: aestra_core::ResourceTypeId::new(RESOURCE_DENSITY),
+        dims: [RESOLUTION; 3],
+        components: 1,
+        origin: [0.0; 3],
+        cell_size: CELL_SIZE,
+    };
+    let size = wgpu::Extent3d {
+        width: RESOLUTION,
+        height: RESOLUTION,
+        depth_or_array_layers: RESOLUTION,
+    };
+    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("volume"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D3,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    // Rows of 16 texels × 8 bytes, padded to the 256-byte copy alignment.
+    let row = 256u32;
+    let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("volume readback"),
+        size: u64::from(row * RESOLUTION * RESOLUTION),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    FieldVolumePipeline::new(&gpu.device).encode(
+        &gpu.device,
+        &mut encoder,
+        fluid.stage.buffer(RESOURCE_DENSITY).unwrap(),
+        &texture.create_view(&Default::default()),
+        &layout,
+    );
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: Some(RESOLUTION),
+            },
+        },
+        size,
+    );
+    gpu.queue.submit([encoder.finish()]);
+    readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    gpu.device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .unwrap();
+    let bytes = readback.slice(..).get_mapped_range().to_vec();
+    let n = RESOLUTION as usize;
+    let mut compared = 0;
+    for (index, expected) in density.iter().enumerate() {
+        let (x, y, z) = (index % n, (index / n) % n, index / (n * n));
+        let at = (z * n + y) * row as usize + x * 8;
+        let red = half_to_f32(u16::from_le_bytes([bytes[at], bytes[at + 1]]));
+        assert!(
+            (red - expected).abs() <= 1e-3 + expected.abs() * 1e-3,
+            "cell {index}: field {expected}, texture {red}"
+        );
+        compared += usize::from(*expected > 0.01);
+    }
+    assert!(
+        compared > 20,
+        "the plume is in the texture ({compared} cells)"
+    );
 }
 
 #[test]

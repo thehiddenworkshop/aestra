@@ -17,5 +17,6 @@ aestra-runtime = { path = "../../crates/aestra-runtime" }
 aestra-artifact = { path = "../../crates/aestra-artifact" }
 aestra-bevy-render = { path = "../../bevy/aestra-bevy-render" }
 aestra-compiler = { path = "../../crates/aestra-compiler" }
+naga.workspace = true
 pollster.workspace = true
 wgpu.workspace = true

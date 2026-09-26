@@ -263,6 +263,7 @@ dependencies = [
  "aestra-extension",
  "aestra-gpu",
  "aestra-runtime",
+ "naga",
  "pollster",
  "wgpu",
 ]
