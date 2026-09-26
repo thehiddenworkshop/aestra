@@ -93,14 +93,15 @@ fn queue_plan(
                 )
             }
         };
-        // Include migrations and verify the loaded document still agrees with discovery.
+        // Verify the loaded document still agrees with discovery: the source on disk, prepared as
+        // an opened document is (schema defaults filled, payloads migrated).
         let opened = opened
             && (|| {
                 prepared_catalog.refresh();
                 if let OpenTarget::Effect(_) = plan.target {
-                    if prepared_catalog.cached_effect(prepared_session.effect.id.into())?
-                        != prepared_session.effect
-                    {
+                    let source =
+                        prepared_catalog.cached_effect(prepared_session.effect.id.into())?;
+                    if crate::session::opened_form(source) != prepared_session.effect {
                         return Err(
                             "The source changed while opening it; retry the open.".to_owned()
                         );

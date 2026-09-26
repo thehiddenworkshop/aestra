@@ -667,17 +667,10 @@ impl EditorSession {
         self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = bytes;
-        // Inputs a file predates show and edit with their schema default — the value the compiler
-        // already used — rather than as missing. It changes nothing the effect does, so the saved
-        // baseline gets them too and the document does not open dirty.
-        let registry = aestra_compiler::ExtensionRegistry::linked();
         let mut effect = effect;
-        registry.fill_missing_inputs(&mut effect);
+        fill_schema_defaults(&mut effect);
         self.saved_effect = Some(effect.clone());
-        // Plugin payloads authored against an older schema are upgraded through the plugins'
-        // migrations (extensible-stages M11, §35). The file is untouched until the user saves, so the
-        // document opens dirty; payloads that cannot migrate — or are newer — are left as authored.
-        let migration = registry.migrate_effect(&mut effect);
+        let migration = migrate_plugin_payloads(&mut effect);
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -714,7 +707,11 @@ impl EditorSession {
         let preview = compile_preview(&effect, self.preview_seed).ok();
         let saved_effect = source_path
             .as_deref()
-            .and_then(|path| EffectAsset::load_ron(path).ok());
+            .and_then(|path| EffectAsset::load_ron(path).ok())
+            .map(|mut saved| {
+                fill_schema_defaults(&mut saved);
+                saved
+            });
         self.effect = effect;
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -2601,6 +2598,29 @@ fn new_playback_driver(instance: EffectInstance) -> PlaybackDriver {
     let mut driver = PlaybackDriver::new(instance);
     driver.enable_checkpoints(CheckpointPolicy::default());
     driver
+}
+
+/// Inputs a file predates show and edit with their schema default — the value the compiler already
+/// used — rather than as missing. It changes nothing the effect does, so the saved baseline gets them
+/// too and the document does not open dirty for them.
+fn fill_schema_defaults(effect: &mut EffectAsset) {
+    aestra_compiler::ExtensionRegistry::linked().fill_missing_inputs(effect);
+}
+
+/// Plugin payloads authored against an older schema are upgraded through the plugins' migrations
+/// (extensible-stages M11, §35). The file is untouched until the user saves, so the document opens
+/// dirty; payloads that cannot migrate — or are newer — are left as authored.
+fn migrate_plugin_payloads(effect: &mut EffectAsset) -> aestra_compiler::PayloadMigrationReport {
+    aestra_compiler::ExtensionRegistry::linked().migrate_effect(effect)
+}
+
+/// The document the editor makes of an effect read from disk: its schema defaults filled, then its
+/// plugin payloads migrated. Whatever compares an opened document with its source on disk compares
+/// with this.
+pub(crate) fn opened_form(mut effect: EffectAsset) -> EffectAsset {
+    fill_schema_defaults(&mut effect);
+    migrate_plugin_payloads(&mut effect);
+    effect
 }
 
 fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {

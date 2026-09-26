@@ -238,6 +238,43 @@ fn prepared_open_is_atomic_and_publication_never_reopens_the_disk() {
     );
 }
 
+/// A file saved before a plugin input existed opens: the session fills the input's schema default,
+/// and the check that the source did not change while opening compares against the same filled form.
+#[test]
+fn an_effect_predating_a_plugin_input_opens() {
+    aestra_fluid::link();
+    let directory = tempfile::tempdir().unwrap();
+    let registry = aestra_compiler::ExtensionRegistry::linked();
+    let mut fire = aestra_fluid::fire_effect(&registry);
+    let grid = fire.simulation_stages[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == aestra_fluid::MODULE_GRID)
+        .unwrap();
+    let aestra_core::ModuleParameters::Custom(values) = &mut grid.parameters else {
+        unreachable!()
+    };
+    values.remove("multigrid_pressure");
+    fire.save_ron(directory.path().join("fire.aestra.ron"))
+        .unwrap();
+    let mut app = app(directory.path());
+    app.world_mut()
+        .trigger(DocumentAction::OpenCatalog(fire.id.into()));
+    io::prepared_completion(app.world_mut()).apply(app.world_mut());
+    let session = app.world().resource::<EditorSession>();
+    assert_eq!(session.effect.id, fire.id, "opened: {}", session.status);
+    assert!(!session.dirty);
+    let grid = session.effect.simulation_stages[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_fluid::MODULE_GRID)
+        .unwrap();
+    assert_eq!(
+        grid.parameter_value("multigrid_pressure"),
+        Some(aestra_core::Value::Bool(true))
+    );
+}
+
 #[test]
 fn discard_then_open_survives_viewport_sync_without_false_catalog_changes() {
     let directory = tempfile::tempdir().unwrap();
