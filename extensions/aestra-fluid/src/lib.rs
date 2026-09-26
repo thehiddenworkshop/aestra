@@ -206,7 +206,7 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
 }
 
 /// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 20] = [
+pub const ENTRY_POINTS: [&str; 21] = [
     "add_sources",
     "compute_vorticity",
     "vorticity_force",
@@ -215,6 +215,7 @@ pub const ENTRY_POINTS: [&str; 20] = [
     "advect_density",
     "compute_divergence",
     "relax_pressure",
+    "relax_pressure_back",
     "project",
     "add_heat",
     "combust",
@@ -1536,24 +1537,45 @@ impl StageLowerer for FluidSolverLowerer {
                 constants_read(),
             ],
         ));
-        steps.push(ExecutionOp::Repeat {
-            policy: RepeatPolicy::FixedCount(iterations),
-            body: with_barriers(vec![
-                pass(
-                    "relax_pressure",
-                    vec![
-                        read(RESOURCE_PRESSURE),
-                        write(RESOURCE_PRESSURE_NEXT),
-                        read(RESOURCE_DIVERGENCE),
-                        read(RESOURCE_SOLID),
-                        constants_read(),
-                    ],
-                ),
-                copy(RESOURCE_PRESSURE_NEXT, RESOURCE_PRESSURE),
-                // Closes the iteration: the next relax reads this copy.
-                ExecutionOp::Barrier,
-            ]),
-        });
+        // Jacobi sweeps ping-pong between the pressure grids: a pair per repeat, no copies; an odd
+        // count ends with one sweep copied back.
+        let relax = |back: bool| {
+            let (entry, from, to) = if back {
+                (
+                    "relax_pressure_back",
+                    RESOURCE_PRESSURE_NEXT,
+                    RESOURCE_PRESSURE,
+                )
+            } else {
+                ("relax_pressure", RESOURCE_PRESSURE, RESOURCE_PRESSURE_NEXT)
+            };
+            pass(
+                entry,
+                vec![
+                    read(from),
+                    write(to),
+                    read(RESOURCE_DIVERGENCE),
+                    read(RESOURCE_SOLID),
+                    constants_read(),
+                ],
+            )
+        };
+        if iterations >= 2 {
+            steps.push(ExecutionOp::Repeat {
+                policy: RepeatPolicy::FixedCount(iterations / 2),
+                // The barriers close each sweep: the next reads what it wrote.
+                body: vec![
+                    relax(false),
+                    ExecutionOp::Barrier,
+                    relax(true),
+                    ExecutionOp::Barrier,
+                ],
+            });
+        }
+        if iterations % 2 == 1 {
+            steps.push(relax(false));
+            steps.push(copy(RESOURCE_PRESSURE_NEXT, RESOURCE_PRESSURE));
+        }
         steps.push(pass(
             "project",
             vec![

@@ -365,9 +365,19 @@ enum ExecutionOpV4 {
         to: ResourceTypeId,
     },
     Repeat {
+        /// The iterations, or a convergent repeat's cap.
         count: u32,
         body: Vec<ExecutionOpV4>,
+        /// A convergent repeat's test (fluid F5); absent for a fixed count.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        until: Option<ConvergenceV4>,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ConvergenceV4 {
+    residual: ResourceTypeId,
+    tolerance: f32,
 }
 
 impl From<&ExecutionOp> for ExecutionOpV4 {
@@ -399,6 +409,17 @@ impl From<&ExecutionOp> for ExecutionOpV4 {
             ExecutionOp::Repeat { policy, body } => Self::Repeat {
                 count: policy.count(),
                 body: body.iter().map(Self::from).collect(),
+                until: match policy {
+                    RepeatPolicy::FixedCount(_) => None,
+                    RepeatPolicy::UntilConverged {
+                        residual,
+                        tolerance,
+                        ..
+                    } => Some(ConvergenceV4 {
+                        residual: residual.clone(),
+                        tolerance: *tolerance,
+                    }),
+                },
             },
         }
     }
@@ -432,8 +453,18 @@ impl From<ExecutionOpV4> for ExecutionOp {
             }),
             ExecutionOpV4::Barrier => Self::Barrier,
             ExecutionOpV4::Copy { from, to } => Self::Copy(CopyOp { from, to }),
-            ExecutionOpV4::Repeat { count, body } => Self::Repeat {
-                policy: RepeatPolicy::FixedCount(count),
+            ExecutionOpV4::Repeat { count, body, until } => Self::Repeat {
+                policy: match until {
+                    None => RepeatPolicy::FixedCount(count),
+                    Some(ConvergenceV4 {
+                        residual,
+                        tolerance,
+                    }) => RepeatPolicy::UntilConverged {
+                        residual,
+                        tolerance,
+                        max: count,
+                    },
+                },
                 body: body.into_iter().map(Self::from).collect(),
             },
         }

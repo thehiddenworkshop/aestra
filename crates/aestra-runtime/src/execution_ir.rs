@@ -168,18 +168,33 @@ pub struct CopyOp {
     pub to: ResourceTypeId,
 }
 
-/// How many times a [`ExecutionOp::Repeat`] body runs (extensible-stages M6). An enum so a future
-/// "until converged" policy can be added without changing call sites.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How many times a [`ExecutionOp::Repeat`] body runs (extensible-stages M6, fluid F5).
+#[derive(Debug, Clone, PartialEq)]
 pub enum RepeatPolicy {
     /// Run the body exactly `n` times (a fixed solver-iteration count).
     FixedCount(u32),
+    /// Run the body until the `f32` in word 0 of `residual` is at or below `tolerance` after an
+    /// iteration, at most `max` times (fluid F5: an iterative solve that stops once converged).
+    ///
+    /// The test runs **on the device, with no readback**: after each iteration the backend compares
+    /// the residual and, once it has converged, turns the remaining iterations' dispatches into empty
+    /// ones. So the body writes `residual` every iteration and holds only compute ops and barriers (a
+    /// copy cannot be skipped on the device). A residual that is not a number never converges: the
+    /// body then runs `max` times. The iterations that ran depend only on the stage's values, so a
+    /// rerun repeats them exactly.
+    UntilConverged {
+        residual: ResourceTypeId,
+        tolerance: f32,
+        max: u32,
+    },
 }
 
 impl RepeatPolicy {
-    pub fn count(self) -> u32 {
+    /// The most times the body runs: exactly for a fixed count, the cap for a convergent repeat.
+    pub fn count(&self) -> u32 {
         match self {
-            Self::FixedCount(n) => n,
+            Self::FixedCount(n) => *n,
+            Self::UntilConverged { max, .. } => *max,
         }
     }
 }
@@ -263,6 +278,9 @@ pub enum ExecutionError {
     InvalidBuiltinResource(ResourceTypeId),
     /// A field layout names an undeclared resource, is empty, or does not fit its resource.
     InvalidField(ResourceTypeId),
+    /// A convergent repeat's body holds a copy or a nested repeat, or its tolerance is not a finite,
+    /// non-negative number.
+    InvalidConvergentRepeat,
 }
 
 impl core::fmt::Display for ExecutionError {
@@ -276,6 +294,11 @@ impl core::fmt::Display for ExecutionError {
             }
             Self::EmptyDispatch(name) => write!(f, "compute op '{name}' has a zero dispatch shape"),
             Self::ZeroRepeat => write!(f, "a repeat policy would run its body zero times"),
+            Self::InvalidConvergentRepeat => write!(
+                f,
+                "a convergent repeat holds only compute ops and barriers, with a finite, \
+                 non-negative tolerance"
+            ),
             Self::InvalidField(id) => write!(
                 f,
                 "field layout of '{}' is empty or does not fit the declared resource",
@@ -363,7 +386,9 @@ impl ExecutionBlock {
     }
 
     /// The number of compute passes a run of this block performs, with repeats expanded — the count of
-    /// GPU dispatches (and of pass-level timestamp intervals) the native backend will issue.
+    /// GPU dispatches (and of pass-level timestamp intervals) the native backend will issue. A
+    /// convergent repeat counts at its cap (the dispatches are issued; past convergence they are
+    /// empty).
     pub fn compute_pass_count(&self) -> u32 {
         count_compute(&self.ops)
     }
@@ -396,6 +421,22 @@ fn validate_ops(
             ExecutionOp::Repeat { policy, body } => {
                 if policy.count() == 0 {
                     return Err(ExecutionError::ZeroRepeat);
+                }
+                if let RepeatPolicy::UntilConverged {
+                    residual,
+                    tolerance,
+                    ..
+                } = policy
+                {
+                    if !declared.contains(residual) {
+                        return Err(ExecutionError::UnknownResource(residual.clone()));
+                    }
+                    let skippable = body
+                        .iter()
+                        .all(|op| matches!(op, ExecutionOp::Compute(_) | ExecutionOp::Barrier));
+                    if !skippable || !tolerance.is_finite() || *tolerance < 0.0 {
+                        return Err(ExecutionError::InvalidConvergentRepeat);
+                    }
                 }
                 validate_ops(body, declared)?;
             }
@@ -442,6 +483,11 @@ fn trace_ops(ops: &[ExecutionOp], steps: &mut Vec<String>) {
             ExecutionOp::Repeat { policy, body } => {
                 for _ in 0..policy.count() {
                     trace_ops(body, steps);
+                    // The reference backend holds no values: it traces every iteration up to the
+                    // cap, each followed by the device-side test that may empty the rest.
+                    if let RepeatPolicy::UntilConverged { residual, .. } = policy {
+                        steps.push(format!("converged?:{}", residual.as_str()));
+                    }
                 }
             }
         }
@@ -570,6 +616,65 @@ mod tests {
             body: vec![compute("A")],
         }]);
         assert_eq!(zero_repeat.validate(), Err(ExecutionError::ZeroRepeat));
+    }
+
+    #[test]
+    fn a_convergent_repeat_traces_its_test_and_holds_only_skippable_ops() {
+        let until = |body: Vec<ExecutionOp>, tolerance: f32| ExecutionOp::Repeat {
+            policy: RepeatPolicy::UntilConverged {
+                residual: ResourceTypeId::new("res.field"),
+                tolerance,
+                max: 2,
+            },
+            body,
+        };
+        let block = field_block(vec![until(
+            vec![compute("B"), ExecutionOp::Barrier, compute("C")],
+            1e-3,
+        )]);
+        block.validate().expect("compute ops and barriers only");
+        assert_eq!(block.compute_pass_count(), 4, "counted at the cap");
+        assert_eq!(
+            execute_reference(&block).steps,
+            vec![
+                "compute:B",
+                "barrier",
+                "compute:C",
+                "converged?:res.field",
+                "compute:B",
+                "barrier",
+                "compute:C",
+                "converged?:res.field",
+            ]
+        );
+
+        let copy = ExecutionOp::Copy(CopyOp {
+            from: ResourceTypeId::new("res.field"),
+            to: ResourceTypeId::new("res.field"),
+        });
+        for invalid in [
+            until(vec![compute("B"), copy], 1e-3),
+            until(vec![until(vec![compute("B")], 1e-3)], 1e-3),
+            until(vec![compute("B")], f32::NAN),
+            until(vec![compute("B")], -1.0),
+        ] {
+            assert_eq!(
+                field_block(vec![invalid]).validate(),
+                Err(ExecutionError::InvalidConvergentRepeat)
+            );
+        }
+        let unknown = field_block(vec![ExecutionOp::Repeat {
+            policy: RepeatPolicy::UntilConverged {
+                residual: ResourceTypeId::new("res.missing"),
+                tolerance: 0.0,
+                max: 1,
+            },
+            body: vec![compute("B")],
+        }]);
+        assert!(matches!(
+            unknown.validate(),
+            Err(ExecutionError::UnknownResource(_))
+        ));
     }
 
     #[test]

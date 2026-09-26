@@ -689,9 +689,9 @@ fn consecutive_dispatches_share_passes_without_changing_the_result() {
     let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
     let passes = fluid.stage.passes_per_tick();
     let dispatches = fluid.stage.block().compute_pass_count() as usize;
-    // Every copy ends a pass: sources .. advect + correct velocity | divergence + relax | 23 relax |
-    // project + advect + correct density.
-    assert_eq!((dispatches, passes), (35, 26));
+    // Every copy ends a pass: sources .. advect + correct velocity | divergence, the 24 relaxations
+    // (a ping-pong: no copies, fluid F5), project, advect + correct density.
+    assert_eq!((dispatches, passes), (35, 2));
     // Many ticks encoded into ONE submission each see their own frame: the result equals ticking
     // with one submission per tick.
     let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());

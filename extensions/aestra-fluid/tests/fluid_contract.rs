@@ -77,7 +77,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
         .programs
         .get(&aestra_core::ComputeProgramId::new(PROGRAM_SOLVER))
         .unwrap();
-    assert_eq!(program.entry_points.len(), 20);
+    assert_eq!(program.entry_points.len(), aestra_fluid::ENTRY_POINTS.len());
     // The whole program — solver passes plus the host-binding accessors — validates.
     aestra_gpu::program_interface(program).expect("the solver program validates");
 }
@@ -142,6 +142,32 @@ fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).unwrap();
     assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 2 + 1 + 24 + 1 + 2);
+}
+
+/// Jacobi sweeps ping-pong between the pressure grids (fluid F5): an even count copies nothing, an
+/// odd one copies its last sweep back once.
+#[test]
+fn jacobi_sweeps_ping_pong_without_copies() {
+    let registry = fluid_registry();
+    let copies = |iterations: u32| {
+        let mut effect = smoke_effect(&registry);
+        set_input(
+            &mut effect,
+            MODULE_GRID,
+            "pressure_iterations",
+            Value::U32(iterations),
+        );
+        let stage = compile_stage(&registry, &effect);
+        check_program_block(&stage.block, &registry.programs).unwrap();
+        aestra_runtime::execute_reference(&stage.block)
+            .steps
+            .iter()
+            .filter(|step| step.contains("pressure_scratch->"))
+            .count()
+    };
+    assert_eq!(copies(24), 0);
+    assert_eq!(copies(25), 1);
+    assert_eq!(copies(1), 1);
 }
 
 #[test]

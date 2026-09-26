@@ -13,6 +13,9 @@
 //! - consecutive compute ops share one compute pass. WebGPU orders dependent dispatches inside a pass
 //!   (each dispatch is its own usage scope), so this is as correct as one pass per op and far
 //!   cheaper; a `Copy` ends the pass;
+//! - a convergent repeat (fluid F5) is expanded to its cap with its body dispatched **indirectly**; a
+//!   one-invocation test after each iteration empties every remaining shape once the residual has
+//!   converged, so the loop stops on the device without a readback;
 //! - before anything is allocated the block is checked against its programs' WGSL
 //!   ([`check_program_block`]), so the declared accesses the IR's hazard reasoning trusts are exactly
 //!   what the shaders use.
@@ -27,7 +30,7 @@ use aestra_core::{ComputeProgramId, ResourceTypeId};
 use aestra_gpu::{GpuHostBindings, check_program_block};
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
-    ExecutionBlock, ExecutionOp, FrameConstants, ResourceLifetime, StagedDispatch,
+    ExecutionBlock, ExecutionOp, FrameConstants, RepeatPolicy, ResourceLifetime, StagedDispatch,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
@@ -74,16 +77,61 @@ pub struct PassTimestamps<'a> {
 /// One step of a tick, with repeats expanded.
 #[derive(Debug, Clone, Copy)]
 enum Step {
-    /// A dispatch: its prepared pipeline/bind group and its shape.
+    /// A dispatch: its prepared pipeline/bind group and its shape. Inside a convergent repeat its
+    /// shape is read from that repeat's control buffer (`indirect`: the repeat, the byte offset).
     Compute {
         dispatch: usize,
         shape: StagedDispatch,
+        indirect: Option<(usize, u64)>,
+    },
+    /// A convergent repeat's device-side test after one iteration.
+    Check {
+        repeat: usize,
     },
     Copy {
         from: usize,
         to: usize,
     },
 }
+
+impl Step {
+    /// Encoded inside a compute pass.
+    fn in_pass(&self) -> bool {
+        matches!(self, Self::Compute { .. } | Self::Check { .. })
+    }
+}
+
+/// The device-side test of a [`RepeatPolicy::UntilConverged`] (fluid F5). Its control buffer holds
+/// `[iterations run, live, then (x, y, z) per body dispatch]`; the body dispatches indirectly from it,
+/// and after each iteration [`CONVERGENCE_WGSL`] zeroes every shape once the residual is at or below
+/// the tolerance — the remaining iterations then dispatch nothing. Reset from `initial` every tick.
+struct ConvergentRepeat {
+    control: wgpu::Buffer,
+    initial: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+}
+
+/// The convergence test: runs after each iteration of a convergent repeat, one invocation.
+const CONVERGENCE_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read> residual: array<u32>;
+@group(0) @binding(1) var<storage, read_write> control: array<u32>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
+
+@compute @workgroup_size(1)
+fn check() {
+    if (control[1] == 0u) {
+        return;
+    }
+    control[0] = control[0] + 1u;
+    // `<=` is false for a residual that is not a number: it never converges.
+    if (bitcast<f32>(residual[0]) <= bitcast<f32>(params[0])) {
+        control[1] = 0u;
+        for (var i = 0u; i < params[1] * 3u; i = i + 1u) {
+            control[2u + i] = 0u;
+        }
+    }
+}
+"#;
 
 /// One compiled plugin stage, allocated on a device and ready to run ticks.
 pub struct StageExecutor {
@@ -94,6 +142,9 @@ pub struct StageExecutor {
     dispatches: Vec<(usize, wgpu::BindGroup)>,
     /// A tick's steps, repeats expanded.
     steps: Vec<Step>,
+    /// Convergent repeats, in depth-first op order, and the test pipeline they share.
+    convergent: Vec<ConvergentRepeat>,
+    check: Option<wgpu::ComputePipeline>,
 }
 
 impl StageExecutor {
@@ -138,6 +189,8 @@ impl StageExecutor {
             pipelines: Vec::new(),
             dispatches: Vec::new(),
             steps: Vec::new(),
+            convergent: Vec::new(),
+            check: None,
         };
         if let Some(binding) = stage
             .binding(AESTRA_RESOURCE_STAGE_CONSTANTS)
@@ -162,11 +215,104 @@ impl StageExecutor {
             &mut dispatches,
         )?;
         stage.dispatches = dispatches;
+        stage.prepare_convergence(device, &block.ops)?;
         let mut steps = Vec::new();
-        let mut cursor = 0;
-        stage.expand_steps(&block.ops, &mut cursor, &mut steps)?;
+        let (mut cursor, mut repeat) = (0, 0);
+        stage.expand_steps(&block.ops, &mut cursor, &mut repeat, None, &mut steps)?;
         stage.steps = steps;
         Ok(stage)
+    }
+
+    /// Allocates each convergent repeat's control buffer and binds its test, in depth-first order.
+    fn prepare_convergence(
+        &mut self,
+        device: &wgpu::Device,
+        ops: &[ExecutionOp],
+    ) -> Result<(), String> {
+        for op in ops {
+            let ExecutionOp::Repeat { policy, body } = op else {
+                continue;
+            };
+            let RepeatPolicy::UntilConverged {
+                residual,
+                tolerance,
+                ..
+            } = policy
+            else {
+                self.prepare_convergence(device, body)?;
+                continue;
+            };
+            let shapes: Vec<StagedDispatch> = body
+                .iter()
+                .filter_map(|op| match op {
+                    ExecutionOp::Compute(compute) => Some(compute.dispatch),
+                    _ => None,
+                })
+                .collect();
+            let mut words = vec![0, 1];
+            for shape in &shapes {
+                words.extend([shape.x, shape.y, shape.z]);
+            }
+            let bytes = words_to_bytes(&words);
+            let initial = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("aestra convergence reset"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::COPY_SRC,
+            });
+            let control = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("aestra convergence control"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            });
+            let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("aestra convergence tolerance"),
+                contents: &words_to_bytes(&[tolerance.to_bits(), shapes.len() as u32]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+            let residual = self.require_binding(residual.as_str())?;
+            let residual = &self.buffers[residual];
+            let check = self.check.get_or_insert_with(|| {
+                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("aestra convergence"),
+                    source: wgpu::ShaderSource::Wgsl(CONVERGENCE_WGSL.into()),
+                });
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("aestra convergence"),
+                    layout: None,
+                    module: &module,
+                    entry_point: Some("check"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                })
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("aestra convergence"),
+                layout: &check.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: residual.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: control.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params.as_entire_binding(),
+                    },
+                ],
+            });
+            self.convergent.push(ConvergentRepeat {
+                control,
+                initial,
+                bind_group,
+            });
+        }
+        Ok(())
     }
 
     fn prepare_ops(
@@ -243,20 +389,28 @@ impl StageExecutor {
         Ok(())
     }
 
+    /// Expands `ops` into steps. `cursor` walks the prepared dispatches, `repeat` the convergent
+    /// repeats; `convergent` is the repeat whose body `ops` is, if any.
     fn expand_steps(
         &self,
         ops: &[ExecutionOp],
         cursor: &mut usize,
+        repeat: &mut usize,
+        convergent: Option<usize>,
         steps: &mut Vec<Step>,
     ) -> Result<(), String> {
+        let mut body_dispatch = 0u64;
         for op in ops {
             match op {
                 ExecutionOp::Compute(compute) => {
                     steps.push(Step::Compute {
                         dispatch: *cursor,
                         shape: compute.dispatch,
+                        // After the two leading control words, three per dispatch.
+                        indirect: convergent.map(|repeat| (repeat, (2 + 3 * body_dispatch) * 4)),
                     });
                     *cursor += 1;
+                    body_dispatch += 1;
                 }
                 ExecutionOp::Barrier => {} // pass order already orders dependent dispatches
                 ExecutionOp::Copy(copy) => steps.push(Step::Copy {
@@ -265,9 +419,18 @@ impl StageExecutor {
                 }),
                 ExecutionOp::Repeat { policy, body } => {
                     let start = *cursor;
+                    let own = matches!(policy, RepeatPolicy::UntilConverged { .. }).then(|| {
+                        *repeat += 1;
+                        *repeat - 1
+                    });
+                    let nested_start = *repeat;
                     for _ in 0..policy.count() {
                         *cursor = start;
-                        self.expand_steps(body, cursor, steps)?;
+                        *repeat = nested_start;
+                        self.expand_steps(body, cursor, repeat, own, steps)?;
+                        if let Some(own) = own {
+                            steps.push(Step::Check { repeat: own });
+                        }
                     }
                 }
             }
@@ -292,10 +455,25 @@ impl StageExecutor {
             .iter()
             .enumerate()
             .filter(|(index, step)| {
-                matches!(step, Step::Compute { .. })
-                    && (*index == 0 || !matches!(self.steps[index - 1], Step::Compute { .. }))
+                step.in_pass() && (*index == 0 || !self.steps[index - 1].in_pass())
             })
             .count()
+    }
+
+    /// How many iterations each convergent repeat ran in the last tick encoded, in depth-first op
+    /// order (blocking readback: for tests, benchmarks and tools).
+    pub fn convergent_iterations(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Vec<u32>, String> {
+        self.convergent
+            .iter()
+            .map(|repeat| {
+                let bytes = read_buffer(device, queue, &repeat.control)?;
+                Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+            })
+            .collect()
     }
 
     fn binding(&self, id: &str) -> Option<usize> {
@@ -341,6 +519,16 @@ impl StageExecutor {
                 encoder.clear_buffer(buffer, 0, None);
             }
         }
+        // Every convergent repeat starts the tick live, with its full dispatch shapes.
+        for repeat in &self.convergent {
+            encoder.copy_buffer_to_buffer(
+                &repeat.initial,
+                0,
+                &repeat.control,
+                0,
+                repeat.initial.size(),
+            );
+        }
         let pass_count = self.passes_per_tick();
         let mut pass_index = 0;
         let mut index = 0;
@@ -351,7 +539,7 @@ impl StageExecutor {
                     encoder.copy_buffer_to_buffer(from, 0, to, 0, from.size().min(to.size()));
                     index += 1;
                 }
-                Step::Compute { .. } => {
+                Step::Compute { .. } | Step::Check { .. } => {
                     let timestamp_writes = timestamps.and_then(|stamps| {
                         let begin = stamps.begin.filter(|_| pass_index == 0);
                         let end = stamps.end.filter(|_| pass_index + 1 == pass_count);
@@ -367,11 +555,32 @@ impl StageExecutor {
                         label: Some("aestra stage"),
                         timestamp_writes,
                     });
-                    while let Some(Step::Compute { dispatch, shape }) = self.steps.get(index) {
-                        let (pipeline, bind_group) = &self.dispatches[*dispatch];
-                        pass.set_pipeline(&self.pipelines[*pipeline]);
-                        pass.set_bind_group(0, bind_group, &[]);
-                        pass.dispatch_workgroups(shape.x, shape.y, shape.z);
+                    while let Some(step) = self.steps.get(index).filter(|step| step.in_pass()) {
+                        match *step {
+                            Step::Compute {
+                                dispatch,
+                                shape,
+                                indirect,
+                            } => {
+                                let (pipeline, bind_group) = &self.dispatches[dispatch];
+                                pass.set_pipeline(&self.pipelines[*pipeline]);
+                                pass.set_bind_group(0, bind_group, &[]);
+                                match indirect {
+                                    Some((repeat, offset)) => pass.dispatch_workgroups_indirect(
+                                        &self.convergent[repeat].control,
+                                        offset,
+                                    ),
+                                    None => pass.dispatch_workgroups(shape.x, shape.y, shape.z),
+                                }
+                            }
+                            Step::Check { repeat } => {
+                                let check = self.check.as_ref().expect("prepared with its repeats");
+                                pass.set_pipeline(check);
+                                pass.set_bind_group(0, &self.convergent[repeat].bind_group, &[]);
+                                pass.dispatch_workgroups(1, 1, 1);
+                            }
+                            Step::Copy { .. } => unreachable!("filtered to in-pass steps"),
+                        }
                         index += 1;
                     }
                     pass_index += 1;
@@ -487,34 +696,7 @@ impl StageExecutor {
         queue: &wgpu::Queue,
         id: &str,
     ) -> Result<Vec<u8>, String> {
-        let source = &self.buffers[self.require_binding(id)?];
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aestra stage readback"),
-            size: source.size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        encoder.copy_buffer_to_buffer(source, 0, &readback, 0, source.size());
-        queue.submit([encoder.finish()]);
-        let slice = readback.slice(..);
-        let (sender, receiver) = mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: Some(READBACK_TIMEOUT),
-            })
-            .map_err(|error| error.to_string())?;
-        receiver
-            .recv_timeout(READBACK_TIMEOUT)
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.to_string())?;
-        let bytes = slice.get_mapped_range().to_vec();
-        readback.unmap();
-        Ok(bytes)
+        read_buffer(device, queue, &self.buffers[self.require_binding(id)?])
     }
 
     /// Reads every persistent resource the stage owns back to the CPU (blocking).
@@ -941,6 +1123,41 @@ fn retain_every_other<T>(items: &mut Vec<T>) {
         keep = !keep;
         keep
     });
+}
+
+/// Reads a buffer back (blocking).
+fn read_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &wgpu::Buffer,
+) -> Result<Vec<u8>, String> {
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("aestra stage readback"),
+        size: source.size(),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_buffer(source, 0, &readback, 0, source.size());
+    queue.submit([encoder.finish()]);
+    let slice = readback.slice(..);
+    let (sender, receiver) = mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = sender.send(result);
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(READBACK_TIMEOUT),
+        })
+        .map_err(|error| error.to_string())?;
+    receiver
+        .recv_timeout(READBACK_TIMEOUT)
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let bytes = slice.get_mapped_range().to_vec();
+    readback.unmap();
+    Ok(bytes)
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {

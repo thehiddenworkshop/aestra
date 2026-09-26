@@ -9,6 +9,7 @@ mod host_bindings;
 pub mod material;
 pub mod mesh_bounds;
 pub mod particle_attributes;
+pub mod reduce;
 pub mod ribbon_bounds;
 pub mod shader;
 pub mod volume;

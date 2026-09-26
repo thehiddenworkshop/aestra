@@ -538,12 +538,18 @@ fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
     divergence[cell_index(cell)] = net / cell_size();
 }
 
-// One Jacobi iteration of the compact 7-point Poisson equation ∇²p = ∇·u. A closed side or a solid is
-// a Neumann wall (the neighbour is left out); an open side holds p = 0 outside (the neighbour counts
-// as zero). Solid cells hold no pressure.
-@compute @workgroup_size(4, 4, 4)
-fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
-    if (!in_grid(cell)) { return; }
+// The pressure of cell `i` in the Jacobi ping-pong: `pressure`, or `pressure_next` on a back sweep.
+fn jacobi_pressure(i: u32, back: bool) -> f32 {
+    if (back) {
+        return pressure_next[i];
+    }
+    return pressure[i];
+}
+
+// One Jacobi iteration of the compact 7-point Poisson equation ∇²p = ∇·u at `cell`, from the
+// pressures of the current sweep. A closed side or a solid is a Neumann wall (the neighbour is left
+// out); an open side holds p = 0 outside (the neighbour counts as zero). Solid cells hold no pressure.
+fn jacobi(cell: vec3<u32>, back: bool) -> f32 {
     let c = vec3<i32>(cell);
     var sum = 0.0;
     var count = 0.0;
@@ -554,7 +560,7 @@ fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
             let neighbour = select(c - step, c + step, positive);
             if (inside(neighbour)) {
                 if (!is_solid(neighbour)) {
-                    sum += pressure[clamped_index(neighbour)];
+                    sum += jacobi_pressure(clamped_index(neighbour), back);
                     count += 1.0;
                 }
             } else if (side_open(axis, positive)) {
@@ -570,7 +576,20 @@ fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (count > 0.0) {
         relaxed = (sum - h * h * divergence[cell_index(cell)]) / count;
     }
-    pressure_next[cell_index(cell)] = relaxed;
+    return relaxed;
+}
+
+// The Jacobi sweeps ping-pong between the two pressure grids, so no copy ends each iteration.
+@compute @workgroup_size(4, 4, 4)
+fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    pressure_next[cell_index(cell)] = jacobi(cell, false);
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn relax_pressure_back(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    pressure[cell_index(cell)] = jacobi(cell, true);
 }
 
 // Subtracts the pressure gradient across each face. A face on a closed side carries no flow; on an
