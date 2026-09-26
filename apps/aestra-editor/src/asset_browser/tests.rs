@@ -250,6 +250,7 @@ pub(super) fn browser_app(root: &Path) -> App {
         TextPlugin,
         InputFocusPlugin,
         ListBoxPlugin,
+        bevy::ui_widgets::ButtonPlugin,
     ))
     .init_asset::<Image>()
     .init_asset::<bevy_resvg::prelude::SvgFile>()
@@ -1746,6 +1747,16 @@ fn click(app: &mut App, target: Entity, count: u8) {
 }
 
 fn click_button(app: &mut App, target: Entity, count: u8, button: PointerButton) {
+    click_button_at(app, target, count, button, Vec2::ZERO);
+}
+
+fn click_button_at(
+    app: &mut App,
+    target: Entity,
+    count: u8,
+    button: PointerButton,
+    position: Vec2,
+) {
     use bevy::{
         camera::NormalizedRenderTarget,
         picking::{
@@ -1760,7 +1771,7 @@ fn click_button(app: &mut App, target: Entity, count: u8, button: PointerButton)
                 width: 800,
                 height: 600,
             },
-            position: Vec2::ZERO,
+            position,
         },
         Click {
             button,
@@ -1771,6 +1782,102 @@ fn click_button(app: &mut App, target: Entity, count: u8, button: PointerButton)
         target,
     ));
     app.update();
+}
+
+#[test]
+fn effect_single_click_opens_from_every_tile_hit_target_with_native_button_observers() {
+    for view in [ViewMode::List, ViewMode::Grid] {
+        for hit in 0..5 {
+            let root = tempfile::tempdir().unwrap();
+            let effect = test_support::session_with_timing_slack().effect;
+            effect
+                .save_ron(root.path().join("valid.aestra.ron"))
+                .unwrap();
+            let mut app = browser_app(root.path());
+            app.world_mut().resource_mut::<AssetBrowserState>().view = view;
+            app.update();
+            app.init_resource::<OpenRequests>().add_observer(
+                |action: On<DocumentAction>, mut requests: ResMut<OpenRequests>| {
+                    requests.0.push(*action);
+                },
+            );
+            let (source, row) = rows(&mut app).into_iter().next().unwrap();
+            let children = app.world().get::<Children>(row).unwrap();
+            let caption = children[0];
+            let thumbnail = children[1];
+            let labels = app.world().get::<Children>(caption).unwrap();
+            let target = match hit {
+                0 => row,
+                1 => caption,
+                2 => labels[0],
+                3 => labels[1],
+                _ => thumbnail,
+            };
+            click(&mut app, target, 1);
+            assert_eq!(
+                app.world().resource::<AssetBrowserState>().selected,
+                Some(source)
+            );
+            assert_eq!(
+                app.world().resource::<OpenRequests>().0,
+                [DocumentAction::OpenCatalog(EffectAssetRef::new(effect.id))],
+                "single click: view={view:?}, hit={hit}"
+            );
+            // The second half of a double-click must not reopen the effect.
+            click_button_at(
+                &mut app,
+                target,
+                2,
+                PointerButton::Primary,
+                Vec2::new(12.0, 0.0),
+            );
+            assert_eq!(
+                app.world().resource::<OpenRequests>().0,
+                [DocumentAction::OpenCatalog(EffectAssetRef::new(effect.id))],
+                "view={view:?}, hit={hit}"
+            );
+        }
+    }
+}
+
+#[test]
+fn effect_single_click_respects_drag_rename_and_duplicate_source_guards() {
+    for guard in 0..3 {
+        let root = tempfile::tempdir().unwrap();
+        let effect = test_support::session_with_timing_slack().effect;
+        effect
+            .save_ron(root.path().join("valid.aestra.ron"))
+            .unwrap();
+        if guard == 2 {
+            effect
+                .save_ron(root.path().join("duplicate.aestra.ron"))
+                .unwrap();
+        }
+        let mut app = browser_app(root.path());
+        app.init_resource::<OpenRequests>().add_observer(
+            |action: On<DocumentAction>, mut requests: ResMut<OpenRequests>| {
+                requests.0.push(*action);
+            },
+        );
+        let (_, row) = rows(&mut app).into_iter().next().unwrap();
+        let target = if guard == 1 {
+            app.world_mut()
+                .spawn((super::operations::InlineRenameEditor, ChildOf(row)))
+                .id()
+        } else {
+            row
+        };
+        if guard == 0 {
+            app.world_mut()
+                .resource_mut::<super::drag_drop::AssetDrag>()
+                .suppress_click = true;
+        }
+        click(&mut app, target, 1);
+        assert!(
+            app.world().resource::<OpenRequests>().0.is_empty(),
+            "guard={guard}"
+        );
+    }
 }
 
 #[test]
@@ -1791,7 +1898,10 @@ fn pointer_selects_and_opens_effect_from_row_content() {
         app.world().resource::<AssetBrowserState>().selected,
         Some(source)
     );
-    assert!(app.world().resource::<OpenRequests>().0.is_empty());
+    assert_eq!(
+        app.world().resource::<OpenRequests>().0,
+        [DocumentAction::OpenCatalog(EffectAssetRef::new(effect.id))]
+    );
     assert_eq!(app.world().resource::<AssetBrowserState>().inspected, None);
     assert_eq!(
         app.world_mut()
@@ -2158,11 +2268,24 @@ fn browser_effect_activation_loads_documents_through_the_background_worker() {
             .unwrap()
             .id;
         let row = rows(&mut app)[&source];
-        click(&mut app, row, 1);
         match activation {
-            0 => click(&mut app, row, 2),
-            1 => key(&mut app, KeyCode::Enter),
-            _ => app.world_mut().trigger(BrowserAction::OpenSelected),
+            0 => click(&mut app, row, 1),
+            1 => {
+                // Keyboard selection does not open until Enter is pressed.
+                let list = list(&mut app);
+                app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
+                app.world_mut()
+                    .entity_mut(list)
+                    .insert(ActiveDescendant(Some(row)));
+                app.insert_resource(InputFocus::from_entity(list));
+                app.update();
+                key(&mut app, KeyCode::Enter);
+            }
+            _ => {
+                app.world_mut().resource_mut::<AssetBrowserState>().selected = Some(source);
+                app.update();
+                app.world_mut().trigger(BrowserAction::OpenSelected);
+            }
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while app.world().resource::<EditorSession>().source_path.as_ref() != Some(&path) {

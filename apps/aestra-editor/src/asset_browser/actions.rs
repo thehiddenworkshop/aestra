@@ -399,12 +399,16 @@ pub(super) fn click_row(
         }
         state.selected = Some(row.0);
         let now = time.elapsed_secs_f64();
-        let double = clicks.0.is_some_and(|(id, at, position, pointer)| {
-            id == row.0
-                && pointer == event.pointer_id
-                && now - at <= 0.5
-                && position.distance(event.pointer_location.position) <= 6.0
-        });
+        // Honor the picker count for repeated hits on one surface. The row-based
+        // fallback also recognizes a double-click whose hits switch between the
+        // thumbnail, caption, and background of the same asset.
+        let double = event.count == 2
+            || clicks.0.is_some_and(|(id, at, position, pointer)| {
+                id == row.0
+                    && pointer == event.pointer_id
+                    && now - at <= 0.5
+                    && position.distance(event.pointer_location.position) <= 6.0
+            });
         clicks.0 = if double {
             None
         } else {
@@ -415,7 +419,15 @@ pub(super) fn click_row(
                 event.pointer_id,
             ))
         };
-        if double {
+        let effect = matches!(
+            catalog.content().asset_for_source(row.0),
+            Some(ProjectAssetId::Effect(_))
+        );
+        // Effects open on the first click anywhere in the row. Do not enqueue a
+        // second open for the other half of a double-click; other assets retain
+        // their select-then-double-click behavior.
+        let should_open = if effect { !double } else { double };
+        if should_open {
             open_source(row.0, false, &catalog, &mut state, &mut commands);
         }
         event.propagate(false);
