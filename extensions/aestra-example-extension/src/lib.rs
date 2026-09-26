@@ -252,6 +252,7 @@ impl StageLowerer for FieldForcesLowerer {
                     entry_point: module.entry_point.clone(),
                     accesses: vec![ResourceAccess::read_write(RESOURCE_FORCE_FIELD)],
                     dispatch: field_dispatch,
+                    indirect: None,
                 })
             })
             .collect();
@@ -269,6 +270,7 @@ impl StageLowerer for FieldForcesLowerer {
                 y: 1,
                 z: 1,
             },
+            indirect: None,
         }));
         Ok(ExecutionBlock {
             resources: vec![

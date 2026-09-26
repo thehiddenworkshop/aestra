@@ -16,6 +16,8 @@
 //! - a convergent repeat (fluid F5) is expanded to its cap with its body dispatched **indirectly**; a
 //!   one-invocation test after each iteration empties every remaining shape once the residual has
 //!   converged, so the loop stops on the device without a readback;
+//! - an op with `indirect` counts (fluid F7) is sized on the device: its workgroup counts are read
+//!   from a resource earlier ops wrote (a sparse grid's active bricks), again without a readback;
 //! - before anything is allocated the block is checked against its programs' WGSL
 //!   ([`check_program_block`]), so the declared accesses the IR's hazard reasoning trusts are exactly
 //!   what the shaders use.
@@ -74,15 +76,32 @@ pub struct PassTimestamps<'a> {
     pub end: Option<u32>,
 }
 
+/// Where an indirect dispatch reads its workgroup counts.
+#[derive(Debug, Clone, Copy)]
+enum Indirect {
+    /// A convergent repeat's control buffer: the repeat, the byte offset.
+    Control(usize, u64),
+    /// A declared resource the block's ops wrote them to (fluid F7): its binding, the byte offset.
+    Resource(usize, u64),
+}
+
 /// One step of a tick, with repeats expanded.
 #[derive(Debug, Clone, Copy)]
 enum Step {
-    /// A dispatch: its prepared pipeline/bind group and its shape. Inside a convergent repeat its
-    /// shape is read from that repeat's control buffer (`indirect`: the repeat, the byte offset).
+    /// A dispatch: its prepared pipeline/bind group and its shape, unless its shape is read on the
+    /// device. Inside a convergent repeat every body shape is read from the repeat's control buffer.
     Compute {
         dispatch: usize,
         shape: StagedDispatch,
-        indirect: Option<(usize, u64)>,
+        indirect: Option<Indirect>,
+    },
+    /// Before a convergent repeat runs: an indirect body op's device-written counts copied into its
+    /// slot of the repeat's control buffer (resource binding and byte offset, repeat, slot offset).
+    Counts {
+        from: usize,
+        offset: u64,
+        repeat: usize,
+        to: u64,
     },
     /// A convergent repeat's device-side test: after an iteration, or before the first one (which
     /// counts no iteration).
@@ -243,8 +262,15 @@ impl StageExecutor {
         block.validate().map_err(|error| error.to_string())?;
         check_program_block_cached(block, programs, &mut cache.interfaces)?;
 
+        let mut counts = Vec::new();
+        indirect_sources(&block.ops, &mut counts);
         let mut buffers = Vec::with_capacity(block.resources.len());
         for resource in &block.resources {
+            let indirect = if counts.contains(&&resource.id) {
+                wgpu::BufferUsages::INDIRECT
+            } else {
+                wgpu::BufferUsages::empty()
+            };
             let bytes = match resource.id.as_str() {
                 AESTRA_RESOURCE_HOST_BINDINGS => host_binding_bytes,
                 _ => resource.bytes,
@@ -260,7 +286,8 @@ impl StageExecutor {
                 size: bytes.next_multiple_of(4),
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
+                    | wgpu::BufferUsages::COPY_DST
+                    | indirect,
                 mapped_at_creation: false,
             }));
         }
@@ -493,11 +520,21 @@ impl StageExecutor {
         for op in ops {
             match op {
                 ExecutionOp::Compute(compute) => {
+                    let indirect = match (convergent, &compute.indirect) {
+                        // After the two leading control words, three per dispatch.
+                        (Some(repeat), _) => {
+                            Some(Indirect::Control(repeat, (2 + 3 * body_dispatch) * 4))
+                        }
+                        (None, Some(counts)) => Some(Indirect::Resource(
+                            self.require_binding(counts.resource.as_str())?,
+                            u64::from(counts.word) * 4,
+                        )),
+                        (None, None) => None,
+                    };
                     steps.push(Step::Compute {
                         dispatch: *cursor,
                         shape: compute.dispatch,
-                        // After the two leading control words, three per dispatch.
-                        indirect: convergent.map(|repeat| (repeat, (2 + 3 * body_dispatch) * 4)),
+                        indirect,
                     });
                     *cursor += 1;
                     body_dispatch += 1;
@@ -514,6 +551,24 @@ impl StageExecutor {
                         *repeat - 1
                     });
                     let nested_start = *repeat;
+                    if let Some(own) = own {
+                        // Device-written counts replace their ops' full shapes before the repeat
+                        // starts (its test then empties them once converged).
+                        let body_ops = body.iter().filter_map(|op| match op {
+                            ExecutionOp::Compute(compute) => Some(compute),
+                            _ => None,
+                        });
+                        for (slot, compute) in body_ops.enumerate() {
+                            if let Some(counts) = &compute.indirect {
+                                steps.push(Step::Counts {
+                                    from: self.require_binding(counts.resource.as_str())?,
+                                    offset: u64::from(counts.word) * 4,
+                                    repeat: own,
+                                    to: (2 + 3 * slot as u64) * 4,
+                                });
+                            }
+                        }
+                    }
                     if let (
                         Some(own),
                         RepeatPolicy::UntilConverged {
@@ -644,6 +699,16 @@ impl StageExecutor {
                     encoder.copy_buffer_to_buffer(from, 0, to, 0, from.size().min(to.size()));
                     index += 1;
                 }
+                Step::Counts {
+                    from,
+                    offset,
+                    repeat,
+                    to,
+                } => {
+                    let control = &self.convergent[repeat].control;
+                    encoder.copy_buffer_to_buffer(&self.buffers[from], offset, control, to, 12);
+                    index += 1;
+                }
                 Step::Compute { .. } | Step::Check { .. } => {
                     let timestamp_writes = timestamps.and_then(|stamps| {
                         let begin = stamps.begin.filter(|_| pass_index == 0);
@@ -671,10 +736,16 @@ impl StageExecutor {
                                 pass.set_pipeline(&self.pipelines[*pipeline]);
                                 pass.set_bind_group(0, bind_group, &[]);
                                 match indirect {
-                                    Some((repeat, offset)) => pass.dispatch_workgroups_indirect(
-                                        &self.convergent[repeat].control,
-                                        offset,
-                                    ),
+                                    Some(Indirect::Control(repeat, offset)) => pass
+                                        .dispatch_workgroups_indirect(
+                                            &self.convergent[repeat].control,
+                                            offset,
+                                        ),
+                                    Some(Indirect::Resource(binding, offset)) => pass
+                                        .dispatch_workgroups_indirect(
+                                            &self.buffers[binding],
+                                            offset,
+                                        ),
                                     None => pass.dispatch_workgroups(shape.x, shape.y, shape.z),
                                 }
                             }
@@ -684,7 +755,9 @@ impl StageExecutor {
                                 pass.set_bind_group(0, &self.convergent[repeat].bind_group, &[]);
                                 pass.dispatch_workgroups(1, 1, 1);
                             }
-                            Step::Copy { .. } => unreachable!("filtered to in-pass steps"),
+                            Step::Copy { .. } | Step::Counts { .. } => {
+                                unreachable!("filtered to in-pass steps")
+                            }
                         }
                         index += 1;
                     }
@@ -1231,6 +1304,21 @@ fn retain_every_other<T>(items: &mut Vec<T>) {
 }
 
 /// Reads a buffer back (blocking).
+/// The resources indirect compute ops read their counts from.
+fn indirect_sources<'a>(ops: &'a [ExecutionOp], sources: &mut Vec<&'a ResourceTypeId>) {
+    for op in ops {
+        match op {
+            ExecutionOp::Compute(compute) => {
+                if let Some(counts) = &compute.indirect {
+                    sources.push(&counts.resource);
+                }
+            }
+            ExecutionOp::Repeat { body, .. } => indirect_sources(body, sources),
+            ExecutionOp::Barrier | ExecutionOp::Copy(_) => {}
+        }
+    }
+}
+
 fn read_buffer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

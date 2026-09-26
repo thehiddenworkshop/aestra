@@ -17,6 +17,7 @@ const VALUE: &str = "org.example.test::resource/value";
 const RESIDUAL: &str = "org.example.test::resource/residual";
 const VALUES: &str = "org.example.test::resource/values";
 const PARTIALS: &str = "org.example.test::resource/partials";
+const COUNTS: &str = "org.example.test::resource/counts";
 
 /// `value` holds [the halved value, how many times `halve` ran]; `residual` the value after each run.
 const WGSL: &str = r#"
@@ -24,6 +25,22 @@ const WGSL: &str = r#"
 @group(0) @binding(1) var<storage, read_write> residual: array<f32>;
 @group(0) @binding(2) var<storage, read_write> values: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read_write> partials: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read_write> counts: array<u32>;
+
+// Workgroup counts for a device-sized `halve`: one, or none.
+@compute @workgroup_size(1)
+fn open_counts() {
+    counts[0] = 1u;
+    counts[1] = 1u;
+    counts[2] = 1u;
+}
+
+@compute @workgroup_size(1)
+fn close_counts() {
+    counts[0] = 0u;
+    counts[1] = 1u;
+    counts[2] = 1u;
+}
 
 @compute @workgroup_size(1)
 fn start() {
@@ -111,9 +128,16 @@ fn registry_with(wgsl: &str) -> ExtensionRegistry {
         .register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM),
             wgsl: format!("{wgsl}\n{}", aestra_gpu::reduce::REDUCE_WGSL),
-            entry_points: ["start", "halve", "reduce_groups", "reduce_partials"]
-                .map(String::from)
-                .to_vec(),
+            entry_points: [
+                "start",
+                "halve",
+                "reduce_groups",
+                "reduce_partials",
+                "open_counts",
+                "close_counts",
+            ]
+            .map(String::from)
+            .to_vec(),
         })
         .unwrap();
     registry
@@ -126,6 +150,7 @@ fn pass(entry: &str, accesses: Vec<ResourceAccess>, x: u32) -> ExecutionOp {
         entry_point: entry.into(),
         accesses,
         dispatch: StagedDispatch { x, y: 1, z: 1 },
+        indirect: None,
     })
 }
 
@@ -263,6 +288,55 @@ fn a_program_cache_reuses_pipelines_until_the_program_changes() {
     // The same program id with another source compiles again: quartering converges in two runs.
     let quartering = registry_with(&WGSL.replace("value[0] * 0.5", "value[0] * 0.25"));
     assert_eq!(run(&quartering), [0.0625, 2.0]);
+}
+
+#[test]
+fn a_device_sized_body_op_takes_its_counts_as_the_repeat_starts() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let run = |counts_entry: &str| {
+        let mut block = halving(0.1, 10, false);
+        // Bindings follow declaration order: the counts are the fifth resource.
+        block.resources.extend([
+            resource(VALUES, 16, ResourceLifetime::Transient),
+            resource(PARTIALS, 16, ResourceLifetime::Transient),
+            resource(COUNTS, 12, ResourceLifetime::Transient),
+        ]);
+        block.ops.insert(
+            1,
+            pass(counts_entry, vec![ResourceAccess::read_write(COUNTS)], 1),
+        );
+        let ExecutionOp::Repeat { body, .. } = &mut block.ops[2] else {
+            unreachable!("the halving loop")
+        };
+        let ExecutionOp::Compute(halve) = &mut body[0] else {
+            unreachable!("halve")
+        };
+        halve.indirect = Some(aestra_runtime::IndirectDispatch {
+            resource: ResourceTypeId::new(COUNTS),
+            word: 0,
+        });
+        let stage = StageExecutor::new(&gpu.device, &gpu.queue, &block, &registry.programs, 4)
+            .expect("the block runs");
+        stage
+            .run_tick(
+                &gpu.device,
+                &gpu.queue,
+                FrameConstants::fixed_step(0, 1.0 / 60.0, 0),
+                None,
+            )
+            .unwrap();
+        let value = floats(&stage.read_resource(&gpu.device, &gpu.queue, VALUE).unwrap());
+        let iterations = stage
+            .convergent_iterations(&gpu.device, &gpu.queue)
+            .unwrap();
+        (value, iterations)
+    };
+
+    // One workgroup: the loop converges as with fixed counts.
+    assert_eq!(run("open_counts"), (vec![0.0625, 4.0], vec![4]));
+    // None: nothing halves, so nothing converges; the loop runs its cap of empty iterations.
+    assert_eq!(run("close_counts"), (vec![1.0, 0.0], vec![10]));
 }
 
 /// The same fixed tree on the CPU: a workgroup halves its active range, adding the upper half on.

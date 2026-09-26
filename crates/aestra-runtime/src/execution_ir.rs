@@ -158,7 +158,22 @@ pub struct ComputeOp {
     pub program: Option<ComputeProgramId>,
     pub entry_point: String,
     pub accesses: Vec<ResourceAccess>,
+    /// The workgroup counts; with [`Self::indirect`], the most the device-written counts may be.
     pub dispatch: StagedDispatch,
+    /// Workgroup counts the device decides (fluid F7, G7): read when the op runs, so a pass can cover
+    /// only what earlier ops found to be live (a sparse grid's active bricks) without a readback.
+    pub indirect: Option<IndirectDispatch>,
+}
+
+/// Where an indirect [`ComputeOp`] reads its workgroup counts: the three `u32` words x, y, z starting
+/// at word `word` of `resource`, written by earlier ops. They must not exceed the op's `dispatch` —
+/// the bound budgets and pass counts are planned with — and a count of zero dispatches nothing. The
+/// resource needs no access of its own on the op: the dispatch reads it, not the program. When the op
+/// does bind it, it may only read it (a dispatch cannot read its counts from a buffer it writes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndirectDispatch {
+    pub resource: ResourceTypeId,
+    pub word: u32,
 }
 
 /// A copy between two resources.
@@ -286,6 +301,8 @@ pub enum ExecutionError {
     /// A convergent repeat's body holds a copy or a nested repeat, or its tolerance is not a finite,
     /// non-negative number.
     InvalidConvergentRepeat,
+    /// An indirect compute op's counts do not fit in their resource, or the op writes that resource.
+    InvalidIndirect(String),
 }
 
 impl core::fmt::Display for ExecutionError {
@@ -303,6 +320,11 @@ impl core::fmt::Display for ExecutionError {
                 f,
                 "a convergent repeat holds only compute ops and barriers, with a finite, \
                  non-negative tolerance"
+            ),
+            Self::InvalidIndirect(name) => write!(
+                f,
+                "compute op '{name}' reads its workgroup counts past the end of their resource, or \
+                 from a resource it writes"
             ),
             Self::InvalidField(id) => write!(
                 f,
@@ -356,7 +378,12 @@ impl ExecutionBlock {
                 return Err(ExecutionError::InvalidField(field.resource.clone()));
             }
         }
-        validate_ops(&self.ops, &declared)
+        let sizes = self
+            .resources
+            .iter()
+            .map(|resource| (resource.id.clone(), resource.bytes))
+            .collect();
+        validate_ops(&self.ops, &sizes)
     }
 
     /// The field layout of a resource, if the block declares one.
@@ -399,10 +426,10 @@ impl ExecutionBlock {
     }
 }
 
-fn validate_ops(
-    ops: &[ExecutionOp],
-    declared: &std::collections::BTreeSet<ResourceTypeId>,
-) -> Result<(), ExecutionError> {
+/// Declared resources and their sizes in bytes (0: sized by the backend).
+type DeclaredResources = std::collections::BTreeMap<ResourceTypeId, u64>;
+
+fn validate_ops(ops: &[ExecutionOp], declared: &DeclaredResources) -> Result<(), ExecutionError> {
     for op in ops {
         match op {
             ExecutionOp::Compute(compute) => {
@@ -410,14 +437,26 @@ fn validate_ops(
                     return Err(ExecutionError::EmptyDispatch(compute.name.clone()));
                 }
                 for access in &compute.accesses {
-                    if !declared.contains(&access.resource) {
+                    if !declared.contains_key(&access.resource) {
                         return Err(ExecutionError::UnknownResource(access.resource.clone()));
+                    }
+                }
+                if let Some(indirect) = &compute.indirect {
+                    let bytes = declared.get(&indirect.resource).ok_or_else(|| {
+                        ExecutionError::UnknownResource(indirect.resource.clone())
+                    })?;
+                    let written = compute.accesses.iter().any(|access| {
+                        access.resource == indirect.resource
+                            && access.mode != ResourceAccessMode::Read
+                    });
+                    if u64::from(indirect.word) * 4 + 12 > *bytes || written {
+                        return Err(ExecutionError::InvalidIndirect(compute.name.clone()));
                     }
                 }
             }
             ExecutionOp::Copy(copy) => {
                 for id in [&copy.from, &copy.to] {
-                    if !declared.contains(id) {
+                    if !declared.contains_key(id) {
                         return Err(ExecutionError::UnknownResource(id.clone()));
                     }
                 }
@@ -433,7 +472,7 @@ fn validate_ops(
                     ..
                 } = policy
                 {
-                    if !declared.contains(residual) {
+                    if !declared.contains_key(residual) {
                         return Err(ExecutionError::UnknownResource(residual.clone()));
                     }
                     let skippable = body
@@ -533,6 +572,7 @@ pub fn lower_stage_fused(
                 y: 1,
                 z: 1,
             },
+            indirect: None,
         })],
         constants: Vec::new(),
         fields: Vec::new(),
@@ -552,6 +592,7 @@ mod tests {
             entry_point: name.to_string(),
             accesses: vec![ResourceAccess::read_write("res.field")],
             dispatch: StagedDispatch { x: 8, y: 1, z: 1 },
+            indirect: None,
         })
     }
 
@@ -618,6 +659,7 @@ mod tests {
             entry_point: "A".to_string(),
             accesses: vec![ResourceAccess::read_write("res.field")],
             dispatch: StagedDispatch { x: 0, y: 1, z: 1 },
+            indirect: None,
         })]);
         assert!(matches!(
             zero_dispatch.validate(),
@@ -704,6 +746,45 @@ mod tests {
         assert_eq!(
             execute_reference(&first).steps,
             vec!["converged?:res.field", "compute:B", "converged?:res.field"]
+        );
+    }
+
+    #[test]
+    fn an_indirect_op_reads_its_counts_from_a_declared_resource_that_holds_them() {
+        let indirect_with = |resource: &str, word: u32, access: ResourceAccess| {
+            field_block(vec![ExecutionOp::Compute(ComputeOp {
+                name: "A".to_string(),
+                program: None,
+                entry_point: "A".to_string(),
+                accesses: vec![access],
+                dispatch: StagedDispatch { x: 8, y: 1, z: 1 },
+                indirect: Some(IndirectDispatch {
+                    resource: ResourceTypeId::new(resource),
+                    word,
+                }),
+            })])
+        };
+        let indirect = |resource: &str, word: u32| {
+            indirect_with(resource, word, ResourceAccess::read("res.field"))
+        };
+        // 1024 bytes: the last three words start at word 253.
+        indirect("res.field", 253).validate().expect("fits");
+        assert_eq!(
+            indirect("res.field", 254).validate(),
+            Err(ExecutionError::InvalidIndirect("A".into()))
+        );
+        assert!(matches!(
+            indirect("res.missing", 0).validate(),
+            Err(ExecutionError::UnknownResource(_))
+        ));
+        assert_eq!(
+            execute_reference(&indirect("res.field", 0)).steps,
+            vec!["compute:A"]
+        );
+        // A dispatch cannot read its counts from a buffer the op writes.
+        assert_eq!(
+            indirect_with("res.field", 0, ResourceAccess::read_write("res.field")).validate(),
+            Err(ExecutionError::InvalidIndirect("A".into()))
         );
     }
 

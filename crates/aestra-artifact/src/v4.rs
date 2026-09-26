@@ -10,9 +10,9 @@ use aestra_core::{
 use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
     CompiledExtensionStage, CompiledHostField, CompiledHostFieldRef, ComputeOp, CopyOp,
-    ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout, RepeatPolicy, ResourceAccess,
-    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagePresentation, StagedDispatch,
-    VolumePresentation,
+    ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout, IndirectDispatch, RepeatPolicy,
+    ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagePresentation,
+    StagedDispatch, VolumePresentation,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -358,6 +358,9 @@ enum ExecutionOpV4 {
         entry_point: String,
         accesses: Vec<ResourceAccessV4>,
         dispatch: (u32, u32, u32),
+        /// Device-written workgroup counts (fluid F7): the resource and the word they start at.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        indirect: Option<(ResourceTypeId, u32)>,
     },
     Barrier,
     Copy {
@@ -403,6 +406,10 @@ impl From<&ExecutionOp> for ExecutionOpV4 {
                     })
                     .collect(),
                 dispatch: (compute.dispatch.x, compute.dispatch.y, compute.dispatch.z),
+                indirect: compute
+                    .indirect
+                    .as_ref()
+                    .map(|indirect| (indirect.resource.clone(), indirect.word)),
             },
             ExecutionOp::Barrier => Self::Barrier,
             ExecutionOp::Copy(copy) => Self::Copy {
@@ -439,6 +446,7 @@ impl From<ExecutionOpV4> for ExecutionOp {
                 entry_point,
                 accesses,
                 dispatch: (x, y, z),
+                indirect,
             } => Self::Compute(ComputeOp {
                 name,
                 program,
@@ -455,6 +463,7 @@ impl From<ExecutionOpV4> for ExecutionOp {
                     })
                     .collect(),
                 dispatch: StagedDispatch { x, y, z },
+                indirect: indirect.map(|(resource, word)| IndirectDispatch { resource, word }),
             }),
             ExecutionOpV4::Barrier => Self::Barrier,
             ExecutionOpV4::Copy { from, to } => Self::Copy(CopyOp { from, to }),
@@ -629,5 +638,31 @@ impl ExtensionStageV4 {
             cpu_reference: self.cpu_reference,
             presentations,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_device_sized_compute_op_round_trips() {
+        let op = |indirect| {
+            ExecutionOp::Compute(ComputeOp {
+                name: "sparse".into(),
+                program: None,
+                entry_point: "sparse".into(),
+                accesses: Vec::new(),
+                dispatch: StagedDispatch { x: 64, y: 1, z: 1 },
+                indirect,
+            })
+        };
+        let indirect = op(Some(IndirectDispatch {
+            resource: ResourceTypeId::new("org.example.test::resource/counts"),
+            word: 4,
+        }));
+        assert_eq!(ExecutionOp::from(ExecutionOpV4::from(&indirect)), indirect);
+        let fixed = op(None);
+        assert_eq!(ExecutionOp::from(ExecutionOpV4::from(&fixed)), fixed);
     }
 }

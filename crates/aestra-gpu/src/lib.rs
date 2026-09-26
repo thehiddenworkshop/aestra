@@ -11,6 +11,7 @@ pub mod mesh_bounds;
 pub mod particle_attributes;
 pub mod reduce;
 pub mod ribbon_bounds;
+pub mod scan;
 pub mod shader;
 pub mod volume;
 

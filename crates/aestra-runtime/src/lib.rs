@@ -20,7 +20,7 @@ pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
     AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, ComputeOp, CopyOp, ExecutionBlock,
-    ExecutionError, ExecutionOp, FieldLayout, FrameConstants, IDENTITY_AFFINE,
+    ExecutionError, ExecutionOp, FieldLayout, FrameConstants, IDENTITY_AFFINE, IndirectDispatch,
     ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
     ResourceLifetime, execute_reference, lower_stage_fused,
 };

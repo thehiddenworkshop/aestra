@@ -197,7 +197,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   (resource `i` is `@group(0) @binding(i)`), and it must not write a resource declared read-only.
 - Owns the shared deterministic reduction module (`reduce::REDUCE_WGSL`, fluid F5): a workgroup sum
   in a fixed tree, with no subgroup operations, so its bits do not depend on the hardware's subgroup
-  support.
+  support. Its scan module (`scan::SCAN_WGSL`, fluid F7) gives the workgroup prefix sums a sparse set
+  is compacted with, in a canonical order and without atomics.
 - Owns the volume-presentation interface (`volume`): the bindings, the `AestraVolumeRay`, and the
   field, constant and box helpers a plugin's march function is written against, plus the pass that
   copies a grid field into a 3D texture.
@@ -210,7 +211,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   repeat (fluid F5) is expanded to its cap with its body dispatched indirectly; a one-invocation test
   after each iteration — and, with `test_first` (fluid F6), before the first — empties the remaining
   dispatches once the residual has converged, so the loop stops on the device with no readback (the
-  emptied dispatches still cost a little each).
+  emptied dispatches still cost a little each). A compute op with `indirect` counts (fluid F7) is
+  sized on the device from a resource earlier ops wrote; inside a convergent repeat, its counts are
+  copied into the repeat's control buffer as the repeat starts.
 - Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
   setup, compute dispatch, readback, texture resolution, and draw submission.
 - Converts WGPU device limits and semantic-material resource layouts at the adapter boundary,

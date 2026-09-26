@@ -338,6 +338,7 @@ fn one_dispatch(entry: &str) -> ExecutionOp {
         entry_point: entry.to_string(),
         accesses: vec![ResourceAccess::read_write(VALUE_RESOURCE)],
         dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
+        indirect: None,
     })
 }
 

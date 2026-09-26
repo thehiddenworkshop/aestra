@@ -478,6 +478,7 @@ fn expand(
                         z: 1,
                     },
                 },
+                indirect: None,
             })),
             OpTemplate::Barrier => expanded.push(ExecutionOp::Barrier),
             OpTemplate::Copy { from, to } => expanded.push(ExecutionOp::Copy(CopyOp {

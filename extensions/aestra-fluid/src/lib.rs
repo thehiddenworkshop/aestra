@@ -1659,6 +1659,7 @@ fn solver_op(entry: &str, accesses: Vec<ResourceAccess>, dispatch: StagedDispatc
         entry_point: entry.into(),
         accesses,
         dispatch,
+        indirect: None,
     })
 }
 
@@ -1966,6 +1967,7 @@ impl StageLowerer for FluidSolverLowerer {
                 entry_point: entry.into(),
                 accesses,
                 dispatch,
+                indirect: None,
             })
         };
         let copy = |from: &str, to: &str| {
@@ -2296,6 +2298,7 @@ impl StageLowerer for FluidSolverLowerer {
                     frame_read(),
                 ],
                 dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
+                indirect: None,
             }));
             steps.push(pass(
                 "lfm_restart",
