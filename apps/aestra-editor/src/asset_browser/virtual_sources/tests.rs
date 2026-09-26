@@ -467,67 +467,87 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
         backend::HitData,
         pointer::{Location, PointerId},
     };
-    for cancel in [false, true] {
-        let (_root, mut app) = fixture(SourceScope::CurrentDocument);
-        app.init_resource::<ButtonInput<KeyCode>>();
-        let row = app
-            .world_mut()
-            .query_filtered::<Entity, With<VirtualRow>>()
-            .iter(app.world())
-            .next()
-            .unwrap();
-        let before = app.world().get::<Node>(row).unwrap().clone();
-        let effect = app.world().resource::<EditorSession>().effect.clone();
-        let location = Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
-            },
-            position: Vec2::new(100.0, 120.0),
-        };
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            DragStart {
-                button: PointerButton::Primary,
-                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            },
-            row,
-        ));
-        app.world_mut().flush();
-        let preview = app
-            .world()
-            .resource::<Drag>()
-            .preview
-            .expect("visible drag copy");
-        assert!(app.world().get::<AssetPayload>(row).is_some());
-        assert!(app.world().get::<OverrideClip>(preview).is_some());
-        assert!(
-            !app.world()
-                .get::<Pickable>(preview)
-                .unwrap()
-                .should_block_lower
-        );
-        assert_eq!(*app.world().get::<Node>(row).unwrap(), before);
-        if cancel {
-            app.world_mut()
-                .resource_mut::<ButtonInput<KeyCode>>()
-                .press(KeyCode::Escape);
-        } else {
+    for scope in [SourceScope::BuiltIns, SourceScope::CurrentDocument] {
+        for cancel in 0..4 {
+            let (_root, mut app) = fixture(scope);
+            app.init_resource::<ButtonInput<KeyCode>>();
+            let row = app
+                .world_mut()
+                .query_filtered::<Entity, With<VirtualRow>>()
+                .iter(app.world())
+                .next()
+                .unwrap();
+            let before = app.world().get::<Node>(row).unwrap().clone();
+            let effect = app.world().resource::<EditorSession>().effect.clone();
+            let location = Location {
+                target: bevy::camera::NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::new(100.0, 120.0),
+            };
             app.world_mut().trigger(Pointer::new(
                 PointerId::Mouse,
-                location,
-                DragEnd {
+                location.clone(),
+                DragStart {
                     button: PointerButton::Primary,
-                    distance: Vec2::new(20.0, 10.0),
+                    hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
                 },
                 row,
             ));
+            app.world_mut().flush();
+            let preview = app
+                .world()
+                .resource::<Drag>()
+                .preview
+                .expect("visible drag copy");
+            assert!(app.world().get::<AssetPayload>(row).is_some());
+            assert_eq!(
+                app.world().resource::<OverrideCursor>().0,
+                app.world()
+                    .resource::<crate::asset_drop::cursor::ClosedHandCursor>()
+                    .0
+            );
+            assert!(app.world().get::<OverrideClip>(preview).is_some());
+            assert!(
+                !app.world()
+                    .get::<Pickable>(preview)
+                    .unwrap()
+                    .should_block_lower
+            );
+            assert_eq!(*app.world().get::<Node>(row).unwrap(), before);
+            if cancel == 1 {
+                app.world_mut()
+                    .resource_mut::<ButtonInput<KeyCode>>()
+                    .press(KeyCode::Escape);
+            } else if cancel == 2 {
+                app.world_mut().trigger(Pointer::new(
+                    PointerId::Mouse,
+                    location,
+                    bevy::picking::events::Cancel {
+                        hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+                    },
+                    row,
+                ));
+            } else if cancel == 3 {
+                app.world_mut().despawn(row);
+            } else {
+                app.world_mut().trigger(Pointer::new(
+                    PointerId::Mouse,
+                    location,
+                    DragEnd {
+                        button: PointerButton::Primary,
+                        distance: Vec2::new(20.0, 10.0),
+                    },
+                    row,
+                ));
+            }
+            app.update();
+            assert!(app.world().resource::<OverrideCursor>().0.is_none());
+            assert!(app.world().get_entity(preview).is_err());
+            assert!(app.world().get::<AssetPayload>(row).is_none());
+            assert_eq!(app.world().resource::<EditorSession>().effect, effect);
         }
-        app.update();
-        assert!(app.world().get_entity(preview).is_err());
-        assert!(app.world().get::<AssetPayload>(row).is_none());
-        assert_eq!(app.world().resource::<EditorSession>().effect, effect);
     }
 }
 

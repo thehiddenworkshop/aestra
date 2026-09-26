@@ -1,5 +1,6 @@
 //! Shared asset-drop transport and feedback. Target adapters own validation and edits.
 //! Filesystem operations deliberately retain their serialized I/O and recovery path.
+pub(crate) mod cursor;
 mod payload;
 pub(crate) mod resource;
 pub(crate) mod virtual_sources;

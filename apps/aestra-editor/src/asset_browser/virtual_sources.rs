@@ -59,6 +59,7 @@ pub(super) fn register(app: &mut App) {
         .add_observer(create)
         .add_observer(begin_drag)
         .add_observer(end_drag)
+        .add_observer(cancel_drag)
         .add_systems(
             Update,
             sync.after(DockingSet::Sync).before(AestraFeathersSet::Sync),
@@ -435,6 +436,12 @@ fn begin_drag(
 
 fn end_drag(event: On<Pointer<DragEnd>>, mut drag: ResMut<Drag>) {
     if event.button == PointerButton::Primary {
+        drag.ended = true;
+    }
+}
+
+fn cancel_drag(event: On<Pointer<bevy::picking::events::Cancel>>, mut drag: ResMut<Drag>) {
+    if drag.origin == Some(event.original_event_target()) {
         drag.ended = true;
     }
 }

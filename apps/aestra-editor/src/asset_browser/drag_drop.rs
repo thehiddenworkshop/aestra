@@ -42,7 +42,8 @@ struct DropChoice {
 }
 
 pub(super) fn register(app: &mut App) {
-    app.init_resource::<AssetDrag>()
+    app.add_plugins(crate::asset_drop::cursor::AssetDragCursorPlugin)
+        .init_resource::<AssetDrag>()
         .add_observer(begin)
         .add_observer(super::drag_preview::follow_pointer)
         .add_observer(press)
@@ -50,6 +51,7 @@ pub(super) fn register(app: &mut App) {
         .add_observer(leave)
         .add_observer(drop_asset)
         .add_observer(end)
+        .add_observer(cancel)
         .add_observer(choose)
         .add_systems(Update, (dismiss, recover_on_project_open))
         .add_systems(PostUpdate, clear_ended.before(bevy::ui::UiSystems::Layout));
@@ -394,6 +396,12 @@ fn drop_asset(
 
 fn end(event: On<Pointer<DragEnd>>, mut drag: ResMut<AssetDrag>) {
     if event.button == PointerButton::Primary {
+        drag.ended = true;
+    }
+}
+
+fn cancel(event: On<Pointer<bevy::picking::events::Cancel>>, mut drag: ResMut<AssetDrag>) {
+    if drag.origin == Some(event.original_event_target()) {
         drag.ended = true;
     }
 }
@@ -761,6 +769,12 @@ mod tests {
                         Some(source),
                         "drag origin kind={kind}, tree={tree}"
                     );
+                    assert_eq!(
+                        app.world().resource::<OverrideCursor>().0,
+                        app.world()
+                            .resource::<crate::asset_drop::cursor::ClosedHandCursor>()
+                            .0
+                    );
                     assert!(
                         app.world()
                             .get::<crate::asset_drop::AssetPayload>(source_row)
@@ -813,6 +827,7 @@ mod tests {
                         .resource_mut::<ButtonInput<KeyCode>>()
                         .press(KeyCode::Escape);
                     app.update();
+                    assert!(app.world().resource::<OverrideCursor>().0.is_none());
                     assert_eq!(
                         app.world_mut()
                             .query::<&DropChoice>()
