@@ -68,6 +68,9 @@ pub const MODULE_BUOYANCY: &str = "org.example.aestra-fluid::module/buoyancy";
 pub const MODULE_VORTICITY: &str = "org.example.aestra-fluid::module/vorticity";
 pub const MODULE_VOLUME_LOOK: &str = "org.example.aestra-fluid::module/volume_look";
 pub const MODULE_COMBUSTION: &str = "org.example.aestra-fluid::module/combustion";
+pub const MODULE_SPHERE_COLLIDER: &str = "org.example.aestra-fluid::module/sphere_collider";
+pub const MODULE_BOX_COLLIDER: &str = "org.example.aestra-fluid::module/box_collider";
+pub const MODULE_CAPSULE_COLLIDER: &str = "org.example.aestra-fluid::module/capsule_collider";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
 pub const PROGRAM_VOLUME: &str = "org.example.aestra-fluid::program/volume";
 /// The march function [`PROGRAM_VOLUME`] defines.
@@ -83,6 +86,7 @@ pub const RESOURCE_DIVERGENCE: &str = "org.example.aestra-fluid::resource/diverg
 pub const RESOURCE_VORTICITY: &str = "org.example.aestra-fluid::resource/vorticity_grid";
 pub const RESOURCE_VELOCITY_HAT: &str = "org.example.aestra-fluid::resource/velocity_corrected";
 pub const RESOURCE_SCALAR_HAT: &str = "org.example.aestra-fluid::resource/scalar_corrected";
+pub const RESOURCE_SOLID: &str = "org.example.aestra-fluid::resource/solid_grid";
 pub const RESOURCE_TEMPERATURE: &str = "org.example.aestra-fluid::resource/temperature_grid";
 pub const RESOURCE_TEMPERATURE_NEXT: &str =
     "org.example.aestra-fluid::resource/temperature_scratch";
@@ -104,7 +108,11 @@ pub const MAX_SOURCES: usize = 8;
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 12;
+const SOURCE_BASE: usize = 14;
+/// Words one collider record takes (see `pack_collider`).
+const COLLIDER_WORDS: usize = 24;
+/// Colliders one stage packs into its constants.
+pub const MAX_COLLIDERS: usize = 4;
 /// Open-side bits of constant word 10 (fluid F4): `1 << (2·axis + side)`.
 const OPEN_X_MIN: u32 = 1 << 0;
 const OPEN_X_MAX: u32 = 1 << 1;
@@ -196,7 +204,7 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
 }
 
 /// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 19] = [
+pub const ENTRY_POINTS: [&str; 20] = [
     "add_sources",
     "compute_vorticity",
     "vorticity_force",
@@ -216,6 +224,7 @@ pub const ENTRY_POINTS: [&str; 19] = [
     "correct_density",
     "correct_temperature",
     "correct_fuel",
+    "mark_solids",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -269,6 +278,7 @@ impl AestraExtension for FluidExtension {
                 "Corrected Scalar",
                 ResourceLifetime::Transient,
             ),
+            (RESOURCE_SOLID, "Solids", ResourceLifetime::Transient),
             (
                 RESOURCE_TEMPERATURE,
                 "Temperature",
@@ -305,6 +315,9 @@ impl AestraExtension for FluidExtension {
             buoyancy_metadata(requires.clone()),
             vorticity_metadata(requires.clone()),
             combustion_metadata(requires.clone()),
+            collider_metadata(MODULE_SPHERE_COLLIDER, requires.clone()),
+            collider_metadata(MODULE_BOX_COLLIDER, requires.clone()),
+            collider_metadata(MODULE_CAPSULE_COLLIDER, requires.clone()),
             volume_look_metadata(requires),
         ] {
             let type_id = metadata.type_id.clone();
@@ -573,6 +586,136 @@ fn combustion_metadata(requires: CapabilityExpression) -> ModuleMetadata {
     .with_cost(3)
 }
 
+/// An analytic collider (fluid F4): the fluid flows around it — no flow through it, and a moving one
+/// pushes the fluid. Its centre and velocity can follow a host object; the centre has a viewport
+/// handle. A sphere has a radius, a box half extents (axis-aligned in the effect's space), a capsule a
+/// half-segment vector and a radius.
+fn collider_metadata(type_id: &'static str, requires: CapabilityExpression) -> ModuleMetadata {
+    let bindable = vec![InputSourceKind::Constant, InputSourceKind::HostBinding];
+    let (display_name, description) = match type_id {
+        MODULE_SPHERE_COLLIDER => (
+            "Sphere Collider",
+            "A sphere the fluid flows around; a host object can move it.",
+        ),
+        MODULE_BOX_COLLIDER => (
+            "Box Collider",
+            "An axis-aligned box the fluid flows around; a host object can move it.",
+        ),
+        _ => (
+            "Capsule Collider",
+            "A capsule (a swept segment) the fluid flows around; a host object can move it.",
+        ),
+    };
+    let mut inputs = vec![
+        InputMetadata::new(
+            "position",
+            "Position",
+            "Centre of the collider; a host object can drive it.",
+            Value::Vec3([0.0, 40.0, 0.0]),
+            vector(),
+        )
+        .with_unit("units")
+        .with_sources(bindable.clone())
+        .with_position_handle(),
+        InputMetadata::new(
+            "velocity",
+            "Velocity",
+            "How fast the collider moves, which it imparts to the fluid; a host object's motion can drive it.",
+            Value::Vec3([0.0; 3]),
+            vector(),
+        )
+        .with_unit("units/s")
+        .with_sources(bindable),
+    ];
+    match type_id {
+        MODULE_BOX_COLLIDER => inputs.push(
+            InputMetadata::new(
+                "half_extents",
+                "Half Extents",
+                "Half the box's size along each axis.",
+                Value::Vec3([8.0, 8.0, 8.0]),
+                vector(),
+            )
+            .with_unit("units"),
+        ),
+        MODULE_CAPSULE_COLLIDER => inputs.push(
+            InputMetadata::new(
+                "half_segment",
+                "Half Segment",
+                "From the centre to one end of the capsule's axis.",
+                Value::Vec3([0.0, 10.0, 0.0]),
+                vector(),
+            )
+            .with_unit("units"),
+        ),
+        _ => {}
+    }
+    if type_id != MODULE_BOX_COLLIDER {
+        inputs.push(
+            InputMetadata::new(
+                "radius",
+                "Radius",
+                "Radius of the sphere, or of the capsule around its axis.",
+                Value::Scalar(8.0),
+                number(0.5, 0.01, None),
+            )
+            .with_unit("units"),
+        );
+    }
+    inputs.push(InputMetadata::new(
+        "no_slip",
+        "Sticky",
+        "The fluid sticks to the surface (no slip) instead of sliding along it.",
+        Value::Bool(false),
+        InputControl::Toggle,
+    ));
+    fluid_module(type_id, display_name, description, requires)
+        .with_inputs(inputs)
+        .with_cost(2)
+}
+
+/// One collider's constant record (`COLLIDER_WORDS`), as `collider_distance` and `mark_solids` read
+/// it: kind, centre (value + host reference), velocity (value + host reference), size, radius, sticky.
+fn pack_collider(collider: &ExtensionModulePlan) -> Result<[u32; COLLIDER_WORDS], String> {
+    let parameters = &collider.parameters;
+    let mut words = [0u32; COLLIDER_WORDS];
+    let (kind, size, radius) = match collider.module_type.0.as_str() {
+        MODULE_SPHERE_COLLIDER => (0, [0.0; 3], scalar(parameters, "radius")?),
+        MODULE_BOX_COLLIDER => (1, vec3(parameters, "half_extents")?, 0.0),
+        _ => (
+            2,
+            vec3(parameters, "half_segment")?,
+            scalar(parameters, "radius")?,
+        ),
+    };
+    if radius < 0.0 || size.iter().any(|axis| *axis < 0.0 && kind == 1) {
+        return Err("collider sizes must not be negative".into());
+    }
+    if kind != 1 && radius <= 0.0 {
+        return Err("a collider's radius must be positive".into());
+    }
+    words[0] = kind;
+    let position = vec3(parameters, "position")?;
+    let velocity = vec3(parameters, "velocity")?;
+    for axis in 0..3 {
+        words[1 + axis] = position[axis].to_bits();
+        words[7 + axis] = velocity[axis].to_bits();
+        words[13 + axis] = size[axis].to_bits();
+    }
+    words[4..7].copy_from_slice(&host_ref(collider.host_fields.get("position"))?);
+    words[10..13].copy_from_slice(&host_ref(collider.host_fields.get("velocity"))?);
+    words[16] = radius.to_bits();
+    words[17] = u32::from(parameters.get_bool("no_slip").unwrap_or(false));
+    Ok(words)
+}
+
+fn is_collider(module_type: &str) -> bool {
+    matches!(
+        module_type,
+        MODULE_SPHERE_COLLIDER | MODULE_BOX_COLLIDER | MODULE_CAPSULE_COLLIDER
+    )
+}
+
 /// The Combustion inputs, in the order `solver.wgsl` reads them after the sources.
 const COMBUSTION_INPUTS: [&str; 6] = [
     "ignition_temperature",
@@ -788,6 +931,16 @@ impl ModuleLowerer for FluidModuleLowerer {
                 }
                 "add_sources"
             }
+            collider if is_collider(collider) => {
+                pack_collider(&ExtensionModulePlan {
+                    source: module.id,
+                    module_type: module.module_type.clone(),
+                    entry_point: String::new(),
+                    parameters: payload.clone(),
+                    host_fields: Default::default(),
+                })?;
+                "mark_solids"
+            }
             MODULE_COMBUSTION => {
                 for name in COMBUSTION_INPUTS {
                     if scalar(payload, name)? < 0.0 {
@@ -855,6 +1008,7 @@ fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<Resource
     // MacCormack's scratch (fluid F4): always declared, so the fire grids keep their bindings.
     resources.push(grid(RESOURCE_VELOCITY_HAT, 16, ResourceLifetime::Transient));
     resources.push(grid(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
+    resources.push(grid(RESOURCE_SOLID, 16, ResourceLifetime::Transient));
     if fire {
         resources.extend([
             grid(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
@@ -901,6 +1055,8 @@ struct PackedStage {
     fire: bool,
     /// MacCormack advection: each advection is followed by its correction.
     sharp: bool,
+    /// Collider modules are present: solids are marked each tick.
+    colliders: bool,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -982,12 +1138,29 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
             words.push(scalar(&combustion.parameters, name)?.to_bits());
         }
     }
+    // Colliders (fluid F4) follow: their count and first word in the header, then one record each.
+    let colliders: Vec<_> = modules
+        .iter()
+        .filter(|module| is_collider(&module.module_type.0))
+        .collect();
+    if colliders.len() > MAX_COLLIDERS {
+        return Err(format!(
+            "a Fluid Solver stage takes at most {MAX_COLLIDERS} colliders, got {}",
+            colliders.len()
+        ));
+    }
+    words[12] = colliders.len() as u32;
+    words[13] = words.len() as u32;
+    for collider in &colliders {
+        words.extend(pack_collider(collider)?);
+    }
     Ok(PackedStage {
         resolution,
         iterations,
         cell_size,
         origin,
         sharp: words[11] != 0,
+        colliders: !colliders.is_empty(),
         constants: words,
         fire: combustion.is_some(),
     })
@@ -1087,6 +1260,7 @@ impl StageLowerer for FluidSolverLowerer {
             constants,
             fire,
             sharp,
+            colliders,
         } = pack_constants(input.modules)?;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
@@ -1137,7 +1311,21 @@ impl StageLowerer for FluidSolverLowerer {
             }
         };
 
-        let mut steps = vec![pass(
+        let mut steps = Vec::new();
+        if colliders {
+            // Solids first: every later pass sees this tick's colliders.
+            steps.push(pass(
+                "mark_solids",
+                vec![
+                    write(RESOURCE_SOLID),
+                    read_write(RESOURCE_DENSITY),
+                    constants_read(),
+                    frame_read(),
+                    read(AESTRA_RESOURCE_HOST_BINDINGS),
+                ],
+            ));
+        }
+        steps.push(pass(
             "add_sources",
             vec![
                 read_write(RESOURCE_VELOCITY),
@@ -1146,7 +1334,7 @@ impl StageLowerer for FluidSolverLowerer {
                 frame_read(),
                 read(AESTRA_RESOURCE_HOST_BINDINGS),
             ],
-        )];
+        ));
         if fire {
             steps.push(pass(
                 "add_heat",
@@ -1251,6 +1439,7 @@ impl StageLowerer for FluidSolverLowerer {
             vec![
                 read(RESOURCE_VELOCITY),
                 write(RESOURCE_DIVERGENCE),
+                read(RESOURCE_SOLID),
                 constants_read(),
             ],
         ));
@@ -1263,6 +1452,7 @@ impl StageLowerer for FluidSolverLowerer {
                         read(RESOURCE_PRESSURE),
                         write(RESOURCE_PRESSURE_NEXT),
                         read(RESOURCE_DIVERGENCE),
+                        read(RESOURCE_SOLID),
                         constants_read(),
                     ],
                 ),
@@ -1276,6 +1466,7 @@ impl StageLowerer for FluidSolverLowerer {
             vec![
                 read_write(RESOURCE_VELOCITY),
                 read(RESOURCE_PRESSURE),
+                read(RESOURCE_SOLID),
                 constants_read(),
             ],
         ));

@@ -111,7 +111,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   honours), the pressure solve is the compact 7-point Laplacian, and each grid side is closed (a
   wall) or open (fluid leaves; `open_top`, `open_sides`). Advection is MacCormack by default
   (`sharp_advection`): each semi-Lagrangian step is corrected by a reverse trace and limited to the
-  forward step's extrema. It also has *Combustion*
+  forward step's extrema. Sphere, box (axis-aligned) and capsule *colliders* — up to four, centre and
+  velocity host-bindable, centre draggable — are marked as solid cells each tick: nothing flows
+  through them, a moving one pushes the fluid, and a sticky one also drags it (no slip). It also
+  has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
   as lit, self-shadowed volumetric smoke with blackbody fire. It adds nothing to core.
 

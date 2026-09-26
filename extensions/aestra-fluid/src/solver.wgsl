@@ -24,16 +24,20 @@
 // MacCormack's corrected results (fluid F4), before they are copied back.
 @group(0) @binding(11) var<storage, read_write> velocity_hat: array<vec4<f32>>;
 @group(0) @binding(12) var<storage, read_write> scalar_hat: array<f32>;
+// Colliders (fluid F4), marked each tick: xyz the solid's velocity, w 0 for fluid, 1 for a solid the
+// fluid slides along, 2 for one it sticks to.
+@group(0) @binding(13) var<storage, read_write> solid: array<vec4<f32>>;
 // Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
 // a smoke-only block binds none of them and none of its passes reads them.
-@group(0) @binding(13) var<storage, read_write> temperature: array<f32>;
-@group(0) @binding(14) var<storage, read_write> temperature_next: array<f32>;
-@group(0) @binding(15) var<storage, read_write> fuel: array<f32>;
-@group(0) @binding(16) var<storage, read_write> fuel_next: array<f32>;
+@group(0) @binding(14) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(15) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(16) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(17) var<storage, read_write> fuel_next: array<f32>;
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
-const SOURCE_BASE: u32 = 12u;
+const SOURCE_BASE: u32 = 14u;
+const COLLIDER_WORDS: u32 = 24u;
 const SOURCE_WORDS: u32 = 16u;
 
 fn grid_res() -> u32 { return constants[0]; }
@@ -50,6 +54,9 @@ fn source_count() -> u32 { return constants[9]; }
 fn open_sides() -> u32 { return constants[10]; }
 // MacCormack advection (fluid F4): the forward step then carries no dissipation; the correction does.
 fn sharp_advection() -> bool { return constants[11] != 0u; }
+// Colliders (fluid F4): how many, and the word their records start at (after sources and Combustion).
+fn collider_count() -> u32 { return constants[12]; }
+fn collider_base() -> u32 { return constants[13]; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 // The Combustion block follows the sources: ignition temperature, burn rate, heat release, smoke
 // yield, cooling, thermal lift.
@@ -352,20 +359,87 @@ fn advect_density(@builtin(global_invocation_id) cell: vec3<u32>) {
     density_next[cell_index(cell)] = sampled * forward_decay(density_dissipation());
 }
 
-// The divergence of each cell: the net flow out through its six faces.
+// ---- Colliders (fluid F4) ----
+
+fn is_solid(cell: vec3<i32>) -> bool {
+    return inside(cell) && solid[clamped_index(cell)].w > 0.5;
+}
+
+// The `axis` velocity through the minimum `axis` face of `cell`: a solid on either side of the face
+// imposes its own velocity (no flow through a still solid; a moving one pushes the fluid).
+fn effective_face(cell: vec3<i32>, axis: u32) -> f32 {
+    if (is_solid(cell)) {
+        return component(solid[clamped_index(cell)], axis);
+    }
+    let below = cell - axis_step(axis);
+    if (is_solid(below)) {
+        return component(solid[clamped_index(below)], axis);
+    }
+    return face(cell, axis);
+}
+
+// Signed distance from `p` to collider `base` (negative inside): 0 sphere, 1 axis-aligned box,
+// 2 capsule (a segment ± its half-segment vector, swept by the radius).
+fn collider_distance(base: u32, p: vec3<f32>) -> f32 {
+    let kind = constants[base];
+    let center = source_vec3(base, 1u, 4u, 1.0);
+    let size = vec3<f32>(
+        bitcast<f32>(constants[base + 13u]),
+        bitcast<f32>(constants[base + 14u]),
+        bitcast<f32>(constants[base + 15u]),
+    );
+    let radius = bitcast<f32>(constants[base + 16u]);
+    if (kind == 1u) {
+        let q = abs(p - center) - size;
+        return length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+    }
+    if (kind == 2u) {
+        let a = center - size;
+        let ba = 2.0 * size;
+        let h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-12), 0.0, 1.0);
+        return length(p - a - ba * h) - radius;
+    }
+    return length(p - center) - radius;
+}
+
+// Marks the cells inside a collider with its velocity and boundary condition, and clears the smoke
+// inside it.
+@compute @workgroup_size(4, 4, 4)
+fn mark_solids(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let i = cell_index(cell);
+    let center = grid_origin() + (vec3<f32>(cell) + vec3<f32>(0.5)) * cell_size();
+    var marked = vec4<f32>(0.0);
+    for (var c = 0u; c < collider_count(); c += 1u) {
+        let base = collider_base() + c * COLLIDER_WORDS;
+        if (collider_distance(base, center) < 0.0) {
+            let velocity_of_solid = source_vec3(base, 7u, 10u, 0.0);
+            marked = vec4<f32>(velocity_of_solid, select(1.0, 2.0, constants[base + 17u] != 0u));
+        }
+    }
+    solid[i] = marked;
+    if (marked.w > 0.5) {
+        density[i] = 0.0;
+    }
+}
+
+// The divergence of each fluid cell: the net flow out through its six faces (solids impose theirs).
 @compute @workgroup_size(4, 4, 4)
 fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
-    divergence[cell_index(cell)] = (
-        face(c + X, 0u) - face(c, 0u)
-        + face(c + Y, 1u) - face(c, 1u)
-        + face(c + Z, 2u) - face(c, 2u)
-    ) / cell_size();
+    var net = 0.0;
+    if (!is_solid(c)) {
+        net = effective_face(c + X, 0u) - effective_face(c, 0u)
+            + effective_face(c + Y, 1u) - effective_face(c, 1u)
+            + effective_face(c + Z, 2u) - effective_face(c, 2u);
+    }
+    divergence[cell_index(cell)] = net / cell_size();
 }
 
-// One Jacobi iteration of the compact 7-point Poisson equation ∇²p = ∇·u. A closed side is a Neumann
-// wall (the neighbour is left out); an open side holds p = 0 outside (the neighbour counts as zero).
+// One Jacobi iteration of the compact 7-point Poisson equation ∇²p = ∇·u. A closed side or a solid is
+// a Neumann wall (the neighbour is left out); an open side holds p = 0 outside (the neighbour counts
+// as zero). Solid cells hold no pressure.
 @compute @workgroup_size(4, 4, 4)
 fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (!in_grid(cell)) { return; }
@@ -378,12 +452,17 @@ fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
             let positive = side == 1u;
             let neighbour = select(c - step, c + step, positive);
             if (inside(neighbour)) {
-                sum += pressure[clamped_index(neighbour)];
-                count += 1.0;
+                if (!is_solid(neighbour)) {
+                    sum += pressure[clamped_index(neighbour)];
+                    count += 1.0;
+                }
             } else if (side_open(axis, positive)) {
                 count += 1.0;
             }
         }
+    }
+    if (is_solid(c)) {
+        count = 0.0;
     }
     let h = cell_size();
     var relaxed = 0.0;
@@ -413,7 +492,39 @@ fn project(@builtin(global_invocation_id) cell: vec3<u32>) {
     let outside = select(below, vec3<f32>(0.0), at_wall);
     v = v - (vec3<f32>(own) - outside) / h;
     v = select(v, vec3<f32>(0.0), at_wall & !open);
-    velocity[i] = vec4<f32>(v, 0.0);
+    // Solids (fluid F4): a face touching one carries the solid's velocity; next to a sticky one, the
+    // face takes its velocity too (no slip).
+    let bounded = vec3<f32>(
+        solid_face(c, 0u, v.x),
+        solid_face(c, 1u, v.y),
+        solid_face(c, 2u, v.z),
+    );
+    velocity[i] = vec4<f32>(bounded, 0.0);
+}
+
+// The `axis` velocity of the minimum `axis` face of fluid cell `cell` given its projected value: a solid
+// across the face imposes its velocity; a sticky solid beside the face (either adjacent cell's
+// tangential neighbour) drags it to its velocity.
+fn solid_face(cell: vec3<i32>, axis: u32, projected: f32) -> f32 {
+    let below = cell - axis_step(axis);
+    if (is_solid(cell) || is_solid(below)) {
+        return effective_face(cell, axis);
+    }
+    var value = projected;
+    for (var t = 0u; t < 3u; t += 1u) {
+        if (t == axis) { continue; }
+        let step = axis_step(t);
+        for (var side = 0u; side < 2u; side += 1u) {
+            let offset = select(-step, step, side == 1u);
+            for (var which = 0u; which < 2u; which += 1u) {
+                let neighbour = select(cell, below, which == 1u) + offset;
+                if (inside(neighbour) && solid[clamped_index(neighbour)].w > 1.5) {
+                    value = component(solid[clamped_index(neighbour)], axis);
+                }
+            }
+        }
+    }
+    return value;
 }
 
 // ---- Fire (fluid F3): temperature and fuel, with the Combustion module ----

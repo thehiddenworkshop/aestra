@@ -232,8 +232,15 @@ fn mass_and_centroid(density: &[f32]) -> (f32, [f32; 3]) {
 #[test]
 fn the_solver_builds_on_every_available_backend() {
     let registry = registry();
+    // With a collider and fire, so every entry point is built.
+    let mut everything = aestra_fluid::fire_effect(&registry);
+    with_collider(
+        &registry,
+        &mut everything,
+        aestra_fluid::MODULE_CAPSULE_COLLIDER,
+    );
     let effect = EffectCompiler::with_extensions(registry.clone())
-        .compile(&smoke_effect(&registry))
+        .compile(&everything)
         .unwrap();
     let block = &effect.extension_stages[0].block;
     for backends in [
@@ -925,6 +932,216 @@ fn particles_following_the_field_take_the_plumes_velocity() {
         live.windows(2)
             .all(|pair| velocity(pair[0])[1] > velocity(pair[1])[1]),
         "the pull fades with height"
+    );
+}
+
+fn with_collider(
+    registry: &ExtensionRegistry,
+    effect: &mut EffectAsset,
+    type_id: &str,
+) -> aestra_core::ModuleId {
+    let mut module = registry
+        .modules
+        .instantiate(&aestra_core::ModuleTypeId::new(type_id))
+        .unwrap();
+    module.stage = aestra_core::StageKind::Simulation(aestra_fluid::SMOKE_STAGE.into());
+    let id = module.id;
+    effect.simulation_stages[0].modules.push(module);
+    id
+}
+
+fn set_module_input(effect: &mut EffectAsset, id: aestra_core::ModuleId, name: &str, value: Value) {
+    let module = effect.simulation_stages[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.id == id)
+        .unwrap();
+    let ModuleParameters::Custom(values) = &mut module.parameters else {
+        unreachable!("plugin modules carry a generic payload");
+    };
+    values.insert(name.into(), value);
+}
+
+/// Mean x-velocity over the cells in `x_range` (cell indices) around the grid's middle in y and z.
+fn mean_x_velocity(velocity: &[f32], x_range: std::ops::Range<usize>, y: usize) -> f32 {
+    let n = RESOLUTION as usize;
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for z in n / 2 - 1..=n / 2 {
+        for yy in y - 1..=y {
+            for x in x_range.clone() {
+                sum += velocity[((z * n + yy) * n + x) * 4];
+                count += 1.0;
+            }
+        }
+    }
+    sum / count
+}
+
+/// Fluid F4: a sphere a host object moves through still fluid drags a wake behind it.
+#[test]
+fn a_moving_sphere_carves_a_wake() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let speed = 2.0;
+    let wake = |with_sphere: bool| {
+        let mut still = effect(&registry, false, 40);
+        // No source: the fluid is at rest until the sphere moves through it.
+        set_input(
+            &mut still,
+            MODULE_DENSITY_SOURCE,
+            "position",
+            Value::Vec3([0.0, 100.0, 0.0]),
+        );
+        let mut paddle = EffectBinding::spatial("Paddle", BindingUpdateMode::Live);
+        paddle
+            .optional_fields
+            .insert(aestra_core::BindingFieldId::new(
+                aestra_core::AESTRA_FIELD_LINEAR_VELOCITY,
+            ));
+        let paddle_id = paddle.id;
+        still.bindings = vec![paddle];
+        if with_sphere {
+            let sphere = with_collider(&registry, &mut still, aestra_fluid::MODULE_SPHERE_COLLIDER);
+            set_module_input(&mut still, sphere, "radius", Value::Scalar(0.4));
+            let module = still.simulation_stages[0]
+                .modules
+                .iter_mut()
+                .find(|module| module.id == sphere)
+                .unwrap();
+            for (input, field) in [
+                ("position", AESTRA_FIELD_POSITION),
+                ("velocity", aestra_core::AESTRA_FIELD_LINEAR_VELOCITY),
+            ] {
+                module
+                    .property_sources
+                    .insert(input.into(), PropertySource::HostBinding);
+                module
+                    .host_bindings
+                    .insert(input.into(), HostFieldRef::new(paddle_id, field));
+            }
+        }
+        let mut fluid = Fluid::new(&gpu, &registry, &still);
+        // The sphere crosses the grid's middle in +x: from x = -1.0 to x = 0.0 (30 ticks).
+        for tick in 0..30u32 {
+            let x = -1.0 + speed * tick as f32 * DT;
+            let mut snapshot = SpatialBindingSnapshot::at([x, 1.6, 0.0]);
+            snapshot.linear_velocity = Some([speed, 0.0, 0.0]);
+            fluid
+                .instance
+                .set_spatial_binding("Paddle", snapshot)
+                .unwrap();
+            fluid.run(&gpu, tick..tick + 1);
+        }
+        fluid.floats(&gpu, RESOURCE_VELOCITY)
+    };
+    // The sphere ends at x = 0 (cell 8 of 16): the wake is the cells behind it, 2.5–4.5 cells back.
+    let behind = |velocity: &[f32]| mean_x_velocity(velocity, 4..6, 8);
+    let with_sphere = behind(&wake(true));
+    let without = behind(&wake(false));
+    eprintln!("wake x-velocity: with sphere {with_sphere}, without {without}");
+    assert!(without.abs() < 1e-4, "still fluid stays still");
+    assert!(
+        with_sphere > 0.1 * speed,
+        "the fluid behind the sphere follows it ({with_sphere})"
+    );
+}
+
+/// Fluid F4: nothing flows through a still solid, and it holds no smoke.
+#[test]
+fn a_still_collider_blocks_the_plume() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut blocked = effect(&registry, false, 40);
+    let block = with_collider(&registry, &mut blocked, aestra_fluid::MODULE_BOX_COLLIDER);
+    // A slab above the source, in the plume's path.
+    set_module_input(
+        &mut blocked,
+        block,
+        "position",
+        Value::Vec3([0.0, 1.4, 0.0]),
+    );
+    set_module_input(
+        &mut blocked,
+        block,
+        "half_extents",
+        Value::Vec3([0.8, 0.2, 0.8]),
+    );
+    let fluid = Fluid::new(&gpu, &registry, &blocked);
+    fluid.run(&gpu, 0..40);
+    let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
+    let density = fluid.floats(&gpu, RESOURCE_DENSITY);
+    let n = RESOLUTION as usize;
+    let index = |x: usize, y: usize, z: usize| (z * n + y) * n + x;
+    // Cells whose centre is inside the slab: |x|, |z| < 0.8 and |y - 1.4| < 0.2.
+    let inside = |x: usize, y: usize, z: usize| {
+        let centre = cell_center(index(x, y, z));
+        centre[0].abs() < 0.8 && (centre[1] - 1.4).abs() < 0.2 && centre[2].abs() < 0.8
+    };
+    let (mut solid_cells, mut through) = (0, 0.0f32);
+    for z in 0..n {
+        for y in 1..n {
+            for x in 0..n {
+                if inside(x, y, z) {
+                    solid_cells += 1;
+                    assert_eq!(density[index(x, y, z)], 0.0, "no smoke inside the solid");
+                    // The y face between the solid and the fluid below carries nothing.
+                    if !inside(x, y - 1, z) {
+                        through = through.max(velocity[index(x, y, z) * 4 + 1].abs());
+                    }
+                }
+            }
+        }
+    }
+    assert!(solid_cells > 0);
+    assert_eq!(through, 0.0, "no flow into the still solid");
+    // The plume is pushed aside: under the slab it spreads sideways.
+    let (mass, _) = mass_and_centroid(&density);
+    assert!(mass > 0.0);
+}
+
+/// Fluid F4: a sticky (no-slip) collider drags the fluid sliding past it; a slippery one does not.
+#[test]
+fn a_sticky_surface_drags_the_fluid_and_a_slippery_one_does_not() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let drag = |sticky: bool| {
+        let mut belt = effect(&registry, false, 40);
+        set_input(
+            &mut belt,
+            MODULE_DENSITY_SOURCE,
+            "position",
+            Value::Vec3([0.0, 100.0, 0.0]),
+        );
+        // A slab across the whole grid whose surface moves in +x, like a conveyor belt: it stays
+        // where it is and has no end faces pushing fluid, only its top surface moving along.
+        let slab = with_collider(&registry, &mut belt, aestra_fluid::MODULE_BOX_COLLIDER);
+        set_module_input(&mut belt, slab, "position", Value::Vec3([0.0, 1.0, 0.0]));
+        set_module_input(
+            &mut belt,
+            slab,
+            "half_extents",
+            Value::Vec3([2.0, 0.3, 2.0]),
+        );
+        set_module_input(&mut belt, slab, "velocity", Value::Vec3([2.0, 0.0, 0.0]));
+        set_module_input(&mut belt, slab, "no_slip", Value::Bool(sticky));
+        let fluid = Fluid::new(&gpu, &registry, &belt);
+        fluid.run(&gpu, 0..10);
+        // Solid rows are y = 4, 5 (centres 0.9, 1.1); the first fluid row on top is y = 6.
+        let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
+        let n = RESOLUTION as usize;
+        let row: Vec<f32> = (4..12)
+            .flat_map(|x| (6..10).map(move |z| (x, z)))
+            .map(|(x, z)| velocity[((z * n + 6) * n + x) * 4])
+            .collect();
+        row.iter().sum::<f32>() / row.len() as f32
+    };
+    let (sticky, slippery) = (drag(true), drag(false));
+    eprintln!("fluid over the belt: sticky {sticky}, slippery {slippery}");
+    assert!(sticky > 1.0, "the sticky belt carries the fluid ({sticky})");
+    assert!(
+        slippery.abs() < sticky * 0.25,
+        "the slippery belt barely moves it ({slippery} vs {sticky})"
     );
 }
 
