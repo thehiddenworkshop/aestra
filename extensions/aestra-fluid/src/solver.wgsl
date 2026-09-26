@@ -21,12 +21,15 @@
 @group(0) @binding(8) var<storage, read> constants: array<u32>;
 @group(0) @binding(9) var<storage, read> frame: array<u32>;
 @group(0) @binding(10) var<storage, read> aestra_host_bindings: array<u32>;
+// MacCormack's corrected results (fluid F4), before they are copied back.
+@group(0) @binding(11) var<storage, read_write> velocity_hat: array<vec4<f32>>;
+@group(0) @binding(12) var<storage, read_write> scalar_hat: array<f32>;
 // Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
 // a smoke-only block binds none of them and none of its passes reads them.
-@group(0) @binding(11) var<storage, read_write> temperature: array<f32>;
-@group(0) @binding(12) var<storage, read_write> temperature_next: array<f32>;
-@group(0) @binding(13) var<storage, read_write> fuel: array<f32>;
-@group(0) @binding(14) var<storage, read_write> fuel_next: array<f32>;
+@group(0) @binding(13) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(14) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(15) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(16) var<storage, read_write> fuel_next: array<f32>;
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
@@ -45,6 +48,8 @@ fn confinement_strength() -> f32 { return bitcast<f32>(constants[8]); }
 fn source_count() -> u32 { return constants[9]; }
 // Open sides: bit 2·axis for the minimum side, 2·axis + 1 for the maximum side.
 fn open_sides() -> u32 { return constants[10]; }
+// MacCormack advection (fluid F4): the forward step then carries no dissipation; the correction does.
+fn sharp_advection() -> bool { return constants[11] != 0u; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 // The Combustion block follows the sources: ignition temperature, burn rate, heat release, smoke
 // yield, cooling, thermal lift.
@@ -308,6 +313,20 @@ fn backtrace(position: vec3<f32>) -> vec3<f32> {
     return position - sample_velocity(position) * (frame_dt() / cell_size());
 }
 
+// Where the fluid at `position` goes in one step: MacCormack's backward (reverse) trace.
+fn forward_trace(position: vec3<f32>) -> vec3<f32> {
+    return position + sample_velocity(position) * (frame_dt() / cell_size());
+}
+
+fn dissipation_factor(rate: f32) -> f32 {
+    return 1.0 / (1.0 + rate * frame_dt());
+}
+
+// The semi-Lagrangian step's dissipation: all of it, unless the MacCormack correction applies it.
+fn forward_decay(rate: f32) -> f32 {
+    return select(dissipation_factor(rate), 1.0, sharp_advection());
+}
+
 // Each face's component is carried along the flow from where it was one step ago.
 @compute @workgroup_size(4, 4, 4)
 fn advect_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
@@ -318,8 +337,7 @@ fn advect_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
         sample_component(backtrace(p - 0.5 * axis_offset(1u)), 1u),
         sample_component(backtrace(p - 0.5 * axis_offset(2u)), 2u),
     );
-    let decay = 1.0 / (1.0 + velocity_dissipation() * frame_dt());
-    velocity_next[cell_index(cell)] = vec4<f32>(advected * decay, 0.0);
+    velocity_next[cell_index(cell)] = vec4<f32>(advected * forward_decay(velocity_dissipation()), 0.0);
 }
 
 @compute @workgroup_size(4, 4, 4)
@@ -331,8 +349,7 @@ fn advect_density(@builtin(global_invocation_id) cell: vec3<u32>) {
     let x2 = mix(density[s.corners[4]], density[s.corners[5]], s.t.x);
     let x3 = mix(density[s.corners[6]], density[s.corners[7]], s.t.x);
     let sampled = mix(mix(x0, x1, s.t.y), mix(x2, x3, s.t.y), s.t.z);
-    let decay = 1.0 / (1.0 + density_dissipation() * frame_dt());
-    density_next[cell_index(cell)] = sampled * decay;
+    density_next[cell_index(cell)] = sampled * forward_decay(density_dissipation());
 }
 
 // The divergence of each cell: the net flow out through its six faces.
@@ -460,4 +477,155 @@ fn advect_fuel(@builtin(global_invocation_id) cell: vec3<u32>) {
     let x2 = mix(fuel[s.corners[4]], fuel[s.corners[5]], s.t.x);
     let x3 = mix(fuel[s.corners[6]], fuel[s.corners[7]], s.t.x);
     fuel_next[cell_index(cell)] = mix(mix(x0, x1, s.t.y), mix(x2, x3, s.t.y), s.t.z);
+}
+
+// ---- MacCormack advection (fluid F4) ----
+//
+// After the semi-Lagrangian step φ̂ = A(φ), trace φ̂ back the other way, φ̃ = A⁻¹(φ̂): the difference
+// φ − φ̃ is twice the step's error, so ψ = φ̂ + ½(φ − φ̃) is second-order. It is limited to the extrema
+// of the eight values the forward step interpolated (Selle et al. 2008), so no new extrema — and no
+// oscillation — appear. Results go to the hat buffers, then are copied back.
+
+fn interpolate(v: array<f32, 8>, t: vec3<f32>) -> f32 {
+    let x0 = mix(v[0], v[1], t.x);
+    let x1 = mix(v[2], v[3], t.x);
+    let x2 = mix(v[4], v[5], t.x);
+    let x3 = mix(v[6], v[7], t.x);
+    return mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
+}
+
+fn lowest(v: array<f32, 8>) -> f32 {
+    return min(min(min(v[0], v[1]), min(v[2], v[3])), min(min(v[4], v[5]), min(v[6], v[7])));
+}
+
+fn highest(v: array<f32, 8>) -> f32 {
+    return max(max(max(v[0], v[1]), max(v[2], v[3])), max(max(v[4], v[5]), max(v[6], v[7])));
+}
+
+// ψ = φ̂ + ½(φ − φ̃), clamped to the extrema of the values φ̂ was interpolated from.
+fn maccormack(original: f32, hat: f32, reversed: f32, sampled: array<f32, 8>) -> f32 {
+    return clamp(hat + 0.5 * (original - reversed), lowest(sampled), highest(sampled));
+}
+
+fn density_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        density[s.corners[0]], density[s.corners[1]], density[s.corners[2]], density[s.corners[3]],
+        density[s.corners[4]], density[s.corners[5]], density[s.corners[6]], density[s.corners[7]],
+    );
+}
+
+fn density_next_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        density_next[s.corners[0]], density_next[s.corners[1]], density_next[s.corners[2]],
+        density_next[s.corners[3]], density_next[s.corners[4]], density_next[s.corners[5]],
+        density_next[s.corners[6]], density_next[s.corners[7]],
+    );
+}
+
+fn temperature_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        temperature[s.corners[0]], temperature[s.corners[1]], temperature[s.corners[2]],
+        temperature[s.corners[3]], temperature[s.corners[4]], temperature[s.corners[5]],
+        temperature[s.corners[6]], temperature[s.corners[7]],
+    );
+}
+
+fn temperature_next_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        temperature_next[s.corners[0]], temperature_next[s.corners[1]],
+        temperature_next[s.corners[2]], temperature_next[s.corners[3]],
+        temperature_next[s.corners[4]], temperature_next[s.corners[5]],
+        temperature_next[s.corners[6]], temperature_next[s.corners[7]],
+    );
+}
+
+fn fuel_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        fuel[s.corners[0]], fuel[s.corners[1]], fuel[s.corners[2]], fuel[s.corners[3]],
+        fuel[s.corners[4]], fuel[s.corners[5]], fuel[s.corners[6]], fuel[s.corners[7]],
+    );
+}
+
+fn fuel_next_corners(s: Trilinear) -> array<f32, 8> {
+    return array<f32, 8>(
+        fuel_next[s.corners[0]], fuel_next[s.corners[1]], fuel_next[s.corners[2]],
+        fuel_next[s.corners[3]], fuel_next[s.corners[4]], fuel_next[s.corners[5]],
+        fuel_next[s.corners[6]], fuel_next[s.corners[7]],
+    );
+}
+
+fn velocity_corners(s: Trilinear, axis: u32) -> array<f32, 8> {
+    return array<f32, 8>(
+        component(velocity[s.corners[0]], axis), component(velocity[s.corners[1]], axis),
+        component(velocity[s.corners[2]], axis), component(velocity[s.corners[3]], axis),
+        component(velocity[s.corners[4]], axis), component(velocity[s.corners[5]], axis),
+        component(velocity[s.corners[6]], axis), component(velocity[s.corners[7]], axis),
+    );
+}
+
+fn velocity_next_corners(s: Trilinear, axis: u32) -> array<f32, 8> {
+    return array<f32, 8>(
+        component(velocity_next[s.corners[0]], axis), component(velocity_next[s.corners[1]], axis),
+        component(velocity_next[s.corners[2]], axis), component(velocity_next[s.corners[3]], axis),
+        component(velocity_next[s.corners[4]], axis), component(velocity_next[s.corners[5]], axis),
+        component(velocity_next[s.corners[6]], axis), component(velocity_next[s.corners[7]], axis),
+    );
+}
+
+// The corrected `axis` velocity of the face at cell coordinates `p` (its cell's centre).
+fn corrected_component(p: vec3<f32>, axis: u32, original: f32, hat: f32) -> f32 {
+    let shift = 0.5 * axis_offset(axis);
+    let at = p - shift;
+    let upstream = trilinear(backtrace(at) + shift);
+    let downstream = trilinear(forward_trace(at) + shift);
+    return maccormack(original, hat, interpolate(velocity_next_corners(downstream, axis), downstream.t), velocity_corners(upstream, axis));
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn correct_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let p = vec3<f32>(cell);
+    let i = cell_index(cell);
+    let original = velocity[i];
+    let hat = velocity_next[i];
+    let corrected = vec3<f32>(
+        corrected_component(p, 0u, original.x, hat.x),
+        corrected_component(p, 1u, original.y, hat.y),
+        corrected_component(p, 2u, original.z, hat.z),
+    );
+    velocity_hat[i] = vec4<f32>(corrected * dissipation_factor(velocity_dissipation()), 0.0);
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn correct_density(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let p = vec3<f32>(cell);
+    let i = cell_index(cell);
+    let upstream = trilinear(backtrace(p));
+    let downstream = trilinear(forward_trace(p));
+    let reversed = interpolate(density_next_corners(downstream), downstream.t);
+    let corrected = maccormack(density[i], density_next[i], reversed, density_corners(upstream));
+    scalar_hat[i] = corrected * dissipation_factor(density_dissipation());
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn correct_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let p = vec3<f32>(cell);
+    let i = cell_index(cell);
+    let upstream = trilinear(backtrace(p));
+    let downstream = trilinear(forward_trace(p));
+    let reversed = interpolate(temperature_next_corners(downstream), downstream.t);
+    scalar_hat[i] = maccormack(temperature[i], temperature_next[i], reversed, temperature_corners(upstream));
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn correct_fuel(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let p = vec3<f32>(cell);
+    let i = cell_index(cell);
+    let upstream = trilinear(backtrace(p));
+    let downstream = trilinear(forward_trace(p));
+    let reversed = interpolate(fuel_next_corners(downstream), downstream.t);
+    scalar_hat[i] = maccormack(fuel[i], fuel_next[i], reversed, fuel_corners(upstream));
 }

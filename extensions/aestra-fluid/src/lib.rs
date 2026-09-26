@@ -81,6 +81,8 @@ pub const RESOURCE_PRESSURE: &str = "org.example.aestra-fluid::resource/pressure
 pub const RESOURCE_PRESSURE_NEXT: &str = "org.example.aestra-fluid::resource/pressure_scratch";
 pub const RESOURCE_DIVERGENCE: &str = "org.example.aestra-fluid::resource/divergence_grid";
 pub const RESOURCE_VORTICITY: &str = "org.example.aestra-fluid::resource/vorticity_grid";
+pub const RESOURCE_VELOCITY_HAT: &str = "org.example.aestra-fluid::resource/velocity_corrected";
+pub const RESOURCE_SCALAR_HAT: &str = "org.example.aestra-fluid::resource/scalar_corrected";
 pub const RESOURCE_TEMPERATURE: &str = "org.example.aestra-fluid::resource/temperature_grid";
 pub const RESOURCE_TEMPERATURE_NEXT: &str =
     "org.example.aestra-fluid::resource/temperature_scratch";
@@ -194,7 +196,7 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
 }
 
 /// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 15] = [
+pub const ENTRY_POINTS: [&str; 19] = [
     "add_sources",
     "compute_vorticity",
     "vorticity_force",
@@ -210,6 +212,10 @@ pub const ENTRY_POINTS: [&str; 15] = [
     "advect_fuel",
     "apply_buoyancy",
     "apply_buoyancy_fire",
+    "correct_velocity",
+    "correct_density",
+    "correct_temperature",
+    "correct_fuel",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -253,6 +259,16 @@ impl AestraExtension for FluidExtension {
                 ResourceLifetime::Transient,
             ),
             (RESOURCE_VORTICITY, "Vorticity", ResourceLifetime::Transient),
+            (
+                RESOURCE_VELOCITY_HAT,
+                "Corrected Velocity",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_SCALAR_HAT,
+                "Corrected Scalar",
+                ResourceLifetime::Transient,
+            ),
             (
                 RESOURCE_TEMPERATURE,
                 "Temperature",
@@ -417,6 +433,13 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "Open Sides",
             "Fluid leaves through the four sides of the grid (the floor stays closed).",
             Value::Bool(false),
+            InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "sharp_advection",
+            "Sharp Advection",
+            "MacCormack advection: keeps swirls and edges that plain semi-Lagrangian advection blurs, for two extra passes per field.",
+            Value::Bool(true),
             InputControl::Toggle,
         ),
     ])
@@ -829,6 +852,9 @@ fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<Resource
         bytes: 0,
         lifetime: ResourceLifetime::Persistent,
     });
+    // MacCormack's scratch (fluid F4): always declared, so the fire grids keep their bindings.
+    resources.push(grid(RESOURCE_VELOCITY_HAT, 16, ResourceLifetime::Transient));
+    resources.push(grid(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
     if fire {
         resources.extend([
             grid(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
@@ -873,6 +899,8 @@ struct PackedStage {
     constants: Vec<u32>,
     /// A Combustion module is present: the stage simulates temperature and fuel.
     fire: bool,
+    /// MacCormack advection: each advection is followed by its correction.
+    sharp: bool,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -926,6 +954,8 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         sides |= OPEN_X_MIN | OPEN_X_MAX | OPEN_Z_MIN | OPEN_Z_MAX;
     }
     words[10] = sides;
+    // MacCormack advection (fluid F4); off falls back to plain semi-Lagrangian.
+    words[11] = u32::from(grid.parameters.get_bool("sharp_advection").unwrap_or(true));
     for (index, source) in sources.iter().enumerate() {
         let base = SOURCE_BASE + index * SOURCE_WORDS;
         let position = vec3(&source.parameters, "position")?;
@@ -957,6 +987,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         iterations,
         cell_size,
         origin,
+        sharp: words[11] != 0,
         constants: words,
         fire: combustion.is_some(),
     })
@@ -1055,6 +1086,7 @@ impl StageLowerer for FluidSolverLowerer {
             origin,
             constants,
             fire,
+            sharp,
         } = pack_constants(input.modules)?;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
@@ -1082,6 +1114,28 @@ impl StageLowerer for FluidSolverLowerer {
         let read_write = ResourceAccess::read_write;
         let constants_read = || read(AESTRA_RESOURCE_STAGE_CONSTANTS);
         let frame_read = || read(AESTRA_RESOURCE_FRAME);
+        // After a scalar's semi-Lagrangian step (into `scratch`): with MacCormack, its correction into
+        // the scalar hat and a copy back; otherwise the copy back.
+        let settle = |correction: &str, field: &'static str, scratch: &'static str| {
+            if sharp {
+                vec![
+                    pass(
+                        correction,
+                        vec![
+                            read(RESOURCE_VELOCITY),
+                            read(field),
+                            read(scratch),
+                            write(RESOURCE_SCALAR_HAT),
+                            constants_read(),
+                            frame_read(),
+                        ],
+                    ),
+                    copy(RESOURCE_SCALAR_HAT, field),
+                ]
+            } else {
+                vec![copy(scratch, field)]
+            }
+        };
 
         let mut steps = vec![pass(
             "add_sources",
@@ -1176,7 +1230,22 @@ impl StageLowerer for FluidSolverLowerer {
                 frame_read(),
             ],
         ));
-        steps.push(copy(RESOURCE_VELOCITY_NEXT, RESOURCE_VELOCITY));
+        if sharp {
+            // MacCormack: correct the semi-Lagrangian result, then take the corrected one.
+            steps.push(pass(
+                "correct_velocity",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read(RESOURCE_VELOCITY_NEXT),
+                    write(RESOURCE_VELOCITY_HAT),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(copy(RESOURCE_VELOCITY_HAT, RESOURCE_VELOCITY));
+        } else {
+            steps.push(copy(RESOURCE_VELOCITY_NEXT, RESOURCE_VELOCITY));
+        }
         steps.push(pass(
             "compute_divergence",
             vec![
@@ -1220,16 +1289,26 @@ impl StageLowerer for FluidSolverLowerer {
                 frame_read(),
             ],
         ));
-        steps.push(copy(RESOURCE_DENSITY_NEXT, RESOURCE_DENSITY));
+        steps.extend(settle(
+            "correct_density",
+            RESOURCE_DENSITY,
+            RESOURCE_DENSITY_NEXT,
+        ));
         let mut fields = vec![(RESOURCE_VELOCITY, 4), (RESOURCE_DENSITY, 1)];
         if fire {
-            for (entry, field, scratch) in [
+            for (entry, correction, field, scratch) in [
                 (
                     "advect_temperature",
+                    "correct_temperature",
                     RESOURCE_TEMPERATURE,
                     RESOURCE_TEMPERATURE_NEXT,
                 ),
-                ("advect_fuel", RESOURCE_FUEL, RESOURCE_FUEL_NEXT),
+                (
+                    "advect_fuel",
+                    "correct_fuel",
+                    RESOURCE_FUEL,
+                    RESOURCE_FUEL_NEXT,
+                ),
             ] {
                 steps.push(pass(
                     entry,
@@ -1241,7 +1320,7 @@ impl StageLowerer for FluidSolverLowerer {
                         frame_read(),
                     ],
                 ));
-                steps.push(copy(scratch, field));
+                steps.extend(settle(correction, field, scratch));
                 fields.push((field, 1));
             }
         }

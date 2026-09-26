@@ -77,7 +77,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
         .programs
         .get(&aestra_core::ComputeProgramId::new(PROGRAM_SOLVER))
         .unwrap();
-    assert_eq!(program.entry_points.len(), 15);
+    assert_eq!(program.entry_points.len(), 19);
     // The whole program — solver passes plus the host-binding accessors — validates.
     aestra_gpu::program_interface(program).expect("the solver program validates");
 }
@@ -103,11 +103,11 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
     stage.block.validate().unwrap();
     // Every op's declared accesses match what its WGSL entry actually uses.
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
-    // sources + buoyancy + vorticity×3 + advect velocity + divergence + 24 relaxations + project +
-    // advect density
+    // sources + buoyancy + vorticity×3 + advect and correct velocity + divergence + 24 relaxations +
+    // project + advect and correct density
     assert_eq!(
         stage.block.compute_pass_count(),
-        1 + 1 + 3 + 1 + 1 + 24 + 1 + 1
+        1 + 1 + 3 + 2 + 1 + 24 + 1 + 2
     );
     assert_eq!(
         stage.block.binding_of(&aestra_core::ResourceTypeId::new(
@@ -141,7 +141,32 @@ fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
         .retain(|module| module.module_type.0 != MODULE_VORTICITY);
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).unwrap();
-    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 1 + 1 + 24 + 1 + 1);
+    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 2 + 1 + 24 + 1 + 2);
+}
+
+#[test]
+fn sharp_advection_adds_the_maccormack_corrections_and_keeps_every_binding() {
+    let registry = fluid_registry();
+    let sharp = compile_stage(&registry, &smoke_effect(&registry));
+    let mut plain = smoke_effect(&registry);
+    set_input(
+        &mut plain,
+        MODULE_GRID,
+        "sharp_advection",
+        Value::Bool(false),
+    );
+    let plain = compile_stage(&registry, &plain);
+    check_program_block(&plain.block, &registry.programs).unwrap();
+    assert_eq!(
+        sharp.block.compute_pass_count(),
+        plain.block.compute_pass_count() + 2,
+        "one correction per advected field (velocity, density)"
+    );
+    assert_eq!(sharp.block.resources, plain.block.resources);
+    assert_eq!(
+        (sharp.block.constants[11], plain.block.constants[11]),
+        (1, 0)
+    );
 }
 
 #[test]
@@ -370,10 +395,10 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
     let smoke = compile_stage(&registry, &smoke_effect(&registry));
     let fire = compile_stage(&registry, &fire_effect(&registry));
     check_program_block(&fire.block, &registry.programs).expect("fire accesses are truthful");
-    // add_heat + combust, then advect temperature and fuel.
+    // add_heat + combust, then advect and correct temperature and fuel.
     assert_eq!(
         fire.block.compute_pass_count(),
-        smoke.block.compute_pass_count() + 4
+        smoke.block.compute_pass_count() + 6
     );
     // The fire grids come last, so every smoke binding keeps its index.
     for (index, resource) in smoke.block.resources.iter().enumerate() {
@@ -390,7 +415,7 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
     {
         assert_eq!(
             fire.block.binding_of(&ResourceTypeId::new(resource)),
-            Some(11 + binding as u32)
+            Some(13 + binding as u32)
         );
         assert_eq!(
             smoke.block.binding_of(&ResourceTypeId::new(resource)),

@@ -187,7 +187,7 @@
     },
     "dispatch_count": {
       "source": "estimated",
-      "value": 39
+      "value": 43
     },
     "estimated_overdraw": {
       "source": "unavailable"
@@ -198,7 +198,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 9306336
+      "value": 11518176
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -298,7 +298,7 @@
         },
         "dispatch_count": {
           "source": "estimated",
-          "value": 39
+          "value": 43
         },
         "estimated_overdraw": {
           "source": "unavailable"
@@ -309,7 +309,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 9306336
+          "value": 11518176
         },
         "texture_memory_bytes": {
           "source": "estimated",

@@ -682,9 +682,9 @@ fn consecutive_dispatches_share_passes_without_changing_the_result() {
     let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
     let passes = fluid.stage.passes_per_tick();
     let dispatches = fluid.stage.block().compute_pass_count() as usize;
-    // Every pressure-iteration copy ends a pass: sources, buoyancy, vorticity ×3, advect | divergence +
-    // relax | 23 relax | project + advect density.
-    assert_eq!((dispatches, passes), (33, 26));
+    // Every copy ends a pass: sources .. advect + correct velocity | divergence + relax | 23 relax |
+    // project + advect + correct density.
+    assert_eq!((dispatches, passes), (35, 26));
     // Many ticks encoded into ONE submission each see their own frame: the result equals ticking
     // with one submission per tick.
     let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());
@@ -925,6 +925,64 @@ fn particles_following_the_field_take_the_plumes_velocity() {
         live.windows(2)
             .all(|pair| velocity(pair[0])[1] > velocity(pair[1])[1]),
         "the pull fades with height"
+    );
+}
+
+/// How high a puff launched by a short burst (a vortex ring) has risen after `ticks`, with or without
+/// MacCormack advection — no buoyancy or confinement, so only advection carries it.
+fn vortex_ring_height(gpu: &Gpu, registry: &ExtensionRegistry, sharp: bool, ticks: u32) -> f32 {
+    let mut ring = effect(registry, false, 40);
+    ring.simulation_stages[0].modules.retain(|module| {
+        module.module_type.0 != aestra_fluid::MODULE_VORTICITY
+            && module.module_type.0 != aestra_fluid::MODULE_BUOYANCY
+    });
+    set_input(
+        &mut ring,
+        MODULE_GRID,
+        "sharp_advection",
+        Value::Bool(sharp),
+    );
+    for (name, value) in [
+        ("position", Value::Vec3([0.0, 0.5, 0.0])),
+        ("radius", Value::Scalar(0.35)),
+        ("velocity", Value::Vec3([0.0, 6.0, 0.0])),
+        ("density_rate", Value::Scalar(30.0)),
+    ] {
+        set_input(&mut ring, MODULE_DENSITY_SOURCE, name, value);
+    }
+    // The same stage with its source moved far outside the grid: nothing more is injected.
+    let mut quiet = ring.clone();
+    set_input(
+        &mut quiet,
+        MODULE_DENSITY_SOURCE,
+        "position",
+        Value::Vec3([0.0, 100.0, 0.0]),
+    );
+    let quiet = Fluid::new(gpu, registry, &quiet)
+        .stage
+        .block()
+        .constants
+        .clone();
+    let mut fluid = Fluid::new(gpu, registry, &ring);
+    fluid.run(gpu, 0..16);
+    fluid.stage.set_constants(&gpu.queue, &quiet).unwrap();
+    fluid.run(gpu, 8..ticks);
+    mass_and_centroid(&fluid.floats(gpu, RESOURCE_DENSITY)).1[1]
+}
+
+/// Fluid F4's benchmark: a vortex ring travels measurably farther with MacCormack advection than with
+/// plain semi-Lagrangian at the same resolution — less numerical dissipation keeps its momentum.
+#[test]
+fn a_vortex_ring_travels_farther_with_maccormack_advection() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let plain = vortex_ring_height(&gpu, &registry, false, 60);
+    let sharp = vortex_ring_height(&gpu, &registry, true, 60);
+    eprintln!("vortex ring centroid height: semi-Lagrangian {plain}, MacCormack {sharp}");
+    let launched_from = CENTER[1] - RESOLUTION as f32 * CELL_SIZE * 0.5 + 0.5;
+    assert!(
+        sharp - launched_from > (plain - launched_from) * 1.1,
+        "MacCormack carries the ring at least 10% farther ({plain} vs {sharp})"
     );
 }
 
