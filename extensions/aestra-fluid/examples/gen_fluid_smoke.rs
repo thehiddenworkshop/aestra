@@ -4,7 +4,8 @@
 //! the plume, and heavier "Embers" pulled more weakly against gravity.
 //! Written through the real `save_ron`, reloaded, and compiled with the fluid extension installed.
 //!
-//! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_smoke`.
+//! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_smoke`; an argument
+//! writes it elsewhere instead.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
@@ -94,6 +95,15 @@ fn main() {
         "center",
         Value::Vec3([0.0, 40.0, 0.0]),
     );
+    // Pressure solved to a tolerance by multigrid-preconditioned CG (fluid F5). Flow maps (F6) stay
+    // off: on a plume this small they add about 0.5 ms a tick for no visible gain.
+    set(
+        &mut effect,
+        MODULE_GRID,
+        "multigrid_pressure",
+        Value::Bool(true),
+    );
+    set(&mut effect, MODULE_GRID, "flow_map", Value::Bool(false));
     set(
         &mut effect,
         MODULE_DENSITY_SOURCE,
@@ -127,15 +137,16 @@ fn main() {
     // Record the plugin requirement exactly as the editor does on save (extensible-stages M11).
     effect.extensions = registry.derive_requirements(&effect);
 
-    effect.save_ron(PATH).expect("write sample");
-    let reloaded = EffectAsset::load_ron(PATH).expect("reload sample");
+    let path = std::env::args().nth(1).unwrap_or_else(|| PATH.into());
+    effect.save_ron(&path).expect("write sample");
+    let reloaded = EffectAsset::load_ron(&path).expect("reload sample");
     assert_eq!(reloaded, effect, "the sample round-trips");
     let compiled = EffectCompiler::with_extensions(registry)
         .compile(&reloaded)
         .expect("the sample compiles with the fluid");
     let stage = &compiled.extension_stages[0];
     println!(
-        "wrote {PATH}: domain '{}' ({}), {} dispatches per tick; followers: {:?}",
+        "wrote {path}: domain '{}' ({}), {} dispatches per tick; followers: {:?}",
         stage.name,
         stage.stage_type.as_str(),
         stage.block.compute_pass_count(),

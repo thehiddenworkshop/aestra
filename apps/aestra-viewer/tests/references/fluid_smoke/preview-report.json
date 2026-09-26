@@ -155,23 +155,23 @@
     },
     "alive_particles": {
       "source": "measured",
-      "value": 264
+      "value": 262
     },
     "submitted_instances": {
       "source": "measured",
-      "value": 264
+      "value": 262
     },
     "submitted_vertices": {
       "source": "measured",
-      "value": 1584
+      "value": 1572
     },
     "submitted_primitives": {
       "source": "measured",
-      "value": 1056
+      "value": 1048
     },
     "peak_particles": {
       "source": "estimated",
-      "value": 266
+      "value": 268
     },
     "particle_capacity": {
       "source": "measured",
@@ -187,7 +187,7 @@
     },
     "dispatch_count": {
       "source": "estimated",
-      "value": 568
+      "value": 292
     },
     "estimated_overdraw": {
       "source": "unavailable"
@@ -198,7 +198,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 13996404
+      "value": 13996508
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -211,15 +211,15 @@
       {
         "id": "6a146334-9d80-4d97-aec8-bcb2d74fc9be",
         "name": "Fluid Smoke [root] / Smoke Puffs",
-        "alive_particles": 214,
+        "alive_particles": 213,
         "peak_particles": 214,
         "particle_capacity": 512
       },
       {
         "id": "b0c5b846-d8a0-4452-8fcf-4c35dac09df3",
         "name": "Fluid Smoke [root] / Embers",
-        "alive_particles": 50,
-        "peak_particles": 52,
+        "alive_particles": 49,
+        "peak_particles": 54,
         "particle_capacity": 512
       }
     ],
@@ -273,23 +273,23 @@
         },
         "alive_particles": {
           "source": "measured",
-          "value": 264
+          "value": 262
         },
         "submitted_instances": {
           "source": "measured",
-          "value": 264
+          "value": 262
         },
         "submitted_vertices": {
           "source": "measured",
-          "value": 1584
+          "value": 1572
         },
         "submitted_primitives": {
           "source": "measured",
-          "value": 1056
+          "value": 1048
         },
         "peak_particles": {
           "source": "estimated",
-          "value": 266
+          "value": 268
         },
         "particle_capacity": {
           "source": "measured",
@@ -305,7 +305,7 @@
         },
         "dispatch_count": {
           "source": "estimated",
-          "value": 568
+          "value": 292
         },
         "estimated_overdraw": {
           "source": "unavailable"
@@ -316,7 +316,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 13996404
+          "value": 13996508
         },
         "texture_memory_bytes": {
           "source": "estimated",
@@ -329,15 +329,15 @@
           {
             "id": "6a146334-9d80-4d97-aec8-bcb2d74fc9be",
             "name": "Smoke Puffs",
-            "alive_particles": 214,
+            "alive_particles": 213,
             "peak_particles": 214,
             "particle_capacity": 512
           },
           {
             "id": "b0c5b846-d8a0-4452-8fcf-4c35dac09df3",
             "name": "Embers",
-            "alive_particles": 50,
-            "peak_particles": 52,
+            "alive_particles": 49,
+            "peak_particles": 54,
             "particle_capacity": 512
           }
         ],

@@ -4,7 +4,8 @@
 //! emission inside lit smoke — plus embers riding the flames. Written through the real `save_ron`,
 //! reloaded, and compiled with the fluid extension installed.
 //!
-//! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_fire`.
+//! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_fire`; an argument
+//! writes it elsewhere instead.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
@@ -83,6 +84,10 @@ fn main() {
         (MODULE_GRID, "open_top", Value::Bool(true)),
         (MODULE_GRID, "open_sides", Value::Bool(true)),
         (MODULE_GRID, "sharp_advection", Value::Bool(true)),
+        // Pressure solved to a tolerance by multigrid-preconditioned CG (fluid F5). Flow maps (F6)
+        // stay off: their energy safeguard damps this strongly forced flow, smoothing the flames.
+        (MODULE_GRID, "multigrid_pressure", Value::Bool(true)),
+        (MODULE_GRID, "flow_map", Value::Bool(false)),
         (
             MODULE_DENSITY_SOURCE,
             "position",
@@ -122,15 +127,16 @@ fn main() {
     // Record the plugin requirement exactly as the editor does on save (extensible-stages M11).
     effect.extensions = registry.derive_requirements(&effect);
 
-    effect.save_ron(PATH).expect("write sample");
-    let reloaded = EffectAsset::load_ron(PATH).expect("reload sample");
+    let path = std::env::args().nth(1).unwrap_or_else(|| PATH.into());
+    effect.save_ron(&path).expect("write sample");
+    let reloaded = EffectAsset::load_ron(&path).expect("reload sample");
     assert_eq!(reloaded, effect, "the sample round-trips");
     let compiled = EffectCompiler::with_extensions(registry)
         .compile(&reloaded)
         .expect("the sample compiles with the fluid");
     let stage = &compiled.extension_stages[0];
     println!(
-        "wrote {PATH}: domain '{}', {} dispatches per tick, {} field(s) drawn",
+        "wrote {path}: domain '{}', {} dispatches per tick, {} field(s) drawn",
         stage.name,
         stage.block.compute_pass_count(),
         match &stage.presentations[0] {
