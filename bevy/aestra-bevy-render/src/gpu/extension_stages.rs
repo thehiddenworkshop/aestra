@@ -28,7 +28,8 @@
 
 use super::*;
 use crate::execution::{
-    FieldFollowPipeline, PassTimestamps, StageExecutor, StageInputs, StageTimeline, TimelinePolicy,
+    FieldFollowPipeline, PassTimestamps, ProgramCache, StageExecutor, StageInputs, StageTimeline,
+    TimelinePolicy,
 };
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
@@ -204,6 +205,7 @@ pub(super) fn install(app: &mut App) {
     render_app
         .insert_resource(mailbox)
         .init_resource::<StageRuntimes>()
+        .init_resource::<super::CatchupPacer>()
         .add_systems(
             RenderStartup,
             (init_field_slice_pipeline, init_field_follow),
@@ -518,10 +520,14 @@ pub(crate) struct StageRuntimes(BTreeMap<Entity, EffectStages>);
 /// Builds, keeps or drops each effect's stage timelines.
 fn prepare_stage_runtimes(
     mut runtimes: ResMut<StageRuntimes>,
+    mut pacer: ResMut<super::CatchupPacer>,
+    // Compiled programs outlive the runtimes: a rebuild after an edit reuses them.
+    mut programs_cache: Local<ProgramCache>,
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
     effects: Query<(Entity, &ExtractedStages)>,
 ) {
+    pacer.frame(std::time::Instant::now());
     runtimes.0.retain(|entity, _| effects.contains(*entity));
     for (entity, extracted) in &effects {
         if let Some(existing) = runtimes.0.get_mut(&entity)
@@ -553,17 +559,20 @@ fn prepare_stage_runtimes(
             existing.key.blocks = blocks;
             continue;
         }
+        // A rebuilt domain replays from tick 0, and its ticks may cost anything now.
+        pacer.restart();
         // The linked programs, including any extension linked since the last build.
         let programs = ExtensionRegistry::linked().programs;
         let wgpu_queue: &wgpu::Queue = &queue;
         let timelines = stages(&extracted.effect)
             .map(|stage| {
-                StageExecutor::new(
+                StageExecutor::with_cache(
                     device.wgpu_device(),
                     wgpu_queue,
                     &stage.block,
                     &programs,
                     extracted.host.byte_len(),
+                    &mut programs_cache,
                 )
                 .map(|executor| {
                     StageTimeline::new(executor, TimelinePolicy::default(), extracted.seed)
@@ -598,6 +607,7 @@ fn run_extension_stages(
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
     mailbox: Res<StageTimingMailbox>,
+    mut pacer: ResMut<super::CatchupPacer>,
     mut timer: Local<SimulationTimer>,
     slice_pipeline: Option<Res<FieldSlicePipeline>>,
     volume_pipeline: Option<Res<super::volume::FieldVolume>>,
@@ -619,7 +629,8 @@ fn run_extension_stages(
         let Some(runtime) = runtimes.0.get_mut(&entity) else {
             continue;
         };
-        let budget = stateful_catchup_budget(extracted.quality);
+        // Paced by frame time: a replay after a rebuild or a seek spreads over frames.
+        let budget = pacer.budget(extracted.quality);
         // Coupled domains advance in lockstep with their particles, in the stateful path (fluid F2b).
         let pending: Vec<usize> = if extracted.coupled {
             Vec::new()
@@ -655,7 +666,7 @@ fn run_extension_stages(
                     end: (position + 1 == pending.len()).then_some(slot + 1),
                 });
             let target = timeline.tick_for_time(extracted.time);
-            if let Err(error) = timeline.advance_to(
+            match timeline.advance_to(
                 wgpu_device,
                 render_context.command_encoder(),
                 target,
@@ -663,8 +674,11 @@ fn run_extension_stages(
                 extracted.inputs(),
                 stamps,
             ) {
-                warn!("extension stage stopped: {error}");
-                runtime.timelines[index] = None;
+                Ok(report) => pacer.spent(report.ticks, budget),
+                Err(error) => {
+                    warn!("extension stage stopped: {error}");
+                    runtime.timelines[index] = None;
+                }
             }
         }
         // The debug field slice.

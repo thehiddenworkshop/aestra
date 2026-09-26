@@ -25,9 +25,9 @@
 //! the nearest one on a backward seek — so scrubbing reproduces the uninterrupted run exactly. Both are
 //! engine-neutral `wgpu`: tests drive them on a standalone device, the Bevy render world on its own.
 
-use aestra_compiler::ComputeProgramRegistry;
+use aestra_compiler::{ComputeProgram, ComputeProgramRegistry};
 use aestra_core::{ComputeProgramId, ResourceTypeId};
-use aestra_gpu::{GpuHostBindings, check_program_block};
+use aestra_gpu::{GpuHostBindings, ProgramInterfaces, check_program_block_cached, source_hash};
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
     ExecutionBlock, ExecutionOp, FrameConstants, RepeatPolicy, ResourceLifetime, StagedDispatch,
@@ -144,6 +144,56 @@ fn check_first() {
 }
 "#;
 
+/// Shader modules, pipelines and checked program interfaces kept across executors on one device.
+/// Rebuilding a stage (an edit that changes its resources or ops) names the same programs again;
+/// with a cache it reuses their compiled pipelines instead of recompiling every entry point. Entries
+/// are keyed by program and a hash of its source, so a changed program is compiled again.
+#[derive(Default)]
+pub struct ProgramCache {
+    interfaces: ProgramInterfaces,
+    modules: HashMap<ComputeProgramId, (u64, wgpu::ShaderModule)>,
+    pipelines: HashMap<(ComputeProgramId, String), (u64, wgpu::ComputePipeline)>,
+    check: Option<[wgpu::ComputePipeline; 2]>,
+}
+
+impl ProgramCache {
+    fn pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        program: &ComputeProgram,
+        entry_point: &str,
+    ) -> wgpu::ComputePipeline {
+        let hash = source_hash(&program.wgsl);
+        let key = (program.id.clone(), entry_point.to_owned());
+        if let Some((cached, pipeline)) = self.pipelines.get(&key)
+            && *cached == hash
+        {
+            return pipeline.clone();
+        }
+        let fresh = self
+            .modules
+            .get(&program.id)
+            .is_some_and(|(cached, _)| *cached == hash);
+        if !fresh {
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(program.id.as_str()),
+                source: wgpu::ShaderSource::Wgsl(program.wgsl.as_str().into()),
+            });
+            self.modules.insert(program.id.clone(), (hash, module));
+        }
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry_point),
+            layout: None,
+            module: &self.modules[&program.id].1,
+            entry_point: Some(entry_point),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        self.pipelines.insert(key, (hash, pipeline.clone()));
+        pipeline
+    }
+}
+
 /// One compiled plugin stage, allocated on a device and ready to run ticks.
 pub struct StageExecutor {
     block: ExecutionBlock,
@@ -171,8 +221,27 @@ impl StageExecutor {
         programs: &ComputeProgramRegistry,
         host_binding_bytes: u64,
     ) -> Result<Self, String> {
+        Self::with_cache(
+            device,
+            queue,
+            block,
+            programs,
+            host_binding_bytes,
+            &mut ProgramCache::default(),
+        )
+    }
+
+    /// [`StageExecutor::new`], reusing the programs `cache` already compiled on `device`.
+    pub fn with_cache(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        block: &ExecutionBlock,
+        programs: &ComputeProgramRegistry,
+        host_binding_bytes: u64,
+        cache: &mut ProgramCache,
+    ) -> Result<Self, String> {
         block.validate().map_err(|error| error.to_string())?;
-        check_program_block(block, programs)?;
+        check_program_block_cached(block, programs, &mut cache.interfaces)?;
 
         let mut buffers = Vec::with_capacity(block.resources.len());
         for resource in &block.resources {
@@ -215,19 +284,18 @@ impl StageExecutor {
             );
         }
 
-        let mut modules: HashMap<ComputeProgramId, wgpu::ShaderModule> = HashMap::new();
         let mut pipeline_index: HashMap<(ComputeProgramId, String), usize> = HashMap::new();
         let mut dispatches = Vec::new();
         stage.prepare_ops(
             device,
             &block.ops,
             programs,
-            &mut modules,
+            cache,
             &mut pipeline_index,
             &mut dispatches,
         )?;
         stage.dispatches = dispatches;
-        stage.prepare_convergence(device, &block.ops)?;
+        stage.prepare_convergence(device, &block.ops, cache)?;
         let mut steps = Vec::new();
         let (mut cursor, mut repeat) = (0, 0);
         stage.expand_steps(&block.ops, &mut cursor, &mut repeat, None, &mut steps)?;
@@ -240,6 +308,7 @@ impl StageExecutor {
         &mut self,
         device: &wgpu::Device,
         ops: &[ExecutionOp],
+        cache: &mut ProgramCache,
     ) -> Result<(), String> {
         for op in ops {
             let ExecutionOp::Repeat { policy, body } = op else {
@@ -251,7 +320,7 @@ impl StageExecutor {
                 ..
             } = policy
             else {
-                self.prepare_convergence(device, body)?;
+                self.prepare_convergence(device, body, cache)?;
                 continue;
             };
             let shapes: Vec<StagedDispatch> = body
@@ -286,7 +355,7 @@ impl StageExecutor {
             });
             let residual = self.require_binding(residual.as_str())?;
             let residual = &self.buffers[residual];
-            let check = self.check.get_or_insert_with(|| {
+            let check = cache.check.get_or_insert_with(|| {
                 let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some("aestra convergence"),
                     source: wgpu::ShaderSource::Wgsl(CONVERGENCE_WGSL.into()),
@@ -322,6 +391,7 @@ impl StageExecutor {
                     })
                 })
             });
+            let check = self.check.get_or_insert_with(|| check.clone());
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("aestra convergence"),
                 layout: &check[0].get_bind_group_layout(0),
@@ -354,7 +424,7 @@ impl StageExecutor {
         device: &wgpu::Device,
         ops: &[ExecutionOp],
         programs: &ComputeProgramRegistry,
-        modules: &mut HashMap<ComputeProgramId, wgpu::ShaderModule>,
+        cache: &mut ProgramCache,
         pipeline_index: &mut HashMap<(ComputeProgramId, String), usize>,
         dispatches: &mut Vec<(usize, wgpu::BindGroup)>,
     ) -> Result<(), String> {
@@ -370,24 +440,10 @@ impl StageExecutor {
                     let index = match pipeline_index.get(&key) {
                         Some(index) => *index,
                         None => {
-                            let module = modules.entry(program_id.clone()).or_insert_with(|| {
-                                let program = programs
-                                    .get(&program_id)
-                                    .expect("checked by check_program_block");
-                                device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                                    label: Some(program_id.as_str()),
-                                    source: wgpu::ShaderSource::Wgsl(program.wgsl.as_str().into()),
-                                })
-                            });
-                            let pipeline =
-                                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                                    label: Some(&compute.entry_point),
-                                    layout: None,
-                                    module,
-                                    entry_point: Some(&compute.entry_point),
-                                    compilation_options: Default::default(),
-                                    cache: None,
-                                });
+                            let program = programs
+                                .get(&program_id)
+                                .expect("checked by check_program_block");
+                            let pipeline = cache.pipeline(device, program, &compute.entry_point);
                             self.pipelines.push(pipeline);
                             pipeline_index.insert(key, self.pipelines.len() - 1);
                             self.pipelines.len() - 1
@@ -415,7 +471,7 @@ impl StageExecutor {
                     dispatches.push((index, bind_group));
                 }
                 ExecutionOp::Repeat { body, .. } => {
-                    self.prepare_ops(device, body, programs, modules, pipeline_index, dispatches)?;
+                    self.prepare_ops(device, body, programs, cache, pipeline_index, dispatches)?;
                 }
                 ExecutionOp::Barrier | ExecutionOp::Copy(_) => {}
             }

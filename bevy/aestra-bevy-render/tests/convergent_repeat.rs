@@ -3,7 +3,7 @@
 //!
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
-use aestra_bevy_render::execution::StageExecutor;
+use aestra_bevy_render::execution::{ProgramCache, StageExecutor};
 use aestra_compiler::{ComputeProgram, ExtensionRegistry};
 use aestra_core::{ComputeProgramId, ResourceTypeId};
 use aestra_runtime::{
@@ -102,11 +102,15 @@ fn gpu() -> Option<Gpu> {
 }
 
 fn registry() -> ExtensionRegistry {
+    registry_with(WGSL)
+}
+
+fn registry_with(wgsl: &str) -> ExtensionRegistry {
     let mut registry = ExtensionRegistry::builtin();
     registry
         .register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM),
-            wgsl: format!("{WGSL}\n{}", aestra_gpu::reduce::REDUCE_WGSL),
+            wgsl: format!("{wgsl}\n{}", aestra_gpu::reduce::REDUCE_WGSL),
             entry_points: ["start", "halve", "reduce_groups", "reduce_partials"]
                 .map(String::from)
                 .to_vec(),
@@ -225,6 +229,40 @@ fn a_convergent_repeat_stops_on_the_device_once_converged() {
     let (value, iterations) = run(&halving(0.1, 10, true));
     assert_eq!(value, [0.0625, 4.0]);
     assert_eq!(iterations, [4]);
+}
+
+#[test]
+fn a_program_cache_reuses_pipelines_until_the_program_changes() {
+    let Some(gpu) = gpu() else { return };
+    let mut cache = ProgramCache::default();
+    let mut run = |registry: &ExtensionRegistry| {
+        let stage = StageExecutor::with_cache(
+            &gpu.device,
+            &gpu.queue,
+            &halving(0.1, 10, false),
+            &registry.programs,
+            4,
+            &mut cache,
+        )
+        .expect("the block runs");
+        stage
+            .run_tick(
+                &gpu.device,
+                &gpu.queue,
+                FrameConstants::fixed_step(0, 1.0 / 60.0, 0),
+                None,
+            )
+            .unwrap();
+        floats(&stage.read_resource(&gpu.device, &gpu.queue, VALUE).unwrap())
+    };
+
+    // Built twice on one cache (the second reuses every pipeline): the same run.
+    let registry = registry();
+    assert_eq!(run(&registry), [0.0625, 4.0]);
+    assert_eq!(run(&registry), [0.0625, 4.0]);
+    // The same program id with another source compiles again: quartering converges in two runs.
+    let quartering = registry_with(&WGSL.replace("value[0] * 0.5", "value[0] * 0.25"));
+    assert_eq!(run(&quartering), [0.0625, 2.0]);
 }
 
 /// The same fixed tree on the CPU: a workgroup halves its active range, adding the upper half on.

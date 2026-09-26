@@ -96,15 +96,52 @@ pub fn check_program_block(
     block: &ExecutionBlock,
     programs: &ComputeProgramRegistry,
 ) -> Result<(), String> {
-    let mut interfaces: BTreeMap<ComputeProgramId, ProgramInterface> = BTreeMap::new();
-    check_ops(block, &block.ops, programs, &mut interfaces)
+    check_program_block_cached(block, programs, &mut ProgramInterfaces::default())
+}
+
+/// Program interfaces kept across checks. Parsing and validating a large program costs milliseconds,
+/// and a block rebuilt by an edit names the same programs again. Keyed by the program and a hash of
+/// its source, so a changed program is parsed again.
+#[derive(Debug, Default)]
+pub struct ProgramInterfaces(BTreeMap<ComputeProgramId, (u64, ProgramInterface)>);
+
+impl ProgramInterfaces {
+    fn get(&mut self, program: &ComputeProgram) -> Result<&ProgramInterface, String> {
+        let hash = source_hash(&program.wgsl);
+        let fresh = self
+            .0
+            .get(&program.id)
+            .is_some_and(|(cached, _)| *cached == hash);
+        if !fresh {
+            self.0
+                .insert(program.id.clone(), (hash, program_interface(program)?));
+        }
+        Ok(&self.0[&program.id].1)
+    }
+}
+
+/// A hash of a program's source, to tell a cached interface or pipeline from a stale one.
+pub fn source_hash(wgsl: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    wgsl.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// [`check_program_block`], reusing the interfaces `cache` holds for unchanged programs.
+pub fn check_program_block_cached(
+    block: &ExecutionBlock,
+    programs: &ComputeProgramRegistry,
+    cache: &mut ProgramInterfaces,
+) -> Result<(), String> {
+    check_ops(block, &block.ops, programs, cache)
 }
 
 fn check_ops(
     block: &ExecutionBlock,
     ops: &[ExecutionOp],
     programs: &ComputeProgramRegistry,
-    interfaces: &mut BTreeMap<ComputeProgramId, ProgramInterface>,
+    interfaces: &mut ProgramInterfaces,
 ) -> Result<(), String> {
     for op in ops {
         let compute = match op {
@@ -119,16 +156,14 @@ fn check_ops(
         let Some(program_id) = &compute.program else {
             return Err(format!("compute op '{name}' names no program"));
         };
-        if !interfaces.contains_key(program_id) {
-            let program = programs.get(program_id).ok_or_else(|| {
-                format!(
-                    "compute op '{name}' names unregistered program '{}'",
-                    program_id.as_str()
-                )
-            })?;
-            interfaces.insert(program_id.clone(), program_interface(program)?);
-        }
-        let uses = interfaces[program_id]
+        let program = programs.get(program_id).ok_or_else(|| {
+            format!(
+                "compute op '{name}' names unregistered program '{}'",
+                program_id.as_str()
+            )
+        })?;
+        let uses = interfaces
+            .get(program)?
             .entries
             .get(&compute.entry_point)
             .ok_or_else(|| {

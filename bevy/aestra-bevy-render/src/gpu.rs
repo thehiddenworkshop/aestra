@@ -2285,6 +2285,72 @@ const STATEFUL_MAX_CATCHUP_TICKS: u32 = 300;
 /// never authoritative, so an exact pass on cursor-release replays the remainder to the target.
 const STATEFUL_PREVIEW_CATCHUP_TICKS: u32 = 24;
 
+/// Paces how many fixed ticks one frame may simulate while a staged simulation catches up — a domain
+/// rebuilt by an edit replaying from tick 0 to the playhead, a seek — from how long frames actually
+/// take. A fluid tick costs milliseconds (and more at high resolution or with flow maps), so a fixed
+/// tick budget either stalls the UI for a whole replay or crawls on cheap effects. The pace halves
+/// after a frame that spent its budget and ran long, and grows while frames stay fast; it grows only
+/// while catching up, starts over at a few ticks whenever a domain is rebuilt, and never drops below
+/// what keeps playback in real time. Shared by the stages that advance alone and those coupled to
+/// particles.
+#[derive(Resource, Debug)]
+pub(crate) struct CatchupPacer {
+    ticks: f32,
+    last_frame: Option<std::time::Instant>,
+    saturated: bool,
+}
+
+/// A frame slower than this, having spent its catch-up budget, halves the pace.
+const CATCHUP_FRAME_TARGET: std::time::Duration = std::time::Duration::from_millis(20);
+/// Ticks a frame always may simulate: real-time playback at down to 30 frames per second.
+const CATCHUP_MIN_TICKS: f32 = 2.0;
+/// Where the pace starts, and starts over after a rebuild.
+const CATCHUP_START_TICKS: f32 = 4.0;
+
+impl Default for CatchupPacer {
+    fn default() -> Self {
+        Self {
+            ticks: CATCHUP_START_TICKS,
+            last_frame: None,
+            saturated: false,
+        }
+    }
+}
+
+impl CatchupPacer {
+    /// Called once a frame, before any simulation: adapts the pace to the previous frame.
+    pub(crate) fn frame(&mut self, now: std::time::Instant) {
+        if let Some(last) = self.last_frame
+            && self.saturated
+        {
+            self.ticks = if now.duration_since(last) > CATCHUP_FRAME_TARGET {
+                (self.ticks * 0.5).max(CATCHUP_MIN_TICKS)
+            } else {
+                (self.ticks * 1.25 + 1.0).min(STATEFUL_MAX_CATCHUP_TICKS as f32)
+            };
+        }
+        self.saturated = false;
+        self.last_frame = Some(now);
+    }
+
+    /// A domain was rebuilt: its ticks may cost anything now.
+    pub(crate) fn restart(&mut self) {
+        self.ticks = CATCHUP_START_TICKS;
+    }
+
+    /// The ticks this frame may simulate for one effect at `quality`.
+    pub(crate) fn budget(&self, quality: SeekQuality) -> u32 {
+        (self.ticks as u32).clamp(CATCHUP_MIN_TICKS as u32, stateful_catchup_budget(quality))
+    }
+
+    /// Reports ticks simulated against the budget: spending it all means still catching up.
+    pub(crate) fn spent(&mut self, ticks: u32, budget: u32) {
+        if ticks >= budget {
+            self.saturated = true;
+        }
+    }
+}
+
 /// The per-frame catch-up budget for a stateful seek at the requested quality (hybrid roadmap M12).
 fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
     match quality {
@@ -2554,8 +2620,8 @@ fn run_coupled_stateful(
     coupling: Coupling<'_>,
     render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
-    seek_quality: SeekQuality,
-) {
+    budget: u32,
+) -> u32 {
     let (death_integrate, spawn, present) = pipelines;
     let domains = coupling.domains;
     let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
@@ -2588,9 +2654,7 @@ fn run_coupled_stateful(
         }
     }
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
-    let ticks = target
-        .saturating_sub(now)
-        .min(stateful_catchup_budget(seek_quality));
+    let ticks = target.saturating_sub(now).min(budget);
     for _ in 0..ticks {
         let next = persistent_states[0].last_tick + 1;
         for domain in domains.iter_mut().flatten() {
@@ -2654,6 +2718,7 @@ fn run_coupled_stateful(
             simulation_time,
         );
     }
+    ticks
 }
 /// Stamps the particle-statistics telemetry trailer the analytic reset writes, so the live-count
 /// readback accepts a stateful frame: `[MAGIC, context token, history epoch, time]` at the indirect
@@ -2706,6 +2771,7 @@ fn run_stateful_dispatches(
     statistics_token: u32,
     history_epoch: u32,
     owns_shared_reset: bool,
+    pacer: Option<&mut CatchupPacer>,
 ) {
     if owns_shared_reset {
         // Clear the shared live counter once, before any emitter's present bumps it.
@@ -2716,18 +2782,28 @@ fn run_stateful_dispatches(
         .iter()
         .any(|dispatch| dispatch.field_follow.is_some());
     match coupling.filter(|_| coupled) {
-        Some(coupling) => run_coupled_stateful(
-            device,
-            encoder,
-            pipelines,
-            layout,
-            persistent_states,
-            dispatches,
-            coupling,
-            render,
-            simulation_time,
-            seek_quality,
-        ),
+        Some(coupling) => {
+            // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
+            let budget = pacer.as_ref().map_or_else(
+                || stateful_catchup_budget(seek_quality),
+                |pacer| pacer.budget(seek_quality),
+            );
+            let ticks = run_coupled_stateful(
+                device,
+                encoder,
+                pipelines,
+                layout,
+                persistent_states,
+                dispatches,
+                coupling,
+                render,
+                simulation_time,
+                budget,
+            );
+            if let Some(pacer) = pacer {
+                pacer.spent(ticks, budget);
+            }
+        }
         None => {
             for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
                 dispatch_stateful_effect(
@@ -2768,6 +2844,7 @@ type SimulationState<'w, 's> = (
     ResMut<'w, StatefulStates>,
     ResMut<'w, extension_stages::StageRuntimes>,
     Option<Res<'w, extension_stages::FieldFollow>>,
+    Option<ResMut<'w, CatchupPacer>>,
 );
 
 fn run_simulation(
@@ -2802,6 +2879,7 @@ fn run_simulation(
         mut stateful_states,
         mut stage_runtimes,
         follower,
+        mut pacer,
     ) = state;
     // Resolve the stateful compute pipelines once (present only when the device supports the path and
     // the pipelines have finished compiling). The stateful branch below drives one enabled stateful
@@ -2879,6 +2957,7 @@ fn run_simulation(
                     effect.statistics_token,
                     effect.history_epoch,
                     true,
+                    pacer.as_deref_mut(),
                 );
             }
         }
@@ -3129,6 +3208,7 @@ fn run_simulation(
                     effect.statistics_token,
                     effect.history_epoch,
                     false,
+                    pacer.as_deref_mut(),
                 );
             }
         }
@@ -3171,6 +3251,58 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A replay's catch-up is paced by frame time: it grows while frames stay fast, halves after a
+    /// slow frame that spent its budget, does not grow when nothing is catching up, keeps real-time
+    /// playback, stays within the quality's cap, and starts over after a rebuild.
+    #[test]
+    fn catch_up_is_paced_by_frame_time() {
+        use std::time::{Duration, Instant};
+        let exact = SeekQuality::Exact;
+        let mut pacer = CatchupPacer::default();
+        let mut now = Instant::now();
+        pacer.frame(now);
+        assert_eq!(pacer.budget(exact), 4, "a rebuilt domain starts slow");
+
+        let mut frame = |pacer: &mut CatchupPacer, spend: bool, length: u64| {
+            if spend {
+                let budget = pacer.budget(exact);
+                pacer.spent(budget, budget);
+            }
+            now += Duration::from_millis(length);
+            pacer.frame(now);
+            pacer.budget(exact)
+        };
+        let mut budget = 4;
+        for _ in 0..10 {
+            budget = frame(&mut pacer, true, 10);
+        }
+        assert!(budget > 40, "fast frames catch up faster ({budget})");
+        for _ in 0..10 {
+            assert_eq!(
+                frame(&mut pacer, false, 10),
+                budget,
+                "idle frames do not grow it"
+            );
+        }
+        let halved = frame(&mut pacer, true, 60);
+        assert_eq!(halved, budget / 2, "a slow frame halves it");
+        for _ in 0..20 {
+            frame(&mut pacer, true, 200);
+        }
+        assert_eq!(pacer.budget(exact), 2, "never below real-time playback");
+        for _ in 0..40 {
+            frame(&mut pacer, true, 5);
+        }
+        assert_eq!(pacer.budget(exact), STATEFUL_MAX_CATCHUP_TICKS);
+        assert_eq!(
+            pacer.budget(SeekQuality::Preview),
+            STATEFUL_PREVIEW_CATCHUP_TICKS,
+            "a preview seek keeps its tighter cap"
+        );
+        pacer.restart();
+        assert_eq!(pacer.budget(exact), 4);
+    }
 
     #[test]
     fn preview_seek_is_bounded_per_frame_and_exact_converges_to_the_target() {
@@ -4132,7 +4264,7 @@ mod coupled_tests {
                     counters,
                 },
                 time,
-                SeekQuality::Exact,
+                stateful_catchup_budget(SeekQuality::Exact),
             );
             self.queue.submit([encoder.finish()]);
         }

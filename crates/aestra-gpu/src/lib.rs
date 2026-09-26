@@ -14,7 +14,10 @@ pub mod ribbon_bounds;
 pub mod shader;
 pub mod volume;
 
-pub use compute_program::{BindingUse, ProgramInterface, check_program_block, program_interface};
+pub use compute_program::{
+    BindingUse, ProgramInterface, ProgramInterfaces, check_program_block,
+    check_program_block_cached, program_interface, source_hash,
+};
 pub use host_bindings::{
     GpuHostBindings, HOST_BINDING_BOUND, HOST_BINDING_HEADER_WORDS, HOST_BINDINGS_WGSL,
     host_binding_value_offsets, host_binding_value_word,
