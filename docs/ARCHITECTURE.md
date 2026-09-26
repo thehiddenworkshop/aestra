@@ -117,7 +117,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   F5 the pressure is solved by multigrid-preconditioned conjugate gradients (`multigrid_pressure`,
   on by default; Jacobi sweeps otherwise) to a relative tolerance, warm-started from the previous
   tick's pressure, in an `UntilConverged` repeat — so it stops on the device, with no readback, once
-  converged. A *Turbulence* module stirs the fluid with animated noise. It also has *Combustion*
+  converged. A *Turbulence* module stirs the fluid with animated noise. Since fluid F6 the velocity
+  can instead be carried by *leapfrog flow maps* (`flow_map`, off by default; Sun et al. 2025): in
+  cycles of n steps, midpoint velocities are advected leapfrog-style and projected, forward maps and
+  their Jacobians are marched, and at the cycle's end the impulse is mapped back along backward maps
+  with round-trip error compensation and projected — vortices live far longer, at 3–5× the tick cost
+  and (12·n + 88) bytes of state per cell. The forces and the kinetic part of the impulse gauge are
+  gathered along the maps, so an open side's projection stays exact; a global energy safeguard starts
+  a cycle from the midpoint velocity when the maps have distorted too much. It also has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
   as lit, self-shadowed volumetric smoke with blackbody fire. It adds nothing to core.
 
@@ -201,8 +208,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Uploads `aestra-gpu` artifacts into Bevy shader buffers.
 - Runs plugin Execution IR blocks (`execution::StageExecutor`). A `RepeatPolicy::UntilConverged`
   repeat (fluid F5) is expanded to its cap with its body dispatched indirectly; a one-invocation test
-  after each iteration empties the remaining dispatches once the residual has converged, so the loop
-  stops on the device with no readback (the emptied dispatches still cost a little each).
+  after each iteration — and, with `test_first` (fluid F6), before the first — empties the remaining
+  dispatches once the residual has converged, so the loop stops on the device with no readback (the
+  emptied dispatches still cost a little each).
 - Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
   setup, compute dispatch, readback, texture resolution, and draw submission.
 - Converts WGPU device limits and semantic-material resource layouts at the adapter boundary,

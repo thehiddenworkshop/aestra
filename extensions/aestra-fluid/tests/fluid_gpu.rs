@@ -243,13 +243,14 @@ fn mass_and_centroid(density: &[f32]) -> (f32, [f32; 3]) {
 #[test]
 fn the_solver_builds_on_every_available_backend() {
     let registry = registry();
-    // With a collider and fire, so every entry point is built.
+    // With a collider, fire and flow maps, so every entry point is built.
     let mut everything = aestra_fluid::fire_effect(&registry);
     with_module(
         &registry,
         &mut everything,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     );
+    set_input(&mut everything, MODULE_GRID, "flow_map", Value::Bool(true));
     let effect = EffectCompiler::with_extensions(registry.clone())
         .compile(&everything)
         .unwrap();
@@ -558,9 +559,10 @@ fn restoring_a_checkpoint_and_replaying_reaches_the_uninterrupted_state() {
     let cells = (RESOLUTION as usize).pow(3);
     assert_eq!(
         checkpoint.bytes(),
-        cells * (16 + 4 + 4),
+        cells * (16 + 4 + 4) + 3 * 16,
         "only the persistent velocity, density and pressure grids (the pressure solve's warm \
-         start, fluid F5) — no scratch, no host inputs"
+         start, fluid F5), and the flow maps' state at its few bytes when they are off — no \
+         scratch, no host inputs"
     );
     fluid.run(&gpu, 20..45);
     let uninterrupted = fluid.state(&gpu);
@@ -1591,6 +1593,215 @@ fn bench_pressure_solvers() {
                 iterations
             };
             eprintln!("BENCH {n}³ {label}: {per_tick:.3} ms/tick ({iterations} iterations)");
+        }
+    }
+}
+
+/// A 48³ vortex ring launched by a short burst and then left alone (no forces, no dissipation), with
+/// its kinetic energy after each of `samples` spans of `span` free ticks.
+fn free_ring_energy(
+    gpu: &Gpu,
+    registry: &ExtensionRegistry,
+    flow_map: bool,
+    span: u32,
+    samples: u32,
+) -> Vec<f32> {
+    let n = 48u32;
+    let mut ring = effect(registry, false, 40);
+    ring.simulation_stages[0].modules.retain(|module| {
+        module.module_type.0 != aestra_fluid::MODULE_VORTICITY
+            && module.module_type.0 != aestra_fluid::MODULE_BUOYANCY
+    });
+    for (name, value) in [
+        ("resolution", Value::U32(n)),
+        ("cell_size", Value::Scalar(3.2 / n as f32)),
+        ("velocity_dissipation", Value::Scalar(0.0)),
+        ("flow_map", Value::Bool(flow_map)),
+    ] {
+        set_input(&mut ring, MODULE_GRID, name, value);
+    }
+    for (name, value) in [
+        ("position", Value::Vec3([0.0, 0.5, 0.0])),
+        ("radius", Value::Scalar(0.35)),
+        ("velocity", Value::Vec3([0.0, 6.0, 0.0])),
+        ("density_rate", Value::Scalar(30.0)),
+    ] {
+        set_input(&mut ring, MODULE_DENSITY_SOURCE, name, value);
+    }
+    let mut quiet = ring.clone();
+    set_input(
+        &mut quiet,
+        MODULE_DENSITY_SOURCE,
+        "position",
+        Value::Vec3([0.0, 100.0, 0.0]),
+    );
+    let quiet = Fluid::new(gpu, registry, &quiet)
+        .stage
+        .block()
+        .constants
+        .clone();
+    let mut fluid = Fluid::new(gpu, registry, &ring);
+    fluid.run(gpu, 0..16);
+    fluid.stage.set_constants(&gpu.queue, &quiet).unwrap();
+    (0..samples)
+        .map(|sample| {
+            fluid.run(gpu, 16 + sample * span..16 + (sample + 1) * span);
+            fluid
+                .floats(gpu, RESOURCE_VELOCITY)
+                .iter()
+                .map(|v| v * v)
+                .sum::<f32>()
+                * 0.5
+        })
+        .collect()
+}
+
+/// Fluid F6's benchmark: a free vortex ring keeps far more of its energy with leapfrog flow maps than
+/// with MacCormack advection at the same resolution — and, left alone for 400 ticks after it has
+/// left the open top, the flow map never gains energy it was not given.
+#[test]
+fn flow_maps_keep_a_vortex_ring_s_energy() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let advected = free_ring_energy(&gpu, &registry, false, 96, 1)[0];
+    let mapped = free_ring_energy(&gpu, &registry, true, 48, 8);
+    eprintln!(
+        "ring energy after 96 free ticks: MacCormack {advected}, flow map {}",
+        mapped[1]
+    );
+    eprintln!("flow map energy every 48 ticks: {mapped:?}");
+    assert!(
+        mapped[1] > advected * 1.25,
+        "flow maps keep a quarter more ({advected} vs {})",
+        mapped[1]
+    );
+    assert!(
+        mapped
+            .windows(2)
+            .skip(1)
+            .all(|pair| pair[1] <= pair[0] * 1.02),
+        "no energy from nowhere: {mapped:?}"
+    );
+}
+
+/// Flow-map state is persistent and checkpointed with the rest: restoring a checkpoint taken in the
+/// middle of a cycle and replaying reaches the uninterrupted state bit for bit (fluid F6).
+#[test]
+fn flow_maps_replay_a_mid_cycle_checkpoint_bit_for_bit() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut mapped = effect(&registry, false, 24);
+    set_input(&mut mapped, MODULE_GRID, "flow_map", Value::Bool(true));
+    set_input(&mut mapped, MODULE_GRID, "flow_map_cycle", Value::U32(8));
+    let fluid = Fluid::new(&gpu, &registry, &mapped);
+    // Tick 20 is step 4 of its cycle.
+    fluid.run(&gpu, 0..20);
+    let checkpoint = fluid.stage.checkpoint(&gpu.device, &gpu.queue).unwrap();
+    let cells = (RESOLUTION as usize).pow(3);
+    assert_eq!(
+        checkpoint.bytes(),
+        cells * (16 + 4 + 4 + 12 * 8 + 16 + 72),
+        "velocity, density, pressure, then the flow maps: 8 stored steps, the cycle's initial \
+         velocity and the forward maps"
+    );
+    fluid.run(&gpu, 20..45);
+    let uninterrupted = (
+        fluid.state(&gpu),
+        fluid.floats(&gpu, aestra_fluid::RESOURCE_LFM_FORWARD),
+    );
+    fluid.stage.restore(&gpu.queue, &checkpoint).unwrap();
+    fluid.run(&gpu, 20..45);
+    assert_eq!(
+        (
+            fluid.state(&gpu),
+            fluid.floats(&gpu, aestra_fluid::RESOURCE_LFM_FORWARD)
+        ),
+        uninterrupted
+    );
+}
+
+/// A fire — strong buoyancy, open sides, a source pulling the flow — keeps bounded on flow maps: where
+/// the maps distort too much over a cycle, the safeguard starts the next cycle from the midpoint
+/// velocity instead of feeding the error (fluid F6).
+#[test]
+fn a_fire_on_flow_maps_stays_bounded() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let peak = |flow_map: bool| {
+        let mut fire = aestra_fluid::fire_effect(&registry);
+        set_input(&mut fire, MODULE_GRID, "open_sides", Value::Bool(true));
+        set_input(&mut fire, MODULE_GRID, "flow_map", Value::Bool(flow_map));
+        set_input(&mut fire, MODULE_GRID, "flow_map_cycle", Value::U32(16));
+        let fluid = Fluid::new(&gpu, &registry, &fire);
+        let mut peak = 0.0f32;
+        for span in 0..10 {
+            fluid.run(&gpu, span * 30..(span + 1) * 30);
+            let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
+            assert!(
+                velocity.iter().all(|v| v.is_finite()),
+                "finite at tick {}",
+                (span + 1) * 30
+            );
+            peak = peak.max(velocity.iter().fold(0.0f32, |p, v| p.max(v.abs())));
+        }
+        peak
+    };
+    let (advected, mapped) = (peak(false), peak(true));
+    eprintln!("fire peak speed over 300 ticks: MacCormack {advected}, flow map {mapped}");
+    assert!(mapped < advected * 3.0, "bounded: {mapped} vs {advected}");
+}
+/// Flow maps' cost per tick against MacCormack (fluid F6): a buoyant plume, and the same with fire,
+/// timed on the device over whole cycles. Not a pass/fail test — run with `--ignored --nocapture` on
+/// the reference GPU.
+#[test]
+#[ignore]
+fn bench_flow_maps() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    for n in [48u32, 64, 96] {
+        for burning in [false, true] {
+            for (label, flow_map, cycle) in [
+                ("MacCormack", false, 8u32),
+                ("flow map ×4", true, 4),
+                ("flow map ×8", true, 8),
+            ] {
+                let mut plume = if burning {
+                    aestra_fluid::fire_effect(&registry)
+                } else {
+                    effect(&registry, false, 12)
+                };
+                set_input(&mut plume, MODULE_GRID, "resolution", Value::U32(n));
+                set_input(
+                    &mut plume,
+                    MODULE_GRID,
+                    "cell_size",
+                    Value::Scalar(3.2 / n as f32),
+                );
+                set_input(&mut plume, MODULE_GRID, "center", Value::Vec3(CENTER));
+                set_input(&mut plume, MODULE_GRID, "flow_map", Value::Bool(flow_map));
+                set_input(&mut plume, MODULE_GRID, "flow_map_cycle", Value::U32(cycle));
+                let fluid = Fluid::new(&gpu, &registry, &plume);
+                let wait = || {
+                    gpu.device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: Some(std::time::Duration::from_secs(120)),
+                        })
+                        .unwrap();
+                };
+                fluid.run(&gpu, 0..64);
+                wait();
+                let ticks = 128;
+                let start = std::time::Instant::now();
+                fluid.run(&gpu, 64..64 + ticks);
+                wait();
+                let per_tick = start.elapsed().as_secs_f64() * 1000.0 / f64::from(ticks);
+                let state_mb = fluid.stage.persistent_bytes() as f64 / (1024.0 * 1024.0);
+                let kind = if burning { "fire" } else { "smoke" };
+                eprintln!(
+                    "BENCH {n}³ {kind} {label}: {per_tick:.3} ms/tick, state {state_mb:.1} MiB"
+                );
+            }
         }
     }
 }

@@ -29,6 +29,7 @@ const WGSL: &str = r#"
 fn start() {
     value[0] = 1.0;
     value[1] = 0.0;
+    residual[0] = 1.0;
 }
 
 @compute @workgroup_size(1)
@@ -132,20 +133,29 @@ fn resource(id: &str, bytes: u64, lifetime: ResourceLifetime) -> ResourceDescrip
     }
 }
 
-/// Starts at 1 and halves until the value is at most `tolerance`, at most `max` times.
-fn halving(tolerance: f32, max: u32) -> ExecutionBlock {
+/// Starts at 1 and halves until the value is at most `tolerance`, at most `max` times; with
+/// `test_first`, 1 is tested before the first halving.
+fn halving(tolerance: f32, max: u32, test_first: bool) -> ExecutionBlock {
     ExecutionBlock {
         resources: vec![
             resource(VALUE, 8, ResourceLifetime::Persistent),
             resource(RESIDUAL, 4, ResourceLifetime::Transient),
         ],
         ops: vec![
-            pass("start", vec![ResourceAccess::read_write(VALUE)], 1),
+            pass(
+                "start",
+                vec![
+                    ResourceAccess::read_write(VALUE),
+                    ResourceAccess::write(RESIDUAL),
+                ],
+                1,
+            ),
             ExecutionOp::Repeat {
                 policy: RepeatPolicy::UntilConverged {
                     residual: ResourceTypeId::new(RESIDUAL),
                     tolerance,
                     max,
+                    test_first,
                 },
                 body: vec![pass(
                     "halve",
@@ -194,19 +204,27 @@ fn a_convergent_repeat_stops_on_the_device_once_converged() {
     };
 
     // 1 → ½ → ¼ → ⅛ → 1/16 ≤ 0.1: four halvings, and the other six are empty dispatches.
-    let (value, iterations) = run(&halving(0.1, 10));
+    let (value, iterations) = run(&halving(0.1, 10, false));
     assert_eq!(value, [0.0625, 4.0]);
     assert_eq!(iterations, [4]);
 
     // Never small enough: capped at `max`.
-    let (value, iterations) = run(&halving(0.0, 10));
+    let (value, iterations) = run(&halving(0.0, 10, false));
     assert_eq!(value, [0.5f32.powi(10), 10.0]);
     assert_eq!(iterations, [10]);
 
     // Converged by the first test: one iteration runs.
-    let (value, iterations) = run(&halving(0.5, 10));
+    let (value, iterations) = run(&halving(0.5, 10, false));
     assert_eq!(value, [0.5, 1.0]);
     assert_eq!(iterations, [1]);
+
+    // Tested first (fluid F6): converged before the first halving runs none; otherwise as before.
+    let (value, iterations) = run(&halving(1.0, 10, true));
+    assert_eq!(value, [1.0, 0.0]);
+    assert_eq!(iterations, [0]);
+    let (value, iterations) = run(&halving(0.1, 10, true));
+    assert_eq!(value, [0.0625, 4.0]);
+    assert_eq!(iterations, [4]);
 }
 
 /// The same fixed tree on the CPU: a workgroup halves its active range, adding the upper half on.

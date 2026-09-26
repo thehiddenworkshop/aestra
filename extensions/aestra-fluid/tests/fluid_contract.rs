@@ -201,6 +201,7 @@ fn the_pressure_is_solved_by_mgpcg_in_one_convergent_repeat() {
             residual: ResourceTypeId::new(aestra_fluid::RESOURCE_PCG_REDUCTION),
             tolerance: 1e-4,
             max: 12,
+            test_first: true,
         }
     );
     let entries: Vec<(&str, u32)> = body
@@ -262,6 +263,97 @@ fn the_pressure_is_solved_by_mgpcg_in_one_convergent_repeat() {
         jacobi.block.resources.len(),
         "the same bindings either way"
     );
+}
+
+/// Flow maps (fluid F6) replace the velocity advection with the leapfrog step and the forward march,
+/// and add the cycle's end — the backward maps, the compensation, a second solve that starts
+/// converged on every other step, the safeguard — sizing their state by the cycle and the grid. The
+/// grid and the cycle are bounded.
+#[test]
+fn flow_maps_lower_a_leapfrog_cycle_sized_by_its_length() {
+    use aestra_runtime::RepeatPolicy;
+    let registry = fluid_registry();
+    let mut effect = smoke_effect(&registry);
+    set_input(&mut effect, MODULE_GRID, "flow_map", Value::Bool(true));
+    set_input(&mut effect, MODULE_GRID, "flow_map_cycle", Value::U32(6));
+    let stage = compile_stage(&registry, &effect);
+    check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
+    assert_eq!(stage.block.constants[18], 6, "the cycle's steps");
+    let plain = compile_stage(&registry, &smoke_effect(&registry));
+    assert_eq!(plain.block.constants[18], 0, "no flow maps");
+
+    let entries: Vec<String> = aestra_runtime::execute_reference(&stage.block)
+        .steps
+        .iter()
+        .filter_map(|step| step.strip_prefix("compute:fluid/").map(str::to_owned))
+        .collect();
+    assert!(
+        !entries
+            .iter()
+            .any(|entry| entry.contains("advect_velocity"))
+    );
+    for entry in [
+        "lfm_forces",
+        "lfm_advect",
+        "lfm_march_forward",
+        "lfm_pull_back",
+        "lfm_measure_error",
+        "lfm_compensate",
+        "lfm_impulse_divergence",
+        "lfm_project",
+        "lfm_energy",
+        "lfm_energy_total",
+        "lfm_restart",
+    ] {
+        assert_eq!(
+            entries.iter().filter(|name| *name == entry).count(),
+            1,
+            "{entry} once a tick"
+        );
+    }
+    let solves: Vec<_> = stage
+        .block
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            ExecutionOp::Repeat {
+                policy: RepeatPolicy::UntilConverged { test_first, .. },
+                ..
+            } => Some(*test_first),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(solves, [true, true], "the midpoint solve and the cycle's");
+
+    let bytes = |id: &str| {
+        stage
+            .block
+            .resources
+            .iter()
+            .find(|resource| resource.id.as_str() == id)
+            .unwrap()
+            .bytes
+    };
+    let cells = 32u64.pow(3);
+    assert_eq!(bytes(aestra_fluid::RESOURCE_LFM_HISTORY), cells * 12 * 6);
+    assert_eq!(bytes(aestra_fluid::RESOURCE_LFM_FORWARD), cells * 72);
+    assert_eq!(stage.block.resources.len(), plain.block.resources.len());
+
+    for (name, value) in [
+        ("flow_map_cycle", Value::U32(0)),
+        ("flow_map_cycle", Value::U32(17)),
+        ("resolution", Value::U32(128)),
+    ] {
+        let mut invalid = effect.clone();
+        set_input(&mut invalid, MODULE_GRID, name, value);
+        let error = EffectCompiler::with_extensions(registry.clone())
+            .compile(&invalid)
+            .unwrap_err();
+        assert!(
+            codes(error).contains(&DiagnosticCode::LoweringFailed),
+            "{name}"
+        );
+    }
 }
 
 /// Jacobi sweeps ping-pong between the pressure grids (fluid F5): an even count copies nothing, an
@@ -414,7 +506,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;
-    assert_eq!(base, 18 + 16, "after the one source");
+    assert_eq!(base, 20 + 16, "after the one source");
     let kinds: Vec<u32> = (0..3).map(|index| words[base + index * 24]).collect();
     assert_eq!(kinds, [0, 1, 2], "sphere, box, capsule");
     assert_eq!(
@@ -578,23 +670,23 @@ fn host_bound_source_inputs_pack_their_slot_presence_bit_and_offset() {
             .insert(input.into(), HostFieldRef::new(emitter_id, field));
     }
     let stage = compile_stage(&registry, &effect);
-    // Source 0 starts at word 18; its references at +8 (position) and +11 (velocity).
+    // Source 0 starts at word 20; its references at +8 (position) and +11 (velocity).
     let words = &stage.block.constants;
     assert_eq!(words[9], 1, "one source");
     assert_eq!(
-        &words[26..29],
+        &words[28..31],
         &[0, 0, 0],
         "slot 0, bit 0 (position), offset 0"
     );
     assert_eq!(
-        &words[29..32],
+        &words[31..34],
         &[0, 1, 3],
         "linear velocity: the layout's second field (bit 1), packed after position's 3 words"
     );
 
     // An unbound source reads the constant fallback marker.
     let stage = compile_stage(&registry, &smoke_effect(&registry));
-    assert_eq!(stage.block.constants[26], u32::MAX);
+    assert_eq!(stage.block.constants[28], u32::MAX);
 }
 
 #[test]
@@ -734,7 +826,7 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
     {
         assert_eq!(
             fire.block.binding_of(&ResourceTypeId::new(resource)),
-            Some(19 + binding as u32)
+            Some(25 + binding as u32)
         );
         assert_eq!(
             smoke.block.binding_of(&ResourceTypeId::new(resource)),
@@ -752,8 +844,8 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
         );
     }
     // The Combustion block follows the one source's 16 words.
-    assert_eq!(fire.block.constants.len(), 18 + 16 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[34]), 0.5, "ignition");
+    assert_eq!(fire.block.constants.len(), 20 + 16 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[36]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =

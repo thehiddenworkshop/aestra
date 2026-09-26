@@ -97,6 +97,14 @@ pub const RESOURCE_MG_FLAGS: &str = "org.example.aestra-fluid::resource/multigri
 /// The pressure solve's scalars, then its per-workgroup partial sums; word 0 is the relative residual
 /// its convergent repeat tests.
 pub const RESOURCE_PCG_REDUCTION: &str = "org.example.aestra-fluid::resource/pcg_reduction";
+/// Leapfrog flow maps (fluid F6): the cycle's midpoint velocities, its initial velocity, the forward and
+/// backward maps, this tick's forces, the mapped impulse.
+pub const RESOURCE_LFM_HISTORY: &str = "org.example.aestra-fluid::resource/flow_map_history";
+pub const RESOURCE_LFM_INITIAL: &str = "org.example.aestra-fluid::resource/flow_map_initial";
+pub const RESOURCE_LFM_FORWARD: &str = "org.example.aestra-fluid::resource/flow_map_forward";
+pub const RESOURCE_LFM_BACKWARD: &str = "org.example.aestra-fluid::resource/flow_map_backward";
+pub const RESOURCE_LFM_FORCE: &str = "org.example.aestra-fluid::resource/flow_map_force";
+pub const RESOURCE_LFM_IMPULSE: &str = "org.example.aestra-fluid::resource/flow_map_impulse";
 pub const RESOURCE_TEMPERATURE: &str = "org.example.aestra-fluid::resource/temperature_grid";
 pub const RESOURCE_TEMPERATURE_NEXT: &str =
     "org.example.aestra-fluid::resource/temperature_scratch";
@@ -107,6 +115,8 @@ pub const RESOURCE_FUEL_NEXT: &str = "org.example.aestra-fluid::resource/fuel_sc
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
 /// The multigrid-preconditioned conjugate-gradient pressure solve (fluid F5), after the solver.
 pub const PRESSURE_WGSL: &str = include_str!("pressure.wgsl");
+/// Leapfrog flow maps (fluid F6), after the solver.
+pub const FLOWMAP_WGSL: &str = include_str!("flowmap.wgsl");
 /// The volume look's march function, composed after the backend's volume interface.
 pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
 
@@ -115,13 +125,17 @@ pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
 pub const MIN_RESOLUTION: u32 = 8;
 pub const MAX_RESOLUTION: u32 = 128;
 pub const MAX_PRESSURE_ITERATIONS: u32 = 200;
+/// Steps in a flow-map reinitialization cycle, and the largest grid flow maps run on: every cell keeps
+/// (12·cycle + 88) bytes of map state, and ~100 more are scratch.
+pub const MAX_FLOW_MAP_CYCLE: u32 = 16;
+pub const MAX_FLOW_MAP_RESOLUTION: u32 = 96;
 /// Density sources one stage packs into its constants.
 pub const MAX_SOURCES: usize = 8;
 /// The solver's workgroup edge; the resolution must be a multiple of it.
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 18;
+const SOURCE_BASE: usize = 20;
 /// Words one collider record takes (see `pack_collider`).
 const COLLIDER_WORDS: usize = 24;
 /// Colliders one stage packs into its constants.
@@ -158,7 +172,7 @@ pub fn link() {
 /// and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{PRESSURE_WGSL}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL
@@ -316,7 +330,7 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
 }
 
 /// The solver's hand-written entry points, as its compute ops name them (see [`entry_points`] for all).
-pub const ENTRY_POINTS: [&str; 30] = [
+pub const ENTRY_POINTS: [&str; 41] = [
     "add_sources",
     "compute_vorticity",
     "vorticity_force",
@@ -347,6 +361,17 @@ pub const ENTRY_POINTS: [&str; 30] = [
     "pcg_alpha",
     "pcg_step",
     "pcg_residual",
+    "lfm_forces",
+    "lfm_advect",
+    "lfm_march_forward",
+    "lfm_pull_back",
+    "lfm_measure_error",
+    "lfm_compensate",
+    "lfm_impulse_divergence",
+    "lfm_project",
+    "lfm_energy",
+    "lfm_energy_total",
+    "lfm_restart",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -424,6 +449,36 @@ impl AestraExtension for FluidExtension {
             (
                 RESOURCE_PCG_REDUCTION,
                 "Pressure Sums",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_LFM_HISTORY,
+                "Flow Map Velocities",
+                ResourceLifetime::Persistent,
+            ),
+            (
+                RESOURCE_LFM_INITIAL,
+                "Flow Map Initial Velocity",
+                ResourceLifetime::Persistent,
+            ),
+            (
+                RESOURCE_LFM_FORWARD,
+                "Forward Flow Map",
+                ResourceLifetime::Persistent,
+            ),
+            (
+                RESOURCE_LFM_BACKWARD,
+                "Backward Flow Map",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_LFM_FORCE,
+                "Flow Map Forces",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_LFM_IMPULSE,
+                "Flow Map Impulse",
                 ResourceLifetime::Transient,
             ),
             (
@@ -624,6 +679,24 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "MacCormack advection: keeps swirls and edges that plain semi-Lagrangian advection blurs, for two extra passes per field.",
             Value::Bool(true),
             InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "flow_map",
+            "Flow Map",
+            "Leapfrog flow maps: carries the velocity along long-range flow maps, so swirls and vortex \
+             rings live far longer than with any advection. Costs memory — (12 × cycle + 88) bytes of \
+             state per cell, ~100 more of scratch — and a heavier tick at each cycle's end. Grids up \
+             to 96 cells a side. (Smoke and heat keep their own advection.)",
+            Value::Bool(false),
+            InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "flow_map_cycle",
+            "Flow Map Cycle",
+            "Steps between the flow maps' reinitializations: longer keeps more swirl, costs more memory \
+             and makes the cycle's last tick heavier.",
+            Value::U32(8),
+            number(1.0, 1.0, Some(MAX_FLOW_MAP_CYCLE as f32)),
         ),
     ])
     .with_cost(8)
@@ -1142,6 +1215,21 @@ impl ModuleLowerer for FluidModuleLowerer {
                         return Err(format!("'{name}' must not be negative"));
                     }
                 }
+                if payload.get_bool("flow_map").unwrap_or(false) {
+                    let cycle = count(payload, "flow_map_cycle")?;
+                    if !(1..=MAX_FLOW_MAP_CYCLE).contains(&cycle) {
+                        return Err(format!(
+                            "the flow map cycle must be between 1 and {MAX_FLOW_MAP_CYCLE} steps, \
+                             got {cycle}"
+                        ));
+                    }
+                    if resolution > MAX_FLOW_MAP_RESOLUTION {
+                        return Err(format!(
+                            "flow maps run on grids up to {MAX_FLOW_MAP_RESOLUTION} cells a side, \
+                             got {resolution}"
+                        ));
+                    }
+                }
                 "relax_pressure"
             }
             MODULE_DENSITY_SOURCE => {
@@ -1215,6 +1303,7 @@ fn resources(
     constant_words: usize,
     fire: bool,
     multigrid: bool,
+    flow_map_cycle: u32,
 ) -> Vec<ResourceDescriptor> {
     let cells = u64::from(resolution).pow(3);
     let grid = |id: &str, bytes_per_cell: u64, lifetime| ResourceDescriptor {
@@ -1249,15 +1338,17 @@ fn resources(
     resources.push(grid(RESOURCE_VELOCITY_HAT, 16, ResourceLifetime::Transient));
     resources.push(grid(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
     resources.push(grid(RESOURCE_SOLID, 16, ResourceLifetime::Transient));
-    let (fine_cells, level_cells, groups) = if multigrid {
+    let (fine_cells, level_cells) = if multigrid {
         let levels = multigrid_levels(resolution);
-        (
-            cells,
-            levels.iter().map(|n| u64::from(*n).pow(3)).sum(),
-            u64::from(resolution / WORKGROUP).pow(3),
-        )
+        (cells, levels.iter().map(|n| u64::from(*n).pow(3)).sum())
     } else {
-        (1, 1, 1)
+        (1, 1)
+    };
+    // The partial sums serve the pressure solve and the flow maps' safeguard.
+    let groups = if multigrid || flow_map_cycle > 0 {
+        u64::from(resolution / WORKGROUP).pow(3)
+    } else {
+        1
     };
     let scratch = |id: &str, bytes: u64| ResourceDescriptor {
         id: ResourceTypeId::new(id),
@@ -1272,6 +1363,42 @@ fn resources(
         scratch(RESOURCE_MG_FLAGS, level_cells * 4),
         // Two vec4 of scalars, then one partial sum per fine workgroup.
         scratch(RESOURCE_PCG_REDUCTION, (2 + groups) * 16),
+    ]);
+    // Flow maps (fluid F6): per cell, 3 floats per stored step, a velocity, 18 floats of forward map
+    // (all state); 18 of backward map, the forces and the impulse (scratch). A few bytes without.
+    let mapped = if flow_map_cycle > 0 { cells } else { 0 };
+    let map_state = |id: &str, bytes: u64, lifetime| ResourceDescriptor {
+        id: ResourceTypeId::new(id),
+        bytes: bytes.max(16),
+        lifetime,
+    };
+    resources.extend([
+        map_state(
+            RESOURCE_LFM_HISTORY,
+            mapped * 12 * u64::from(flow_map_cycle),
+            ResourceLifetime::Persistent,
+        ),
+        map_state(
+            RESOURCE_LFM_INITIAL,
+            mapped * 16,
+            ResourceLifetime::Persistent,
+        ),
+        map_state(
+            RESOURCE_LFM_FORWARD,
+            mapped * 72,
+            ResourceLifetime::Persistent,
+        ),
+        map_state(
+            RESOURCE_LFM_BACKWARD,
+            mapped * 72,
+            ResourceLifetime::Transient,
+        ),
+        map_state(RESOURCE_LFM_FORCE, mapped * 16, ResourceLifetime::Transient),
+        map_state(
+            RESOURCE_LFM_IMPULSE,
+            mapped * 16,
+            ResourceLifetime::Transient,
+        ),
     ]);
     if fire {
         resources.extend([
@@ -1337,6 +1464,8 @@ struct PackedStage {
     /// The pressure is solved by MGPCG to `tolerance` (fluid F5), not by Jacobi sweeps.
     multigrid: bool,
     tolerance: f32,
+    /// Steps in a flow-map cycle (fluid F6); 0 without flow maps.
+    flow_map_cycle: u32,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -1381,6 +1510,10 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     words[8] = strength(MODULE_VORTICITY)?.to_bits();
     words[9] = sources.len() as u32;
     words[10] = open_side_mask(&grid.parameters);
+    // Flow maps (fluid F6): the cycle's steps, 0 without them.
+    if grid.parameters.get_bool("flow_map").unwrap_or(false) {
+        words[18] = count(&grid.parameters, "flow_map_cycle")?;
+    }
     // MacCormack advection (fluid F4); off falls back to plain semi-Lagrangian.
     words[11] = u32::from(grid.parameters.get_bool("sharp_advection").unwrap_or(true));
     // Turbulence: strength (0 without the module), noise frequency, evolution rate, mask flag.
@@ -1448,6 +1581,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
             .get_bool("multigrid_pressure")
             .unwrap_or(true),
         tolerance: scalar(&grid.parameters, "pressure_tolerance")?,
+        flow_map_cycle: words[18],
         constants: words,
         fire: combustion.is_some(),
     })
@@ -1538,6 +1672,47 @@ fn level_dispatch(n: u32) -> StagedDispatch {
     }
 }
 
+/// The velocity carried one step without flow maps: semi-Lagrangian, and with MacCormack its
+/// correction, then copied back.
+fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
+    let constants = || ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
+    let frame = || ResourceAccess::read(AESTRA_RESOURCE_FRAME);
+    let copy = |from: &str, to: &str| {
+        ExecutionOp::Copy(CopyOp {
+            from: ResourceTypeId::new(from),
+            to: ResourceTypeId::new(to),
+        })
+    };
+    let mut ops = vec![solver_op(
+        "advect_velocity",
+        vec![
+            ResourceAccess::read(RESOURCE_VELOCITY),
+            ResourceAccess::write(RESOURCE_VELOCITY_NEXT),
+            constants(),
+            frame(),
+        ],
+        dispatch,
+    )];
+    if sharp {
+        // MacCormack: correct the semi-Lagrangian result, then take the corrected one.
+        ops.push(solver_op(
+            "correct_velocity",
+            vec![
+                ResourceAccess::read(RESOURCE_VELOCITY),
+                ResourceAccess::read(RESOURCE_VELOCITY_NEXT),
+                ResourceAccess::write(RESOURCE_VELOCITY_HAT),
+                constants(),
+                frame(),
+            ],
+            dispatch,
+        ));
+        ops.push(copy(RESOURCE_VELOCITY_HAT, RESOURCE_VELOCITY));
+    } else {
+        ops.push(copy(RESOURCE_VELOCITY_NEXT, RESOURCE_VELOCITY));
+    }
+    ops
+}
+
 /// Jacobi sweeps that ping-pong between the pressure grids: a pair per repeat, no copies; an odd
 /// count ends with one sweep copied back.
 fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
@@ -1595,6 +1770,7 @@ fn multigrid_pressure(
     iterations: u32,
     tolerance: f32,
     colliders: bool,
+    coarsen: bool,
 ) -> Vec<ExecutionOp> {
     use ResourceAccess as Access;
     let levels = multigrid_levels(resolution);
@@ -1638,7 +1814,8 @@ fn multigrid_pressure(
     };
 
     let mut ops = Vec::new();
-    if colliders {
+    // The solid flags, once a tick (a second solve reuses them).
+    if colliders && coarsen {
         for level in 0..levels.len() {
             ops.push(level_pass(LevelPass::Coarsen, level));
         }
@@ -1720,6 +1897,7 @@ fn multigrid_pressure(
             residual: ResourceTypeId::new(RESOURCE_PCG_REDUCTION),
             tolerance,
             max: iterations,
+            test_first: true,
         },
         body: with_barriers(body),
     });
@@ -1772,7 +1950,9 @@ impl StageLowerer for FluidSolverLowerer {
             colliders,
             multigrid,
             tolerance,
+            flow_map_cycle,
         } = pack_constants(input.modules)?;
+        let flow_map = flow_map_cycle > 0;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
             x: groups,
@@ -1835,6 +2015,10 @@ impl StageLowerer for FluidSolverLowerer {
                     read(AESTRA_RESOURCE_HOST_BINDINGS),
                 ],
             ));
+        }
+        if flow_map {
+            // The velocity before the force passes: what they add is the flow maps' force field.
+            steps.push(copy(RESOURCE_VELOCITY, RESOURCE_LFM_FORCE));
         }
         steps.push(pass(
             "add_sources",
@@ -1920,30 +2104,31 @@ impl StageLowerer for FluidSolverLowerer {
                 ],
             ));
         }
-        steps.push(pass(
-            "advect_velocity",
-            vec![
-                read(RESOURCE_VELOCITY),
-                write(RESOURCE_VELOCITY_NEXT),
-                constants_read(),
-                frame_read(),
-            ],
-        ));
-        if sharp {
-            // MacCormack: correct the semi-Lagrangian result, then take the corrected one.
+        if flow_map {
+            // The forces, then the leapfrog-advected midpoint velocity (fluid F6).
             steps.push(pass(
-                "correct_velocity",
+                "lfm_forces",
                 vec![
                     read(RESOURCE_VELOCITY),
-                    read(RESOURCE_VELOCITY_NEXT),
-                    write(RESOURCE_VELOCITY_HAT),
+                    read_write(RESOURCE_LFM_FORCE),
                     constants_read(),
                     frame_read(),
                 ],
             ));
-            steps.push(copy(RESOURCE_VELOCITY_HAT, RESOURCE_VELOCITY));
-        } else {
+            steps.push(pass(
+                "lfm_advect",
+                vec![
+                    read(RESOURCE_LFM_INITIAL),
+                    read(RESOURCE_LFM_HISTORY),
+                    read(RESOURCE_LFM_FORCE),
+                    write(RESOURCE_VELOCITY_NEXT),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
             steps.push(copy(RESOURCE_VELOCITY_NEXT, RESOURCE_VELOCITY));
+        } else {
+            steps.extend(advect_velocity(sharp, dispatch));
         }
         steps.push(pass(
             "compute_divergence",
@@ -1954,13 +2139,14 @@ impl StageLowerer for FluidSolverLowerer {
                 constants_read(),
             ],
         ));
-        if multigrid {
-            steps.extend(multigrid_pressure(
-                resolution, iterations, tolerance, colliders,
-            ));
-        } else {
-            steps.extend(jacobi_pressure(iterations, dispatch));
-        }
+        let solve = |coarsen: bool| {
+            if multigrid {
+                multigrid_pressure(resolution, iterations, tolerance, colliders, coarsen)
+            } else {
+                jacobi_pressure(iterations, dispatch)
+            }
+        };
+        steps.extend(solve(true));
         steps.push(pass(
             "project",
             vec![
@@ -1970,6 +2156,21 @@ impl StageLowerer for FluidSolverLowerer {
                 constants_read(),
             ],
         ));
+        if flow_map {
+            // The projected midpoint velocity is stored and the forward maps marched through it.
+            steps.push(pass(
+                "lfm_march_forward",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read_write(RESOURCE_LFM_FORWARD),
+                    read(RESOURCE_LFM_FORCE),
+                    read_write(RESOURCE_LFM_INITIAL),
+                    write(RESOURCE_LFM_HISTORY),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+        }
         steps.push(pass(
             "advect_density",
             vec![
@@ -2015,9 +2216,102 @@ impl StageLowerer for FluidSolverLowerer {
                 fields.push((field, 1));
             }
         }
+        if flow_map {
+            // The cycle's last step (each pass does nothing on the others; the second solve starts
+            // converged): the impulse mapped back along the backward maps, its round-trip error
+            // measured and taken off, then projected into the next cycle's velocity.
+            steps.push(pass(
+                "lfm_pull_back",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read(RESOURCE_LFM_HISTORY),
+                    write(RESOURCE_LFM_BACKWARD),
+                    read(RESOURCE_LFM_INITIAL),
+                    write(RESOURCE_LFM_IMPULSE),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(pass(
+                "lfm_measure_error",
+                vec![
+                    read(RESOURCE_LFM_FORWARD),
+                    read(RESOURCE_LFM_IMPULSE),
+                    read(RESOURCE_LFM_INITIAL),
+                    write(RESOURCE_LFM_FORCE),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(pass(
+                "lfm_compensate",
+                vec![
+                    read(RESOURCE_LFM_BACKWARD),
+                    read(RESOURCE_LFM_FORCE),
+                    read(RESOURCE_LFM_IMPULSE),
+                    write(RESOURCE_VELOCITY),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(pass(
+                "lfm_impulse_divergence",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    write(RESOURCE_DIVERGENCE),
+                    read(RESOURCE_SOLID),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.extend(solve(false));
+            steps.push(pass(
+                "lfm_project",
+                vec![
+                    read_write(RESOURCE_VELOCITY),
+                    read(RESOURCE_PRESSURE),
+                    read(RESOURCE_SOLID),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            // The safeguard: the mapped velocity's energy against the last midpoint velocity's.
+            steps.push(pass(
+                "lfm_energy",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read(RESOURCE_LFM_HISTORY),
+                    write(RESOURCE_PCG_REDUCTION),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(ExecutionOp::Compute(ComputeOp {
+                name: "fluid/lfm_energy_total".into(),
+                program: Some(ComputeProgramId::new(PROGRAM_SOLVER)),
+                entry_point: "lfm_energy_total".into(),
+                accesses: vec![
+                    read_write(RESOURCE_PCG_REDUCTION),
+                    constants_read(),
+                    frame_read(),
+                ],
+                dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
+            }));
+            steps.push(pass(
+                "lfm_restart",
+                vec![
+                    read_write(RESOURCE_VELOCITY),
+                    read(RESOURCE_LFM_HISTORY),
+                    read(RESOURCE_PCG_REDUCTION),
+                    write(RESOURCE_LFM_INITIAL),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+        }
 
         Ok(ExecutionBlock {
-            resources: resources(resolution, constants.len(), fire, multigrid),
+            resources: resources(resolution, constants.len(), fire, multigrid, flow_map_cycle),
             ops: with_barriers(steps),
             constants,
             // The persistent grids, for debug views, field sampling and renderers.

@@ -84,9 +84,11 @@ enum Step {
         shape: StagedDispatch,
         indirect: Option<(usize, u64)>,
     },
-    /// A convergent repeat's device-side test after one iteration.
+    /// A convergent repeat's device-side test: after an iteration, or before the first one (which
+    /// counts no iteration).
     Check {
         repeat: usize,
+        before: bool,
     },
     Copy {
         from: usize,
@@ -117,19 +119,28 @@ const CONVERGENCE_WGSL: &str = r#"
 @group(0) @binding(1) var<storage, read_write> control: array<u32>;
 @group(0) @binding(2) var<storage, read> params: array<u32>;
 
-@compute @workgroup_size(1)
-fn check() {
-    if (control[1] == 0u) {
-        return;
-    }
-    control[0] = control[0] + 1u;
-    // `<=` is false for a residual that is not a number: it never converges.
+// `<=` is false for a residual that is not a number: it never converges.
+fn converge() {
     if (bitcast<f32>(residual[0]) <= bitcast<f32>(params[0])) {
         control[1] = 0u;
         for (var i = 0u; i < params[1] * 3u; i = i + 1u) {
             control[2u + i] = 0u;
         }
     }
+}
+
+@compute @workgroup_size(1)
+fn check() {
+    if (control[1] == 0u) {
+        return;
+    }
+    control[0] = control[0] + 1u;
+    converge();
+}
+
+@compute @workgroup_size(1)
+fn check_first() {
+    converge();
 }
 "#;
 
@@ -142,9 +153,10 @@ pub struct StageExecutor {
     dispatches: Vec<(usize, wgpu::BindGroup)>,
     /// A tick's steps, repeats expanded.
     steps: Vec<Step>,
-    /// Convergent repeats, in depth-first op order, and the test pipeline they share.
+    /// Convergent repeats, in depth-first op order, and the test pipelines they share: after an
+    /// iteration, and before the first.
     convergent: Vec<ConvergentRepeat>,
-    check: Option<wgpu::ComputePipeline>,
+    check: Option<[wgpu::ComputePipeline; 2]>,
 }
 
 impl StageExecutor {
@@ -279,18 +291,40 @@ impl StageExecutor {
                     label: Some("aestra convergence"),
                     source: wgpu::ShaderSource::Wgsl(CONVERGENCE_WGSL.into()),
                 });
-                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                // One explicit layout: the two entries use the same bindings.
+                let entry = |binding, read_only| wgpu::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                };
+                let bindings = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("aestra convergence"),
-                    layout: None,
-                    module: &module,
-                    entry_point: Some("check"),
-                    compilation_options: Default::default(),
-                    cache: None,
+                    entries: &[entry(0, true), entry(1, false), entry(2, true)],
+                });
+                let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("aestra convergence"),
+                    bind_group_layouts: &[Some(&bindings)],
+                    immediate_size: 0,
+                });
+                ["check", "check_first"].map(|name| {
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("aestra convergence"),
+                        layout: Some(&layout),
+                        module: &module,
+                        entry_point: Some(name),
+                        compilation_options: Default::default(),
+                        cache: None,
+                    })
                 })
             });
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("aestra convergence"),
-                layout: &check.get_bind_group_layout(0),
+                layout: &check[0].get_bind_group_layout(0),
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -424,12 +458,27 @@ impl StageExecutor {
                         *repeat - 1
                     });
                     let nested_start = *repeat;
+                    if let (
+                        Some(own),
+                        RepeatPolicy::UntilConverged {
+                            test_first: true, ..
+                        },
+                    ) = (own, policy)
+                    {
+                        steps.push(Step::Check {
+                            repeat: own,
+                            before: true,
+                        });
+                    }
                     for _ in 0..policy.count() {
                         *cursor = start;
                         *repeat = nested_start;
                         self.expand_steps(body, cursor, repeat, own, steps)?;
                         if let Some(own) = own {
-                            steps.push(Step::Check { repeat: own });
+                            steps.push(Step::Check {
+                                repeat: own,
+                                before: false,
+                            });
                         }
                     }
                 }
@@ -573,9 +622,9 @@ impl StageExecutor {
                                     None => pass.dispatch_workgroups(shape.x, shape.y, shape.z),
                                 }
                             }
-                            Step::Check { repeat } => {
+                            Step::Check { repeat, before } => {
                                 let check = self.check.as_ref().expect("prepared with its repeats");
-                                pass.set_pipeline(check);
+                                pass.set_pipeline(&check[usize::from(before)]);
                                 pass.set_bind_group(0, &self.convergent[repeat].bind_group, &[]);
                                 pass.dispatch_workgroups(1, 1, 1);
                             }

@@ -37,16 +37,27 @@
 @group(0) @binding(16) var<storage, read_write> mg_rhs: array<f32>;
 @group(0) @binding(17) var<storage, read_write> mg_flags: array<u32>;
 @group(0) @binding(18) var<storage, read_write> pcg_reduction: array<vec4<f32>>;
+// Leapfrog flow maps (fluid F6, `flowmap.wgsl`): the cycle's midpoint velocities (3 floats per cell per
+// step); the cycle's initial velocity, gathering the forces' path integral; the forward map and the
+// matching Jacobian column per face (6 floats per face, 18 per cell); the same for the backward map at
+// the cycle's end; this tick's forces (then the round-trip error); the mapped impulse. Always declared
+// — a few bytes each without flow maps — so the fire grids keep their bindings.
+@group(0) @binding(19) var<storage, read_write> lfm_history: array<f32>;
+@group(0) @binding(20) var<storage, read_write> lfm_initial: array<vec4<f32>>;
+@group(0) @binding(21) var<storage, read_write> lfm_forward: array<f32>;
+@group(0) @binding(22) var<storage, read_write> lfm_backward: array<f32>;
+@group(0) @binding(23) var<storage, read_write> lfm_force: array<vec4<f32>>;
+@group(0) @binding(24) var<storage, read_write> lfm_impulse: array<vec4<f32>>;
 // Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
 // a smoke-only block binds none of them and none of its passes reads them.
-@group(0) @binding(19) var<storage, read_write> temperature: array<f32>;
-@group(0) @binding(20) var<storage, read_write> temperature_next: array<f32>;
-@group(0) @binding(21) var<storage, read_write> fuel: array<f32>;
-@group(0) @binding(22) var<storage, read_write> fuel_next: array<f32>;
+@group(0) @binding(25) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(26) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(27) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(28) var<storage, read_write> fuel_next: array<f32>;
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
-const SOURCE_BASE: u32 = 18u;
+const SOURCE_BASE: u32 = 20u;
 const COLLIDER_WORDS: u32 = 24u;
 const SOURCE_WORDS: u32 = 16u;
 
@@ -73,6 +84,8 @@ fn turbulence_strength() -> f32 { return bitcast<f32>(constants[14]); }
 fn turbulence_frequency() -> f32 { return bitcast<f32>(constants[15]); }
 fn turbulence_evolution() -> f32 { return bitcast<f32>(constants[16]); }
 fn turbulence_masked() -> bool { return constants[17] != 0u; }
+// Leapfrog flow maps: the steps in a reinitialization cycle (0 without flow maps).
+fn lfm_cycle() -> u32 { return constants[18]; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 fn frame_time() -> f32 { return bitcast<f32>(frame[2]); }
 fn frame_seed() -> u32 { return frame[3]; }
@@ -548,6 +561,10 @@ fn bounded_face(c: vec3<i32>, axis: u32) -> f32 {
 @compute @workgroup_size(4, 4, 4)
 fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (!in_grid(cell)) { return; }
+    divergence[cell_index(cell)] = divergence_at(cell);
+}
+
+fn divergence_at(cell: vec3<u32>) -> f32 {
     let c = vec3<i32>(cell);
     var net = 0.0;
     if (!is_solid(c)) {
@@ -555,7 +572,7 @@ fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
             + effective_face(c + Y, 1u) - bounded_face(c, 1u)
             + effective_face(c + Z, 2u) - bounded_face(c, 2u);
     }
-    divergence[cell_index(cell)] = net / cell_size();
+    return net / cell_size();
 }
 
 // The pressure of cell `i` in the Jacobi ping-pong: `pressure`, or `pressure_next` on a back sweep.
@@ -617,6 +634,10 @@ fn relax_pressure_back(@builtin(global_invocation_id) cell: vec3<u32>) {
 @compute @workgroup_size(4, 4, 4)
 fn project(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (!in_grid(cell)) { return; }
+    project_cell(cell);
+}
+
+fn project_cell(cell: vec3<u32>) {
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
     let h = cell_size();

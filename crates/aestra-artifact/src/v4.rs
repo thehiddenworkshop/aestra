@@ -378,6 +378,9 @@ enum ExecutionOpV4 {
 struct ConvergenceV4 {
     residual: ResourceTypeId,
     tolerance: f32,
+    /// Also tested before the first iteration (fluid F6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    test_first: bool,
 }
 
 impl From<&ExecutionOp> for ExecutionOpV4 {
@@ -414,10 +417,12 @@ impl From<&ExecutionOp> for ExecutionOpV4 {
                     RepeatPolicy::UntilConverged {
                         residual,
                         tolerance,
+                        test_first,
                         ..
                     } => Some(ConvergenceV4 {
                         residual: residual.clone(),
                         tolerance: *tolerance,
+                        test_first: *test_first,
                     }),
                 },
             },
@@ -459,10 +464,12 @@ impl From<ExecutionOpV4> for ExecutionOp {
                     Some(ConvergenceV4 {
                         residual,
                         tolerance,
+                        test_first,
                     }) => RepeatPolicy::UntilConverged {
                         residual,
                         tolerance,
                         max: count,
+                        test_first,
                     },
                 },
                 body: body.into_iter().map(Self::from).collect(),

@@ -284,7 +284,7 @@ fn pressure_at(neighbour: i32) -> f32 {
 }
 
 // The solve starts from the previous tick's pressure (it persists; a warm start): r = b − A·x with
-// b = −h²·∇·u on the fluid cells. Partials of Σb, Σb², the fluid cell count.
+// b = −h²·∇·u on the fluid cells. Partials of Σb, Σb², the fluid cell count, Σr².
 @compute @workgroup_size(4, 4, 4)
 fn pcg_setup(
     @builtin(global_invocation_id) cell: vec3<u32>,
@@ -307,23 +307,31 @@ fn pcg_setup(
     if (in_grid(cell)) {
         mg_rhs[cell_index(cell)] = r;
     }
-    let total = aestra_workgroup_sum(local, vec4<f32>(b, b * b, fluid, 0.0));
+    let total = aestra_workgroup_sum(local, vec4<f32>(b, b * b, fluid, r * r));
     if (local == 0u) {
         pcg_reduction[PCG_PARTIALS + pcg_group_index(group)] = total;
     }
 }
 
 // A domain closed on every side holds pressure only up to a constant: its system is consistent only
-// when b sums to zero, so b loses its mean. |b|² (of what is solved) sets the relative residual.
+// when b sums to zero, so b loses its mean. |b|² (of what is solved) sets the relative residual. The
+// warm start's own relative residual is tested before the first iteration: a solve that starts
+// converged — nothing to solve, or last tick's pressure already good enough — runs none. (A closed
+// domain's is not known before its mean is removed: it always iterates.)
 @compute @workgroup_size(64)
 fn pcg_setup_finalize(@builtin(local_invocation_index) local: u32) {
     let total = pcg_total(local);
     if (local == 0u) {
         let closed = open_sides() == 0u && total.z > 0.0;
         let mean = select(0.0, total.x / max(total.z, 1.0), closed);
-        pcg_reduction[1] = vec4<f32>(max(total.y - total.z * mean * mean, 0.0), mean, 0.0, 0.0);
+        let rr0 = max(total.y - total.z * mean * mean, 0.0);
+        pcg_reduction[1] = vec4<f32>(rr0, mean, 0.0, 0.0);
+        var residual = select(0.0, sqrt(total.w / rr0), rr0 > 0.0);
+        if (closed) {
+            residual = 1.0;
+        }
         // r·z: any non-zero — the first iteration's direction is z plus a multiple of the zero p.
-        pcg_reduction[0] = vec4<f32>(1.0, 1.0, 0.0, 0.0);
+        pcg_reduction[0] = vec4<f32>(residual, 1.0, 0.0, 0.0);
     }
 }
 

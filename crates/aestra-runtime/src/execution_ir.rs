@@ -182,10 +182,15 @@ pub enum RepeatPolicy {
     /// copy cannot be skipped on the device). A residual that is not a number never converges: the
     /// body then runs `max` times. The iterations that ran depend only on the stage's values, so a
     /// rerun repeats them exactly.
+    ///
+    /// With `test_first`, the residual is also tested before the first iteration (fluid F6), so the
+    /// ops before the repeat must have written it: a solve that starts converged — nothing to solve,
+    /// or a warm start already good enough — runs no iteration at all.
     UntilConverged {
         residual: ResourceTypeId,
         tolerance: f32,
         max: u32,
+        test_first: bool,
     },
 }
 
@@ -481,6 +486,14 @@ fn trace_ops(ops: &[ExecutionOp], steps: &mut Vec<String>) {
                 steps.push(format!("copy:{}->{}", copy.from.as_str(), copy.to.as_str()))
             }
             ExecutionOp::Repeat { policy, body } => {
+                if let RepeatPolicy::UntilConverged {
+                    residual,
+                    test_first: true,
+                    ..
+                } = policy
+                {
+                    steps.push(format!("converged?:{}", residual.as_str()));
+                }
                 for _ in 0..policy.count() {
                     trace_ops(body, steps);
                     // The reference backend holds no values: it traces every iteration up to the
@@ -625,6 +638,7 @@ mod tests {
                 residual: ResourceTypeId::new("res.field"),
                 tolerance,
                 max: 2,
+                test_first: false,
             },
             body,
         };
@@ -668,6 +682,7 @@ mod tests {
                 residual: ResourceTypeId::new("res.missing"),
                 tolerance: 0.0,
                 max: 1,
+                test_first: false,
             },
             body: vec![compute("B")],
         }]);
@@ -675,6 +690,21 @@ mod tests {
             unknown.validate(),
             Err(ExecutionError::UnknownResource(_))
         ));
+
+        // Tested first too: a repeat that starts converged runs nothing.
+        let first = field_block(vec![ExecutionOp::Repeat {
+            policy: RepeatPolicy::UntilConverged {
+                residual: ResourceTypeId::new("res.field"),
+                tolerance: 0.0,
+                max: 1,
+                test_first: true,
+            },
+            body: vec![compute("B")],
+        }]);
+        assert_eq!(
+            execute_reference(&first).steps,
+            vec!["converged?:res.field", "compute:B", "converged?:res.field"]
+        );
     }
 
     #[test]
