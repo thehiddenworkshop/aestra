@@ -482,6 +482,26 @@ impl StagesKey {
                 .iter()
                 .eq(stages(&extracted.effect).map(|stage| &stage.block))
     }
+
+    /// Whether the effect's stages differ from these only in their constants' values (fluid F3): a
+    /// domain input edit or drag, which the running timelines take in place.
+    fn differs_only_in_constants(&self, extracted: &ExtractedStages) -> bool {
+        let same_shape = |old: &aestra_runtime::ExecutionBlock,
+                          new: &aestra_runtime::ExecutionBlock| {
+            old.resources == new.resources
+                && old.ops == new.ops
+                && old.fields == new.fields
+                && old.constants.len() == new.constants.len()
+        };
+        self.seed == extracted.seed
+            && self.host_bytes == extracted.host.byte_len()
+            && self.blocks.len() == stages(&extracted.effect).count()
+            && self
+                .blocks
+                .iter()
+                .zip(stages(&extracted.effect))
+                .all(|(old, new)| same_shape(old, &new.block))
+    }
 }
 
 /// One effect's stage timelines in the render world.
@@ -514,6 +534,23 @@ fn prepare_stage_runtimes(
                 }
                 existing.host_epoch = extracted.host_epoch;
             }
+            continue;
+        }
+        // Only constants changed (an input edit, a source dragged): keep simulating, with the new values.
+        if let Some(existing) = runtimes.0.get_mut(&entity)
+            && existing.key.differs_only_in_constants(extracted)
+        {
+            let blocks: Vec<_> = stages(&extracted.effect)
+                .map(|stage| stage.block.clone())
+                .collect();
+            for (timeline, block) in existing.timelines.iter_mut().zip(&blocks) {
+                if let Some(timeline) = timeline
+                    && let Err(error) = timeline.set_constants(&queue, &block.constants)
+                {
+                    warn!("extension stage constants could not be updated: {error}");
+                }
+            }
+            existing.key.blocks = blocks;
             continue;
         }
         // The linked programs, including any extension linked since the last build.
@@ -788,6 +825,58 @@ mod tests {
         )
         .validate(&module)
         .expect("the field slice shader validates");
+    }
+
+    fn fire_with(module: &str, input: &str, value: aestra_core::Value) -> ExtractedStages {
+        let mut registry = ExtensionRegistry::builtin();
+        registry.install(&aestra_fluid::FluidExtension).unwrap();
+        let mut effect = aestra_fluid::fire_effect(&registry);
+        let found = effect.simulation_stages[0]
+            .modules
+            .iter_mut()
+            .find(|candidate| candidate.module_type.0 == module)
+            .unwrap();
+        let aestra_core::ModuleParameters::Custom(values) = &mut found.parameters else {
+            unreachable!("plugin modules carry a generic payload");
+        };
+        values.insert(input.into(), value);
+        let compiled = aestra_compiler::EffectCompiler::with_extensions(registry)
+            .compile(&effect)
+            .unwrap();
+        let instance = EffectInstance::new(Arc::new(compiled));
+        ExtractedStages {
+            host: GpuHostBindings::from_instance(&instance),
+            effect: Arc::clone(instance.effect()),
+            time: 0.0,
+            quality: SeekQuality::Exact,
+            seed: 7,
+            host_epoch: 0,
+            world_to_effect: aestra_runtime::IDENTITY_AFFINE,
+            coupled: false,
+            view: None,
+            volumes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_moved_source_updates_the_running_stages_but_a_new_grid_rebuilds_them() {
+        use aestra_core::Value;
+        let at = |position| {
+            fire_with(
+                aestra_fluid::MODULE_DENSITY_SOURCE,
+                "position",
+                Value::Vec3(position),
+            )
+        };
+        let key = StagesKey::of(&at([0.0, 15.0, 0.0]));
+        let moved = at([20.0, 10.0, 0.0]);
+        assert!(!key.matches(&moved));
+        assert!(key.differs_only_in_constants(&moved), "taken in place");
+        let regridded = fire_with(aestra_fluid::MODULE_GRID, "resolution", Value::U32(24));
+        assert!(
+            !key.differs_only_in_constants(&regridded),
+            "new resources and fields rebuild the stages"
+        );
     }
 
     #[test]

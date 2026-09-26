@@ -34,6 +34,7 @@ fn input(
         unit: None,
         control,
         sources,
+        handle: None,
     }
 }
 
@@ -68,6 +69,12 @@ impl InputMetadata {
 
     pub fn with_unit(mut self, unit: &'static str) -> Self {
         self.unit = Some(unit);
+        self
+    }
+
+    /// Marks a `Vec3` input as a point in the effect's space that editors move with a viewport gizmo.
+    pub fn with_position_handle(mut self) -> Self {
+        self.handle = Some(aestra_core::PropertyHandle::Position);
         self
     }
 

@@ -717,6 +717,51 @@ fn scrubbing_reproduces_the_uninterrupted_run_bit_for_bit() {
     );
 }
 
+/// A dragged source (fluid F3): new constants apply to the running stage without a restart; the
+/// history mixing both is never checkpointed, and a backward seek replays under the new constants.
+#[test]
+fn a_live_constant_edit_keeps_the_run_and_a_seek_replays_under_the_new_values() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut moved = effect(&registry, false, 24);
+    set_input(
+        &mut moved,
+        MODULE_DENSITY_SOURCE,
+        "position",
+        Value::Vec3([0.6, 0.5, 0.0]),
+    );
+    let moved = Fluid::new(&gpu, &registry, &moved);
+    let moved_constants = moved.stage.block().constants.clone();
+    let mut placed = StageTimeline::new(moved.stage, TimelinePolicy::default(), SEED);
+    advance(&gpu, &mut placed, 90, u32::MAX);
+    let placed = timeline_state(&gpu, &placed);
+
+    let mut live = timeline(&gpu, &registry, TimelinePolicy::default());
+    advance(&gpu, &mut live, 40, u32::MAX);
+    let before = timeline_state(&gpu, &live);
+    assert!(live.set_constants(&gpu.queue, &moved_constants).unwrap());
+    assert!(!live.set_constants(&gpu.queue, &moved_constants).unwrap());
+    assert!(live.checkpoint_ticks().is_empty());
+    // One more tick, from the live state: no restart.
+    assert_eq!(advance(&gpu, &mut live, 41, u32::MAX), 1);
+    assert_eq!(live.last_tick(), 41);
+    advance(&gpu, &mut live, 90, u32::MAX);
+    assert!(
+        live.checkpoint_ticks().is_empty(),
+        "a history mixing two sources is never checkpointed"
+    );
+    assert_ne!(timeline_state(&gpu, &live), before);
+    // Seeking back replays from tick 0 under the new source: the run placed there from the start.
+    advance(&gpu, &mut live, 10, u32::MAX);
+    advance(&gpu, &mut live, 90, u32::MAX);
+    assert_eq!(timeline_state(&gpu, &live), placed);
+    assert_eq!(
+        live.checkpoint_ticks(),
+        [20, 40, 60, 80],
+        "checkpoints resume"
+    );
+}
+
 #[test]
 fn checkpoint_memory_stays_within_the_policy() {
     let Some(gpu) = gpu() else { return };

@@ -185,6 +185,16 @@ pub struct PropertyDescriptor {
     /// means constant only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<crate::PropertySource>,
+    /// A viewport handle editors offer for this property (fluid F3), e.g. a gizmo dragging a point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<PropertyHandle>,
+}
+
+/// How a property can be edited directly in the viewport, beside its inspector control.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PropertyHandle {
+    /// A `Vec3` point in the owning effect's space, moved with a translate gizmo.
+    Position,
 }
 
 impl PropertyDescriptor {
@@ -327,6 +337,7 @@ mod tests {
                         max: Some(10.0),
                     },
                     sources: vec![crate::PropertySource::Constant],
+                    handle: None,
                 },
                 PropertyDescriptor {
                     name: "mode".to_string(),
@@ -339,6 +350,7 @@ mod tests {
                         options: vec!["PIC".to_string(), "FLIP".to_string(), "APIC".to_string()],
                     },
                     sources: Vec::new(),
+                    handle: None,
                 },
             ],
         )
@@ -448,6 +460,7 @@ mod tests {
                     max: Some(1.0),
                 },
                 sources: Vec::new(),
+                handle: None,
             }],
         );
         let mut inverted = PropertyBag::new();

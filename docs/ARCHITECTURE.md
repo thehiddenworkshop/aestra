@@ -222,6 +222,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Runs every presented effect's extension stages in the render world (`gpu::extension_stages`):
   - one timeline per stage, rebuilt only when a stage's execution block, the seed or the host-binding
     size changes, so recompiles that leave the stages alone (a gizmo drag) keep them running;
+  - an edit that changes only a block's constants (a domain input, a dragged source) is applied to
+    the running timeline in place (`StageTimeline::set_constants`): it acts from the next tick, its
+    checkpoints are dropped and none is captured until a reset replays under the new values;
   - a rebound host object drops the checkpoints;
   - the same `Preview`/`Exact` catch-up budgets as the stateful particle path;
   - per-instance GPU time as `GpuStageTiming` (the profile's `gpu_stage_time_ns`);
@@ -269,6 +272,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
+- Offers a translate gizmo for any module input whose schema marks it as a position handle
+  (`PropertyHandle::Position`, `InputMetadata::with_position_handle`), unless a host object drives
+  it; a fluid source's centre is one. Previews that change only emitter or clip transforms, or only
+  extension-stage constants, module values and presentations, swap the player in place, so a drag
+  keeps the running simulation.
 - Uses Bevy Feathers for standard tooling controls and theme semantics. The
   editor menu bar, dropdowns, primary toolbar, Settings workspace, and
   metadata-driven Properties inputs use Feathers menus, buttons, pane/group

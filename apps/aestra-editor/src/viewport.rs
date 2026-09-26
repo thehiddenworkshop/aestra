@@ -529,6 +529,9 @@ enum PreviewTransformTarget {
     Emitter(EmitterId),
     EffectClip(EffectClipId),
     HostPose(aestra_core::EffectId, usize),
+    /// A module input its schema marks as a position handle (fluid F3), e.g. a fluid source's
+    /// centre: the gizmo translates the point; rotation and scale do not apply.
+    ModuleHandle(ModuleId, &'static str),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -904,8 +907,13 @@ fn sync_transform_gizmo_focus(
     motion: Option<Res<host_motion::HostMotionViewport>>,
     interaction: Res<EmitterTransformGizmoInteraction>,
     proxies: Query<(Entity, Has<TransformGizmoFocus>), With<EmitterTransformGizmoProxy>>,
+    modules: Option<Res<crate::properties::EditorModuleRegistry>>,
 ) {
-    let target = selected_gizmo_transform(&session, timeline.as_deref());
+    let target = selected_gizmo_transform(
+        &session,
+        timeline.as_deref(),
+        modules.as_deref().map(|modules| &modules.0),
+    );
     let allowed = target.is_some()
         && !protection.as_ref().is_some_and(|state| state.is_open())
         && !interaction.cancelled
@@ -927,6 +935,7 @@ fn sync_transform_gizmo_focus(
                 PreviewTransformTarget::Emitter(id) => SemanticTarget::Emitter(id),
                 PreviewTransformTarget::EffectClip(id) => SemanticTarget::EffectClip(id),
                 PreviewTransformTarget::HostPose(id, _) => SemanticTarget::Effect(id),
+                PreviewTransformTarget::ModuleHandle(id, _) => SemanticTarget::Module(id),
             },
         ));
     for (entity, has_focus) in &proxies {
@@ -944,11 +953,16 @@ fn sync_emitter_transform_proxy(
     gizmo: Res<TransformGizmoState>,
     interaction: Res<EmitterTransformGizmoInteraction>,
     mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
+    modules: Option<Res<crate::properties::EditorModuleRegistry>>,
 ) {
     if gizmo.active || interaction.active.is_some() {
         return;
     }
-    let Some((_, authored)) = selected_gizmo_transform(&session, timeline.as_deref()) else {
+    let Some((_, authored)) = selected_gizmo_transform(
+        &session,
+        timeline.as_deref(),
+        modules.as_deref().map(|modules| &modules.0),
+    ) else {
         return;
     };
     let desired = bevy_transform_from_emitter(authored);
@@ -967,12 +981,17 @@ fn update_emitter_transform_gizmo(
     mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
     mut session: ResMut<EditorSession>,
     timeline: Option<Res<TimelineState>>,
+    modules: Option<Res<crate::properties::EditorModuleRegistry>>,
 ) {
     let Ok(mut transform) = proxies.single_mut() else {
         return;
     };
     let raw_current = emitter_transform_from_bevy(&transform);
-    let selected = selected_gizmo_transform(&session, timeline.as_deref());
+    let selected = selected_gizmo_transform(
+        &session,
+        timeline.as_deref(),
+        modules.as_deref().map(|modules| &modules.0),
+    );
     if interaction.cancelled {
         if let Some((_, pose)) = selected {
             *transform = bevy_transform_from_emitter(pose);
@@ -1064,6 +1083,7 @@ fn update_emitter_transform_gizmo(
                 PreviewTransformTarget::Emitter(_) => "Transformed emitter",
                 PreviewTransformTarget::EffectClip(_) => "Transformed effect clip",
                 PreviewTransformTarget::HostPose(_, _) => "Transformed host pose",
+                PreviewTransformTarget::ModuleHandle(_, _) => "Moved module position",
             },
             command,
             true,
@@ -1328,9 +1348,48 @@ fn update_transform_gizmo_value_label(
     }
 }
 
+/// The position handle of a module (fluid F3): its first `Vec3` input the schema marks as one,
+/// unless a host object drives that input. Returns the input's name and current value.
+fn module_position_handle(
+    session: &EditorSession,
+    modules: &aestra_compiler::ModuleRegistry,
+    id: ModuleId,
+) -> Option<(&'static str, [f32; 3])> {
+    let (_, module) = session.owned_module(id)?;
+    let metadata = modules.get(&module.module_type)?;
+    let input = metadata.inputs.iter().find(|input| {
+        input.handle == Some(aestra_core::PropertyHandle::Position)
+            && input.value_type == aestra_core::ValueType::Vec3
+    })?;
+    if module.property_source(input.name) == Some(aestra_core::PropertySource::HostBinding) {
+        return None;
+    }
+    let value = match &module.parameters {
+        aestra_core::ModuleParameters::Custom(values) => values.get(input.name).cloned(),
+        _ => None,
+    }
+    .unwrap_or_else(|| input.default_value.clone());
+    let aestra_core::Value::Vec3(position) = value else {
+        return None;
+    };
+    Some((input.name, position))
+}
+
 fn selected_preview_transform(
     session: &EditorSession,
+    modules: Option<&aestra_compiler::ModuleRegistry>,
 ) -> Option<(PreviewTransformTarget, EmitterTransform)> {
+    if let (SemanticTarget::Module(id), Some(modules)) = (session.selection.primary, modules)
+        && let Some((input, position)) = module_position_handle(session, modules, id)
+    {
+        return Some((
+            PreviewTransformTarget::ModuleHandle(id, input),
+            EmitterTransform {
+                translation: position,
+                ..default()
+            },
+        ));
+    }
     if let SemanticTarget::EffectClip(id) = session.selection.primary {
         return session
             .effect
@@ -1349,6 +1408,7 @@ fn selected_preview_transform(
 fn selected_gizmo_transform(
     session: &EditorSession,
     timeline: Option<&TimelineState>,
+    modules: Option<&aestra_compiler::ModuleRegistry>,
 ) -> Option<(PreviewTransformTarget, EmitterTransform)> {
     if let Some(timeline) = timeline
         && crate::timeline::host_motion::active(session, timeline)
@@ -1362,7 +1422,7 @@ fn selected_gizmo_transform(
             },
         );
     }
-    selected_preview_transform(session)
+    selected_preview_transform(session, modules)
 }
 
 fn preview_transform_command(
@@ -1386,6 +1446,15 @@ fn preview_transform_command(
             )
             .ok()?;
             EffectCommand::SetHostTransformTrack { track: Some(track) }
+        }
+        PreviewTransformTarget::ModuleHandle(module, input) => {
+            let (owner, _) = session.owned_module(module)?;
+            EffectCommand::SetModuleParameter {
+                emitter: owner,
+                module,
+                parameter: input.to_string(),
+                value: aestra_core::Value::Vec3(transform.translation),
+            }
         }
     })
 }
@@ -2757,8 +2826,7 @@ fn sync_rendered_preview(
             *transform = instance.transform;
         }
         if !Arc::ptr_eq(player.effect(), &instance.effect) {
-            if compiled_effects_differ_only_by_emitter_transforms(player.effect(), &instance.effect)
-            {
+            if compiled_effects_differ_only_in_live_edits(player.effect(), &instance.effect) {
                 *player = configured_preview_instance(
                     instance.effect,
                     instance.time,
@@ -2812,7 +2880,7 @@ fn presented_playhead_time(player: &PresentedEffect) -> f32 {
     }
 }
 
-fn compiled_effects_differ_only_by_emitter_transforms(
+fn compiled_effects_differ_only_in_live_edits(
     current: &CompiledEffect,
     desired: &CompiledEffect,
 ) -> bool {
@@ -2829,6 +2897,37 @@ fn compiled_effects_differ_only_by_emitter_transforms(
         .zip(&desired.effect_clips)
     {
         clip.transform = desired_clip.transform;
+    }
+    // Extension stages (fluid F3): the render world takes new constants and looks in place, so a
+    // domain input edit or a dragged source keeps the simulation running. Anything that changes a
+    // stage's shape still differs here and respawns the player.
+    let live_stage = |stage: &mut aestra_runtime::CompiledExtensionStage,
+                      desired: &aestra_runtime::CompiledExtensionStage| {
+        if stage.block.constants.len() == desired.block.constants.len() {
+            stage.block.constants.clone_from(&desired.block.constants);
+        }
+        if stage.modules.len() == desired.modules.len() {
+            for (module, desired) in stage.modules.iter_mut().zip(&desired.modules) {
+                module.parameters.clone_from(&desired.parameters);
+            }
+        }
+        stage.presentations.clone_from(&desired.presentations);
+    };
+    for (stage, desired_stage) in normalized
+        .extension_stages
+        .iter_mut()
+        .zip(&desired.extension_stages)
+    {
+        live_stage(stage, desired_stage);
+    }
+    for (emitter, desired_emitter) in normalized.emitters.iter_mut().zip(&desired.emitters) {
+        for (stage, desired_stage) in emitter
+            .extension_stages
+            .iter_mut()
+            .zip(&desired_emitter.extension_stages)
+        {
+            live_stage(stage, desired_stage);
+        }
     }
     &normalized == desired
 }
@@ -3518,7 +3617,7 @@ mod tests {
     #[test]
     fn empty_effect_disables_emitter_gizmo_but_keeps_clip_transforms() {
         let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
-        assert!(selected_preview_transform(&session).is_none());
+        assert!(selected_preview_transform(&session, None).is_none());
         let mut app = App::new();
         app.insert_resource(session)
             .init_resource::<ShapeGizmoState>()
@@ -3536,11 +3635,71 @@ mod tests {
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         session.effect.effect_clips.push(clip);
         session.selection.select_effect_clip(id);
-        let (target, transform) = selected_preview_transform(&session).unwrap();
+        let (target, transform) = selected_preview_transform(&session, None).unwrap();
         assert!(matches!(target, PreviewTransformTarget::EffectClip(selected) if selected == id));
         assert_eq!(transform.translation, [1.0, 2.0, 3.0]);
         app.update();
         assert!(app.world().get::<TransformGizmoFocus>(proxy).is_some());
+    }
+
+    #[test]
+    fn a_selected_fluid_source_is_moved_by_the_gizmo_without_restarting_the_fluid() {
+        aestra_fluid::link();
+        let registry = aestra_compiler::ExtensionRegistry::linked();
+        let mut session = EditorSession::from_test_effect(aestra_fluid::fire_effect(&registry));
+        let source = session.effect.simulation_stages[0]
+            .modules
+            .iter()
+            .find(|module| module.module_type.0 == aestra_fluid::MODULE_DENSITY_SOURCE)
+            .unwrap()
+            .id;
+        session.selection.primary = SemanticTarget::Module(source);
+        let (target, transform) =
+            selected_preview_transform(&session, Some(&registry.modules)).unwrap();
+        assert_eq!(
+            target,
+            PreviewTransformTarget::ModuleHandle(source, "position")
+        );
+        assert_eq!(transform.translation, [0.0, 15.0, 0.0]);
+
+        // Dragging edits the domain's source through the effect scope, as one live preview.
+        let before = session.preview().unwrap().effect().clone();
+        let moved = EmitterTransform {
+            translation: [20.0, 10.0, 0.0],
+            ..default()
+        };
+        let command = preview_transform_command(target, moved, &session).unwrap();
+        assert!(matches!(
+            &command,
+            EffectCommand::SetModuleParameter { emitter, parameter, .. }
+                if *emitter == EmitterId::EFFECT_SCOPE && parameter == "position"
+        ));
+        assert!(
+            session.preview_interaction(EffectTransaction::single("Preview transform", command))
+        );
+        let after = session.preview().unwrap().effect();
+        assert_ne!(
+            before.extension_stages[0].block.constants,
+            after.extension_stages[0].block.constants
+        );
+        assert!(
+            compiled_effects_differ_only_in_live_edits(&before, after),
+            "the player is swapped in place, so the running fluid is kept"
+        );
+
+        // A position a host object drives offers no handle.
+        let module = session.effect.simulation_stages[0]
+            .modules
+            .iter_mut()
+            .find(|module| module.id == source)
+            .unwrap();
+        module
+            .property_sources
+            .insert("position".into(), aestra_core::PropertySource::HostBinding);
+        assert!(!matches!(
+            selected_preview_transform(&session, Some(&registry.modules)),
+            Some((PreviewTransformTarget::ModuleHandle(..), _))
+        ));
     }
 
     #[test]
@@ -3692,13 +3851,13 @@ mod tests {
         let current = session.preview().unwrap().effect();
         let mut transformed = current.as_ref().clone();
         transformed.emitters[0].transform.translation[0] = 4.0;
-        assert!(compiled_effects_differ_only_by_emitter_transforms(
+        assert!(compiled_effects_differ_only_in_live_edits(
             current,
             &transformed
         ));
 
         transformed.emitters[0].duration += 0.25;
-        assert!(!compiled_effects_differ_only_by_emitter_transforms(
+        assert!(!compiled_effects_differ_only_in_live_edits(
             current,
             &transformed
         ));

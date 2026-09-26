@@ -17,6 +17,8 @@ pub struct InputMetadata {
     pub unit: Option<&'static str>,
     pub control: InputControl,
     pub sources: Vec<InputSourceKind>,
+    /// A viewport handle editors offer for the input (see [`aestra_core::PropertyHandle`]).
+    pub handle: Option<aestra_core::PropertyHandle>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -84,6 +86,7 @@ impl InputMetadata {
             unit: self.unit.map(str::to_string),
             control: self.control.to_property_control(),
             sources: self.sources.clone(),
+            handle: self.handle,
         }
     }
 }

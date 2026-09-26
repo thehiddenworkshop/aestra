@@ -189,6 +189,7 @@ fn debug_points_schema() -> PropertySchema {
                 max: Some(64.0),
             },
             sources: vec![PropertySource::Constant],
+            handle: None,
         }],
     )
 }

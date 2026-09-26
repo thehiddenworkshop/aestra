@@ -416,7 +416,8 @@ fn density_source_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             vector(),
         )
         .with_unit("units")
-        .with_sources(bindable.clone()),
+        .with_sources(bindable.clone())
+        .with_position_handle(),
         InputMetadata::new(
             "radius",
             "Radius",

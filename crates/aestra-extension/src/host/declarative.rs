@@ -116,6 +116,7 @@ fn input_metadata(descriptor: &PropertyDescriptor) -> InputMetadata {
         } else {
             descriptor.sources.clone()
         },
+        handle: descriptor.handle,
     }
 }
 

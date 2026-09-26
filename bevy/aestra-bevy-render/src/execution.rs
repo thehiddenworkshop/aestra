@@ -412,6 +412,26 @@ impl StageExecutor {
         Ok(())
     }
 
+    /// Replaces the stage constants in place (fluid F3: live domain edits). The layout must keep its
+    /// length; the constants are not stage state, so nothing else changes.
+    pub fn set_constants(&mut self, queue: &wgpu::Queue, constants: &[u32]) -> Result<(), String> {
+        if constants.len() != self.block.constants.len() {
+            return Err(format!(
+                "stage constants changed length ({} → {} words)",
+                self.block.constants.len(),
+                constants.len()
+            ));
+        }
+        if let Some(binding) = self
+            .binding(AESTRA_RESOURCE_STAGE_CONSTANTS)
+            .filter(|_| !constants.is_empty())
+        {
+            queue.write_buffer(&self.buffers[binding], 0, &words_to_bytes(constants));
+        }
+        self.block.constants = constants.to_vec();
+        Ok(())
+    }
+
     /// Returns the stage to its tick-0 state: every stage-owned persistent resource zeroed.
     pub fn reset(&self, encoder: &mut wgpu::CommandEncoder) {
         for binding in self.stage_owned_persistent() {
@@ -603,6 +623,9 @@ pub struct StageTimeline {
     seed: u32,
     last_tick: u32,
     checkpoints: Vec<(u32, GpuStageCheckpoint)>,
+    /// The live state was simulated under more than one set of constants (a live edit), so a replay
+    /// would not reproduce it: no checkpoint is captured from it until the next reset.
+    mixed_history: bool,
 }
 
 impl StageTimeline {
@@ -613,7 +636,25 @@ impl StageTimeline {
             seed,
             last_tick: 0,
             checkpoints: Vec::new(),
+            mixed_history: false,
         }
+    }
+
+    /// Applies new constants to the running stage without restarting it (fluid F3): the edit acts
+    /// from the next tick on. Checkpoints recorded under the old constants are dropped, and none is
+    /// captured until a reset replays under the new ones. False when nothing changed.
+    pub fn set_constants(
+        &mut self,
+        queue: &wgpu::Queue,
+        constants: &[u32],
+    ) -> Result<bool, String> {
+        if self.executor.block.constants == constants {
+            return Ok(false);
+        }
+        self.executor.set_constants(queue, constants)?;
+        self.checkpoints.clear();
+        self.mixed_history = self.last_tick > 0;
+        Ok(true)
     }
 
     pub fn executor(&self) -> &StageExecutor {
@@ -653,6 +694,7 @@ impl StageTimeline {
         if tick == 0 {
             self.executor.reset(encoder);
             self.last_tick = 0;
+            self.mixed_history = false;
             return true;
         }
         let Some((_, checkpoint)) = self.checkpoints.iter().find(|(at, _)| *at == tick) else {
@@ -698,6 +740,7 @@ impl StageTimeline {
                 None => {
                     self.executor.reset(encoder);
                     self.last_tick = 0;
+                    self.mixed_history = false;
                     report.restored_from = Some(0);
                 }
             }
@@ -724,7 +767,8 @@ impl StageTimeline {
 
     fn capture(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         let tick = self.last_tick;
-        if self.policy.max_checkpoints == 0
+        if self.mixed_history
+            || self.policy.max_checkpoints == 0
             || self.executor.persistent_bytes() > self.policy.max_bytes
             || self
                 .checkpoints
