@@ -380,6 +380,8 @@ fn begin_drag(
     catalog: Res<ProjectEffectCatalog>,
     session: Res<EditorSession>,
     geometry: Query<(&ComputedNode, &UiGlobalTransform)>,
+    children: Query<&Children>,
+    visuals: Query<(&Node, Option<&ImageNode>)>,
     assets: Res<AssetServer>,
     mut drag: ResMut<Drag>,
     mut commands: Commands,
@@ -387,7 +389,8 @@ fn begin_drag(
     if event.button != PointerButton::Primary || event.entity != event.original_event_target() {
         return;
     }
-    let Some((_, row)) = crate::asset_drop::nearest(event.entity, &parents, |e| rows.get(e).ok())
+    let Some((row_entity, row)) =
+        crate::asset_drop::nearest(event.entity, &parents, |e| rows.get(e).ok())
     else {
         return;
     };
@@ -425,6 +428,7 @@ fn begin_drag(
             kind(row.0.asset),
             row.0.kind,
             &assets,
+            super::drag_preview::thumbnail(row_entity, &children, &visuals),
         ));
     }
     let payload = row.1.clone();

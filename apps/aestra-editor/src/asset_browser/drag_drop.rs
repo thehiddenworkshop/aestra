@@ -119,6 +119,8 @@ fn begin(
     mut drag: ResMut<AssetDrag>,
     mut clicks: ResMut<super::actions::BrowserClickState>,
     geometry: Query<(&ComputedNode, &UiGlobalTransform)>,
+    children: Query<&Children>,
+    visuals: Query<(&Node, Option<&ImageNode>)>,
     assets: Res<AssetServer>,
     localizer: Res<Localizer>,
     mut commands: Commands,
@@ -168,6 +170,10 @@ fn begin(
                 entry,
                 &assets,
                 &localizer,
+                ancestors
+                    .iter()
+                    .find(|entity| rows.contains(**entity))
+                    .and_then(|row| super::drag_preview::thumbnail(*row, &children, &visuals)),
             ));
         }
         drag.source = Some((source, catalog.content_revision()));

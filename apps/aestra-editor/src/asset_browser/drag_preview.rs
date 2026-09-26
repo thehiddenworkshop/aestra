@@ -13,6 +13,30 @@ pub(super) struct DragPreview {
 
 const OFFSET: Vec2 = Vec2::new(16.0, 18.0);
 
+/// Reuse the displayed image, including built-in previews, without another load
+/// or render job. Hidden/loading images must not replace the type-icon fallback.
+pub(super) fn thumbnail(
+    row: Entity,
+    children: &Query<&Children>,
+    visuals: &Query<(&Node, Option<&ImageNode>)>,
+) -> Option<ImageNode> {
+    let mut pending = vec![row];
+    while let Some(entity) = pending.pop() {
+        if let Ok((node, image)) = visuals.get(entity) {
+            if node.display == Display::None {
+                continue;
+            }
+            if let Some(image) = image.filter(|image| image.image != Handle::<Image>::default()) {
+                return Some(image.clone());
+            }
+        }
+        if let Ok(children) = children.get(entity) {
+            pending.extend(children.iter().rev());
+        }
+    }
+    None
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn spawn(
     commands: &mut Commands,
@@ -23,6 +47,7 @@ pub(super) fn spawn(
     entry: &aestra_project::ProjectSourceEntry,
     assets: &AssetServer,
     localizer: &Localizer,
+    thumbnail: Option<ImageNode>,
 ) -> Entity {
     let kind = Kind::of(entry);
     spawn_named(
@@ -35,6 +60,7 @@ pub(super) fn spawn(
         kind,
         &localizer.text(kind.label()),
         assets,
+        thumbnail,
     )
 }
 
@@ -49,6 +75,7 @@ pub(super) fn spawn_named(
     kind: Kind,
     subtitle: &str,
     assets: &AssetServer,
+    thumbnail: Option<ImageNode>,
 ) -> Entity {
     let position = position + OFFSET;
     let mut preview = commands.spawn((
@@ -86,11 +113,24 @@ pub(super) fn spawn_named(
     ));
     let entity = preview.id();
     preview.with_children(|preview| {
-        let icon = panel::icon(preview, assets, kind.icon(), 30.0);
-        preview
-            .commands()
-            .entity(icon)
-            .insert(bevy_resvg::prelude::SvgColor(panel::kind_color(kind)));
+        if let Some(thumbnail) = thumbnail {
+            preview.spawn((
+                thumbnail,
+                Pickable::IGNORE,
+                Node {
+                    width: Val::Px(36.0),
+                    height: Val::Px(36.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+            ));
+        } else {
+            let icon = panel::icon(preview, assets, kind.icon(), 30.0);
+            preview
+                .commands()
+                .entity(icon)
+                .insert(bevy_resvg::prelude::SvgColor(panel::kind_color(kind)));
+        }
         preview
             .spawn((
                 Pickable::IGNORE,
@@ -200,7 +240,21 @@ mod tests {
                     .translation
                     .trunc();
                 let size = app.world().get::<ComputedNode>(row).unwrap().size();
+                let thumbnail = app.world().get::<Children>(row).unwrap()[1];
+                let image_entity = app.world().get::<Children>(thumbnail).unwrap()[1];
+                let image = app
+                    .world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default());
                 for escape in [false, true] {
+                    // Ready images are copied; hidden/loading images use the icon.
+                    app.world_mut()
+                        .entity_mut(image_entity)
+                        .insert(ImageNode::new(image.clone()));
+                    app.world_mut()
+                        .get_mut::<Node>(image_entity)
+                        .unwrap()
+                        .display = if escape { Display::None } else { Display::Flex };
                     app.world_mut().trigger(Pointer::new(
                         PointerId::Mouse,
                         location(start),
@@ -225,6 +279,17 @@ mod tests {
                         "Preview must escape scrolling/panel clipping"
                     );
                     assert!(app.world().get::<OverrideClip>(preview).is_some());
+                    let visual = app.world().get::<Children>(preview).unwrap()[0];
+                    if escape {
+                        assert!(app.world().get::<ImageNode>(visual).is_none());
+                        assert!(
+                            app.world()
+                                .get::<bevy_resvg::prelude::UiSvg>(visual)
+                                .is_some()
+                        );
+                    } else {
+                        assert_eq!(app.world().get::<ImageNode>(visual).unwrap().image, image);
+                    }
                     let before = app.world().get::<Node>(preview).unwrap().clone();
                     let delta = Vec2::new(280.0, 125.0) * scale;
                     app.world_mut().trigger(Pointer::new(

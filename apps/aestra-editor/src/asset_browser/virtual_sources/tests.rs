@@ -478,6 +478,19 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
                 .next()
                 .unwrap();
             let before = app.world().get::<Node>(row).unwrap().clone();
+            let image = if scope == SourceScope::BuiltIns {
+                let visual = *app.world().get::<Children>(row).unwrap().last().unwrap();
+                let image = app
+                    .world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default());
+                app.world_mut()
+                    .entity_mut(visual)
+                    .insert(ImageNode::new(image.clone()));
+                Some(image)
+            } else {
+                None
+            };
             let effect = app.world().resource::<EditorSession>().effect.clone();
             let location = Location {
                 target: bevy::camera::NormalizedRenderTarget::None {
@@ -501,6 +514,17 @@ fn virtual_drag_has_a_nonblocking_copy_and_cancel_restores_the_row() {
                 .resource::<Drag>()
                 .preview
                 .expect("visible drag copy");
+            let visual = app.world().get::<Children>(preview).unwrap()[0];
+            if let Some(image) = image {
+                assert_eq!(app.world().get::<ImageNode>(visual).unwrap().image, image);
+            } else {
+                assert!(app.world().get::<ImageNode>(visual).is_none());
+                assert!(
+                    app.world()
+                        .get::<bevy_resvg::prelude::UiSvg>(visual)
+                        .is_some()
+                );
+            }
             assert!(app.world().get::<AssetPayload>(row).is_some());
             assert_eq!(
                 app.world().resource::<OverrideCursor>().0,
