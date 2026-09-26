@@ -247,6 +247,11 @@ fn main() {
                     primary_window: Some(Window {
                         title: "Aestra — VFX Choreography Editor".into(),
                         resolution: WindowResolution::new(1440, 900),
+                        resize_constraints: WindowResizeConstraints {
+                            min_width: dock_ui::EDITOR_MIN_SIZE.x,
+                            min_height: dock_ui::EDITOR_MIN_SIZE.y,
+                            ..default()
+                        },
                         resizable: true,
                         ..default()
                     }),

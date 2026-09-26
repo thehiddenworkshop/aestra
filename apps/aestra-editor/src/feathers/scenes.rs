@@ -19,6 +19,8 @@ pub(crate) fn editor_root() -> impl Scene {
         Node {
             width: percent(100),
             height: percent(100),
+            min_width: px(crate::dock_ui::EDITOR_MIN_SIZE.x),
+            min_height: px(crate::dock_ui::EDITOR_MIN_SIZE.y),
             display: Display::Grid,
             grid_template_columns: {vec![GridTrack::flex(1.0)]},
             grid_template_rows: {vec![

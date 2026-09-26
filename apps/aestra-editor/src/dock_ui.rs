@@ -20,6 +20,14 @@ use bevy::{
 };
 use fluent_bundle::FluentArgs;
 
+/// The smallest size the editor window can be resized to, and the floor its UI lays out at. A
+/// minimized window reports 0×0; laid out at that size, padded panels hand their stretched children
+/// negative sizes, which Bevy's border-radius resolution rejects (a panic). The UI instead keeps this
+/// size, clipped, until the window is restored.
+pub(crate) const EDITOR_MIN_SIZE: Vec2 = Vec2::new(800.0, 500.0);
+/// The same floor for a floating panel window.
+pub(crate) const FLOATING_MIN_SIZE: Vec2 = Vec2::new(260.0, 180.0);
+
 #[derive(Clone, Copy)]
 struct PanelSources<'a> {
     asset_server: &'a AssetServer,
@@ -291,8 +299,8 @@ pub(crate) fn sync_native_floating_windows(
                             floating.position[1].round() as i32,
                         )),
                         resize_constraints: WindowResizeConstraints {
-                            min_width: 260.0,
-                            min_height: 180.0,
+                            min_width: FLOATING_MIN_SIZE.x,
+                            min_height: FLOATING_MIN_SIZE.y,
                             ..default()
                         },
                         resizable: true,
@@ -683,6 +691,9 @@ fn spawn_native_floating_ui(
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
+            // Never lay out smaller than the window may be sized (see `FLOATING_MIN_SIZE`).
+            min_width: Val::Px(FLOATING_MIN_SIZE.x),
+            min_height: Val::Px(FLOATING_MIN_SIZE.y),
             flex_direction: FlexDirection::Column,
             ..default()
         },

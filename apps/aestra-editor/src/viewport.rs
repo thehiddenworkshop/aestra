@@ -1285,6 +1285,12 @@ fn transform_gizmo_value_text(
     value
 }
 
+/// Where a cursor-following overlay `extent` wide sits along one canvas axis: just past the cursor,
+/// kept inside the canvas, and pinned to the 8 px inset when the canvas is too small to hold it.
+fn overlay_offset(cursor: f32, canvas: f32, extent: f32) -> f32 {
+    (cursor + 14.0).clamp(8.0, (canvas - extent).max(8.0))
+}
+
 fn update_transform_gizmo_value_label(
     window: Single<&Window, With<PrimaryWindow>>,
     canvas: Single<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
@@ -1316,8 +1322,8 @@ fn update_transform_gizmo_value_label(
         - top_left;
     for (mut text, mut node, mut visibility) in &mut labels {
         text.0.clone_from(&message);
-        node.left = Val::Px((local_position.x + 14.0).clamp(8.0, canvas.0.size().x - 200.0));
-        node.top = Val::Px((local_position.y + 14.0).clamp(8.0, canvas.0.size().y - 32.0));
+        node.left = Val::Px(overlay_offset(local_position.x, canvas.0.size().x, 200.0));
+        node.top = Val::Px(overlay_offset(local_position.y, canvas.0.size().y, 32.0));
         *visibility = Visibility::Inherited;
     }
 }
@@ -1846,8 +1852,8 @@ fn update_shape_gizmo_label(
     let local_position = cursor_position.unwrap_or(top_left + Vec2::splat(24.0)) - top_left;
     for (mut text, mut node, mut visibility) in labels {
         text.0.clone_from(&message);
-        node.left = Val::Px((local_position.x + 14.0).clamp(8.0, canvas.size().x - 120.0));
-        node.top = Val::Px((local_position.y + 14.0).clamp(8.0, canvas.size().y - 32.0));
+        node.left = Val::Px(overlay_offset(local_position.x, canvas.size().x, 120.0));
+        node.top = Val::Px(overlay_offset(local_position.y, canvas.size().y, 32.0));
         *visibility = Visibility::Inherited;
     }
 }
