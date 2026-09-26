@@ -1,18 +1,16 @@
 //! Function-native canvas: no surrogate material program or effect is created.
 use super::*;
 use crate::feathers::context_menu::{
-    pointer_position_in_node, should_dismiss_pointer_context_menu, spawn_pointer_context_menu_item,
-    spawn_pointer_context_menu_sized,
+    PointerContextSubmenuSurface, pointer_position_in_node, should_dismiss_pointer_context_menu,
+    spawn_pointer_context_menu_item, spawn_pointer_context_menu_shortcut_item,
+    spawn_pointer_context_menu_sized, spawn_pointer_context_submenu,
 };
 use crate::feathers::node_graph::geometry::{
     GraphDocumentKey, GraphGeometryNode, GraphGeometryPort, GraphGeometryView, GraphNodeKey,
     GraphViewKey,
 };
 use crate::feathers::{
-    combo_box::{
-        ComboOption, spawn_compact_action_menu, spawn_icon_action_menu,
-        spawn_searchable_icon_action_menu,
-    },
+    combo_box::{ComboOption, spawn_compact_action_menu, spawn_searchable_icon_action_menu},
     icon::load_svg_icon,
     node_graph::*,
 };
@@ -25,6 +23,8 @@ use aestra_compiler::{
 use bevy::ui::RelativeCursorPosition;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
+mod arrange_context_tests;
 mod clipboard;
 mod socket_palette;
 
@@ -149,6 +149,8 @@ struct FunctionGraphContextMenu;
 
 #[derive(Component, Clone, Copy)]
 enum FunctionGraphContextAction {
+    Clipboard(crate::material_graph::clipboard::Shortcut),
+    Arrange(crate::material_graph::arrange::ArrangeScope),
     Open(MaterialExpressionId),
     Duplicate(MaterialExpressionId),
     Delete(MaterialExpressionId),
@@ -869,12 +871,15 @@ fn handle_function_graph_context_action(
     event: On<Activate>,
     actions: Query<&FunctionGraphContextAction>,
     graph_nodes: Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    graph_views: Query<(&View, &ViewScope, &FeathersGraphViewport)>,
+    menu_surfaces: Query<&ChildOf, With<FunctionGraphContextMenu>>,
     mut menus: ResMut<FunctionGraphMenuState>,
     mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
     mut editor: ResMut<FunctionEditor>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut memory: ResMut<GraphViewportMemory>,
+    mut clipboard: ResMut<crate::material_graph::clipboard::GraphClipboard>,
     mut commands: Commands,
 ) {
     let Ok(action) = actions.get(event.entity) else {
@@ -883,11 +888,58 @@ fn handle_function_graph_context_action(
     let Some(open) = menus.open.clone() else {
         return;
     };
+    if let FunctionGraphContextAction::Arrange(scope) = *action {
+        commands.trigger(crate::material_graph::arrange::ArrangeGraph {
+            view: GraphViewKey {
+                document: GraphDocumentKey {
+                    project: catalog.root().to_owned(),
+                    asset: crate::document::DocumentKey::MaterialFunction(open.owner),
+                },
+                view: open.scope,
+            },
+            editing_target: crate::material_document::MaterialEditingTarget::Function {
+                root: catalog.root().to_owned(),
+                id: open.owner,
+            },
+            scope,
+            seeds: selection.function_arrange_seeds(open.scope, open.owner),
+        });
+        menus.open = None;
+        // Keep the mounted graph and its measurement token intact until arrangement completes.
+        for parent in &menu_surfaces {
+            commands.entity(parent.parent()).despawn();
+        }
+        return;
+    }
     if !activate_function_graph_target(&mut session, &catalog, open.owner) {
         menus.open = None;
         return;
     }
     match *action {
+        FunctionGraphContextAction::Clipboard(action) => {
+            let anchor = graph_views
+                .iter()
+                .find(|(view, scope, _)| view.0 == open.owner && scope.0 == open.scope)
+                .map(|(_, _, graph)| graph.unproject_viewport_point(open.position));
+            session.status = clipboard::execute(
+                Some(action),
+                false,
+                open.owner,
+                open.scope,
+                anchor,
+                &graph_nodes,
+                &mut clipboard,
+                &mut selection,
+                &mut editor,
+                &mut session,
+                &mut catalog,
+                &mut memory,
+            )
+            .unwrap_or_else(|error| format!("Could not edit function nodes: {error}"));
+        }
+        FunctionGraphContextAction::Arrange(_) => {
+            unreachable!("handled before semantic activation")
+        }
         FunctionGraphContextAction::Open(expression) => {
             if let Ok(function) = session.graph_function(&catalog)
                 && let Some(MaterialExpression {
@@ -994,7 +1046,13 @@ fn handle_function_graph_context_action(
 fn dismiss_function_graph_menu(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
-    surfaces: Query<&RelativeCursorPosition, With<FunctionGraphContextMenu>>,
+    surfaces: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<FunctionGraphContextMenu>,
+            With<PointerContextSubmenuSurface>,
+        )>,
+    >,
     mut menus: ResMut<FunctionGraphMenuState>,
     mut session: ResMut<EditorSession>,
 ) {
@@ -1634,60 +1692,6 @@ pub(crate) fn spawn(
                     scope: view,
                 },
             );
-            let arrange_options = [
-                ComboOption {
-                    label: "Arrange selection".into(),
-                    selected: false,
-                    action: BodyAction {
-                        owner: function.id,
-                        kind: BodyActionKind::Arrange(
-                            crate::material_graph::arrange::ArrangeScope::Selection,
-                        ),
-                        scope: view,
-                    },
-                },
-                ComboOption {
-                    label: "Arrange upstream".into(),
-                    selected: false,
-                    action: BodyAction {
-                        owner: function.id,
-                        kind: BodyActionKind::Arrange(
-                            crate::material_graph::arrange::ArrangeScope::Upstream,
-                        ),
-                        scope: view,
-                    },
-                },
-                ComboOption {
-                    label: "Arrange downstream".into(),
-                    selected: false,
-                    action: BodyAction {
-                        owner: function.id,
-                        kind: BodyActionKind::Arrange(
-                            crate::material_graph::arrange::ArrangeScope::Downstream,
-                        ),
-                        scope: view,
-                    },
-                },
-                ComboOption {
-                    label: "Arrange graph".into(),
-                    selected: false,
-                    action: BodyAction {
-                        owner: function.id,
-                        kind: BodyActionKind::Arrange(
-                            crate::material_graph::arrange::ArrangeScope::Graph,
-                        ),
-                        scope: view,
-                    },
-                },
-            ];
-            spawn_icon_action_menu(
-                toolbar,
-                assets,
-                "icons/chevron-down.svg",
-                "Arrange nodes",
-                "Arrange nodes",
-                &arrange_options,
-            );
             spawn_graph_tool_button(
                 toolbar,
                 assets,
@@ -2012,6 +2016,30 @@ fn spawn_function_graph_context_menu(
         (FunctionGraphContextMenu, FeathersGraphNavigationBlocker),
         |menu| match &open.kind {
             FunctionGraphMenuKind::Node(expression) => {
+                for (label, shortcut, action) in [
+                    (
+                        "Copy",
+                        "Ctrl+C",
+                        crate::material_graph::clipboard::Shortcut::Copy,
+                    ),
+                    (
+                        "Cut",
+                        "Ctrl+X",
+                        crate::material_graph::clipboard::Shortcut::Cut,
+                    ),
+                    (
+                        "Paste",
+                        "Ctrl+V",
+                        crate::material_graph::clipboard::Shortcut::Paste,
+                    ),
+                ] {
+                    spawn_pointer_context_menu_shortcut_item(
+                        menu,
+                        label,
+                        shortcut,
+                        FunctionGraphContextAction::Clipboard(action),
+                    );
+                }
                 if function.expressions.iter().any(|candidate| {
                     candidate.id == *expression
                         && matches!(
@@ -2038,6 +2066,28 @@ fn spawn_function_graph_context_menu(
                     "Delete node(s)",
                     FunctionGraphContextAction::Delete(*expression),
                 );
+                spawn_pointer_context_submenu(menu, "Arrange", |menu| {
+                    for (label, scope) in [
+                        (
+                            "Arrange selection",
+                            crate::material_graph::arrange::ArrangeScope::Selection,
+                        ),
+                        (
+                            "Arrange upstream",
+                            crate::material_graph::arrange::ArrangeScope::Upstream,
+                        ),
+                        (
+                            "Arrange downstream",
+                            crate::material_graph::arrange::ArrangeScope::Downstream,
+                        ),
+                    ] {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            label,
+                            FunctionGraphContextAction::Arrange(scope),
+                        );
+                    }
+                });
             }
             FunctionGraphMenuKind::Connections(connections) => {
                 for (index, (_, target)) in connections.iter().copied().enumerate() {

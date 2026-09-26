@@ -135,6 +135,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "material-graph-frame-all",
     "material-graph-arrange",
     "material-graph-arrange-menu",
+    "material-graph-arrange-section",
     "material-graph-arrange-selection",
     "material-graph-arrange-upstream",
     "material-graph-arrange-downstream",

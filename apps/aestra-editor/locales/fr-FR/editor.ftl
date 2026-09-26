@@ -223,6 +223,7 @@ material-graph-add-node = Ajouter un nœud (Tab)
 material-graph-frame-all = Cadrer tous les nœuds (Début)
 material-graph-arrange = Organiser le graphe
 material-graph-arrange-menu = Organiser les nœuds
+material-graph-arrange-section = Organiser
 material-graph-arrange-selection = Organiser la sélection
 material-graph-arrange-upstream = Organiser en amont
 material-graph-arrange-downstream = Organiser en aval

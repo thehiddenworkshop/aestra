@@ -6,6 +6,122 @@ use crate::material_graph::clipboard::{self as shared, Fragment, GraphClipboard,
 mod tests;
 
 #[allow(clippy::too_many_arguments)]
+pub(super) fn execute(
+    action: Option<Shortcut>,
+    delete: bool,
+    owner: MaterialFunctionId,
+    scope: crate::material_graph::MaterialSelectionScope,
+    anchor: Option<Vec2>,
+    nodes: &Query<(&FunctionGraphNodeAction, &FeathersGraphNode)>,
+    clipboard: &mut GraphClipboard,
+    selection: &mut crate::material_graph::MaterialGraphSelectionState,
+    editor: &mut FunctionEditor,
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    memory: &mut GraphViewportMemory,
+) -> Result<String, String> {
+    if !activate_function_graph_target(session, catalog, owner) {
+        return Err("The function is unavailable".into());
+    }
+    let selected = selection
+        .function_arrange_seeds(scope, owner)
+        .into_iter()
+        .filter_map(|node| {
+            if let GraphNodeKey::Expression(id) = node {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect::<BTreeSet<_>>();
+    if selected.is_empty() && action != Some(Shortcut::Paste) {
+        return Err("Select nodes to copy or cut".into());
+    }
+
+    let function = session.graph_function(catalog)?;
+    let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), owner);
+    if matches!(
+        action,
+        Some(Shortcut::Copy | Shortcut::Cut | Shortcut::Duplicate)
+    ) {
+        let positions = nodes
+            .iter()
+            .filter(|(node, _)| node.owner == owner && node.scope == scope)
+            .map(|(node, graph)| (node.expression, graph.position()))
+            .collect::<BTreeMap<_, _>>();
+        let positions = selected
+            .iter()
+            .map(|id| {
+                (
+                    *id,
+                    positions
+                        .get(id)
+                        .copied()
+                        .or_else(|| memory.node_position(&graph_key, &id.to_string()))
+                        .unwrap_or(Vec2::ZERO),
+                )
+            })
+            .collect();
+        let fragment = Fragment::capture(&function.expressions, &selected, positions, &[], &[])?;
+        if action == Some(Shortcut::Duplicate) {
+            let count = insert(
+                &fragment,
+                Vec2::splat(24.0),
+                owner,
+                scope,
+                editor,
+                session,
+                catalog,
+                memory,
+                selection,
+            )?;
+            return Ok(format!("Duplicated {count} function node(s)"));
+        }
+        let count = fragment.len();
+        clipboard.fragment = Some(fragment);
+        if action == Some(Shortcut::Copy) {
+            return Ok(format!("Copied {count} node(s)"));
+        }
+    }
+    if action == Some(Shortcut::Paste) {
+        let Some(fragment) = &clipboard.fragment else {
+            return Ok("No graph nodes to paste".into());
+        };
+        let offset = anchor.map_or(Vec2::splat(24.0), |position| fragment.offset_to(position));
+        let count = insert(
+            fragment, offset, owner, scope, editor, session, catalog, memory, selection,
+        )?;
+        return Ok(format!("Pasted {count} function node(s)"));
+    }
+    // The function transaction validates the complete selection atomically; a rejected cut
+    // leaves the source intact and still copied, rather than partially deleting nodes.
+    let before = crate::material_graph::presentation::Snapshot::capture(
+        &graph_key, catalog, session, memory,
+    );
+    editor.edit_body(
+        session,
+        catalog,
+        selected
+            .iter()
+            .rev()
+            .map(|id| Edit::Remove { expression: *id })
+            .collect(),
+    )?;
+    for id in &selected {
+        memory.remove_node(&graph_key, &id.to_string());
+    }
+    if let Some(before) = before {
+        before.attach(catalog, session, memory);
+    }
+    selection.clear_function_selection(scope, owner);
+    Ok(format!(
+        "{} {} function node(s)",
+        if delete { "Deleted" } else { "Cut" },
+        selected.len()
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn insert(
     fragment: &Fragment,
     offset: Vec2,
@@ -117,99 +233,20 @@ pub(super) fn keyboard(
         if !activate_function_graph_target(&mut session, &catalog, owner) {
             return;
         }
-        let result = (|| {
-            let function = session.graph_function(&catalog)?;
-            let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), owner);
-            if matches!(
-                action,
-                Some(Shortcut::Copy | Shortcut::Cut | Shortcut::Duplicate)
-            ) {
-                let positions = nodes
-                    .iter()
-                    .filter(|(node, _)| node.owner == owner && node.scope == scope)
-                    .map(|(node, graph)| (node.expression, graph.position()))
-                    .collect::<BTreeMap<_, _>>();
-                let positions = selected
-                    .iter()
-                    .map(|id| {
-                        (
-                            *id,
-                            positions
-                                .get(id)
-                                .copied()
-                                .or_else(|| memory.node_position(&graph_key, &id.to_string()))
-                                .unwrap_or(Vec2::ZERO),
-                        )
-                    })
-                    .collect();
-                let fragment =
-                    Fragment::capture(&function.expressions, &selected, positions, &[], &[])?;
-                if action == Some(Shortcut::Duplicate) {
-                    let count = insert(
-                        &fragment,
-                        Vec2::splat(24.0),
-                        owner,
-                        scope,
-                        &mut editor,
-                        &mut session,
-                        &mut catalog,
-                        &mut memory,
-                        &mut selection,
-                    )?;
-                    return Ok(format!("Duplicated {count} function node(s)"));
-                }
-                let count = fragment.len();
-                clipboard.fragment = Some(fragment);
-                if action == Some(Shortcut::Copy) {
-                    return Ok(format!("Copied {count} node(s)"));
-                }
-            }
-            if action == Some(Shortcut::Paste) {
-                let Some(fragment) = &clipboard.fragment else {
-                    return Ok("No graph nodes to paste".into());
-                };
-                let offset =
-                    anchor.map_or(Vec2::splat(24.0), |position| fragment.offset_to(position));
-                let count = insert(
-                    fragment,
-                    offset,
-                    owner,
-                    scope,
-                    &mut editor,
-                    &mut session,
-                    &mut catalog,
-                    &mut memory,
-                    &mut selection,
-                )?;
-                return Ok(format!("Pasted {count} function node(s)"));
-            }
-            // The function transaction validates the complete selection atomically; a rejected cut
-            // leaves the source intact and still copied, rather than partially deleting nodes.
-            let before = crate::material_graph::presentation::Snapshot::capture(
-                &graph_key, &catalog, &session, &memory,
-            );
-            editor.edit_body(
-                &mut session,
-                &mut catalog,
-                selected
-                    .iter()
-                    .rev()
-                    .map(|id| Edit::Remove { expression: *id })
-                    .collect(),
-            )?;
-            for id in &selected {
-                memory.remove_node(&graph_key, &id.to_string());
-            }
-            if let Some(before) = before {
-                before.attach(&catalog, &mut session, &mut memory);
-            }
-            selection.clear_function_selection(scope, owner);
-            Ok(format!(
-                "{} {} function node(s)",
-                if delete { "Deleted" } else { "Cut" },
-                selected.len()
-            ))
-        })();
+        let result = execute(
+            action,
+            delete,
+            owner,
+            scope,
+            anchor,
+            &nodes,
+            &mut clipboard,
+            &mut selection,
+            &mut editor,
+            &mut session,
+            &mut catalog,
+            &mut memory,
+        );
         session.status = result
             .unwrap_or_else(|error: String| format!("Could not edit function nodes: {error}"));
         session.ui_revision += 1;

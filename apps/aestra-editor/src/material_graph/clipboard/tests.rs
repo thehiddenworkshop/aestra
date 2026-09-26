@@ -120,6 +120,94 @@ fn source(app: &App, id: MaterialProgramId) -> MaterialProgram {
 }
 
 #[test]
+fn node_menu_copy_cut_paste_preserve_multi_selection_links_and_undo() {
+    let root = tempfile::tempdir().unwrap();
+    let (program, selected) = program();
+    let mut app = app(root.path(), &program, &selected);
+    let scope = Some(crate::docking::EditorViewId(7));
+    let invoke = |app: &mut App, action| {
+        app.world_mut()
+            .resource_mut::<MaterialGraphPaletteState>()
+            .node_menu = Some(MaterialGraphNodeMenuOpen {
+            program: program.id,
+            scope,
+            menu_position: Vec2::new(500.0, 400.0),
+        });
+        let item = app
+            .world_mut()
+            .spawn((
+                MaterialGraphContextAction::Clipboard(program.id, action),
+                FeathersActionButton,
+                PendingFeathersActivation,
+                Interaction::Pressed,
+            ))
+            .id();
+        app.world_mut()
+            .run_system_once(handle_material_graph_context_actions)
+            .unwrap();
+        app.world_mut().despawn(item);
+        assert!(
+            app.world()
+                .resource::<MaterialGraphPaletteState>()
+                .node_menu
+                .is_none()
+        );
+    };
+    invoke(&mut app, Shortcut::Copy);
+    assert_eq!(source(&app, program.id), program);
+    assert_eq!(
+        app.world()
+            .resource::<GraphClipboard>()
+            .fragment
+            .as_ref()
+            .unwrap()
+            .len(),
+        2
+    );
+    invoke(&mut app, Shortcut::Cut);
+    assert_eq!(
+        source(&app, program.id).expressions.len(),
+        program.expressions.len() - 2
+    );
+    invoke(&mut app, Shortcut::Paste);
+    let pasted = source(&app, program.id);
+    assert_eq!(pasted.expressions.len(), program.expressions.len());
+    let created = &app
+        .world()
+        .resource::<MaterialGraphSelectionState>()
+        .get(scope)
+        .unwrap()
+        .expressions;
+    assert_eq!(created.len(), 2);
+    assert!(created.is_disjoint(&selected));
+    let new_constant = pasted
+        .expressions
+        .iter()
+        .find(|node| {
+            created.contains(&node.id)
+                && node.kind == MaterialExpressionKind::Constant(MaterialValue::Float(0.75))
+        })
+        .unwrap()
+        .id;
+    assert!(
+        pasted
+            .expressions
+            .iter()
+            .any(|node| created.contains(&node.id)
+                && node.kind == MaterialExpressionKind::Multiply(new_constant, new_constant))
+    );
+    app.world_mut().trigger(crate::history::HistoryAction::Undo);
+    app.world_mut().flush();
+    assert_eq!(
+        source(&app, program.id).expressions.len(),
+        program.expressions.len() - 2
+    );
+    app.world_mut().trigger(crate::history::HistoryAction::Undo);
+    app.world_mut().flush();
+    assert_eq!(source(&app, program.id), program);
+}
+
+#[test]
 fn clipboard_remaps_internal_links_and_retains_metadata_and_relative_positions() {
     let (mut program, selected) = program();
     let a = program

@@ -1087,6 +1087,15 @@ workspace formatting, `git diff --check` and the normal editor build passed.
 
 ## M10.5 implementation — graph gesture parity
 
+Arrangement actions are selection-local in a compact Arrange flyout in the node right-click menu:
+Selection, Upstream (input dependencies), and Downstream (output consumers). The toolbar retains
+only the dedicated Arrange Graph action. Right-clicking an already selected node keeps the full
+selection; right-clicking another node targets that node. Closing this menu for arrangement removes
+only the popup, preserving the mounted graph's geometry token for asynchronous layout.
+The same node menus expose Copy (Ctrl+C), Cut (Ctrl+X), and Paste (Ctrl+V), using the shared
+clipboard transactions. Paste is anchored at the original context-click position and selects
+the newly created nodes; Cut retains the existing atomic validation and Undo behavior.
+
 - The shared graph widget owns blank-canvas marquee selection, middle-button and Space+LMB
   panning, cursor-centred wheel zoom, and modifier-aware node drags. Marquee selection supports
   replace, Shift-add and Control-toggle modes in both material and function views.

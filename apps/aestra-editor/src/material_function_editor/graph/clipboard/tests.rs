@@ -3,6 +3,15 @@ use bevy::ecs::system::RunSystemOnce;
 
 #[test]
 fn function_multi_clipboard_shortcuts_preserve_links_select_new_nodes_and_undo() {
+    check_function_clipboard(false);
+}
+
+#[test]
+fn function_node_menu_clipboard_preserves_links_selects_new_nodes_and_undoes() {
+    check_function_clipboard(true);
+}
+
+fn check_function_clipboard(from_menu: bool) {
     let root = tempfile::tempdir().unwrap();
     let output = MaterialExpressionId::new();
     let constant = MaterialExpressionId::new();
@@ -49,10 +58,12 @@ fn function_multi_clipboard_shortcuts_preserve_links_select_new_nodes_and_undo()
         .init_resource::<crate::material_graph::MaterialGraphSelectionState>()
         .init_resource::<GraphViewportMemory>()
         .init_resource::<FunctionEditor>()
+        .init_resource::<FunctionGraphMenuState>()
         .init_resource::<crate::history::MaterialProgramEditHistory>()
         .init_resource::<crate::history::EditorHistoryLedger>()
         .init_resource::<ButtonInput<KeyCode>>()
         .add_systems(Update, keyboard)
+        .add_observer(handle_function_graph_context_action)
         .add_observer(crate::history::execute_history_action);
     let scope = Some(crate::docking::EditorViewId(42));
     let selected = BTreeSet::from([constant, multiply]);
@@ -92,7 +103,38 @@ fn function_multi_clipboard_shortcuts_preserve_links_select_new_nodes_and_undo()
             });
         })
         .unwrap();
-    fn tap(app: &mut App, key: KeyCode) {
+    fn tap(app: &mut App, key: KeyCode, from_menu: bool) {
+        if from_menu && key != KeyCode::KeyD {
+            let owner = source(app).id;
+            app.world_mut()
+                .resource_mut::<FunctionGraphMenuState>()
+                .open = Some(FunctionGraphMenuOpen {
+                owner,
+                scope: Some(crate::docking::EditorViewId(42)),
+                position: Vec2::new(500.0, 400.0),
+                kind: FunctionGraphMenuKind::Node(MaterialExpressionId::new()),
+            });
+            let action = match key {
+                KeyCode::KeyC => Shortcut::Copy,
+                KeyCode::KeyX => Shortcut::Cut,
+                KeyCode::KeyV => Shortcut::Paste,
+                _ => unreachable!(),
+            };
+            let item = app
+                .world_mut()
+                .spawn(FunctionGraphContextAction::Clipboard(action))
+                .id();
+            app.world_mut().trigger(Activate { entity: item });
+            app.world_mut().flush();
+            app.world_mut().despawn(item);
+            assert!(
+                app.world()
+                    .resource::<FunctionGraphMenuState>()
+                    .open
+                    .is_none()
+            );
+            return;
+        }
         let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
         keys.reset_all();
         keys.press(KeyCode::ControlLeft);
@@ -108,11 +150,11 @@ fn function_multi_clipboard_shortcuts_preserve_links_select_new_nodes_and_undo()
             .graph_function(app.world().resource::<ProjectEffectCatalog>())
             .unwrap()
     }
-    tap(&mut app, KeyCode::KeyC);
+    tap(&mut app, KeyCode::KeyC, from_menu);
     assert_eq!(source(&app), function);
-    tap(&mut app, KeyCode::KeyX);
+    tap(&mut app, KeyCode::KeyX, from_menu);
     assert_eq!(source(&app).expressions.len(), 1);
-    tap(&mut app, KeyCode::KeyV);
+    tap(&mut app, KeyCode::KeyV, from_menu);
     let pasted = source(&app);
     assert_eq!(pasted.expressions.len(), 3);
     let new_constant = pasted
@@ -147,7 +189,7 @@ fn function_multi_clipboard_shortcuts_preserve_links_select_new_nodes_and_undo()
     app.world_mut().trigger(crate::history::HistoryAction::Redo);
     app.world_mut().flush();
     assert_eq!(source(&app), pasted);
-    tap(&mut app, KeyCode::KeyD);
+    tap(&mut app, KeyCode::KeyD, from_menu);
     let new_selection = app
         .world()
         .resource::<crate::material_graph::MaterialGraphSelectionState>()

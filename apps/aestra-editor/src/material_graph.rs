@@ -7,11 +7,11 @@ use crate::feathers::node_graph::geometry::{
 
 use crate::{
     feathers::{
-        combo_box::{ComboOption, spawn_icon_action_menu},
         context_menu::{
-            pointer_position_in_node, should_dismiss_pointer_context_menu,
-            spawn_pointer_context_menu_custom_item, spawn_pointer_context_menu_item,
-            spawn_pointer_context_menu_sized,
+            PointerContextSubmenuSurface, pointer_position_in_node,
+            should_dismiss_pointer_context_menu, spawn_pointer_context_menu_custom_item,
+            spawn_pointer_context_menu_item, spawn_pointer_context_menu_shortcut_item,
+            spawn_pointer_context_menu_sized, spawn_pointer_context_submenu,
         },
         icon::load_svg_icon,
         node_graph::{
@@ -68,6 +68,8 @@ use std::{
 
 const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod arrange;
+#[cfg(test)]
+mod arrange_context_tests;
 pub(crate) mod asset_drop;
 mod asset_preview;
 pub(crate) mod clipboard;
@@ -1085,6 +1087,8 @@ struct MaterialGraphPaletteEmptySearch;
 
 #[derive(Component, Debug, Clone, Copy)]
 enum MaterialGraphContextAction {
+    Clipboard(MaterialProgramId, clipboard::Shortcut),
+    Arrange(MaterialProgramId, arrange::ArrangeScope),
     ExtractFunction(MaterialProgramId),
     Duplicate(MaterialProgramId),
     Delete(MaterialProgramId),
@@ -1538,6 +1542,7 @@ fn open_material_graph_palette(
             With<MaterialGraphPalette>,
             With<MaterialGraphNodeMenu>,
             With<MaterialGraphConnectionMenu>,
+            With<PointerContextSubmenuSurface>,
         )>,
     >,
     parents: Query<&ChildOf>,
@@ -2076,6 +2081,7 @@ fn dismiss_material_graph_palette(
             With<MaterialGraphPalette>,
             With<MaterialGraphNodeMenu>,
             With<MaterialGraphConnectionMenu>,
+            With<PointerContextSubmenuSurface>,
         )>,
     >,
     mut palette: ResMut<MaterialGraphPaletteState>,
@@ -2543,6 +2549,8 @@ fn handle_material_graph_context_actions(
     >,
     graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
     viewports: Query<&MaterialGraphViewport>,
+    graph_views: Query<(&MaterialGraphViewport, &FeathersGraphViewport)>,
+    menu_surfaces: Query<&ChildOf, With<MaterialGraphNodeMenu>>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
@@ -2552,6 +2560,7 @@ fn handle_material_graph_context_actions(
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
     mut previews: ResMut<MaterialGraphPreviewState>,
+    mut clipboard: ResMut<clipboard::GraphClipboard>,
 ) {
     for (entity, interaction, action, pending) in &actions {
         if *interaction != Interaction::Pressed || pending.is_none() {
@@ -2562,6 +2571,119 @@ fn handle_material_graph_context_actions(
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
         let (program, edit) = match *action {
+            MaterialGraphContextAction::Clipboard(program, action) => {
+                let Some(open) = palette
+                    .node_menu
+                    .as_ref()
+                    .filter(|open| open.program == program)
+                else {
+                    continue;
+                };
+                let scope = open.scope;
+                let Some(target) = material_graph_target(&viewports, program, scope) else {
+                    continue;
+                };
+                if action == clipboard::Shortcut::Paste {
+                    if let Some(fragment) = &clipboard.fragment {
+                        let position = graph_views
+                            .iter()
+                            .find(|(view, _)| view.program == program && view.scope == scope)
+                            .map(|(_, graph)| graph.unproject_viewport_point(open.menu_position));
+                        let offset = position
+                            .map_or(Vec2::splat(24.0), |position| fragment.offset_to(position));
+                        session.status = match clipboard::insert_material(
+                            fragment,
+                            offset,
+                            "Paste graph nodes",
+                            program,
+                            scope,
+                            &target,
+                            &mut session,
+                            &mut catalog,
+                            &mut material_history,
+                            &mut history_ledger,
+                            &mut graph_memory,
+                            &mut inspector,
+                            &mut selection,
+                        ) {
+                            Ok(count) => format!("Pasted {count} node(s)"),
+                            Err(error) => format!("Could not paste nodes: {error}"),
+                        };
+                    } else {
+                        session.status = "No graph nodes to paste".into();
+                    }
+                } else {
+                    match clipboard::capture_material(
+                        program,
+                        scope,
+                        &target,
+                        &graph_nodes,
+                        &session,
+                        &catalog,
+                        &graph_memory,
+                        &selection,
+                    ) {
+                        Ok(fragment) => {
+                            session.status = format!("Copied {} node(s)", fragment.len());
+                            clipboard.fragment = Some(fragment);
+                            if action == clipboard::Shortcut::Cut {
+                                apply_material_graph_selection_edit(
+                                    MaterialGraphSelectionEdit::Delete,
+                                    scope,
+                                    program,
+                                    &target,
+                                    &graph_nodes,
+                                    &mut session,
+                                    &mut catalog,
+                                    &mut material_history,
+                                    &mut history_ledger,
+                                    &mut graph_memory,
+                                    &mut inspector,
+                                    &mut selection,
+                                    &mut previews,
+                                    None,
+                                );
+                            }
+                        }
+                        Err(error) => session.status = format!("Could not copy nodes: {error}"),
+                    }
+                }
+                palette.node_menu = None;
+                session.ui_revision += 1;
+                continue;
+            }
+            MaterialGraphContextAction::Arrange(program, arrange_scope) => {
+                let Some(open) = palette
+                    .node_menu
+                    .as_ref()
+                    .filter(|menu| menu.program == program)
+                else {
+                    continue;
+                };
+                let scope = open.scope;
+                let Some(target) = material_graph_target(&viewports, program, scope) else {
+                    session.status = "The material graph is no longer available".into();
+                    continue;
+                };
+                commands.trigger(arrange::ArrangeGraph {
+                    view: GraphViewKey {
+                        document: GraphDocumentKey {
+                            project: catalog.root().to_owned(),
+                            asset: crate::document::DocumentKey::MaterialProgram(program),
+                        },
+                        view: scope,
+                    },
+                    editing_target: target,
+                    scope: arrange_scope,
+                    seeds: arrange_seeds(&selection, scope, program),
+                });
+                palette.node_menu = None;
+                // Remove only the popup. Rebuilding the graph here invalidates its async layout.
+                for parent in &menu_surfaces {
+                    commands.entity(parent.parent()).despawn();
+                }
+                continue;
+            }
             MaterialGraphContextAction::ExtractFunction(program) => {
                 (program, MaterialGraphSelectionEdit::ExtractFunction)
             }
@@ -2668,49 +2790,16 @@ fn material_graph_keyboard_input(
         if let Some(action) = clipboard::shortcut(keys) {
             match action {
                 clipboard::Shortcut::Copy | clipboard::Shortcut::Cut if has_expressions => {
-                    let result = (|| {
-                        let source = session
-                            .graph_material_programs_for(&target, &catalog)?
-                            .into_iter()
-                            .find(|candidate| candidate.id == program)
-                            .ok_or("Material is unavailable")?;
-                        let selected = &selection.get(scope).unwrap().expressions;
-                        let positions = graph_nodes
-                            .iter()
-                            .filter(|(action, node)| {
-                                action.program == program
-                                    && node.graph_key() == material_graph_view_key(program)
-                            })
-                            .map(|(action, node)| (action.expression, node.position()))
-                            .collect::<BTreeMap<_, _>>();
-                        let key = material_graph_view_key(program);
-                        let positions = selected
-                            .iter()
-                            .map(|id| {
-                                (
-                                    *id,
-                                    positions
-                                        .get(id)
-                                        .copied()
-                                        .or_else(|| {
-                                            graph_memory.node_position(
-                                                &key,
-                                                &material_graph_expression_node_key(*id),
-                                            )
-                                        })
-                                        .unwrap_or(Vec2::ZERO),
-                                )
-                            })
-                            .collect();
-                        clipboard::Fragment::capture(
-                            &source.expressions,
-                            selected,
-                            positions,
-                            &source.disabled_expressions,
-                            &source.node_constants,
-                        )
-                        .map(|fragment| fragment.with_inline_defaults(&source))
-                    })();
+                    let result = clipboard::capture_material(
+                        program,
+                        scope,
+                        &target,
+                        &graph_nodes,
+                        &session,
+                        &catalog,
+                        &graph_memory,
+                        &selection,
+                    );
                     match result {
                         Ok(fragment) => {
                             session.status = format!("Copied {} node(s)", fragment.len());
@@ -5223,6 +5312,18 @@ fn spawn_material_graph_node_menu(
         MaterialGraphPaletteAnchor,
         (MaterialGraphNodeMenu, FeathersGraphNavigationBlocker),
         |menu| {
+            for (label, shortcut, action) in [
+                ("Copy", "Ctrl+C", clipboard::Shortcut::Copy),
+                ("Cut", "Ctrl+X", clipboard::Shortcut::Cut),
+                ("Paste", "Ctrl+V", clipboard::Shortcut::Paste),
+            ] {
+                spawn_pointer_context_menu_shortcut_item(
+                    menu,
+                    label,
+                    shortcut,
+                    MaterialGraphContextAction::Clipboard(open.program, action),
+                );
+            }
             spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("material-graph-extract-function"),
@@ -5237,6 +5338,32 @@ fn spawn_material_graph_node_menu(
                 menu,
                 &localizer.text("material-graph-delete-nodes"),
                 MaterialGraphContextAction::Delete(open.program),
+            );
+            spawn_pointer_context_submenu(
+                menu,
+                &localizer.text("material-graph-arrange-section"),
+                |menu| {
+                    for (label, scope) in [
+                        (
+                            "material-graph-arrange-selection",
+                            arrange::ArrangeScope::Selection,
+                        ),
+                        (
+                            "material-graph-arrange-upstream",
+                            arrange::ArrangeScope::Upstream,
+                        ),
+                        (
+                            "material-graph-arrange-downstream",
+                            arrange::ArrangeScope::Downstream,
+                        ),
+                    ] {
+                        spawn_pointer_context_menu_item(
+                            menu,
+                            &localizer.text(label),
+                            MaterialGraphContextAction::Arrange(open.program, scope),
+                        );
+                    }
+                },
             );
         },
     );
@@ -5441,52 +5568,6 @@ fn spawn_header(
                         scope,
                         arrange::ArrangeScope::Graph,
                     ),
-                );
-                let arrange_options = [
-                    ComboOption {
-                        label: localizer.text("material-graph-arrange-selection"),
-                        selected: false,
-                        action: MaterialGraphToolbarAction::Arrange(
-                            graph.program,
-                            scope,
-                            arrange::ArrangeScope::Selection,
-                        ),
-                    },
-                    ComboOption {
-                        label: localizer.text("material-graph-arrange-upstream"),
-                        selected: false,
-                        action: MaterialGraphToolbarAction::Arrange(
-                            graph.program,
-                            scope,
-                            arrange::ArrangeScope::Upstream,
-                        ),
-                    },
-                    ComboOption {
-                        label: localizer.text("material-graph-arrange-downstream"),
-                        selected: false,
-                        action: MaterialGraphToolbarAction::Arrange(
-                            graph.program,
-                            scope,
-                            arrange::ArrangeScope::Downstream,
-                        ),
-                    },
-                    ComboOption {
-                        label: localizer.text("material-graph-arrange"),
-                        selected: false,
-                        action: MaterialGraphToolbarAction::Arrange(
-                            graph.program,
-                            scope,
-                            arrange::ArrangeScope::Graph,
-                        ),
-                    },
-                ];
-                spawn_icon_action_menu(
-                    header,
-                    asset_server,
-                    "icons/chevron-down.svg",
-                    &localizer.text("material-graph-arrange-menu"),
-                    &localizer.text("material-graph-arrange-menu"),
-                    &arrange_options,
                 );
                 let all_previews_visible = graph_preview_targets(graph)
                     .all(|target| previews.is_visible(graph.program, target));

@@ -223,6 +223,7 @@ material-graph-add-node = Add node (Tab)
 material-graph-frame-all = Frame all nodes (Home)
 material-graph-arrange = Arrange graph
 material-graph-arrange-menu = Arrange nodes
+material-graph-arrange-section = Arrange
 material-graph-arrange-selection = Arrange selection
 material-graph-arrange-upstream = Arrange upstream
 material-graph-arrange-downstream = Arrange downstream

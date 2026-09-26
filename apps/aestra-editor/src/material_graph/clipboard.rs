@@ -184,6 +184,59 @@ pub(crate) fn shortcut(keys: &ButtonInput<KeyCode>) -> Option<Shortcut> {
     .find_map(|(key, action)| keys.just_pressed(key).then_some(action))
 }
 
+/// Capture the same multi-selection for menu actions and keyboard shortcuts.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn capture_material(
+    program: MaterialProgramId,
+    scope: MaterialSelectionScope,
+    target: &crate::material_document::MaterialEditingTarget,
+    nodes: &Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    memory: &GraphViewportMemory,
+    selection: &MaterialGraphSelectionState,
+) -> Result<Fragment, String> {
+    let source = session
+        .graph_material_programs_for(target, catalog)?
+        .into_iter()
+        .find(|candidate| candidate.id == program)
+        .ok_or("Material is unavailable")?;
+    let selected = &selection
+        .get(scope)
+        .filter(|entry| entry.program == Some(program))
+        .ok_or("Select nodes to copy")?
+        .expressions;
+    let key = material_graph_view_key(program);
+    let positions = nodes
+        .iter()
+        .filter(|(action, node)| action.program == program && node.graph_key() == key)
+        .map(|(action, node)| (action.expression, node.position()))
+        .collect::<BTreeMap<_, _>>();
+    let positions = selected
+        .iter()
+        .map(|id| {
+            (
+                *id,
+                positions
+                    .get(id)
+                    .copied()
+                    .or_else(|| {
+                        memory.node_position(&key, &material_graph_expression_node_key(*id))
+                    })
+                    .unwrap_or(Vec2::ZERO),
+            )
+        })
+        .collect();
+    Fragment::capture(
+        &source.expressions,
+        selected,
+        positions,
+        &source.disabled_expressions,
+        &source.node_constants,
+    )
+    .map(|fragment| fragment.with_inline_defaults(&source))
+}
+
 /// Uses the normal material validation/history path; a rejected paste changes nothing.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn insert_material(
