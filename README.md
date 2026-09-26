@@ -190,6 +190,13 @@ Use the same workflow for the textured renderer reference:
 cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron --visual-test apps/aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil --frames 8
 ```
 
+Volumetric fluids (fluid F3) draw only through a 3D camera, so their references use `--view3d`,
+which frames the effect's simulation domains:
+
+```powershell
+cargo run -p aestra-viewer -- --backend gpu --view3d --effect sample-project/effects/fluid_fire.aestra.ron --visual-test apps/aestra-viewer/tests/references/fluid_fire target/visual-regression/fluid-fire --frames 8
+```
+
 The command exits with an error when a frame exceeds the tolerant foreground RMSE,
 coverage, changed-pixel, or centroid limits. It writes amplified `diff-*.png` images
 and `regression-report.md` to the output directory. The versioned JSON report retains the

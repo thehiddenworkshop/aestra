@@ -573,7 +573,7 @@ mod tests {
                 .constants[0]
                 .x
         };
-        assert_eq!(steps(&app), 64);
+        assert_eq!(steps(&app), 48);
 
         // A look edit (the editor swaps the player in place) updates the same material.
         *app.world_mut().get_mut::<PresentedEffect>(effect).unwrap() =

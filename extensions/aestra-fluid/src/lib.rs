@@ -638,14 +638,14 @@ fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "steps",
             "March Steps",
             "Samples along each view ray.",
-            Value::U32(64),
+            Value::U32(48),
             number(1.0, 4.0, Some(MAX_VOLUME_STEPS as f32)),
         ),
         InputMetadata::new(
             "shadow_steps",
             "Shadow Steps",
             "Samples towards the light per view sample (0 disables self-shadowing).",
-            Value::U32(8),
+            Value::U32(6),
             number(1.0, 0.0, Some(MAX_SHADOW_STEPS as f32)),
         ),
         InputMetadata::new(

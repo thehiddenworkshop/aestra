@@ -142,7 +142,15 @@ pub fn drive_gpu_bench(
     }
     for diagnostic in diagnostics.iter() {
         let path = diagnostic.path().as_str();
-        if (path.contains("aestra::gpu::simulate") || path.contains("main_transparent_pass_2d"))
+        // Aestra's passes, and the transparent passes its particles and volumes draw in.
+        if [
+            "aestra::gpu::simulate",
+            "aestra::gpu::extension_stages",
+            "main_transparent_pass_2d",
+            "main_transparent_pass_3d",
+        ]
+        .iter()
+        .any(|pass| path.contains(pass))
             && let Some(value) = diagnostic.value()
         {
             plan.samples.entry(path.to_owned()).or_default().push(value);

@@ -398,6 +398,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   in that report on both passing and rejected candidates.
 - Runs deterministic, effect-only GPU regression captures against approved references,
   with tolerant foreground metrics and amplified difference images.
+- With `--view3d`, views and captures through a 3D camera framing the effect's simulation domains,
+  which volumetric fluids need; the fluid smoke and fire references use it. `--gpu-bench` also
+  records the stage span and the 3D transparent pass the volumes draw in.
 - Shares runtime behavior with games by using `AestraPlugin` directly.
 
 ### GPU runtime

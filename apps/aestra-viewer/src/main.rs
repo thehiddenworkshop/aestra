@@ -58,7 +58,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -203,6 +203,9 @@ struct ViewerConfig {
     preview_seed: Option<u64>,
     diagnostics: bool,
     gpu_bench: Option<PathBuf>,
+    /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
+    /// one. Otherwise the viewer is 2-D.
+    view_3d: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,6 +255,7 @@ impl ViewerConfig {
         let mut preview_seed = None;
         let mut diagnostics = false;
         let mut gpu_bench = None;
+        let mut view_3d = false;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -263,6 +267,7 @@ impl ViewerConfig {
                 "--semantic-materials" => semantic_materials = true,
                 "--wireframe" => wireframe = true,
                 "--diagnostics" => diagnostics = true,
+                "--view3d" => view_3d = true,
                 "--gpu-bench" => {
                     gpu_bench = Some(PathBuf::from(
                         args.next()
@@ -396,6 +401,7 @@ impl ViewerConfig {
             preview_seed,
             diagnostics,
             gpu_bench,
+            view_3d,
         })
     }
 
@@ -700,10 +706,22 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
         return;
     }
 
-    commands.spawn(Camera2d);
+    if config.view_3d {
+        commands.spawn((
+            Camera3d::default(),
+            Camera {
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.009, 0.012, 0.024)),
+                ..default()
+            },
+            framing_transform(&prepared.compiled),
+        ));
+    } else {
+        commands.spawn(Camera2d);
+    }
     commands.spawn((player, presentation));
 
-    if regression_scene {
+    // The 2-D grid and HUD are sprites and UI for the 2-D view; regression scenes stay bare.
+    if regression_scene || config.view_3d {
         return;
     }
 
@@ -838,6 +856,29 @@ fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
         editor_preview_camera_transform(),
         RenderLayers::layer(15),
     ));
+}
+
+/// A 3-D view of the effect: its simulation domains' boxes framed whole from slightly above, else the
+/// editor preview's view of the origin.
+fn framing_transform(effect: &aestra_bevy::CompiledEffect) -> Transform {
+    let bounds = effect
+        .all_extension_stages()
+        .flat_map(|stage| stage.block.fields.iter())
+        .map(|field| {
+            let min = Vec3::from(field.origin);
+            let size = Vec3::from(field.dims.map(|cells| cells as f32 * field.cell_size));
+            (min, min + size)
+        })
+        .reduce(|(min_a, max_a), (min_b, max_b)| (min_a.min(min_b), max_a.max(max_b)));
+    let Some((min, max)) = bounds else {
+        return editor_preview_camera_transform();
+    };
+    let center = (min + max) * 0.5;
+    // The box's front face fills the default 45° vertical field of view.
+    let half = (max - min) * 0.5;
+    let distance = half.x.max(half.y) / std::f32::consts::FRAC_PI_8.tan() + half.z;
+    let orbit = Quat::from_rotation_x(-0.25);
+    Transform::from_translation(center + orbit * Vec3::Z * distance).looking_at(center, Vec3::Y)
 }
 
 fn editor_preview_camera_transform() -> Transform {
@@ -1415,6 +1456,7 @@ mod tests {
             preview_seed: None,
             diagnostics: false,
             gpu_bench: None,
+            view_3d: false,
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");

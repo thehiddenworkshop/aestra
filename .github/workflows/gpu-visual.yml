@@ -104,6 +104,24 @@ jobs:
           --visual-test apps/aestra-viewer/tests/references/trail_lab target/visual-regression/trail-lab
           --frames 8
 
+      - name: Compare Fluid Smoke reference (volumetric)
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --view3d
+          --effect sample-project/effects/fluid_smoke.aestra.ron
+          --visual-test apps/aestra-viewer/tests/references/fluid_smoke target/visual-regression/fluid-smoke
+          --frames 8
+
+      - name: Compare Fluid Fire reference (volumetric)
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --view3d
+          --effect sample-project/effects/fluid_fire.aestra.ron
+          --visual-test apps/aestra-viewer/tests/references/fluid_fire target/visual-regression/fluid-fire
+          --frames 8
+
       - name: Upload captures and regression reports
         if: always()
         uses: actions/upload-artifact@v7

@@ -1,0 +1,348 @@
+{
+  "schema_version": 1,
+  "status": "succeeded",
+  "errors": [],
+  "effect": {
+    "id": "ec2d06d5-ec75-4ddb-b925-543ebcefdfbd",
+    "name": "Fluid Smoke",
+    "duration_seconds": 6.0,
+    "playback_mode": "LoopContinuous",
+    "seek_mode": "RestartReplay",
+    "emitter_count": 2,
+    "material_count": 1,
+    "material_program_count": 0,
+    "max_particles": 1024
+  },
+  "capture": {
+    "tick_rate": 60,
+    "seed": "0xa3572a115eed0001",
+    "frame_width": 960,
+    "frame_height": 540,
+    "contact_sheet_columns": 3,
+    "contact_sheet_rows": 3,
+    "contact_sheet": "contact-sheet.png",
+    "frames": [
+      {
+        "index": 0,
+        "simulation_frame": 23,
+        "time_seconds": 0.38333333333333336,
+        "image": "frame-000.png"
+      },
+      {
+        "index": 1,
+        "simulation_frame": 68,
+        "time_seconds": 1.1333333333333333,
+        "image": "frame-001.png"
+      },
+      {
+        "index": 2,
+        "simulation_frame": 113,
+        "time_seconds": 1.8833333333333333,
+        "image": "frame-002.png"
+      },
+      {
+        "index": 3,
+        "simulation_frame": 158,
+        "time_seconds": 2.6333333333333333,
+        "image": "frame-003.png"
+      },
+      {
+        "index": 4,
+        "simulation_frame": 203,
+        "time_seconds": 3.3833333333333333,
+        "image": "frame-004.png"
+      },
+      {
+        "index": 5,
+        "simulation_frame": 248,
+        "time_seconds": 4.133333333333334,
+        "image": "frame-005.png"
+      },
+      {
+        "index": 6,
+        "simulation_frame": 293,
+        "time_seconds": 4.883333333333334,
+        "image": "frame-006.png"
+      },
+      {
+        "index": 7,
+        "simulation_frame": 338,
+        "time_seconds": 5.633333333333334,
+        "image": "frame-007.png"
+      }
+    ]
+  },
+  "compiler": {
+    "diagnostics": [],
+    "optimizations": {
+      "material_function_calls_authored": 0,
+      "material_function_calls_eliminated": 0,
+      "material_function_calls_live": 0,
+      "constant_expressions": 29,
+      "runtime_parameter_reads": 0,
+      "eliminated_attributes": 1,
+      "material_common_subexpressions": 0,
+      "material_specialized_parameter_reads": 0,
+      "material_pruned_static_branches": 0,
+      "material_pruned_features": 0,
+      "material_texture_samples_authored": 0,
+      "material_texture_samples_eliminated": 0,
+      "material_texture_samples_live": 0
+    },
+    "material_program_fingerprints": []
+  },
+  "runtime": {
+    "requested_backend": "Gpu",
+    "active_backend": "native GPU",
+    "selection_reason": "compute, vertex storage, and indirect drawing are supported",
+    "compatibility": {
+      "target": "native GPU",
+      "compatible": true,
+      "issues": []
+    },
+    "adapter": {
+      "detected": true,
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "device_type": "DiscreteGpu",
+      "driver": "NVIDIA",
+      "limitations": []
+    },
+    "physical_gpu_particle_capacity": 4194240,
+    "configured_gpu_particle_budget": 262144,
+    "effective_gpu_particle_budget": 262144
+  },
+  "metrics": {
+    "trail_capacity": {
+      "source": "measured",
+      "value": 0
+    },
+    "occupied_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "retired_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "trail_evictions": {
+      "source": "measured",
+      "value": 0
+    },
+    "truncated_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "cpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_simulation_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_trail_compaction_time_ns": {
+      "source": "measured",
+      "value": 0
+    },
+    "gpu_trail_culling_time_ns": {
+      "source": "measured",
+      "value": 0
+    },
+    "gpu_stage_time_ns": {
+      "source": "unavailable"
+    },
+    "alive_particles": {
+      "source": "measured",
+      "value": 264
+    },
+    "submitted_instances": {
+      "source": "measured",
+      "value": 264
+    },
+    "submitted_vertices": {
+      "source": "measured",
+      "value": 1584
+    },
+    "submitted_primitives": {
+      "source": "measured",
+      "value": 1056
+    },
+    "peak_particles": {
+      "source": "estimated",
+      "value": 266
+    },
+    "particle_capacity": {
+      "source": "measured",
+      "value": 1024
+    },
+    "emitter_count": {
+      "source": "measured",
+      "value": 2
+    },
+    "draw_calls": {
+      "source": "measured",
+      "value": 2
+    },
+    "dispatch_count": {
+      "source": "estimated",
+      "value": 33
+    },
+    "estimated_overdraw": {
+      "source": "unavailable"
+    },
+    "texture_sample_count": {
+      "source": "estimated",
+      "value": 0
+    },
+    "buffer_memory_bytes": {
+      "source": "estimated",
+      "value": 7586000
+    },
+    "texture_memory_bytes": {
+      "source": "estimated",
+      "value": 0
+    },
+    "collision_time_ns": {
+      "source": "unavailable"
+    },
+    "emitters": [
+      {
+        "id": "ad2c0fa1-b034-440e-aad2-c97f57d1d5a3",
+        "name": "Fluid Smoke [root] / Smoke Puffs",
+        "alive_particles": 214,
+        "peak_particles": 214,
+        "particle_capacity": 512
+      },
+      {
+        "id": "e8e59a4a-ccac-4ed4-b4db-8b2a2e07581f",
+        "name": "Fluid Smoke [root] / Embers",
+        "alive_particles": 50,
+        "peak_particles": 52,
+        "particle_capacity": 512
+      }
+    ],
+    "platform_warnings": []
+  },
+  "instances": [
+    {
+      "clip_path": [],
+      "effect": "ec2d06d5-ec75-4ddb-b925-543ebcefdfbd",
+      "name": "Fluid Smoke",
+      "metrics": {
+        "trail_capacity": {
+          "source": "measured",
+          "value": 0
+        },
+        "occupied_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "retired_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "trail_evictions": {
+          "source": "measured",
+          "value": 0
+        },
+        "truncated_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "cpu_time_ns": {
+          "source": "unavailable"
+        },
+        "gpu_time_ns": {
+          "source": "unavailable"
+        },
+        "gpu_simulation_time_ns": {
+          "source": "unavailable"
+        },
+        "gpu_trail_compaction_time_ns": {
+          "source": "measured",
+          "value": 0
+        },
+        "gpu_trail_culling_time_ns": {
+          "source": "measured",
+          "value": 0
+        },
+        "gpu_stage_time_ns": {
+          "source": "unavailable"
+        },
+        "alive_particles": {
+          "source": "measured",
+          "value": 264
+        },
+        "submitted_instances": {
+          "source": "measured",
+          "value": 264
+        },
+        "submitted_vertices": {
+          "source": "measured",
+          "value": 1584
+        },
+        "submitted_primitives": {
+          "source": "measured",
+          "value": 1056
+        },
+        "peak_particles": {
+          "source": "estimated",
+          "value": 266
+        },
+        "particle_capacity": {
+          "source": "measured",
+          "value": 1024
+        },
+        "emitter_count": {
+          "source": "measured",
+          "value": 2
+        },
+        "draw_calls": {
+          "source": "measured",
+          "value": 2
+        },
+        "dispatch_count": {
+          "source": "estimated",
+          "value": 33
+        },
+        "estimated_overdraw": {
+          "source": "unavailable"
+        },
+        "texture_sample_count": {
+          "source": "estimated",
+          "value": 0
+        },
+        "buffer_memory_bytes": {
+          "source": "estimated",
+          "value": 7586000
+        },
+        "texture_memory_bytes": {
+          "source": "estimated",
+          "value": 0
+        },
+        "collision_time_ns": {
+          "source": "unavailable"
+        },
+        "emitters": [
+          {
+            "id": "ad2c0fa1-b034-440e-aad2-c97f57d1d5a3",
+            "name": "Smoke Puffs",
+            "alive_particles": 214,
+            "peak_particles": 214,
+            "particle_capacity": 512
+          },
+          {
+            "id": "e8e59a4a-ccac-4ed4-b4db-8b2a2e07581f",
+            "name": "Embers",
+            "alive_particles": 50,
+            "peak_particles": 52,
+            "particle_capacity": 512
+          }
+        ],
+        "platform_warnings": []
+      }
+    }
+  ]
+}

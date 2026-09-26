@@ -275,7 +275,7 @@ fn the_volume_look_presents_the_density_and_never_touches_the_solver() {
     assert_eq!(volume.entry_point, VOLUME_ENTRY);
     assert_eq!(volume.fields, [ResourceTypeId::new(RESOURCE_DENSITY)]);
     assert_eq!(volume.layouts(&stage.block).unwrap()[0].dims, [32; 3]);
-    assert_eq!(volume.constants[0], 64, "march steps");
+    assert_eq!(volume.constants[0], 48, "march steps");
 
     // A look edit changes only the presentation: the running simulation is untouched.
     let mut brighter = effect.clone();
