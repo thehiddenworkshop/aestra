@@ -1,6 +1,6 @@
 //! Project-bound placement lifecycle. The active project's legacy material keys are reset as a
 //! unit; generic graph widgets are untouched. Base placement survives semantic reloads, while
-//! removed identities and temporary offsets do not.
+//! removed identities do not. Surviving nodes keep their displayed placement across semantic edits.
 use super::*;
 use crate::{document::DocumentKey, feathers::node_graph::geometry::GraphGeometryRegistry};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -157,7 +157,7 @@ pub(super) fn reconcile(
             DocumentKey::MaterialProgram(id) => {
                 persistence.document.material_graphs.remove(&id);
                 previews.visible.retain(|(program, _)| *program != id);
-                previews.cache.retain(|(program, _), _| *program != id);
+                previews.cache.retain(|key, _| key.program != id);
             }
             DocumentKey::MaterialFunction(id) => {
                 persistence.document.function_graphs.remove(&id);
@@ -184,7 +184,6 @@ pub(super) fn reconcile(
         memory.retain_nodes(&key, |node| {
             node == MATERIAL_GRAPH_OUTPUT_NODE_KEY || keys.contains(node)
         });
-        memory.clear_offsets(&key);
         let keep = |(id, target): &(MaterialProgramId, MaterialGraphPreviewTarget)| {
             *id != program.id
                 || match target {
@@ -193,7 +192,9 @@ pub(super) fn reconcile(
                 }
         };
         previews.visible.retain(keep);
-        previews.cache.retain(|key, _| keep(key));
+        previews
+            .cache
+            .retain(|key, _| keep(&(key.program, key.target)));
     }
     if let Ok(functions) = functions {
         for function in functions {
@@ -211,7 +212,6 @@ pub(super) fn reconcile(
             memory.retain_nodes(&key, |node| {
                 function.custom_wesl.is_none() && (node == "outputs" || keys.contains(node))
             });
-            memory.clear_offsets(&key);
             if function.custom_wesl.is_some() {
                 persistence.document.function_graphs.remove(&function.id);
             }

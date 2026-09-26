@@ -74,6 +74,7 @@ mod function_layout;
 pub(crate) mod insertion;
 mod layout_adapter;
 mod layout_lifecycle;
+mod node_previews;
 pub(crate) mod presentation;
 pub(crate) mod semantic_placement;
 pub(crate) use asset_preview::render_material_asset_preview;
@@ -585,7 +586,7 @@ enum MaterialGraphPreviewTarget {
 #[derive(Resource, Debug, Default)]
 pub(crate) struct MaterialGraphPreviewState {
     visible: BTreeSet<(MaterialProgramId, MaterialGraphPreviewTarget)>,
-    cache: BTreeMap<(MaterialProgramId, MaterialGraphPreviewTarget), MaterialGraphPreviewCache>,
+    cache: BTreeMap<node_previews::Key, MaterialGraphPreviewCache>,
 }
 
 #[derive(Debug, Clone)]
@@ -1000,9 +1001,7 @@ fn update_material_graph_layout_document(
 
 #[derive(Debug, Clone)]
 struct MaterialGraphPreviewCache {
-    program: MaterialProgram,
-    instance: Option<MaterialId>,
-    document_revision: u64,
+    input: node_previews::Input,
     image: Handle<Image>,
 }
 
@@ -3371,69 +3370,7 @@ pub(crate) fn update_wire_material(
 const MATERIAL_PREVIEW_SIZE: u32 = NODE_PREVIEW_SIZE as u32;
 const MATERIAL_PREVIEW_LAYOUT_HEIGHT: f32 = NODE_PREVIEW_SIZE + 8.0;
 
-fn rasterize_material_graph_previews(
-    mut commands: Commands,
-    requests: Query<(Entity, &MaterialGraphPreviewRaster), Added<MaterialGraphPreviewRaster>>,
-    session: Res<EditorSession>,
-    catalog: Res<ProjectEffectCatalog>,
-    mut previews: ResMut<MaterialGraphPreviewState>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    if requests.is_empty() {
-        return;
-    }
-    // Built-in + project functions, so graph FunctionCall nodes preview instead of showing checkers.
-    let functions = aestra_compiler::MaterialFunctionLibrary::new(
-        catalog.material_functions().unwrap_or_default(),
-    );
-    for (entity, request) in &requests {
-        let Ok(programs) = session.graph_material_programs_for(&request.editing_target, &catalog)
-        else {
-            continue;
-        };
-        let key = (request.program, request.target);
-        let Some(program) = programs
-            .iter()
-            .find(|program| program.id == request.program)
-        else {
-            continue;
-        };
-        if let Some(cached) = previews.cache.get(&key)
-            && cached.program == *program
-            && cached.instance == request.instance
-            && cached.document_revision == session.document_revision()
-        {
-            commands
-                .entity(entity)
-                .insert(ImageNode::new(cached.image.clone()).with_mode(NodeImageMode::Stretch));
-            continue;
-        }
-        let instance = session
-            .effect
-            .material_instances
-            .iter()
-            .find(|instance| Some(instance.id) == request.instance);
-        let image = images.add(render_material_graph_preview(
-            program,
-            instance,
-            &functions,
-            request.target,
-            request.value_type,
-        ));
-        previews.cache.insert(
-            key,
-            MaterialGraphPreviewCache {
-                program: program.clone(),
-                instance: request.instance,
-                document_revision: session.document_revision(),
-                image: image.clone(),
-            },
-        );
-        commands
-            .entity(entity)
-            .insert(ImageNode::new(image).with_mode(NodeImageMode::Stretch));
-    }
-}
+use node_previews::update as rasterize_material_graph_previews;
 
 fn rasterize_material_preset_previews(
     mut commands: Commands,
@@ -6156,8 +6093,9 @@ fn spawn_expression_node(
                 ),
             );
             if preview_visible {
-                spawn_graph_node_preview(
+                node_previews::spawn(
                     body,
+                    previews,
                     MaterialGraphPreviewRaster {
                         program,
                         editing_target: editing_target.clone(),
@@ -6265,8 +6203,9 @@ fn spawn_output_node(
                 );
             }
             if preview_visible {
-                spawn_graph_node_preview(
+                node_previews::spawn(
                     body,
+                    previews,
                     MaterialGraphPreviewRaster {
                         program,
                         editing_target: editing_target.clone(),
@@ -8029,8 +7968,11 @@ mod tests {
             .id();
 
         app.update();
-
-        assert!(app.world().get::<ImageNode>(request).is_some());
+        assert!(
+            app.world().get::<ImageNode>(request).is_none(),
+            "the UI frame queues pixels instead of rendering them synchronously"
+        );
+        node_previews::wait_for_image(&mut app, request, None);
     }
 
     #[test]
@@ -8061,8 +8003,7 @@ mod tests {
             value_type: None,
         };
         let first = app.world_mut().spawn(request.clone()).id();
-        app.update();
-        let first_image = app.world().get::<ImageNode>(first).unwrap().image.clone();
+        let first_image = node_previews::wait_for_image(&mut app, first, None);
         let mut session = app.world_mut().remove_resource::<EditorSession>().unwrap();
         let mut history = MaterialProgramEditHistory::default();
         apply_material_tool_command(
@@ -8081,8 +8022,7 @@ mod tests {
         assert_eq!(session.document_revision(), revision);
         app.insert_resource(session).insert_resource(catalog);
         let second = app.world_mut().spawn(request).id();
-        app.update();
-        let second_image = app.world().get::<ImageNode>(second).unwrap().image.clone();
+        let second_image = node_previews::wait_for_image(&mut app, second, Some(&first_image));
         assert_ne!(first_image, second_image);
         let images = app.world().resource::<Assets<Image>>();
         assert_ne!(

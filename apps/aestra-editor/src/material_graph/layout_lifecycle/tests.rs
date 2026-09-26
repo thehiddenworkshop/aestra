@@ -239,7 +239,7 @@ fn reload_prunes_removed_nodes_but_preserves_base_placement_and_semantics() {
     );
     assert_eq!(
         memory.node_position(&key, &material_graph_expression_node_key(kept)),
-        Some(Vec2::splat(30.0))
+        Some(Vec2::splat(130.0))
     );
     assert!(
         !app.world()
@@ -247,6 +247,41 @@ fn reload_prunes_removed_nodes_but_preserves_base_placement_and_semantics() {
             .is_visible(program.id, MaterialGraphPreviewTarget::Expression(removed))
     );
     assert_eq!(app.world().resource::<EditorSession>().effect, effect);
+}
+
+#[test]
+fn adding_a_node_keeps_surviving_display_positions_and_camera() {
+    let root = tempfile::tempdir().unwrap();
+    let (program, _) = sources(root.path());
+    let mut app = app(root.path());
+    app.update();
+    let key = material_graph_view_key(program.id);
+    let node = material_graph_expression_node_key(program.outputs.color);
+    {
+        let mut memory = app.world_mut().resource_mut::<GraphViewportMemory>();
+        memory.set_node(&key, &node, Vec2::new(30.0, 60.0), false);
+        memory.set_temporary_offset(&key, &node, Vec2::new(100.0, 50.0));
+        memory.set_view(&key, Vec2::new(-240.0, 70.0), 0.5);
+    }
+    let mut edited = program.clone();
+    edited
+        .expressions
+        .push(aestra_core::material::MaterialExpression {
+            id: MaterialExpressionId::from_u128(123),
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        });
+    app.world_mut()
+        .resource_mut::<ProjectEffectCatalog>()
+        .replace_material_program(&program, &edited)
+        .unwrap();
+    app.update();
+    let memory = app.world().resource::<GraphViewportMemory>();
+    assert_eq!(
+        memory.node_position(&key, &node),
+        Some(Vec2::new(130.0, 110.0))
+    );
+    assert_eq!(memory.node(&key, &node).unwrap().0, Vec2::new(30.0, 60.0));
+    assert_eq!(memory.view(&key), Some((Vec2::new(-240.0, 70.0), 0.5)));
 }
 
 #[test]
