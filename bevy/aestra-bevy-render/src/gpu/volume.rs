@@ -605,6 +605,7 @@ mod tests {
             components: 1,
             origin: [0.0; 3],
             cell_size: 0.5,
+            staggered: false,
         };
         let params = VolumeParams::new(&layout, 2, &[7, 8, 9, 10, 11]);
         assert_eq!(params.size, Vec4::new(8.0, 4.0, 2.0, 0.5));

@@ -318,6 +318,9 @@ struct FieldLayoutV4 {
     components: u32,
     origin: [f32; 3],
     cell_size: f32,
+    /// A staggered (MAC) field (fluid F4, additive).
+    #[serde(default, skip_serializing_if = "is_false")]
+    staggered: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -491,6 +494,7 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                         components: field.components,
                         origin: field.origin,
                         cell_size: field.cell_size,
+                        staggered: field.staggered,
                     })
                     .collect(),
             },
@@ -536,6 +540,7 @@ impl ExtensionStageV4 {
                     components: field.components,
                     origin: field.origin,
                     cell_size: field.cell_size,
+                    staggered: field.staggered,
                 })
                 .collect(),
         };

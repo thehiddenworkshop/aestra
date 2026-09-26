@@ -77,7 +77,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
         .programs
         .get(&aestra_core::ComputeProgramId::new(PROGRAM_SOLVER))
         .unwrap();
-    assert_eq!(program.entry_points.len(), 12);
+    assert_eq!(program.entry_points.len(), 15);
     // The whole program — solver passes plus the host-binding accessors — validates.
     aestra_gpu::program_interface(program).expect("the solver program validates");
 }
@@ -103,8 +103,12 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
     stage.block.validate().unwrap();
     // Every op's declared accesses match what its WGSL entry actually uses.
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
-    // sources + vorticity×2 + advect velocity + divergence + 24 relaxations + project + advect density
-    assert_eq!(stage.block.compute_pass_count(), 1 + 2 + 1 + 1 + 24 + 1 + 1);
+    // sources + buoyancy + vorticity×3 + advect velocity + divergence + 24 relaxations + project +
+    // advect density
+    assert_eq!(
+        stage.block.compute_pass_count(),
+        1 + 1 + 3 + 1 + 1 + 24 + 1 + 1
+    );
     assert_eq!(
         stage.block.binding_of(&aestra_core::ResourceTypeId::new(
             AESTRA_RESOURCE_HOST_BINDINGS
@@ -137,7 +141,7 @@ fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
         .retain(|module| module.module_type.0 != MODULE_VORTICITY);
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).unwrap();
-    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 1 + 24 + 1 + 1);
+    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 1 + 1 + 24 + 1 + 1);
 }
 
 #[test]
@@ -230,23 +234,23 @@ fn host_bound_source_inputs_pack_their_slot_presence_bit_and_offset() {
             .insert(input.into(), HostFieldRef::new(emitter_id, field));
     }
     let stage = compile_stage(&registry, &effect);
-    // Source 0 starts at word 10; its references at +8 (position) and +11 (velocity).
+    // Source 0 starts at word 12; its references at +8 (position) and +11 (velocity).
     let words = &stage.block.constants;
     assert_eq!(words[9], 1, "one source");
     assert_eq!(
-        &words[18..21],
+        &words[20..23],
         &[0, 0, 0],
         "slot 0, bit 0 (position), offset 0"
     );
     assert_eq!(
-        &words[21..24],
+        &words[23..26],
         &[0, 1, 3],
         "linear velocity: the layout's second field (bit 1), packed after position's 3 words"
     );
 
     // An unbound source reads the constant fallback marker.
     let stage = compile_stage(&registry, &smoke_effect(&registry));
-    assert_eq!(stage.block.constants[18], u32::MAX);
+    assert_eq!(stage.block.constants[20], u32::MAX);
 }
 
 #[test]
@@ -404,8 +408,8 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
         );
     }
     // The Combustion block follows the one source's 16 words.
-    assert_eq!(fire.block.constants.len(), 10 + 16 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[26]), 0.5, "ignition");
+    assert_eq!(fire.block.constants.len(), 12 + 16 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[28]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =

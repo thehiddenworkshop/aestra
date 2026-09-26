@@ -459,6 +459,9 @@ struct FieldFollowV4 {
     origin: [f32; 3],
     cell_size: f32,
     strength: f32,
+    /// A staggered (MAC) field (fluid F4, additive).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    staggered: bool,
 }
 
 impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
@@ -471,6 +474,7 @@ impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
             origin: follow.field.origin,
             cell_size: follow.field.cell_size,
             strength: follow.strength,
+            staggered: follow.field.staggered,
         }
     }
 }
@@ -485,6 +489,7 @@ impl FieldFollowV4 {
                 components: self.components,
                 origin: self.origin,
                 cell_size: self.cell_size,
+                staggered: self.staggered,
             },
             strength: self.strength,
         }

@@ -27,7 +27,8 @@
 //! ```text
 //! add_sources (density/velocity injection, buoyancy)
 //! [add_heat → combust]                             with a Combustion module
-//! [compute_vorticity → confine_vorticity]          with a Vorticity module
+//! apply_buoyancy (density and, with fire, temperature lift the y faces)
+//! [compute_vorticity → vorticity_force → apply_vorticity] with a Vorticity module
 //! advect_velocity → copy
 //! compute_divergence → repeat ×N { relax_pressure → copy } → project
 //! advect_density → copy
@@ -101,7 +102,13 @@ pub const MAX_SOURCES: usize = 8;
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 10;
+const SOURCE_BASE: usize = 12;
+/// Open-side bits of constant word 10 (fluid F4): `1 << (2·axis + side)`.
+const OPEN_X_MIN: u32 = 1 << 0;
+const OPEN_X_MAX: u32 = 1 << 1;
+const OPEN_Y_MAX: u32 = 1 << 3;
+const OPEN_Z_MIN: u32 = 1 << 4;
+const OPEN_Z_MAX: u32 = 1 << 5;
 const SOURCE_WORDS: usize = 16;
 const NO_SLOT: u32 = u32::MAX;
 
@@ -187,10 +194,11 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
 }
 
 /// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 12] = [
+pub const ENTRY_POINTS: [&str; 15] = [
     "add_sources",
     "compute_vorticity",
-    "confine_vorticity",
+    "vorticity_force",
+    "apply_vorticity",
     "advect_velocity",
     "advect_density",
     "compute_divergence",
@@ -200,6 +208,8 @@ pub const ENTRY_POINTS: [&str; 12] = [
     "combust",
     "advect_temperature",
     "advect_fuel",
+    "apply_buoyancy",
+    "apply_buoyancy_fire",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -394,6 +404,20 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "How fast motion fades, per second.",
             Value::Scalar(0.05),
             number(0.01, 0.0, None),
+        ),
+        InputMetadata::new(
+            "open_top",
+            "Open Top",
+            "Fluid leaves through the top of the grid instead of pooling under it.",
+            Value::Bool(true),
+            InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "open_sides",
+            "Open Sides",
+            "Fluid leaves through the four sides of the grid (the floor stays closed).",
+            Value::Bool(false),
+            InputControl::Toggle,
         ),
     ])
     .with_cost(8)
@@ -755,7 +779,7 @@ impl ModuleLowerer for FluidModuleLowerer {
             }
             MODULE_VORTICITY => {
                 scalar(payload, "strength")?;
-                "confine_vorticity"
+                "apply_vorticity"
             }
             MODULE_VOLUME_LOOK => {
                 pack_volume(payload)?;
@@ -892,6 +916,16 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     words[7] = strength(MODULE_BUOYANCY)?.to_bits();
     words[8] = strength(MODULE_VORTICITY)?.to_bits();
     words[9] = sources.len() as u32;
+    // Open sides (fluid F4): bit 2·axis for the minimum side, 2·axis + 1 for the maximum side.
+    let open = |name: &str| grid.parameters.get_bool(name).unwrap_or(false);
+    let mut sides = 0u32;
+    if open("open_top") {
+        sides |= OPEN_Y_MAX;
+    }
+    if open("open_sides") {
+        sides |= OPEN_X_MIN | OPEN_X_MAX | OPEN_Z_MIN | OPEN_Z_MAX;
+    }
+    words[10] = sides;
     for (index, source) in sources.iter().enumerate() {
         let base = SOURCE_BASE + index * SOURCE_WORDS;
         let position = vec3(&source.parameters, "position")?;
@@ -1073,10 +1107,29 @@ impl StageLowerer for FluidSolverLowerer {
             steps.push(pass(
                 "combust",
                 vec![
-                    read_write(RESOURCE_VELOCITY),
                     read_write(RESOURCE_DENSITY),
                     read_write(RESOURCE_TEMPERATURE),
                     read_write(RESOURCE_FUEL),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.push(pass(
+                "apply_buoyancy_fire",
+                vec![
+                    read_write(RESOURCE_VELOCITY),
+                    read(RESOURCE_DENSITY),
+                    read(RESOURCE_TEMPERATURE),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+        } else {
+            steps.push(pass(
+                "apply_buoyancy",
+                vec![
+                    read_write(RESOURCE_VELOCITY),
+                    read(RESOURCE_DENSITY),
                     constants_read(),
                     frame_read(),
                 ],
@@ -1095,11 +1148,20 @@ impl StageLowerer for FluidSolverLowerer {
                     constants_read(),
                 ],
             ));
+            // The confinement force per cell goes to the velocity scratch, then onto the faces.
             steps.push(pass(
-                "confine_vorticity",
+                "vorticity_force",
+                vec![
+                    read(RESOURCE_VORTICITY),
+                    write(RESOURCE_VELOCITY_NEXT),
+                    constants_read(),
+                ],
+            ));
+            steps.push(pass(
+                "apply_vorticity",
                 vec![
                     read_write(RESOURCE_VELOCITY),
-                    read(RESOURCE_VORTICITY),
+                    read(RESOURCE_VELOCITY_NEXT),
                     constants_read(),
                     frame_read(),
                 ],
@@ -1197,6 +1259,8 @@ impl StageLowerer for FluidSolverLowerer {
                     components,
                     origin,
                     cell_size,
+                    // Velocity lives on the cells' faces (a MAC grid, fluid F4).
+                    staggered: resource == RESOURCE_VELOCITY,
                 })
                 .collect(),
         })

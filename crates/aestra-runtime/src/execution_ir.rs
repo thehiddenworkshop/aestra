@@ -205,6 +205,10 @@ pub enum ExecutionOp {
 /// in space at `origin` (the grid's minimum corner) with cubic cells of `cell_size`. Generic metadata:
 /// tools and renderers use it to interpret the bytes (debug slices now; field sampling and volume
 /// rendering later) without knowing what the field means.
+///
+/// A **staggered** vector field (fluid F4, a MAC grid) stores component `c` of cell `i` on the cell's
+/// minimum face along axis `c` — at `origin + (i + 0.5 - 0.5·e_c)·cell_size` — rather than at its
+/// centre; samplers offset each component accordingly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldLayout {
     pub resource: ResourceTypeId,
@@ -212,6 +216,7 @@ pub struct FieldLayout {
     pub components: u32,
     pub origin: [f32; 3],
     pub cell_size: f32,
+    pub staggered: bool,
 }
 
 impl FieldLayout {

@@ -844,7 +844,7 @@ pub fn stateful_simulation_wgsl() -> String {
 }
 
 /// Words of [`FIELD_FOLLOW_WGSL`]'s `params`: `[capacity, dims.x, dims.y, dims.z, cell stride,
-/// origin.x, origin.y, origin.z, cell_size, strength, dt, 0]` (floats as bits).
+/// origin.x, origin.y, origin.z, cell_size, strength, dt, staggered]` (floats as bits).
 pub const FIELD_FOLLOW_PARAM_WORDS: usize = 12;
 
 /// Follow Field for stateful particles (fluid F2b): each live slot of the persistent state
@@ -867,6 +867,36 @@ fn follow_field_value(cell: vec3<i32>) -> vec3<f32> {
     return vec3<f32>(field[base], field[base + 1u], field[base + 2u]);
 }
 
+// One component of a staggered (MAC) field at grid coordinate `g` (cell centres at integers):
+// component `c` lives on the cells' minimum faces, so its own grid is shifted by half a cell.
+fn follow_staggered_component(g: vec3<f32>, component: u32) -> f32 {
+    let last = vec3<f32>(f32(params[1]), f32(params[2]), f32(params[3])) - vec3<f32>(1.0);
+    var shift = vec3<f32>(0.0);
+    if (component == 0u) { shift.x = 0.5; }
+    if (component == 1u) { shift.y = 0.5; }
+    if (component == 2u) { shift.z = 0.5; }
+    let q = clamp(g + shift, vec3<f32>(0.0), last);
+    let base = floor(q);
+    let t = q - base;
+    let b = vec3<i32>(base);
+    let c000 = follow_field_value(b);
+    let c100 = follow_field_value(b + vec3<i32>(1, 0, 0));
+    let c010 = follow_field_value(b + vec3<i32>(0, 1, 0));
+    let c110 = follow_field_value(b + vec3<i32>(1, 1, 0));
+    let c001 = follow_field_value(b + vec3<i32>(0, 0, 1));
+    let c101 = follow_field_value(b + vec3<i32>(1, 0, 1));
+    let c011 = follow_field_value(b + vec3<i32>(0, 1, 1));
+    let c111 = follow_field_value(b + vec3<i32>(1, 1, 1));
+    let x0 = mix(c000, c100, t.x);
+    let x1 = mix(c010, c110, t.x);
+    let x2 = mix(c001, c101, t.x);
+    let x3 = mix(c011, c111, t.x);
+    let value = mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
+    if (component == 0u) { return value.x; }
+    if (component == 1u) { return value.y; }
+    return value.z;
+}
+
 @compute @workgroup_size(64)
 fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
@@ -879,15 +909,25 @@ fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
     let cell_size = bitcast<f32>(params[8]);
     let position = vec3<f32>(state[s], state[s + 1u], state[s + 2u]);
     let last = vec3<f32>(f32(params[1]), f32(params[2]), f32(params[3])) - vec3<f32>(1.0);
-    let g = clamp((position - origin) / cell_size - vec3<f32>(0.5), vec3<f32>(0.0), last);
-    let base = floor(g);
-    let t = g - base;
-    let b = vec3<i32>(base);
-    let x0 = mix(follow_field_value(b), follow_field_value(b + vec3<i32>(1, 0, 0)), t.x);
-    let x1 = mix(follow_field_value(b + vec3<i32>(0, 1, 0)), follow_field_value(b + vec3<i32>(1, 1, 0)), t.x);
-    let x2 = mix(follow_field_value(b + vec3<i32>(0, 0, 1)), follow_field_value(b + vec3<i32>(1, 0, 1)), t.x);
-    let x3 = mix(follow_field_value(b + vec3<i32>(0, 1, 1)), follow_field_value(b + vec3<i32>(1, 1, 1)), t.x);
-    let target_velocity = mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
+    var target_velocity: vec3<f32>;
+    if (params[11] != 0u) {
+        let g = (position - origin) / cell_size - vec3<f32>(0.5);
+        target_velocity = vec3<f32>(
+            follow_staggered_component(g, 0u),
+            follow_staggered_component(g, 1u),
+            follow_staggered_component(g, 2u),
+        );
+    } else {
+        let g = clamp((position - origin) / cell_size - vec3<f32>(0.5), vec3<f32>(0.0), last);
+        let base = floor(g);
+        let t = g - base;
+        let b = vec3<i32>(base);
+        let x0 = mix(follow_field_value(b), follow_field_value(b + vec3<i32>(1, 0, 0)), t.x);
+        let x1 = mix(follow_field_value(b + vec3<i32>(0, 1, 0)), follow_field_value(b + vec3<i32>(1, 1, 0)), t.x);
+        let x2 = mix(follow_field_value(b + vec3<i32>(0, 0, 1)), follow_field_value(b + vec3<i32>(1, 0, 1)), t.x);
+        let x3 = mix(follow_field_value(b + vec3<i32>(0, 1, 1)), follow_field_value(b + vec3<i32>(1, 1, 1)), t.x);
+        target_velocity = mix(mix(x0, x1, t.y), mix(x2, x3, t.y), t.z);
+    }
     let pull = min(bitcast<f32>(params[9]) * bitcast<f32>(params[10]), 1.0);
     let velocity = vec3<f32>(state[s + 3u], state[s + 4u], state[s + 5u]);
     let followed = velocity + (target_velocity - velocity) * pull;
@@ -921,7 +961,7 @@ pub fn field_follow_params(
         field.cell_size.to_bits(),
         follow.strength.to_bits(),
         dt.to_bits(),
-        0,
+        u32::from(field.staggered),
     ]
 }
 

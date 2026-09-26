@@ -106,7 +106,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - `aestra-example-extension` is the reference linked extension (a stage, module, domain, resource
   and renderer).
 - `aestra-fluid` is an experimental GPU-only fluid: a grid-solver stage and four modules lowered to
-  one checked multi-pass Execution IR block over a registered WGSL program, plus *Combustion*
+  one checked multi-pass Execution IR block over a registered WGSL program. Since fluid F4 its
+  velocity lives on a staggered MAC grid (declared `FieldLayout::staggered`, which Follow Field
+  honours), the pressure solve is the compact 7-point Laplacian, and each grid side is closed (a
+  wall) or open (fluid leaves; `open_top`, `open_sides`). It also has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
   as lit, self-shadowed volumetric smoke with blackbody fire. It adds nothing to core.
 

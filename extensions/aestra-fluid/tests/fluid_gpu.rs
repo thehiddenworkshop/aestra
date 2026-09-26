@@ -427,6 +427,7 @@ fn the_density_reaches_its_volume_texture_cell_for_cell() {
         components: 1,
         origin: [0.0; 3],
         cell_size: CELL_SIZE,
+        staggered: false,
     };
     let size = wgpu::Extent3d {
         width: RESOLUTION,
@@ -576,23 +577,44 @@ fn the_pressure_projection_removes_most_of_the_divergence() {
     // The divergence the tick's projection started from…
     let before = fluid.floats(&gpu, RESOURCE_DIVERGENCE);
     let before = interior_rms(|x, y, z| before[index(x, y, z)]);
-    // …and what is left in the projected velocity.
+    // …and what is left in the projected velocity: on the MAC grid, each cell's net flow out through
+    // its six faces (component `axis` of a cell is its minimum face on that axis).
     let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
-    let component = |x, y, z, axis| velocity[index(x, y, z) * 4 + axis];
+    let face = |x, y, z, axis| velocity[index(x, y, z) * 4 + axis];
     let after = interior_rms(|x, y, z| {
-        (component(x + 1, y, z, 0) - component(x - 1, y, z, 0) + component(x, y + 1, z, 1)
-            - component(x, y - 1, z, 1)
-            + component(x, y, z + 1, 2)
-            - component(x, y, z - 1, 2))
-            * (0.5 / CELL_SIZE)
+        (face(x + 1, y, z, 0) - face(x, y, z, 0) + face(x, y + 1, z, 1) - face(x, y, z, 1)
+            + face(x, y, z + 1, 2)
+            - face(x, y, z, 2))
+            / CELL_SIZE
     });
     eprintln!("divergence rms: before {before}, after {after}");
     assert!(before > 0.0);
-    // The solve uses the operator the projection applies, so it removes nearly all of it (~40× on
-    // the reference GPU), not just the part a mismatched Laplacian could reach.
+    // The compact Laplacian is exactly the operator the MAC projection applies.
     assert!(
         after < before * 0.1,
         "projection removes the divergence: {before} -> {after}"
+    );
+
+    // No checkerboard: the pressure does not correlate with the odd/even pattern (-1)^(x+y+z) a
+    // collocated grid's pressure modes would follow.
+    let pressure = fluid.floats(&gpu, aestra_fluid::RESOURCE_PRESSURE);
+    let (mut alternating, mut magnitude) = (0.0f64, 0.0f64);
+    for z in 1..n - 1 {
+        for y in 1..n - 1 {
+            for x in 1..n - 1 {
+                let p = f64::from(pressure[index(x, y, z)]);
+                let sign = if (x + y + z) % 2 == 0 { 1.0 } else { -1.0 };
+                alternating += sign * p;
+                magnitude += p.abs();
+            }
+        }
+    }
+    let checkerboard = alternating.abs() / magnitude;
+    eprintln!("pressure checkerboard ratio {checkerboard}");
+    assert!(magnitude > 0.0);
+    assert!(
+        checkerboard < 0.02,
+        "no odd/even pressure mode ({checkerboard})"
     );
 }
 
@@ -660,9 +682,9 @@ fn consecutive_dispatches_share_passes_without_changing_the_result() {
     let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
     let passes = fluid.stage.passes_per_tick();
     let dispatches = fluid.stage.block().compute_pass_count() as usize;
-    // Every pressure-iteration copy ends a pass: sources..advect | divergence+relax | 23 relax |
-    // project+advect density.
-    assert_eq!((dispatches, passes), (31, 26));
+    // Every pressure-iteration copy ends a pass: sources, buoyancy, vorticity ×3, advect | divergence +
+    // relax | 23 relax | project + advect density.
+    assert_eq!((dispatches, passes), (33, 26));
     // Many ticks encoded into ONE submission each see their own frame: the result equals ticking
     // with one submission per tick.
     let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());
@@ -904,6 +926,95 @@ fn particles_following_the_field_take_the_plumes_velocity() {
             .all(|pair| velocity(pair[0])[1] > velocity(pair[1])[1]),
         "the pull fades with height"
     );
+}
+
+/// A staggered (MAC) field is sampled at its faces (fluid F4): a linear field — each face holding its
+/// own position — is reproduced exactly at any interior point, and read as cell-centred it is off by
+/// half a cell.
+#[test]
+fn a_staggered_field_is_sampled_at_its_faces() {
+    use wgpu::util::DeviceExt;
+    let Some(gpu) = gpu() else { return };
+    const N: usize = 8;
+    const H: f32 = 0.5;
+    let origin = [1.0f32, -2.0, 3.0];
+    // Component `axis` of cell `i` sits on the cell's minimum face: at `i · H` along that axis.
+    let mut faces = Vec::with_capacity(N * N * N * 4);
+    for z in 0..N {
+        for y in 0..N {
+            for x in 0..N {
+                faces.extend([x as f32 * H, y as f32 * H, z as f32 * H, 0.0]);
+            }
+        }
+    }
+    let field = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("staggered field"),
+            contents: &faces
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<u8>>(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+    let points = [[1.3, 1.1, 0.8], [2.0, 2.5, 1.7], [0.9, 0.75, 3.1]];
+    let sample = |staggered: bool| {
+        let positions: Vec<[f32; 3]> = points
+            .iter()
+            .map(|local| std::array::from_fn(|axis| origin[axis] + local[axis]))
+            .collect();
+        let state = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("state"),
+                contents: &particle_slots(&positions, usize::MAX)
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let follow = aestra_runtime::CompiledFieldFollow {
+            stage: 0,
+            field: aestra_runtime::FieldLayout {
+                resource: aestra_core::ResourceTypeId::new("test::resource/faces"),
+                dims: [N as u32; 3],
+                components: 4,
+                origin,
+                cell_size: H,
+                staggered,
+            },
+            strength: 1.0e6,
+        };
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        FieldFollowPipeline::new(&gpu.device).encode(
+            &gpu.device,
+            &mut encoder,
+            &state,
+            points.len() as u32,
+            &field,
+            &follow,
+            DT,
+        );
+        gpu.queue.submit([encoder.finish()]);
+        read_floats(&gpu, &state)
+    };
+    let staggered = sample(true);
+    let centred = sample(false);
+    for (slot, local) in points.iter().enumerate() {
+        for axis in 0..3 {
+            let value = staggered[slot * 9 + 3 + axis];
+            assert!(
+                (value - local[axis]).abs() < 1e-5,
+                "staggered: slot {slot} axis {axis}: {value} vs {}",
+                local[axis]
+            );
+            let off = centred[slot * 9 + 3 + axis];
+            assert!(
+                (off - (local[axis] - 0.5 * H)).abs() < 1e-5,
+                "cell-centred reading is half a cell off: {off}"
+            );
+        }
+    }
 }
 
 fn read_floats(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<f32> {
