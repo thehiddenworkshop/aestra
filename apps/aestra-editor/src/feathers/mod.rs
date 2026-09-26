@@ -49,6 +49,7 @@ impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FeathersPlugins)
             .add_plugins(code_editor::CodeEditorPlugin)
+            .add_plugins(number_input::arrows::NumberArrowsPlugin)
             .add_plugins(node_graph::FeathersNodeGraphPlugin)
             .insert_resource(theme::feathers_theme())
             .init_resource::<automation_curve::AutomationCurveImageCache>()

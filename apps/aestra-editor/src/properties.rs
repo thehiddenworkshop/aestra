@@ -143,6 +143,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(begin_numeric_scrub)
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
+            .add_observer(step_numeric_input)
             .add_observer(select_properties_header)
             .add_observer(handle_instance_label_change)
             .add_observer(change_module_stack_filter)
@@ -3164,6 +3165,64 @@ mod tests {
     }
 
     #[test]
+    fn numeric_arrow_property_step_uses_metadata_and_is_undoable() {
+        let session = test_support::session_with_timing_slack();
+        let module = session
+            .selected_layer()
+            .unwrap()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let original = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+        let Value::Scalar(initial) = original else {
+            panic!("expected scalar spawn rate");
+        };
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(test_localizer())
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(step_numeric_input);
+        let owner = app
+            .world_mut()
+            .spawn(PropertiesNumberControl {
+                module,
+                parameter: "spawn_rate",
+                component: 0,
+                kind: PropertiesNumberKind::Scalar,
+                step: 5.0,
+                min: Some(0.0),
+                max: None,
+            })
+            .id();
+        app.world_mut()
+            .spawn((ChildOf(owner), EditableText::new(initial.to_string())));
+        app.world_mut()
+            .trigger(crate::feathers::number_input::arrows::StepNumber {
+                entity: owner,
+                direction: 1,
+            });
+        assert_eq!(
+            properties_module_parameter(
+                app.world().resource::<EditorSession>(),
+                module,
+                "spawn_rate"
+            ),
+            Some(Value::Scalar(initial + 5.0))
+        );
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            properties_module_parameter(
+                app.world().resource::<EditorSession>(),
+                module,
+                "spawn_rate"
+            ),
+            Some(original)
+        );
+    }
+
+    #[test]
     fn emitter_duration_editor_can_grow_the_source_within_the_effect() {
         let mut session = test_support::session_with_timing_slack();
         let original = session.selected_layer().unwrap().clone();
@@ -5079,6 +5138,7 @@ fn decorate_numeric_scrub_inputs(
     for entity in &inputs {
         commands.entity(entity).insert((
             NumericScrubInput,
+            crate::feathers::number_input::arrows::CustomNumberStep,
             EntityCursor::System(SystemCursorIcon::EwResize),
         ));
         if let Ok(children) = children.get(entity) {
@@ -5089,6 +5149,64 @@ fn decorate_numeric_scrub_inputs(
             }
         }
     }
+}
+
+fn step_numeric_input(
+    step: On<crate::feathers::number_input::arrows::StepNumber>,
+    properties_controls: Query<&PropertiesNumberControl>,
+    emitter_controls: Query<&EmitterNumberControl>,
+    effect_clip_controls: Query<&EffectClipNumberControl>,
+    effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
+    start_reference_controls: Query<&StartReferenceOffsetControl>,
+    choreography_event_controls: Query<&ChoreographyEventNumberControl>,
+    parents: Query<&ChildOf>,
+    children: Query<&Children>,
+    mut texts: Query<&mut EditableText>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    let Some((owner, target)) = resolve_numeric_scrub_target(
+        step.entity,
+        &parents,
+        &properties_controls,
+        &emitter_controls,
+        &effect_clip_controls,
+        &effect_clip_parameter_controls,
+        &start_reference_controls,
+        &choreography_event_controls,
+    ) else {
+        return;
+    };
+    let Some(initial) = numeric_scrub_value(&session, target) else {
+        return;
+    };
+    let multiplier = numeric_scrub_multiplier(
+        keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight),
+    );
+    let delta = numeric_scrub_step(target) * multiplier;
+    let delta = if numeric_scrub_is_integer(target) {
+        delta.max(1.0)
+    } else {
+        delta
+    };
+    let value = normalize_numeric_scrub_value_with_multiplier(
+        &session,
+        target,
+        initial + step.direction as f32 * delta,
+        multiplier,
+    );
+    if value == initial {
+        return;
+    }
+    update_numeric_scrub_text(
+        owner,
+        format_numeric_scrub_value(target, value, multiplier),
+        &children,
+        &mut texts,
+    );
+    commit_numeric_scrub(&mut session, target, value, &localizer);
 }
 
 fn begin_numeric_scrub(

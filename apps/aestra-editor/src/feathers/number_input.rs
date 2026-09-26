@@ -16,6 +16,8 @@ use bevy::{
     window::{CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon},
 };
 
+pub(crate) mod arrows;
+
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct ScrubbableNumber {
     pub(crate) value: f32,

@@ -910,3 +910,5 @@ graph-layout-overlap-conflict = Certains nœuds ne peuvent pas être espacés sa
 graph-snap-grid = Magnétisme de la grille (maintenir Alt pour déplacer librement)
 graph-snap-alignment = Magnétisme et guides d’alignement (maintenir Alt pour déplacer librement)
 graph-placement-unavailable = Espacement local indisponible ; positionnez le nouveau nœud manuellement
+number-decrease-value = Diminuer la valeur
+number-increase-value = Augmenter la valeur
