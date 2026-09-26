@@ -53,6 +53,17 @@ fn compile_stage(registry: &ExtensionRegistry, effect: &EffectAsset) -> Compiled
     compiled.extension_stages[0].clone()
 }
 
+/// The effect with its pressure solved by Jacobi sweeps rather than MGPCG.
+fn jacobi(mut effect: EffectAsset) -> EffectAsset {
+    set_input(
+        &mut effect,
+        MODULE_GRID,
+        "multigrid_pressure",
+        Value::Bool(false),
+    );
+    effect
+}
+
 fn codes(error: aestra_compiler::CompileError) -> Vec<DiagnosticCode> {
     error
         .report()
@@ -77,7 +88,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
         .programs
         .get(&aestra_core::ComputeProgramId::new(PROGRAM_SOLVER))
         .unwrap();
-    assert_eq!(program.entry_points.len(), aestra_fluid::ENTRY_POINTS.len());
+    assert_eq!(program.entry_points, aestra_fluid::entry_points());
     // The whole program — solver passes plus the host-binding accessors — validates.
     aestra_gpu::program_interface(program).expect("the solver program validates");
 }
@@ -85,7 +96,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
 #[test]
 fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
     let registry = fluid_registry();
-    let effect = smoke_effect(&registry);
+    let effect = jacobi(smoke_effect(&registry));
     let compiled = EffectCompiler::with_extensions(registry.clone())
         .compile(&effect)
         .unwrap();
@@ -103,11 +114,12 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
     stage.block.validate().unwrap();
     // Every op's declared accesses match what its WGSL entry actually uses.
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
-    // sources + buoyancy + vorticity×3 + advect and correct velocity + divergence + 24 relaxations +
+    // sources + buoyancy + vorticity×3 + advect and correct velocity + divergence + 12 relaxations (the
+    // default) +
     // project + advect and correct density
     assert_eq!(
         stage.block.compute_pass_count(),
-        1 + 1 + 3 + 2 + 1 + 24 + 1 + 2
+        1 + 1 + 3 + 2 + 1 + 12 + 1 + 2
     );
     assert_eq!(
         stage.block.binding_of(&aestra_core::ResourceTypeId::new(
@@ -135,13 +147,121 @@ fn one_authored_stage_lowers_to_a_checked_multi_pass_solver() {
 #[test]
 fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
     let registry = fluid_registry();
-    let mut effect = smoke_effect(&registry);
+    let mut effect = jacobi(smoke_effect(&registry));
     effect.simulation_stages[0]
         .modules
         .retain(|module| module.module_type.0 != MODULE_VORTICITY);
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).unwrap();
-    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 2 + 1 + 24 + 1 + 2);
+    assert_eq!(stage.block.compute_pass_count(), 1 + 1 + 2 + 1 + 12 + 1 + 2);
+}
+
+/// The pressure is solved by MGPCG by default (fluid F5): a setup, then one convergent repeat whose
+/// test reads the solve's scalars, capped at the pressure iterations, and whose body — a V-cycle over
+/// every level, then the conjugate-gradient step — holds no copy.
+#[test]
+fn the_pressure_is_solved_by_mgpcg_in_one_convergent_repeat() {
+    use aestra_runtime::RepeatPolicy;
+    assert_eq!(aestra_fluid::multigrid_levels(32), [32, 16, 8, 4]);
+    assert_eq!(aestra_fluid::multigrid_levels(48), [48, 24, 12, 6, 3]);
+    assert_eq!(aestra_fluid::multigrid_levels(20), [20, 10, 5]);
+    assert_eq!(aestra_fluid::multigrid_levels(128), [128, 64, 32, 16, 8, 4]);
+
+    let registry = fluid_registry();
+    let mut effect = smoke_effect(&registry);
+    set_input(
+        &mut effect,
+        MODULE_GRID,
+        "pressure_tolerance",
+        Value::Scalar(1e-4),
+    );
+    set_input(
+        &mut effect,
+        MODULE_GRID,
+        "pressure_iterations",
+        Value::U32(12),
+    );
+    let stage = compile_stage(&registry, &effect);
+    check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
+    let repeats: Vec<_> = stage
+        .block
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            ExecutionOp::Repeat { policy, body } => Some((policy, body)),
+            _ => None,
+        })
+        .collect();
+    let [(policy, body)] = repeats.as_slice() else {
+        panic!("one repeat: the solve");
+    };
+    assert_eq!(
+        **policy,
+        RepeatPolicy::UntilConverged {
+            residual: ResourceTypeId::new(aestra_fluid::RESOURCE_PCG_REDUCTION),
+            tolerance: 1e-4,
+            max: 12,
+        }
+    );
+    let entries: Vec<(&str, u32)> = body
+        .iter()
+        .filter_map(|op| match op {
+            ExecutionOp::Compute(compute) => {
+                Some((compute.entry_point.as_str(), compute.dispatch.x))
+            }
+            ExecutionOp::Barrier => None,
+            other => panic!("only compute ops and barriers: {other:?}"),
+        })
+        .collect();
+    // Down the levels of 32³, each dispatched over its own cells; the coarsest red, black, red; back
+    // up; then the conjugate-gradient step (the fine level's first red sweep rides the previous step).
+    // 19 dispatches an iteration.
+    assert_eq!(
+        entries,
+        [
+            ("mg_smooth_black_0", 8),
+            ("mg_restrict_1", 4),
+            ("mg_smooth_black_1", 4),
+            ("mg_restrict_2", 2),
+            ("mg_smooth_black_2", 2),
+            ("mg_restrict_3", 1),
+            ("mg_smooth_black_3", 1),
+            ("mg_smooth_red_3", 1),
+            ("mg_prolong_2", 2),
+            ("mg_smooth_red_2", 2),
+            ("mg_prolong_1", 4),
+            ("mg_smooth_red_1", 4),
+            ("mg_prolong_0", 8),
+            ("pcg_smooth_dot", 8),
+            ("pcg_beta", 1),
+            ("pcg_apply", 8),
+            ("pcg_alpha", 1),
+            ("pcg_step", 8),
+            ("pcg_residual", 1),
+        ]
+    );
+    // Under Jacobi, the solve's resources are declared but a few bytes each.
+    let jacobi = compile_stage(&registry, &jacobi(smoke_effect(&registry)));
+    let bytes = |stage: &CompiledExtensionStage, id: &str| {
+        stage
+            .block
+            .resources
+            .iter()
+            .find(|resource| resource.id.as_str() == id)
+            .unwrap()
+            .bytes
+    };
+    let solution = aestra_fluid::RESOURCE_MG_SOLUTION;
+    assert_eq!(bytes(&jacobi, solution), 16);
+    assert_eq!(
+        bytes(&stage, solution),
+        (32u64.pow(3) + 16u64.pow(3) + 8u64.pow(3) + 4u64.pow(3)) * 4
+    );
+    assert_eq!(
+        stage.block.resources.len(),
+        jacobi.block.resources.len(),
+        "the same bindings either way"
+    );
 }
 
 /// Jacobi sweeps ping-pong between the pressure grids (fluid F5): an even count copies nothing, an
@@ -150,7 +270,7 @@ fn without_a_vorticity_module_no_confinement_passes_are_lowered() {
 fn jacobi_sweeps_ping_pong_without_copies() {
     let registry = fluid_registry();
     let copies = |iterations: u32| {
-        let mut effect = smoke_effect(&registry);
+        let mut effect = jacobi(smoke_effect(&registry));
         set_input(
             &mut effect,
             MODULE_GRID,
@@ -269,8 +389,8 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
     assert_eq!(
         stage.block.compute_pass_count(),
-        plain.block.compute_pass_count() + 1,
-        "one mark_solids pass"
+        plain.block.compute_pass_count() + 1 + 4,
+        "one mark_solids pass, and the solid flags of the 4 multigrid levels of 32³"
     );
     let first = stage
         .block
@@ -614,7 +734,7 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
     {
         assert_eq!(
             fire.block.binding_of(&ResourceTypeId::new(resource)),
-            Some(14 + binding as u32)
+            Some(19 + binding as u32)
         );
         assert_eq!(
             smoke.block.binding_of(&ResourceTypeId::new(resource)),

@@ -113,8 +113,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   (`sharp_advection`): each semi-Lagrangian step is corrected by a reverse trace and limited to the
   forward step's extrema. Sphere, box (axis-aligned) and capsule *colliders* — up to four, centre and
   velocity host-bindable, centre draggable — are marked as solid cells each tick: nothing flows
-  through them, a moving one pushes the fluid, and a sticky one also drags it (no slip). It also
-  has *Combustion*
+  through them, a moving one pushes the fluid, and a sticky one also drags it (no slip). Since fluid
+  F5 the pressure is solved by multigrid-preconditioned conjugate gradients (`multigrid_pressure`,
+  on by default; Jacobi sweeps otherwise) to a relative tolerance, warm-started from the previous
+  tick's pressure, in an `UntilConverged` repeat — so it stops on the device, with no readback, once
+  converged. A *Turbulence* module stirs the fluid with animated noise. It also has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
   as lit, self-shadowed volumetric smoke with blackbody fire. It adds nothing to core.
 
@@ -185,6 +188,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Checks a lowered Execution IR block against its compute programs with naga
   (`check_program_block`). Each op's declared accesses must be exactly the bindings its entry uses
   (resource `i` is `@group(0) @binding(i)`), and it must not write a resource declared read-only.
+- Owns the shared deterministic reduction module (`reduce::REDUCE_WGSL`, fluid F5): a workgroup sum
+  in a fixed tree, with no subgroup operations, so its bits do not depend on the hardware's subgroup
+  support.
 - Owns the volume-presentation interface (`volume`): the bindings, the `AestraVolumeRay`, and the
   field, constant and box helpers a plugin's march function is written against, plus the pass that
   copies a grid field into a 3D texture.
@@ -193,6 +199,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 ### `aestra-bevy-render`
 
 - Uploads `aestra-gpu` artifacts into Bevy shader buffers.
+- Runs plugin Execution IR blocks (`execution::StageExecutor`). A `RepeatPolicy::UntilConverged`
+  repeat (fluid F5) is expanded to its cap with its body dispatched indirectly; a one-invocation test
+  after each iteration empties the remaining dispatches once the residual has converged, so the loop
+  stops on the device with no readback (the emptied dispatches still cost a little each).
 - Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
   setup, compute dispatch, readback, texture resolution, and draw submission.
 - Converts WGPU device limits and semantic-material resource layouts at the adapter boundary,

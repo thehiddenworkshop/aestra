@@ -27,12 +27,22 @@
 // Colliders (fluid F4), marked each tick: xyz the solid's velocity, w 0 for fluid, 1 for a solid the
 // fluid slides along, 2 for one it sticks to.
 @group(0) @binding(13) var<storage, read_write> solid: array<vec4<f32>>;
+// The multigrid-preconditioned conjugate-gradient pressure solve (fluid F5, `pressure.wgsl`): the
+// search direction p and its image A·p on the fine grid, side by side; the V-cycle's solution and
+// right-hand side on every level, one after the other (on the fine level, PCG's z and r); every
+// level's solid flags; the solve's scalars followed by per-workgroup partial sums. Always declared — a
+// few bytes each under Jacobi — so the fire grids keep their bindings.
+@group(0) @binding(14) var<storage, read_write> pcg_vectors: array<vec2<f32>>;
+@group(0) @binding(15) var<storage, read_write> mg_solution: array<f32>;
+@group(0) @binding(16) var<storage, read_write> mg_rhs: array<f32>;
+@group(0) @binding(17) var<storage, read_write> mg_flags: array<u32>;
+@group(0) @binding(18) var<storage, read_write> pcg_reduction: array<vec4<f32>>;
 // Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
 // a smoke-only block binds none of them and none of its passes reads them.
-@group(0) @binding(14) var<storage, read_write> temperature: array<f32>;
-@group(0) @binding(15) var<storage, read_write> temperature_next: array<f32>;
-@group(0) @binding(16) var<storage, read_write> fuel: array<f32>;
-@group(0) @binding(17) var<storage, read_write> fuel_next: array<f32>;
+@group(0) @binding(19) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(20) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(21) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(22) var<storage, read_write> fuel_next: array<f32>;
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
@@ -524,6 +534,16 @@ fn mark_solids(@builtin(global_invocation_id) cell: vec3<u32>) {
     }
 }
 
+// The flow through a cell's minimum `axis` face as the divergence counts it: none through a closed
+// side of the grid — the projection zeroes that face, whatever advection left on it — so a region
+// sealed by walls and solids has no net inflow and its pressure equation stays consistent.
+fn bounded_face(c: vec3<i32>, axis: u32) -> f32 {
+    if (axis_coordinate(c, axis) == 0 && !side_open(axis, false)) {
+        return 0.0;
+    }
+    return effective_face(c, axis);
+}
+
 // The divergence of each fluid cell: the net flow out through its six faces (solids impose theirs).
 @compute @workgroup_size(4, 4, 4)
 fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
@@ -531,9 +551,9 @@ fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
     let c = vec3<i32>(cell);
     var net = 0.0;
     if (!is_solid(c)) {
-        net = effective_face(c + X, 0u) - effective_face(c, 0u)
-            + effective_face(c + Y, 1u) - effective_face(c, 1u)
-            + effective_face(c + Z, 2u) - effective_face(c, 2u);
+        net = effective_face(c + X, 0u) - bounded_face(c, 0u)
+            + effective_face(c + Y, 1u) - bounded_face(c, 1u)
+            + effective_face(c + Z, 2u) - bounded_face(c, 2u);
     }
     divergence[cell_index(cell)] = net / cell_size();
 }

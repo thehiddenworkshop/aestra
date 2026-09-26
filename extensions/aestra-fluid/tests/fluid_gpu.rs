@@ -141,6 +141,17 @@ fn effect(registry: &ExtensionRegistry, bound: bool, iterations: u32) -> EffectA
     effect
 }
 
+/// The effect with its pressure solved by Jacobi sweeps rather than MGPCG.
+fn jacobi(mut effect: EffectAsset) -> EffectAsset {
+    set_input(
+        &mut effect,
+        MODULE_GRID,
+        "multigrid_pressure",
+        Value::Bool(false),
+    );
+    effect
+}
+
 /// A compiled fluid effect, its host-side instance, and its stage running on the GPU.
 struct Fluid {
     instance: EffectInstance,
@@ -547,8 +558,9 @@ fn restoring_a_checkpoint_and_replaying_reaches_the_uninterrupted_state() {
     let cells = (RESOLUTION as usize).pow(3);
     assert_eq!(
         checkpoint.bytes(),
-        cells * (16 + 4),
-        "only the persistent velocity and density grids — no scratch, no host inputs"
+        cells * (16 + 4 + 4),
+        "only the persistent velocity, density and pressure grids (the pressure solve's warm \
+         start, fluid F5) — no scratch, no host inputs"
     );
     fluid.run(&gpu, 20..45);
     let uninterrupted = fluid.state(&gpu);
@@ -687,11 +699,18 @@ fn consecutive_dispatches_share_passes_without_changing_the_result() {
     let Some(gpu) = gpu() else { return };
     let registry = registry();
     let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
-    let passes = fluid.stage.passes_per_tick();
-    let dispatches = fluid.stage.block().compute_pass_count() as usize;
-    // Every copy ends a pass: sources .. advect + correct velocity | divergence, the 24 relaxations
-    // (a ping-pong: no copies, fluid F5), project, advect + correct density.
-    assert_eq!((dispatches, passes), (35, 2));
+    // Every copy ends a pass: sources .. advect + correct velocity | divergence, the pressure solve
+    // (MGPCG in a convergent repeat, or Jacobi's ping-pong: no copies either way, fluid F5), project,
+    // advect + correct density.
+    assert_eq!(fluid.stage.passes_per_tick(), 2);
+    let jacobi = Fluid::new(&gpu, &registry, &jacobi(effect(&registry, false, 24)));
+    assert_eq!(
+        (
+            jacobi.stage.block().compute_pass_count(),
+            jacobi.stage.passes_per_tick()
+        ),
+        (35, 2)
+    );
     // Many ticks encoded into ONE submission each see their own frame: the result equals ticking
     // with one submission per tick.
     let mut timeline = timeline(&gpu, &registry, TimelinePolicy::default());
@@ -1380,4 +1399,198 @@ fn turbulence_stirs_only_where_there_is_smoke_and_breaks_the_plume_s_symmetry() 
         stirred > 10.0 * calm.max(1e-4),
         "calm {calm}, stirred {stirred}"
     );
+}
+
+/// MGPCG (fluid F5) solves the pressure to its tolerance in few iterations — in an open box, a box
+/// closed on every side (whose right-hand side loses its mean) and around a collider (whose solids the
+/// coarse levels inherit) — and leaves far less divergence than Jacobi's fixed sweeps on a 48³ grid.
+#[test]
+fn mgpcg_converges_to_its_tolerance_and_leaves_far_less_divergence_than_jacobi() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let n = 48usize;
+    let cell = 3.2 / n as f32;
+    let fine = |mut effect: EffectAsset| {
+        set_input(&mut effect, MODULE_GRID, "resolution", Value::U32(n as u32));
+        set_input(&mut effect, MODULE_GRID, "cell_size", Value::Scalar(cell));
+        set_input(
+            &mut effect,
+            MODULE_GRID,
+            "pressure_tolerance",
+            Value::Scalar(1e-4),
+        );
+        effect
+    };
+    let index = |x: usize, y: usize, z: usize| (z * n + y) * n + x;
+    let rms = |values: &dyn Fn(usize, usize, usize) -> f32| {
+        let (mut sum, mut count) = (0.0f64, 0.0f64);
+        for z in 2..n - 2 {
+            for y in 2..n - 2 {
+                for x in 2..n - 2 {
+                    sum += f64::from(values(x, y, z)).powi(2);
+                    count += 1.0;
+                }
+            }
+        }
+        (sum / count).sqrt()
+    };
+    // Divergence before and after the last tick's projection; the solve's iterations and residual.
+    let solve = |effect: &EffectAsset| {
+        let fluid = Fluid::new(&gpu, &registry, effect);
+        fluid.run(&gpu, 0..30);
+        let before = fluid.floats(&gpu, RESOURCE_DIVERGENCE);
+        let before = rms(&|x, y, z| before[index(x, y, z)]);
+        let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
+        let face = |x, y, z, axis| velocity[index(x, y, z) * 4 + axis];
+        let after = rms(&|x, y, z| {
+            (face(x + 1, y, z, 0) - face(x, y, z, 0) + face(x, y + 1, z, 1) - face(x, y, z, 1)
+                + face(x, y, z + 1, 2)
+                - face(x, y, z, 2))
+                / cell
+        });
+        let iterations = fluid
+            .stage
+            .convergent_iterations(&gpu.device, &gpu.queue)
+            .unwrap();
+        let residual = fluid.floats(&gpu, aestra_fluid::RESOURCE_PCG_REDUCTION)[0];
+        (before, after, iterations, residual)
+    };
+
+    let (before, after, iterations, residual) = solve(&fine(effect(&registry, false, 50)));
+    let (jacobi_before, jacobi_after, _, _) = solve(&fine(jacobi(effect(&registry, false, 24))));
+    eprintln!(
+        "48³ open top: MGPCG {iterations:?} iterations, residual {residual}, divergence \
+         {before} -> {after}; Jacobi ×24 {jacobi_before} -> {jacobi_after}"
+    );
+    assert_eq!(iterations.len(), 1);
+    assert!(iterations[0] < 50, "converged before the cap");
+    assert!(residual <= 1e-4, "to the tolerance: {residual}");
+    assert!(after < before * 1e-3, "{before} -> {after}");
+    assert!(
+        after < jacobi_after * 0.05,
+        "{after} vs Jacobi {jacobi_after}"
+    );
+
+    let mut closed = fine(effect(&registry, false, 50));
+    set_input(&mut closed, MODULE_GRID, "open_top", Value::Bool(false));
+    let (before, after, iterations, residual) = solve(&closed);
+    eprintln!("closed box: {iterations:?} iterations, residual {residual}, {before} -> {after}");
+    assert!(iterations[0] < 50 && residual <= 1e-4);
+    assert!(after < before * 1e-3, "{before} -> {after}");
+
+    let mut obstructed = fine(effect(&registry, false, 50));
+    let sphere = with_module(
+        &registry,
+        &mut obstructed,
+        aestra_fluid::MODULE_SPHERE_COLLIDER,
+    );
+    set_module_input(
+        &mut obstructed,
+        sphere,
+        "position",
+        Value::Vec3([0.0, 1.6, 0.0]),
+    );
+    set_module_input(&mut obstructed, sphere, "radius", Value::Scalar(0.5));
+    let (_, _, iterations, residual) = solve(&obstructed);
+    eprintln!("around a sphere: {iterations:?} iterations, residual {residual}");
+    assert!(iterations[0] < 50 && residual <= 1e-4);
+}
+/// A slab across the whole grid seals the region under it: its pressure is known only up to a
+/// constant. Held still, the region takes no net inflow and the solve converges as anywhere else; a slab
+/// moving up would draw fluid out of it — impossible for an incompressible fluid — and the solve must
+/// stay bounded rather than diverge (fluid F5).
+#[test]
+fn a_sealed_region_stays_solvable() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let sealed = |velocity: [f32; 3]| {
+        let mut effect = effect(&registry, false, 40);
+        let slab = with_module(&registry, &mut effect, aestra_fluid::MODULE_BOX_COLLIDER);
+        set_module_input(&mut effect, slab, "position", Value::Vec3([0.0, 1.0, 0.0]));
+        set_module_input(
+            &mut effect,
+            slab,
+            "half_extents",
+            Value::Vec3([2.0, 0.3, 2.0]),
+        );
+        set_module_input(&mut effect, slab, "velocity", Value::Vec3(velocity));
+        let fluid = Fluid::new(&gpu, &registry, &effect);
+        let mut iterations = Vec::new();
+        for tick in 0..30 {
+            fluid.run(&gpu, tick..tick + 1);
+            iterations.extend(
+                fluid
+                    .stage
+                    .convergent_iterations(&gpu.device, &gpu.queue)
+                    .unwrap(),
+            );
+        }
+        let peak = fluid
+            .floats(&gpu, RESOURCE_VELOCITY)
+            .iter()
+            .fold(0.0f32, |peak, v| peak.max(v.abs()));
+        (iterations, peak)
+    };
+    let (iterations, peak) = sealed([2.0, 0.0, 0.0]);
+    eprintln!("sealed, sliding: iterations {iterations:?}, peak speed {peak}");
+    assert!(iterations[1..].iter().all(|&count| count < 40), "converges");
+    assert!(peak < 10.0, "no blow-up ({peak})");
+    let (iterations, peak) = sealed([0.0, 1.0, 0.0]);
+    eprintln!("sealed, drawn from: iterations {iterations:?}, peak speed {peak}");
+    assert!(peak.is_finite() && peak < 50.0, "bounded ({peak})");
+}
+/// The pressure solve's cost per tick, Jacobi against MGPCG (fluid F5): many ticks of a plume, timed on
+/// the device. Not a pass/fail test — run with `--ignored --nocapture` on the reference GPU.
+#[test]
+#[ignore]
+fn bench_pressure_solvers() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    for n in [48u32, 96, 128] {
+        for (label, multigrid, iterations) in [
+            ("Jacobi ×24", false, 24u32),
+            ("MGPCG cap 24", true, 24),
+            ("MGPCG cap 12", true, 12),
+        ] {
+            let mut plume = effect(&registry, false, iterations);
+            set_input(&mut plume, MODULE_GRID, "resolution", Value::U32(n));
+            set_input(
+                &mut plume,
+                MODULE_GRID,
+                "cell_size",
+                Value::Scalar(3.2 / n as f32),
+            );
+            set_input(
+                &mut plume,
+                MODULE_GRID,
+                "multigrid_pressure",
+                Value::Bool(multigrid),
+            );
+            let fluid = Fluid::new(&gpu, &registry, &plume);
+            fluid.run(&gpu, 0..60);
+            let wait = || {
+                gpu.device
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(std::time::Duration::from_secs(120)),
+                    })
+                    .unwrap();
+            };
+            wait();
+            let ticks = 120;
+            let start = std::time::Instant::now();
+            fluid.run(&gpu, 60..60 + ticks);
+            wait();
+            let per_tick = start.elapsed().as_secs_f64() * 1000.0 / f64::from(ticks);
+            let iterations = if multigrid {
+                fluid
+                    .stage
+                    .convergent_iterations(&gpu.device, &gpu.queue)
+                    .unwrap()[0]
+            } else {
+                iterations
+            };
+            eprintln!("BENCH {n}³ {label}: {per_tick:.3} ms/tick ({iterations} iterations)");
+        }
+    }
 }

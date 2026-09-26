@@ -89,6 +89,14 @@ pub const RESOURCE_VORTICITY: &str = "org.example.aestra-fluid::resource/vortici
 pub const RESOURCE_VELOCITY_HAT: &str = "org.example.aestra-fluid::resource/velocity_corrected";
 pub const RESOURCE_SCALAR_HAT: &str = "org.example.aestra-fluid::resource/scalar_corrected";
 pub const RESOURCE_SOLID: &str = "org.example.aestra-fluid::resource/solid_grid";
+/// The pressure solve's search direction p and its image A·p, side by side per cell.
+pub const RESOURCE_PCG_VECTORS: &str = "org.example.aestra-fluid::resource/pcg_vectors";
+pub const RESOURCE_MG_SOLUTION: &str = "org.example.aestra-fluid::resource/multigrid_solution";
+pub const RESOURCE_MG_RHS: &str = "org.example.aestra-fluid::resource/multigrid_rhs";
+pub const RESOURCE_MG_FLAGS: &str = "org.example.aestra-fluid::resource/multigrid_flags";
+/// The pressure solve's scalars, then its per-workgroup partial sums; word 0 is the relative residual
+/// its convergent repeat tests.
+pub const RESOURCE_PCG_REDUCTION: &str = "org.example.aestra-fluid::resource/pcg_reduction";
 pub const RESOURCE_TEMPERATURE: &str = "org.example.aestra-fluid::resource/temperature_grid";
 pub const RESOURCE_TEMPERATURE_NEXT: &str =
     "org.example.aestra-fluid::resource/temperature_scratch";
@@ -97,12 +105,15 @@ pub const RESOURCE_FUEL_NEXT: &str = "org.example.aestra-fluid::resource/fuel_sc
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
+/// The multigrid-preconditioned conjugate-gradient pressure solve (fluid F5), after the solver.
+pub const PRESSURE_WGSL: &str = include_str!("pressure.wgsl");
 /// The volume look's march function, composed after the backend's volume interface.
 pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
 
-/// The grid resolution per axis is bounded (plan §11.1): at 96³ every grid together is ~60 MB.
+/// The grid resolution per axis is bounded (plan §11.1): at 128³ every grid together — the solver's
+/// scratch and the multigrid levels included — is ~300 MB (~330 MB with fire).
 pub const MIN_RESOLUTION: u32 = 8;
-pub const MAX_RESOLUTION: u32 = 96;
+pub const MAX_RESOLUTION: u32 = 128;
 pub const MAX_PRESSURE_ITERATIONS: u32 = 200;
 /// Density sources one stage packs into its constants.
 pub const MAX_SOURCES: usize = 8;
@@ -143,9 +154,108 @@ pub fn link() {
         .expect("the fluid extension registers only namespaced, unique ids");
 }
 
-/// The complete solver program: the solver passes plus the host-binding accessors they call.
+/// The complete solver program: the solver passes, the pressure solve with its per-level entry points,
+/// and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
-    format!("{SOLVER_WGSL}\n{}", aestra_gpu::HOST_BINDINGS_WGSL)
+    format!(
+        "{SOLVER_WGSL}\n{PRESSURE_WGSL}\n{}\n{}\n{}",
+        multigrid_entries_wgsl(),
+        aestra_gpu::HOST_BINDINGS_WGSL,
+        aestra_gpu::reduce::REDUCE_WGSL
+    )
+}
+
+/// Levels the multigrid pressure solve uses at most: a 128-cell grid halves down to 4.
+pub const MAX_MULTIGRID_LEVELS: usize = 6;
+
+/// The multigrid levels' resolutions, finest first: they halve while the grid stays even and keeps at
+/// least 3 cells a side.
+pub fn multigrid_levels(resolution: u32) -> Vec<u32> {
+    let mut levels = vec![resolution];
+    let mut n = resolution;
+    while n.is_multiple_of(2) && n / 2 >= 3 && levels.len() < MAX_MULTIGRID_LEVELS {
+        n /= 2;
+        levels.push(n);
+    }
+    levels
+}
+
+/// The V-cycle's passes, one entry point per kind and level (`pressure.wgsl` has the bodies).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LevelPass {
+    SmoothRed,
+    SmoothBlack,
+    /// Into this level from the finer one, with this level's first red sweep.
+    RestrictSmooth,
+    /// From the coarser level into this one, with this level's black sweep.
+    ProlongSmooth,
+    /// This level's solid flags: the fine level's from the solids, a coarse one's from the finer.
+    Coarsen,
+}
+
+impl LevelPass {
+    const ALL: [Self; 5] = [
+        Self::SmoothRed,
+        Self::SmoothBlack,
+        Self::RestrictSmooth,
+        Self::ProlongSmooth,
+        Self::Coarsen,
+    ];
+
+    fn levels(self) -> std::ops::Range<usize> {
+        match self {
+            Self::RestrictSmooth => 1..MAX_MULTIGRID_LEVELS,
+            Self::ProlongSmooth => 0..MAX_MULTIGRID_LEVELS - 1,
+            Self::SmoothRed | Self::SmoothBlack | Self::Coarsen => 0..MAX_MULTIGRID_LEVELS,
+        }
+    }
+
+    fn entry(self, level: usize) -> String {
+        let kind = match self {
+            Self::SmoothRed => "smooth_red",
+            Self::SmoothBlack => "smooth_black",
+            Self::RestrictSmooth => "restrict",
+            Self::ProlongSmooth => "prolong",
+            Self::Coarsen => "coarsen",
+        };
+        format!("mg_{kind}_{level}")
+    }
+
+    fn body(self, level: usize) -> String {
+        match self {
+            Self::SmoothRed => format!("mg_smooth({level}u, cell, 0u)"),
+            Self::SmoothBlack => format!("mg_smooth({level}u, cell, 1u)"),
+            Self::RestrictSmooth => format!("mg_restrict_smooth({level}u, cell)"),
+            Self::ProlongSmooth => format!("mg_prolong_smooth({level}u, cell)"),
+            Self::Coarsen => format!("mg_coarsen({level}u, cell)"),
+        }
+    }
+}
+
+/// One thin entry point per V-cycle pass and level: the level is a constant of the entry, since a
+/// dispatch carries no parameters of its own.
+fn multigrid_entries_wgsl() -> String {
+    let mut wgsl = String::new();
+    for pass in LevelPass::ALL {
+        for level in pass.levels() {
+            wgsl.push_str(&format!(
+                "@compute @workgroup_size(4, 4, 4)\nfn {}(@builtin(global_invocation_id) cell: \
+                 vec3<u32>) {{\n    {};\n}}\n",
+                pass.entry(level),
+                pass.body(level)
+            ));
+        }
+    }
+    wgsl
+}
+
+/// Every entry point of the solver program: [`ENTRY_POINTS`] and the per-level V-cycle passes.
+pub fn entry_points() -> Vec<String> {
+    let mut entries: Vec<String> = ENTRY_POINTS.iter().map(|entry| entry.to_string()).collect();
+    for pass in LevelPass::ALL {
+        entries.extend(pass.levels().map(|level| pass.entry(level)));
+    }
+    entries
 }
 
 /// The simulation-stage name [`smoke_effect`] authors.
@@ -205,8 +315,8 @@ pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
     effect
 }
 
-/// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 21] = [
+/// The solver's hand-written entry points, as its compute ops name them (see [`entry_points`] for all).
+pub const ENTRY_POINTS: [&str; 30] = [
     "add_sources",
     "compute_vorticity",
     "vorticity_force",
@@ -228,6 +338,15 @@ pub const ENTRY_POINTS: [&str; 21] = [
     "correct_temperature",
     "correct_fuel",
     "mark_solids",
+    "pcg_setup",
+    "pcg_setup_finalize",
+    "pcg_start",
+    "pcg_smooth_dot",
+    "pcg_beta",
+    "pcg_apply",
+    "pcg_alpha",
+    "pcg_step",
+    "pcg_residual",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -259,7 +378,7 @@ impl AestraExtension for FluidExtension {
                 "Density Scratch",
                 ResourceLifetime::Transient,
             ),
-            (RESOURCE_PRESSURE, "Pressure", ResourceLifetime::Transient),
+            (RESOURCE_PRESSURE, "Pressure", ResourceLifetime::Persistent),
             (
                 RESOURCE_PRESSURE_NEXT,
                 "Pressure Scratch",
@@ -282,6 +401,31 @@ impl AestraExtension for FluidExtension {
                 ResourceLifetime::Transient,
             ),
             (RESOURCE_SOLID, "Solids", ResourceLifetime::Transient),
+            (
+                RESOURCE_PCG_VECTORS,
+                "Pressure Search Direction",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_MG_SOLUTION,
+                "Multigrid Solution",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_MG_RHS,
+                "Multigrid Right-Hand Side",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_MG_FLAGS,
+                "Multigrid Solid Flags",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_PCG_REDUCTION,
+                "Pressure Sums",
+                ResourceLifetime::Transient,
+            ),
             (
                 RESOURCE_TEMPERATURE,
                 "Temperature",
@@ -333,7 +477,7 @@ impl AestraExtension for FluidExtension {
         registry.register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM_SOLVER),
             wgsl: program_wgsl(),
-            entry_points: ENTRY_POINTS.iter().map(|entry| entry.to_string()).collect(),
+            entry_points: entry_points(),
         })?;
         registry.register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM_VOLUME),
@@ -420,9 +564,29 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
         InputMetadata::new(
             "pressure_iterations",
             "Pressure Iterations",
-            "Jacobi iterations of the pressure solve per tick.",
-            Value::U32(24),
+            "With Multigrid Pressure, the most iterations a tick's pressure solve may take before it \
+             stops short of the tolerance (each unused one still costs a little); without, the Jacobi \
+             sweeps it always takes.",
+            Value::U32(12),
             number(1.0, 1.0, Some(MAX_PRESSURE_ITERATIONS as f32)),
+        ),
+        InputMetadata::new(
+            "multigrid_pressure",
+            "Multigrid Pressure",
+            "Solves the pressure with multigrid-preconditioned conjugate gradients, until it is \
+             accurate to the tolerance: the fluid stays incompressible at any resolution. Off, a \
+             fixed number of Jacobi sweeps: cheaper on small grids, but leaves compression behind on \
+             large ones.",
+            Value::Bool(true),
+            InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "pressure_tolerance",
+            "Pressure Tolerance",
+            "With Multigrid Pressure, how small the solve's remaining error must be, relative to \
+             where it started, for it to stop.",
+            Value::Scalar(1e-3),
+            number(0.0001, 0.0, Some(1.0)),
         ),
         InputMetadata::new(
             "density_dissipation",
@@ -969,7 +1133,11 @@ impl ModuleLowerer for FluidModuleLowerer {
                          got {iterations}"
                     ));
                 }
-                for name in ["density_dissipation", "velocity_dissipation"] {
+                for name in [
+                    "density_dissipation",
+                    "velocity_dissipation",
+                    "pressure_tolerance",
+                ] {
                     if scalar(payload, name)? < 0.0 {
                         return Err(format!("'{name}' must not be negative"));
                     }
@@ -1040,8 +1208,14 @@ impl ModuleLowerer for FluidModuleLowerer {
 }
 
 /// The resources a fluid stage declares, in the binding order `solver.wgsl` expects; the fire grids
-/// only with combustion, last, so the others keep their bindings.
-fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<ResourceDescriptor> {
+/// only with combustion, last, so the others keep their bindings. The multigrid pressure solve's are
+/// always declared, sized for the solve only when it runs.
+fn resources(
+    resolution: u32,
+    constant_words: usize,
+    fire: bool,
+    multigrid: bool,
+) -> Vec<ResourceDescriptor> {
     let cells = u64::from(resolution).pow(3);
     let grid = |id: &str, bytes_per_cell: u64, lifetime| ResourceDescriptor {
         id: ResourceTypeId::new(id),
@@ -1053,7 +1227,8 @@ fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<Resource
         grid(RESOURCE_DENSITY, 4, ResourceLifetime::Persistent),
         grid(RESOURCE_VELOCITY_NEXT, 16, ResourceLifetime::Transient),
         grid(RESOURCE_DENSITY_NEXT, 4, ResourceLifetime::Transient),
-        grid(RESOURCE_PRESSURE, 4, ResourceLifetime::Transient),
+        // Persistent (fluid F5): each tick's solve starts from the last one's pressure.
+        grid(RESOURCE_PRESSURE, 4, ResourceLifetime::Persistent),
         grid(RESOURCE_PRESSURE_NEXT, 4, ResourceLifetime::Transient),
         grid(RESOURCE_DIVERGENCE, 4, ResourceLifetime::Transient),
         grid(RESOURCE_VORTICITY, 16, ResourceLifetime::Transient),
@@ -1074,6 +1249,30 @@ fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<Resource
     resources.push(grid(RESOURCE_VELOCITY_HAT, 16, ResourceLifetime::Transient));
     resources.push(grid(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
     resources.push(grid(RESOURCE_SOLID, 16, ResourceLifetime::Transient));
+    let (fine_cells, level_cells, groups) = if multigrid {
+        let levels = multigrid_levels(resolution);
+        (
+            cells,
+            levels.iter().map(|n| u64::from(*n).pow(3)).sum(),
+            u64::from(resolution / WORKGROUP).pow(3),
+        )
+    } else {
+        (1, 1, 1)
+    };
+    let scratch = |id: &str, bytes: u64| ResourceDescriptor {
+        id: ResourceTypeId::new(id),
+        // Never empty: a zero-sized resource cannot be bound.
+        bytes: bytes.max(16),
+        lifetime: ResourceLifetime::Transient,
+    };
+    resources.extend([
+        scratch(RESOURCE_PCG_VECTORS, fine_cells * 8),
+        scratch(RESOURCE_MG_SOLUTION, level_cells * 4),
+        scratch(RESOURCE_MG_RHS, level_cells * 4),
+        scratch(RESOURCE_MG_FLAGS, level_cells * 4),
+        // Two vec4 of scalars, then one partial sum per fine workgroup.
+        scratch(RESOURCE_PCG_REDUCTION, (2 + groups) * 16),
+    ]);
     if fire {
         resources.extend([
             grid(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
@@ -1135,6 +1334,9 @@ struct PackedStage {
     sharp: bool,
     /// Collider modules are present: solids are marked each tick.
     colliders: bool,
+    /// The pressure is solved by MGPCG to `tolerance` (fluid F5), not by Jacobi sweeps.
+    multigrid: bool,
+    tolerance: f32,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -1241,6 +1443,11 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         origin,
         sharp: words[11] != 0,
         colliders: !colliders.is_empty(),
+        multigrid: grid
+            .parameters
+            .get_bool("multigrid_pressure")
+            .unwrap_or(true),
+        tolerance: scalar(&grid.parameters, "pressure_tolerance")?,
         constants: words,
         fire: combustion.is_some(),
     })
@@ -1310,6 +1517,214 @@ fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
 const VOLUME_TEMPERATURE_SLOT: usize = 16;
 const VOLUME_OPEN_SIDES: usize = 19;
 
+/// One pass of the solver program.
+fn solver_op(entry: &str, accesses: Vec<ResourceAccess>, dispatch: StagedDispatch) -> ExecutionOp {
+    ExecutionOp::Compute(ComputeOp {
+        name: format!("fluid/{entry}"),
+        program: Some(ComputeProgramId::new(PROGRAM_SOLVER)),
+        entry_point: entry.into(),
+        accesses,
+        dispatch,
+    })
+}
+
+/// The dispatch covering an `n`³ level in 4³ workgroups.
+fn level_dispatch(n: u32) -> StagedDispatch {
+    let groups = n.div_ceil(WORKGROUP);
+    StagedDispatch {
+        x: groups,
+        y: groups,
+        z: groups,
+    }
+}
+
+/// Jacobi sweeps that ping-pong between the pressure grids: a pair per repeat, no copies; an odd
+/// count ends with one sweep copied back.
+fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
+    let relax = |back: bool| {
+        let (entry, from, to) = if back {
+            (
+                "relax_pressure_back",
+                RESOURCE_PRESSURE_NEXT,
+                RESOURCE_PRESSURE,
+            )
+        } else {
+            ("relax_pressure", RESOURCE_PRESSURE, RESOURCE_PRESSURE_NEXT)
+        };
+        solver_op(
+            entry,
+            vec![
+                ResourceAccess::read(from),
+                ResourceAccess::write(to),
+                ResourceAccess::read(RESOURCE_DIVERGENCE),
+                ResourceAccess::read(RESOURCE_SOLID),
+                ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
+            ],
+            dispatch,
+        )
+    };
+    let mut ops = Vec::new();
+    if iterations >= 2 {
+        ops.push(ExecutionOp::Repeat {
+            policy: RepeatPolicy::FixedCount(iterations / 2),
+            // The barriers close each sweep: the next reads what it wrote.
+            body: vec![
+                relax(false),
+                ExecutionOp::Barrier,
+                relax(true),
+                ExecutionOp::Barrier,
+            ],
+        });
+    }
+    if iterations % 2 == 1 {
+        ops.push(relax(false));
+        ops.push(ExecutionOp::Copy(CopyOp {
+            from: ResourceTypeId::new(RESOURCE_PRESSURE_NEXT),
+            to: ResourceTypeId::new(RESOURCE_PRESSURE),
+        }));
+    }
+    ops
+}
+
+/// The MGPCG pressure solve (fluid F5, `pressure.wgsl`): with colliders, every level's solid flags;
+/// the right-hand side; then conjugate-gradient iterations, each preconditioned by one V-cycle, in a
+/// repeat that stops on the device once the relative residual is at most `tolerance` — at most
+/// `iterations` times. No copies: the whole solve runs in one compute pass.
+fn multigrid_pressure(
+    resolution: u32,
+    iterations: u32,
+    tolerance: f32,
+    colliders: bool,
+) -> Vec<ExecutionOp> {
+    use ResourceAccess as Access;
+    let levels = multigrid_levels(resolution);
+    let fine = level_dispatch(resolution);
+    let single = StagedDispatch { x: 1, y: 1, z: 1 };
+    let constants = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
+    // A pass's own accesses, and what finding a cell's neighbours reads: the solid flags and the
+    // open sides.
+    let with_walls = |mut accesses: Vec<ResourceAccess>| {
+        accesses.extend([Access::read(RESOURCE_MG_FLAGS), constants()]);
+        accesses
+    };
+    let level_pass = |pass: LevelPass, level: usize| {
+        let accesses = match pass {
+            LevelPass::SmoothRed | LevelPass::SmoothBlack | LevelPass::ProlongSmooth => {
+                with_walls(vec![
+                    Access::read_write(RESOURCE_MG_SOLUTION),
+                    Access::read(RESOURCE_MG_RHS),
+                ])
+            }
+            LevelPass::RestrictSmooth => with_walls(vec![
+                Access::read_write(RESOURCE_MG_SOLUTION),
+                Access::read_write(RESOURCE_MG_RHS),
+            ]),
+            // The fine flags from the solids; a coarse level's from the finer one's.
+            LevelPass::Coarsen => vec![
+                Access::read_write(RESOURCE_MG_FLAGS),
+                Access::read(RESOURCE_SOLID),
+                constants(),
+            ],
+        };
+        solver_op(&pass.entry(level), accesses, level_dispatch(levels[level]))
+    };
+    // A single-workgroup pass summing the partials into the scalars.
+    let reduce = |entry: &str| {
+        solver_op(
+            entry,
+            vec![Access::read_write(RESOURCE_PCG_REDUCTION), constants()],
+            single,
+        )
+    };
+
+    let mut ops = Vec::new();
+    if colliders {
+        for level in 0..levels.len() {
+            ops.push(level_pass(LevelPass::Coarsen, level));
+        }
+    }
+    ops.push(solver_op(
+        "pcg_setup",
+        with_walls(vec![
+            Access::read(RESOURCE_DIVERGENCE),
+            Access::read(RESOURCE_PRESSURE),
+            Access::write(RESOURCE_MG_RHS),
+            Access::write(RESOURCE_PCG_REDUCTION),
+        ]),
+        fine,
+    ));
+    ops.push(reduce("pcg_setup_finalize"));
+    // r loses b's mean (a closed domain), and the first V-cycle's red sweep.
+    ops.push(solver_op(
+        "pcg_start",
+        with_walls(vec![
+            Access::read_write(RESOURCE_MG_RHS),
+            Access::read(RESOURCE_PCG_REDUCTION),
+            Access::write(RESOURCE_MG_SOLUTION),
+        ]),
+        fine,
+    ));
+
+    // One iteration: z = M⁻¹·r (a V-cycle, whose fine red sweep the previous pass took), β,
+    // p = z + β·p with q = A·p, α, x and r step with the next V-cycle's red sweep, |r| / |b|. Every
+    // level sweeps red, black on the way down and black, red on the way up — the coarsest red, black,
+    // red — a palindrome, so the cycle is symmetric.
+    let coarsest = levels.len() - 1;
+    let mut body = vec![level_pass(LevelPass::SmoothBlack, 0)];
+    for level in 1..=coarsest {
+        body.push(level_pass(LevelPass::RestrictSmooth, level));
+        body.push(level_pass(LevelPass::SmoothBlack, level));
+    }
+    body.push(level_pass(LevelPass::SmoothRed, coarsest));
+    for level in (0..coarsest).rev() {
+        body.push(level_pass(LevelPass::ProlongSmooth, level));
+        if level > 0 {
+            body.push(level_pass(LevelPass::SmoothRed, level));
+        }
+    }
+    // The fine level's last red sweep, with the partials of r·z.
+    body.push(solver_op(
+        "pcg_smooth_dot",
+        with_walls(vec![
+            Access::read_write(RESOURCE_MG_SOLUTION),
+            Access::read(RESOURCE_MG_RHS),
+            Access::write(RESOURCE_PCG_REDUCTION),
+        ]),
+        fine,
+    ));
+    body.push(reduce("pcg_beta"));
+    body.push(solver_op(
+        "pcg_apply",
+        with_walls(vec![
+            Access::read(RESOURCE_MG_SOLUTION),
+            Access::read_write(RESOURCE_PCG_VECTORS),
+            Access::read_write(RESOURCE_PCG_REDUCTION),
+        ]),
+        fine,
+    ));
+    body.push(reduce("pcg_alpha"));
+    body.push(solver_op(
+        "pcg_step",
+        with_walls(vec![
+            Access::read_write(RESOURCE_PRESSURE),
+            Access::read(RESOURCE_PCG_VECTORS),
+            Access::read_write(RESOURCE_MG_RHS),
+            Access::read_write(RESOURCE_PCG_REDUCTION),
+            Access::write(RESOURCE_MG_SOLUTION),
+        ]),
+        fine,
+    ));
+    body.push(reduce("pcg_residual"));
+    ops.push(ExecutionOp::Repeat {
+        policy: RepeatPolicy::UntilConverged {
+            residual: ResourceTypeId::new(RESOURCE_PCG_REDUCTION),
+            tolerance,
+            max: iterations,
+        },
+        body: with_barriers(body),
+    });
+    ops
+}
 /// Lowers a Fluid Solver stage into the solver's passes (see the crate docs).
 struct FluidSolverLowerer;
 
@@ -1355,6 +1770,8 @@ impl StageLowerer for FluidSolverLowerer {
             fire,
             sharp,
             colliders,
+            multigrid,
+            tolerance,
         } = pack_constants(input.modules)?;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
@@ -1537,44 +1954,12 @@ impl StageLowerer for FluidSolverLowerer {
                 constants_read(),
             ],
         ));
-        // Jacobi sweeps ping-pong between the pressure grids: a pair per repeat, no copies; an odd
-        // count ends with one sweep copied back.
-        let relax = |back: bool| {
-            let (entry, from, to) = if back {
-                (
-                    "relax_pressure_back",
-                    RESOURCE_PRESSURE_NEXT,
-                    RESOURCE_PRESSURE,
-                )
-            } else {
-                ("relax_pressure", RESOURCE_PRESSURE, RESOURCE_PRESSURE_NEXT)
-            };
-            pass(
-                entry,
-                vec![
-                    read(from),
-                    write(to),
-                    read(RESOURCE_DIVERGENCE),
-                    read(RESOURCE_SOLID),
-                    constants_read(),
-                ],
-            )
-        };
-        if iterations >= 2 {
-            steps.push(ExecutionOp::Repeat {
-                policy: RepeatPolicy::FixedCount(iterations / 2),
-                // The barriers close each sweep: the next reads what it wrote.
-                body: vec![
-                    relax(false),
-                    ExecutionOp::Barrier,
-                    relax(true),
-                    ExecutionOp::Barrier,
-                ],
-            });
-        }
-        if iterations % 2 == 1 {
-            steps.push(relax(false));
-            steps.push(copy(RESOURCE_PRESSURE_NEXT, RESOURCE_PRESSURE));
+        if multigrid {
+            steps.extend(multigrid_pressure(
+                resolution, iterations, tolerance, colliders,
+            ));
+        } else {
+            steps.extend(jacobi_pressure(iterations, dispatch));
         }
         steps.push(pass(
             "project",
@@ -1632,7 +2017,7 @@ impl StageLowerer for FluidSolverLowerer {
         }
 
         Ok(ExecutionBlock {
-            resources: resources(resolution, constants.len(), fire),
+            resources: resources(resolution, constants.len(), fire, multigrid),
             ops: with_barriers(steps),
             constants,
             // The persistent grids, for debug views, field sampling and renderers.
