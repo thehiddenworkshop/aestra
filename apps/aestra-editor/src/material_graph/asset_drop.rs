@@ -23,6 +23,7 @@ pub(crate) struct GraphDropTarget {
 }
 
 impl GraphDropTarget {
+    #[cfg(test)]
     pub(crate) fn program(session: &EditorSession, id: MaterialProgramId) -> Self {
         Self::program_for(session, id, &session.material_target)
     }
@@ -37,6 +38,7 @@ impl GraphDropTarget {
             effect: session.effect.id,
         }
     }
+    #[cfg(test)]
     pub(crate) fn function(session: &EditorSession, id: MaterialFunctionId) -> Self {
         Self::function_for(session, id, &session.material_target)
     }
