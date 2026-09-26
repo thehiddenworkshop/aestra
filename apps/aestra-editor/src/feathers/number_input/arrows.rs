@@ -142,6 +142,106 @@ fn sync_visibility(
     }
 }
 
+fn activate_arrow(
+    activate: On<Activate>,
+    arrows: Query<&NumberArrow>,
+    disabled: Query<(), With<InteractionDisabled>>,
+    parents: Query<&ChildOf>,
+    mut commands: Commands,
+) {
+    let Ok(arrow) = arrows.get(activate.entity) else {
+        return;
+    };
+    if disabled.contains(arrow.owner)
+        || parents
+            .iter_ancestors(activate.entity)
+            .any(|entity| disabled.contains(entity))
+    {
+        return;
+    }
+    commands.trigger(StepNumber {
+        entity: arrow.owner,
+        direction: arrow.direction,
+    });
+}
+
+fn step_number(
+    step: On<StepNumber>,
+    inputs: Query<(&NumberFormat, Option<&ScrubbableNumber>), Without<CustomNumberStep>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    children: Query<&Children>,
+    mut texts: Query<&mut EditableText>,
+    mut commands: Commands,
+) {
+    let Ok((format, scrub)) = inputs.get(step.entity) else {
+        return;
+    };
+    let Some(text) = children
+        .iter_descendants(step.entity)
+        .find_map(|entity| texts.get(entity).ok().map(|text| text.value().to_string()))
+    else {
+        return;
+    };
+    let multiplier = scrub_multiplier(
+        keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight),
+    );
+    macro_rules! change {
+        ($value:expr, $text:expr) => {{
+            replace_number_text(step.entity, $text, &children, &mut texts);
+            commands.trigger(ValueChange {
+                source: step.entity,
+                value: $value,
+                is_final: true,
+            });
+        }};
+    }
+    match format {
+        NumberFormat::F32 => {
+            let Ok(value) = text.parse::<f32>() else {
+                return;
+            };
+            let config =
+                scrub
+                    .copied()
+                    .unwrap_or(ScrubbableNumber::new(value, -f32::MAX, f32::MAX, 0.01));
+            let next = config.normalize(
+                value + step.direction as f32 * config.step * multiplier,
+                multiplier,
+            );
+            if next.is_finite() {
+                change!(
+                    next,
+                    formatted(next, decimal_places(config.step * multiplier))
+                );
+            }
+        }
+        NumberFormat::F64 => {
+            let Ok(value) = text.parse::<f64>() else {
+                return;
+            };
+            let next = value + step.direction as f64 * 0.01 * multiplier as f64;
+            if next.is_finite() {
+                change!(next, next.to_string());
+            }
+        }
+        NumberFormat::I32 => {
+            let Ok(value) = text.parse::<i32>() else {
+                return;
+            };
+            let next = value.saturating_add(step.direction as i32 * (multiplier as i32).max(1));
+            change!(next, next.to_string());
+        }
+        NumberFormat::I64 => {
+            let Ok(value) = text.parse::<i64>() else {
+                return;
+            };
+            let next = value.saturating_add(step.direction as i64 * (multiplier as i64).max(1));
+            change!(next, next.to_string());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,105 +468,5 @@ mod tests {
             *app.world().resource::<Integers>().0.last().unwrap(),
             i64::MAX
         );
-    }
-}
-
-fn activate_arrow(
-    activate: On<Activate>,
-    arrows: Query<&NumberArrow>,
-    disabled: Query<(), With<InteractionDisabled>>,
-    parents: Query<&ChildOf>,
-    mut commands: Commands,
-) {
-    let Ok(arrow) = arrows.get(activate.entity) else {
-        return;
-    };
-    if disabled.contains(arrow.owner)
-        || parents
-            .iter_ancestors(activate.entity)
-            .any(|entity| disabled.contains(entity))
-    {
-        return;
-    }
-    commands.trigger(StepNumber {
-        entity: arrow.owner,
-        direction: arrow.direction,
-    });
-}
-
-fn step_number(
-    step: On<StepNumber>,
-    inputs: Query<(&NumberFormat, Option<&ScrubbableNumber>), Without<CustomNumberStep>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    children: Query<&Children>,
-    mut texts: Query<&mut EditableText>,
-    mut commands: Commands,
-) {
-    let Ok((format, scrub)) = inputs.get(step.entity) else {
-        return;
-    };
-    let Some(text) = children
-        .iter_descendants(step.entity)
-        .find_map(|entity| texts.get(entity).ok().map(|text| text.value().to_string()))
-    else {
-        return;
-    };
-    let multiplier = scrub_multiplier(
-        keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight),
-    );
-    macro_rules! change {
-        ($value:expr, $text:expr) => {{
-            replace_number_text(step.entity, $text, &children, &mut texts);
-            commands.trigger(ValueChange {
-                source: step.entity,
-                value: $value,
-                is_final: true,
-            });
-        }};
-    }
-    match format {
-        NumberFormat::F32 => {
-            let Ok(value) = text.parse::<f32>() else {
-                return;
-            };
-            let config =
-                scrub
-                    .copied()
-                    .unwrap_or(ScrubbableNumber::new(value, -f32::MAX, f32::MAX, 0.01));
-            let next = config.normalize(
-                value + step.direction as f32 * config.step * multiplier,
-                multiplier,
-            );
-            if next.is_finite() {
-                change!(
-                    next,
-                    formatted(next, decimal_places(config.step * multiplier))
-                );
-            }
-        }
-        NumberFormat::F64 => {
-            let Ok(value) = text.parse::<f64>() else {
-                return;
-            };
-            let next = value + step.direction as f64 * 0.01 * multiplier as f64;
-            if next.is_finite() {
-                change!(next, next.to_string());
-            }
-        }
-        NumberFormat::I32 => {
-            let Ok(value) = text.parse::<i32>() else {
-                return;
-            };
-            let next = value.saturating_add(step.direction as i32 * (multiplier as i32).max(1));
-            change!(next, next.to_string());
-        }
-        NumberFormat::I64 => {
-            let Ok(value) = text.parse::<i64>() else {
-                return;
-            };
-            let next = value.saturating_add(step.direction as i64 * (multiplier as i64).max(1));
-            change!(next, next.to_string());
-        }
     }
 }

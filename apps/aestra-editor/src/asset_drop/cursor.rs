@@ -240,6 +240,6 @@ mod tests {
             &data[(11 * 24 + 11) * 4..(11 * 24 + 11) * 4 + 4],
             &[255, 255, 255, 255]
         );
-        assert!(data.chunks_exact(4).any(|pixel| pixel == [24, 24, 24, 255]));
+        assert!(data.as_chunks::<4>().0.contains(&[24, 24, 24, 255]));
     }
 }

@@ -43,6 +43,16 @@ jobs:
           --test trail_uv_conformance
           -- --nocapture
 
+      - name: Validate coupled fluid replay on hardware
+        # Coupled fluid replay is too expensive for hosted software adapters. Keep it
+        # mandatory on hardware, with only one of these simulations running at a time.
+        # (The ordinary workspace test job reports these two tests as ignored.)
+        run: >-
+          cargo test --locked -p aestra-bevy-render --lib gpu::coupled_tests
+          -- --ignored --test-threads=1 --nocapture
+        env:
+          AESTRA_REQUIRE_GPU_CONFORMANCE: "1"
+
       - name: Validate editor viewport composition
         run: >-
           cargo run --locked -p aestra-viewer --

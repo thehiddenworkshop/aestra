@@ -4082,6 +4082,7 @@ mod coupled_tests {
 
     const CAPACITY: u32 = 256;
     const STRIDE: u32 = 9;
+    const TICKS_PER_SUBMISSION: u32 = 8;
 
     struct Scene {
         device: RenderDevice,
@@ -4105,6 +4106,11 @@ mod coupled_tests {
             compatible_surface: None,
         }))
         .ok()?;
+        // Hosted Windows runners can expose WARP even when no hardware GPU is available.
+        // These long replay checks belong on the native-GPU job, not a software adapter.
+        if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
+            return None;
+        }
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_limits: adapter.limits(),
             ..Default::default()
@@ -4115,8 +4121,21 @@ mod coupled_tests {
         // The fluid domain, lowered by the real plugin and run on a StageTimeline.
         let mut registry = ExtensionRegistry::builtin();
         registry.install(&aestra_fluid::FluidExtension).unwrap();
+        let mut source = aestra_fluid::smoke_effect(&registry);
+        let grid = source.simulation_stages[0]
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_fluid::MODULE_GRID)
+            .unwrap();
+        let aestra_core::ModuleParameters::Custom(values) = &mut grid.parameters else {
+            panic!("fluid grid parameters should be custom");
+        };
+        // Keep the same physical domain, with fewer cells: this checks replay/coupling,
+        // not solver accuracy, and does not need the showcase's full resolution.
+        values.insert("resolution".into(), aestra_core::Value::U32(16));
+        values.insert("cell_size".into(), aestra_core::Value::Scalar(6.0));
         let effect = aestra_compiler::EffectCompiler::with_extensions(registry.clone())
-            .compile(&aestra_fluid::smoke_effect(&registry))
+            .compile(&source)
             .unwrap();
         let block = &effect.extension_stages[0].block;
         let executor =
@@ -4239,34 +4258,48 @@ mod coupled_tests {
         /// One frame at `tick` (mid-tick, so the target is exactly that tick).
         fn frame(&mut self, tick: u32) {
             let time = (tick as f32 + 0.5) * STATEFUL_TICK_DT;
-            let mut encoder = self.device.create_command_encoder(&Default::default());
-            let host = aestra_gpu::GpuHostBindings { words: vec![0] };
-            let [particles, alive, indirect, counters] = &self.render;
-            run_coupled_stateful(
-                &self.device,
-                &mut encoder,
-                (&self.pipelines[0], &self.pipelines[1], &self.pipelines[2]),
-                &self.layout,
-                &mut self.states,
-                &self.dispatches,
-                Coupling {
-                    domains: &mut self.domains,
-                    inputs: StageInputs {
-                        host_bindings: Some(&host),
-                        ..Default::default()
+            loop {
+                let mut encoder = self.device.create_command_encoder(&Default::default());
+                let host = aestra_gpu::GpuHostBindings { words: vec![0] };
+                let [particles, alive, indirect, counters] = &self.render;
+                run_coupled_stateful(
+                    &self.device,
+                    &mut encoder,
+                    (&self.pipelines[0], &self.pipelines[1], &self.pipelines[2]),
+                    &self.layout,
+                    &mut self.states,
+                    &self.dispatches,
+                    Coupling {
+                        domains: &mut self.domains,
+                        inputs: StageInputs {
+                            host_bindings: Some(&host),
+                            ..Default::default()
+                        },
+                        follower: &self.follower,
                     },
-                    follower: &self.follower,
-                },
-                &StatefulRenderBuffers {
-                    particles,
-                    alive,
-                    indirect,
-                    counters,
-                },
-                time,
-                stateful_catchup_budget(SeekQuality::Exact),
-            );
-            self.queue.submit([encoder.finish()]);
+                    &StatefulRenderBuffers {
+                        particles,
+                        alive,
+                        indirect,
+                        counters,
+                    },
+                    time,
+                    TICKS_PER_SUBMISSION,
+                );
+                self.queue.submit([encoder.finish()]);
+                // Bound each native command buffer and drain it before encoding more replay work.
+                // In particular, a seek must not queue an entire fluid replay in one submission.
+                self.device
+                    .wgpu_device()
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(std::time::Duration::from_secs(120)),
+                    })
+                    .expect("coupled simulation submission should complete");
+                if self.states.iter().all(|state| state.last_tick == tick) {
+                    break;
+                }
+            }
         }
 
         /// Every emitter's persistent state and the domain's velocity, bit for bit.
@@ -4299,14 +4332,21 @@ mod coupled_tests {
         encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
         queue.submit([encoder.finish()]);
         let slice = readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
         device
             .wgpu_device()
             .poll(wgpu::PollType::Wait {
                 submission_index: None,
-                timeout: Some(std::time::Duration::from_secs(60)),
+                timeout: Some(std::time::Duration::from_secs(120)),
             })
-            .unwrap();
+            .expect("coupled simulation readback submission should complete");
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("coupled simulation mapping callback should run")
+            .expect("coupled simulation buffer should map successfully");
         let bytes = slice.get_mapped_range().to_vec();
         readback.unmap();
         bytes
@@ -4316,14 +4356,15 @@ mod coupled_tests {
         if scene.is_none() {
             assert!(
                 std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
-                "AESTRA_REQUIRE_GPU_CONFORMANCE is set but no GPU is available"
+                "AESTRA_REQUIRE_GPU_CONFORMANCE is set but no hardware GPU is available"
             );
-            eprintln!("skipping coupled conformance: no GPU");
+            eprintln!("skipping coupled conformance: no hardware GPU");
         }
         scene
     }
 
     #[test]
+    #[ignore = "requires a hardware GPU; exercised by the native GPU visual workflow"]
     fn coupled_particles_scrub_back_and_forth_to_the_uninterrupted_state() {
         let Some(mut uninterrupted) = require(scene(true)) else {
             return;
@@ -4356,6 +4397,7 @@ mod coupled_tests {
     }
 
     #[test]
+    #[ignore = "requires a hardware GPU; exercised by the native GPU visual workflow"]
     fn moving_an_emitter_keeps_the_run_live_and_a_seek_replays_the_new_placement() {
         let Some(mut moved) = require(scene(true)) else {
             return;
