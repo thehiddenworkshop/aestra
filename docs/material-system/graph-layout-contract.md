@@ -1087,7 +1087,7 @@ workspace formatting, `git diff --check` and the normal editor build passed.
 
 ## M10.5 implementation — graph gesture parity
 
-- The shared graph widget owns blank-canvas marquee selection, middle/right-button and Space+LMB
+- The shared graph widget owns blank-canvas marquee selection, middle-button and Space+LMB
   panning, cursor-centred wheel zoom, and modifier-aware node drags. Marquee selection supports
   replace, Shift-add and Control-toggle modes in both material and function views.
 - Node dragging keeps ordinary movement presentation-only. Alt-drag duplicates the active scoped
@@ -1100,8 +1100,8 @@ workspace formatting, `git diff --check` and the normal editor build passed.
 - Pin-to-pin drags retain typed connection validation. Releasing a pin drag on blank canvas opens
   the context-sensitive node search for both graph kinds. Right-click blank canvas opens general
   node search, while right-clicking a node, connected pin, or wire opens the corresponding semantic
-  context menu. A right-button pan suppresses its release click so it never opens a menu by
-  accident.
+  context menu. Right-button dragging does not pan or change the cursor; the right button is
+  reserved for context menus.
 - Double-clicking a project function-call node opens that function without creating a second
   interaction model. Function-node context menus expose the same open, duplicate and delete paths;
   optional function arguments can be disconnected back to their declared default, while required

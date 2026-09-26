@@ -1519,9 +1519,9 @@ fn graph_branch_nodes(
 
 fn open_material_graph_palette(
     mut click: On<Pointer<Click>>,
-    mut viewports: Query<(
+    viewports: Query<(
         &MaterialGraphViewport,
-        &mut FeathersGraphViewport,
+        &FeathersGraphViewport,
         &ComputedNode,
         &UiGlobalTransform,
     )>,
@@ -1554,11 +1554,7 @@ fn open_material_graph_palette(
         if graph_nodes.contains(entity) || palette_surfaces.contains(entity) {
             return;
         }
-        if let Ok((marker, mut viewport, computed, transform)) = viewports.get_mut(entity) {
-            if viewport.consume_suppressed_context_click() {
-                click.propagate(false);
-                return;
-            }
+        if let Ok((marker, viewport, computed, transform)) = viewports.get(entity) {
             let menu_position =
                 pointer_position_in_node(click.pointer_location.position, computed, transform);
             let socket_positions = collect_socket_positions(&sockets, &graph_nodes);
@@ -1634,12 +1630,7 @@ fn open_material_graph_palette(
 fn open_material_graph_pin_menu(
     mut click: On<Pointer<Click>>,
     sockets: Query<&MaterialGraphSocket>,
-    mut viewports: Query<(
-        &MaterialGraphViewport,
-        &mut FeathersGraphViewport,
-        &ComputedNode,
-        &UiGlobalTransform,
-    )>,
+    viewports: Query<(&MaterialGraphViewport, &ComputedNode, &UiGlobalTransform)>,
     parents: Query<&ChildOf>,
     wires: Query<&MaterialGraphWire>,
     mut palette: ResMut<MaterialGraphPaletteState>,
@@ -1661,8 +1652,8 @@ fn open_material_graph_pin_menu(
         entity = parent.parent();
     };
     let mut ancestor = entity;
-    let (viewport, mut shared_viewport, computed, transform) = loop {
-        if let Ok(viewport) = viewports.get_mut(ancestor) {
+    let (viewport, computed, transform) = loop {
+        if let Ok(viewport) = viewports.get(ancestor) {
             break viewport;
         }
         let Ok(parent) = parents.get(ancestor) else {
@@ -1670,10 +1661,6 @@ fn open_material_graph_pin_menu(
         };
         ancestor = parent.parent();
     };
-    if shared_viewport.consume_suppressed_context_click() {
-        click.propagate(false);
-        return;
-    }
     if viewport.program != socket.program {
         return;
     }
@@ -1722,7 +1709,6 @@ fn open_material_graph_node_menu(
     actions: Query<&MaterialGraphAction>,
     sockets: Query<(), With<MaterialGraphSocket>>,
     viewports: Query<(&MaterialGraphViewport, &ComputedNode, &UiGlobalTransform)>,
-    mut shared_viewports: Query<&mut FeathersGraphViewport>,
     parents: Query<&ChildOf>,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
@@ -1746,22 +1732,15 @@ fn open_material_graph_node_menu(
         entity = parent.parent();
     };
     let mut ancestor = entity;
-    let (viewport_entity, viewport, computed, transform) = loop {
+    let (viewport, computed, transform) = loop {
         if let Ok(viewport) = viewports.get(ancestor) {
-            break (ancestor, viewport.0, viewport.1, viewport.2);
+            break (viewport.0, viewport.1, viewport.2);
         }
         let Ok(parent) = parents.get(ancestor) else {
             return;
         };
         ancestor = parent.parent();
     };
-    if shared_viewports
-        .get_mut(viewport_entity)
-        .is_ok_and(|mut viewport| viewport.consume_suppressed_context_click())
-    {
-        click.propagate(false);
-        return;
-    }
     if viewport.program != action.program {
         return;
     }

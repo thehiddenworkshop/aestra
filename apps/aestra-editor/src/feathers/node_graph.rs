@@ -242,7 +242,6 @@ pub(crate) struct FeathersGraphViewport {
     selection_bounds: Option<Rect>,
     frame_request: Option<GraphFrameTarget>,
     measured_frame: Option<(GraphFrameTarget, GraphView)>,
-    suppress_context_click: bool,
 }
 
 impl FeathersGraphViewport {
@@ -252,10 +251,6 @@ impl FeathersGraphViewport {
 
     pub(crate) fn unproject_viewport_point(&self, point: Vec2) -> Vec2 {
         (point - self.pan) / self.zoom
-    }
-
-    pub(crate) fn consume_suppressed_context_click(&mut self) -> bool {
-        std::mem::take(&mut self.suppress_context_click)
     }
 }
 
@@ -882,7 +877,6 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
                 .initial_view
                 .is_none()
                 .then_some(GraphFrameTarget::All),
-            suppress_context_click: false,
         },
     ));
     let entity = viewport.id();
@@ -1813,8 +1807,6 @@ fn navigate_graph_viewports(
     if !was_panning {
         let button = if buttons.just_pressed(MouseButton::Middle) {
             Some(MouseButton::Middle)
-        } else if buttons.just_pressed(MouseButton::Right) {
-            Some(MouseButton::Right)
         } else if space && buttons.just_pressed(MouseButton::Left) {
             Some(MouseButton::Left)
         } else {
@@ -1823,11 +1815,6 @@ fn navigate_graph_viewports(
         if let (Some(viewport), Some(button)) = (hovered, button) {
             gesture.viewport = Some(viewport);
             gesture.button = Some(button);
-            if button == MouseButton::Right
-                && let Ok((_, _, _, mut viewport)) = viewports.get_mut(viewport)
-            {
-                viewport.suppress_context_click = false;
-            }
         }
     }
 
@@ -1846,9 +1833,6 @@ fn navigate_graph_viewports(
                 // Pan is screen-space, so neither display scale nor graph zoom belongs here.
                 viewport.pan += pointer_delta;
                 viewport.frame_request = None;
-                if button == MouseButton::Right {
-                    viewport.suppress_context_click = true;
-                }
             }
         }
         let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
@@ -2563,7 +2547,6 @@ mod tests {
                 selection_bounds: None,
                 frame_request: None,
                 measured_frame: None,
-                suppress_context_click: false,
             })
             .id();
         let node = app
@@ -2667,7 +2650,6 @@ mod tests {
                 selection_bounds: None,
                 frame_request: None,
                 measured_frame: None,
-                suppress_context_click: false,
             };
             let wire_endpoint_screen = viewport.project_graph_point(graph_point);
 

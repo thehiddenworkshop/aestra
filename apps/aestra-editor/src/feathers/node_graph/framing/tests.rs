@@ -40,7 +40,6 @@ fn wheel_navigation_uses_logical_viewport_size_and_cancels_pending_frame() {
                                 zoom: 0.25,
                             },
                         )),
-                        suppress_context_click: false,
                     },
                     ComputedNode {
                         size: size * scale,
@@ -82,6 +81,113 @@ struct Fixture {
     nodes: [Entity; 2],
     bodies: [Entity; 2],
     key: GraphViewKey,
+}
+
+#[test]
+fn graph_pan_only_uses_middle_or_space_left_and_resets_cursor_on_release() {
+    use bevy::ecs::system::RunSystemOnce;
+
+    for (button, space) in [
+        (MouseButton::Right, false),
+        (MouseButton::Right, true),
+        (MouseButton::Left, false),
+        (MouseButton::Middle, false),
+        (MouseButton::Left, true),
+    ] {
+        let mut app = App::new();
+        app.init_resource::<Messages<CursorMoved>>()
+            .init_resource::<Messages<MouseWheel>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<GraphPanGesture>()
+            .init_resource::<OverrideCursor>();
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), PrimaryWindow))
+            .id();
+        let pan = Vec2::new(60.0, -30.0);
+        let entity = app
+            .world_mut()
+            .spawn((
+                FeathersGraphViewport {
+                    key: "view".into(),
+                    pan,
+                    zoom: 0.5,
+                    content_size: Vec2::new(960.0, 640.0),
+                    selection_bounds: None,
+                    frame_request: Some(GraphFrameTarget::All),
+                    measured_frame: None,
+                },
+                ComputedNode::default(),
+                RelativeCursorPosition {
+                    cursor_over: true,
+                    normalized: Some(Vec2::ZERO),
+                },
+            ))
+            .id();
+        if space {
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::Space);
+        }
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(button);
+        let panning = button == MouseButton::Middle || (button == MouseButton::Left && space);
+        for (index, position) in [Vec2::new(100.0, 100.0), Vec2::new(140.0, 120.0)]
+            .into_iter()
+            .enumerate()
+        {
+            app.world_mut()
+                .resource_mut::<Messages<CursorMoved>>()
+                .write(CursorMoved {
+                    window,
+                    position,
+                    delta: None,
+                });
+            app.world_mut()
+                .run_system_once(navigate_graph_viewports)
+                .unwrap();
+            assert_eq!(
+                app.world().resource::<GraphPanGesture>().viewport,
+                panning.then_some(entity)
+            );
+            assert_eq!(
+                app.world().resource::<OverrideCursor>().0,
+                panning.then_some(EntityCursor::System(SystemCursorIcon::Grabbing))
+            );
+            let viewport = app.world().get::<FeathersGraphViewport>(entity).unwrap();
+            assert_eq!(
+                viewport.pan,
+                pan + if panning && index == 1 {
+                    Vec2::new(40.0, 20.0)
+                } else {
+                    Vec2::ZERO
+                }
+            );
+            assert_eq!(viewport.frame_request.is_none(), panning && index == 1);
+            app.world_mut()
+                .resource_mut::<ButtonInput<MouseButton>>()
+                .clear();
+        }
+        // Releasing Space also ends a left-button pan even with the mouse still held.
+        if space {
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .release(KeyCode::Space);
+        } else {
+            app.world_mut()
+                .resource_mut::<ButtonInput<MouseButton>>()
+                .release(button);
+        }
+        app.world_mut()
+            .run_system_once(navigate_graph_viewports)
+            .unwrap();
+        let gesture = app.world().resource::<GraphPanGesture>();
+        assert!(gesture.viewport.is_none());
+        assert!(gesture.button.is_none());
+        assert!(app.world().resource::<OverrideCursor>().0.is_none());
+    }
 }
 
 fn spawn(app: &mut App, root: Entity, function: bool, view: u64, zoom: f32) -> Fixture {

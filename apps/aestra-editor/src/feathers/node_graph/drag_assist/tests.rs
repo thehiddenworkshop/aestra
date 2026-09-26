@@ -65,7 +65,6 @@ fn setup_scene(zoom: f32, scale: f32) -> (App, Entity, Entity) {
             selection_bounds: None,
             frame_request: None,
             measured_frame: None,
-            suppress_context_click: false,
         })
         .id();
     let node = app

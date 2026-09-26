@@ -658,10 +658,10 @@ fn select_function_graph_canvas(
 
 fn open_function_graph_palette(
     mut click: On<Pointer<Click>>,
-    mut views: Query<(
+    views: Query<(
         &View,
         &ViewScope,
-        &mut FeathersGraphViewport,
+        &FeathersGraphViewport,
         &ComputedNode,
         &UiGlobalTransform,
     )>,
@@ -692,11 +692,7 @@ fn open_function_graph_palette(
         if controls.contains(entity) {
             return;
         }
-        if let Ok((view, scope, mut viewport, computed, transform)) = views.get_mut(entity) {
-            if viewport.consume_suppressed_context_click() {
-                click.propagate(false);
-                return;
-            }
+        if let Ok((view, scope, viewport, computed, transform)) = views.get(entity) {
             let position =
                 pointer_position_in_node(click.pointer_location.position, computed, transform);
             let socket_positions =
@@ -753,13 +749,7 @@ fn open_function_graph_palette(
 fn open_function_graph_pin_menu(
     mut click: On<Pointer<Click>>,
     sockets: Query<(Entity, &Socket)>,
-    mut views: Query<(
-        &View,
-        &ViewScope,
-        &mut FeathersGraphViewport,
-        &ComputedNode,
-        &UiGlobalTransform,
-    )>,
+    views: Query<(&View, &ViewScope, &ComputedNode, &UiGlobalTransform)>,
     wires: Query<(Entity, &Wire)>,
     parents: Query<&ChildOf>,
     mut menus: ResMut<FunctionGraphMenuState>,
@@ -776,19 +766,15 @@ fn open_function_graph_pin_menu(
         return;
     };
     let mut ancestor = socket_entity;
-    let (viewport_entity, scope, mut viewport, computed, transform) = loop {
-        if let Ok((_, scope, viewport, computed, transform)) = views.get_mut(ancestor) {
-            break (ancestor, *scope, viewport, computed, transform);
+    let (viewport_entity, scope, computed, transform) = loop {
+        if let Ok((_, scope, computed, transform)) = views.get(ancestor) {
+            break (ancestor, *scope, computed, transform);
         }
         let Ok(parent) = parents.get(ancestor) else {
             return;
         };
         ancestor = parent.parent();
     };
-    if viewport.consume_suppressed_context_click() {
-        click.propagate(false);
-        return;
-    }
     let connections = wires
         .iter()
         .filter(|(wire_entity, wire)| {
@@ -827,13 +813,7 @@ fn open_function_graph_node_menu(
     mut click: On<Pointer<Click>>,
     actions: Query<&FunctionGraphNodeAction>,
     sockets: Query<(), With<Socket>>,
-    mut views: Query<(
-        &View,
-        &ViewScope,
-        &mut FeathersGraphViewport,
-        &ComputedNode,
-        &UiGlobalTransform,
-    )>,
+    views: Query<(&View, &ViewScope, &ComputedNode, &UiGlobalTransform)>,
     parents: Query<&ChildOf>,
     mut selection: ResMut<crate::material_graph::MaterialGraphSelectionState>,
     mut menus: ResMut<FunctionGraphMenuState>,
@@ -856,19 +836,15 @@ fn open_function_graph_node_menu(
         entity = parent.parent();
     };
     let mut ancestor = entity;
-    let (scope, mut viewport, computed, transform) = loop {
-        if let Ok((_, scope, viewport, computed, transform)) = views.get_mut(ancestor) {
-            break (*scope, viewport, computed, transform);
+    let (scope, computed, transform) = loop {
+        if let Ok((_, scope, computed, transform)) = views.get(ancestor) {
+            break (*scope, computed, transform);
         }
         let Ok(parent) = parents.get(ancestor) else {
             return;
         };
         ancestor = parent.parent();
     };
-    if viewport.consume_suppressed_context_click() {
-        click.propagate(false);
-        return;
-    }
     if !selection.is_function_expression_selected(action.scope, action.owner, action.expression) {
         selection.select_function_expression(
             action.scope,
