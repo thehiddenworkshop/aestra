@@ -15,6 +15,12 @@
 @group(0) @binding(8) var<storage, read> constants: array<u32>;
 @group(0) @binding(9) var<storage, read> frame: array<u32>;
 @group(0) @binding(10) var<storage, read> aestra_host_bindings: array<u32>;
+// Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
+// a smoke-only block binds none of them and none of its passes reads them.
+@group(0) @binding(11) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(12) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(13) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(14) var<storage, read_write> fuel_next: array<f32>;
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
@@ -32,6 +38,11 @@ fn buoyancy_strength() -> f32 { return bitcast<f32>(constants[7]); }
 fn confinement_strength() -> f32 { return bitcast<f32>(constants[8]); }
 fn source_count() -> u32 { return constants[9]; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
+// The Combustion block follows the sources: ignition temperature, burn rate, heat release, smoke
+// yield, cooling, thermal lift.
+fn combustion(word: u32) -> f32 {
+    return bitcast<f32>(constants[SOURCE_BASE + source_count() * SOURCE_WORDS + word]);
+}
 
 // World space into the effect's space (frame words 4..15, rows): the grid lives in the effect's space
 // and moves with it; host inputs arrive in world space. `w` is 1 for a point, 0 for a vector.
@@ -247,4 +258,72 @@ fn project(@builtin(global_invocation_id) cell: vec3<u32>) {
         pressure[clamped_index(c + Z)] - pressure[clamped_index(c - Z)],
     ) * (0.5 / cell_size());
     velocity[i] = vec4<f32>(velocity[i].xyz - gradient, 0.0);
+}
+
+// ---- Fire (fluid F3): temperature and fuel, with the Combustion module ----
+
+// Injects heat and fuel from every source (source words 14 and 15: rates per second at the centre).
+@compute @workgroup_size(4, 4, 4)
+fn add_heat(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let i = cell_index(cell);
+    let delta = frame_dt();
+    let center = grid_origin() + (vec3<f32>(cell) + vec3<f32>(0.5)) * cell_size();
+    var heat = temperature[i];
+    var burnable = fuel[i];
+    for (var s = 0u; s < source_count(); s += 1u) {
+        let base = SOURCE_BASE + s * SOURCE_WORDS;
+        let radius = bitcast<f32>(constants[base + 3u]);
+        let distance_to_source = length(center - source_vec3(base, 0u, 8u, 1.0));
+        if (distance_to_source < radius) {
+            let falloff = 1.0 - distance_to_source / radius;
+            heat += bitcast<f32>(constants[base + 14u]) * falloff * delta;
+            burnable += bitcast<f32>(constants[base + 15u]) * falloff * delta;
+        }
+    }
+    temperature[i] = heat;
+    fuel[i] = burnable;
+}
+
+// Burns fuel where it is hot enough, releasing heat and smoke; hot gas rises, and cools.
+@compute @workgroup_size(4, 4, 4)
+fn combust(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let i = cell_index(cell);
+    let delta = frame_dt();
+    var heat = temperature[i];
+    var burnable = fuel[i];
+    if (heat > combustion(0u)) {
+        let burned = min(burnable, combustion(1u) * delta);
+        burnable -= burned;
+        heat += combustion(2u) * burned;
+        density[i] = density[i] + combustion(3u) * burned;
+    }
+    heat = heat / (1.0 + combustion(4u) * delta);
+    let v = velocity[i];
+    velocity[i] = vec4<f32>(v.x, v.y + combustion(5u) * heat * delta, v.z, v.w);
+    temperature[i] = heat;
+    fuel[i] = burnable;
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn advect_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let s = trilinear(backtrace(cell));
+    let x0 = mix(temperature[s.corners[0]], temperature[s.corners[1]], s.t.x);
+    let x1 = mix(temperature[s.corners[2]], temperature[s.corners[3]], s.t.x);
+    let x2 = mix(temperature[s.corners[4]], temperature[s.corners[5]], s.t.x);
+    let x3 = mix(temperature[s.corners[6]], temperature[s.corners[7]], s.t.x);
+    temperature_next[cell_index(cell)] = mix(mix(x0, x1, s.t.y), mix(x2, x3, s.t.y), s.t.z);
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn advect_fuel(@builtin(global_invocation_id) cell: vec3<u32>) {
+    if (!in_grid(cell)) { return; }
+    let s = trilinear(backtrace(cell));
+    let x0 = mix(fuel[s.corners[0]], fuel[s.corners[1]], s.t.x);
+    let x1 = mix(fuel[s.corners[2]], fuel[s.corners[3]], s.t.x);
+    let x2 = mix(fuel[s.corners[4]], fuel[s.corners[5]], s.t.x);
+    let x3 = mix(fuel[s.corners[6]], fuel[s.corners[7]], s.t.x);
+    fuel_next[cell_index(cell)] = mix(mix(x0, x1, s.t.y), mix(x2, x3, s.t.y), s.t.z);
 }

@@ -9,9 +9,10 @@ use aestra_core::{
     EffectAsset, EffectBinding, HostFieldRef, ModuleParameters, PropertySource, StageTypeId, Value,
 };
 use aestra_fluid::{
-    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VOLUME_LOOK, MODULE_VORTICITY,
-    PROGRAM_SOLVER, PROGRAM_VOLUME, RESOURCE_DENSITY, RESOURCE_VELOCITY, STAGE_FLUID_SOLVER,
-    VOLUME_ENTRY, smoke_effect,
+    FluidExtension, MODULE_COMBUSTION, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VOLUME_LOOK,
+    MODULE_VORTICITY, PROGRAM_SOLVER, PROGRAM_VOLUME, RESOURCE_DENSITY, RESOURCE_FUEL,
+    RESOURCE_TEMPERATURE, RESOURCE_VELOCITY, STAGE_FLUID_SOLVER, VOLUME_ENTRY, fire_effect,
+    smoke_effect,
 };
 use aestra_gpu::check_program_block;
 use aestra_runtime::{
@@ -76,7 +77,7 @@ fn the_solver_stage_is_registered_gpu_only_with_its_program() {
         .programs
         .get(&aestra_core::ComputeProgramId::new(PROGRAM_SOLVER))
         .unwrap();
-    assert_eq!(program.entry_points.len(), 8);
+    assert_eq!(program.entry_points.len(), 12);
     // The whole program — solver passes plus the host-binding accessors — validates.
     aestra_gpu::program_interface(program).expect("the solver program validates");
 }
@@ -360,6 +361,97 @@ fn invalid_looks_and_presentations_fail_to_compile() {
 }
 
 #[test]
+fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
+    let registry = fluid_registry();
+    let smoke = compile_stage(&registry, &smoke_effect(&registry));
+    let fire = compile_stage(&registry, &fire_effect(&registry));
+    check_program_block(&fire.block, &registry.programs).expect("fire accesses are truthful");
+    // add_heat + combust, then advect temperature and fuel.
+    assert_eq!(
+        fire.block.compute_pass_count(),
+        smoke.block.compute_pass_count() + 4
+    );
+    // The fire grids come last, so every smoke binding keeps its index.
+    for (index, resource) in smoke.block.resources.iter().enumerate() {
+        assert_eq!(fire.block.binding_of(&resource.id), Some(index as u32));
+    }
+    for (binding, resource) in [
+        RESOURCE_TEMPERATURE,
+        aestra_fluid::RESOURCE_TEMPERATURE_NEXT,
+        RESOURCE_FUEL,
+        aestra_fluid::RESOURCE_FUEL_NEXT,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            fire.block.binding_of(&ResourceTypeId::new(resource)),
+            Some(11 + binding as u32)
+        );
+        assert_eq!(
+            smoke.block.binding_of(&ResourceTypeId::new(resource)),
+            None,
+            "smoke allocates no fire grid"
+        );
+    }
+    for field in [RESOURCE_TEMPERATURE, RESOURCE_FUEL] {
+        assert_eq!(
+            fire.block
+                .field(&ResourceTypeId::new(field))
+                .unwrap()
+                .components,
+            1
+        );
+    }
+    // The Combustion block follows the one source's 16 words.
+    assert_eq!(fire.block.constants.len(), 10 + 16 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[26]), 0.5, "ignition");
+
+    // The look burns only where there is fire: the temperature is its slot 1.
+    let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =
+        (&fire.presentations[0], &smoke.presentations[0]);
+    assert_eq!(
+        fire_look.fields,
+        [
+            ResourceTypeId::new(RESOURCE_DENSITY),
+            ResourceTypeId::new(RESOURCE_TEMPERATURE)
+        ]
+    );
+    assert_eq!(fire_look.constants[16], 1);
+    assert_eq!(smoke_look.fields, [ResourceTypeId::new(RESOURCE_DENSITY)]);
+    assert_eq!(smoke_look.constants[16], u32::MAX);
+
+    // Round-trips like any stage.
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&fire_effect(&registry))
+        .unwrap();
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+            .unwrap();
+    assert_eq!(decoded.extension_stages, compiled.extension_stages);
+
+    // One Combustion per stage.
+    let mut twice = fire_effect(&registry);
+    let combustion = twice.simulation_stages[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == MODULE_COMBUSTION)
+        .unwrap()
+        .clone();
+    twice.simulation_stages[0]
+        .modules
+        .push(aestra_core::ModuleInstance {
+            id: aestra_core::ModuleId::new(),
+            ..combustion
+        });
+    assert!(
+        EffectCompiler::with_extensions(registry)
+            .compile(&twice)
+            .is_err()
+    );
+}
+
+#[test]
 fn a_missing_fluid_extension_is_diagnosed_and_the_data_preserved() {
     let effect = smoke_effect(&fluid_registry());
     let saved = effect.to_pretty_ron().unwrap();
@@ -391,6 +483,42 @@ fn the_committed_smoke_sample_compiles_and_survives_a_missing_plugin_unchanged()
     assert_eq!(density.components, 1);
 
     // Opened where the plugin is not linked: named, not dropped, and saved back unchanged.
+    let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&effect)
+        .unwrap_err();
+    assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
+    assert_eq!(
+        effect.to_pretty_ron().unwrap().replace("\r\n", "\n"),
+        source.replace("\r\n", "\n")
+    );
+}
+
+#[test]
+fn the_committed_fire_sample_burns_glows_and_survives_a_missing_plugin_unchanged() {
+    let source = include_str!("../../../sample-project/effects/fluid_fire.aestra.ron");
+    let effect = EffectAsset::from_ron(source).expect("the sample loads without plugin code");
+    let registry = fluid_registry();
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&effect)
+        .expect("the sample compiles with the plugin");
+    let stage = &compiled.extension_stages[0];
+    check_program_block(&stage.block, &registry.programs).unwrap();
+    assert!(
+        stage
+            .block
+            .field(&ResourceTypeId::new(RESOURCE_TEMPERATURE))
+            .is_some()
+    );
+    let StagePresentation::Volume(look) = &stage.presentations[0];
+    assert_eq!(look.fields.len(), 2, "smoke and fire");
+    assert!(
+        compiled
+            .emitters
+            .iter()
+            .all(|emitter| emitter.field_follow.is_some()),
+        "the embers ride the flames"
+    );
+
     let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
         .compile(&effect)
         .unwrap_err();

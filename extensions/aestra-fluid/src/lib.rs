@@ -12,9 +12,13 @@
 //! - four solver **modules**, edited by the schema-driven inspector like any built-in: *Fluid Grid*
 //!   (one per stage: resolution, cell size, pressure iterations, dissipation), *Density Source* (whose
 //!   position and velocity a host object can drive), *Buoyancy* and *Vorticity*;
+//! - *Combustion* (fluid F3): sources also emit fuel and heat; fuel burns above an ignition
+//!   temperature into heat and smoke, hot gas rises and cools. It adds the temperature and fuel grids
+//!   (declared last, only with this module, so a smoke-only stage allocates nothing for fire);
 //! - one presentation module, *Volume Look* (fluid F3): the stage lowerer turns it into a volume
-//!   presentation — the density ray-marched as lit, self-shadowed smoke — never into the solver, so a
-//!   look edit never restarts the simulation;
+//!   presentation — the density ray-marched as lit, self-shadowed smoke, and the temperature, when the
+//!   stage burns, as blackbody fire — never into the solver, so a look edit never restarts the
+//!   simulation;
 //! - two **programs**: the solver (`solver.wgsl`) whose entry points the stage lowers to, and the
 //!   volume look's march function (`volume.wgsl`).
 //!
@@ -22,10 +26,12 @@
 //!
 //! ```text
 //! add_sources (density/velocity injection, buoyancy)
+//! [add_heat → combust]                             with a Combustion module
 //! [compute_vorticity → confine_vorticity]          with a Vorticity module
 //! advect_velocity → copy
 //! compute_divergence → repeat ×N { relax_pressure → copy } → project
 //! advect_density → copy
+//! [advect_temperature → copy → advect_fuel → copy] with a Combustion module
 //! ```
 //!
 //! Every pass is a gather (no atomics), so same asset + seed + frames reproduces the same bits on the
@@ -60,6 +66,7 @@ pub const MODULE_DENSITY_SOURCE: &str = "org.example.aestra-fluid::module/densit
 pub const MODULE_BUOYANCY: &str = "org.example.aestra-fluid::module/buoyancy";
 pub const MODULE_VORTICITY: &str = "org.example.aestra-fluid::module/vorticity";
 pub const MODULE_VOLUME_LOOK: &str = "org.example.aestra-fluid::module/volume_look";
+pub const MODULE_COMBUSTION: &str = "org.example.aestra-fluid::module/combustion";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
 pub const PROGRAM_VOLUME: &str = "org.example.aestra-fluid::program/volume";
 /// The march function [`PROGRAM_VOLUME`] defines.
@@ -73,6 +80,11 @@ pub const RESOURCE_PRESSURE: &str = "org.example.aestra-fluid::resource/pressure
 pub const RESOURCE_PRESSURE_NEXT: &str = "org.example.aestra-fluid::resource/pressure_scratch";
 pub const RESOURCE_DIVERGENCE: &str = "org.example.aestra-fluid::resource/divergence_grid";
 pub const RESOURCE_VORTICITY: &str = "org.example.aestra-fluid::resource/vorticity_grid";
+pub const RESOURCE_TEMPERATURE: &str = "org.example.aestra-fluid::resource/temperature_grid";
+pub const RESOURCE_TEMPERATURE_NEXT: &str =
+    "org.example.aestra-fluid::resource/temperature_scratch";
+pub const RESOURCE_FUEL: &str = "org.example.aestra-fluid::resource/fuel_grid";
+pub const RESOURCE_FUEL_NEXT: &str = "org.example.aestra-fluid::resource/fuel_scratch";
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
@@ -145,8 +157,37 @@ pub fn smoke_effect(registry: &ExtensionRegistry) -> EffectAsset {
     effect
 }
 
+/// [`smoke_effect`] set on fire (fluid F3): a Combustion module, and a source emitting fuel and the
+/// heat that ignites it, with little smoke of its own — the smoke comes from burning.
+pub fn fire_effect(registry: &ExtensionRegistry) -> EffectAsset {
+    let mut effect = smoke_effect(registry);
+    effect.name = "Fluid Fire".into();
+    let domain = &mut effect.simulation_stages[0];
+    let mut combustion = registry
+        .modules
+        .instantiate(&ModuleTypeId::new(MODULE_COMBUSTION))
+        .expect("the fluid extension is installed in the registry");
+    combustion.stage = StageKind::Simulation(SMOKE_STAGE.into());
+    domain.modules.push(combustion);
+    let source = domain
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_DENSITY_SOURCE)
+        .expect("the smoke effect has a source");
+    if let aestra_core::ModuleParameters::Custom(values) = &mut source.parameters {
+        for (name, value) in [
+            ("density_rate", 0.5),
+            ("temperature_rate", 3.0),
+            ("fuel_rate", 4.0),
+        ] {
+            values.insert(name.into(), Value::Scalar(value));
+        }
+    }
+    effect
+}
+
 /// The solver's entry points, as its compute ops name them.
-pub const ENTRY_POINTS: [&str; 8] = [
+pub const ENTRY_POINTS: [&str; 12] = [
     "add_sources",
     "compute_vorticity",
     "confine_vorticity",
@@ -155,6 +196,10 @@ pub const ENTRY_POINTS: [&str; 8] = [
     "compute_divergence",
     "relax_pressure",
     "project",
+    "add_heat",
+    "combust",
+    "advect_temperature",
+    "advect_fuel",
 ];
 
 impl AestraExtension for FluidExtension {
@@ -198,6 +243,22 @@ impl AestraExtension for FluidExtension {
                 ResourceLifetime::Transient,
             ),
             (RESOURCE_VORTICITY, "Vorticity", ResourceLifetime::Transient),
+            (
+                RESOURCE_TEMPERATURE,
+                "Temperature",
+                ResourceLifetime::Persistent,
+            ),
+            (
+                RESOURCE_TEMPERATURE_NEXT,
+                "Temperature Scratch",
+                ResourceLifetime::Transient,
+            ),
+            (RESOURCE_FUEL, "Fuel", ResourceLifetime::Persistent),
+            (
+                RESOURCE_FUEL_NEXT,
+                "Fuel Scratch",
+                ResourceLifetime::Transient,
+            ),
         ] {
             registry.resources.register(ResourceTypeDescriptor {
                 type_id: ResourceTypeId::new(type_id),
@@ -217,6 +278,7 @@ impl AestraExtension for FluidExtension {
             density_source_metadata(requires.clone()),
             buoyancy_metadata(requires.clone()),
             vorticity_metadata(requires.clone()),
+            combustion_metadata(requires.clone()),
             volume_look_metadata(requires),
         ] {
             let type_id = metadata.type_id.clone();
@@ -379,9 +441,99 @@ fn density_source_metadata(requires: CapabilityExpression) -> ModuleMetadata {
         )
         .with_unit("units/s")
         .with_sources(bindable),
+        InputMetadata::new(
+            "temperature_rate",
+            "Temperature Rate",
+            "Heat added per second at the centre (needs a Combustion module).",
+            Value::Scalar(0.0),
+            number(0.1, 0.0, None),
+        ),
+        InputMetadata::new(
+            "fuel_rate",
+            "Fuel Rate",
+            "Fuel added per second at the centre (needs a Combustion module).",
+            Value::Scalar(0.0),
+            number(0.1, 0.0, None),
+        ),
     ])
     .with_cost(2)
 }
+
+/// Fire (fluid F3): fuel burns where the temperature passes the ignition point, releasing heat and
+/// smoke; hot gas rises and cools. Adds the temperature and fuel grids.
+fn combustion_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    let input = |name, display, description, value: f32, step| {
+        InputMetadata::new(
+            name,
+            display,
+            description,
+            Value::Scalar(value),
+            number(step, 0.0, None),
+        )
+    };
+    fluid_module(
+        MODULE_COMBUSTION,
+        "Combustion",
+        "Burns fuel into heat and smoke: fire. Sources emit the fuel and the heat that ignites it.",
+        requires,
+    )
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        input(
+            "ignition_temperature",
+            "Ignition Temperature",
+            "Temperature above which fuel burns.",
+            0.5,
+            0.05,
+        ),
+        input(
+            "burn_rate",
+            "Burn Rate",
+            "Fuel burned per second where it is hot enough.",
+            2.0,
+            0.1,
+        ),
+        input(
+            "heat_release",
+            "Heat Release",
+            "Temperature gained per unit of fuel burned.",
+            3.0,
+            0.1,
+        ),
+        input(
+            "smoke_yield",
+            "Smoke Yield",
+            "Density produced per unit of fuel burned.",
+            0.6,
+            0.05,
+        ),
+        input(
+            "cooling",
+            "Cooling",
+            "How fast temperature fades, per second.",
+            1.0,
+            0.05,
+        ),
+        input(
+            "thermal_lift",
+            "Thermal Lift",
+            "Upward acceleration per unit of temperature.",
+            30.0,
+            1.0,
+        ),
+    ])
+    .with_cost(3)
+}
+
+/// The Combustion inputs, in the order `solver.wgsl` reads them after the sources.
+const COMBUSTION_INPUTS: [&str; 6] = [
+    "ignition_temperature",
+    "burn_rate",
+    "heat_release",
+    "smoke_yield",
+    "cooling",
+    "thermal_lift",
+];
 
 fn buoyancy_metadata(requires: CapabilityExpression) -> ModuleMetadata {
     fluid_module(
@@ -496,6 +648,21 @@ fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             Value::U32(8),
             number(1.0, 0.0, Some(MAX_SHADOW_STEPS as f32)),
         ),
+        InputMetadata::new(
+            "fire_intensity",
+            "Fire Intensity",
+            "Brightness of burning gas (with a Combustion module).",
+            Value::Scalar(1.0),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "temperature_scale",
+            "Temperature Scale",
+            "Kelvin per unit of temperature: sets the blackbody colour of the flames.",
+            Value::Scalar(1000.0),
+            number(10.0, 0.0, None),
+        )
+        .with_unit("K"),
     ])
     .with_cost(4)
 }
@@ -568,8 +735,18 @@ impl ModuleLowerer for FluidModuleLowerer {
                 if scalar(payload, "radius")? <= 0.0 {
                     return Err("source radius must be positive".into());
                 }
-                scalar(payload, "density_rate")?;
+                for name in ["density_rate", "temperature_rate", "fuel_rate"] {
+                    scalar(payload, name)?;
+                }
                 "add_sources"
+            }
+            MODULE_COMBUSTION => {
+                for name in COMBUSTION_INPUTS {
+                    if scalar(payload, name)? < 0.0 {
+                        return Err(format!("'{name}' must not be negative"));
+                    }
+                }
+                "combust"
             }
             MODULE_BUOYANCY => {
                 scalar(payload, "strength")?;
@@ -596,8 +773,9 @@ impl ModuleLowerer for FluidModuleLowerer {
     }
 }
 
-/// The resources a fluid stage declares, in the binding order `solver.wgsl` expects.
-fn resources(resolution: u32, constant_words: usize) -> Vec<ResourceDescriptor> {
+/// The resources a fluid stage declares, in the binding order `solver.wgsl` expects; the fire grids
+/// only with combustion, last, so the others keep their bindings.
+fn resources(resolution: u32, constant_words: usize, fire: bool) -> Vec<ResourceDescriptor> {
     let cells = u64::from(resolution).pow(3);
     let grid = |id: &str, bytes_per_cell: u64, lifetime| ResourceDescriptor {
         id: ResourceTypeId::new(id),
@@ -626,6 +804,14 @@ fn resources(resolution: u32, constant_words: usize) -> Vec<ResourceDescriptor> 
         bytes: 0,
         lifetime: ResourceLifetime::Persistent,
     });
+    if fire {
+        resources.extend([
+            grid(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
+            grid(RESOURCE_TEMPERATURE_NEXT, 4, ResourceLifetime::Transient),
+            grid(RESOURCE_FUEL, 4, ResourceLifetime::Persistent),
+            grid(RESOURCE_FUEL_NEXT, 4, ResourceLifetime::Transient),
+        ]);
+    }
     resources
 }
 
@@ -660,6 +846,8 @@ struct PackedStage {
     cell_size: f32,
     origin: [f32; 3],
     constants: Vec<u32>,
+    /// A Combustion module is present: the stage simulates temperature and fuel.
+    fire: bool,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -715,6 +903,19 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         words[base + 7] = scalar(&source.parameters, "density_rate")?.to_bits();
         words[base + 8..base + 11].copy_from_slice(&host_ref(source.host_fields.get("position"))?);
         words[base + 11..base + 14].copy_from_slice(&host_ref(source.host_fields.get("velocity"))?);
+        words[base + 14] = scalar(&source.parameters, "temperature_rate")?.to_bits();
+        words[base + 15] = scalar(&source.parameters, "fuel_rate")?.to_bits();
+    }
+    // The Combustion block follows the sources (see `combustion` in solver.wgsl).
+    let mut combustions = of(MODULE_COMBUSTION);
+    let combustion = combustions.next();
+    if combustions.next().is_some() {
+        return Err("a Fluid Solver stage takes one Combustion module".into());
+    }
+    if let Some(combustion) = combustion {
+        for name in COMBUSTION_INPUTS {
+            words.push(scalar(&combustion.parameters, name)?.to_bits());
+        }
     }
     Ok(PackedStage {
         resolution,
@@ -722,6 +923,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         cell_size,
         origin,
         constants: words,
+        fire: combustion.is_some(),
     })
 }
 
@@ -766,26 +968,45 @@ fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
     for (axis, value) in vec3(payload, "light_color")?.into_iter().enumerate() {
         words[12 + axis] = value.to_bits();
     }
+    // Fire: which field slot holds the temperature (none until `present` binds it), its glow, and
+    // how many kelvin one unit of temperature stands for.
+    words.extend([
+        NO_SLOT,
+        non_negative("fire_intensity")?.to_bits(),
+        non_negative("temperature_scale")?.to_bits(),
+    ]);
     Ok(words)
 }
+
+/// The volume look's constant word holding the temperature field's slot.
+const VOLUME_TEMPERATURE_SLOT: usize = 16;
 
 /// Lowers a Fluid Solver stage into the solver's passes (see the crate docs).
 struct FluidSolverLowerer;
 
 impl StageLowerer for FluidSolverLowerer {
-    /// A Volume Look draws the density grid as a lit volume.
+    /// A Volume Look draws the density grid as lit smoke, and the temperature grid — when the stage
+    /// burns — as blackbody fire.
     fn present(
         &self,
         input: &StageLoweringInput<'_>,
-        _block: &ExecutionBlock,
+        block: &ExecutionBlock,
     ) -> Result<Vec<StagePresentation>, String> {
+        let temperature = ResourceTypeId::new(RESOURCE_TEMPERATURE);
+        let fire = block.field(&temperature).is_some();
         modules_of(input.modules, MODULE_VOLUME_LOOK)
             .map(|look| {
+                let mut fields = vec![ResourceTypeId::new(RESOURCE_DENSITY)];
+                let mut constants = pack_volume(&look.parameters)?;
+                if fire {
+                    constants[VOLUME_TEMPERATURE_SLOT] = fields.len() as u32;
+                    fields.push(temperature.clone());
+                }
                 Ok(StagePresentation::Volume(VolumePresentation {
                     program: ComputeProgramId::new(PROGRAM_VOLUME),
                     entry_point: VOLUME_ENTRY.into(),
-                    fields: vec![ResourceTypeId::new(RESOURCE_DENSITY)],
-                    constants: pack_volume(&look.parameters)?,
+                    fields,
+                    constants,
                 }))
             })
             .collect()
@@ -798,6 +1019,7 @@ impl StageLowerer for FluidSolverLowerer {
             cell_size,
             origin,
             constants,
+            fire,
         } = pack_constants(input.modules)?;
         let groups = resolution / WORKGROUP;
         let dispatch = StagedDispatch {
@@ -836,6 +1058,29 @@ impl StageLowerer for FluidSolverLowerer {
                 read(AESTRA_RESOURCE_HOST_BINDINGS),
             ],
         )];
+        if fire {
+            steps.push(pass(
+                "add_heat",
+                vec![
+                    read_write(RESOURCE_TEMPERATURE),
+                    read_write(RESOURCE_FUEL),
+                    constants_read(),
+                    frame_read(),
+                    read(AESTRA_RESOURCE_HOST_BINDINGS),
+                ],
+            ));
+            steps.push(pass(
+                "combust",
+                vec![
+                    read_write(RESOURCE_VELOCITY),
+                    read_write(RESOURCE_DENSITY),
+                    read_write(RESOURCE_TEMPERATURE),
+                    read_write(RESOURCE_FUEL),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+        }
         if input
             .modules
             .iter()
@@ -913,13 +1158,38 @@ impl StageLowerer for FluidSolverLowerer {
             ],
         ));
         steps.push(copy(RESOURCE_DENSITY_NEXT, RESOURCE_DENSITY));
+        let mut fields = vec![(RESOURCE_VELOCITY, 4), (RESOURCE_DENSITY, 1)];
+        if fire {
+            for (entry, field, scratch) in [
+                (
+                    "advect_temperature",
+                    RESOURCE_TEMPERATURE,
+                    RESOURCE_TEMPERATURE_NEXT,
+                ),
+                ("advect_fuel", RESOURCE_FUEL, RESOURCE_FUEL_NEXT),
+            ] {
+                steps.push(pass(
+                    entry,
+                    vec![
+                        read(RESOURCE_VELOCITY),
+                        read(field),
+                        write(scratch),
+                        constants_read(),
+                        frame_read(),
+                    ],
+                ));
+                steps.push(copy(scratch, field));
+                fields.push((field, 1));
+            }
+        }
 
         Ok(ExecutionBlock {
-            resources: resources(resolution, constants.len()),
+            resources: resources(resolution, constants.len(), fire),
             ops: with_barriers(steps),
             constants,
             // The persistent grids, for debug views, field sampling and renderers.
-            fields: [(RESOURCE_VELOCITY, 4), (RESOURCE_DENSITY, 1)]
+            fields: fields
+                .into_iter()
                 .map(|(resource, components)| FieldLayout {
                     resource: ResourceTypeId::new(resource),
                     dims: [resolution; 3],
@@ -927,7 +1197,7 @@ impl StageLowerer for FluidSolverLowerer {
                     origin,
                     cell_size,
                 })
-                .into(),
+                .collect(),
         })
     }
 }

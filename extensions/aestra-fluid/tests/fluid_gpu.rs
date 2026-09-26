@@ -323,6 +323,97 @@ fn half_to_f32(bits: u16) -> f32 {
     }
 }
 
+/// The test grid set on fire: the source emits fuel and heat but no smoke of its own, and hot gas
+/// rises at the test scale.
+fn fire(registry: &ExtensionRegistry) -> EffectAsset {
+    let mut fire = effect(registry, false, 24);
+    let combustion = aestra_fluid::fire_effect(registry).simulation_stages[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_fluid::MODULE_COMBUSTION)
+        .unwrap()
+        .clone();
+    fire.simulation_stages[0].modules.push(combustion);
+    for (name, value) in [
+        ("density_rate", 0.0),
+        ("temperature_rate", 8.0),
+        ("fuel_rate", 4.0),
+    ] {
+        set_input(&mut fire, MODULE_DENSITY_SOURCE, name, Value::Scalar(value));
+    }
+    set_input(
+        &mut fire,
+        aestra_fluid::MODULE_COMBUSTION,
+        "thermal_lift",
+        Value::Scalar(1.0),
+    );
+    fire
+}
+
+#[test]
+fn fire_burns_fuel_into_heat_and_smoke_and_the_hot_gas_rises() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let effect = fire(&registry);
+    let burning = Fluid::new(&gpu, &registry, &effect);
+    burning.run(&gpu, 0..60);
+    let temperature = burning.floats(&gpu, aestra_fluid::RESOURCE_TEMPERATURE);
+    let fuel = burning.floats(&gpu, aestra_fluid::RESOURCE_FUEL);
+    let density = burning.floats(&gpu, RESOURCE_DENSITY);
+    let hottest = temperature.iter().copied().fold(0.0, f32::max);
+    assert!(hottest > 0.5, "the source heats past ignition ({hottest})");
+    let (smoke, _) = mass_and_centroid(&density);
+    assert!(
+        smoke > 0.01,
+        "with no smoke of its own, the source's smoke comes from burning ({smoke})"
+    );
+    // Without burning, the same fuel would pile up.
+    let mut unlit = effect.clone();
+    set_input(
+        &mut unlit,
+        aestra_fluid::MODULE_COMBUSTION,
+        "ignition_temperature",
+        Value::Scalar(1.0e6),
+    );
+    let unlit = Fluid::new(&gpu, &registry, &unlit);
+    unlit.run(&gpu, 0..60);
+    let fuel_total: f32 = fuel.iter().sum();
+    let unburned: f32 = unlit.floats(&gpu, aestra_fluid::RESOURCE_FUEL).iter().sum();
+    assert!(
+        fuel_total < unburned * 0.8,
+        "burning consumes fuel ({fuel_total} of {unburned})"
+    );
+    assert!(
+        mass_and_centroid(&unlit.floats(&gpu, RESOURCE_DENSITY)).0 < 1e-6,
+        "unlit fuel makes no smoke"
+    );
+
+    // The heat rises.
+    let (_, early) = mass_and_centroid(&temperature);
+    burning.run(&gpu, 60..90);
+    let (_, late) = mass_and_centroid(&burning.floats(&gpu, aestra_fluid::RESOURCE_TEMPERATURE));
+    assert!(late[1] > early[1], "hot gas rises ({early:?} → {late:?})");
+
+    // Temperature and fuel are state: a rerun reproduces them bit for bit.
+    let again = Fluid::new(&gpu, &registry, &effect);
+    again.run(&gpu, 0..90);
+    for resource in [
+        aestra_fluid::RESOURCE_TEMPERATURE,
+        aestra_fluid::RESOURCE_FUEL,
+    ] {
+        assert_eq!(
+            again
+                .stage
+                .read_resource(&gpu.device, &gpu.queue, resource)
+                .unwrap(),
+            burning
+                .stage
+                .read_resource(&gpu.device, &gpu.queue, resource)
+                .unwrap()
+        );
+    }
+}
+
 #[test]
 fn the_density_reaches_its_volume_texture_cell_for_cell() {
     let Some(gpu) = gpu() else { return };
