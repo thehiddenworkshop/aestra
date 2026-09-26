@@ -25,6 +25,7 @@ use aestra_compiler::{
 use bevy::ui::RelativeCursorPosition;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod clipboard;
 mod socket_palette;
 
 #[derive(Component, Clone, Copy)]
@@ -181,6 +182,7 @@ pub(super) fn register(app: &mut App) {
     app.init_resource::<ConnectionPreview>()
         .init_resource::<FunctionGraphMenuState>()
         .init_resource::<crate::material_graph::MaterialGraphSelectionState>()
+        .init_resource::<crate::material_graph::clipboard::GraphClipboard>()
         // Graph observers registered here (e.g. handle_function_graph_context_action) read the
         // viewport pan/zoom memory; own its presence so every context registering these observers —
         // including focused tests — has it, not just apps that also add the feathers node-graph plugin.
@@ -201,7 +203,14 @@ pub(super) fn register(app: &mut App) {
         .add_observer(drop_socket)
         .add_observer(constant_text)
         .add_observer(constant_number)
-        .add_systems(Update, (attach_wires, dismiss_function_graph_menu))
+        .add_systems(
+            Update,
+            (
+                attach_wires,
+                dismiss_function_graph_menu,
+                clipboard::keyboard,
+            ),
+        )
         .add_systems(
             PostUpdate,
             update_wires.after(bevy::ui::UiSystems::PostLayout),
@@ -1074,59 +1083,37 @@ fn duplicate_function_selection(
     if selected.is_empty() {
         selected.insert(anchor);
     }
-    let ordered = function
-        .expressions
-        .iter()
-        .filter(|expression| selected.contains(&expression.id))
-        .collect::<Vec<_>>();
-    let remapped = ordered
-        .iter()
-        .map(|expression| (expression.id, MaterialExpressionId::new()))
-        .collect::<BTreeMap<_, _>>();
-    let edits = ordered
-        .iter()
-        .enumerate()
-        .map(|(index, expression)| {
-            let mut kind = expression.kind.clone();
-            aestra_authoring::remap_expression_sources(&mut kind, &remapped);
-            Edit::Add {
-                expression: MaterialExpression {
-                    id: remapped[&expression.id],
-                    kind,
-                },
-                index: function.expressions.len() + index,
-            }
-        })
-        .collect::<Vec<_>>();
     let positions = graph_nodes
         .iter()
-        .filter(|(node, _)| node.owner == owner && selected.contains(&node.expression))
+        .filter(|(node, _)| {
+            node.owner == owner && node.scope == scope && selected.contains(&node.expression)
+        })
         .map(|(node, graph)| (node.expression, graph.position()))
         .collect::<BTreeMap<_, _>>();
     let graph_key = crate::material_graph::function_graph_memory_key(catalog.root(), owner);
-    let before = crate::material_graph::presentation::Snapshot::capture(
-        &graph_key, catalog, session, memory,
-    );
-    editor.edit_body(session, catalog, edits)?;
-    for (source, duplicate) in &remapped {
-        let position = positions
-            .get(source)
-            .copied()
-            .or_else(|| memory.node_position(&graph_key, &source.to_string()))
-            .unwrap_or(Vec2::ZERO)
-            + offset;
-        memory.place_node(&graph_key, duplicate.to_string(), position);
-    }
-    if let Some(before) = before {
-        before.attach(catalog, session, memory);
-    }
-    selection.select_function_expressions(
-        scope,
-        owner,
-        &remapped.values().copied().collect(),
-        GraphSelectionMode::Replace,
-    );
-    Ok(remapped.len())
+    let positions = selected
+        .iter()
+        .map(|id| {
+            (
+                *id,
+                positions
+                    .get(id)
+                    .copied()
+                    .or_else(|| memory.node_position(&graph_key, &id.to_string()))
+                    .unwrap_or(Vec2::ZERO),
+            )
+        })
+        .collect();
+    let fragment = crate::material_graph::clipboard::Fragment::capture(
+        &function.expressions,
+        &selected,
+        positions,
+        &[],
+        &[],
+    )?;
+    clipboard::insert(
+        &fragment, offset, owner, scope, editor, session, catalog, memory, selection,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

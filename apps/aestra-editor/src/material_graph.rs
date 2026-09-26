@@ -70,6 +70,7 @@ const COLUMN_WIDTH: f32 = 282.0;
 pub(crate) mod arrange;
 pub(crate) mod asset_drop;
 mod asset_preview;
+pub(crate) mod clipboard;
 mod function_layout;
 pub(crate) mod insertion;
 mod layout_adapter;
@@ -140,6 +141,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<crate::material_function_editor::graph::FunctionGraphMenuState>()
             .init_resource::<MaterialGraphSelectionState>()
+            .init_resource::<clipboard::GraphClipboard>()
             .init_resource::<MaterialGraphPreviewState>()
             .init_resource::<MaterialPresetPreviewState>()
             .init_resource::<MaterialGraphLayoutPersistence>()
@@ -2634,7 +2636,12 @@ fn handle_material_graph_context_actions(
 fn material_graph_keyboard_input(
     input: crate::input::ShortcutKeys,
     shortcuts: crate::input::ShortcutContext,
-    viewports: Query<(&MaterialGraphViewport, &RelativeCursorPosition)>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &RelativeCursorPosition,
+        &FeathersGraphViewport,
+        &ComputedNode,
+    )>,
     graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
     focus: Option<Res<InputFocus>>,
     editable_text: Query<(), With<EditableText>>,
@@ -2647,6 +2654,7 @@ fn material_graph_keyboard_input(
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut selection: ResMut<MaterialGraphSelectionState>,
     mut previews: ResMut<MaterialGraphPreviewState>,
+    mut clipboard: ResMut<clipboard::GraphClipboard>,
 ) {
     let editing_text = focus
         .as_ref()
@@ -2656,23 +2664,131 @@ fn material_graph_keyboard_input(
         return;
     }
     // Keyboard edits act on the graph under the cursor, in that viewport's own selection scope.
-    let Some((program, scope, target)) = viewports.iter().find_map(|(viewport, cursor)| {
-        cursor.cursor_over().then_some((
-            viewport.program,
-            viewport.scope,
-            viewport.editing_target.clone(),
-        ))
-    }) else {
+    let Some((program, scope, target, paste_position)) =
+        viewports
+            .iter()
+            .find_map(|(viewport, cursor, graph, computed)| {
+                cursor.cursor_over().then_some((
+                    viewport.program,
+                    viewport.scope,
+                    viewport.editing_target.clone(),
+                    cursor.normalized.map(|point| {
+                        graph.unproject_viewport_point((point + Vec2::splat(0.5)) * computed.size())
+                    }),
+                ))
+            })
+    else {
         return;
     };
-    if selection.program(scope) != Some(program) {
-        return;
-    }
-    let has_expressions = selection
-        .get(scope)
-        .is_some_and(|selection| !selection.expressions.is_empty());
-    let has_connection = selection.selected_connection(scope).is_some();
     for keys in input.iter() {
+        let has_expressions = selection.get(scope).is_some_and(|selection| {
+            selection.program == Some(program) && !selection.expressions.is_empty()
+        });
+        let has_connection = selection.program(scope) == Some(program)
+            && selection.selected_connection(scope).is_some();
+        if let Some(action) = clipboard::shortcut(keys) {
+            match action {
+                clipboard::Shortcut::Copy | clipboard::Shortcut::Cut if has_expressions => {
+                    let result = (|| {
+                        let source = session
+                            .graph_material_programs_for(&target, &catalog)?
+                            .into_iter()
+                            .find(|candidate| candidate.id == program)
+                            .ok_or("Material is unavailable")?;
+                        let selected = &selection.get(scope).unwrap().expressions;
+                        let positions = graph_nodes
+                            .iter()
+                            .filter(|(action, node)| {
+                                action.program == program
+                                    && node.graph_key() == material_graph_view_key(program)
+                            })
+                            .map(|(action, node)| (action.expression, node.position()))
+                            .collect::<BTreeMap<_, _>>();
+                        let key = material_graph_view_key(program);
+                        let positions = selected
+                            .iter()
+                            .map(|id| {
+                                (
+                                    *id,
+                                    positions
+                                        .get(id)
+                                        .copied()
+                                        .or_else(|| {
+                                            graph_memory.node_position(
+                                                &key,
+                                                &material_graph_expression_node_key(*id),
+                                            )
+                                        })
+                                        .unwrap_or(Vec2::ZERO),
+                                )
+                            })
+                            .collect();
+                        clipboard::Fragment::capture(
+                            &source.expressions,
+                            selected,
+                            positions,
+                            &source.disabled_expressions,
+                            &source.node_constants,
+                        )
+                        .map(|fragment| fragment.with_inline_defaults(&source))
+                    })();
+                    match result {
+                        Ok(fragment) => {
+                            session.status = format!("Copied {} node(s)", fragment.len());
+                            clipboard.fragment = Some(fragment);
+                            if action == clipboard::Shortcut::Cut {
+                                apply_material_graph_selection_edit(
+                                    MaterialGraphSelectionEdit::Delete,
+                                    scope,
+                                    program,
+                                    &target,
+                                    &graph_nodes,
+                                    &mut session,
+                                    &mut catalog,
+                                    &mut material_history,
+                                    &mut history_ledger,
+                                    &mut graph_memory,
+                                    &mut inspector,
+                                    &mut selection,
+                                    &mut previews,
+                                    None,
+                                );
+                                session.ui_revision += 1;
+                            }
+                        }
+                        Err(error) => session.status = format!("Could not copy nodes: {error}"),
+                    }
+                    continue;
+                }
+                clipboard::Shortcut::Paste => {
+                    if let Some(fragment) = &clipboard.fragment {
+                        let offset = paste_position
+                            .map_or(Vec2::splat(24.0), |position| fragment.offset_to(position));
+                        session.status = match clipboard::insert_material(
+                            fragment,
+                            offset,
+                            "Paste graph nodes",
+                            program,
+                            scope,
+                            &target,
+                            &mut session,
+                            &mut catalog,
+                            &mut material_history,
+                            &mut history_ledger,
+                            &mut graph_memory,
+                            &mut inspector,
+                            &mut selection,
+                        ) {
+                            Ok(count) => format!("Pasted {count} node(s)"),
+                            Err(error) => format!("Could not paste nodes: {error}"),
+                        };
+                        session.ui_revision += 1;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+        }
         let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
         let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
         let edit = if control && shift && keys.just_pressed(KeyCode::KeyE) && has_expressions {
@@ -2779,23 +2895,6 @@ fn apply_material_graph_selection_edit(
         .unwrap_or_default();
     let expressions = selected_expressions.iter().copied().collect::<Vec<_>>();
     let connection = selected.and_then(|selection| selection.connection);
-    let ordered = session
-        .graph_material_programs(catalog)
-        .ok()
-        .and_then(|programs| {
-            programs
-                .iter()
-                .find(|candidate| candidate.id == program)
-                .map(|program| {
-                    program
-                        .expressions
-                        .iter()
-                        .filter(|expression| selected_expressions.contains(&expression.id))
-                        .map(|expression| expression.id)
-                        .collect::<Vec<_>>()
-                })
-        })
-        .unwrap_or_default();
     let positions = graph_nodes
         .iter()
         .filter(|(action, _)| {
@@ -2811,6 +2910,60 @@ fn apply_material_graph_selection_edit(
         session.status = "Cannot edit nodes with invalid graph positions".into();
         return;
     }
+    if matches!(edit, MaterialGraphSelectionEdit::Duplicate) {
+        let result = (|| {
+            let source = session
+                .graph_material_programs(catalog)?
+                .into_iter()
+                .find(|candidate| candidate.id == program)
+                .ok_or("Material is unavailable")?;
+            let key = material_graph_view_key(program);
+            let positions = selected_expressions
+                .iter()
+                .map(|id| {
+                    (
+                        *id,
+                        positions
+                            .get(id)
+                            .copied()
+                            .or_else(|| {
+                                graph_memory
+                                    .node_position(&key, &material_graph_expression_node_key(*id))
+                            })
+                            .unwrap_or(Vec2::ZERO),
+                    )
+                })
+                .collect();
+            let fragment = clipboard::Fragment::capture(
+                &source.expressions,
+                &selected_expressions,
+                positions,
+                &source.disabled_expressions,
+                &source.node_constants,
+            )?
+            .with_inline_defaults(&source);
+            clipboard::insert_material(
+                &fragment,
+                duplicate_offset.unwrap_or(Vec2::splat(24.0)),
+                "Duplicate material graph nodes",
+                program,
+                scope,
+                target,
+                session,
+                catalog,
+                material_history,
+                history_ledger,
+                graph_memory,
+                inspector,
+                selection,
+            )
+        })();
+        session.status = match result {
+            Ok(count) => format!("Duplicated {count} material node(s)"),
+            Err(error) => format!("Could not duplicate material nodes: {error}"),
+        };
+        return;
+    }
     let (label, command) = match edit {
         MaterialGraphSelectionEdit::ExtractFunction => (
             "Extract material function",
@@ -2821,13 +2974,9 @@ fn apply_material_graph_selection_edit(
                 expressions: expressions.clone(),
             },
         ),
-        MaterialGraphSelectionEdit::Duplicate => (
-            "Duplicate material graph nodes",
-            MaterialToolCommand::DuplicateMaterialExpressions {
-                program,
-                expressions: expressions.clone(),
-            },
-        ),
+        MaterialGraphSelectionEdit::Duplicate => {
+            unreachable!("duplication uses the shared clipboard path")
+        }
         MaterialGraphSelectionEdit::Delete => (
             "Delete material graph nodes",
             MaterialToolCommand::DeleteMaterialExpressions {
@@ -2896,36 +3045,7 @@ fn apply_material_graph_selection_edit(
                     );
                 }
                 MaterialGraphSelectionEdit::Duplicate => {
-                    selected.expressions.clear();
-                    for (source, duplicate) in ordered.iter().zip(&plan.created_expressions) {
-                        let position = positions
-                            .get(source)
-                            .copied()
-                            .or_else(|| {
-                                graph_memory.node_position(
-                                    &graph_key,
-                                    &material_graph_expression_node_key(*source),
-                                )
-                            })
-                            .unwrap_or(Vec2::ZERO)
-                            + duplicate_offset.unwrap_or(Vec2::splat(24.0));
-                        graph_memory.place_node(
-                            graph_key.clone(),
-                            material_graph_expression_node_key(*duplicate),
-                            position,
-                        );
-                        selected.expressions.insert(*duplicate);
-                    }
-                    selected.connection = None;
-                    inspector.selected = plan
-                        .created_expressions
-                        .last()
-                        .copied()
-                        .map(|expression| (program, expression));
-                    session.status = format!(
-                        "Duplicated {} material node(s)",
-                        plan.created_expressions.len()
-                    );
+                    unreachable!("duplication uses the shared clipboard path");
                 }
                 MaterialGraphSelectionEdit::Delete => {
                     for expression in &expressions {
