@@ -35,20 +35,18 @@ fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 
 // World space into the effect's space (frame words 4..15, rows): the grid lives in the effect's space
 // and moves with it; host inputs arrive in world space. `w` is 1 for a point, 0 for a vector.
+// Rows are spelled out: a dynamically indexed vector write makes FXC (D3D12) unroll the enclosing
+// loops, which fails for the per-source loop.
+fn affine_row(base: u32, h: vec4<f32>) -> f32 {
+    return bitcast<f32>(frame[base]) * h.x
+        + bitcast<f32>(frame[base + 1u]) * h.y
+        + bitcast<f32>(frame[base + 2u]) * h.z
+        + bitcast<f32>(frame[base + 3u]) * h.w;
+}
+
 fn world_to_effect(v: vec3<f32>, w: f32) -> vec3<f32> {
     let h = vec4<f32>(v, w);
-    var out: vec3<f32>;
-    for (var row = 0u; row < 3u; row += 1u) {
-        let base = 4u + row * 4u;
-        let r = vec4<f32>(
-            bitcast<f32>(frame[base]),
-            bitcast<f32>(frame[base + 1u]),
-            bitcast<f32>(frame[base + 2u]),
-            bitcast<f32>(frame[base + 3u]),
-        );
-        out[row] = r.x * h.x + r.y * h.y + r.z * h.z + r.w * h.w;
-    }
-    return out;
+    return vec3<f32>(affine_row(4u, h), affine_row(8u, h), affine_row(12u, h));
 }
 
 fn in_grid(cell: vec3<u32>) -> bool {

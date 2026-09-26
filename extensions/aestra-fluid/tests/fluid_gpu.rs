@@ -226,6 +226,42 @@ fn mass_and_centroid(density: &[f32]) -> (f32, [f32; 3]) {
     (mass, centroid)
 }
 
+/// Every pipeline of the solver builds on each native backend present — D3D12 through FXC included,
+/// which rejects what Vulkan accepts (a dynamically indexed vector write forces loops to unroll).
+#[test]
+fn the_solver_builds_on_every_available_backend() {
+    let registry = registry();
+    let effect = EffectCompiler::with_extensions(registry.clone())
+        .compile(&smoke_effect(&registry))
+        .unwrap();
+    let block = &effect.extension_stages[0].block;
+    for backends in [
+        wgpu::Backends::VULKAN,
+        wgpu::Backends::DX12,
+        wgpu::Backends::METAL,
+    ] {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = backends;
+        descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::Fxc;
+        let instance = wgpu::Instance::new(descriptor);
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
+            continue;
+        };
+        let Ok((device, queue)) = pollster::block_on(adapter.request_device(&Default::default()))
+        else {
+            continue;
+        };
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let executor = StageExecutor::new(&device, &queue, block, &registry.programs, 4);
+        let error = pollster::block_on(scope.pop());
+        assert!(
+            executor.is_ok() && error.is_none(),
+            "{backends:?}: {:?} {error:?}",
+            executor.err()
+        );
+    }
+}
+
 #[test]
 fn rerunning_the_same_asset_seed_and_frames_reproduces_the_same_bits() {
     let Some(gpu) = gpu() else { return };
