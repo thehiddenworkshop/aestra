@@ -12,6 +12,7 @@
 //! - four solver **modules**, edited by the schema-driven inspector like any built-in: *Fluid Grid*
 //!   (one per stage: resolution, cell size, pressure iterations, dissipation), *Density Source* (whose
 //!   position and velocity a host object can drive), *Buoyancy* and *Vorticity*;
+//! - *Turbulence*: an animated noise push that breaks the regularity of a steady source;
 //! - *Combustion* (fluid F3): sources also emit fuel and heat; fuel burns above an ignition
 //!   temperature into heat and smoke, hot gas rises and cools. It adds the temperature and fuel grids
 //!   (declared last, only with this module, so a smoke-only stage allocates nothing for fire);
@@ -27,7 +28,7 @@
 //! ```text
 //! add_sources (density/velocity injection, buoyancy)
 //! [add_heat → combust]                             with a Combustion module
-//! apply_buoyancy (density and, with fire, temperature lift the y faces)
+//! apply_buoyancy (density and, with fire, temperature lift the y faces; a Turbulence module's push)
 //! [compute_vorticity → vorticity_force → apply_vorticity] with a Vorticity module
 //! advect_velocity → copy
 //! compute_divergence → repeat ×N { relax_pressure → copy } → project
@@ -66,6 +67,7 @@ pub const MODULE_GRID: &str = "org.example.aestra-fluid::module/grid";
 pub const MODULE_DENSITY_SOURCE: &str = "org.example.aestra-fluid::module/density_source";
 pub const MODULE_BUOYANCY: &str = "org.example.aestra-fluid::module/buoyancy";
 pub const MODULE_VORTICITY: &str = "org.example.aestra-fluid::module/vorticity";
+pub const MODULE_TURBULENCE: &str = "org.example.aestra-fluid::module/turbulence";
 pub const MODULE_VOLUME_LOOK: &str = "org.example.aestra-fluid::module/volume_look";
 pub const MODULE_COMBUSTION: &str = "org.example.aestra-fluid::module/combustion";
 pub const MODULE_SPHERE_COLLIDER: &str = "org.example.aestra-fluid::module/sphere_collider";
@@ -108,7 +110,7 @@ pub const MAX_SOURCES: usize = 8;
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 14;
+const SOURCE_BASE: usize = 18;
 /// Words one collider record takes (see `pack_collider`).
 const COLLIDER_WORDS: usize = 24;
 /// Colliders one stage packs into its constants.
@@ -314,6 +316,7 @@ impl AestraExtension for FluidExtension {
             density_source_metadata(requires.clone()),
             buoyancy_metadata(requires.clone()),
             vorticity_metadata(requires.clone()),
+            turbulence_metadata(requires.clone()),
             combustion_metadata(requires.clone()),
             collider_metadata(MODULE_SPHERE_COLLIDER, requires.clone()),
             collider_metadata(MODULE_BOX_COLLIDER, requires.clone()),
@@ -430,8 +433,10 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
         InputMetadata::new(
             "velocity_dissipation",
             "Velocity Dissipation",
-            "How fast motion fades, per second.",
-            Value::Scalar(0.05),
+            "How fast motion fades, per second. Sources, buoyancy and heat keep adding motion, and \
+             sharp advection keeps almost all of it: too little dissipation lets it build up until \
+             the whole grid churns and the smoke fills it.",
+            Value::Scalar(0.5),
             number(0.01, 0.0, None),
         ),
         InputMetadata::new(
@@ -762,6 +767,48 @@ fn vorticity_metadata(requires: CapabilityExpression) -> ModuleMetadata {
     .with_cost(2)
 }
 
+fn turbulence_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    fluid_module(
+        MODULE_TURBULENCE,
+        "Turbulence",
+        "Stirs the fluid with an ever-changing swirling push, so plumes and flames waver and break \
+         up like real ones instead of rising in a perfectly regular column.",
+        requires,
+    )
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        InputMetadata::new(
+            "strength",
+            "Strength",
+            "Acceleration of the push.",
+            Value::Scalar(20.0),
+            number(1.0, 0.0, None),
+        ),
+        InputMetadata::new(
+            "scale",
+            "Scale",
+            "Size of the largest swirls, in the effect's units.",
+            Value::Scalar(20.0),
+            number(0.5, 0.01, None),
+        ),
+        InputMetadata::new(
+            "evolution",
+            "Evolution",
+            "How many times per second the swirls renew (0 keeps them still).",
+            Value::Scalar(1.5),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "masked",
+            "Only In Smoke",
+            "Push only where there is smoke or heat, leaving the still air around it alone.",
+            Value::Bool(true),
+            InputControl::Toggle,
+        ),
+    ])
+    .with_cost(1)
+}
+
 fn colour() -> InputControl {
     InputControl::Vector {
         step: 0.01,
@@ -854,6 +901,14 @@ fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             number(10.0, 0.0, None),
         )
         .with_unit("K"),
+        InputMetadata::new(
+            "edge_fade",
+            "Open Edge Fade",
+            "How far in from an open side of the grid smoke and flames fade out, as a fraction of the \
+             grid, so they thin away instead of ending in a flat cut where they leave it.",
+            Value::Scalar(0.15),
+            number(0.01, 0.0, Some(0.5)),
+        ),
     ])
     .with_cost(4)
 }
@@ -957,6 +1012,15 @@ impl ModuleLowerer for FluidModuleLowerer {
                 scalar(payload, "strength")?;
                 "apply_vorticity"
             }
+            MODULE_TURBULENCE => {
+                if scalar(payload, "strength")? < 0.0 || scalar(payload, "evolution")? < 0.0 {
+                    return Err("turbulence strength and evolution must not be negative".into());
+                }
+                if scalar(payload, "scale")? <= 0.0 {
+                    return Err("turbulence scale must be positive".into());
+                }
+                "apply_buoyancy"
+            }
             MODULE_VOLUME_LOOK => {
                 pack_volume(payload)?;
                 VOLUME_ENTRY
@@ -1044,6 +1108,19 @@ fn modules_of<'a>(
         .filter(move |module| module.module_type.0 == type_id)
 }
 
+/// A Fluid Grid's open sides (fluid F4): bit 2·axis for the minimum side, 2·axis + 1 for the maximum.
+fn open_side_mask(grid: &PropertyBag) -> u32 {
+    let open = |name: &str| grid.get_bool(name).unwrap_or(false);
+    let mut sides = 0u32;
+    if open("open_top") {
+        sides |= OPEN_Y_MAX;
+    }
+    if open("open_sides") {
+        sides |= OPEN_X_MIN | OPEN_X_MAX | OPEN_Z_MIN | OPEN_Z_MAX;
+    }
+    sides
+}
+
 /// A stage's packed constants plus the grid placement its field layouts declare.
 struct PackedStage {
     resolution: u32,
@@ -1100,18 +1177,20 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     words[7] = strength(MODULE_BUOYANCY)?.to_bits();
     words[8] = strength(MODULE_VORTICITY)?.to_bits();
     words[9] = sources.len() as u32;
-    // Open sides (fluid F4): bit 2·axis for the minimum side, 2·axis + 1 for the maximum side.
-    let open = |name: &str| grid.parameters.get_bool(name).unwrap_or(false);
-    let mut sides = 0u32;
-    if open("open_top") {
-        sides |= OPEN_Y_MAX;
-    }
-    if open("open_sides") {
-        sides |= OPEN_X_MIN | OPEN_X_MAX | OPEN_Z_MIN | OPEN_Z_MAX;
-    }
-    words[10] = sides;
+    words[10] = open_side_mask(&grid.parameters);
     // MacCormack advection (fluid F4); off falls back to plain semi-Lagrangian.
     words[11] = u32::from(grid.parameters.get_bool("sharp_advection").unwrap_or(true));
+    // Turbulence: strength (0 without the module), noise frequency, evolution rate, mask flag.
+    let mut turbulences = of(MODULE_TURBULENCE);
+    if let Some(turbulence) = turbulences.next() {
+        words[14] = scalar(&turbulence.parameters, "strength")?.to_bits();
+        words[15] = (1.0 / scalar(&turbulence.parameters, "scale")?).to_bits();
+        words[16] = scalar(&turbulence.parameters, "evolution")?.to_bits();
+        words[17] = u32::from(turbulence.parameters.get_bool("masked").unwrap_or(true));
+    }
+    if turbulences.next().is_some() {
+        return Err("a Fluid Solver stage takes one Turbulence module".into());
+    }
     for (index, source) in sources.iter().enumerate() {
         let base = SOURCE_BASE + index * SOURCE_WORDS;
         let position = vec3(&source.parameters, "position")?;
@@ -1214,11 +1293,21 @@ fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
         non_negative("fire_intensity")?.to_bits(),
         non_negative("temperature_scale")?.to_bits(),
     ]);
+    // The grid's open sides (none until `present` reads them from the Fluid Grid) and the depth of
+    // the fade in from each.
+    let edge_fade = non_negative("edge_fade")?;
+    if edge_fade > 0.5 {
+        return Err(format!(
+            "the open edge fade must be at most 0.5, got {edge_fade}"
+        ));
+    }
+    words.extend([0, edge_fade.to_bits()]);
     Ok(words)
 }
 
-/// The volume look's constant word holding the temperature field's slot.
+/// The volume look's constant words holding the temperature field's slot and the open-side mask.
 const VOLUME_TEMPERATURE_SLOT: usize = 16;
+const VOLUME_OPEN_SIDES: usize = 19;
 
 /// Lowers a Fluid Solver stage into the solver's passes (see the crate docs).
 struct FluidSolverLowerer;
@@ -1233,10 +1322,14 @@ impl StageLowerer for FluidSolverLowerer {
     ) -> Result<Vec<StagePresentation>, String> {
         let temperature = ResourceTypeId::new(RESOURCE_TEMPERATURE);
         let fire = block.field(&temperature).is_some();
+        let open_sides = modules_of(input.modules, MODULE_GRID)
+            .next()
+            .map_or(0, |grid| open_side_mask(&grid.parameters));
         modules_of(input.modules, MODULE_VOLUME_LOOK)
             .map(|look| {
                 let mut fields = vec![ResourceTypeId::new(RESOURCE_DENSITY)];
                 let mut constants = pack_volume(&look.parameters)?;
+                constants[VOLUME_OPEN_SIDES] = open_sides;
                 if fire {
                     constants[VOLUME_TEMPERATURE_SLOT] = fields.len() as u32;
                     fields.push(temperature.clone());

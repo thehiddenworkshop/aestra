@@ -234,7 +234,7 @@ fn the_solver_builds_on_every_available_backend() {
     let registry = registry();
     // With a collider and fire, so every entry point is built.
     let mut everything = aestra_fluid::fire_effect(&registry);
-    with_collider(
+    with_module(
         &registry,
         &mut everything,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
@@ -935,7 +935,7 @@ fn particles_following_the_field_take_the_plumes_velocity() {
     );
 }
 
-fn with_collider(
+fn with_module(
     registry: &ExtensionRegistry,
     effect: &mut EffectAsset,
     type_id: &str,
@@ -1002,7 +1002,7 @@ fn a_moving_sphere_carves_a_wake() {
         let paddle_id = paddle.id;
         still.bindings = vec![paddle];
         if with_sphere {
-            let sphere = with_collider(&registry, &mut still, aestra_fluid::MODULE_SPHERE_COLLIDER);
+            let sphere = with_module(&registry, &mut still, aestra_fluid::MODULE_SPHERE_COLLIDER);
             set_module_input(&mut still, sphere, "radius", Value::Scalar(0.4));
             let module = still.simulation_stages[0]
                 .modules
@@ -1053,7 +1053,7 @@ fn a_still_collider_blocks_the_plume() {
     let Some(gpu) = gpu() else { return };
     let registry = registry();
     let mut blocked = effect(&registry, false, 40);
-    let block = with_collider(&registry, &mut blocked, aestra_fluid::MODULE_BOX_COLLIDER);
+    let block = with_module(&registry, &mut blocked, aestra_fluid::MODULE_BOX_COLLIDER);
     // A slab above the source, in the plume's path.
     set_module_input(
         &mut blocked,
@@ -1115,7 +1115,7 @@ fn a_sticky_surface_drags_the_fluid_and_a_slippery_one_does_not() {
         );
         // A slab across the whole grid whose surface moves in +x, like a conveyor belt: it stays
         // where it is and has no end faces pushing fluid, only its top surface moving along.
-        let slab = with_collider(&registry, &mut belt, aestra_fluid::MODULE_BOX_COLLIDER);
+        let slab = with_module(&registry, &mut belt, aestra_fluid::MODULE_BOX_COLLIDER);
         set_module_input(&mut belt, slab, "position", Value::Vec3([0.0, 1.0, 0.0]));
         set_module_input(
             &mut belt,
@@ -1319,4 +1319,65 @@ fn read_floats(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<f32> {
         .collect();
     readback.unmap();
     values
+}
+
+/// Turbulence: masked, it leaves still air perfectly still; unmasked, it stirs it. And a steady plume,
+/// which rises straight up the grid's middle on its own, is pushed off that line by it.
+#[test]
+fn turbulence_stirs_only_where_there_is_smoke_and_breaks_the_plume_s_symmetry() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let turbulent = |masked: bool, source: bool| {
+        let mut effect = effect(&registry, false, 20);
+        if !source {
+            set_input(
+                &mut effect,
+                MODULE_DENSITY_SOURCE,
+                "density_rate",
+                Value::Scalar(0.0),
+            );
+            set_input(
+                &mut effect,
+                MODULE_DENSITY_SOURCE,
+                "velocity",
+                Value::Vec3([0.0; 3]),
+            );
+        }
+        let id = with_module(&registry, &mut effect, aestra_fluid::MODULE_TURBULENCE);
+        set_module_input(&mut effect, id, "strength", Value::Scalar(6.0));
+        set_module_input(&mut effect, id, "scale", Value::Scalar(0.8));
+        set_module_input(&mut effect, id, "masked", Value::Bool(masked));
+        effect
+    };
+    let peak = |effect: &EffectAsset| {
+        let fluid = Fluid::new(&gpu, &registry, effect);
+        fluid.run(&gpu, 0..30);
+        fluid
+            .floats(&gpu, RESOURCE_VELOCITY)
+            .iter()
+            .fold(0.0f32, |peak, v| peak.max(v.abs()))
+    };
+    assert_eq!(
+        peak(&turbulent(true, false)),
+        0.0,
+        "masked: no smoke, no push"
+    );
+    assert!(
+        peak(&turbulent(false, false)) > 0.05,
+        "unmasked: the air is stirred"
+    );
+
+    let drift = |effect: &EffectAsset| {
+        let fluid = Fluid::new(&gpu, &registry, effect);
+        fluid.run(&gpu, 0..90);
+        let (_, centroid) = mass_and_centroid(&fluid.floats(&gpu, RESOURCE_DENSITY));
+        ((centroid[0] - CENTER[0]).powi(2) + (centroid[2] - CENTER[2]).powi(2)).sqrt()
+    };
+    let calm = drift(&effect(&registry, false, 20));
+    let stirred = drift(&turbulent(true, true));
+    eprintln!("plume off-axis: calm {calm}, stirred {stirred}");
+    assert!(
+        stirred > 10.0 * calm.max(1e-4),
+        "calm {calm}, stirred {stirred}"
+    );
 }

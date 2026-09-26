@@ -36,7 +36,7 @@
 
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
 const NO_SLOT: u32 = 0xffffffffu;
-const SOURCE_BASE: u32 = 14u;
+const SOURCE_BASE: u32 = 18u;
 const COLLIDER_WORDS: u32 = 24u;
 const SOURCE_WORDS: u32 = 16u;
 
@@ -57,7 +57,15 @@ fn sharp_advection() -> bool { return constants[11] != 0u; }
 // Colliders (fluid F4): how many, and the word their records start at (after sources and Combustion).
 fn collider_count() -> u32 { return constants[12]; }
 fn collider_base() -> u32 { return constants[13]; }
+// Turbulence: its acceleration, noise cycles per unit of length (1 / the largest swirls' size),
+// pattern renewals per second, and whether it acts only where there is smoke or heat.
+fn turbulence_strength() -> f32 { return bitcast<f32>(constants[14]); }
+fn turbulence_frequency() -> f32 { return bitcast<f32>(constants[15]); }
+fn turbulence_evolution() -> f32 { return bitcast<f32>(constants[16]); }
+fn turbulence_masked() -> bool { return constants[17] != 0u; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
+fn frame_time() -> f32 { return bitcast<f32>(frame[2]); }
+fn frame_seed() -> u32 { return frame[3]; }
 // The Combustion block follows the sources: ignition temperature, burn rate, heat release, smoke
 // yield, cooling, thermal lift.
 fn combustion(word: u32) -> f32 {
@@ -237,15 +245,102 @@ fn add_sources(@builtin(global_invocation_id) cell: vec3<u32>) {
     velocity[i] = vec4<f32>(v, 0.0);
 }
 
-// Buoyancy: dense (and, with fire, hot) fluid lifts each y face by the mean of its two cells.
+// A well-mixed 32-bit hash (PCG output permutation).
+fn hash_u32(x: u32) -> u32 {
+    let state = x * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// The pseudo-random gradient at lattice point `corner` of noise `seed`, each component in [-1, 1].
+fn lattice_gradient(corner: vec3<i32>, seed: u32) -> vec3<f32> {
+    let c = bitcast<vec3<u32>>(corner);
+    let h = hash_u32(c.x ^ hash_u32(c.y ^ hash_u32(c.z ^ seed)));
+    let g = vec3<u32>(h & 0x3ffu, (h >> 10u) & 0x3ffu, (h >> 20u) & 0x3ffu);
+    return vec3<f32>(g) / 511.5 - vec3<f32>(1.0);
+}
+
+// Gradient noise at `p` (lattice units), about [-1, 1], smooth to its second derivative.
+fn gradient_noise(p: vec3<f32>, seed: u32) -> f32 {
+    let base = floor(p);
+    let b = vec3<i32>(base);
+    let f = p - base;
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let n000 = dot(lattice_gradient(b, seed), f);
+    let n100 = dot(lattice_gradient(b + X, seed), f - vec3<f32>(X));
+    let n010 = dot(lattice_gradient(b + Y, seed), f - vec3<f32>(Y));
+    let n110 = dot(lattice_gradient(b + X + Y, seed), f - vec3<f32>(X + Y));
+    let n001 = dot(lattice_gradient(b + Z, seed), f - vec3<f32>(Z));
+    let n101 = dot(lattice_gradient(b + X + Z, seed), f - vec3<f32>(X + Z));
+    let n011 = dot(lattice_gradient(b + Y + Z, seed), f - vec3<f32>(Y + Z));
+    let n111 = dot(lattice_gradient(b + X + Y + Z, seed), f - vec3<f32>(X + Y + Z));
+    return mix(
+        mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+        mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+        u.z,
+    );
+}
+
+// Two octaves of one generation of turbulence noise.
+fn turbulence_octaves(p: vec3<f32>, seed: u32) -> f32 {
+    return gradient_noise(p, seed) + 0.5 * gradient_noise(2.0 * p + vec3<f32>(17.3), seed ^ 0x9e3779b9u);
+}
+
+// Component `axis` of the turbulence at `point` (effect space). The pattern renews `evolution` times
+// a second by cross-fading one generation into the next; the weights are normalised so its strength
+// does not dip between generations.
+fn turbulence_component(point: vec3<f32>, axis: u32) -> f32 {
+    let p = point * turbulence_frequency();
+    let age = max(frame_time() * turbulence_evolution(), 0.0);
+    let generation = u32(floor(age));
+    let s = smoothstep(0.0, 1.0, fract(age));
+    let seed = hash_u32(frame_seed() ^ (axis * 0x68e31da4u));
+    let current = turbulence_octaves(p, hash_u32(seed ^ generation));
+    let next = turbulence_octaves(p, hash_u32(seed ^ (generation + 1u)));
+    return ((1.0 - s) * current + s * next) * inverseSqrt((1.0 - s) * (1.0 - s) + s * s);
+}
+
+// The turbulence acceleration on `cell`'s three minimum faces. `here` and `below` are how much smoke
+// or heat the cell and its neighbour below each face hold: when masked, a face is pushed only as far
+// as the fluid on it is present, so still air stays still.
+fn turbulence_force(c: vec3<i32>, here: f32, below: vec3<f32>) -> vec3<f32> {
+    let strength = turbulence_strength();
+    if (strength == 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let h = cell_size();
+    let center = grid_origin() + (vec3<f32>(c) + vec3<f32>(0.5)) * h;
+    var mask = vec3<f32>(1.0);
+    if (turbulence_masked()) {
+        mask = clamp(0.5 * (vec3<f32>(here) + below), vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    return strength * mask * vec3<f32>(
+        turbulence_component(center - vec3<f32>(0.5 * h, 0.0, 0.0), 0u),
+        turbulence_component(center - vec3<f32>(0.0, 0.5 * h, 0.0), 1u),
+        turbulence_component(center - vec3<f32>(0.0, 0.0, 0.5 * h), 2u),
+    );
+}
+
+// Buoyancy: dense (and, with fire, hot) fluid lifts each y face by the mean of its two cells. The
+// turbulence acts in the same pass.
 @compute @workgroup_size(4, 4, 4)
 fn apply_buoyancy(@builtin(global_invocation_id) cell: vec3<u32>) {
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
-    let lifted = 0.5 * (density[i] + density[clamped_index(c - Y)]);
-    let v = velocity[i];
-    velocity[i] = vec4<f32>(v.x, v.y + buoyancy_strength() * lifted * frame_dt(), v.z, v.w);
+    let below = vec3<f32>(
+        density[clamped_index(c - X)],
+        density[clamped_index(c - Y)],
+        density[clamped_index(c - Z)],
+    );
+    let lift = buoyancy_strength() * 0.5 * (density[i] + below.y);
+    let force = vec3<f32>(0.0, lift, 0.0) + turbulence_force(c, density[i], below);
+    velocity[i] = vec4<f32>(velocity[i].xyz + force * frame_dt(), 0.0);
+}
+
+// How much smoke or heat a burning cell holds, for the turbulence mask.
+fn presence(i: u32) -> f32 {
+    return max(density[i], 0.0) + max(temperature[i], 0.0);
 }
 
 @compute @workgroup_size(4, 4, 4)
@@ -256,8 +351,13 @@ fn apply_buoyancy_fire(@builtin(global_invocation_id) cell: vec3<u32>) {
     let below = clamped_index(c - Y);
     let lift = buoyancy_strength() * 0.5 * (density[i] + density[below])
         + combustion(5u) * 0.5 * (temperature[i] + temperature[below]);
-    let v = velocity[i];
-    velocity[i] = vec4<f32>(v.x, v.y + lift * frame_dt(), v.z, v.w);
+    let neighbours = vec3<f32>(
+        presence(clamped_index(c - X)),
+        presence(below),
+        presence(clamped_index(c - Z)),
+    );
+    let force = vec3<f32>(0.0, lift, 0.0) + turbulence_force(c, presence(i), neighbours);
+    velocity[i] = vec4<f32>(velocity[i].xyz + force * frame_dt(), 0.0);
 }
 
 // Vorticity ω = ∇ × u of the cell-centred velocity (central differences); `w` holds |ω|.

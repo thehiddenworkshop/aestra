@@ -3,7 +3,7 @@
   "status": "succeeded",
   "errors": [],
   "effect": {
-    "id": "9cf9bf9d-7038-4ae1-bd47-38669ea514ce",
+    "id": "15cc71e8-5fe2-479d-add9-193329594619",
     "name": "Fluid Fire",
     "duration_seconds": 6.0,
     "playback_mode": "LoopContinuous",
@@ -198,7 +198,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 11518176
+      "value": 13287672
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -209,7 +209,7 @@
     },
     "emitters": [
       {
-        "id": "e59bad8a-2837-441e-8ed3-bdbd6117aac1",
+        "id": "3f4ad374-fc8d-40c6-b974-be71e049510f",
         "name": "Fluid Fire [root] / Embers",
         "alive_particles": 49,
         "peak_particles": 49,
@@ -221,7 +221,7 @@
   "instances": [
     {
       "clip_path": [],
-      "effect": "9cf9bf9d-7038-4ae1-bd47-38669ea514ce",
+      "effect": "15cc71e8-5fe2-479d-add9-193329594619",
       "name": "Fluid Fire",
       "metrics": {
         "trail_capacity": {
@@ -309,7 +309,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 11518176
+          "value": 13287672
         },
         "texture_memory_bytes": {
           "source": "estimated",
@@ -320,7 +320,7 @@
         },
         "emitters": [
           {
-            "id": "e59bad8a-2837-441e-8ed3-bdbd6117aac1",
+            "id": "3f4ad374-fc8d-40c6-b974-be71e049510f",
             "name": "Embers",
             "alive_particles": 49,
             "peak_particles": 49,

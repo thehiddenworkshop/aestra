@@ -9,10 +9,11 @@
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
     EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
-    ScalarRange, Value,
+    ModuleTypeId, ScalarRange, StageKind, Value,
 };
 use aestra_fluid::{
-    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_VORTICITY, smoke_effect,
+    FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_TURBULENCE, MODULE_VORTICITY,
+    smoke_effect,
 };
 
 const PATH: &str = "sample-project/effects/fluid_smoke.aestra.ron";
@@ -76,6 +77,13 @@ fn main() {
         follower("Smoke Puffs", 60.0, (3.0, 4.0), (0.0, 4.0), 0.0, 8.0),
         follower("Embers", 25.0, (1.5, 2.5), (10.0, 20.0), -20.0, 3.0),
     ];
+    // A gentle stir, so the plume wavers instead of rising as a regular column.
+    let mut turbulence = registry
+        .modules
+        .instantiate(&ModuleTypeId::new(MODULE_TURBULENCE))
+        .expect("the fluid extension is installed");
+    turbulence.stage = StageKind::Simulation(effect.simulation_stages[0].name.clone());
+    effect.simulation_stages[0].modules.push(turbulence);
 
     // A 120-unit box (48 cells of 2.5) around the origin; the source near its floor.
     set(&mut effect, MODULE_GRID, "resolution", Value::U32(48));
@@ -109,6 +117,12 @@ fn main() {
         MODULE_VORTICITY,
         "strength",
         Value::Scalar(0.5),
+    );
+    set(
+        &mut effect,
+        MODULE_TURBULENCE,
+        "strength",
+        Value::Scalar(30.0),
     );
     // Record the plugin requirement exactly as the editor does on save (extensible-stages M11).
     effect.extensions = registry.derive_requirements(&effect);

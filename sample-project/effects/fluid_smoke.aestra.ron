@@ -1,6 +1,6 @@
 (
     format_version: 4,
-    id: "ec2d06d5-ec75-4ddb-b925-543ebcefdfbd",
+    id: "8ba372dc-f6a5-4b30-a628-e30f5745718f",
     name: "Fluid Smoke",
     duration: 6.0,
     playback_mode: LoopContinuous,
@@ -22,20 +22,23 @@
             stage_type: "org.example.aestra-fluid::stage/fluid_solver",
             modules: [
                 (
-                    id: "a1deb523-4b41-4b91-be7c-6620e1d27f08",
+                    id: "5bc4a349-fd45-4187-9ef1-fb043da9ebf3",
                     module_type: "org.example.aestra-fluid::module/grid",
                     enabled: true,
                     parameters: Custom({
                         "cell_size": Scalar(2.5),
                         "center": Vec3((0.0, 40.0, 0.0)),
                         "density_dissipation": Scalar(0.1),
+                        "open_sides": Bool(false),
+                        "open_top": Bool(true),
                         "pressure_iterations": U32(24),
                         "resolution": U32(48),
-                        "velocity_dissipation": Scalar(0.05),
+                        "sharp_advection": Bool(true),
+                        "velocity_dissipation": Scalar(0.5),
                     }),
                 ),
                 (
-                    id: "28ba865a-c139-48b4-abeb-ab7d8b8f51a5",
+                    id: "d83f16a3-8d9d-4427-8846-fb3efd30d3bd",
                     module_type: "org.example.aestra-fluid::module/density_source",
                     enabled: true,
                     parameters: Custom({
@@ -48,7 +51,7 @@
                     }),
                 ),
                 (
-                    id: "bbaf1efb-2214-46f9-aa4f-0bab040650be",
+                    id: "0ea161fd-7840-42ef-976d-faa06caac5fc",
                     module_type: "org.example.aestra-fluid::module/buoyancy",
                     enabled: true,
                     parameters: Custom({
@@ -56,7 +59,7 @@
                     }),
                 ),
                 (
-                    id: "207e1073-d4f1-4be7-9a2a-8f6beea1f1f0",
+                    id: "089e4e13-eb15-4c8e-9e2f-5fe4fba7a8b0",
                     module_type: "org.example.aestra-fluid::module/vorticity",
                     enabled: true,
                     parameters: Custom({
@@ -64,12 +67,13 @@
                     }),
                 ),
                 (
-                    id: "caa6ca29-77d6-4f80-b302-fbd55efab8b2",
+                    id: "b205719c-95c5-4dfd-be6e-8b90fea5b9ed",
                     module_type: "org.example.aestra-fluid::module/volume_look",
                     enabled: true,
                     parameters: Custom({
                         "ambient": Scalar(0.3),
                         "color": Vec3((0.72, 0.74, 0.78)),
+                        "edge_fade": Scalar(0.15),
                         "fire_intensity": Scalar(1.0),
                         "light_color": Vec3((1.0, 0.96, 0.9)),
                         "light_direction": Vec3((-0.55, 0.75, -0.35)),
@@ -80,12 +84,23 @@
                         "temperature_scale": Scalar(1000.0),
                     }),
                 ),
+                (
+                    id: "b62767ae-06d4-416e-b3ab-936677fb1f4e",
+                    module_type: "org.example.aestra-fluid::module/turbulence",
+                    enabled: true,
+                    parameters: Custom({
+                        "evolution": Scalar(1.5),
+                        "masked": Bool(true),
+                        "scale": Scalar(20.0),
+                        "strength": Scalar(30.0),
+                    }),
+                ),
             ],
         ),
     ],
     emitters: [
         (
-            id: "ad2c0fa1-b034-440e-aad2-c97f57d1d5a3",
+            id: "6a146334-9d80-4d97-aec8-bcb2d74fc9be",
             name: "Smoke Puffs",
             enabled: true,
             transform: (
@@ -101,7 +116,7 @@
                 emitter_update: (
                     modules: [
                         (
-                            id: "74b67fc3-94af-4cdc-a412-ef6dfe17bc2a",
+                            id: "69828fb5-49aa-47af-996a-ab585345a494",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -114,7 +129,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "e3fe0821-09ae-451c-bc30-fea4c2c871f0",
+                            id: "c8a04a2a-138f-409d-a7af-abd36aebe5d2",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -124,7 +139,7 @@
                             ),
                         ),
                         (
-                            id: "dfab9898-975f-4c9b-ba12-ad57421ec8dc",
+                            id: "cecf0946-66c4-4d60-881c-d78e8adb5814",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -149,7 +164,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "3c2acf7d-dd6b-4ec3-a5f2-8e642c6b3965",
+                            id: "55496679-927d-4c74-8f72-2cbec45de349",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -159,7 +174,7 @@
                             ),
                         ),
                         (
-                            id: "087e8ff5-bf0a-4c23-b72c-b2b8bd4fc8ec",
+                            id: "43ffff90-1a20-4a6d-ac70-9fcdeec8c951",
                             module_type: "aestra.update.follow_field",
                             enabled: true,
                             parameters: FollowField(
@@ -167,12 +182,12 @@
                             ),
                         ),
                         (
-                            id: "b84615fe-878f-4818-90a6-cd541b700a33",
+                            id: "6f6b2750-2559-49c3-8d2a-f8093ef2b2b7",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "cc673556-6cce-4463-a83d-f427026db7ca",
+                                    id: "2db6acc7-2499-4b07-b472-e82dde29b2e3",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -189,7 +204,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "52a707cd-3121-40dc-b57d-8e96c2956adb",
+                                    id: "c13e6c9f-62ed-4a83-9e52-420720168436",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -206,7 +221,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "fde9cd30-6fb8-441f-94ea-2b1680bb7f21",
+                                    id: "e97e6921-2583-4d9a-b35c-a9397a757431",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -229,7 +244,7 @@
             ),
             renderers: [
                 (
-                    id: "1eb24251-86a9-4250-956e-b6f57fa41e89",
+                    id: "311b31fa-db58-469c-9d1e-cfc77d147b96",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",
@@ -238,7 +253,7 @@
             ],
         ),
         (
-            id: "e8e59a4a-ccac-4ed4-b4db-8b2a2e07581f",
+            id: "b0c5b846-d8a0-4452-8fcf-4c35dac09df3",
             name: "Embers",
             enabled: true,
             transform: (
@@ -254,7 +269,7 @@
                 emitter_update: (
                     modules: [
                         (
-                            id: "2aea508e-4867-468b-8382-dfb2b77ce2d1",
+                            id: "49c36c7e-a6f0-446a-8f56-3a375946626a",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -267,7 +282,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "993b4d8c-e121-42d7-acd8-d462b194af8c",
+                            id: "a389060f-fea2-499a-a006-5e8b41a055f8",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -277,7 +292,7 @@
                             ),
                         ),
                         (
-                            id: "64ef55d5-730e-43e5-aad2-f5560effb735",
+                            id: "0105a293-8b2d-4f56-950a-93b1eea13fd5",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -302,7 +317,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "8c40b0c9-280b-4be9-b7a9-f41d1c9c0e18",
+                            id: "ba4ffdf9-b3c2-4632-a018-645451eaed0c",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -312,7 +327,7 @@
                             ),
                         ),
                         (
-                            id: "815a8bac-aa50-41f6-9ccc-febe39249bbe",
+                            id: "bbc37281-8a7c-4bc9-9bbe-c2a92bd23b77",
                             module_type: "aestra.update.follow_field",
                             enabled: true,
                             parameters: FollowField(
@@ -320,12 +335,12 @@
                             ),
                         ),
                         (
-                            id: "02fc01f7-ec90-4430-83c3-480589570e79",
+                            id: "98725982-69f5-4214-9123-7dc303ed8abc",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "ed9b7384-c7c6-4b3f-a9ce-24bd06a42ae9",
+                                    id: "7ee9300d-3b06-4148-8160-77efdeb02250",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -342,7 +357,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "d571ef1a-c081-4305-aa7f-ff5ca06bd78d",
+                                    id: "e29b8910-85ba-4842-9b22-0d0e4319f39c",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -359,7 +374,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "baa3daca-b715-4cd5-8943-6f386cc66011",
+                                    id: "f9f20a18-5264-4e5c-b066-189fd8082767",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -382,7 +397,7 @@
             ),
             renderers: [
                 (
-                    id: "813da63e-06c3-48f3-81f5-64cbd1071c82",
+                    id: "1137ba47-e082-4540-b59e-dfaf053ec8a7",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-000000000001",

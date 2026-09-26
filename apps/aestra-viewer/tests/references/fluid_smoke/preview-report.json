@@ -3,7 +3,7 @@
   "status": "succeeded",
   "errors": [],
   "effect": {
-    "id": "ec2d06d5-ec75-4ddb-b925-543ebcefdfbd",
+    "id": "8ba372dc-f6a5-4b30-a628-e30f5745718f",
     "name": "Fluid Smoke",
     "duration_seconds": 6.0,
     "playback_mode": "LoopContinuous",
@@ -198,7 +198,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 9797848
+      "value": 11567344
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -209,14 +209,14 @@
     },
     "emitters": [
       {
-        "id": "ad2c0fa1-b034-440e-aad2-c97f57d1d5a3",
+        "id": "6a146334-9d80-4d97-aec8-bcb2d74fc9be",
         "name": "Fluid Smoke [root] / Smoke Puffs",
         "alive_particles": 214,
         "peak_particles": 214,
         "particle_capacity": 512
       },
       {
-        "id": "e8e59a4a-ccac-4ed4-b4db-8b2a2e07581f",
+        "id": "b0c5b846-d8a0-4452-8fcf-4c35dac09df3",
         "name": "Fluid Smoke [root] / Embers",
         "alive_particles": 50,
         "peak_particles": 52,
@@ -228,7 +228,7 @@
   "instances": [
     {
       "clip_path": [],
-      "effect": "ec2d06d5-ec75-4ddb-b925-543ebcefdfbd",
+      "effect": "8ba372dc-f6a5-4b30-a628-e30f5745718f",
       "name": "Fluid Smoke",
       "metrics": {
         "trail_capacity": {
@@ -316,7 +316,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 9797848
+          "value": 11567344
         },
         "texture_memory_bytes": {
           "source": "estimated",
@@ -327,14 +327,14 @@
         },
         "emitters": [
           {
-            "id": "ad2c0fa1-b034-440e-aad2-c97f57d1d5a3",
+            "id": "6a146334-9d80-4d97-aec8-bcb2d74fc9be",
             "name": "Smoke Puffs",
             "alive_particles": 214,
             "peak_particles": 214,
             "particle_capacity": 512
           },
           {
-            "id": "e8e59a4a-ccac-4ed4-b4db-8b2a2e07581f",
+            "id": "b0c5b846-d8a0-4452-8fcf-4c35dac09df3",
             "name": "Embers",
             "alive_particles": 50,
             "peak_particles": 52,

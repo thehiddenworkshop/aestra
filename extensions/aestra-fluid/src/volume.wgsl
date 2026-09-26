@@ -8,11 +8,31 @@
 //   8..10 light direction (effect space, towards the light, unit length)
 //   12..14 light colour
 //   16 temperature field slot (0xffffffff: no fire)   17 fire intensity   18 kelvin per unit
+//   19 open sides (bit 2·axis minimum side, 2·axis + 1 maximum side)
+//   20 fade depth in from an open side (fraction of the grid)
 
 const FLUID_NO_SLOT: u32 = 0xffffffffu;
 
+// Fades smoke and fire out towards the grid's open sides: fluid leaves through them, and without the
+// fade it would end in a flat cut there.
+fn fluid_edge_fade(uvw: vec3<f32>) -> f32 {
+    let open = aestra_volume_constant(19u);
+    let depth = aestra_volume_constant_f32(20u);
+    if (open == 0u || depth <= 0.0) {
+        return 1.0;
+    }
+    var fade = 1.0;
+    if ((open & 1u) != 0u) { fade = min(fade, uvw.x / depth); }
+    if ((open & 2u) != 0u) { fade = min(fade, (1.0 - uvw.x) / depth); }
+    if ((open & 4u) != 0u) { fade = min(fade, uvw.y / depth); }
+    if ((open & 8u) != 0u) { fade = min(fade, (1.0 - uvw.y) / depth); }
+    if ((open & 16u) != 0u) { fade = min(fade, uvw.z / depth); }
+    if ((open & 32u) != 0u) { fade = min(fade, (1.0 - uvw.z) / depth); }
+    return smoothstep(0.0, 1.0, fade);
+}
+
 fn fluid_density(uvw: vec3<f32>) -> f32 {
-    return max(aestra_volume_field(0u, uvw).x, 0.0);
+    return max(aestra_volume_field(0u, uvw).x, 0.0) * fluid_edge_fade(uvw);
 }
 
 // The colour of a blackbody at `kelvin` (Tanner Helland's fit of the Planckian locus), in linear RGB
@@ -40,7 +60,8 @@ fn fluid_blackbody(kelvin: f32) -> vec3<f32> {
 // Light the burning gas at `uvw` emits per unit length: blackbody-coloured, rising steeply with
 // temperature above the dull-red glow at ~600 K.
 fn fluid_fire(uvw: vec3<f32>, slot: u32) -> vec3<f32> {
-    let kelvin = max(aestra_volume_field(slot, uvw).x, 0.0) * aestra_volume_constant_f32(18u);
+    let kelvin = max(aestra_volume_field(slot, uvw).x, 0.0) * aestra_volume_constant_f32(18u)
+        * fluid_edge_fade(uvw);
     let glow = max(kelvin - 600.0, 0.0) / 1400.0;
     return fluid_blackbody(kelvin) * (glow * glow * glow) * aestra_volume_constant_f32(17u);
 }

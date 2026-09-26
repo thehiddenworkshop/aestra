@@ -169,7 +169,49 @@ fn sharp_advection_adds_the_maccormack_corrections_and_keeps_every_binding() {
     );
 }
 
-fn with_collider(
+#[test]
+fn turbulence_rides_the_buoyancy_pass_and_the_look_fades_at_open_sides() {
+    let registry = fluid_registry();
+    let calm = compile_stage(&registry, &smoke_effect(&registry));
+    assert_eq!(calm.block.constants[14], 0, "no turbulence: zero strength");
+    let mut effect = smoke_effect(&registry);
+    let turbulence = with_module(&registry, &mut effect, aestra_fluid::MODULE_TURBULENCE);
+    let ModuleParameters::Custom(values) = &mut effect.simulation_stages[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.id == turbulence)
+        .unwrap()
+        .parameters
+    else {
+        unreachable!()
+    };
+    values.insert("scale".into(), Value::Scalar(4.0));
+    values.insert("masked".into(), Value::Bool(false));
+    let stirred = compile_stage(&registry, &effect);
+    check_program_block(&stirred.block, &registry.programs).unwrap();
+    assert_eq!(
+        stirred.block.compute_pass_count(),
+        calm.block.compute_pass_count(),
+        "no pass of its own"
+    );
+    assert_eq!(stirred.block.resources, calm.block.resources);
+    let words = &stirred.block.constants;
+    assert_eq!(f32::from_bits(words[14]), 20.0, "strength");
+    assert_eq!(
+        f32::from_bits(words[15]),
+        0.25,
+        "noise cycles per unit: 1 / scale"
+    );
+    assert_eq!(f32::from_bits(words[16]), 1.5, "evolution");
+    assert_eq!(words[17], 0, "unmasked");
+
+    // The look knows the grid's open sides (the top, by default) and how deep to fade in from them.
+    let StagePresentation::Volume(look) = &calm.presentations[0];
+    assert_eq!(look.constants[19], 1 << 3, "the top is open");
+    assert_eq!(f32::from_bits(look.constants[20]), 0.15);
+}
+
+fn with_module(
     registry: &ExtensionRegistry,
     effect: &mut EffectAsset,
     type_id: &str,
@@ -195,7 +237,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
         aestra_fluid::MODULE_BOX_COLLIDER,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     ] {
-        with_collider(&registry, &mut effect, type_id);
+        with_module(&registry, &mut effect, type_id);
     }
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
@@ -226,7 +268,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;
-    assert_eq!(base, 14 + 16, "after the one source");
+    assert_eq!(base, 18 + 16, "after the one source");
     let kinds: Vec<u32> = (0..3).map(|index| words[base + index * 24]).collect();
     assert_eq!(kinds, [0, 1, 2], "sphere, box, capsule");
     assert_eq!(
@@ -241,7 +283,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
 fn a_host_object_can_drive_a_collider_and_invalid_colliders_fail() {
     let registry = fluid_registry();
     let mut effect = smoke_effect(&registry);
-    let sphere = with_collider(&registry, &mut effect, aestra_fluid::MODULE_SPHERE_COLLIDER);
+    let sphere = with_module(&registry, &mut effect, aestra_fluid::MODULE_SPHERE_COLLIDER);
     let object = EffectBinding::spatial("Paddle", BindingUpdateMode::Live);
     let object_id = object.id;
     effect.bindings = vec![object];
@@ -274,7 +316,7 @@ fn a_host_object_can_drive_a_collider_and_invalid_colliders_fail() {
     // At most four, and a positive radius.
     let mut crowded = smoke_effect(&registry);
     for _ in 0..5 {
-        with_collider(
+        with_module(
             &registry,
             &mut crowded,
             aestra_fluid::MODULE_SPHERE_COLLIDER,
@@ -286,7 +328,7 @@ fn a_host_object_can_drive_a_collider_and_invalid_colliders_fail() {
             .is_err()
     );
     let mut flat = smoke_effect(&registry);
-    with_collider(&registry, &mut flat, aestra_fluid::MODULE_CAPSULE_COLLIDER);
+    with_module(&registry, &mut flat, aestra_fluid::MODULE_CAPSULE_COLLIDER);
     set_input(
         &mut flat,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
@@ -390,23 +432,23 @@ fn host_bound_source_inputs_pack_their_slot_presence_bit_and_offset() {
             .insert(input.into(), HostFieldRef::new(emitter_id, field));
     }
     let stage = compile_stage(&registry, &effect);
-    // Source 0 starts at word 14; its references at +8 (position) and +11 (velocity).
+    // Source 0 starts at word 18; its references at +8 (position) and +11 (velocity).
     let words = &stage.block.constants;
     assert_eq!(words[9], 1, "one source");
     assert_eq!(
-        &words[22..25],
+        &words[26..29],
         &[0, 0, 0],
         "slot 0, bit 0 (position), offset 0"
     );
     assert_eq!(
-        &words[25..28],
+        &words[29..32],
         &[0, 1, 3],
         "linear velocity: the layout's second field (bit 1), packed after position's 3 words"
     );
 
     // An unbound source reads the constant fallback marker.
     let stage = compile_stage(&registry, &smoke_effect(&registry));
-    assert_eq!(stage.block.constants[22], u32::MAX);
+    assert_eq!(stage.block.constants[26], u32::MAX);
 }
 
 #[test]
@@ -564,8 +606,8 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
         );
     }
     // The Combustion block follows the one source's 16 words.
-    assert_eq!(fire.block.constants.len(), 14 + 16 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[30]), 0.5, "ignition");
+    assert_eq!(fire.block.constants.len(), 18 + 16 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[34]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =

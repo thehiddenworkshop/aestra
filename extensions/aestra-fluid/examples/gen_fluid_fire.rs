@@ -9,11 +9,11 @@
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
     EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
-    ScalarRange, Value,
+    ModuleTypeId, ScalarRange, StageKind, Value,
 };
 use aestra_fluid::{
     FluidExtension, MODULE_BUOYANCY, MODULE_COMBUSTION, MODULE_DENSITY_SOURCE, MODULE_GRID,
-    MODULE_VOLUME_LOOK, MODULE_VORTICITY, fire_effect,
+    MODULE_TURBULENCE, MODULE_VOLUME_LOOK, MODULE_VORTICITY, fire_effect,
 };
 
 const PATH: &str = "sample-project/effects/fluid_fire.aestra.ron";
@@ -66,13 +66,23 @@ fn main() {
     effect.duration = 6.0;
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
     effect.emitters = vec![embers()];
+    let mut turbulence = registry
+        .modules
+        .instantiate(&ModuleTypeId::new(MODULE_TURBULENCE))
+        .expect("the fluid extension is installed");
+    turbulence.stage = StageKind::Simulation(effect.simulation_stages[0].name.clone());
+    effect.simulation_stages[0].modules.push(turbulence);
 
-    // A 120-unit box (48 cells of 2.5); the burner sits near its floor.
+    // A 120-unit box (48 cells of 2.5); the burner sits near its floor. Open on every side but the
+    // floor, so the smoke rises out and air is drawn in around the flames.
     for (type_id, name, value) in [
         (MODULE_GRID, "resolution", Value::U32(48)),
         (MODULE_GRID, "cell_size", Value::Scalar(2.5)),
         (MODULE_GRID, "center", Value::Vec3([0.0, 40.0, 0.0])),
         (MODULE_GRID, "density_dissipation", Value::Scalar(0.35)),
+        (MODULE_GRID, "open_top", Value::Bool(true)),
+        (MODULE_GRID, "open_sides", Value::Bool(true)),
+        (MODULE_GRID, "sharp_advection", Value::Bool(true)),
         (
             MODULE_DENSITY_SOURCE,
             "position",
@@ -92,7 +102,10 @@ fn main() {
         ),
         (MODULE_DENSITY_SOURCE, "fuel_rate", Value::Scalar(5.0)),
         (MODULE_BUOYANCY, "strength", Value::Scalar(4.0)),
-        (MODULE_VORTICITY, "strength", Value::Scalar(0.8)),
+        (MODULE_VORTICITY, "strength", Value::Scalar(0.3)),
+        (MODULE_TURBULENCE, "strength", Value::Scalar(40.0)),
+        (MODULE_TURBULENCE, "scale", Value::Scalar(18.0)),
+        (MODULE_TURBULENCE, "evolution", Value::Scalar(2.0)),
         (MODULE_COMBUSTION, "thermal_lift", Value::Scalar(10.0)),
         (MODULE_COMBUSTION, "cooling", Value::Scalar(1.4)),
         (MODULE_VOLUME_LOOK, "opacity", Value::Scalar(0.08)),
