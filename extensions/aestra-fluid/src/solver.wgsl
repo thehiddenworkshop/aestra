@@ -361,8 +361,9 @@ fn advect_density(@builtin(global_invocation_id) cell: vec3<u32>) {
 
 // ---- Colliders (fluid F4) ----
 
+// Without colliders nothing is solid: skip the read (a uniform test the hot Jacobi loop benefits from).
 fn is_solid(cell: vec3<i32>) -> bool {
-    return inside(cell) && solid[clamped_index(cell)].w > 0.5;
+    return collider_count() > 0u && inside(cell) && solid[clamped_index(cell)].w > 0.5;
 }
 
 // The `axis` velocity through the minimum `axis` face of `cell`: a solid on either side of the face
