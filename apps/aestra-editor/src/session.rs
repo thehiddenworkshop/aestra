@@ -2513,9 +2513,18 @@ impl EditorSession {
         self.ui_revision += 1;
     }
 
+    /// Keeps the playhead within the (possibly edited) duration. Continuous playback simulates on an
+    /// unwrapped clock: keep it and only re-wrap the playhead — seeking to the wrapped frame would jump
+    /// the simulation back a whole number of loops, replaying stateful effects after every edit.
     fn clamp_clock(&mut self) {
-        let frame = self.driver.clock.frame();
-        self.driver.clock.seek_frame(frame, self.effect.duration);
+        let duration = self.effect.duration;
+        if self.playback_mode().is_continuous() {
+            let elapsed = self.driver.clock.elapsed_time();
+            self.driver.clock.seek_elapsed_seconds(elapsed, duration);
+        } else {
+            let frame = self.driver.clock.frame();
+            self.driver.clock.seek_frame(frame, duration);
+        }
     }
 
     fn invalidate_effect_checkpoints(&mut self) {
@@ -2656,6 +2665,64 @@ mod tests {
     #[test]
     fn blank_effect_is_valid() {
         blank_effect().validate().unwrap();
+    }
+
+    /// Editing a continuous effect keeps its unwrapped simulation clock: re-wrapping only the
+    /// playhead, never jumping the simulation back whole loops (which replayed fluids after edits).
+    #[test]
+    fn an_edit_keeps_a_continuous_effects_simulation_time() {
+        let mut session = test_support::session_with_timing_slack();
+        session.effect.playback_mode = aestra_core::EffectPlaybackMode::LoopContinuous;
+        let duration = session.effect.duration;
+        session
+            .driver
+            .clock
+            .seek_elapsed_seconds(duration * 2.5, duration);
+        let before = session.simulation_time();
+        assert!(before > duration * 2.0);
+        let emitter = session.selected_layer().unwrap().id;
+        assert!(session.execute(
+            "Transformed emitter",
+            EffectCommand::SetEmitterTransform {
+                id: emitter,
+                transform: aestra_core::EmitterTransform {
+                    translation: [4.0, 0.0, 0.0],
+                    ..Default::default()
+                },
+            },
+            false,
+        ));
+        assert!((session.simulation_time() - before).abs() < 1e-3);
+    }
+
+    /// A module of the effect's own simulation stage stays selected across edits (it is not "missing"
+    /// just because no emitter holds it), so its viewport handle stays reachable.
+    #[test]
+    fn a_selected_domain_module_survives_edits() {
+        aestra_fluid::link();
+        let registry = aestra_compiler::ExtensionRegistry::linked();
+        let mut session = EditorSession::from_test_effect(aestra_fluid::fire_effect(&registry));
+        let source = session.effect.simulation_stages[0]
+            .modules
+            .iter()
+            .find(|module| module.module_type.0 == aestra_fluid::MODULE_DENSITY_SOURCE)
+            .unwrap()
+            .id;
+        session.selection.primary = aestra_authoring::SemanticTarget::Module(source);
+        assert!(session.execute(
+            "Moved module position",
+            EffectCommand::SetModuleParameter {
+                emitter: EmitterId::EFFECT_SCOPE,
+                module: source,
+                parameter: "position".into(),
+                value: aestra_core::Value::Vec3([10.0, 5.0, 0.0]),
+            },
+            false,
+        ));
+        assert_eq!(
+            session.selection.primary,
+            aestra_authoring::SemanticTarget::Module(source)
+        );
     }
 
     #[test]

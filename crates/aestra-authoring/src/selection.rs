@@ -473,10 +473,14 @@ fn target_exists(target: SemanticTarget, effect: &EffectAsset) -> bool {
             .any(|event| event.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|item| item.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|item| item.id == id),
-        SemanticTarget::Module(id) => effect
-            .emitters
-            .iter()
-            .any(|emitter| emitter.modules.iter().any(|item| item.id == id)),
+        // Emitters' modules, and the modules of the effect's own simulation stages (fluid F2).
+        SemanticTarget::Module(id) => {
+            effect.module(EmitterId::EFFECT_SCOPE, id).is_some()
+                || effect
+                    .emitters
+                    .iter()
+                    .any(|emitter| emitter.modules.iter().any(|item| item.id == id))
+        }
         SemanticTarget::Renderer(id) => effect
             .emitters
             .iter()

@@ -917,11 +917,14 @@ fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool 
             .any(|event| event.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|value| value.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|emitter| emitter.id == id),
-        SemanticTarget::Module(id) => effect
-            .emitters
-            .iter()
-            .flat_map(|emitter| emitter.modules.iter())
-            .any(|module| module.id == id),
+        SemanticTarget::Module(id) => {
+            effect.module(EmitterId::EFFECT_SCOPE, id).is_some()
+                || effect
+                    .emitters
+                    .iter()
+                    .flat_map(|emitter| emitter.modules.iter())
+                    .any(|module| module.id == id)
+        }
         SemanticTarget::Renderer(id) => effect
             .emitters
             .iter()
