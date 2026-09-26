@@ -169,6 +169,7 @@ impl MaterialProgramEditHistory {
         }
     }
 
+    #[cfg(test)]
     fn for_target(&self, session: &EditorSession) -> Option<&Self> {
         if !session.material_history_active {
             return Some(self);

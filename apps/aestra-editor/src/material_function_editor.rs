@@ -165,6 +165,7 @@ impl FunctionEditor {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn available(&self, session: &EditorSession, undo: bool) -> bool {
         key(session)
             .ok()

@@ -5255,6 +5255,7 @@ pub(crate) fn material_graph_unsaved(
     })
 }
 
+#[cfg(test)]
 fn selected_projection(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
