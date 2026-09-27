@@ -327,7 +327,7 @@ fn setup_preview_scene(
         PreviewGridPlane,
         Mesh3d(meshes.add(Plane3d::default().mesh().size(2.0, 2.0))),
         MeshMaterial3d(grid_materials.add(PreviewGridMaterial {
-            grid: preview_grid_uniform(140.0, Vec3::ZERO, 1.0),
+            grid: preview_grid_uniform(140.0, 1.0),
         })),
         Transform::from_xyz(0.0, PREVIEW_GRID_Y, 0.0).with_scale(Vec3::new(2_800.0, 1.0, 2_800.0)),
         RenderLayers::layer(0),
@@ -811,20 +811,21 @@ fn sync_preview_grid(
     };
 
     let plane_radius = (controller.distance * 24.0).clamp(200.0, 100_000.0);
-    transform.translation = Vec3::new(controller.focus.x, PREVIEW_GRID_Y, controller.focus.z);
+    // Navigation moves the camera, not the ground reference beneath the effect.
+    transform.translation = Vec3::new(0.0, PREVIEW_GRID_Y, 0.0);
     transform.scale = Vec3::new(plane_radius, 1.0, plane_radius);
 
     let view_angle = camera.forward().dot(Vec3::NEG_Y).abs();
     let angle_fade = ((view_angle - 0.015) / 0.16).clamp(0.0, 1.0);
     if let Some(mut material) = materials.get_mut(&material_handle.0) {
-        let uniform = preview_grid_uniform(controller.distance, controller.focus, angle_fade);
+        let uniform = preview_grid_uniform(controller.distance, angle_fade);
         if material.grid != uniform {
             material.grid = uniform;
         }
     }
 }
 
-fn preview_grid_uniform(distance: f32, focus: Vec3, angle_fade: f32) -> PreviewGridUniform {
+fn preview_grid_uniform(distance: f32, angle_fade: f32) -> PreviewGridUniform {
     PreviewGridUniform {
         minor_color: Vec4::new(0.20, 0.22, 0.29, 0.22),
         major_color: Vec4::new(0.27, 0.30, 0.39, 0.38),
@@ -836,7 +837,8 @@ fn preview_grid_uniform(distance: f32, focus: Vec3, angle_fade: f32) -> PreviewG
             angle_fade,
             10.0,
         ),
-        focus: Vec4::new(focus.x, focus.z, 0.0, 0.0),
+        // Keep the fade centered on the world origin as well as the grid axes.
+        focus: Vec4::ZERO,
     }
 }
 
@@ -3499,6 +3501,54 @@ mod tests {
         let rotation = visual.rotation.unwrap();
         assert!(rotation.angle_between(Quat::from_rotation_z(45.0_f32.to_radians())) < 0.0001);
         assert_eq!(visual.scale, Vec3::ONE);
+    }
+
+    #[test]
+    fn preview_grid_stays_at_world_origin_after_pan_and_zoom() {
+        let mut app = App::new();
+        app.init_resource::<MenuState>()
+            .init_resource::<PreviewCameraController>()
+            .init_resource::<Assets<PreviewGridMaterial>>()
+            .add_systems(Update, sync_preview_grid);
+        app.world_mut().spawn((
+            PreviewRenderCamera,
+            GlobalTransform::from(preview_camera_transform(
+                Vec3::ZERO,
+                140.0,
+                0.0,
+                DEFAULT_PREVIEW_PITCH,
+            )),
+        ));
+        let material = app
+            .world_mut()
+            .resource_mut::<Assets<PreviewGridMaterial>>()
+            .add(PreviewGridMaterial {
+                grid: preview_grid_uniform(140.0, 1.0),
+            });
+        let grid = app
+            .world_mut()
+            .spawn((
+                PreviewGridPlane,
+                Transform::default(),
+                Visibility::Inherited,
+                MeshMaterial3d(material.clone()),
+            ))
+            .id();
+
+        for distance in [140.0, 20.0, 600.0, 140.0] {
+            {
+                let mut controller = app.world_mut().resource_mut::<PreviewCameraController>();
+                controller.focus = Vec3::new(120.0, 80.0, -90.0);
+                controller.distance = distance;
+            }
+            app.update();
+            assert_eq!(
+                app.world().get::<Transform>(grid).unwrap().translation,
+                Vec3::new(0.0, PREVIEW_GRID_Y, 0.0),
+            );
+            let materials = app.world().resource::<Assets<PreviewGridMaterial>>();
+            assert_eq!(materials.get(&material).unwrap().grid.focus, Vec4::ZERO);
+        }
     }
 
     #[test]
