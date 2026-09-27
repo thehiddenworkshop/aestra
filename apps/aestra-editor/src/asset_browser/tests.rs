@@ -271,6 +271,24 @@ pub(crate) fn browser_app(root: &Path) -> App {
     app
 }
 
+pub(crate) fn selected_relative_path(app: &App) -> Option<std::path::PathBuf> {
+    let state = app.world().resource::<AssetBrowserState>();
+    let catalog = app.world().resource::<ProjectEffectCatalog>();
+    state
+        .selected
+        .and_then(|id| catalog.content().source(id))
+        .map(|entry| entry.relative_path.clone())
+}
+
+pub(crate) fn request_effect_in_folder(
+    app: &mut App,
+    parent: aestra_project::ProjectSourceId,
+    version: ProjectContentVersion,
+) {
+    app.world_mut()
+        .trigger(BrowserAction::NewEffectInFolder(parent, version));
+}
+
 fn spawn_browser_fixture(
     mut commands: Commands,
     state: Res<AssetBrowserState>,

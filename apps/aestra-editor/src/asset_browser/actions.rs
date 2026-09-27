@@ -67,6 +67,8 @@ pub(super) enum BrowserAction {
     OpenProject,
     Refresh,
     NewFolder,
+    NewEffect,
+    NewEffectInFolder(ProjectSourceId, ProjectContentVersion),
     Duplicate(ProjectSourceId, ProjectContentVersion),
     Rename(ProjectSourceId, ProjectContentVersion),
     Delete(ProjectSourceId, ProjectContentVersion),
@@ -193,6 +195,38 @@ pub(super) fn handle_action(
         BrowserAction::NewFolder => {
             if state.collection == BrowserCollection::Folder {
                 commands.trigger(super::operations::OpenFolderPrompt(None, false, None));
+            }
+        }
+        BrowserAction::NewEffect => {
+            if state.scope == SourceScope::Project && state.collection == BrowserCollection::Folder
+            {
+                let parent = if state.folder.as_os_str().is_empty() {
+                    content
+                        .source_tree()
+                        .at_relative_path(
+                            catalog
+                                .effect_root()
+                                .strip_prefix(catalog.root())
+                                .unwrap_or(std::path::Path::new("")),
+                        )
+                        .map_or_else(|| state.folder_id(content), |entry| entry.id)
+                } else {
+                    state.folder_id(content)
+                };
+                commands.trigger(DocumentAction::NewInFolder(
+                    parent,
+                    catalog.content_revision(),
+                ));
+            }
+        }
+        BrowserAction::NewEffectInFolder(parent, version) => {
+            if version == catalog.content_revision()
+                && catalog
+                    .content()
+                    .source(parent)
+                    .is_some_and(|entry| Kind::of(entry) == Kind::Folder)
+            {
+                commands.trigger(DocumentAction::NewInFolder(parent, version));
             }
         }
         BrowserAction::Duplicate(source, version) => {

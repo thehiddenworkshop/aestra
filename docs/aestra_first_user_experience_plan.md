@@ -29,7 +29,7 @@ Implemented:
 
 Boundary: FX1 follows the existing Open Project session reset and leaves the standard
 unsaved starter effect in the editor. It does not create an effect file or copy examples.
-FX2 will make the first effect a named, explicitly created project asset.
+FX2 makes the first effect a named, explicitly created project asset.
 
 Manual acceptance:
 
@@ -40,15 +40,27 @@ Manual acceptance:
    no overwrite, and the ability to correct the inputs and retry.
 5. Modify the current effect, then choose New Project; exercise Cancel, Save, and Discard.
 
-## FX2 — First effect creation (next)
+## FX2 — First effect creation
+
+Implemented:
 
 - An actionable empty-project state with Create Effect.
 - One creation flow shared by File → New Effect and the Project asset browser.
 - Name and destination selection; a simple visible sprite-emitter starter.
 - Persist the new asset safely, select its browser row, and open its Timeline/Module Stack.
 - Frame the preview and select the starter emitter. Avoid an unexplained unsaved placeholder.
+- Background no-clobber source publication, portable names, and project-contained destinations.
+- Cancel/retry and unsaved-work protection; untouched scratch starters need no discard prompt.
 
-## FX3 — First launch and returning users
+Manual acceptance:
+
+1. Create a project → Create Effect; name it and verify its saved row, Timeline, and sprite preview.
+2. File → New Effect / Ctrl+N and the Project browser plus/context-menu actions use the same dialog.
+3. Browse to a project subfolder; verify the full destination and selected saved asset.
+4. Cancel, invalid/outside folders, existing names, and Save/Discard of edited effects preserve work.
+5. Edit, save, close, and reopen the newly created effect.
+
+## FX3 — First launch and returning users (next)
 
 - New Project, Open Project, Recent Projects, and explicit Explore Examples entry points.
 - Stop treating the bundled sample project as the implicit new-user working project.

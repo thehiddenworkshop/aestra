@@ -756,6 +756,18 @@ pub(super) fn sync_panel(
                     };
                     text(parent, localizer.text(key));
                 }
+                if catalog.entries().is_empty()
+                    && state.collection == BrowserCollection::Folder
+                    && state.query.is_empty()
+                    && state.kinds.is_empty()
+                {
+                    spawn_feathers_action_button(
+                        parent,
+                        &localizer.text("effect-create-confirm"),
+                        BrowserAction::NewEffect,
+                        false,
+                    );
+                }
             });
         }
         if locate_requested && let Some(row) = state.selected.and_then(|id| ui.rows.get(&id)) {
@@ -839,6 +851,12 @@ fn sync_chrome(
             }
             for (key, path, action, selected) in [
                 (
+                    "file-new-effect",
+                    "icons/plus.svg",
+                    BrowserAction::NewEffect,
+                    false,
+                ),
+                (
                     "browser-new-folder",
                     "icons/folder-plus.svg",
                     BrowserAction::NewFolder,
@@ -891,7 +909,9 @@ fn sync_chrome(
     // Keep keyboard focus on toolbar controls when navigating or switching layout.
     for (entity, action) in &ui.toolbar_actions {
         let disabled = match action {
-            BrowserAction::NewFolder => state.collection != BrowserCollection::Folder,
+            BrowserAction::NewFolder | BrowserAction::NewEffect => {
+                state.collection != BrowserCollection::Folder
+            }
             BrowserAction::Back => state.back.is_empty(),
             BrowserAction::Forward => state.forward.is_empty(),
             BrowserAction::Up => state.folder.as_os_str().is_empty(),

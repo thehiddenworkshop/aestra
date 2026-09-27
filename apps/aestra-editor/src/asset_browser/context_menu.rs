@@ -40,6 +40,23 @@ fn spawn_menu(
             },
             BrowserContextMenu,
             |menu| {
+                if state.collection == super::bookmarks::BrowserCollection::Folder {
+                    let effect_action = source
+                        .filter(|id| {
+                            catalog
+                                .content()
+                                .source(*id)
+                                .is_some_and(|entry| Kind::of(entry) == Kind::Folder)
+                        })
+                        .map_or(BrowserAction::NewEffect, |id| {
+                            BrowserAction::NewEffectInFolder(id, catalog.content_revision())
+                        });
+                    spawn_pointer_context_menu_item(
+                        menu,
+                        &localizer.text("file-new-effect"),
+                        effect_action,
+                    );
+                }
                 if let Some(source) = source {
                     spawn_pointer_context_menu_item(
                         menu,

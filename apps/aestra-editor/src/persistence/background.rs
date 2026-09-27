@@ -7,6 +7,7 @@ enum OpenTarget {
     Folder(PathBuf),
     Effect(PathBuf),
     CreateProject(crate::project::CreateProjectRequest),
+    CreateEffect(aestra_project::ProjectSourceId, String),
 }
 
 struct OpenPlan {
@@ -30,6 +31,21 @@ pub(super) fn queue_open(
     if action == DocumentAction::NewProject {
         commands.trigger(new_project::OpenNewProject);
         return true;
+    }
+    match action {
+        DocumentAction::New => {
+            commands.trigger(new_project::OpenNewEffect(None));
+            return true;
+        }
+        DocumentAction::NewInFolder(parent, version) => {
+            if version == catalog.content_revision() {
+                commands.trigger(new_project::OpenNewEffect(Some(parent)));
+            } else {
+                session.status = localizer.text("project-operation-open-stale");
+            }
+            return true;
+        }
+        _ => {}
     }
     if matches!(
         action,
@@ -76,6 +92,31 @@ pub(super) fn queue_project_creation(
     );
 }
 
+pub(super) fn queue_effect_creation(
+    commands: &mut Commands,
+    session: &EditorSession,
+    settings: &EditorSettings,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+    parent: aestra_project::ProjectSourceId,
+    name: String,
+) {
+    queue_plan(
+        commands,
+        session,
+        settings,
+        catalog,
+        localizer,
+        OpenPlan {
+            target: OpenTarget::CreateEffect(parent, name),
+            navigation: default(),
+            restore: None,
+            clip: None,
+            emitter: None,
+        },
+    );
+}
+
 fn queue_plan(
     commands: &mut Commands,
     session: &EditorSession,
@@ -90,13 +131,39 @@ fn queue_plan(
     prepared_catalog.material_drafts = default();
     let settings = settings.clone();
     let locale = localizer.locale();
-    let creating = matches!(&plan.target, OpenTarget::CreateProject(_));
+    let creating = matches!(
+        &plan.target,
+        OpenTarget::CreateProject(_) | OpenTarget::CreateEffect(..)
+    );
     io::enqueue_with_rejection(
         commands,
         guard.clone(),
         move || {
             let localizer = Localizer::new(locale).expect("supported locale");
             let opened = match &plan.target {
+                OpenTarget::CreateEffect(parent, name) => {
+                    let result = (|| -> Result<(), String> {
+                        let mut effect = crate::session::blank_effect();
+                        effect.name.clone_from(name);
+                        let compiled = prepared_catalog.compile_project(&effect)?.root;
+                        let path = prepared_catalog
+                            .content()
+                            .plan_effect_creation(*parent, name, &effect)
+                            .map_err(|error| error.to_string())?
+                            .apply()
+                            .map_err(|error| error.to_string())?;
+                        let emitter = effect.emitters[0].id;
+                        prepared_session.open_compiled_effect(&path, effect, compiled);
+                        prepared_session.select_emitter(emitter);
+                        prepared_session.status =
+                            format!("{} {}", localizer.text("effect-created"), path.display());
+                        Ok(())
+                    })();
+                    if let Err(error) = &result {
+                        prepared_session.status = error.clone();
+                    }
+                    result.is_ok()
+                }
                 OpenTarget::CreateProject(request) => match crate::project::create_project(request)
                 {
                     Ok(candidate) => {
@@ -148,7 +215,10 @@ fn queue_plan(
             let opened = opened
                 && (|| {
                     prepared_catalog.refresh();
-                    if let OpenTarget::Effect(_) = plan.target {
+                    if matches!(
+                        &plan.target,
+                        OpenTarget::Effect(_) | OpenTarget::CreateEffect(..)
+                    ) {
                         let source =
                             prepared_catalog.cached_effect(prepared_session.effect.id.into())?;
                         if crate::session::opened_form(source) != prepared_session.effect {
@@ -191,12 +261,31 @@ fn queue_plan(
                         };
                         new_project::finished(world, Err(message));
                     }
+                    if let OpenTarget::CreateEffect(_, name) = &plan.target {
+                        let message = if opened {
+                            let path = prepared_session.source_path.clone();
+                            format!(
+                                "{}\n{}",
+                                localizer.text("effect-created-not-opened"),
+                                path.map_or_else(
+                                    || name.clone(),
+                                    |path| path.display().to_string()
+                                )
+                            )
+                        } else {
+                            prepared_session.status.clone()
+                        };
+                        new_project::finished(world, Err(message));
+                    }
                     return;
                 }
                 if !opened {
                     warn!("Document open failed: {}", prepared_session.status);
                     world.resource_mut::<EditorSession>().status = prepared_session.status;
-                    if matches!(&plan.target, OpenTarget::CreateProject(_)) {
+                    if matches!(
+                        &plan.target,
+                        OpenTarget::CreateProject(_) | OpenTarget::CreateEffect(..)
+                    ) {
                         let message = world.resource::<EditorSession>().status.clone();
                         new_project::finished(world, Err(message));
                     }
@@ -249,8 +338,18 @@ fn queue_plan(
                         timeline.reveal_emitter(emitter);
                     }
                 }
-                if matches!(&plan.target, OpenTarget::CreateProject(_)) {
+                if matches!(
+                    &plan.target,
+                    OpenTarget::CreateProject(_) | OpenTarget::CreateEffect(..)
+                ) {
                     new_project::finished(world, Ok(()));
+                }
+                if matches!(&plan.target, OpenTarget::CreateEffect(..)) {
+                    let effect = world.resource::<EditorSession>().effect.id;
+                    world.trigger(crate::asset_browser::LocateInAssets(
+                        aestra_project::ProjectAssetId::Effect(effect),
+                    ));
+                    world.trigger(crate::viewport::ViewportAction::FramePreview);
                 }
             })
         },
@@ -413,6 +512,17 @@ pub(super) fn queue_save(
     };
     let guard = IoGuard::capture(catalog, session);
     let mut saved = session.fork_for_io();
+    let continuation_folder = match continuation {
+        Some(DocumentAction::NewInFolder(parent, version))
+            if version == catalog.content_revision() =>
+        {
+            catalog
+                .content()
+                .source(parent)
+                .map(|entry| entry.relative_path.clone())
+        }
+        _ => None,
+    };
     let mut prepared = catalog.clone();
     let before = catalog.material_drafts.clone();
     let locale = localizer.locale();
@@ -476,6 +586,18 @@ pub(super) fn queue_save(
             {
                 world.resource_mut::<DocumentProtectionState>().pending = None;
                 // Re-enter the regular guard: edits made during the save need confirmation again.
+                let action = if let Some(folder) = continuation_folder {
+                    let catalog = world.resource::<ProjectEffectCatalog>();
+                    catalog
+                        .content()
+                        .source_tree()
+                        .at_relative_path(folder)
+                        .map_or(action, |entry| {
+                            DocumentAction::NewInFolder(entry.id, catalog.content_revision())
+                        })
+                } else {
+                    action
+                };
                 world.trigger(action);
             }
         })

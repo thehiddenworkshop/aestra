@@ -69,6 +69,10 @@ impl Plugin for EditorPersistencePlugin {
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DocumentAction {
     New,
+    NewInFolder(
+        aestra_project::ProjectSourceId,
+        aestra_project::ProjectContentVersion,
+    ),
     NewProject,
     Open,
     OpenProject,
@@ -156,7 +160,7 @@ pub(crate) struct DocumentProtectionState {
     pub(crate) asset_delete_open: bool,
     pub(crate) asset_create_open: bool,
     pub(crate) transaction_open: bool,
-    pub(crate) project_create_open: bool,
+    pub(crate) creation_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
     /// The editor view awaiting a dirty-close decision (Save / Discard / Cancel), if any.
@@ -185,7 +189,7 @@ impl DocumentProtectionState {
             || self.asset_delete_open
             || self.asset_create_open
             || self.transaction_open
-            || self.project_create_open
+            || self.creation_open
     }
 }
 
@@ -846,7 +850,7 @@ fn document_action_requires_confirmation(
     session: &EditorSession,
     settings: &EditorSettings,
 ) -> bool {
-    session.dirty && settings.general.confirm_unsaved_changes
+    session.dirty && !session.is_untouched_starter() && settings.general.confirm_unsaved_changes
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1732,7 +1736,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_navigation_keeps_material_drafts_and_discarded_new_document_drops_them() {
+    fn failed_navigation_and_cancelable_new_prompt_keep_material_drafts() {
         let directory = tempfile::tempdir().unwrap();
         let (mut session, mut catalog, _) = pending_material_edit(directory.path());
         let original = fs::read(directory.path().join("program.aestra.material.ron")).unwrap();
@@ -1759,14 +1763,8 @@ mod tests {
                 None,
                 None,
             );
-            assert_eq!(
-                catalog.material_drafts.is_empty(),
-                action == DocumentAction::New
-            );
-            assert_eq!(
-                session.material_drafts.is_empty(),
-                action == DocumentAction::New
-            );
+            assert!(!catalog.material_drafts.is_empty());
+            assert!(!session.material_drafts.is_empty());
         }
         queue.apply(&mut world);
         assert_eq!(

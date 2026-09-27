@@ -1,4 +1,4 @@
-//! Project creation UI. Disk work and publication reuse the protected project-open pipeline.
+//! Shared project/effect creation UI. Disk work uses the protected document-open pipeline.
 use super::*;
 use crate::project::{CreateProjectError, CreateProjectRequest};
 use crate::project_content::io::IoGuard;
@@ -12,8 +12,22 @@ use bevy::ui_widgets::ValueChange;
 #[derive(Event)]
 pub(super) struct OpenNewProject;
 
+#[derive(Event)]
+pub(super) struct OpenNewEffect(pub Option<aestra_project::ProjectSourceId>);
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum CreationKind {
+    #[default]
+    Project,
+    Effect,
+}
+
+#[derive(Event)]
+struct OpenCreation(CreationKind, Option<aestra_project::ProjectSourceId>);
+
 #[derive(Resource, Default)]
 struct Prompt {
+    kind: CreationKind,
     overlay: Option<Entity>,
     name: String,
     location: String,
@@ -48,6 +62,8 @@ struct PendingFocus;
 pub(super) fn register(app: &mut App) {
     app.init_resource::<Prompt>()
         .add_observer(open)
+        .add_observer(open_effect)
+        .add_observer(open_creation)
         .add_observer(change)
         .add_observer(choose)
         .add_observer(keyboard)
@@ -62,6 +78,63 @@ fn request(prompt: &Prompt) -> CreateProjectRequest {
         name: prompt.name.clone(),
         parent: PathBuf::from(&prompt.location),
     }
+}
+
+fn effect_parent(
+    prompt: &Prompt,
+    catalog: &ProjectEffectCatalog,
+) -> Result<aestra_project::ProjectSourceId, String> {
+    let relative = Path::new(&prompt.location);
+    if relative.is_absolute()
+        || relative.components().any(|part| {
+            !matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err("Choose a folder inside the active project".into());
+    }
+    let relative: PathBuf = relative
+        .components()
+        .filter_map(|part| match part {
+            std::path::Component::Normal(part) => Some(part),
+            _ => None,
+        })
+        .collect();
+    catalog
+        .content()
+        .source_tree()
+        .at_relative_path(&relative)
+        .map(|entry| entry.id)
+        .ok_or_else(|| "Choose an existing project folder".into())
+}
+
+fn validation(
+    prompt: &Prompt,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) -> Result<PathBuf, String> {
+    if prompt.kind == CreationKind::Project {
+        let request = request(prompt);
+        request
+            .validate()
+            .map_err(|error| error_text(error, localizer))?;
+        return Ok(request.destination());
+    }
+    let parent = effect_parent(prompt, catalog)
+        .map_err(|_| localizer.text("effect-create-invalid-location"))?;
+    CreateProjectRequest {
+        name: prompt.name.clone(),
+        parent: catalog.root().to_owned(),
+    }
+    .validate()
+    .map_err(|_| localizer.text("effect-create-invalid-name"))?;
+    catalog
+        .content()
+        .effect_creation_destination(parent, &prompt.name)
+        .map(|relative| catalog.root().join(relative))
+        .map_err(|error| error.to_string())
 }
 
 // Canonical Windows paths are useful for I/O, but their device prefix is not UI copy.
@@ -86,8 +159,16 @@ fn error_text(error: CreateProjectError, localizer: &Localizer) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn open(
-    _: On<OpenNewProject>,
+fn open(_: On<OpenNewProject>, mut commands: Commands) {
+    commands.trigger(OpenCreation(CreationKind::Project, None));
+}
+
+fn open_effect(event: On<OpenNewEffect>, mut commands: Commands) {
+    commands.trigger(OpenCreation(CreationKind::Effect, event.0));
+}
+
+fn open_creation(
+    event: On<OpenCreation>,
     mut commands: Commands,
     mut prompt: ResMut<Prompt>,
     mut protection: ResMut<DocumentProtectionState>,
@@ -106,12 +187,32 @@ fn open(
         root
     };
     *prompt = Prompt {
-        location: display_path(project_root.parent().unwrap_or(project_root)),
+        kind: event.0,
+        location: if event.0 == CreationKind::Effect {
+            event
+                .1
+                .and_then(|parent| catalog.content().source(parent))
+                .map(|entry| entry.relative_path.clone())
+                .unwrap_or_else(|| {
+                    catalog
+                        .effect_root()
+                        .strip_prefix(catalog.root())
+                        .unwrap_or(Path::new(""))
+                        .to_owned()
+                })
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            display_path(project_root.parent().unwrap_or(project_root))
+        },
         guard: Some(IoGuard::capture(&catalog, &session)),
         return_focus: focus.as_deref().and_then(InputFocus::get),
         ..default()
     };
-    protection.project_create_open = true;
+    if prompt.kind == CreationKind::Effect && prompt.location.is_empty() {
+        prompt.location = ".".into();
+    }
+    protection.creation_open = true;
     prompt.overlay = Some(
         commands
             .spawn((
@@ -160,7 +261,11 @@ fn open(
                             .with_children(|header| {
                                 text_label(
                                     header,
-                                    localizer.text("file-new-project"),
+                                    localizer.text(if prompt.kind == CreationKind::Project {
+                                        "file-new-project"
+                                    } else {
+                                        "file-new-effect"
+                                    }),
                                     26.0,
                                     theme::TEXT,
                                 );
@@ -172,13 +277,14 @@ fn open(
                                 ..default()
                             })
                             .with_children(|group| {
-                                label(group, localizer.text("project-create-name"));
-                                let name = input(
-                                    group,
-                                    "",
-                                    &localizer.text("project-create-name"),
-                                    Field::Name,
-                                );
+                                let name_label =
+                                    localizer.text(if prompt.kind == CreationKind::Project {
+                                        "project-create-name"
+                                    } else {
+                                        "effect-create-name"
+                                    });
+                                label(group, name_label.clone());
+                                let name = input(group, "", &name_label, Field::Name);
                                 group.commands().entity(name).insert(PendingFocus);
                             });
                         panel
@@ -188,7 +294,13 @@ fn open(
                                 ..default()
                             })
                             .with_children(|group| {
-                                label(group, localizer.text("project-create-location"));
+                                let location_label =
+                                    localizer.text(if prompt.kind == CreationKind::Project {
+                                        "project-create-location"
+                                    } else {
+                                        "effect-create-location"
+                                    });
+                                label(group, location_label.clone());
                                 group
                                     .spawn(Node {
                                         column_gap: Val::Px(10.0),
@@ -199,7 +311,7 @@ fn open(
                                         input(
                                             row,
                                             &prompt.location,
-                                            &localizer.text("project-create-location"),
+                                            &location_label,
                                             Field::Location,
                                         );
                                         dialog_button(
@@ -226,7 +338,11 @@ fn open(
                             .with_children(|summary| {
                                 text_label(
                                     summary,
-                                    localizer.text("project-create-destination"),
+                                    localizer.text(if prompt.kind == CreationKind::Project {
+                                        "project-create-destination"
+                                    } else {
+                                        "effect-create-destination"
+                                    }),
                                     12.0,
                                     theme::TEXT_MUTED,
                                 );
@@ -279,7 +395,11 @@ fn open(
                                 );
                                 dialog_button(
                                     buttons,
-                                    &localizer.text("project-create-confirm"),
+                                    &localizer.text(if prompt.kind == CreationKind::Project {
+                                        "project-create-confirm"
+                                    } else {
+                                        "effect-create-confirm"
+                                    }),
                                     Choice::Create,
                                     true,
                                 );
@@ -454,11 +574,36 @@ fn choose(
     }
     if *choice == Choice::Browse {
         if let Some(folder) = FileDialog::new()
-            .set_title(localizer.text("project-create-location"))
-            .set_directory(&prompt.location)
+            .set_title(localizer.text(if prompt.kind == CreationKind::Project {
+                "project-create-location"
+            } else {
+                "effect-create-location"
+            }))
+            .set_directory(if prompt.kind == CreationKind::Effect {
+                catalog.root().join(&prompt.location)
+            } else {
+                PathBuf::from(&prompt.location)
+            })
             .pick_folder()
         {
-            prompt.location = display_path(&folder);
+            prompt.location = if prompt.kind == CreationKind::Effect {
+                let folder = folder.canonicalize().unwrap_or(folder);
+                let root = catalog
+                    .root()
+                    .canonicalize()
+                    .unwrap_or_else(|_| catalog.root().to_owned());
+                let Ok(folder) = folder.strip_prefix(&root) else {
+                    prompt.error = Some(localizer.text("effect-create-invalid-location"));
+                    return;
+                };
+                if folder.as_os_str().is_empty() {
+                    ".".into()
+                } else {
+                    folder.to_string_lossy().into_owned()
+                }
+            } else {
+                display_path(&folder)
+            };
             prompt.error = None;
             for (mut text, parent) in &mut texts {
                 if fields.get(parent.parent()) == Ok(&Field::Location) {
@@ -477,6 +622,25 @@ fn choose(
         .is_some_and(|guard| guard.matches(&catalog, &session))
     {
         prompt.error = Some(localizer.text("project-operation-open-stale"));
+        return;
+    }
+    if prompt.kind == CreationKind::Effect {
+        let parent = effect_parent(&prompt, &catalog);
+        if let Err(error) = validation(&prompt, &catalog, &localizer) {
+            prompt.error = Some(error);
+            return;
+        }
+        prompt.error = None;
+        prompt.busy = true;
+        background::queue_effect_creation(
+            &mut commands,
+            &session,
+            &settings,
+            &catalog,
+            &localizer,
+            parent.expect("validated folder"),
+            prompt.name.clone(),
+        );
         return;
     }
     let request = request(&prompt);
@@ -512,7 +676,7 @@ fn close(commands: &mut Commands, prompt: &mut Prompt, protection: &mut Document
         }
     });
     prompt.guard = None;
-    protection.project_create_open = false;
+    protection.creation_open = false;
 }
 
 fn escape(
@@ -529,6 +693,7 @@ fn escape(
 #[allow(clippy::too_many_arguments)]
 fn sync(
     prompt: Res<Prompt>,
+    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
     mut commands: Commands,
     mut destinations: Query<&mut Text, (With<Destination>, Without<Feedback>)>,
@@ -555,9 +720,19 @@ fn sync(
         return;
     }
     let request = request(&prompt);
-    let validation = request.validate();
+    let project_validation = request.validate();
+    let validation = validation(&prompt, &catalog, &localizer);
     for mut text in &mut destinations {
-        text.0 = display_path(&request.destination());
+        text.0 = display_path(&validation.clone().unwrap_or_else(|_| {
+            if prompt.kind == CreationKind::Effect {
+                catalog
+                    .root()
+                    .join(&prompt.location)
+                    .join(format!("{}.aestra.ron", prompt.name))
+            } else {
+                request.destination()
+            }
+        }));
     }
     for mut node in &mut summaries {
         node.display = if prompt.name.is_empty() {
@@ -568,24 +743,36 @@ fn sync(
     }
     for (mut text, mut color, mut node) in &mut feedback {
         text.0 = if prompt.busy {
-            localizer.text("project-create-running")
+            localizer.text(if prompt.kind == CreationKind::Project {
+                "project-create-running"
+            } else {
+                "effect-create-running"
+            })
         } else if let Some(error) = &prompt.error {
             error.clone()
         } else {
-            validation
-                .as_ref()
-                .err()
-                .filter(|error| match error {
-                    CreateProjectError::InvalidName => prompt.edited,
-                    _ => prompt.location_edited,
-                })
-                .map(|error| match error {
-                    CreateProjectError::InvalidName => {
-                        localizer.text("project-create-invalid-name")
-                    }
-                    _ => localizer.text("project-create-invalid-location"),
-                })
-                .unwrap_or_default()
+            if prompt.kind == CreationKind::Effect {
+                if prompt.edited || prompt.location_edited {
+                    validation.as_ref().err().cloned().unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            } else {
+                project_validation
+                    .as_ref()
+                    .err()
+                    .filter(|error| match error {
+                        CreateProjectError::InvalidName => prompt.edited,
+                        _ => prompt.location_edited,
+                    })
+                    .map(|error| match error {
+                        CreateProjectError::InvalidName => {
+                            localizer.text("project-create-invalid-name")
+                        }
+                        _ => localizer.text("project-create-invalid-location"),
+                    })
+                    .unwrap_or_default()
+            }
         };
         node.display = if text.0.is_empty() {
             Display::None
@@ -649,7 +836,7 @@ pub(super) fn finished(world: &mut World, result: Result<(), String>) {
             }
             world
                 .resource_mut::<DocumentProtectionState>()
-                .project_create_open = false;
+                .creation_open = false;
             crate::asset_browser::reveal_created_project(world);
             if let Some(mut active) =
                 world.get_resource_mut::<crate::editor_view::ActiveEditorContext>()
@@ -680,6 +867,216 @@ pub(super) fn creation_error(error: CreateProjectError, localizer: &Localizer) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Resource, Default)]
+    struct FrameRequests(usize);
+
+    fn effect_app(root: &Path) -> App {
+        let mut app = crate::asset_browser::tests::browser_app(root);
+        app.insert_resource(crate::project::catalog_for_folder(root).unwrap());
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<FrameRequests>()
+            .add_observer(
+                |event: On<crate::viewport::ViewportAction>, mut frames: ResMut<FrameRequests>| {
+                    if matches!(*event, crate::viewport::ViewportAction::FramePreview) {
+                        frames.0 += 1;
+                    }
+                },
+            );
+        super::super::install_document_open_test_runtime(&mut app, root.join("recovery"));
+        register(&mut app);
+        app.update();
+        app
+    }
+
+    #[test]
+    fn file_and_browser_creation_save_select_open_and_frame_the_named_starter() {
+        for browser in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir(root.path().join("effects")).unwrap();
+            fs::create_dir(root.path().join("custom")).unwrap();
+            let mut app = effect_app(root.path());
+            if browser {
+                let catalog = app.world().resource::<ProjectEffectCatalog>();
+                let parent = catalog
+                    .content()
+                    .source_tree()
+                    .at_relative_path("custom")
+                    .unwrap()
+                    .id;
+                let version = catalog.content_revision();
+                crate::asset_browser::tests::request_effect_in_folder(&mut app, parent, version);
+            } else {
+                app.world_mut().trigger(DocumentAction::New);
+            }
+            app.world_mut().flush();
+            app.update();
+            assert!(app.world().resource::<Prompt>().overlay.is_some());
+            assert!(app.world().resource::<Prompt>().kind == CreationKind::Effect);
+            assert_eq!(
+                app.world().resource::<Prompt>().location,
+                if browser { "custom" } else { "effects" }
+            );
+            set_field(&mut app, Field::Name, "First Sparks");
+            choose(&mut app, Choice::Create);
+            crate::project_content::io::drain(app.world_mut());
+            for _ in 0..3 {
+                app.update();
+            }
+            let relative = PathBuf::from(if browser {
+                "custom/First Sparks.aestra.ron"
+            } else {
+                "effects/First Sparks.aestra.ron"
+            });
+            let source = aestra_core::EffectAsset::load_ron(root.path().join(&relative)).unwrap();
+            let session = app.world().resource::<EditorSession>();
+            assert_eq!(session.effect.name, "First Sparks");
+            assert_eq!(session.effect.id, source.id);
+            assert!(!session.dirty);
+            assert!(session.source_path.as_ref().unwrap().ends_with(&relative));
+            assert_eq!(session.effect.emitters.len(), 1);
+            assert_eq!(
+                session.selection.primary,
+                SemanticTarget::Emitter(source.emitters[0].id)
+            );
+            assert!(session.preview().is_some());
+            assert_eq!(
+                crate::asset_browser::tests::selected_relative_path(&app),
+                Some(relative)
+            );
+            assert!(
+                app.world()
+                    .resource::<WorkspaceLayout>()
+                    .is_active(ToolPanel::Timeline)
+            );
+            assert!(
+                app.world()
+                    .resource::<WorkspaceLayout>()
+                    .is_active(ToolPanel::Assets)
+            );
+            assert_eq!(app.world().resource::<FrameRequests>().0, 1);
+            assert!(app.world().resource::<Prompt>().overlay.is_none());
+        }
+    }
+
+    #[test]
+    fn effect_creation_cancel_invalid_destination_and_late_collision_keep_the_document() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = effect_app(root.path());
+        let original = app.world().resource::<EditorSession>().effect.clone();
+        app.world_mut().trigger(DocumentAction::New);
+        app.world_mut().flush();
+        app.update();
+        set_field(&mut app, Field::Name, "Sparks");
+        for location in ["../outside", "missing"] {
+            set_field(&mut app, Field::Location, location);
+            choose(&mut app, Choice::Create);
+            assert!(!app.world().resource::<Prompt>().busy);
+            assert!(app.world().resource::<Prompt>().error.is_some());
+        }
+        set_field(&mut app, Field::Location, "");
+        fs::write(root.path().join("SPARKS.aestra.ron"), "keep").unwrap();
+        choose(&mut app, Choice::Create);
+        crate::project_content::io::drain(app.world_mut());
+        assert!(app.world().resource::<Prompt>().error.is_some());
+        assert_eq!(app.world().resource::<EditorSession>().effect, original);
+        assert_eq!(
+            fs::read_to_string(root.path().join("SPARKS.aestra.ron")).unwrap(),
+            "keep"
+        );
+        choose(&mut app, Choice::Cancel);
+        assert!(app.world().resource::<Prompt>().overlay.is_none());
+        let files: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(files, vec![std::ffi::OsString::from("SPARKS.aestra.ron")]);
+    }
+
+    #[test]
+    fn fresh_project_can_create_its_first_effect_but_user_edits_require_approval() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = effect_app(root.path());
+        open_prompt(&mut app);
+        set_field(&mut app, Field::Name, "Project");
+        set_field(&mut app, Field::Location, &display_path(root.path()));
+        choose(&mut app, Choice::Create);
+        crate::project_content::io::drain(app.world_mut());
+        app.update();
+        app.world_mut().trigger(DocumentAction::New);
+        app.world_mut().flush();
+        app.update();
+        assert!(app.world().resource::<Prompt>().overlay.is_some());
+        choose(&mut app, Choice::Cancel);
+        app.world_mut().resource_mut::<EditorSession>().effect.name = "My work".into();
+        app.world_mut().trigger(DocumentAction::New);
+        app.world_mut().flush();
+        app.update();
+        assert!(app.world().resource::<Prompt>().overlay.is_none());
+        assert_eq!(
+            app.world().resource::<DocumentProtectionState>().pending,
+            Some(DocumentAction::New)
+        );
+    }
+
+    #[test]
+    fn save_then_create_in_browser_folder_rebinds_the_post_save_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = app(root.path());
+        app.world_mut().resource_mut::<EditorSession>().effect.name = "Saved work".into();
+        app.world_mut().resource_mut::<EditorSession>().dirty = true;
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        let action = DocumentAction::NewInFolder(
+            catalog.content().source_tree().root(),
+            catalog.content_revision(),
+        );
+        app.world_mut().trigger(action);
+        app.world_mut().flush();
+        app.update();
+        assert_eq!(
+            app.world().resource::<DocumentProtectionState>().pending,
+            Some(action)
+        );
+        let button = app.world_mut().spawn(DocumentProtectionAction::Save).id();
+        app.world_mut().trigger(Activate { entity: button });
+        app.world_mut().flush();
+        crate::project_content::io::drain(app.world_mut());
+        app.update();
+        assert!(app.world().resource::<Prompt>().overlay.is_some());
+        assert!(app.world().resource::<Prompt>().kind == CreationKind::Effect);
+        assert_eq!(app.world().resource::<Prompt>().location, ".");
+        assert_eq!(
+            aestra_core::EffectAsset::load_ron(root.path().join("old/original.aestra.ron"))
+                .unwrap()
+                .name,
+            "Saved work"
+        );
+    }
+
+    #[test]
+    fn effect_created_during_a_workspace_change_is_saved_but_never_replaces_newer_work() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = effect_app(root.path());
+        app.world_mut().trigger(DocumentAction::New);
+        app.world_mut().flush();
+        app.update();
+        set_field(&mut app, Field::Name, "Created");
+        choose(&mut app, Choice::Create);
+        app.world_mut().resource_mut::<EditorSession>().effect.name = "Newer work".into();
+        crate::project_content::io::drain(app.world_mut());
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.name,
+            "Newer work"
+        );
+        assert!(root.path().join("Created.aestra.ron").is_file());
+        let error = app.world().resource::<Prompt>().error.as_ref().unwrap();
+        assert!(error.contains("The effect was saved"), "{error}");
+        assert!(error.contains("Created.aestra.ron"), "{error}");
+        assert!(app.world().resource::<Prompt>().overlay.is_some());
+    }
 
     #[test]
     fn creation_switches_the_visible_browser_and_preview_through_normal_updates() {

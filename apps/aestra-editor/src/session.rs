@@ -81,6 +81,8 @@ pub(crate) struct EditorSession {
     pub(crate) operation_order: crate::history::asset_order::EditOrder,
     history_generation: u64,
     saved_effect: Option<EffectAsset>,
+    /// An untouched scratch starter is not user-authored work to discard.
+    unsaved_starter: Option<EffectAsset>,
     saved_source_bytes: Option<Vec<u8>>,
     effect_revision: u64,
     last_seek: SeekPlan,
@@ -123,6 +125,7 @@ impl EditorSession {
             operation_order: self.operation_order.clone(),
             history_generation: self.history_generation,
             saved_effect: self.saved_effect.clone(),
+            unsaved_starter: self.unsaved_starter.clone(),
             saved_source_bytes: self.saved_source_bytes.clone(),
             effect_revision: self.effect_revision,
             last_seek: self.last_seek,
@@ -183,6 +186,7 @@ impl EditorSession {
             operation_order: Default::default(),
             history_generation: 0,
             saved_effect: Some(saved_effect),
+            unsaved_starter: None,
             saved_source_bytes: None,
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
@@ -560,6 +564,7 @@ impl EditorSession {
         self.interaction_source = None;
         self.saved_source_bytes = None;
         self.effect = blank_effect();
+        self.unsaved_starter = Some(self.effect.clone());
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.set_preview(
@@ -670,6 +675,7 @@ impl EditorSession {
         let mut effect = effect;
         fill_schema_defaults(&mut effect);
         self.saved_effect = Some(effect.clone());
+        self.unsaved_starter = None;
         let migration = migrate_plugin_payloads(&mut effect);
         self.effect = effect;
         self.solo_emitter = None;
@@ -699,6 +705,7 @@ impl EditorSession {
     }
 
     pub fn restore_recovery(&mut self, effect: EffectAsset, source_path: Option<PathBuf>) {
+        self.unsaved_starter = None;
         self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = source_path
@@ -2589,6 +2596,14 @@ impl EditorSession {
         self.saved_effect
             .as_ref()
             .is_none_or(|saved| saved != &self.effect)
+    }
+
+    pub(crate) fn is_untouched_starter(&self) -> bool {
+        self.source_path.is_none()
+            && self.material_drafts.is_empty()
+            && self.pending_change.is_none()
+            && self.interaction_source.is_none()
+            && self.unsaved_starter.as_ref() == Some(&self.effect)
     }
 }
 
