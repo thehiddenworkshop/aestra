@@ -95,9 +95,20 @@ pub(crate) fn enqueue(
     guard: IoGuard,
     work: impl FnOnce() -> CommandQueue + Send + 'static,
 ) {
+    enqueue_with_rejection(commands, guard, work, |_| {});
+}
+
+/// Modal workflows must also release their busy state when a queued operation is rejected.
+pub(crate) fn enqueue_with_rejection(
+    commands: &mut Commands,
+    guard: IoGuard,
+    work: impl FnOnce() -> CommandQueue + Send + 'static,
+    rejected: impl FnOnce(&mut World) + Send + 'static,
+) {
     commands.queue(move |world: &mut World| {
         world.init_resource::<ProjectIoTasks>();
         if world.resource::<ProjectIoTasks>().busy {
+            rejected(world);
             return;
         }
         if !guard.matches(
@@ -105,6 +116,7 @@ pub(crate) fn enqueue(
             world.resource::<EditorSession>(),
         ) {
             set_status(world, "project-operation-queued-cancelled");
+            rejected(world);
             return;
         }
         set_status(world, "project-operation-running");

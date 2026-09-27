@@ -1,6 +1,7 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
 mod background;
 mod material;
+mod new_project;
 pub(crate) mod recovery_dialog;
 mod recovery_target;
 
@@ -31,6 +32,7 @@ pub(crate) enum PersistenceSet {
 
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {
+        new_project::register(app);
         app.init_resource::<DocumentProtectionState>()
             .init_resource::<recovery_dialog::RecoveryDialogState>()
             .init_resource::<crate::project_content::io::ProjectIoTasks>()
@@ -67,6 +69,7 @@ impl Plugin for EditorPersistencePlugin {
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DocumentAction {
     New,
+    NewProject,
     Open,
     OpenProject,
     OpenCatalog(EffectAssetRef),
@@ -153,6 +156,7 @@ pub(crate) struct DocumentProtectionState {
     pub(crate) asset_delete_open: bool,
     pub(crate) asset_create_open: bool,
     pub(crate) transaction_open: bool,
+    pub(crate) project_create_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
     /// The editor view awaiting a dirty-close decision (Save / Discard / Cancel), if any.
@@ -181,6 +185,7 @@ impl DocumentProtectionState {
             || self.asset_delete_open
             || self.asset_create_open
             || self.transaction_open
+            || self.project_create_open
     }
 }
 

@@ -6,6 +6,7 @@ use crate::project_content::io::{self, IoGuard};
 enum OpenTarget {
     Folder(PathBuf),
     Effect(PathBuf),
+    CreateProject(crate::project::CreateProjectRequest),
 }
 
 struct OpenPlan {
@@ -26,6 +27,10 @@ pub(super) fn queue_open(
     timeline: Option<&TimelineState>,
     navigation: Option<&SourceNavigationState>,
 ) -> bool {
+    if action == DocumentAction::NewProject {
+        commands.trigger(new_project::OpenNewProject);
+        return true;
+    }
     if matches!(
         action,
         DocumentAction::New | DocumentAction::Save | DocumentAction::SaveAs | DocumentAction::Exit
@@ -47,6 +52,30 @@ pub(super) fn queue_open(
     true
 }
 
+pub(super) fn queue_project_creation(
+    commands: &mut Commands,
+    session: &EditorSession,
+    settings: &EditorSettings,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+    request: crate::project::CreateProjectRequest,
+) {
+    queue_plan(
+        commands,
+        session,
+        settings,
+        catalog,
+        localizer,
+        OpenPlan {
+            target: OpenTarget::CreateProject(request),
+            navigation: default(),
+            restore: None,
+            clip: None,
+            emitter: None,
+        },
+    );
+}
+
 fn queue_plan(
     commands: &mut Commands,
     session: &EditorSession,
@@ -61,128 +90,179 @@ fn queue_plan(
     prepared_catalog.material_drafts = default();
     let settings = settings.clone();
     let locale = localizer.locale();
-    io::enqueue(commands, guard.clone(), move || {
-        let localizer = Localizer::new(locale).expect("supported locale");
-        let opened = match &plan.target {
-            OpenTarget::Folder(folder) => match crate::project::open_folder(
-                &mut prepared_session,
-                &mut prepared_catalog,
-                folder,
-            ) {
-                Ok(()) => {
-                    prepared_session.status = localizer.text("project-opened");
-                    true
+    let creating = matches!(&plan.target, OpenTarget::CreateProject(_));
+    io::enqueue_with_rejection(
+        commands,
+        guard.clone(),
+        move || {
+            let localizer = Localizer::new(locale).expect("supported locale");
+            let opened = match &plan.target {
+                OpenTarget::CreateProject(request) => match crate::project::create_project(request)
+                {
+                    Ok(candidate) => {
+                        prepared_session.new_effect();
+                        prepared_catalog = candidate;
+                        prepared_session.status = format!(
+                            "{} {}",
+                            localizer.text("project-created"),
+                            request.destination().display()
+                        );
+                        true
+                    }
+                    Err(error) => {
+                        prepared_session.status = new_project::creation_error(error, &localizer);
+                        false
+                    }
+                },
+                OpenTarget::Folder(folder) => match crate::project::open_folder(
+                    &mut prepared_session,
+                    &mut prepared_catalog,
+                    folder,
+                ) {
+                    Ok(()) => {
+                        prepared_session.status = localizer.text("project-opened");
+                        true
+                    }
+                    Err(error) => {
+                        set_persistence_status(
+                            &mut prepared_session,
+                            &localizer,
+                            PersistenceStatus::OpenFailed(error),
+                        );
+                        false
+                    }
+                },
+                OpenTarget::Effect(path) => {
+                    prepared_catalog.refresh();
+                    open_effect_in_project(
+                        &mut prepared_session,
+                        path,
+                        &settings,
+                        &mut prepared_catalog,
+                        &localizer,
+                    )
                 }
-                Err(error) => {
+            };
+            // Verify the loaded document still agrees with discovery: the source on disk, prepared as
+            // an opened document is (schema defaults filled, payloads migrated).
+            let opened = opened
+                && (|| {
+                    prepared_catalog.refresh();
+                    if let OpenTarget::Effect(_) = plan.target {
+                        let source =
+                            prepared_catalog.cached_effect(prepared_session.effect.id.into())?;
+                        if crate::session::opened_form(source) != prepared_session.effect {
+                            return Err(
+                                "The source changed while opening it; retry the open.".to_owned()
+                            );
+                        }
+                        prepared_catalog.prepare_preview(&prepared_session.effect)?;
+                    }
+                    if !prepared_catalog.snapshot_is_current() {
+                        return Err(
+                            "Project sources changed while opening; retry the open.".to_owned()
+                        );
+                    }
+                    Ok(())
+                })()
+                .map_err(|error| {
                     set_persistence_status(
                         &mut prepared_session,
                         &localizer,
                         PersistenceStatus::OpenFailed(error),
-                    );
-                    false
-                }
-            },
-            OpenTarget::Effect(path) => {
-                prepared_catalog.refresh();
-                open_effect_in_project(
-                    &mut prepared_session,
-                    path,
-                    &settings,
-                    &mut prepared_catalog,
-                    &localizer,
-                )
-            }
-        };
-        // Verify the loaded document still agrees with discovery: the source on disk, prepared as
-        // an opened document is (schema defaults filled, payloads migrated).
-        let opened = opened
-            && (|| {
-                prepared_catalog.refresh();
-                if let OpenTarget::Effect(_) = plan.target {
-                    let source =
-                        prepared_catalog.cached_effect(prepared_session.effect.id.into())?;
-                    if crate::session::opened_form(source) != prepared_session.effect {
-                        return Err(
-                            "The source changed while opening it; retry the open.".to_owned()
-                        );
+                    )
+                })
+                .is_ok();
+            io::completion(move |world| {
+                if !guard.matches(
+                    world.resource::<ProjectEffectCatalog>(),
+                    world.resource::<EditorSession>(),
+                ) {
+                    io::set_status(world, "project-operation-open-stale");
+                    if let OpenTarget::CreateProject(request) = &plan.target {
+                        let message = if opened {
+                            format!(
+                                "{}\n{}",
+                                localizer.text("project-created-not-opened"),
+                                request.destination().display()
+                            )
+                        } else {
+                            prepared_session.status.clone()
+                        };
+                        new_project::finished(world, Err(message));
                     }
-                    prepared_catalog.prepare_preview(&prepared_session.effect)?;
+                    return;
                 }
-                if !prepared_catalog.snapshot_is_current() {
-                    return Err("Project sources changed while opening; retry the open.".to_owned());
+                if !opened {
+                    warn!("Document open failed: {}", prepared_session.status);
+                    world.resource_mut::<EditorSession>().status = prepared_session.status;
+                    if matches!(&plan.target, OpenTarget::CreateProject(_)) {
+                        let message = world.resource::<EditorSession>().status.clone();
+                        new_project::finished(world, Err(message));
+                    }
+                    return;
                 }
-                Ok(())
-            })()
-            .map_err(|error| {
-                set_persistence_status(
-                    &mut prepared_session,
-                    &localizer,
-                    PersistenceStatus::OpenFailed(error),
-                )
+                prepared_session.playing = settings.preview.play_on_open;
+                prepared_session.ui_revision = world.resource::<EditorSession>().ui_revision + 1;
+                world.insert_resource(prepared_session);
+                // Successful document switches deliberately discard the approved old drafts.
+                world.resource_mut::<ProjectEffectCatalog>().material_drafts = default();
+                io::publish_catalog(world, prepared_catalog);
+                if let OpenTarget::Effect(path) = &plan.target {
+                    let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
+                    if let Ok(relative) = path.strip_prefix(&root) {
+                        world.trigger(crate::asset_browser::AssetOpened {
+                            root: root.clone(),
+                            relative: relative.to_owned(),
+                        });
+                    }
+                }
+                world.insert_resource(plan.navigation);
+                if let Some(mut workspace) = world.get_resource_mut::<CurvesState>() {
+                    workspace.clear();
+                }
+                let duration = world.resource::<EditorSession>().playback_duration();
+                if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
+                    *timeline = TimelineState::framed(duration);
+                }
+                if let Some(entry) = plan.restore {
+                    if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
+                        timeline.restore_navigation(entry.timeline, duration);
+                    }
+                    let mut session = world.resource_mut::<EditorSession>();
+                    session.selection.primary = entry.selection;
+                    let effect = session.effect.clone();
+                    session.selection.repair(&effect);
+                    session.seek_time(entry.playhead_time);
+                    session.playing = entry.playing;
+                }
+                if let Some(clip) = plan.clip {
+                    world
+                        .resource_mut::<EditorSession>()
+                        .select_effect_clip(clip);
+                }
+                if let Some(emitter) = plan.emitter {
+                    world
+                        .resource_mut::<EditorSession>()
+                        .select_emitter(emitter);
+                    if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
+                        timeline.reveal_emitter(emitter);
+                    }
+                }
+                if matches!(&plan.target, OpenTarget::CreateProject(_)) {
+                    new_project::finished(world, Ok(()));
+                }
             })
-            .is_ok();
-        io::completion(move |world| {
-            if !guard.matches(
-                world.resource::<ProjectEffectCatalog>(),
-                world.resource::<EditorSession>(),
-            ) {
-                io::set_status(world, "project-operation-open-stale");
-                return;
+        },
+        move |world| {
+            if creating {
+                let message = world
+                    .resource::<Localizer>()
+                    .text("project-create-queued-cancelled");
+                new_project::finished(world, Err(message));
             }
-            if !opened {
-                warn!("Document open failed: {}", prepared_session.status);
-                world.resource_mut::<EditorSession>().status = prepared_session.status;
-                return;
-            }
-            prepared_session.playing = settings.preview.play_on_open;
-            prepared_session.ui_revision = world.resource::<EditorSession>().ui_revision + 1;
-            world.insert_resource(prepared_session);
-            // Successful document switches deliberately discard the approved old drafts.
-            world.resource_mut::<ProjectEffectCatalog>().material_drafts = default();
-            io::publish_catalog(world, prepared_catalog);
-            if let OpenTarget::Effect(path) = &plan.target {
-                let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
-                if let Ok(relative) = path.strip_prefix(&root) {
-                    world.trigger(crate::asset_browser::AssetOpened {
-                        root: root.clone(),
-                        relative: relative.to_owned(),
-                    });
-                }
-            }
-            world.insert_resource(plan.navigation);
-            if let Some(mut workspace) = world.get_resource_mut::<CurvesState>() {
-                workspace.clear();
-            }
-            let duration = world.resource::<EditorSession>().playback_duration();
-            if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
-                *timeline = TimelineState::framed(duration);
-            }
-            if let Some(entry) = plan.restore {
-                if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
-                    timeline.restore_navigation(entry.timeline, duration);
-                }
-                let mut session = world.resource_mut::<EditorSession>();
-                session.selection.primary = entry.selection;
-                let effect = session.effect.clone();
-                session.selection.repair(&effect);
-                session.seek_time(entry.playhead_time);
-                session.playing = entry.playing;
-            }
-            if let Some(clip) = plan.clip {
-                world
-                    .resource_mut::<EditorSession>()
-                    .select_effect_clip(clip);
-            }
-            if let Some(emitter) = plan.emitter {
-                world
-                    .resource_mut::<EditorSession>()
-                    .select_emitter(emitter);
-                if let Some(mut timeline) = world.get_resource_mut::<TimelineState>() {
-                    timeline.reveal_emitter(emitter);
-                }
-            }
-        })
-    });
+        },
+    );
 }
 
 fn open_plan(

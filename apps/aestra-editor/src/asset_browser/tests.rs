@@ -241,7 +241,7 @@ fn removed_folder_falls_back_and_project_generation_clears_navigation() {
     assert!(state.query.is_empty());
 }
 
-pub(super) fn browser_app(root: &Path) -> App {
+pub(crate) fn browser_app(root: &Path) -> App {
     let mut app = App::new();
     app.add_plugins((
         MinimalPlugins,

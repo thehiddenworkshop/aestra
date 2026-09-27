@@ -16,7 +16,7 @@ mod relocation;
 pub(crate) mod relocation_recovery;
 mod state;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod thumbnails;
 mod tree;
 mod virtual_sources;
@@ -105,4 +105,17 @@ fn reconcile_snapshot(
         *clicks = default();
         state.reconcile(catalog.content(), catalog.content_revision());
     }
+}
+
+/// A newly created project should be visible even if the browser was on a
+/// virtual source, filtered folder, or inactive dock tab before creation.
+pub(crate) fn reveal_created_project(world: &mut World) {
+    if !world.contains_resource::<AssetBrowserState>() {
+        return;
+    }
+    world.resource_scope(|world, mut state: Mut<AssetBrowserState>| {
+        let catalog = world.resource::<ProjectEffectCatalog>();
+        state.scope = state::SourceScope::Project;
+        state.reconcile(catalog.content(), catalog.content_revision());
+    });
 }

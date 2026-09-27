@@ -282,6 +282,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                 ))
                 .with_children(|dropdown| {
                     for (message_id, shortcut, action) in [
+                        ("file-new-project", "", DocumentAction::NewProject),
                         ("file-new-effect", "Ctrl+N", DocumentAction::New),
                         ("file-open", "Ctrl+O", DocumentAction::Open),
                         ("file-open-project", "", DocumentAction::OpenProject),
@@ -1098,7 +1099,7 @@ mod tests {
             .iter(app.world())
             .map(|(entity, action)| (*action, entity))
             .collect::<Vec<_>>();
-        assert_eq!(items.len(), 7, "all target-specific items must be retained");
+        assert_eq!(items.len(), 8, "all target-specific items must be retained");
         for standalone in [false, true, false, true] {
             app.world_mut()
                 .resource_mut::<EditorSession>()
