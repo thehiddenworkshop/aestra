@@ -36,7 +36,7 @@ pub(super) type Framing = (Transform, OrthographicProjection);
 /// Bump to invalidate every cached entry when the on-disk schema changes.
 const CACHE_FORMAT_VERSION: u32 = 1;
 /// Bump when the GPU render or framing path changes the produced pixels.
-const RENDERER_VERSION: u32 = 1;
+const RENDERER_VERSION: u32 = 2;
 
 /// The content identity of an effect's rendered thumbnail.
 ///

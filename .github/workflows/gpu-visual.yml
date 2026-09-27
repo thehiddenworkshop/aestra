@@ -67,6 +67,18 @@ jobs:
           --editor-viewport-smoke target/visual-regression/editor-viewport-smoke
           --frames 3
 
+      - name: Validate fluid thumbnails and live hover previews
+        run: >-
+          cargo test --locked -p aestra-editor --bin aestra-editor
+          asset_browser::thumbnails::effect::tests::native_gpu_fluid_thumbnails_capture_volumes_without_emitters
+          -- --ignored --exact --nocapture
+
+      - name: Validate plugin particle thumbnail
+        run: >-
+          cargo test --locked -p aestra-editor --bin aestra-editor
+          asset_browser::thumbnails::effect::tests::native_gpu_plugin_thumbnail_captures_extension_particles
+          -- --ignored --exact --nocapture
+
       - name: Compare Prism Bloom reference
         run: >-
           cargo run --locked -p aestra-viewer --

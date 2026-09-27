@@ -745,6 +745,7 @@ fn hover_preview(
         &mut PresentedEffect,
         Option<&EffectRuntimeStatus>,
         Option<&GpuParticleStatistics>,
+        Option<&aestra_bevy_render::gpu::GpuStageProgress>,
     )>,
 ) {
     let (Some(mut images), Some(mut meshes)) = (images, meshes) else {

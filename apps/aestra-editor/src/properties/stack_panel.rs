@@ -15,7 +15,7 @@ pub(crate) fn spawn_module_stack_panel(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
-    let Some(layer) = session.selected_layer() else {
+    if session.selected_layer().is_none() && session.effect.simulation_stages.is_empty() {
         parent
             .spawn(Node {
                 width: Val::Percent(100.0),
@@ -39,10 +39,7 @@ pub(crate) fn spawn_module_stack_panel(
                 ));
             });
         return;
-    };
-    let Some(emitter_index) = session.selected_layer_index() else {
-        return;
-    };
+    }
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -130,6 +127,11 @@ pub(crate) fn spawn_module_stack_panel(
                                     );
                                 }
                             }
+                            let (Some(layer), Some(emitter_index)) =
+                                (session.selected_layer(), session.selected_layer_index())
+                            else {
+                                return;
+                            };
                             spawn_stack_nav_item(
                                 stack,
                                 &localizer.text("properties-emitter"),

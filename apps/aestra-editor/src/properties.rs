@@ -1196,6 +1196,65 @@ mod tests {
         );
     }
 
+    #[test]
+    fn volume_only_effect_module_stack_shows_selectable_effect_stage_modules() {
+        aestra_fluid::link();
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project/effects");
+        for name in ["fluid_smoke", "fluid_sparse_plume"] {
+            let mut app = App::new();
+            app.add_plugins((
+                MinimalPlugins,
+                bevy::asset::AssetPlugin::default(),
+                bevy::scene::ScenePlugin,
+                bevy::text::TextPlugin,
+            ));
+            app.init_asset::<bevy_resvg::prelude::SvgFile>();
+            let assets = app.world().resource::<AssetServer>().clone();
+            let effect =
+                aestra_core::EffectAsset::load_ron(root.join(format!("{name}.aestra.ron")))
+                    .unwrap();
+            assert!(effect.emitters.is_empty());
+            let session = EditorSession::from_test_effect(effect);
+            let localizer = test_localizer();
+            app.world_mut()
+                .commands()
+                .spawn(Node::default())
+                .with_children(|parent| {
+                    spawn_module_stack_panel(
+                        parent,
+                        &session,
+                        &EditorModuleRegistry::default(),
+                        &ModulePaletteState::default(),
+                        &localizer,
+                        &assets,
+                    );
+                });
+            app.world_mut().flush();
+            let world = app.world_mut();
+            let targets: Vec<_> = world
+                .query::<&PropertiesSelectionTarget>()
+                .iter(world)
+                .map(|target| target.0)
+                .collect();
+            assert!(targets.contains(&SemanticTarget::Effect(session.effect.id)));
+            for module in session
+                .effect
+                .simulation_stages
+                .iter()
+                .flat_map(|stage| &stage.modules)
+            {
+                assert!(targets.contains(&SemanticTarget::Module(module.id)));
+            }
+            assert!(
+                !world
+                    .query::<&Text>()
+                    .iter(world)
+                    .any(|text| text.0 == localizer.text("properties-no-emitter"))
+            );
+        }
+    }
+
     fn clear_effect_parameters_and_bindings(session: &mut EditorSession) {
         session.effect.parameters.clear();
         for emitter in &mut session.effect.emitters {

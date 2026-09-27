@@ -39,7 +39,62 @@ use aestra_runtime::{
 };
 use bevy::render::{renderer::RenderQueue, sync_world::MainEntity, texture::GpuImage};
 use simulation_timing::{SimulationTimer, TimingMailbox};
+use std::{collections::HashMap, sync::Mutex};
 use wgpu::util::DeviceExt;
+
+/// Latest render-world confirmation that all extension stages reached the requested time.
+/// Unlike particle counts this also works for volume-only effects with no emitters.
+#[derive(Component, Default, Debug)]
+pub struct GpuStageProgress {
+    sample: Option<StageProgressSample>,
+}
+
+#[derive(Clone, Debug)]
+struct StageProgressSample {
+    effect: Arc<CompiledEffect>,
+    seed: u32,
+    epoch: u32,
+    revision: u64,
+    time: f32,
+}
+
+impl GpuStageProgress {
+    pub fn is_ready(&self, instance: &EffectInstance) -> bool {
+        self.sample.as_ref().is_some_and(|sample| {
+            Arc::ptr_eq(&sample.effect, instance.effect())
+                && sample.seed == instance.seed() as u32
+                && sample.epoch == instance.history_epoch()
+                && sample.revision == instance.history_revision()
+                && (sample.time - instance.time()).abs() < 0.0001
+        })
+    }
+}
+
+fn progress_target_tick(time: f32, tick_dt: f32, coupled: bool) -> u32 {
+    if coupled {
+        // Match run_coupled_stateful exactly, including its rounding at float tick boundaries.
+        (time.max(0.0) / STATEFUL_TICK_DT) as u32
+    } else {
+        (time.max(0.0) / tick_dt + 1e-3).floor() as u32
+    }
+}
+
+#[derive(Resource, Default, Clone)]
+struct StageProgressMailbox(Arc<Mutex<HashMap<Entity, Option<StageProgressSample>>>>);
+
+fn receive_stage_progress(
+    mailbox: Res<StageProgressMailbox>,
+    mut commands: Commands,
+    players: Query<&PresentedEffect>,
+) {
+    if let Ok(mut samples) = mailbox.0.lock() {
+        for (entity, sample) in samples.drain() {
+            if players.contains(entity) {
+                commands.entity(entity).insert(GpuStageProgress { sample });
+            }
+        }
+    }
+}
 
 /// Debug views of extension-stage fields (fluid F1). Off by default; editors and viewers opt in.
 #[derive(Resource, Debug, Clone, Copy, Default)]
@@ -95,6 +150,8 @@ pub(crate) struct ExtractedStages {
     quality: SeekQuality,
     host: GpuHostBindings,
     seed: u32,
+    history_epoch: u32,
+    history_revision: u64,
     host_epoch: u64,
     /// The effect's placement: world space into its space (fluid F2).
     world_to_effect: [[f32; 4]; 3],
@@ -189,11 +246,14 @@ fn stages(effect: &CompiledEffect) -> impl Iterator<Item = &CompiledExtensionSta
 
 pub(super) fn install(app: &mut App) {
     let mailbox = StageTimingMailbox::default();
+    let progress = StageProgressMailbox::default();
     app.init_resource::<AestraDebugViews>()
         .init_resource::<super::AestraCatchupPacing>()
         .insert_resource(mailbox.clone())
+        .insert_resource(progress.clone())
         .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
         .add_systems(PreUpdate, receive_stage_timings)
+        .add_systems(PreUpdate, receive_stage_progress)
         .add_systems(
             Update,
             (sync_field_views, sync_stage_inputs)
@@ -205,6 +265,7 @@ pub(super) fn install(app: &mut App) {
     };
     render_app
         .insert_resource(mailbox)
+        .insert_resource(progress)
         .init_resource::<StageRuntimes>()
         .init_resource::<super::CatchupPacer>()
         .add_systems(ExtractSchedule, extract_catchup_pacing)
@@ -283,6 +344,8 @@ pub(super) fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery
             quality: presented.seek_quality(),
             host: GpuHostBindings::from_instance(instance),
             seed: instance.seed() as u32,
+            history_epoch: instance.history_epoch(),
+            history_revision: instance.history_revision(),
             host_epoch: instance.host_input_epoch(),
             world_to_effect: transform.map_or(aestra_runtime::IDENTITY_AFFINE, world_to_local),
             coupled: effect
@@ -618,6 +681,7 @@ fn run_extension_stages(
     queue: Res<RenderQueue>,
     mailbox: Res<StageTimingMailbox>,
     mut pacer: ResMut<super::CatchupPacer>,
+    progress: Res<StageProgressMailbox>,
     mut timer: Local<SimulationTimer>,
     slice_pipeline: Option<Res<FieldSlicePipeline>>,
     volume_pipeline: Option<Res<super::volume::FieldVolume>>,
@@ -690,6 +754,28 @@ fn run_extension_stages(
                     runtime.timelines[index] = None;
                 }
             }
+        }
+        let caught_up = runtime.timelines.iter().all(|timeline| {
+            timeline.as_ref().is_some_and(|timeline| {
+                timeline.last_tick()
+                    == progress_target_tick(
+                        extracted.time,
+                        timeline.policy().tick_dt,
+                        extracted.coupled,
+                    )
+            })
+        });
+        if let Ok(mut samples) = progress.0.lock() {
+            samples.insert(
+                main_entity.id(),
+                caught_up.then(|| StageProgressSample {
+                    effect: extracted.effect.clone(),
+                    seed: extracted.seed,
+                    epoch: extracted.history_epoch,
+                    revision: extracted.history_revision,
+                    time: extracted.time,
+                }),
+            );
         }
         // The debug field slice.
         if let (Some(view), Some(pipeline)) = (&extracted.view, &slice_pipeline)
@@ -906,6 +992,8 @@ mod tests {
             time: 0.0,
             quality: SeekQuality::Exact,
             seed: 7,
+            history_epoch: 0,
+            history_revision: 0,
             host_epoch: 0,
             world_to_effect: aestra_runtime::IDENTITY_AFFINE,
             coupled: false,
@@ -952,5 +1040,57 @@ mod tests {
             ProfileValue::Unavailable,
             "a sample from after a backward seek is not current"
         );
+    }
+
+    #[test]
+    fn stage_progress_requires_the_current_simulation_context_and_time() {
+        let extracted = fire_with(
+            aestra_fluid::MODULE_GRID,
+            "resolution",
+            aestra_core::Value::U32(16),
+        );
+        let mut instance = EffectInstance::new(extracted.effect.clone());
+        instance.set_seed(7);
+        instance.seek(1.5);
+        let sample = || StageProgressSample {
+            effect: instance.effect().clone(),
+            seed: instance.seed() as u32,
+            epoch: instance.history_epoch(),
+            revision: instance.history_revision(),
+            time: instance.time(),
+        };
+        assert!(!GpuStageProgress::default().is_ready(&instance));
+        let ready = GpuStageProgress {
+            sample: Some(sample()),
+        };
+        assert!(ready.is_ready(&instance));
+        instance.set_playback_time(2.0);
+        assert!(!ready.is_ready(&instance));
+        instance.seek(1.5);
+        assert!(!ready.is_ready(&instance));
+        let ready = GpuStageProgress {
+            sample: Some(StageProgressSample {
+                effect: instance.effect().clone(),
+                seed: instance.seed() as u32,
+                epoch: instance.history_epoch(),
+                revision: instance.history_revision(),
+                time: instance.time(),
+            }),
+        };
+        assert!(ready.is_ready(&instance));
+        instance.set_seed(8);
+        assert!(!ready.is_ready(&instance));
+    }
+
+    #[test]
+    fn stage_progress_matches_coupled_and_independent_float_tick_rounding() {
+        let dt = TimelinePolicy::default().tick_dt;
+        assert_eq!(progress_target_tick(2.0, dt, false), 120);
+        assert_eq!(
+            progress_target_tick(2.0, dt, true),
+            (2.0 / STATEFUL_TICK_DT) as u32
+        );
+        assert_eq!(progress_target_tick(2.001, dt, false), 120);
+        assert_eq!(progress_target_tick(2.001, dt, true), 120);
     }
 }

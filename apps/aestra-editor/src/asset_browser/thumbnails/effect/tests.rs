@@ -66,6 +66,55 @@ fn empty_effect_uses_an_explained_fallback() {
     );
 }
 
+#[test]
+fn volume_only_fluid_examples_prepare_bounded_thumbnails_without_changing_the_asset() {
+    aestra_fluid::link();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    for name in ["fluid_smoke", "fluid_sparse_plume", "fluid_fire"] {
+        let saved = fixture_project(&root, name);
+        let original = saved.clone();
+        let prepared = prepare(saved.clone(), &root, &AtomicBool::new(false)).unwrap();
+        assert_eq!(saved.root, original.root);
+        assert!(prepared.center.is_finite() && prepared.radius.is_finite());
+        assert_eq!(prepared.players.len(), 1);
+        let preview = prepared.players[0].effect();
+        assert!(requires_stage_progress(preview));
+        volume::check_budget(preview).unwrap();
+        let source = EffectCompiler::default().compile(&original.root).unwrap();
+        let expected_bounds = volume::bounds(&source).unwrap().unwrap();
+        let actual_bounds = volume::bounds(preview).unwrap().unwrap();
+        assert!(actual_bounds.0.abs_diff_eq(expected_bounds.0, 0.001));
+        assert!(actual_bounds.1.abs_diff_eq(expected_bounds.1, 0.001));
+        for stage in preview.all_extension_stages() {
+            assert!(stage.block.fields.iter().all(|field| {
+                field.dims.iter().all(|dim| *dim <= 32) && field.stored_cells() <= 65 * 512
+            }));
+        }
+        let again = prepare(saved, &root, &AtomicBool::new(false)).unwrap();
+        assert_eq!(prepared.center, again.center);
+        assert_eq!(prepared.radius, again.radius);
+        let mut over_budget = (**preview).clone();
+        over_budget.extension_stages[0].block.resources[0].bytes = 65 * 1024 * 1024;
+        assert!(volume::check_budget(&over_budget).is_err());
+    }
+}
+
+#[test]
+fn plugin_particle_thumbnail_does_not_wait_for_a_non_presenting_legacy_stage() {
+    aestra_example_extension::link();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let prepared = prepare(
+        fixture_project(&root, "plugin_lab"),
+        &root,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let effect = prepared.players[0].effect();
+    assert!(effect.max_particles > 0);
+    assert!(effect.all_extension_stages().next().is_some());
+    assert!(!requires_stage_progress(effect));
+}
+
 fn trail_project(root: &Path) -> ResolvedEffectProject {
     fixture_project(root, "trail_lab")
 }
@@ -211,6 +260,22 @@ fn native_gpu_prism_thumbnail_fills_the_tile() {
 
 #[test]
 #[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_fluid_thumbnails_capture_volumes_without_emitters() {
+    aestra_fluid::link();
+    for name in ["fluid_smoke", "fluid_sparse_plume", "fluid_fire"] {
+        capture_fixture(name, true);
+    }
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_plugin_thumbnail_captures_extension_particles() {
+    aestra_example_extension::link();
+    capture_fixture("plugin_lab", true);
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
 fn native_gpu_project_mesh_uses_project_root_without_thumbnail_overrides() {
     capture_fixture("mesh_material_lab", false);
 }
@@ -218,7 +283,11 @@ fn native_gpu_project_mesh_uses_project_root_without_thumbnail_overrides() {
 fn capture_fixture(name: &str, private_assets: bool) {
     use bevy::{app::PluginsState, ecs::system::RunSystemOnce, window::ExitCondition};
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/test")
+        .join(if name.starts_with("fluid_") || name == "plugin_lab" {
+            "../../sample-project"
+        } else {
+            "../../assets/test"
+        })
         .canonicalize()
         .unwrap();
     let mut prepared =
@@ -239,6 +308,7 @@ fn capture_fixture(name: &str, private_assets: bool) {
                 exit_condition: ExitCondition::DontExit,
                 ..default()
             })
+            .disable::<bevy::log::LogPlugin>()
             .disable::<bevy_winit::WinitPlugin>(),
     )
     .add_plugins(aestra_bevy_render::AestraRenderPlugin)
@@ -369,4 +439,117 @@ fn capture_fixture(name: &str, private_assets: bool) {
             .iter()
             .all(|id| !app.world().resource::<Assets<Image>>().contains(*id))
     );
+    if name.starts_with("fluid_") {
+        assert_live_preview_animates(&mut app, name);
+    }
+}
+
+fn assert_live_preview_animates(app: &mut App, name: &str) {
+    use bevy::ecs::system::RunSystemOnce;
+    #[derive(Resource)]
+    struct Preview(LivePreview);
+    let epoch = app
+        .world()
+        .resource::<ThumbnailCache>()
+        .epoch
+        .clone()
+        .unwrap();
+    let prepared = prepare(
+        fixture_project(&epoch.0, name),
+        &epoch.0,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let sample = prepared.players[0].instance.time();
+    let mut prepared = Some(prepared);
+    app.world_mut()
+        .run_system_once(
+            move |mut commands: Commands,
+                  mut images: ResMut<Assets<Image>>,
+                  mut meshes: ResMut<Assets<Mesh>>| {
+                let live = LivePreview::start(
+                    prepared.take().unwrap(),
+                    &epoch,
+                    None,
+                    &mut commands,
+                    &mut images,
+                    &mut meshes,
+                );
+                commands.insert_resource(Preview(live));
+            },
+        )
+        .unwrap();
+    let start = Instant::now();
+    loop {
+        app.update();
+        app.world_mut()
+            .run_system_once(
+                |mut live: ResMut<Preview>,
+                 mut players: Query<(
+                    &mut PresentedEffect,
+                    Option<&EffectRuntimeStatus>,
+                    Option<&GpuParticleStatistics>,
+                    Option<&GpuStageProgress>,
+                )>| {
+                    live.0.advance(&mut players, 1.0 / 60.0);
+                },
+            )
+            .unwrap();
+        let live = &app.world().resource::<Preview>().0;
+        if live.ready {
+            break;
+        }
+        assert!(
+            start.elapsed() < TIMEOUT,
+            "{name}: hover never became ready"
+        );
+        for entity in &live.players {
+            assert_eq!(
+                app.world()
+                    .get::<PresentedEffect>(*entity)
+                    .unwrap()
+                    .instance
+                    .time(),
+                sample
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    app.update();
+    app.world_mut()
+        .run_system_once(
+            |mut live: ResMut<Preview>,
+             mut players: Query<(
+                &mut PresentedEffect,
+                Option<&EffectRuntimeStatus>,
+                Option<&GpuParticleStatistics>,
+                Option<&GpuStageProgress>,
+            )>| {
+                live.0.advance(&mut players, 1.0 / 60.0);
+            },
+        )
+        .unwrap();
+    let live = app.world_mut().remove_resource::<Preview>().unwrap().0;
+    for entity in &live.players {
+        assert!(
+            app.world()
+                .get::<PresentedEffect>(*entity)
+                .unwrap()
+                .instance
+                .time()
+                > sample
+        );
+    }
+    let mut live = Some(live);
+    app.world_mut()
+        .run_system_once(
+            move |mut commands: Commands,
+                  mut images: ResMut<Assets<Image>>,
+                  mut meshes: ResMut<Assets<Mesh>>| {
+                live.take()
+                    .unwrap()
+                    .cleanup(&mut commands, &mut images, &mut meshes);
+            },
+        )
+        .unwrap();
 }

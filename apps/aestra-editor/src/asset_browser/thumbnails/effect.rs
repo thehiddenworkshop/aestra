@@ -3,8 +3,10 @@ use super::*;
 mod capture;
 mod displacement;
 mod framing;
+mod volume;
 use aestra_bevy_render::{
-    ActiveBackend, EffectRuntimeStatus, PresentedEffect, gpu::GpuParticleStatistics,
+    ActiveBackend, EffectRuntimeStatus, PresentedEffect,
+    gpu::{GpuParticleStatistics, GpuStageProgress},
 };
 use aestra_compiler::EffectCompiler;
 use aestra_core::{AssetKind, EffectAssetRef, material::MaterialExpressionKind};
@@ -86,6 +88,7 @@ pub(super) struct Context<'w, 's> {
             &'static PresentedEffect,
             Option<&'static EffectRuntimeStatus>,
             Option<&'static GpuParticleStatistics>,
+            Option<&'static GpuStageProgress>,
         ),
     >,
 }
@@ -144,6 +147,19 @@ fn sample_time(duration: f32) -> Result<f32, String> {
     Ok((duration * 0.5).min(2.0))
 }
 
+/// Wait for standalone domains only when they feed the presentation. Legacy plugin
+/// stages can have no standalone compute program and no volume/field-follow output;
+/// their presence must not block an otherwise ready particle thumbnail.
+fn requires_stage_progress(effect: &aestra_runtime::CompiledEffect) -> bool {
+    effect
+        .all_extension_stages()
+        .any(|stage| !stage.presentations.is_empty())
+        || effect
+            .emitters
+            .iter()
+            .any(|emitter| emitter.enabled && emitter.field_follow.is_some())
+}
+
 /// Compiles a resolved project, schedules its instances, builds the presented players,
 /// and frames them — everything a capture needs except the texture pixels. The effect
 /// path decodes those from disk in [`prepare`]; the material path binds neutral textures.
@@ -158,6 +174,11 @@ pub(super) fn assemble(
     keep_functions: bool,
 ) -> Result<Assembled, String> {
     check_cancelled(cancelled)?;
+    // Only the job-owned copy is simplified; the source and editor simulation stay untouched.
+    volume::bound_fluid_preview(&mut saved.root);
+    for effect in saved.dependencies.values_mut() {
+        volume::bound_fluid_preview(effect);
+    }
     if !keep_functions {
         // The project resolver includes the entire function library, including unrelated WESL.
         // Calls are rejected below for this slice, so none of those definitions are required.
@@ -218,6 +239,10 @@ pub(super) fn assemble(
     let project = EffectCompiler::default()
         .compile_resolved_project(&saved)
         .map_err(|e| e.to_string())?;
+    volume::check_budget(&project.root)?;
+    for effect in project.dependencies.values() {
+        volume::check_budget(effect)?;
+    }
     check_cancelled(cancelled)?;
     let time = sample_time(project.root.duration)?;
     let scheduled = project.instances(time, SEED);
@@ -315,7 +340,8 @@ pub(super) fn assemble(
         if trail_points > 32_768 {
             return Err("Preview limit: 32768 trail history points".into());
         }
-        if !has_renderer || instance.effect.max_particles == 0 {
+        let volume_bounds = volume::bounds(&instance.effect)?;
+        if (!has_renderer || instance.effect.max_particles == 0) && volume_bounds.is_none() {
             continue;
         }
         for asset in &instance.effect.assets {
@@ -332,6 +358,23 @@ pub(super) fn assemble(
         player
             .instance
             .set_inherited_host_transform(instance.inherited);
+        if let Some((low, high)) = volume_bounds {
+            let matrix = Mat4::from_cols_array(
+                &player
+                    .instance
+                    .host_transform_context()
+                    .matrix_at(instance.time),
+            );
+            for x in [low.x, high.x] {
+                for y in [low.y, high.y] {
+                    for z in [low.z, high.z] {
+                        let point = matrix.transform_point3(Vec3::new(x, y, z));
+                        min = min.min(point);
+                        max = max.max(point);
+                    }
+                }
+            }
+        }
         // Include the complete bounded prefix: trail history and retired particles can extend
         // far beyond the live particle head at the capture time.
         let frames = (instance.time * 60.0).ceil() as u32;
@@ -579,7 +622,7 @@ impl GpuJob {
         }
         let mut ready = context.readiness.as_ref().is_some_and(|r| r.0);
         for entity in &self.players {
-            let Ok((player, status, stats)) = context.players.get(*entity) else {
+            let Ok((player, status, stats, stages)) = context.players.get(*entity) else {
                 ready = false;
                 continue;
             };
@@ -594,9 +637,14 @@ impl GpuJob {
                     ready = false;
                 }
             }
-            ready &= stats
-                .and_then(|s| s.observation(&player.instance))
-                .is_some_and(|(time, _)| (time - player.simulation_time()).abs() < 0.0001);
+            if player.effect().max_particles > 0 {
+                ready &= stats
+                    .and_then(|s| s.observation(&player.instance))
+                    .is_some_and(|(time, _)| (time - player.simulation_time()).abs() < 0.0001);
+            }
+            if requires_stage_progress(player.effect()) {
+                ready &= stages.is_some_and(|stages| stages.is_ready(&player.instance));
+            }
         }
         self.harness.settle(ready, commands);
         None
@@ -608,14 +656,15 @@ impl GpuJob {
             .players
             .iter()
             .filter_map(|entity| context.players.get(*entity).ok())
-            .map(|(player, status, stats)| {
+            .map(|(player, status, stats, stages)| {
                 format!(
-                    "{:?}: {:?}/{}",
+                    "{:?}: {:?}/{}; stages ready: {}",
                     status.map(|s| s.active),
                     stats
                         .and_then(|s| s.observation(&player.instance))
                         .map(|(t, _)| t),
-                    player.simulation_time()
+                    player.simulation_time(),
+                    stages.is_some_and(|stages| stages.is_ready(&player.instance))
                 )
             })
             .collect::<Vec<_>>()
@@ -722,7 +771,7 @@ impl LivePreview {
         let players: Vec<_> = prepared
             .players
             .into_iter()
-            .map(|mut player| {
+            .map(|player| {
                 let overrides = player
                     .effect()
                     .assets
@@ -743,8 +792,8 @@ impl LivePreview {
                             .map(|handle| (asset.source, handle.clone()))
                     })
                     .collect();
-                // Restart the timeline so the preview loops from the beginning.
-                player.instance.set_playback_time(0.0);
+                // Keep the prepared sample time until the GPU catches up. In particular,
+                // a volume-only preview must not chase a moving target before it can fade in.
                 commands
                     .spawn((
                         player
@@ -777,26 +826,32 @@ impl LivePreview {
             &mut PresentedEffect,
             Option<&EffectRuntimeStatus>,
             Option<&GpuParticleStatistics>,
+            Option<&GpuStageProgress>,
         )>,
         dt: f32,
     ) {
         let mut all_settled = !self.players.is_empty();
         for entity in &self.players {
-            let Ok((mut player, status, stats)) = players.get_mut(*entity) else {
+            let Ok((mut player, status, stats, stages)) = players.get_mut(*entity) else {
                 all_settled = false;
                 continue;
             };
-            let mut time = player.instance.time() + dt.clamp(0.0, 0.1);
-            if time >= self.duration {
-                player.instance.restart();
-                time = 0.0;
-            }
-            player.instance.set_playback_time(time);
             let presenting = matches!(status.map(|s| s.active), Some(ActiveBackend::Gpu));
-            let observed = stats
-                .and_then(|s| s.observation(&player.instance))
-                .is_some();
-            all_settled &= presenting && observed;
+            let particles_ready = player.effect().max_particles == 0
+                || stats
+                    .and_then(|s| s.observation(&player.instance))
+                    .is_some();
+            let stages_ready = !requires_stage_progress(player.effect())
+                || stages.is_some_and(|progress| progress.is_ready(&player.instance));
+            all_settled &= presenting && particles_ready && stages_ready;
+            if self.ready {
+                let mut time = player.instance.time() + dt.clamp(0.0, 0.1);
+                if time >= self.duration {
+                    player.instance.restart();
+                    time = 0.0;
+                }
+                player.instance.set_playback_time(time);
+            }
         }
         self.settled = if all_settled {
             self.settled.saturating_add(1)
