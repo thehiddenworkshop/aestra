@@ -75,6 +75,13 @@ pub(crate) struct DiagnosticsPanelState {
     details: Option<String>,
 }
 
+impl DiagnosticsPanelState {
+    /// Retain rejected-operation diagnostics after its confirmation is cancelled.
+    pub(crate) fn show_details(&mut self, message: String) {
+        self.details = Some(message);
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum DiagnosticsFilter {
     #[default]

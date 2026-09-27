@@ -110,7 +110,7 @@ pub(super) fn handle_renderer_action(
     session: &mut EditorSession,
     palette: &mut ModulePaletteState,
     workspace: &mut CurvesState,
-    layout: &mut WorkspaceLayout,
+    _layout: &mut WorkspaceLayout,
 ) -> bool {
     match action {
         PropertiesAction::AddTrailRenderer => {
@@ -162,7 +162,6 @@ pub(super) fn handle_renderer_action(
         PropertiesAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
         PropertiesAction::DeleteRenderer(id) => {
             if preview_renderer_deletion(session, id) {
-                reveal_dock_panel(layout, session, ToolPanel::Changes);
                 workspace.clear();
             }
         }

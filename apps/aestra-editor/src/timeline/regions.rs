@@ -407,7 +407,7 @@ pub(super) fn delete_selected_emitter_regions(
     session: &mut EditorSession,
     state: &mut TimelineState,
     curves: &mut CurvesState,
-    layout: &mut WorkspaceLayout,
+    _layout: &mut WorkspaceLayout,
     localizer: &Localizer,
 ) -> bool {
     let Some((emitter_id, selected)) = selected_regions_for_one_emitter(session, state) else {
@@ -432,7 +432,6 @@ pub(super) fn delete_selected_emitter_regions(
         session.select_emitter(emitter_id);
         if preview_selected_emitter_deletion(session, localizer) {
             state.select_only_emitter(emitter_id);
-            reveal_dock_panel(layout, session, ToolPanel::Changes);
             curves.clear();
             return true;
         }

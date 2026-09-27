@@ -653,14 +653,6 @@ fn spawn_panel_content(
         ToolPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
         }
-        ToolPanel::Changes => spawn_changes_workspace(
-            parent,
-            sources.session,
-            sources.documents,
-            sources.catalog,
-            sources.wesl_documents,
-            sources.localizer,
-        ),
         ToolPanel::Settings => spawn_settings_workspace(
             parent,
             sources.settings,
@@ -982,7 +974,7 @@ fn spawn_dock_tab_bar(
                 let editor_title = match tab {
                     DockTab::Editor(view) => Some(
                         crate::editor_view::view_document_key(*view, views, documents)
-                            .map(|key| crate::changes::document_display_name(key, catalog, wesl))
+                            .map(|key| crate::document::document_display_name(key, catalog, wesl))
                             .unwrap_or_else(|| "Editor".to_owned()),
                     ),
                     DockTab::Tool(_) => None,

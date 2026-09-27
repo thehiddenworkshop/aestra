@@ -216,7 +216,6 @@ panel-diagnostics = DIAGNOSTICS
 panel-compiler-inspector = COMPILER INSPECTOR
 panel-material-graph = MATERIAL GRAPH
 panel-profiler = PROFILER
-panel-changes = CHANGES
 panel-settings = SETTINGS
 
 material-graph-add-node = Add node (Tab)
@@ -773,22 +772,12 @@ compiler-wesl-pending-description = Edit the module to compile it; the generated
 compiler-wesl-empty = No reachable WGSL
 compiler-wesl-empty-description = The module compiled cleanly, but has no entry point, so nothing is emitted until it is imported by a module that uses it.
 
-changes-none-pending = NO TRANSACTION PENDING
-changes-summary = { $transaction }  ·  { $count } CHANGES
-changes-empty-description = No proposed changes. Structural deletions open here for review before they modify the effect.
-changes-modified-documents = MODIFIED DOCUMENTS ({ $count })
-changes-save-document = Save
-changes-ready = VALIDATED · READY TO APPLY
-changes-blocked = BLOCKED · { $count } COMPILER ERROR(S)
-changes-discard = Discard
-changes-apply = Apply
-changes-apply-blocked = Apply blocked
-changes-kind-added = ADDED
-changes-kind-removed = REMOVED
-changes-kind-modified = MODIFIED
-changes-kind-moved = MOVED
-changes-target-preview-only = The changed object only exists in the transaction preview.
-changes-selected-target = Selected changed { $target }.
+transaction-confirm-description = Confirm this operation? You can undo it afterwards.
+transaction-blocked-description = This operation cannot be applied because it would introduce validation errors. See Diagnostics for details.
+transaction-cancel = Cancel
+transaction-delete = Delete
+transaction-confirm = Confirm
+transaction-diagnostics = View Diagnostics
 
 diagnostics-validation = VALIDATION
 diagnostics-details = Details

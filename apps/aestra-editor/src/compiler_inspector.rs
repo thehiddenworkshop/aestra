@@ -57,7 +57,7 @@ fn handle_compiler_inspector_actions(
                 } else {
                     session.status = localizer.text("compiler-status-pending-target");
                     session.ui_revision += 1;
-                    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Changes);
+                    reveal_dock_panel(&mut layout, &mut session, ToolPanel::Diagnostics);
                 }
             }
         }

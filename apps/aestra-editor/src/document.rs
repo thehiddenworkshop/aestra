@@ -34,6 +34,31 @@ pub(crate) enum DocumentKey {
     WeslSource(crate::wesl_document::WeslSourceId),
 }
 
+/// Asset display names shared by editor tabs and document save/close UI.
+pub(crate) fn document_display_name(
+    key: DocumentKey,
+    catalog: &crate::ProjectEffectCatalog,
+    wesl: &crate::wesl_document::WeslDocuments,
+) -> String {
+    match key {
+        DocumentKey::MaterialProgram(id) => catalog
+            .material_program(id)
+            .map(|program| program.name)
+            .unwrap_or_else(|_| format!("Material {id}")),
+        DocumentKey::MaterialFunction(id) => catalog
+            .material_functions()
+            .ok()
+            .and_then(|functions| functions.into_iter().find(|function| function.id == id))
+            .map(|function| function.name)
+            .unwrap_or_else(|| format!("Function {id}")),
+        DocumentKey::WeslSource(id) => wesl
+            .relative_path(id)
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("WESL {id}")),
+    }
+}
+
 /// An open authored document: its identity, the asset it edits, and its dirty/revision state.
 ///
 /// Authored draft bytes continue to live in the project draft store for now; ownership of the draft

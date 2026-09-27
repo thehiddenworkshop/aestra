@@ -177,7 +177,7 @@ pub(crate) fn spawn_wesl_editor_view(
                             BackgroundColor(theme::ACCENT),
                         ));
                     }
-                    // Saving is via Ctrl+S / File ▸ Save All / the Changes panel, so the editor
+                    // Saving is via Ctrl+S / File ▸ Save All, so the editor
                     // header carries no Save button of its own.
                 });
 

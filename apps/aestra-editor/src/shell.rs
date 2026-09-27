@@ -72,8 +72,7 @@ pub(crate) enum ScrollMemoryKey {
     Profiler,
     Settings,
     Diagnostics,
-    ChangesList,
-    ChangesReview,
+    TransactionConfirmation,
     Curves,
     MaterialGraphPalette,
     MaterialFunctionInspector,
@@ -235,6 +234,7 @@ fn spawn_editor_ui(
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer, asset_server);
             spawn_document_protection_overlay(root, protection, localizer);
+            crate::transaction_dialog::spawn(root);
             crate::persistence::recovery_dialog::spawn(root, protection, localizer);
             crate::asset_browser::relocation_recovery::spawn(root, localizer);
             crate::asset_browser::deletion::spawn(root);
@@ -731,35 +731,6 @@ fn sync_document_save_status(
     for mut text in &mut operations {
         text.0 = crate::diagnostics::details::summary(&session.status, 96);
     }
-}
-
-pub(crate) fn properties_action_button<A: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: A,
-    help: Option<&str>,
-) {
-    let mut button = parent.spawn_empty();
-    button.apply_scene(ui_shell::feathers_button()).insert((
-        action,
-        FeathersActionButton,
-        AccessibleLabel(label.to_owned()),
-        Node {
-            width: Val::Auto,
-            height: Val::Px(28.0),
-            margin: UiRect::horizontal(Val::Px(12.0)),
-            padding: UiRect::horizontal(Val::Px(10.0)),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-    ));
-    if let Some(help) = help {
-        button.insert(EditorTooltip::titled(label, help));
-    }
-    button.with_children(|button| {
-        button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-    });
 }
 
 pub(crate) fn localized_action_button(

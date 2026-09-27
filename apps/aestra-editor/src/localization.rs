@@ -129,7 +129,6 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "panel-compiler-inspector",
     "panel-material-graph",
     "panel-profiler",
-    "panel-changes",
     "panel-settings",
     "material-graph-add-node",
     "material-graph-frame-all",
@@ -486,22 +485,12 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "compiler-wesl-pending-description",
     "compiler-wesl-empty",
     "compiler-wesl-empty-description",
-    "changes-none-pending",
-    "changes-summary",
-    "changes-empty-description",
-    "changes-modified-documents",
-    "changes-save-document",
-    "changes-ready",
-    "changes-blocked",
-    "changes-discard",
-    "changes-apply",
-    "changes-apply-blocked",
-    "changes-kind-added",
-    "changes-kind-removed",
-    "changes-kind-modified",
-    "changes-kind-moved",
-    "changes-target-preview-only",
-    "changes-selected-target",
+    "transaction-confirm-description",
+    "transaction-blocked-description",
+    "transaction-cancel",
+    "transaction-delete",
+    "transaction-confirm",
+    "transaction-diagnostics",
     "diagnostics-validation",
     "diagnostics-details",
     "diagnostics-back",
@@ -805,7 +794,7 @@ mod tests {
         );
         assert_eq!(localizer.text("curves-value"), "Valeur");
         assert_eq!(localizer.text("generated-compiled-plan"), "PLAN COMPILÉ");
-        assert_eq!(localizer.text("changes-discard"), "Ignorer");
+        assert_eq!(localizer.text("transaction-cancel"), "Annuler");
 
         let mut args = FluentArgs::new();
         args.set("count", 12_u32);
@@ -817,12 +806,6 @@ mod tests {
         assert!(summary.contains("MOY."));
         assert!(summary.contains("1,2 ms"));
 
-        let mut args = FluentArgs::new();
-        args.set("transaction", "SUPPRESSION");
-        args.set("count", 3_u32);
-        let summary = localizer.text_with("changes-summary", &args);
-        assert!(summary.contains("SUPPRESSION"));
-        assert!(summary.contains('3'));
-        assert!(summary.contains("MODIFICATIONS"));
+        assert_eq!(localizer.text("transaction-delete"), "Supprimer");
     }
 }

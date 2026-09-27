@@ -5,7 +5,6 @@
 mod asset_actions;
 mod asset_browser;
 mod asset_drop;
-mod changes;
 mod compiler_inspector;
 mod curves;
 mod diagnostics;
@@ -37,6 +36,7 @@ mod shell;
 mod test_support;
 mod theme;
 mod timeline;
+mod transaction_dialog;
 mod transport;
 mod viewport;
 mod wesl_document;
@@ -85,8 +85,6 @@ use bevy::{
 };
 use bevy_resvg::prelude::SvgPlugin;
 use bevy_winit::WINIT_WINDOWS;
-pub(crate) use changes::spawn_changes_workspace;
-use changes::{ChangesSet, EditorChangesPlugin};
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
 use compiler_inspector::{CompilerInspectorSet, EditorCompilerInspectorPlugin};
 pub(crate) use curves::{CurvesAction, CurvesState, spawn_curves_workspace};
@@ -153,6 +151,7 @@ pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 pub(crate) use shell::*;
 pub(crate) use timeline::ChoreographyAction;
 use timeline::{TimelinePlugin, TimelineSet};
+use transaction_dialog::{EditorTransactionDialogPlugin, TransactionDialogSet};
 pub(crate) use transport::TransportAction;
 use transport::{EditorTransportPlugin, TransportSet, spawn_transport_controls};
 use viewport::{
@@ -267,7 +266,7 @@ fn main() {
         .add_plugins(EditorAssetActionsPlugin)
         .add_plugins(asset_browser::EditorAssetBrowserPlugin)
         .add_plugins(EditorMaterialGraphPlugin)
-        .add_plugins(EditorChangesPlugin)
+        .add_plugins(EditorTransactionDialogPlugin)
         .add_plugins(EditorCompilerInspectorPlugin)
         .add_plugins(EditorCurvesPlugin)
         .add_plugins(EditorDiagnosticsPlugin)
@@ -334,7 +333,7 @@ fn main() {
                 AestraFeathersSet::Input,
                 (
                     AssetActionsSet::Actions,
-                    ChangesSet::Actions,
+                    TransactionDialogSet::Actions,
                     CompilerInspectorSet::Actions,
                     CurvesSet::Actions,
                     DiagnosticsSet::Actions,

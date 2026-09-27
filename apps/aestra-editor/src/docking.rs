@@ -403,17 +403,17 @@ pub(crate) enum ToolPanel {
     Properties,
     Timeline,
     Curves,
+    #[serde(alias = "Changes")]
     Diagnostics,
     #[serde(alias = "GeneratedCode")]
     CompilerInspector,
     MaterialGraph,
     Profiler,
-    Changes,
     Settings,
 }
 
 impl ToolPanel {
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Viewport,
         Self::Assets,
         Self::AssetInspector,
@@ -425,7 +425,6 @@ impl ToolPanel {
         Self::CompilerInspector,
         Self::MaterialGraph,
         Self::Profiler,
-        Self::Changes,
         Self::Settings,
     ];
 
@@ -442,7 +441,6 @@ impl ToolPanel {
             Self::CompilerInspector => "panel-compiler-inspector",
             Self::MaterialGraph => "panel-material-graph",
             Self::Profiler => "panel-profiler",
-            Self::Changes => "panel-changes",
             Self::Settings => "panel-settings",
         }
     }
@@ -746,12 +744,7 @@ impl Default for WorkspaceLayout {
         let top = DockNode::split(5, DockAxis::Horizontal, 0.75, left_center, right);
         let bottom = DockNode::tool_tabs(
             4,
-            &[
-                ToolPanel::Curves,
-                ToolPanel::Diagnostics,
-                ToolPanel::Changes,
-                ToolPanel::Assets,
-            ],
+            &[ToolPanel::Curves, ToolPanel::Diagnostics, ToolPanel::Assets],
             ToolPanel::Assets,
         );
         Self {
@@ -935,7 +928,6 @@ impl WorkspaceLayout {
         let bottom_group = [
             ToolPanel::Curves,
             ToolPanel::Diagnostics,
-            ToolPanel::Changes,
             ToolPanel::Assets,
             ToolPanel::CompilerInspector,
         ];
@@ -1213,8 +1205,7 @@ fn default_floating_size(panel: ToolPanel, available_size: [f32; 2]) -> [f32; 2]
         | ToolPanel::Diagnostics
         | ToolPanel::CompilerInspector
         | ToolPanel::MaterialGraph
-        | ToolPanel::Profiler
-        | ToolPanel::Changes => [720.0, 320.0],
+        | ToolPanel::Profiler => [720.0, 320.0],
         ToolPanel::Assets
         | ToolPanel::Properties
         | ToolPanel::ModuleStack
@@ -1283,6 +1274,19 @@ pub(crate) fn workspace_config_path(file: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_changes_panels_migrate_to_diagnostics_without_resetting_the_workspace() {
+        let layout = WorkspaceLayout::default();
+        let source = ron::to_string(&layout).unwrap();
+        let legacy = source.replace("Tool(Diagnostics)", "Tool(Diagnostics),Tool(Changes)");
+        assert_ne!(source, legacy);
+        let loaded: WorkspaceLayout = ron::from_str(&legacy).unwrap();
+        assert_eq!(loaded.normalized(), layout);
+        let panel: ToolPanel = ron::from_str("Changes").unwrap();
+        assert_eq!(panel, ToolPanel::Diagnostics);
+        assert!(!ron::to_string(&layout).unwrap().contains("Changes"));
+    }
 
     #[test]
     fn asset_inspector_is_optional_closable_and_reuses_properties_stack() {
@@ -1530,12 +1534,11 @@ mod tests {
                 DockTab::Tool(ToolPanel::Assets),
                 DockTab::Tool(ToolPanel::Curves),
                 DockTab::Tool(ToolPanel::Diagnostics),
-                DockTab::Tool(ToolPanel::Changes),
             ]
         );
 
         // Pull the timeline out of the central stack into the bottom strip.
-        assert!(layout.reorder_tab(ToolPanel::Timeline, ToolPanel::Changes, false));
+        assert!(layout.reorder_tab(ToolPanel::Timeline, ToolPanel::Diagnostics, false));
         assert_eq!(
             layout.root.node_containing(ToolPanel::Timeline),
             Some(bottom)

@@ -216,7 +216,6 @@ panel-diagnostics = DIAGNOSTICS
 panel-compiler-inspector = INSPECTEUR DU COMPILATEUR
 panel-material-graph = GRAPHE DE MATÉRIAU
 panel-profiler = PROFILEUR
-panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
 
 material-graph-add-node = Ajouter un nœud (Tab)
@@ -773,22 +772,12 @@ compiler-wesl-pending-description = Modifiez le module pour le compiler ; le WGS
 compiler-wesl-empty = Aucun WGSL atteignable
 compiler-wesl-empty-description = Le module compile proprement, mais n’a pas de point d’entrée : rien n’est émis tant qu’il n’est pas importé par un module qui l’utilise.
 
-changes-none-pending = AUCUNE TRANSACTION EN ATTENTE
-changes-summary = { $transaction }  ·  { $count } MODIFICATIONS
-changes-empty-description = Aucune modification proposée. Les suppressions structurelles s’ouvrent ici pour validation avant de modifier l’effet.
-changes-modified-documents = DOCUMENTS MODIFIÉS ({ $count })
-changes-save-document = Enregistrer
-changes-ready = VALIDÉ · PRÊT À APPLIQUER
-changes-blocked = BLOQUÉ · { $count } ERREUR(S) DE COMPILATION
-changes-discard = Ignorer
-changes-apply = Appliquer
-changes-apply-blocked = Application bloquée
-changes-kind-added = AJOUTÉ
-changes-kind-removed = SUPPRIMÉ
-changes-kind-modified = MODIFIÉ
-changes-kind-moved = DÉPLACÉ
-changes-target-preview-only = L’objet modifié existe uniquement dans l’aperçu de la transaction.
-changes-selected-target = Cible modifiée sélectionnée : { $target }.
+transaction-confirm-description = Confirmer cette opération ? Vous pourrez l’annuler ensuite.
+transaction-blocked-description = Cette opération introduirait des erreurs de validation. Consultez les diagnostics pour plus de détails.
+transaction-cancel = Annuler
+transaction-delete = Supprimer
+transaction-confirm = Confirmer
+transaction-diagnostics = Voir les diagnostics
 
 diagnostics-validation = VALIDATION
 diagnostics-details = Détails
