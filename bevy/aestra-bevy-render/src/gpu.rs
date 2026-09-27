@@ -71,6 +71,7 @@ use bevy::{
     },
 };
 pub use extension_stages::{AestraDebugViews, AestraFieldView, GpuStageTiming};
+// AestraCatchupPacing is defined below, beside the pacer it configures.
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
 pub use simulation_timing::GpuSimulationTiming;
@@ -188,6 +189,47 @@ struct StatefulDispatch {
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
     placement: aestra_runtime::SpawnPlacement,
+    /// How `present` draws the particles: the emitter's appearance, as the analytic path samples it.
+    /// Kept out of the fingerprint too: a look edit changes no particle's motion.
+    appearance: StatefulAppearance,
+}
+
+/// An emitter's size and opacity over life, colour gradient and largest scale, for stateful `present`.
+#[derive(Clone, Copy)]
+struct StatefulAppearance {
+    size: aestra_gpu::GpuCurve,
+    opacity: aestra_gpu::GpuCurve,
+    color: aestra_gpu::GpuGradient,
+    max_scale: f32,
+}
+
+impl StatefulAppearance {
+    fn of(emitter: &aestra_gpu::GpuEmitter) -> Self {
+        Self {
+            size: emitter.size,
+            opacity: emitter.opacity,
+            color: emitter.color,
+            max_scale: emitter.max_scale,
+        }
+    }
+
+    /// White, opaque and one unit across all life (a gradient without keys is white).
+    #[cfg(test)]
+    fn plain() -> Self {
+        let mut keys = [Vec2::ZERO; aestra_gpu::MAX_CURVE_KEYS];
+        keys[0] = Vec2::new(0.0, 1.0);
+        let one = aestra_gpu::GpuCurve {
+            keys,
+            count: 1,
+            ..Default::default()
+        };
+        Self {
+            size: one,
+            opacity: one,
+            color: aestra_gpu::GpuGradient::default(),
+            max_scale: 1.0,
+        }
+    }
 }
 
 /// The spawn placement of an emitter transform, with the rotation normalized for the trig-free kernel.
@@ -874,6 +916,7 @@ pub(crate) fn prepare_gpu_effects(
                                 colliders: compiled.colliders.clone(),
                                 field_follow: compiled.field_follow.clone(),
                                 placement: spawn_placement(compiled.transform),
+                                appearance: StatefulAppearance::of(emitter),
                             })
                     })
                     .collect()
@@ -2298,6 +2341,23 @@ pub(crate) struct CatchupPacer {
     ticks: f32,
     last_frame: Option<std::time::Instant>,
     saturated: bool,
+    /// Off (see [`AestraCatchupPacing`]): every frame may spend the full budget.
+    paced: bool,
+}
+
+/// Whether catch-up — a staged simulation replaying to the playhead after a rebuild or a seek — is
+/// paced by frame time, so the UI stays responsive while it runs (the default, for editors), or may
+/// spend the full per-quality budget every frame, so each frame shows exactly the tick it asks for
+/// (captures, visual references, benchmarks). Main-world setting, read by the render world each frame.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct AestraCatchupPacing {
+    pub paced: bool,
+}
+
+impl Default for AestraCatchupPacing {
+    fn default() -> Self {
+        Self { paced: true }
+    }
 }
 
 /// A frame slower than this, having spent its catch-up budget, halves the pace.
@@ -2313,6 +2373,7 @@ impl Default for CatchupPacer {
             ticks: CATCHUP_START_TICKS,
             last_frame: None,
             saturated: false,
+            paced: true,
         }
     }
 }
@@ -2340,7 +2401,15 @@ impl CatchupPacer {
 
     /// The ticks this frame may simulate for one effect at `quality`.
     pub(crate) fn budget(&self, quality: SeekQuality) -> u32 {
+        if !self.paced {
+            return stateful_catchup_budget(quality);
+        }
         (self.ticks as u32).clamp(CATCHUP_MIN_TICKS as u32, stateful_catchup_budget(quality))
+    }
+
+    /// Takes the main world's [`AestraCatchupPacing`].
+    pub(crate) fn set_paced(&mut self, paced: bool) {
+        self.paced = paced;
     }
 
     /// Reports ticks simulated against the budget: spending it all means still catching up.
@@ -2400,6 +2469,14 @@ fn stateful_params_bytes(
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
     pack_colliders(&dispatch.colliders, &mut words);
     aestra_gpu::pack_spawn_placement(&dispatch.placement, &mut words);
+    let look = &dispatch.appearance;
+    aestra_gpu::pack_stateful_appearance(
+        &look.size,
+        &look.opacity,
+        &look.color,
+        look.max_scale,
+        &mut words,
+    );
     words.into_iter().flat_map(u32::to_le_bytes).collect()
 }
 
@@ -3384,6 +3461,7 @@ mod tests {
             colliders: Vec::new(),
             field_follow: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
+            appearance: StatefulAppearance::plain(),
         };
         assert_eq!(
             base.fingerprint(),
@@ -4218,6 +4296,7 @@ mod coupled_tests {
                 strength,
             }),
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
+            appearance: StatefulAppearance::plain(),
         };
         let dispatches = vec![dispatch(0, 0.0, 8.0), dispatch(1, -20.0, 3.0)];
         let states = dispatches

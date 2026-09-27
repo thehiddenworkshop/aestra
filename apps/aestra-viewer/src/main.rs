@@ -155,7 +155,10 @@ fn main() {
         );
     if let Some(capture) = capture {
         app.insert_resource(capture)
-            .init_resource::<CaptureRenderReadiness>();
+            .init_resource::<CaptureRenderReadiness>()
+            // Every captured frame is the exact tick it names: a seek catches up in full, not paced
+            // for responsiveness as in the editor.
+            .insert_resource(aestra_bevy::gpu::AestraCatchupPacing { paced: false });
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app.add_systems(ExtractSchedule, publish_capture_render_readiness);
         }

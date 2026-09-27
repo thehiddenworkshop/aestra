@@ -190,6 +190,7 @@ fn stages(effect: &CompiledEffect) -> impl Iterator<Item = &CompiledExtensionSta
 pub(super) fn install(app: &mut App) {
     let mailbox = StageTimingMailbox::default();
     app.init_resource::<AestraDebugViews>()
+        .init_resource::<super::AestraCatchupPacing>()
         .insert_resource(mailbox.clone())
         .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
         .add_systems(PreUpdate, receive_stage_timings)
@@ -206,6 +207,7 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(mailbox)
         .init_resource::<StageRuntimes>()
         .init_resource::<super::CatchupPacer>()
+        .add_systems(ExtractSchedule, extract_catchup_pacing)
         .add_systems(
             RenderStartup,
             (init_field_slice_pipeline, init_field_follow),
@@ -222,6 +224,14 @@ pub(super) fn install(app: &mut App) {
                 .after(super::run_simulation)
                 .before(RenderGraphSystems::Render),
         );
+}
+
+/// The main world's pacing choice, for this frame's catch-up.
+fn extract_catchup_pacing(
+    pacing: bevy::render::Extract<Option<Res<super::AestraCatchupPacing>>>,
+    mut pacer: ResMut<super::CatchupPacer>,
+) {
+    pacer.set_paced(pacing.as_ref().is_none_or(|pacing| pacing.paced));
 }
 
 /// A presented effect, its field view, and which stage components it already carries.

@@ -72,11 +72,13 @@ fn allocate(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 #[test]
 fn presentation_primitive_composes_into_valid_wgsl() {
-    // Presentation extraction reads the persistent `state` buffer and writes the `present_out`
-    // GpuParticle records, both declared by the includer.
+    // Presentation extraction reads the persistent `state` buffer and the `params` whose appearance
+    // block it draws with, and writes the `present_out` GpuParticle records, all declared by the
+    // includer.
     let entry = r#"
 @group(0) @binding(0) var<storage, read> state: array<f32>;
 @group(0) @binding(1) var<storage, read_write> present_out: array<f32>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
 
 @compute @workgroup_size(64)
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {

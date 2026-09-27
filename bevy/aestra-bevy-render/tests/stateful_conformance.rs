@@ -47,6 +47,25 @@ fn shape_params(shape: SpawnShape) -> (u32, f32, [f32; 3]) {
 
 /// Builds the production 25-word stateful `params` buffer from a config (the layout the death loop and
 /// production kernels share). Floats are stored as bits.
+/// The appearance `present` draws a particle with, when a test checks only its motion: white,
+/// opaque, one unit across, all life (a gradient without keys is white).
+fn plain_appearance(words: &mut [u32]) {
+    let mut keys = [bevy::math::Vec2::ZERO; aestra_gpu::MAX_CURVE_KEYS];
+    keys[0] = bevy::math::Vec2::new(0.0, 1.0);
+    let one = aestra_gpu::GpuCurve {
+        keys,
+        count: 1,
+        ..Default::default()
+    };
+    aestra_gpu::pack_stateful_appearance(
+        &one,
+        &one,
+        &aestra_gpu::GpuGradient::default(),
+        1.0,
+        words,
+    );
+}
+
 fn stateful_params(
     config: &StatefulConfig,
     seed: u64,
@@ -105,6 +124,7 @@ fn stateful_params(
         words[base + 9] = u32::from(collider.kill);
     }
     aestra_gpu::pack_spawn_placement(&config.placement, &mut words);
+    plain_appearance(&mut words);
     words
 }
 
@@ -366,12 +386,14 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// Presentation extraction: map each stride-9 persistent state slot to a 12-word GpuParticle record,
-/// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Three bindings: state (read), the
-/// presentation output (read-write), and the sub-tick interpolation time (read).
+/// exercising the production `aestra_gpu::STATEFUL_PRESENT_WGSL`. Four bindings: state (read), the
+/// presentation output (read-write), the sub-tick interpolation time (read), and the params whose
+/// appearance block `present` draws with (read; a plain one here).
 const PRESENT_ENTRY: &str = r#"
 @group(0) @binding(0) var<storage, read> state: array<f32>;
 @group(0) @binding(1) var<storage, read_write> present_out: array<f32>;
 @group(0) @binding(2) var<storage, read> subtick: f32;
+@group(0) @binding(3) var<storage, read> params: array<u32>;
 
 @compute @workgroup_size(64)
 fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -570,7 +592,12 @@ impl Harness {
         // production STATEFUL_PRESENT_WGSL plus the entry point.
         let present_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Aestra present bindings"),
-            entries: &[storage(0, true), storage(1, false), storage(2, true)],
+            entries: &[
+                storage(0, true),
+                storage(1, false),
+                storage(2, true),
+                storage(3, true),
+            ],
         });
         let present_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1262,6 +1289,18 @@ impl Harness {
     /// ABI). Floats come back as bits so `packed_emitter_alive` and `particle_index` are recovered
     /// exactly.
     fn extract_presentation(&self, state_words: &[f32], subtick: f32) -> Result<Vec<u32>, String> {
+        let mut params = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+        plain_appearance(&mut params);
+        self.extract_presentation_with(state_words, subtick, &params)
+    }
+
+    /// [`Self::extract_presentation`] drawing with the appearance block of `params`.
+    fn extract_presentation_with(
+        &self,
+        state_words: &[f32],
+        subtick: f32,
+        params: &[u32],
+    ) -> Result<Vec<u32>, String> {
         let count = state_words.len() / DEATH_STRIDE;
         let state_bytes = encode(&state_words.to_vec())?;
         let state = self
@@ -1286,6 +1325,13 @@ impl Harness {
                 contents: &encode(&subtick)?,
                 usage: wgpu::BufferUsages::STORAGE,
             });
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("present params"),
+                contents: &encode(&params)?,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("present bind group"),
             layout: &self.present_layout,
@@ -1301,6 +1347,10 @@ impl Harness {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: subtick_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1363,6 +1413,7 @@ impl Harness {
         // The 25-word layout; present reads only params[0] (capacity), [17] (emitter_index), and
         // [18] (slot_offset).
         let mut params = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+        plain_appearance(&mut params);
         params[0] = capacity;
         params[17] = emitter_index;
         params[18] = slot_offset;
@@ -1699,6 +1750,61 @@ fn gpu_presentation_extraction_matches_the_reference_abi() {
         vec![1, 1, 1, 0, 0, 0],
         "the alive bit reflects lifetime/age exactly"
     );
+}
+
+#[test]
+fn gpu_present_draws_the_emitters_appearance() {
+    // Stateful particles (those that collide or follow a field) are drawn with the emitter's look —
+    // its size and opacity over life, colour gradient and scale, sampled as the analytic path does —
+    // not as white unit dots.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let linear = |pairs: [(f32, f32); 2]| {
+        let mut keys = [bevy::math::Vec2::ZERO; aestra_gpu::MAX_CURVE_KEYS];
+        for (index, (time, value)) in pairs.into_iter().enumerate() {
+            keys[index] = bevy::math::Vec2::new(time, value);
+        }
+        aestra_gpu::GpuCurve {
+            keys,
+            count: 2,
+            _padding: bevy::math::Vec3::new(1.0, 0.0, 0.0), // linear
+        }
+    };
+    let mut color_keys = [aestra_gpu::GpuGradientKey::default(); aestra_gpu::MAX_CURVE_KEYS];
+    color_keys[0].color = bevy::math::Vec4::new(1.0, 0.0, 0.0, 1.0);
+    color_keys[1].time = 1.0;
+    color_keys[1].color = bevy::math::Vec4::new(0.0, 0.0, 1.0, 0.8);
+    let color = aestra_gpu::GpuGradient {
+        keys: color_keys,
+        count: 2,
+        ..Default::default()
+    };
+    let mut params = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    aestra_gpu::pack_stateful_appearance(
+        &linear([(0.0, 2.0), (1.0, 6.0)]),
+        &linear([(0.0, 1.0), (1.0, 0.0)]),
+        &color,
+        2.0,
+        &mut params,
+    );
+    // Half-way through life: size 4 × scale 2, opacity ½, colour half red, half blue.
+    let slot = state_slot([0.0; 3], [0.0; 3], 1.0, 2.0, 0);
+    let record = harness
+        .extract_presentation_with(&slot, 0.0, &params)
+        .unwrap();
+    let words: Vec<f32> = record[..8]
+        .iter()
+        .map(|word| f32::from_bits(*word))
+        .collect();
+    let expected = [0.5, 0.0, 0.5, 0.9 * 0.5];
+    for (channel, (got, want)) in words[..4].iter().zip(expected).enumerate() {
+        assert!(
+            (got - want).abs() < 1e-6,
+            "colour {channel}: {got} vs {want}"
+        );
+    }
+    assert!((words[7] - 8.0).abs() < 1e-5, "size: {}", words[7]);
 }
 
 #[test]

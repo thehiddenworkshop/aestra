@@ -486,7 +486,8 @@ fn aestra_free_push(slot: u32) {
 /// `age >= lifetime`) is emitted with `alive = 0`; the existing compaction pass drops it.
 ///
 /// The including shader must declare module-scope bindings `state: array<f32>` (the persistent
-/// buffer) and `present_out: array<f32>` (12 words per slot), matching the free-list convention.
+/// buffer), `present_out: array<f32>` (12 words per slot) and `params: array<u32>` (whose appearance
+/// block, [`pack_stateful_appearance`], the record's colour and size come from).
 /// `slot` indexes the per-emitter `state`; `out_slot` indexes the effect-wide `present_out`, so a
 /// stateful emitter whose particles occupy `[slot_offset, slot_offset + capacity)` of the shared
 /// buffer passes `out_slot = slot_offset + slot`.
@@ -498,6 +499,88 @@ fn aestra_free_push(slot: u32) {
 pub const STATEFUL_PRESENT_WGSL: &str = r#"
 const AESTRA_STATE_STRIDE: u32 = 9u;
 const AESTRA_PRESENT_STRIDE: u32 = 12u;
+// The appearance block of `params` (see `pack_stateful_appearance`).
+const AESTRA_APPEARANCE_SIZE: u32 = 78u;
+const AESTRA_APPEARANCE_OPACITY: u32 = 96u;
+const AESTRA_APPEARANCE_COLOR: u32 = 114u;
+const AESTRA_APPEARANCE_SCALE: u32 = 155u;
+const AESTRA_APPEARANCE_KEYS: u32 = 8u;
+
+// The analytic path's `sample_curve`, over a curve packed at `base`: key `k` is (time, value) at
+// base + 2 + 2k, after its count and interpolation mode (0 smooth, 1 linear, 2 step).
+fn aestra_state_curve(base: u32, time: f32) -> f32 {
+    let count = params[base];
+    if (count == 0u) {
+        return 0.0;
+    }
+    let mode = bitcast<f32>(params[base + 1u]);
+    var t = clamp(time, 0.0, 1.0);
+    if (mode == 2.0) { t = min(t + 0.00000011920928955078125, 1.0); }
+    let first = vec2<f32>(bitcast<f32>(params[base + 2u]), bitcast<f32>(params[base + 3u]));
+    if (t <= first.x) {
+        return first.y;
+    }
+    var index = 1u;
+    loop {
+        if (index >= count || index >= AESTRA_APPEARANCE_KEYS) {
+            break;
+        }
+        let at = base + 2u + 2u * index;
+        let end = vec2<f32>(bitcast<f32>(params[at]), bitcast<f32>(params[at + 1u]));
+        if (t <= end.x) {
+            let start = vec2<f32>(bitcast<f32>(params[at - 2u]), bitcast<f32>(params[at - 1u]));
+            let span = select(0.00000011920928955078125, end.x - start.x, end.x > start.x);
+            let x = clamp((t - start.x) / span, 0.0, 1.0);
+            var weight = x * x * (3.0 - 2.0 * x);
+            if (mode == 1.0) { weight = x; }
+            if (mode == 2.0) { return select(start.y, end.y, t >= end.x); }
+            return mix(start.y, end.y, weight);
+        }
+        index += 1u;
+    }
+    let last = base + 2u + 2u * (min(count, AESTRA_APPEARANCE_KEYS) - 1u);
+    return bitcast<f32>(params[last + 1u]);
+}
+
+fn aestra_state_color_key(base: u32, index: u32) -> vec4<f32> {
+    let at = base + 1u + 5u * index + 1u;
+    return vec4<f32>(
+        bitcast<f32>(params[at]),
+        bitcast<f32>(params[at + 1u]),
+        bitcast<f32>(params[at + 2u]),
+        bitcast<f32>(params[at + 3u]),
+    );
+}
+
+fn aestra_state_color_time(base: u32, index: u32) -> f32 {
+    return bitcast<f32>(params[base + 1u + 5u * index]);
+}
+
+// The analytic path's `sample_gradient`, over a gradient packed at `base`.
+fn aestra_state_gradient(base: u32, time: f32) -> vec4<f32> {
+    let count = params[base];
+    if (count == 0u) {
+        return vec4<f32>(1.0);
+    }
+    let t = clamp(time, 0.0, 1.0);
+    if (t <= aestra_state_color_time(base, 0u)) {
+        return aestra_state_color_key(base, 0u);
+    }
+    var index = 1u;
+    loop {
+        if (index >= count || index >= AESTRA_APPEARANCE_KEYS) {
+            break;
+        }
+        let end_time = aestra_state_color_time(base, index);
+        if (t <= end_time) {
+            let start_time = aestra_state_color_time(base, index - 1u);
+            let x = clamp((t - start_time) / max(end_time - start_time, 0.000000119), 0.0, 1.0);
+            return mix(aestra_state_color_key(base, index - 1u), aestra_state_color_key(base, index), x);
+        }
+        index += 1u;
+    }
+    return aestra_state_color_key(base, min(count, AESTRA_APPEARANCE_KEYS) - 1u);
+}
 
 fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick: f32) {
     let s = slot * AESTRA_STATE_STRIDE;
@@ -510,14 +593,17 @@ fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick
     if (lifetime > 0.0) {
         normalized_age = clamp((age + subtick) / lifetime, 0.0, 1.0);
     }
-    present_out[o + 0u] = 1.0; // color.r
-    present_out[o + 1u] = 1.0; // color.g
-    present_out[o + 2u] = 1.0; // color.b
-    present_out[o + 3u] = 1.0; // color.a
+    // The emitter's look over the particle's life, as the analytic path draws it.
+    let gradient = aestra_state_gradient(AESTRA_APPEARANCE_COLOR, normalized_age);
+    present_out[o + 0u] = gradient.r;
+    present_out[o + 1u] = gradient.g;
+    present_out[o + 2u] = gradient.b;
+    present_out[o + 3u] = gradient.a * aestra_state_curve(AESTRA_APPEARANCE_OPACITY, normalized_age);
     present_out[o + 4u] = state[s + 0u] + state[s + 3u] * subtick; // position.x
     present_out[o + 5u] = state[s + 1u] + state[s + 4u] * subtick; // position.y
     present_out[o + 6u] = state[s + 2u] + state[s + 5u] * subtick; // position.z
-    present_out[o + 7u] = 1.0; // size
+    present_out[o + 7u] = aestra_state_curve(AESTRA_APPEARANCE_SIZE, normalized_age)
+        * bitcast<f32>(params[AESTRA_APPEARANCE_SCALE]);
     present_out[o + 8u] = 0.0; // rotation
     present_out[o + 9u] = normalized_age;
     present_out[o + 10u] = bitcast<f32>((emitter_index << 16u) | select(0u, 1u, alive)); // packed_emitter_alive
@@ -669,8 +755,49 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// word at index 26, then up to four 10-word collider records from index 27 (see
 /// [`STATEFUL_COLLISION_WGSL`]), then the spawn placement (the emitter transform,
 /// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
-/// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = 78;
+/// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78; then the appearance
+/// `present` draws with (see [`pack_stateful_appearance`]), from 78.
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize =
+    STATEFUL_APPEARANCE_BASE + STATEFUL_APPEARANCE_WORDS;
+
+/// Where the appearance block starts in the stateful params, and its length: the size and opacity
+/// curves (a count, the interpolation mode as `f32` bits, then 8 `(time, value)` keys each), the
+/// colour gradient (a count, then 8 `(time, r, g, b, a)` keys), and the emitter's largest scale.
+pub const STATEFUL_APPEARANCE_BASE: usize = 78;
+pub const STATEFUL_APPEARANCE_WORDS: usize = 2 * CURVE_WORDS + GRADIENT_WORDS + 1;
+const CURVE_WORDS: usize = 2 + 2 * MAX_CURVE_KEYS;
+const GRADIENT_WORDS: usize = 1 + 5 * MAX_CURVE_KEYS;
+
+/// Packs an emitter's appearance — the same size and opacity curves, colour gradient and scale the
+/// analytic path samples — into the stateful params, so stateful particles (those that collide or
+/// follow a field) are drawn with the look their emitter authors, not as plain white dots.
+pub fn pack_stateful_appearance(
+    size: &GpuCurve,
+    opacity: &GpuCurve,
+    color: &GpuGradient,
+    max_scale: f32,
+    words: &mut [u32],
+) {
+    let mut at = STATEFUL_APPEARANCE_BASE;
+    for curve in [size, opacity] {
+        words[at] = curve.count;
+        words[at + 1] = curve._padding.x.to_bits();
+        for (index, key) in curve.keys.iter().enumerate() {
+            words[at + 2 + 2 * index] = key.x.to_bits();
+            words[at + 3 + 2 * index] = key.y.to_bits();
+        }
+        at += CURVE_WORDS;
+    }
+    words[at] = color.count;
+    for (index, key) in color.keys.iter().enumerate() {
+        let base = at + 1 + 5 * index;
+        words[base] = key.time.to_bits();
+        for (channel, value) in key.color.to_array().into_iter().enumerate() {
+            words[base + 1 + channel] = value.to_bits();
+        }
+    }
+    words[at + GRADIENT_WORDS] = max_scale.to_bits();
+}
 
 /// Packs a spawn placement into its [`STATEFUL_SIMULATION_PARAM_WORDS`] slots (67..78); the identity
 /// leaves the flag clear so the kernel skips it, exactly as the CPU reference does.
