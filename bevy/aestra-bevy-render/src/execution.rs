@@ -32,7 +32,8 @@ use aestra_core::{ComputeProgramId, ResourceTypeId};
 use aestra_gpu::{GpuHostBindings, ProgramInterfaces, check_program_block_cached, source_hash};
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
-    ExecutionBlock, ExecutionOp, FrameConstants, RepeatPolicy, ResourceLifetime, StagedDispatch,
+    ExecutionBlock, ExecutionOp, FieldLayout, FrameConstants, RepeatPolicy, ResourceLifetime,
+    StagedDispatch,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
@@ -40,6 +41,22 @@ use std::time::Duration;
 use wgpu::util::DeviceExt;
 
 const READBACK_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A grid field's buffers as a reader binds them (see [`StageExecutor::field_buffers`]).
+#[derive(Clone, Copy)]
+pub struct FieldBuffers<'a> {
+    pub field: &'a wgpu::Buffer,
+    /// A bricked field's brick table (fluid F7); `None` when every cell is stored.
+    pub table: Option<&'a wgpu::Buffer>,
+}
+
+impl<'a> FieldBuffers<'a> {
+    /// The table, or — for a field that stores every cell — the field itself, bound where a reader's
+    /// shader declares the table but never reads it.
+    fn table_or_field(&self) -> &'a wgpu::Buffer {
+        self.table.unwrap_or(self.field)
+    }
+}
 
 /// The persistent state of a stage at a tick boundary, read back to the CPU: the bytes of every
 /// persistent resource the stage owns (host-written built-ins excluded).
@@ -609,6 +626,17 @@ impl StageExecutor {
         self.binding(id).map(|binding| &self.buffers[binding])
     }
 
+    /// The buffers a reader of the grid field `layout` binds: the field's, and a bricked field's
+    /// brick table's (fluid F7).
+    pub fn field_buffers(&self, layout: &FieldLayout) -> Option<FieldBuffers<'_>> {
+        let field = self.buffer(layout.resource.as_str())?;
+        let table = match &layout.bricks {
+            Some(bricks) => Some(self.buffer(bricks.table.as_str())?),
+            None => None,
+        };
+        Some(FieldBuffers { field, table })
+    }
+
     /// Compute passes one tick encodes (runs of consecutive dispatches).
     pub fn passes_per_tick(&self) -> usize {
         self.steps
@@ -1151,7 +1179,7 @@ impl StageTimeline {
 }
 
 /// Follow Field for stateful particles (fluid F2b): pulls each live slot's velocity toward a domain's
-/// vector field (see [`aestra_gpu::FIELD_FOLLOW_WGSL`]). Engine-neutral, like [`StageExecutor`].
+/// vector field (see [`aestra_gpu::field_follow_wgsl`]). Engine-neutral, like [`StageExecutor`].
 pub struct FieldFollowPipeline {
     pipeline: wgpu::ComputePipeline,
 }
@@ -1160,7 +1188,7 @@ impl FieldFollowPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("aestra follow field"),
-            source: wgpu::ShaderSource::Wgsl(aestra_gpu::FIELD_FOLLOW_WGSL.into()),
+            source: wgpu::ShaderSource::Wgsl(aestra_gpu::field_follow_wgsl().into()),
         });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("aestra follow field"),
@@ -1181,7 +1209,7 @@ impl FieldFollowPipeline {
         encoder: &mut wgpu::CommandEncoder,
         state: &wgpu::Buffer,
         capacity: u32,
-        field: &wgpu::Buffer,
+        field: FieldBuffers<'_>,
         follow: &aestra_runtime::CompiledFieldFollow,
         dt: f32,
     ) {
@@ -1200,11 +1228,15 @@ impl FieldFollowPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: field.as_entire_binding(),
+                    resource: field.field.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: field.table_or_field().as_entire_binding(),
                 },
             ],
         });
@@ -1220,37 +1252,67 @@ impl FieldFollowPipeline {
 
 /// Copies a grid field into an `rgba16float` 3-D storage texture of the grid's size (fluid F3), so
 /// volume presentations sample it with hardware trilinear filtering (see
-/// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]). Engine-neutral, like [`StageExecutor`].
+/// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]); a bricked field (fluid F7) into a brick atlas and
+/// its table texture ([`aestra_gpu::volume::bricks_to_volume_wgsl`]). Engine-neutral, like
+/// [`StageExecutor`].
 pub struct FieldVolumePipeline {
     pipeline: wgpu::ComputePipeline,
+    bricks: wgpu::ComputePipeline,
+    table: wgpu::ComputePipeline,
 }
 
 impl FieldVolumePipeline {
     pub fn new(device: &wgpu::Device) -> Self {
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("aestra field volume"),
-            source: wgpu::ShaderSource::Wgsl(aestra_gpu::volume::FIELD_TO_VOLUME_WGSL.into()),
-        });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("aestra field volume"),
-            layout: None,
-            module: &module,
-            entry_point: Some("copy_field"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-        Self { pipeline }
+        let compute = |source: String, entry: &str| {
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("aestra field volume"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("aestra field volume"),
+                layout: None,
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        let bricks = aestra_gpu::volume::bricks_to_volume_wgsl();
+        Self {
+            pipeline: compute(
+                aestra_gpu::volume::FIELD_TO_VOLUME_WGSL.into(),
+                "copy_field",
+            ),
+            bricks: compute(bricks.clone(), "copy_bricks"),
+            table: compute(bricks, "copy_table"),
+        }
     }
 
-    /// Encodes the copy of `field`, laid out as `layout`, into the 3-D texture `volume`.
+    /// Encodes the copy of `field`, laid out as `layout`, into the 3-D texture `volume` — for a
+    /// bricked field, a brick atlas, and its brick table into `table`.
     pub fn encode(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        field: &wgpu::Buffer,
+        field: FieldBuffers<'_>,
         volume: &wgpu::TextureView,
         layout: &aestra_runtime::FieldLayout,
+        table: Option<&wgpu::TextureView>,
     ) {
+        if let (Some(bricks), Some(table_buffer), Some(table)) =
+            (&layout.bricks, field.table, table)
+        {
+            self.encode_bricks(
+                device,
+                encoder,
+                (field.field, table_buffer),
+                (volume, table),
+                layout,
+                bricks,
+            );
+            return;
+        }
+        let field = field.field;
         let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("aestra field volume params"),
             contents: &words_to_bytes(&[
@@ -1291,6 +1353,69 @@ impl FieldVolumePipeline {
             layout.dims[2].div_ceil(4),
         );
     }
+
+    fn encode_bricks(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        (field, table_buffer): (&wgpu::Buffer, &wgpu::Buffer),
+        (volume, table): (&wgpu::TextureView, &wgpu::TextureView),
+        layout: &aestra_runtime::FieldLayout,
+        bricks: &aestra_runtime::BrickLayout,
+    ) {
+        let per_axis = aestra_gpu::volume::brick_atlas_bricks(bricks.slots);
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra brick volume params"),
+            contents: &words_to_bytes(&[
+                layout.dims[0],
+                layout.dims[1],
+                layout.dims[2],
+                layout.components,
+                bricks.edge,
+                per_axis,
+                bricks.table_word,
+                bricks.slot_bricks_word,
+                bricks.slots,
+            ]),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let entry = |binding, resource| wgpu::BindGroupEntry { binding, resource };
+        let atlas = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra brick atlas"),
+            layout: &self.bricks.get_bind_group_layout(0),
+            entries: &[
+                entry(0, field.as_entire_binding()),
+                entry(1, params.as_entire_binding()),
+                entry(2, wgpu::BindingResource::TextureView(volume)),
+                entry(3, table_buffer.as_entire_binding()),
+            ],
+        });
+        let table_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra brick table"),
+            layout: &self.table.get_bind_group_layout(0),
+            entries: &[
+                entry(1, params.as_entire_binding()),
+                entry(3, table_buffer.as_entire_binding()),
+                entry(4, wgpu::BindingResource::TextureView(table)),
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra brick volume"),
+            timestamp_writes: None,
+        });
+        let texels = per_axis * (bricks.edge + 2);
+        pass.set_pipeline(&self.bricks);
+        pass.set_bind_group(0, &atlas, &[]);
+        pass.dispatch_workgroups(texels.div_ceil(4), texels.div_ceil(4), texels.div_ceil(4));
+        let grid = bricks.grid(layout.dims);
+        pass.set_pipeline(&self.table);
+        pass.set_bind_group(0, &table_group, &[]);
+        pass.dispatch_workgroups(
+            grid[0].div_ceil(4),
+            grid[1].div_ceil(4),
+            grid[2].div_ceil(4),
+        );
+    }
 }
 
 /// Halves a store by keeping entries 0, 2, 4… — doubling the effective cadence while keeping
@@ -1303,7 +1428,6 @@ fn retain_every_other<T>(items: &mut Vec<T>) {
     });
 }
 
-/// Reads a buffer back (blocking).
 /// The resources indirect compute ops read their counts from.
 fn indirect_sources<'a>(ops: &'a [ExecutionOp], sources: &mut Vec<&'a ResourceTypeId>) {
     for op in ops {
@@ -1319,6 +1443,7 @@ fn indirect_sources<'a>(ops: &'a [ExecutionOp], sources: &mut Vec<&'a ResourceTy
     }
 }
 
+/// Reads a buffer back (blocking).
 fn read_buffer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

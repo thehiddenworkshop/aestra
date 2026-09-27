@@ -1126,8 +1126,30 @@ fn a_sparse_grid_lowers_to_passes_over_its_active_bricks() {
         (16 + 2 * slots as u64 + 64u64.pow(3)) * 4
     );
     assert_eq!(stage.block.constants[19], slots);
-    // Not drawn yet: no field layouts, no presentation.
-    assert!(stage.block.fields.is_empty() && stage.presentations.is_empty());
+    // Its fields are laid out as bricks over the 512³ grid, so it is drawn, followed and sliced.
+    let density = stage
+        .block
+        .field(&ResourceTypeId::new(RESOURCE_DENSITY))
+        .unwrap();
+    assert_eq!(density.dims, [512; 3]);
+    let bricks = density.bricks.as_ref().expect("bricked");
+    assert_eq!(
+        (
+            bricks.edge,
+            bricks.slots,
+            bricks.table.as_str(),
+            bricks.table_word,
+            bricks.slot_bricks_word
+        ),
+        (
+            8,
+            slots,
+            aestra_fluid::RESOURCE_BRICKS,
+            16 + 2 * slots,
+            16 + slots
+        )
+    );
+    assert_eq!(stage.presentations.len(), 1, "the volume look");
 
     // Through the artifact, device-sized passes included.
     let compiled = EffectCompiler::with_extensions(registry.clone())

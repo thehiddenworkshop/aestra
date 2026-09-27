@@ -321,6 +321,43 @@ struct FieldLayoutV4 {
     /// A staggered (MAC) field (fluid F4, additive).
     #[serde(default, skip_serializing_if = "is_false")]
     staggered: bool,
+    /// A bricked field (fluid F7, additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bricks: Option<BrickLayoutV4>,
+}
+
+/// A bricked field's storage (fluid F7): see [`aestra_runtime::BrickLayout`].
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct BrickLayoutV4 {
+    edge: u32,
+    slots: u32,
+    table: ResourceTypeId,
+    table_word: u32,
+    slot_bricks_word: u32,
+}
+
+impl From<&aestra_runtime::BrickLayout> for BrickLayoutV4 {
+    fn from(bricks: &aestra_runtime::BrickLayout) -> Self {
+        Self {
+            edge: bricks.edge,
+            slots: bricks.slots,
+            table: bricks.table.clone(),
+            table_word: bricks.table_word,
+            slot_bricks_word: bricks.slot_bricks_word,
+        }
+    }
+}
+
+impl From<BrickLayoutV4> for aestra_runtime::BrickLayout {
+    fn from(bricks: BrickLayoutV4) -> Self {
+        Self {
+            edge: bricks.edge,
+            slots: bricks.slots,
+            table: bricks.table,
+            table_word: bricks.table_word,
+            slot_bricks_word: bricks.slot_bricks_word,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -542,6 +579,7 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                         origin: field.origin,
                         cell_size: field.cell_size,
                         staggered: field.staggered,
+                        bricks: field.bricks.as_ref().map(BrickLayoutV4::from),
                     })
                     .collect(),
             },
@@ -588,6 +626,7 @@ impl ExtensionStageV4 {
                     origin: field.origin,
                     cell_size: field.cell_size,
                     staggered: field.staggered,
+                    bricks: field.bricks.map(Into::into),
                 })
                 .collect(),
         };

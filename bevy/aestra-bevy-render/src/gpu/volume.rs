@@ -6,7 +6,8 @@
 //! - **Fields become 3-D textures.** Each presented field gets an `rgba16float` 3-D image; after the
 //!   stages advance each frame, a compute pass copies the field's buffer into it
 //!   ([`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]), so the march samples with hardware trilinear
-//!   filtering.
+//!   filtering. A bricked grid's fields (fluid F7) become brick atlases, sized by the grid's slots,
+//!   not its extent, with an `r32uint` table image the interface finds each brick's block with.
 //! - **The box is a mesh.** A unit cube, a child of the effect scaled to the grid's extent, draws with
 //!   [`VolumeMaterial`]. Only its back faces are rasterized and the depth test is off: the fragment
 //!   rebuilds the view ray in the box's space, clips it to the box (the camera may be inside) and to the
@@ -43,6 +44,7 @@ use std::collections::HashMap;
 pub(crate) struct VolumeParams {
     size: Vec4,
     dims: UVec4,
+    bricks: UVec4,
     constants: [UVec4; MAX_VOLUME_CONSTANTS / 4],
 }
 
@@ -56,6 +58,14 @@ impl VolumeParams {
             size: Vec3::from(layout.dims.map(|cells| cells as f32 * layout.cell_size))
                 .extend(layout.cell_size),
             dims: UVec3::from(layout.dims).extend(fields as u32),
+            bricks: layout.bricks.as_ref().map_or(UVec4::ZERO, |bricks| {
+                UVec4::new(
+                    bricks.edge,
+                    aestra_gpu::volume::brick_atlas_bricks(bricks.slots),
+                    0,
+                    0,
+                )
+            }),
             constants: words,
         }
     }
@@ -76,6 +86,9 @@ pub(crate) struct VolumeMaterial {
     field_2: Handle<Image>,
     #[texture(5, dimension = "3d")]
     field_3: Handle<Image>,
+    /// A bricked grid's brick table (fluid F7); a placeholder otherwise.
+    #[texture(6, dimension = "3d", sample_type = "u_int")]
+    table: Handle<Image>,
     shader: Handle<Shader>,
 }
 
@@ -203,6 +216,8 @@ pub(super) struct VolumeFieldTarget {
     pub stage: usize,
     pub layout: FieldLayout,
     pub image: AssetId<Image>,
+    /// A bricked field's table image (fluid F7).
+    pub table: Option<AssetId<Image>>,
 }
 
 /// What one presented volume was built for; a change rebuilds its entity and textures.
@@ -220,6 +235,7 @@ struct VolumeView {
     entity: Entity,
     material: Handle<VolumeMaterial>,
     images: Vec<Handle<Image>>,
+    table: Option<Handle<Image>>,
 }
 
 /// Main-world state of an effect's volumes.
@@ -242,6 +258,7 @@ impl VolumeViews {
                         stage: view.key.stage,
                         layout: layout.clone(),
                         image: image.id(),
+                        table: view.table.as_ref().map(Handle::id),
                     })
             })
             .collect()
@@ -283,6 +300,33 @@ fn presented_volumes(effect: &CompiledEffect) -> Vec<(VolumeKey, &VolumePresenta
 /// Composed volume shaders by program and march function.
 #[derive(Resource, Default)]
 struct VolumeShaders(HashMap<(ComputeProgramId, String), Handle<Shader>>);
+
+/// The texture a field is copied into: the grid's extent, or a bricked grid's atlas.
+fn field_image(layout: &FieldLayout) -> Image {
+    match &layout.bricks {
+        Some(bricks) => {
+            volume_image([aestra_gpu::volume::brick_atlas_texels(bricks.slots, bricks.edge); 3])
+        }
+        None => volume_image(layout.dims),
+    }
+}
+
+/// A bricked grid's table image: one `u32` texel per brick, read without filtering.
+fn table_image(grid: [u32; 3]) -> Image {
+    let mut image = Image::new_fill(
+        Extent3d {
+            width: grid[0],
+            height: grid[1],
+            depth_or_array_layers: grid[2],
+        },
+        TextureDimension::D3,
+        &[0; 4],
+        TextureFormat::R32Uint,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.texture_descriptor.usage |= TextureUsages::STORAGE_BINDING;
+    image
+}
 
 fn volume_image(dims: [u32; 3]) -> Image {
     let mut image = Image::new_fill(
@@ -329,8 +373,8 @@ fn sync_volume_views(
     )>,
     cameras_3d: Query<(), With<Camera3d>>,
     mut shaders_cache: ResMut<VolumeShaders>,
-    // A one-texel 3-D image bound to unused field slots.
-    mut placeholder: Local<Option<Handle<Image>>>,
+    // One-texel 3-D images bound to unused field slots and, for a grid storing every cell, the table.
+    mut placeholders: Local<Option<(Handle<Image>, Handle<Image>)>>,
     mut unit_cube: Local<Option<Handle<Mesh>>>,
     assets: VolumeAssets,
 ) {
@@ -338,8 +382,13 @@ fn sync_volume_views(
     else {
         return;
     };
-    let placeholder = placeholder
-        .get_or_insert_with(|| images.add(volume_image([1, 1, 1])))
+    let (placeholder, placeholder_table) = placeholders
+        .get_or_insert_with(|| {
+            (
+                images.add(volume_image([1, 1, 1])),
+                images.add(table_image([1, 1, 1])),
+            )
+        })
         .clone();
     let unit_cube = unit_cube
         .get_or_insert_with(|| meshes.add(Cuboid::from_length(1.0)))
@@ -399,10 +448,14 @@ fn sync_volume_views(
                 })
                 .clone();
             let layout = &key.layouts[0];
+            let table = layout
+                .bricks
+                .as_ref()
+                .map(|bricks| images.add(table_image(bricks.grid(layout.dims))));
             let images: Vec<Handle<Image>> = key
                 .layouts
                 .iter()
-                .map(|field| images.add(volume_image(field.dims)))
+                .map(|field| images.add(field_image(field)))
                 .collect();
             let slot = |index: usize| images.get(index).unwrap_or(&placeholder).clone();
             let material = materials.add(VolumeMaterial {
@@ -411,6 +464,7 @@ fn sync_volume_views(
                 field_1: slot(1),
                 field_2: slot(2),
                 field_3: slot(3),
+                table: table.clone().unwrap_or_else(|| placeholder_table.clone()),
                 shader,
             });
             let size = Vec3::from(layout.dims.map(|cells| cells as f32 * layout.cell_size));
@@ -429,6 +483,7 @@ fn sync_volume_views(
                 key,
                 material,
                 images,
+                table,
             });
         }
         if let Some(fresh) = fresh {
@@ -606,6 +661,7 @@ mod tests {
             origin: [0.0; 3],
             cell_size: 0.5,
             staggered: false,
+            bricks: None,
         };
         let params = VolumeParams::new(&layout, 2, &[7, 8, 9, 10, 11]);
         assert_eq!(params.size, Vec4::new(8.0, 4.0, 2.0, 0.5));

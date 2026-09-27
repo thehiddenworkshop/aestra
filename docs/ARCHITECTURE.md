@@ -133,7 +133,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   integer prefix sums, so it is deterministic; the same solver WGSL is composed with a sparse or a
   dense indexing module (`grid_sparse.wgsl` / `grid_dense.wgsl`); an inactive brick is still, open
   air (p = 0). Stored whole (a negative threshold), a sparse grid computes the dense grid's bits under
-  Jacobi sweeps. It adds nothing to core.
+  Jacobi sweeps. Its fields declare a generic `BrickLayout`, so they are drawn, followed and sliced
+  like dense ones. It adds nothing fluid-specific to core.
 
 ### `aestra-compiler`
 
@@ -208,7 +209,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   is compacted with, in a canonical order and without atomics.
 - Owns the volume-presentation interface (`volume`): the bindings, the `AestraVolumeRay`, and the
   field, constant and box helpers a plugin's march function is written against, plus the pass that
-  copies a grid field into a 3D texture.
+  copies a grid field into a 3D texture. A bricked field (`FieldLayout::bricks`, fluid F7) is copied
+  into a brick atlas — each stored brick with a one-cell apron, so trilinear filtering stays exact
+  across brick borders — and a `u32` table texture, which `aestra_volume_field` reads transparently.
+  `brick_cell_wgsl` is the shared lookup Follow Field and the debug slices read bricked fields with.
 - Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
 
 ### `aestra-bevy-render`

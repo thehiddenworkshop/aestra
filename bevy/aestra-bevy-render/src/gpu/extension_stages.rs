@@ -684,7 +684,7 @@ fn run_extension_stages(
         // The debug field slice.
         if let (Some(view), Some(pipeline)) = (&extracted.view, &slice_pipeline)
             && let Some(Some(timeline)) = runtime.timelines.get(view.stage)
-            && let Some(field) = timeline.executor().buffer(view.layout.resource.as_str())
+            && let Some(field) = timeline.executor().field_buffers(&view.layout)
             && let Some(image) = images.get(view.image)
         {
             pipeline.encode(
@@ -699,15 +699,20 @@ fn run_extension_stages(
         if let Some(pipeline) = &volume_pipeline {
             for target in &extracted.volumes {
                 if let Some(Some(timeline)) = runtime.timelines.get(target.stage)
-                    && let Some(field) = timeline.executor().buffer(target.layout.resource.as_str())
+                    && let Some(field) = timeline.executor().field_buffers(&target.layout)
                     && let Some(image) = images.get(target.image)
                 {
+                    let table = target
+                        .table
+                        .and_then(|table| images.get(table))
+                        .map(|table| &table.texture_view);
                     pipeline.0.encode(
                         wgpu_device,
                         render_context.command_encoder(),
                         field,
                         &image.texture_view,
                         &target.layout,
+                        table.map(|view| &**view),
                     );
                 }
             }
@@ -719,7 +724,16 @@ fn run_extension_stages(
     }
 }
 
-/// Copies one z-slice of a grid field into an `rgba8unorm` storage texture.
+/// Copies one z-slice of a grid field into an `rgba8unorm` storage texture; a bricked field (fluid
+/// F7) through its brick table (binding 3; any buffer when every cell is stored), empty where its
+/// bricks are not stored.
+fn field_slice_wgsl() -> String {
+    format!(
+        "{FIELD_SLICE_WGSL}{}",
+        aestra_gpu::brick_cell_wgsl("slice_brick_cell", "slice_table")
+    )
+}
+
 const FIELD_SLICE_WGSL: &str = r#"
 struct SliceParams {
     dims_x: u32,
@@ -727,17 +741,31 @@ struct SliceParams {
     components: u32,
     slice: u32,
     gain: f32,
+    dims_z: u32,
+    brick_edge: u32,
+    table_word: u32,
 }
 
 @group(0) @binding(0) var<storage, read> field: array<f32>;
 @group(0) @binding(1) var<storage, read> params: SliceParams;
 @group(0) @binding(2) var slice_image: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var<storage, read> slice_table: array<u32>;
 
 @compute @workgroup_size(8, 8)
 fn slice_field(@builtin(global_invocation_id) id: vec3<u32>) {
     if (id.x >= params.dims_x || id.y >= params.dims_y) { return; }
     let stride = select(params.components, 4u, params.components == 3u);
-    let base = ((params.slice * params.dims_y + id.y) * params.dims_x + id.x) * stride;
+    var element = (params.slice * params.dims_y + id.y) * params.dims_x + id.x;
+    let texel = vec2<i32>(i32(id.x), i32(params.dims_y - 1u - id.y));
+    if (params.brick_edge != 0u) {
+        let dims = vec3<u32>(params.dims_x, params.dims_y, params.dims_z);
+        element = slice_brick_cell(vec3<u32>(id.xy, params.slice), dims, params.brick_edge, params.table_word);
+        if (element == 0xffffffffu) {
+            textureStore(slice_image, texel, vec4<f32>(0.0));
+            return;
+        }
+    }
+    let base = element * stride;
     var color: vec4<f32>;
     if (params.components == 1u) {
         color = vec4<f32>(1.0, 1.0, 1.0, clamp(field[base] * params.gain, 0.0, 1.0));
@@ -746,7 +774,7 @@ fn slice_field(@builtin(global_invocation_id) id: vec3<u32>) {
         color = vec4<f32>(clamp(abs(v), vec3<f32>(0.0), vec3<f32>(1.0)), clamp(length(v), 0.0, 1.0));
     }
     // Texture rows run downward; the grid's y runs upward.
-    textureStore(slice_image, vec2<i32>(i32(id.x), i32(params.dims_y - 1u - id.y)), color);
+    textureStore(slice_image, texel, color);
 }
 "#;
 
@@ -757,7 +785,7 @@ fn init_field_slice_pipeline(mut commands: Commands, device: Res<RenderDevice>) 
     let device = device.wgpu_device();
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("aestra field slice"),
-        source: wgpu::ShaderSource::Wgsl(FIELD_SLICE_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(field_slice_wgsl().into()),
     });
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("aestra field slice"),
@@ -775,7 +803,7 @@ impl FieldSlicePipeline {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        field: &wgpu::Buffer,
+        field: crate::execution::FieldBuffers<'_>,
         image: &wgpu::TextureView,
         view: &FieldViewTarget,
     ) {
@@ -786,9 +814,9 @@ impl FieldSlicePipeline {
             layout.components,
             view.slice,
             view.gain.to_bits(),
-            0,
-            0,
-            0,
+            layout.dims[2],
+            layout.bricks.as_ref().map_or(0, |bricks| bricks.edge),
+            layout.bricks.as_ref().map_or(0, |bricks| bricks.table_word),
         ];
         let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("aestra field slice params"),
@@ -804,7 +832,7 @@ impl FieldSlicePipeline {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: field.as_entire_binding(),
+                    resource: field.field.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -813,6 +841,10 @@ impl FieldSlicePipeline {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(image),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: field.table.unwrap_or(field.field).as_entire_binding(),
                 },
             ],
         });
@@ -832,7 +864,7 @@ mod tests {
 
     #[test]
     fn the_field_slice_shader_validates() {
-        let module = naga::front::wgsl::parse_str(FIELD_SLICE_WGSL).expect("parses");
+        let module = naga::front::wgsl::parse_str(&field_slice_wgsl()).expect("parses");
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::default(),

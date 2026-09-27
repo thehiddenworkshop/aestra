@@ -462,6 +462,9 @@ struct FieldFollowV4 {
     /// A staggered (MAC) field (fluid F4, additive).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     staggered: bool,
+    /// A bricked field (fluid F7, additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bricks: Option<v4::BrickLayoutV4>,
 }
 
 impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
@@ -475,6 +478,7 @@ impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
             cell_size: follow.field.cell_size,
             strength: follow.strength,
             staggered: follow.field.staggered,
+            bricks: follow.field.bricks.as_ref().map(v4::BrickLayoutV4::from),
         }
     }
 }
@@ -490,6 +494,7 @@ impl FieldFollowV4 {
                 origin: self.origin,
                 cell_size: self.cell_size,
                 staggered: self.staggered,
+                bricks: self.bricks.map(Into::into),
             },
             strength: self.strength,
         }

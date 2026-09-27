@@ -1,0 +1,269 @@
+(
+    format_version: 4,
+    id: "9235e13e-338c-49ee-87cb-5db6a34a6c09",
+    name: "Fluid Sparse Plume",
+    duration: 8.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "9691600b-4b89-1cf3-f2a4-85227344bcb8",
+            name: "Fluid",
+            stage_type: "org.example.aestra-fluid::stage/fluid_solver",
+            modules: [
+                (
+                    id: "0f77f42b-0eca-4eba-a0fd-d58df0805191",
+                    module_type: "org.example.aestra-fluid::module/grid",
+                    enabled: true,
+                    parameters: Custom({
+                        "brick_budget": U32(2048),
+                        "brick_threshold": Scalar(0.001),
+                        "cell_size": Scalar(1.25),
+                        "center": Vec3((0.0, 120.0, 0.0)),
+                        "density_dissipation": Scalar(0.25),
+                        "flow_map": Bool(false),
+                        "flow_map_cycle": U32(8),
+                        "multigrid_pressure": Bool(true),
+                        "open_sides": Bool(true),
+                        "open_top": Bool(true),
+                        "pressure_iterations": U32(12),
+                        "pressure_tolerance": Scalar(0.001),
+                        "resolution": U32(192),
+                        "sharp_advection": Bool(true),
+                        "sparse": Bool(true),
+                        "velocity_dissipation": Scalar(0.5),
+                    }),
+                ),
+                (
+                    id: "bd2dac38-a678-473b-ab66-cb13c6ec79c8",
+                    module_type: "org.example.aestra-fluid::module/density_source",
+                    enabled: true,
+                    parameters: Custom({
+                        "density_rate": Scalar(5.0),
+                        "fuel_rate": Scalar(0.0),
+                        "position": Vec3((0.0, 12.0, 0.0)),
+                        "radius": Scalar(10.0),
+                        "temperature_rate": Scalar(0.0),
+                        "velocity": Vec3((0.0, 40.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "88ed6321-fef7-42a3-813f-8c90ab90d07f",
+                    module_type: "org.example.aestra-fluid::module/buoyancy",
+                    enabled: true,
+                    parameters: Custom({
+                        "strength": Scalar(3.0),
+                    }),
+                ),
+                (
+                    id: "ec653806-e2f1-478f-bdab-d4d628b0bd86",
+                    module_type: "org.example.aestra-fluid::module/vorticity",
+                    enabled: true,
+                    parameters: Custom({
+                        "strength": Scalar(0.4),
+                    }),
+                ),
+                (
+                    id: "a3b40f1f-cd4e-4b03-acd2-b2a94349861b",
+                    module_type: "org.example.aestra-fluid::module/volume_look",
+                    enabled: true,
+                    parameters: Custom({
+                        "ambient": Scalar(0.3),
+                        "color": Vec3((0.72, 0.74, 0.78)),
+                        "edge_fade": Scalar(0.15),
+                        "fire_intensity": Scalar(1.0),
+                        "light_color": Vec3((1.0, 0.96, 0.9)),
+                        "light_direction": Vec3((-0.55, 0.75, -0.35)),
+                        "light_intensity": Scalar(1.2),
+                        "opacity": Scalar(0.06),
+                        "shadow_steps": U32(6),
+                        "steps": U32(192),
+                        "temperature_scale": Scalar(1000.0),
+                    }),
+                ),
+                (
+                    id: "200c343e-d2f4-4749-b453-1b41dbef4c46",
+                    module_type: "org.example.aestra-fluid::module/turbulence",
+                    enabled: true,
+                    parameters: Custom({
+                        "evolution": Scalar(1.5),
+                        "masked": Bool(true),
+                        "scale": Scalar(20.0),
+                        "strength": Scalar(30.0),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [
+        (
+            id: "874d0cda-da0a-4330-89af-cc1967a4f961",
+            name: "Smoke Puffs",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 8.0,
+            max_particles: 1024,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "dbf7a5f2-f6f6-46da-a173-03ded82bce8d",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 80.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "eff6ed17-83a6-4d6e-bd2c-d2d6e11eb4ff",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Sphere(
+                                    radius: 10.0,
+                                ),
+                            ),
+                        ),
+                        (
+                            id: "7d7cb506-1eeb-45d7-b5f1-b03ac54cd0c1",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 5.0,
+                                    max: 7.0,
+                                ),
+                                speed: (
+                                    min: 0.0,
+                                    max: 5.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 60.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "1bbe7449-6946-443d-80a4-25bcec929abc",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, 0.0, 0.0),
+                                drag: 0.0,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "0cb7bf13-65ee-4c71-8f19-4b72d48ab026",
+                            module_type: "aestra.update.follow_field",
+                            enabled: true,
+                            parameters: FollowField(
+                                strength: 6.0,
+                            ),
+                        ),
+                        (
+                            id: "698825ba-4a19-480f-8f3b-81cbdce3ea3b",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "2dcfba25-8aaa-4e12-8b33-e2919b121836",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 4.0,
+                                        ),
+                                        (
+                                            time: 0.35,
+                                            value: 10.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 1.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "fbf90b6b-49da-45c7-870e-d8996245f0a6",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.0,
+                                        ),
+                                        (
+                                            time: 0.12,
+                                            value: 1.0,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "5f282f88-287d-45eb-a1a9-4d6891495960",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.35, 0.75, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 0.5,
+                                            color: (0.62, 0.3, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.15, 0.05, 0.4, 0.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "97bd0b26-92d8-49c1-9d9f-f8dc151776fc",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+)

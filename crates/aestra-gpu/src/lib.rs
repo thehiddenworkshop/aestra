@@ -848,27 +848,66 @@ pub fn stateful_simulation_wgsl() -> String {
     )
 }
 
-/// Words of [`FIELD_FOLLOW_WGSL`]'s `params`: `[capacity, dims.x, dims.y, dims.z, cell stride,
-/// origin.x, origin.y, origin.z, cell_size, strength, dt, staggered]` (floats as bits).
-pub const FIELD_FOLLOW_PARAM_WORDS: usize = 12;
+/// A WGSL function `{name}(cell: vec3<u32>, dims: vec3<u32>, edge: u32, table_word: u32) -> u32` for
+/// a bricked field (fluid F7, [`aestra_runtime::BrickLayout`]): the element of the stored field that
+/// holds grid cell `cell`, or `0xffffffffu` when its brick is not stored (it then reads as zero).
+/// `table` names the `array<u32>` holding the brick table at word `table_word`.
+pub fn brick_cell_wgsl(name: &str, table: &str) -> String {
+    format!(
+        r#"
+fn {name}(cell: vec3<u32>, dims: vec3<u32>, edge: u32, table_word: u32) -> u32 {{
+    let grid = dims / edge;
+    let brick = cell / edge;
+    let slot = {table}[table_word + (brick.z * grid.y + brick.y) * grid.x + brick.x];
+    if (slot == 0u) {{
+        return 0xffffffffu;
+    }}
+    let local = cell % edge;
+    return slot * edge * edge * edge + (local.z * edge + local.y) * edge + local.x;
+}}
+"#
+    )
+}
+
+/// Words of [`field_follow_wgsl`]'s `params`: `[capacity, dims.x, dims.y, dims.z, cell stride,
+/// origin.x, origin.y, origin.z, cell_size, strength, dt, staggered, brick edge (0: every cell
+/// stored), brick table word]` (floats as bits).
+pub const FIELD_FOLLOW_PARAM_WORDS: usize = 14;
 
 /// Follow Field for stateful particles (fluid F2b): each live slot of the persistent state
 /// (`AESTRA_STATE_STRIDE` = 9 floats: position, velocity, age, lifetime, ordinal) samples a vector
 /// grid field — a domain's [`aestra_runtime::FieldLayout`] — trilinearly at its position (cell-centred,
 /// clamped to the grid) and moves its velocity toward the sampled `xyz` by `min(strength × dt, 1)`.
 /// A gather over particles: no atomics, so reruns reproduce the same bits. The stateful backend runs it
-/// right after each tick's `death_integrate`/`spawn`, so the pull shapes the next tick's motion.
-pub const FIELD_FOLLOW_WGSL: &str = r#"
+/// right after each tick's `death_integrate`/`spawn`, so the pull shapes the next tick's motion. A
+/// bricked field (fluid F7) is read through its brick table (binding 3; any buffer when the field
+/// stores every cell), and is zero where its bricks are not stored.
+pub fn field_follow_wgsl() -> String {
+    format!(
+        "{FIELD_FOLLOW_WGSL}{}",
+        brick_cell_wgsl("follow_brick_cell", "follow_table")
+    )
+}
+
+const FIELD_FOLLOW_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read_write> state: array<f32>;
 @group(0) @binding(1) var<storage, read> field: array<f32>;
 @group(0) @binding(2) var<storage, read> params: array<u32>;
+@group(0) @binding(3) var<storage, read> follow_table: array<u32>;
 
 const FOLLOW_STATE_STRIDE: u32 = 9u;
 
 fn follow_field_value(cell: vec3<i32>) -> vec3<f32> {
     let dims = vec3<i32>(i32(params[1]), i32(params[2]), i32(params[3]));
     let c = clamp(cell, vec3<i32>(0), dims - vec3<i32>(1));
-    let base = (u32((c.z * dims.y + c.y) * dims.x + c.x)) * params[4];
+    var element = u32((c.z * dims.y + c.y) * dims.x + c.x);
+    if (params[12] != 0u) {
+        element = follow_brick_cell(vec3<u32>(c), vec3<u32>(dims), params[12], params[13]);
+        if (element == 0xffffffffu) {
+            return vec3<f32>(0.0);
+        }
+    }
+    let base = element * params[4];
     return vec3<f32>(field[base], field[base + 1u], field[base + 2u]);
 }
 
@@ -942,7 +981,7 @@ fn follow_field(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// The [`FIELD_FOLLOW_WGSL`] params for one emitter following `follow` with `capacity` slots.
+/// The [`field_follow_wgsl`] params for one emitter following `follow` with `capacity` slots.
 pub fn field_follow_params(
     capacity: u32,
     follow: &aestra_runtime::CompiledFieldFollow,
@@ -967,6 +1006,8 @@ pub fn field_follow_params(
         follow.strength.to_bits(),
         dt.to_bits(),
         u32::from(field.staggered),
+        field.bricks.as_ref().map_or(0, |bricks| bricks.edge),
+        field.bricks.as_ref().map_or(0, |bricks| bricks.table_word),
     ]
 }
 

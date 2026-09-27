@@ -244,6 +244,8 @@ pub enum ExecutionOp {
 /// A **staggered** vector field (fluid F4, a MAC grid) stores component `c` of cell `i` on the cell's
 /// minimum face along axis `c` — at `origin + (i + 0.5 - 0.5·e_c)·cell_size` — rather than at its
 /// centre; samplers offset each component accordingly.
+///
+/// A **bricked** field (fluid F7) stores only some of its bricks: see [`BrickLayout`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldLayout {
     pub resource: ResourceTypeId,
@@ -252,12 +254,44 @@ pub struct FieldLayout {
     pub origin: [f32; 3],
     pub cell_size: f32,
     pub staggered: bool,
+    pub bricks: Option<BrickLayout>,
+}
+
+/// How a bricked [`FieldLayout`] is stored (fluid F7): the grid is cut into `edge`³-cell bricks, and
+/// only some are stored, each in one of `slots` slots of `edge`³ cells (x fastest within the brick),
+/// so cell `c` of the brick in slot `s` is element `s·edge³ + c`. Two `u32` arrays of the resource
+/// `table` say which: at word `table_word`, one entry per brick (x fastest over the dims / edge
+/// bricks) holding its slot, 0 when it is not stored — its cells then read as zero; at word
+/// `slot_bricks_word`, one entry per slot holding its brick's coordinates packed as
+/// `x | y << 10 | z << 20`, plus one, 0 for an unused slot. Slot 0 is never a brick's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrickLayout {
+    pub edge: u32,
+    pub slots: u32,
+    pub table: ResourceTypeId,
+    pub table_word: u32,
+    pub slot_bricks_word: u32,
+}
+
+impl BrickLayout {
+    /// Bricks along each axis of a grid of `dims`.
+    pub fn grid(&self, dims: [u32; 3]) -> [u32; 3] {
+        dims.map(|dim| dim / self.edge)
+    }
 }
 
 impl FieldLayout {
     /// Cells in the grid.
     pub fn cells(&self) -> u64 {
         self.dims.iter().map(|&dim| u64::from(dim)).product()
+    }
+
+    /// Cells the resource stores: every cell, or every slot's brick.
+    pub fn stored_cells(&self) -> u64 {
+        match &self.bricks {
+            Some(bricks) => u64::from(bricks.slots) * u64::from(bricks.edge).pow(3),
+            None => self.cells(),
+        }
     }
 
     /// Bytes one cell occupies (`vec4` alignment for 3 components).
@@ -363,16 +397,32 @@ impl ExecutionBlock {
                 return Err(ExecutionError::InvalidBuiltinResource(resource.id.clone()));
             }
         }
-        for field in &self.fields {
-            let fits = self
-                .resources
+        let bytes_of = |id: &ResourceTypeId| {
+            self.resources
                 .iter()
-                .find(|resource| resource.id == field.resource)
-                .is_some_and(|resource| {
+                .find(|resource| &resource.id == id)
+                .map(|resource| resource.bytes)
+        };
+        for field in &self.fields {
+            let bricks_fit = field.bricks.as_ref().is_none_or(|bricks| {
+                let grid = bricks.grid(field.dims);
+                let entries = grid.iter().map(|&n| u64::from(n)).product::<u64>();
+                bricks.edge > 0
+                    && bricks.slots > 0
+                    && field.dims.iter().all(|dim| dim % bricks.edge == 0)
+                    && bytes_of(&bricks.table).is_some_and(|bytes| {
+                        bytes >= (u64::from(bricks.table_word) + entries) * 4
+                            && bytes
+                                >= (u64::from(bricks.slot_bricks_word) + u64::from(bricks.slots))
+                                    * 4
+                    })
+            });
+            let fits = bricks_fit
+                && bytes_of(&field.resource).is_some_and(|bytes| {
                     (1..=4).contains(&field.components)
                         && field.cells() > 0
                         && field.cell_size > 0.0
-                        && resource.bytes >= field.cells() * field.cell_bytes()
+                        && bytes >= field.stored_cells() * field.cell_bytes()
                 });
             if !fits {
                 return Err(ExecutionError::InvalidField(field.resource.clone()));

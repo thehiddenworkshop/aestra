@@ -769,7 +769,8 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             "Stores and simulates only the 8³-cell bricks that hold smoke, heat or fuel, or touch a \
              source, and the ring of bricks around them: a large grid then costs what its fluid \
              occupies. The resolution may reach 512 cells a side (a multiple of 8). Outside the active \
-             bricks is still, open air. Without flow maps.",
+             bricks is still, open air. Without flow maps. (For the volume march, raise March Steps \
+             with the resolution: the steps span the whole grid.)",
             Value::Bool(false),
             InputControl::Toggle,
         ),
@@ -1846,6 +1847,18 @@ impl Grid {
         u64::from(self.resolution / BRICK_EDGE).pow(3)
     }
 
+    /// How a sparse grid's fields are stored, for their readers (`grid_sparse.wgsl`'s `bricks`: the
+    /// header, the list, each slot's brick, then the table).
+    fn brick_layout(self) -> Option<aestra_runtime::BrickLayout> {
+        self.slots.map(|slots| aestra_runtime::BrickLayout {
+            edge: BRICK_EDGE,
+            slots,
+            table: ResourceTypeId::new(RESOURCE_BRICKS),
+            table_word: 16 + 2 * slots,
+            slot_bricks_word: 16 + slots,
+        })
+    }
+
     /// The multigrid levels' resolutions, finest first.
     fn levels(self) -> Vec<u32> {
         match self.slots {
@@ -2254,13 +2267,6 @@ impl StageLowerer for FluidSolverLowerer {
     ) -> Result<Vec<StagePresentation>, String> {
         let temperature = ResourceTypeId::new(RESOURCE_TEMPERATURE);
         let fire = block.field(&temperature).is_some();
-        // A sparse grid (fluid F7) declares no field layouts yet, so nothing can draw it.
-        if block
-            .field(&ResourceTypeId::new(RESOURCE_DENSITY))
-            .is_none()
-        {
-            return Ok(Vec::new());
-        }
         let open_sides = modules_of(input.modules, MODULE_GRID)
             .next()
             .map_or(0, |grid| open_side_mask(&grid.parameters));
@@ -2643,10 +2649,6 @@ impl StageLowerer for FluidSolverLowerer {
             ));
         }
 
-        // A sparse grid's fields are not laid out as a grid yet: nothing reads them in place.
-        if grid.slots.is_some() {
-            fields.clear();
-        }
         Ok(ExecutionBlock {
             resources: resources(grid, constants.len(), fire, multigrid, flow_map_cycle),
             ops: with_barriers(steps),
@@ -2662,6 +2664,7 @@ impl StageLowerer for FluidSolverLowerer {
                     cell_size,
                     // Velocity lives on the cells' faces (a MAC grid, fluid F4).
                     staggered: resource == RESOURCE_VELOCITY,
+                    bricks: grid.brick_layout(),
                 })
                 .collect(),
         })

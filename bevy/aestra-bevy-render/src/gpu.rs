@@ -2685,7 +2685,7 @@ fn run_coupled_stateful(
             }
             if let Some(follow) = &dispatch.field_follow
                 && let Some(Some(domain)) = domains.get(follow.stage)
-                && let Some(field) = domain.executor().buffer(follow.field.resource.as_str())
+                && let Some(field) = domain.executor().field_buffers(&follow.field)
             {
                 coupling.follower.encode(
                     device.wgpu_device(),

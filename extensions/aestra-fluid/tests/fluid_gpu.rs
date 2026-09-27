@@ -464,6 +464,7 @@ fn the_density_reaches_its_volume_texture_cell_for_cell() {
         origin: [0.0; 3],
         cell_size: CELL_SIZE,
         staggered: false,
+        bricks: None,
     };
     let size = wgpu::Extent3d {
         width: RESOLUTION,
@@ -492,9 +493,10 @@ fn the_density_reaches_its_volume_texture_cell_for_cell() {
     FieldVolumePipeline::new(&gpu.device).encode(
         &gpu.device,
         &mut encoder,
-        fluid.stage.buffer(RESOURCE_DENSITY).unwrap(),
+        fluid.stage.field_buffers(&layout).unwrap(),
         &texture.create_view(&Default::default()),
         &layout,
+        None,
     );
     encoder.copy_texture_to_buffer(
         texture.as_image_copy(),
@@ -907,12 +909,10 @@ fn particle_slots(positions: &[[f32; 3]], dead: usize) -> Vec<f32> {
     state
 }
 
-#[test]
-fn particles_following_the_field_take_the_plumes_velocity() {
-    let Some(gpu) = gpu() else { return };
-    let registry = registry();
-    let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
-    fluid.run(&gpu, 0..40);
+/// Particles up the plume's axis — slot 1 dead — each velocity pulled all the way to `fluid`'s
+/// velocity field where it is: the state after one Follow Field pass.
+fn follow_plume(gpu: &Gpu, fluid: &Fluid) -> Vec<f32> {
+    use wgpu::util::DeviceExt;
     let layout = fluid
         .stage
         .block()
@@ -924,32 +924,39 @@ fn particles_following_the_field_take_the_plumes_velocity() {
         field: layout,
         strength: 1.0e6, // pull clamps to 1: velocity becomes the sampled field value
     };
-    // Particles up the plume's axis; slot 1 is dead and must be left alone.
     let positions: Vec<[f32; 3]> = (0..8).map(|i| [0.0, 0.6 + 0.2 * i as f32, 0.0]).collect();
-    let initial = particle_slots(&positions, 1);
-    let run = || {
-        use wgpu::util::DeviceExt;
-        let state = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("state"),
-                contents: &initial
-                    .iter()
-                    .flat_map(|value| value.to_le_bytes())
-                    .collect::<Vec<u8>>(),
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-            });
-        let pipeline = FieldFollowPipeline::new(&gpu.device);
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        let field = fluid.stage.buffer(RESOURCE_VELOCITY).unwrap();
-        pipeline.encode(&gpu.device, &mut encoder, &state, 8, field, &follow, DT);
-        gpu.queue.submit([encoder.finish()]);
-        read_floats(&gpu, &state)
-    };
-    let followed = run();
-    assert_eq!(run(), followed, "a rerun gives the same bits");
+    let state = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("state"),
+            contents: &particle_slots(&positions, 1)
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<u8>>(),
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        });
+    let pipeline = FieldFollowPipeline::new(&gpu.device);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    let field = fluid.stage.field_buffers(&follow.field).unwrap();
+    pipeline.encode(&gpu.device, &mut encoder, &state, 8, field, &follow, DT);
+    gpu.queue.submit([encoder.finish()]);
+    read_floats(gpu, &state)
+}
+
+#[test]
+fn particles_following_the_field_take_the_plumes_velocity() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    fluid.run(&gpu, 0..40);
+    let followed = follow_plume(&gpu, &fluid);
+    assert_eq!(
+        follow_plume(&gpu, &fluid),
+        followed,
+        "a rerun gives the same bits"
+    );
     let velocity = |slot: usize| {
         [
             followed[slot * 9 + 3],
@@ -1295,6 +1302,7 @@ fn a_staggered_field_is_sampled_at_its_faces() {
                 origin,
                 cell_size: H,
                 staggered,
+                bricks: None,
             },
             strength: 1.0e6,
         };
@@ -1304,7 +1312,10 @@ fn a_staggered_field_is_sampled_at_its_faces() {
             &mut encoder,
             &state,
             points.len() as u32,
-            &field,
+            aestra_bevy_render::execution::FieldBuffers {
+                field: &field,
+                table: None,
+            },
             &follow,
             DT,
         );
@@ -2125,5 +2136,208 @@ fn bench_sparse_grid() {
                  pressure iterations {iterations:?}"
             );
         }
+    }
+}
+
+#[test]
+fn particles_follow_a_sparse_field_as_they_follow_the_dense_one() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let all = (RESOLUTION / 8).pow(3);
+    let dense = Fluid::new(&gpu, &registry, &jacobi(effect(&registry, false, 24)));
+    let whole = Fluid::new(
+        &gpu,
+        &registry,
+        &sparse(jacobi(effect(&registry, false, 24)), all, -1.0),
+    );
+    dense.run(&gpu, 0..40);
+    whole.run(&gpu, 0..40);
+    assert!(
+        whole
+            .stage
+            .block()
+            .field(&aestra_core::ResourceTypeId::new(RESOURCE_VELOCITY))
+            .unwrap()
+            .bricks
+            .is_some()
+    );
+    // The same field, read through the brick table: the same bits.
+    assert_eq!(
+        bits(&follow_plume(&gpu, &whole)),
+        bits(&follow_plume(&gpu, &dense))
+    );
+}
+
+/// Samples field slot 0 of the volume interface at a lattice of points off the cell centres, through
+/// a compute shader composed like the march: `params` the interface's uniform words, `field` bound to
+/// every field slot, `table` the brick table (a one-texel placeholder for a dense field).
+fn probe_volume(
+    gpu: &Gpu,
+    params: &[u32],
+    field: &wgpu::TextureView,
+    table: &wgpu::TextureView,
+) -> Vec<f32> {
+    use wgpu::util::DeviceExt;
+    const LATTICE: u32 = 11;
+    let source = format!(
+        "{}\n@group(0) @binding(7) var<storage, read_write> probes: array<vec4<f32>>;\n\
+         @compute @workgroup_size(64)\nfn probe(@builtin(global_invocation_id) id: vec3<u32>) {{\n    \
+         let i = id.x;\n    if (i >= arrayLength(&probes)) {{ return; }}\n    \
+         let n = {LATTICE}u;\n    \
+         let at = vec3<f32>(f32(i % n), f32((i / n) % n), f32(i / (n * n))) + vec3<f32>(0.37, 0.61, 0.23);\n    \
+         probes[i] = aestra_volume_field(0u, at / f32(n));\n}}",
+        aestra_gpu::volume::volume_interface_wgsl("0"),
+    );
+    let module = gpu
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("volume probe"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+    let pipeline = gpu
+        .device
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("volume probe"),
+            layout: None,
+            module: &module,
+            entry_point: Some("probe"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+    let uniform = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("volume params"),
+            contents: &params
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<u8>>(),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+    let count = LATTICE.pow(3) as u64;
+    let probes = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("probes"),
+        size: count * 16,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    let entry = |binding, resource| wgpu::BindGroupEntry { binding, resource };
+    let view = || wgpu::BindingResource::TextureView(field);
+    let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("volume probe"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[
+            entry(0, uniform.as_entire_binding()),
+            entry(1, view()),
+            entry(2, wgpu::BindingResource::Sampler(&sampler)),
+            entry(3, view()),
+            entry(4, view()),
+            entry(5, view()),
+            entry(6, wgpu::BindingResource::TextureView(table)),
+            entry(7, probes.as_entire_binding()),
+        ],
+    });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups((count as u32).div_ceil(64), 1, 1);
+    }
+    gpu.queue.submit([encoder.finish()]);
+    read_floats(gpu, &probes)
+        .chunks(4)
+        .map(|value| value[0])
+        .collect()
+}
+
+/// A 3-D texture a field or a table is copied into and the probe samples.
+fn volume_texture(gpu: &Gpu, edge: u32, format: wgpu::TextureFormat) -> wgpu::TextureView {
+    gpu.device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("volume"),
+            size: wgpu::Extent3d {
+                width: edge,
+                height: edge,
+                depth_or_array_layers: edge,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&Default::default())
+}
+
+#[test]
+fn a_sparse_field_is_drawn_from_its_brick_atlas_as_the_dense_field_is() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let all = (RESOLUTION / 8).pow(3);
+    let dense = Fluid::new(&gpu, &registry, &jacobi(effect(&registry, false, 24)));
+    let whole = Fluid::new(
+        &gpu,
+        &registry,
+        &sparse(jacobi(effect(&registry, false, 24)), all, -1.0),
+    );
+    dense.run(&gpu, 0..40);
+    whole.run(&gpu, 0..40);
+    let density = aestra_core::ResourceTypeId::new(RESOURCE_DENSITY);
+    let dense_layout = dense.stage.block().field(&density).unwrap().clone();
+    let sparse_layout = whole.stage.block().field(&density).unwrap().clone();
+    let bricks = sparse_layout.bricks.clone().expect("bricked");
+    let copies = FieldVolumePipeline::new(&gpu.device);
+
+    let dense_texture = volume_texture(&gpu, RESOLUTION, wgpu::TextureFormat::Rgba16Float);
+    let placeholder = volume_texture(&gpu, 1, wgpu::TextureFormat::R32Uint);
+    let atlas_texels = aestra_gpu::volume::brick_atlas_texels(bricks.slots, bricks.edge);
+    let atlas = volume_texture(&gpu, atlas_texels, wgpu::TextureFormat::Rgba16Float);
+    let table = volume_texture(&gpu, RESOLUTION / 8, wgpu::TextureFormat::R32Uint);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    copies.encode(
+        &gpu.device,
+        &mut encoder,
+        dense.stage.field_buffers(&dense_layout).unwrap(),
+        &dense_texture,
+        &dense_layout,
+        None,
+    );
+    copies.encode(
+        &gpu.device,
+        &mut encoder,
+        whole.stage.field_buffers(&sparse_layout).unwrap(),
+        &atlas,
+        &sparse_layout,
+        Some(&table),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    // The interface's uniform: size and cell, dims and field count, bricks, 64 constant words.
+    let params = |bricks: [u32; 2]| {
+        let extent = (RESOLUTION as f32 * CELL_SIZE).to_bits();
+        let mut words = vec![extent, extent, extent, CELL_SIZE.to_bits()];
+        words.extend([
+            RESOLUTION, RESOLUTION, RESOLUTION, 1, bricks[0], bricks[1], 0, 0,
+        ]);
+        words.extend([0; aestra_runtime::MAX_VOLUME_CONSTANTS]);
+        words
+    };
+    let expected = probe_volume(&gpu, &params([0, 0]), &dense_texture, &placeholder);
+    let per_axis = aestra_gpu::volume::brick_atlas_bricks(bricks.slots);
+    let got = probe_volume(&gpu, &params([bricks.edge, per_axis]), &atlas, &table);
+    let peak = expected.iter().fold(0.0f32, |p, v| p.max(v.abs()));
+    assert!(peak > 0.05, "the probes cross the plume (peak {peak})");
+    for (index, (a, b)) in expected.iter().zip(&got).enumerate() {
+        assert!(
+            (a - b).abs() <= 1e-2 * peak,
+            "probe {index}: dense {a}, bricks {b}"
+        );
     }
 }
