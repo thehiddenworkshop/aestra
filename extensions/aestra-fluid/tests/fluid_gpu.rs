@@ -7,7 +7,9 @@
 //! - the pressure projection leaves the velocity far closer to divergence-free than it found it;
 //! - a density source bound to a host object follows that object.
 //!
-//! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
+//! Simulations run serially on hardware compute adapters, not hosted software adapters. Shader
+//! build checks still run on software adapters. Set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require
+//! hardware; the native GPU workflow runs the complete simulation suite with that requirement.
 
 use aestra_bevy_render::execution::{
     FieldFollowPipeline, FieldVolumePipeline, StageExecutor, StageInputs, StageTimeline,
@@ -24,7 +26,7 @@ use aestra_fluid::{
 };
 use aestra_gpu::GpuHostBindings;
 use aestra_runtime::{EffectInstance, FrameConstants, SpatialBindingSnapshot};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
 const DT: f32 = 1.0 / 60.0;
@@ -34,12 +36,29 @@ const RESOLUTION: u32 = 16;
 const CELL_SIZE: f32 = 0.2;
 const CENTER: [f32; 3] = [0.0, 1.6, 0.0];
 
+// Separate devices still share one adapter. Concurrent long fluid runs overwhelm software
+// adapters and can time out readbacks or crash the native driver, hiding the original failure.
+static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn exclusive_gpu() -> MutexGuard<'static, ()> {
+    GPU_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+fn supports_simulation(device_type: wgpu::DeviceType, flags: wgpu::DownlevelFlags) -> bool {
+    device_type != wgpu::DeviceType::Cpu && flags.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+}
+
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    // Released after the device and queue, so the next test cannot overlap their teardown.
+    _exclusive: MutexGuard<'static, ()>,
 }
 
 fn gpu() -> Option<Gpu> {
+    let exclusive = exclusive_gpu();
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(descriptor);
@@ -50,17 +69,17 @@ fn gpu() -> Option<Gpu> {
     }))
     .ok();
     let adapter = adapter.filter(|adapter| {
-        adapter
-            .get_downlevel_capabilities()
-            .flags
-            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+        supports_simulation(
+            adapter.get_info().device_type,
+            adapter.get_downlevel_capabilities().flags,
+        )
     });
     let Some(adapter) = adapter else {
         assert!(
             std::env::var_os(REQUIRED_GPU_ENV).is_none(),
-            "{REQUIRED_GPU_ENV} is set but no compute adapter is available"
+            "{REQUIRED_GPU_ENV} is set but no hardware compute adapter is available"
         );
-        eprintln!("skipping fluid GPU conformance: no compatible compute adapter");
+        eprintln!("skipping fluid GPU simulation: no compatible hardware compute adapter");
         return None;
     };
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -69,7 +88,29 @@ fn gpu() -> Option<Gpu> {
         ..Default::default()
     }))
     .expect("the adapter provides a device");
-    Some(Gpu { device, queue })
+    Some(Gpu {
+        device,
+        queue,
+        _exclusive: exclusive,
+    })
+}
+
+#[test]
+fn simulations_require_hardware_compute_but_not_a_specific_gpu_type() {
+    let compute = wgpu::DownlevelFlags::COMPUTE_SHADERS;
+    assert!(!supports_simulation(wgpu::DeviceType::Cpu, compute));
+    for device_type in [
+        wgpu::DeviceType::DiscreteGpu,
+        wgpu::DeviceType::IntegratedGpu,
+        wgpu::DeviceType::VirtualGpu,
+        wgpu::DeviceType::Other,
+    ] {
+        assert!(supports_simulation(device_type, compute));
+        assert!(!supports_simulation(
+            device_type,
+            wgpu::DownlevelFlags::empty()
+        ));
+    }
 }
 
 fn registry() -> ExtensionRegistry {
@@ -242,6 +283,7 @@ fn mass_and_centroid(density: &[f32]) -> (f32, [f32; 3]) {
 /// which rejects what Vulkan accepts (a dynamically indexed vector write forces loops to unroll).
 #[test]
 fn the_solver_builds_on_every_available_backend() {
+    let _exclusive = exclusive_gpu();
     let registry = registry();
     // With a collider, fire and flow maps, so every entry point is built.
     let mut everything = aestra_fluid::fire_effect(&registry);

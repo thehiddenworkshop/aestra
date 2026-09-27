@@ -53,6 +53,13 @@ jobs:
         env:
           AESTRA_REQUIRE_GPU_CONFORMANCE: "1"
 
+      - name: Validate fluid solver and sparse checkpoint replay on hardware
+        run: >-
+          cargo test --locked -p aestra-fluid --test fluid_gpu
+          -- --test-threads=1 --nocapture
+        env:
+          AESTRA_REQUIRE_GPU_CONFORMANCE: "1"
+
       - name: Validate editor viewport composition
         run: >-
           cargo run --locked -p aestra-viewer --
