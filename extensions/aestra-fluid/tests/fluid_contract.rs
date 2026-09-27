@@ -506,7 +506,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;
-    assert_eq!(base, 20 + 16, "after the one source");
+    assert_eq!(base, 24 + 16, "after the one source");
     let kinds: Vec<u32> = (0..3).map(|index| words[base + index * 24]).collect();
     assert_eq!(kinds, [0, 1, 2], "sphere, box, capsule");
     assert_eq!(
@@ -670,23 +670,23 @@ fn host_bound_source_inputs_pack_their_slot_presence_bit_and_offset() {
             .insert(input.into(), HostFieldRef::new(emitter_id, field));
     }
     let stage = compile_stage(&registry, &effect);
-    // Source 0 starts at word 20; its references at +8 (position) and +11 (velocity).
+    // Source 0 starts at word 24; its references at +8 (position) and +11 (velocity).
     let words = &stage.block.constants;
     assert_eq!(words[9], 1, "one source");
     assert_eq!(
-        &words[28..31],
+        &words[32..35],
         &[0, 0, 0],
         "slot 0, bit 0 (position), offset 0"
     );
     assert_eq!(
-        &words[31..34],
+        &words[35..38],
         &[0, 1, 3],
         "linear velocity: the layout's second field (bit 1), packed after position's 3 words"
     );
 
     // An unbound source reads the constant fallback marker.
     let stage = compile_stage(&registry, &smoke_effect(&registry));
-    assert_eq!(stage.block.constants[28], u32::MAX);
+    assert_eq!(stage.block.constants[32], u32::MAX);
 }
 
 #[test]
@@ -826,7 +826,7 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
     {
         assert_eq!(
             fire.block.binding_of(&ResourceTypeId::new(resource)),
-            Some(25 + binding as u32)
+            Some(28 + binding as u32)
         );
         assert_eq!(
             smoke.block.binding_of(&ResourceTypeId::new(resource)),
@@ -844,8 +844,8 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
         );
     }
     // The Combustion block follows the one source's 16 words.
-    assert_eq!(fire.block.constants.len(), 20 + 16 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[36]), 0.5, "ignition");
+    assert_eq!(fire.block.constants.len(), 24 + 16 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[40]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =
@@ -1028,4 +1028,145 @@ fn a_follower_without_a_domain_is_an_invalid_reference() {
                 .message
                 .contains("no domain declaring a vector field")
     }));
+}
+
+/// The smoke effect on a sparse 512³ grid of `budget` bricks (fluid F7).
+fn sparse_smoke(registry: &ExtensionRegistry, budget: u32) -> EffectAsset {
+    let mut effect = smoke_effect(registry);
+    set_input(&mut effect, MODULE_GRID, "sparse", Value::Bool(true));
+    set_input(&mut effect, MODULE_GRID, "resolution", Value::U32(512));
+    set_input(&mut effect, MODULE_GRID, "brick_budget", Value::U32(budget));
+    effect
+}
+
+#[test]
+fn a_sparse_grid_lowers_to_passes_over_its_active_bricks() {
+    let registry = fluid_registry();
+    let stage = compile_stage(&registry, &sparse_smoke(&registry, 100));
+    check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
+    let computes: Vec<_> = stage
+        .block
+        .ops
+        .iter()
+        .flat_map(|op| match op {
+            ExecutionOp::Compute(compute) => vec![compute.clone()],
+            ExecutionOp::Repeat { body, .. } => body
+                .iter()
+                .filter_map(|op| match op {
+                    ExecutionOp::Compute(compute) => Some(compute.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    assert!(computes.iter().all(|compute| {
+        compute.program.as_ref().map(|id| id.as_str()) == Some(aestra_fluid::PROGRAM_SOLVER_SPARSE)
+    }));
+    // The allocation runs first; the passes after it cover the bricks it keeps.
+    let entries: Vec<_> = computes.iter().map(|c| c.entry_point.as_str()).collect();
+    assert_eq!(
+        entries[..6],
+        [
+            "brick_activity",
+            "brick_need",
+            "brick_plan",
+            "brick_assign",
+            "brick_compact",
+            "brick_zero"
+        ]
+    );
+    let slots = 101u32;
+    for compute in &computes {
+        let level = match compute.entry_point.as_str() {
+            "brick_need" | "brick_assign" | "brick_plan" | "brick_compact" => None,
+            entry if entry.starts_with("pcg_") && compute.dispatch.x == 1 => None,
+            "brick_activity" => Some(1),
+            entry => Some(
+                entry
+                    .rsplit('_')
+                    .next()
+                    .and_then(|level| level.parse::<u32>().ok())
+                    .filter(|_| entry.starts_with("mg_"))
+                    .unwrap_or(0),
+            ),
+        };
+        match level {
+            Some(level) => {
+                let counts = compute.indirect.as_ref().expect("sized on the device");
+                assert_eq!(
+                    counts.resource.as_str(),
+                    aestra_fluid::RESOURCE_BRICK_DISPATCH
+                );
+                assert_eq!(counts.word, 4 * level, "{}", compute.entry_point);
+                assert_eq!(
+                    compute.dispatch.x,
+                    (slots * (512 >> (3 * level))).div_ceil(64),
+                    "{}: bounded by every slot",
+                    compute.entry_point
+                );
+            }
+            None => assert!(compute.indirect.is_none(), "{}", compute.entry_point),
+        }
+    }
+    // Every field is a pool of the budget's bricks and the empty slot; the table covers 64³ bricks.
+    let bytes = |id: &str| {
+        stage
+            .block
+            .resources
+            .iter()
+            .find(|resource| resource.id.as_str() == id)
+            .unwrap()
+            .bytes
+    };
+    assert_eq!(bytes(RESOURCE_VELOCITY), slots as u64 * 512 * 16);
+    assert_eq!(bytes(RESOURCE_DENSITY), slots as u64 * 512 * 4);
+    assert_eq!(
+        bytes(aestra_fluid::RESOURCE_BRICKS),
+        (16 + 2 * slots as u64 + 64u64.pow(3)) * 4
+    );
+    assert_eq!(stage.block.constants[19], slots);
+    // Not drawn yet: no field layouts, no presentation.
+    assert!(stage.block.fields.is_empty() && stage.presentations.is_empty());
+
+    // Through the artifact, device-sized passes included.
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&sparse_smoke(&registry, 100))
+        .unwrap();
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+            .unwrap();
+    assert_eq!(decoded.extension_stages, compiled.extension_stages);
+}
+
+#[test]
+fn a_sparse_grid_takes_a_multiple_of_the_brick_up_to_512_and_no_flow_maps() {
+    let registry = fluid_registry();
+    let fails = |effect: &EffectAsset| {
+        let error = EffectCompiler::with_extensions(registry.clone())
+            .compile(effect)
+            .unwrap_err();
+        codes(error).contains(&DiagnosticCode::LoweringFailed)
+    };
+    let mut off_brick = sparse_smoke(&registry, 64);
+    set_input(&mut off_brick, MODULE_GRID, "resolution", Value::U32(60));
+    assert!(fails(&off_brick), "60 is not a multiple of 8");
+    let mut too_big = sparse_smoke(&registry, 64);
+    set_input(&mut too_big, MODULE_GRID, "resolution", Value::U32(520));
+    assert!(fails(&too_big));
+    let mut mapped = sparse_smoke(&registry, 64);
+    set_input(&mut mapped, MODULE_GRID, "flow_map", Value::Bool(true));
+    assert!(fails(&mapped), "flow maps stay dense");
+    let mut over_budget = sparse_smoke(&registry, 64);
+    set_input(
+        &mut over_budget,
+        MODULE_GRID,
+        "brick_budget",
+        Value::U32(aestra_fluid::MAX_BRICK_BUDGET + 1),
+    );
+    assert!(fails(&over_budget));
+    // A dense grid still stops at 128.
+    let mut dense = smoke_effect(&registry);
+    set_input(&mut dense, MODULE_GRID, "resolution", Value::U32(256));
+    assert!(fails(&dense));
 }

@@ -20,8 +20,10 @@
 //!   presentation — the density ray-marched as lit, self-shadowed smoke, and the temperature, when the
 //!   stage burns, as blackbody fire — never into the solver, so a look edit never restarts the
 //!   simulation;
-//! - two **programs**: the solver (`solver.wgsl`) whose entry points the stage lowers to, and the
-//!   volume look's march function (`volume.wgsl`).
+//! - **programs**: the solver (`solver.wgsl`) whose entry points the stage lowers to — composed once
+//!   with the dense grid and once with the sparse one (fluid F7: 8³-cell bricks allocated where the
+//!   fluid is, so a grid up to 512³ costs what its fluid occupies) — and the volume look's march
+//!   function (`volume.wgsl`).
 //!
 //! The authored stage stays one semantic object; lowering expands it into the solver's passes:
 //!
@@ -54,8 +56,8 @@ use aestra_extension::{
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
     CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
-    FieldLayout, RepeatPolicy, ResourceAccess, ResourceDescriptor, ResourceLifetime,
-    StagePresentation, StagedDispatch, VolumePresentation,
+    FieldLayout, IndirectDispatch, RepeatPolicy, ResourceAccess, ResourceDescriptor,
+    ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
 };
 use std::sync::Arc;
 
@@ -74,6 +76,8 @@ pub const MODULE_SPHERE_COLLIDER: &str = "org.example.aestra-fluid::module/spher
 pub const MODULE_BOX_COLLIDER: &str = "org.example.aestra-fluid::module/box_collider";
 pub const MODULE_CAPSULE_COLLIDER: &str = "org.example.aestra-fluid::module/capsule_collider";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
+/// The same solver over a sparse grid of bricks (fluid F7), with the brick allocation.
+pub const PROGRAM_SOLVER_SPARSE: &str = "org.example.aestra-fluid::program/solver_sparse";
 pub const PROGRAM_VOLUME: &str = "org.example.aestra-fluid::program/volume";
 /// The march function [`PROGRAM_VOLUME`] defines.
 pub const VOLUME_ENTRY: &str = "fluid_volume";
@@ -110,6 +114,11 @@ pub const RESOURCE_TEMPERATURE_NEXT: &str =
     "org.example.aestra-fluid::resource/temperature_scratch";
 pub const RESOURCE_FUEL: &str = "org.example.aestra-fluid::resource/fuel_grid";
 pub const RESOURCE_FUEL_NEXT: &str = "org.example.aestra-fluid::resource/fuel_scratch";
+/// A sparse grid's bricks (fluid F7): the active count and list, each slot's brick and the brick
+/// table; the allocation's scratch; the passes' workgroup counts.
+pub const RESOURCE_BRICKS: &str = "org.example.aestra-fluid::resource/bricks";
+pub const RESOURCE_BRICK_SCRATCH: &str = "org.example.aestra-fluid::resource/brick_scratch";
+pub const RESOURCE_BRICK_DISPATCH: &str = "org.example.aestra-fluid::resource/brick_dispatch";
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
@@ -119,11 +128,19 @@ pub const PRESSURE_WGSL: &str = include_str!("pressure.wgsl");
 pub const FLOWMAP_WGSL: &str = include_str!("flowmap.wgsl");
 /// The volume look's march function, composed after the backend's volume interface.
 pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
+/// How the solver indexes its cells (fluid F7): every cell stored, or only the active bricks'.
+pub const GRID_DENSE_WGSL: &str = include_str!("grid_dense.wgsl");
+pub const GRID_SPARSE_WGSL: &str = include_str!("grid_sparse.wgsl");
 
 /// The grid resolution per axis is bounded (plan §11.1): at 128³ every grid together — the solver's
 /// scratch and the multigrid levels included — is ~300 MB (~330 MB with fire).
 pub const MIN_RESOLUTION: u32 = 8;
 pub const MAX_RESOLUTION: u32 = 128;
+/// A sparse grid (fluid F7) stores 8³-cell bricks: its resolution is a multiple of the edge, up to
+/// 512 (a 64³ table of bricks), and it stores at most the budget's bricks at once.
+pub const BRICK_EDGE: u32 = 8;
+pub const MAX_SPARSE_RESOLUTION: u32 = 512;
+pub const MAX_BRICK_BUDGET: u32 = 4096;
 pub const MAX_PRESSURE_ITERATIONS: u32 = 200;
 /// Steps in a flow-map reinitialization cycle, and the largest grid flow maps run on: every cell keeps
 /// (12·cycle + 88) bytes of map state, and ~100 more are scratch.
@@ -135,7 +152,7 @@ pub const MAX_SOURCES: usize = 8;
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 20;
+const SOURCE_BASE: usize = 24;
 /// Words one collider record takes (see `pack_collider`).
 const COLLIDER_WORDS: usize = 24;
 /// Colliders one stage packs into its constants.
@@ -168,16 +185,40 @@ pub fn link() {
         .expect("the fluid extension registers only namespaced, unique ids");
 }
 
-/// The complete solver program: the solver passes, the pressure solve with its per-level entry points,
-/// and the shared host-binding accessors and reductions they call.
+/// The complete solver program: the solver passes on the dense grid, the pressure solve with its
+/// per-level entry points, and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL
     )
 }
+
+/// The same passes over a sparse grid of bricks (fluid F7), with the brick allocation and the prefix
+/// sums it ranks with.
+pub fn sparse_program_wgsl() -> String {
+    format!(
+        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}\n{}",
+        multigrid_entries_wgsl(),
+        aestra_gpu::HOST_BINDINGS_WGSL,
+        aestra_gpu::reduce::REDUCE_WGSL,
+        aestra_gpu::scan::SCAN_WGSL
+    )
+}
+
+/// The brick allocation's entry points, in the sparse program only.
+pub const BRICK_ENTRY_POINTS: [&str; 8] = [
+    "brick_activity",
+    "brick_activity_fire",
+    "brick_need",
+    "brick_plan",
+    "brick_assign",
+    "brick_compact",
+    "brick_zero",
+    "brick_zero_fire",
+];
 
 /// Levels the multigrid pressure solve uses at most: a 128-cell grid halves down to 4.
 pub const MAX_MULTIGRID_LEVELS: usize = 6;
@@ -235,6 +276,7 @@ impl LevelPass {
         format!("mg_{kind}_{level}")
     }
 
+    /// The call an entry makes for the cell `cell` of its level.
     fn body(self, level: usize) -> String {
         match self {
             Self::SmoothRed => format!("mg_smooth({level}u, cell, 0u)"),
@@ -253,8 +295,8 @@ fn multigrid_entries_wgsl() -> String {
     for pass in LevelPass::ALL {
         for level in pass.levels() {
             wgsl.push_str(&format!(
-                "@compute @workgroup_size(4, 4, 4)\nfn {}(@builtin(global_invocation_id) cell: \
-                 vec3<u32>) {{\n    {};\n}}\n",
+                "@compute @workgroup_size(4, 4, 4)\nfn {}(@builtin(global_invocation_id) gid: \
+                 vec3<u32>) {{\n    let cell = lv_cell({level}u, gid);\n    {};\n}}\n",
                 pass.entry(level),
                 pass.body(level)
             ));
@@ -269,6 +311,13 @@ pub fn entry_points() -> Vec<String> {
     for pass in LevelPass::ALL {
         entries.extend(pass.levels().map(|level| pass.entry(level)));
     }
+    entries
+}
+
+/// Every entry point of the sparse solver program: the solver's and the brick allocation's.
+pub fn sparse_entry_points() -> Vec<String> {
+    let mut entries = entry_points();
+    entries.extend(BRICK_ENTRY_POINTS.iter().map(|entry| entry.to_string()));
     entries
 }
 
@@ -497,6 +546,17 @@ impl AestraExtension for FluidExtension {
                 "Fuel Scratch",
                 ResourceLifetime::Transient,
             ),
+            (RESOURCE_BRICKS, "Bricks", ResourceLifetime::Persistent),
+            (
+                RESOURCE_BRICK_SCRATCH,
+                "Brick Allocation",
+                ResourceLifetime::Transient,
+            ),
+            (
+                RESOURCE_BRICK_DISPATCH,
+                "Brick Workgroups",
+                ResourceLifetime::Persistent,
+            ),
         ] {
             registry.resources.register(ResourceTypeDescriptor {
                 type_id: ResourceTypeId::new(type_id),
@@ -533,6 +593,11 @@ impl AestraExtension for FluidExtension {
             id: ComputeProgramId::new(PROGRAM_SOLVER),
             wgsl: program_wgsl(),
             entry_points: entry_points(),
+        })?;
+        registry.register_program(ComputeProgram {
+            id: ComputeProgramId::new(PROGRAM_SOLVER_SPARSE),
+            wgsl: sparse_program_wgsl(),
+            entry_points: sparse_entry_points(),
         })?;
         registry.register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM_VOLUME),
@@ -697,6 +762,38 @@ fn grid_metadata(requires: CapabilityExpression) -> ModuleMetadata {
              and makes the cycle's last tick heavier.",
             Value::U32(8),
             number(1.0, 1.0, Some(MAX_FLOW_MAP_CYCLE as f32)),
+        ),
+        InputMetadata::new(
+            "sparse",
+            "Sparse Bricks",
+            "Stores and simulates only the 8³-cell bricks that hold smoke, heat or fuel, or touch a \
+             source, and the ring of bricks around them: a large grid then costs what its fluid \
+             occupies. The resolution may reach 512 cells a side (a multiple of 8). Outside the active \
+             bricks is still, open air. Without flow maps.",
+            Value::Bool(false),
+            InputControl::Toggle,
+        ),
+        InputMetadata::new(
+            "brick_budget",
+            "Brick Budget",
+            "With Sparse Bricks, the most bricks stored at once, each 512 cells (about 65 KB of state \
+             and scratch; 73 KB with fire). Fluid that would need more waits as open air until \
+             bricks free.",
+            Value::U32(2048),
+            number(1.0, 1.0, Some(MAX_BRICK_BUDGET as f32)),
+        ),
+        InputMetadata::new(
+            "brick_threshold",
+            "Brick Threshold",
+            "With Sparse Bricks, how much smoke, heat or fuel a cell must hold to keep its brick \
+             active. A negative threshold keeps every brick: the grid is then stored whole (as \
+             many bricks as the budget allows).",
+            Value::Scalar(1e-3),
+            InputControl::Number {
+                step: 0.0001,
+                min: None,
+                max: None,
+            },
         ),
     ])
     .with_cost(8)
@@ -1187,7 +1284,27 @@ impl ModuleLowerer for FluidModuleLowerer {
         let entry_point = match module.module_type.0.as_str() {
             MODULE_GRID => {
                 let resolution = count(payload, "resolution")?;
-                if !(MIN_RESOLUTION..=MAX_RESOLUTION).contains(&resolution)
+                let sparse = payload.get_bool("sparse").unwrap_or(false);
+                if sparse {
+                    if !(MIN_RESOLUTION..=MAX_SPARSE_RESOLUTION).contains(&resolution)
+                        || resolution % BRICK_EDGE != 0
+                    {
+                        return Err(format!(
+                            "a sparse grid's resolution must be a multiple of {BRICK_EDGE} between \
+                             {MIN_RESOLUTION} and {MAX_SPARSE_RESOLUTION}, got {resolution}"
+                        ));
+                    }
+                    let budget = count(payload, "brick_budget")?;
+                    if !(1..=MAX_BRICK_BUDGET).contains(&budget) {
+                        return Err(format!(
+                            "the brick budget must be between 1 and {MAX_BRICK_BUDGET}, got {budget}"
+                        ));
+                    }
+                    scalar(payload, "brick_threshold")?;
+                    if payload.get_bool("flow_map").unwrap_or(false) {
+                        return Err("flow maps do not run on a sparse grid".into());
+                    }
+                } else if !(MIN_RESOLUTION..=MAX_RESOLUTION).contains(&resolution)
                     || resolution % WORKGROUP != 0
                 {
                     return Err(format!(
@@ -1296,31 +1413,31 @@ impl ModuleLowerer for FluidModuleLowerer {
 }
 
 /// The resources a fluid stage declares, in the binding order `solver.wgsl` expects; the fire grids
-/// only with combustion, last, so the others keep their bindings. The multigrid pressure solve's are
-/// always declared, sized for the solve only when it runs.
+/// only with combustion, last, so the others keep their bindings. The multigrid pressure solve's and a
+/// sparse grid's bricks are always declared, sized only when they are used.
 fn resources(
-    resolution: u32,
+    grid: Grid,
     constant_words: usize,
     fire: bool,
     multigrid: bool,
     flow_map_cycle: u32,
 ) -> Vec<ResourceDescriptor> {
-    let cells = u64::from(resolution).pow(3);
-    let grid = |id: &str, bytes_per_cell: u64, lifetime| ResourceDescriptor {
+    let cells = grid.cells();
+    let field = |id: &str, bytes_per_cell: u64, lifetime| ResourceDescriptor {
         id: ResourceTypeId::new(id),
         bytes: cells * bytes_per_cell,
         lifetime,
     };
     let mut resources = vec![
-        grid(RESOURCE_VELOCITY, 16, ResourceLifetime::Persistent),
-        grid(RESOURCE_DENSITY, 4, ResourceLifetime::Persistent),
-        grid(RESOURCE_VELOCITY_NEXT, 16, ResourceLifetime::Transient),
-        grid(RESOURCE_DENSITY_NEXT, 4, ResourceLifetime::Transient),
+        field(RESOURCE_VELOCITY, 16, ResourceLifetime::Persistent),
+        field(RESOURCE_DENSITY, 4, ResourceLifetime::Persistent),
+        field(RESOURCE_VELOCITY_NEXT, 16, ResourceLifetime::Transient),
+        field(RESOURCE_DENSITY_NEXT, 4, ResourceLifetime::Transient),
         // Persistent (fluid F5): each tick's solve starts from the last one's pressure.
-        grid(RESOURCE_PRESSURE, 4, ResourceLifetime::Persistent),
-        grid(RESOURCE_PRESSURE_NEXT, 4, ResourceLifetime::Transient),
-        grid(RESOURCE_DIVERGENCE, 4, ResourceLifetime::Transient),
-        grid(RESOURCE_VORTICITY, 16, ResourceLifetime::Transient),
+        field(RESOURCE_PRESSURE, 4, ResourceLifetime::Persistent),
+        field(RESOURCE_PRESSURE_NEXT, 4, ResourceLifetime::Transient),
+        field(RESOURCE_DIVERGENCE, 4, ResourceLifetime::Transient),
+        field(RESOURCE_VORTICITY, 16, ResourceLifetime::Transient),
     ];
     resources.push(ResourceDescriptor {
         id: ResourceTypeId::new(AESTRA_RESOURCE_STAGE_CONSTANTS),
@@ -1335,18 +1452,21 @@ fn resources(
         lifetime: ResourceLifetime::Persistent,
     });
     // MacCormack's scratch (fluid F4): always declared, so the fire grids keep their bindings.
-    resources.push(grid(RESOURCE_VELOCITY_HAT, 16, ResourceLifetime::Transient));
-    resources.push(grid(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
-    resources.push(grid(RESOURCE_SOLID, 16, ResourceLifetime::Transient));
+    resources.push(field(
+        RESOURCE_VELOCITY_HAT,
+        16,
+        ResourceLifetime::Transient,
+    ));
+    resources.push(field(RESOURCE_SCALAR_HAT, 4, ResourceLifetime::Transient));
+    resources.push(field(RESOURCE_SOLID, 16, ResourceLifetime::Transient));
     let (fine_cells, level_cells) = if multigrid {
-        let levels = multigrid_levels(resolution);
-        (cells, levels.iter().map(|n| u64::from(*n).pow(3)).sum())
+        (cells, grid.level_cells())
     } else {
         (1, 1)
     };
     // The partial sums serve the pressure solve and the flow maps' safeguard.
     let groups = if multigrid || flow_map_cycle > 0 {
-        u64::from(resolution / WORKGROUP).pow(3)
+        grid.groups()
     } else {
         1
     };
@@ -1400,12 +1520,44 @@ fn resources(
             ResourceLifetime::Transient,
         ),
     ]);
+    // A sparse grid's bricks (fluid F7): the header, list, slots' bricks and brick table (state); the
+    // allocation's flags, free list and new bricks' ranks; the passes' workgroup counts (state, so a
+    // tick's first passes cover the bricks the last one left). A dense grid's are scratch: its
+    // checkpoints carry nothing for them.
+    let brick_state = if grid.slots.is_some() {
+        ResourceLifetime::Persistent
+    } else {
+        ResourceLifetime::Transient
+    };
+    let (bricks, brick_scratch) = match grid.slots {
+        Some(slots) => {
+            let (slots, table) = (u64::from(slots), grid.brick_table());
+            (
+                (16 + 2 * slots + table) * 4,
+                (16 + 4 * slots + 2 * table + table.div_ceil(64)) * 4,
+            )
+        }
+        None => (0, 0),
+    };
+    resources.extend([
+        map_state(RESOURCE_BRICKS, bricks, brick_state),
+        map_state(
+            RESOURCE_BRICK_SCRATCH,
+            brick_scratch,
+            ResourceLifetime::Transient,
+        ),
+        map_state(
+            RESOURCE_BRICK_DISPATCH,
+            if grid.slots.is_some() { 64 } else { 0 },
+            brick_state,
+        ),
+    ]);
     if fire {
         resources.extend([
-            grid(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
-            grid(RESOURCE_TEMPERATURE_NEXT, 4, ResourceLifetime::Transient),
-            grid(RESOURCE_FUEL, 4, ResourceLifetime::Persistent),
-            grid(RESOURCE_FUEL_NEXT, 4, ResourceLifetime::Transient),
+            field(RESOURCE_TEMPERATURE, 4, ResourceLifetime::Persistent),
+            field(RESOURCE_TEMPERATURE_NEXT, 4, ResourceLifetime::Transient),
+            field(RESOURCE_FUEL, 4, ResourceLifetime::Persistent),
+            field(RESOURCE_FUEL_NEXT, 4, ResourceLifetime::Transient),
         ]);
     }
     resources
@@ -1450,7 +1602,7 @@ fn open_side_mask(grid: &PropertyBag) -> u32 {
 
 /// A stage's packed constants plus the grid placement its field layouts declare.
 struct PackedStage {
-    resolution: u32,
+    grid: Grid,
     iterations: u32,
     cell_size: f32,
     origin: [f32; 3],
@@ -1516,6 +1668,16 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     }
     // MacCormack advection (fluid F4); off falls back to plain semi-Lagrangian.
     words[11] = u32::from(grid.parameters.get_bool("sharp_advection").unwrap_or(true));
+    // A sparse grid (fluid F7): its slots — the budget and the empty slot 0 — and the threshold that
+    // keeps a brick active; 0 slots for a dense grid.
+    let slots = if grid.parameters.get_bool("sparse").unwrap_or(false) {
+        let slots = count(&grid.parameters, "brick_budget")? + 1;
+        words[19] = slots;
+        words[20] = scalar(&grid.parameters, "brick_threshold")?.to_bits();
+        Some(slots)
+    } else {
+        None
+    };
     // Turbulence: strength (0 without the module), noise frequency, evolution rate, mask flag.
     let mut turbulences = of(MODULE_TURBULENCE);
     if let Some(turbulence) = turbulences.next() {
@@ -1570,7 +1732,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         words.extend(pack_collider(collider)?);
     }
     Ok(PackedStage {
-        resolution,
+        grid: Grid { resolution, slots },
         iterations,
         cell_size,
         origin,
@@ -1651,31 +1813,214 @@ fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
 const VOLUME_TEMPERATURE_SLOT: usize = 16;
 const VOLUME_OPEN_SIDES: usize = 19;
 
-/// One pass of the solver program.
-fn solver_op(entry: &str, accesses: Vec<ResourceAccess>, dispatch: StagedDispatch) -> ExecutionOp {
-    ExecutionOp::Compute(ComputeOp {
-        name: format!("fluid/{entry}"),
-        program: Some(ComputeProgramId::new(PROGRAM_SOLVER)),
-        entry_point: entry.into(),
-        accesses,
-        dispatch,
-        indirect: None,
-    })
+/// How a stage's grid is stored and how its passes cover it (fluid F7).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Grid {
+    resolution: u32,
+    /// A sparse grid's brick slots — its budget, and slot 0, which stays empty; `None` when dense.
+    slots: Option<u32>,
 }
 
-/// The dispatch covering an `n`³ level in 4³ workgroups.
-fn level_dispatch(n: u32) -> StagedDispatch {
-    let groups = n.div_ceil(WORKGROUP);
-    StagedDispatch {
-        x: groups,
-        y: groups,
-        z: groups,
+/// Multigrid levels a sparse grid's bricks hold: 8³, 4³, 2³ and 1 cell.
+const SPARSE_LEVELS: usize = 4;
+
+impl Grid {
+    fn program(self) -> &'static str {
+        if self.slots.is_some() {
+            PROGRAM_SOLVER_SPARSE
+        } else {
+            PROGRAM_SOLVER
+        }
+    }
+
+    /// Cells every grid resource stores.
+    fn cells(self) -> u64 {
+        match self.slots {
+            Some(slots) => u64::from(slots) * u64::from(BRICK_EDGE.pow(3)),
+            None => u64::from(self.resolution).pow(3),
+        }
+    }
+
+    /// Entries in a sparse grid's brick table.
+    fn brick_table(self) -> u64 {
+        u64::from(self.resolution / BRICK_EDGE).pow(3)
+    }
+
+    /// The multigrid levels' resolutions, finest first.
+    fn levels(self) -> Vec<u32> {
+        match self.slots {
+            Some(_) => (0..SPARSE_LEVELS)
+                .map(|level| self.resolution >> level)
+                .collect(),
+            None => multigrid_levels(self.resolution),
+        }
+    }
+
+    /// Cells every multigrid level stores together.
+    fn level_cells(self) -> u64 {
+        match self.slots {
+            Some(slots) => u64::from(slots) * (512 + 64 + 8 + 1),
+            None => self.levels().iter().map(|n| u64::from(*n).pow(3)).sum(),
+        }
+    }
+
+    /// Workgroups a fine-level pass runs at most: one partial sum each.
+    fn groups(self) -> u64 {
+        match self.slots {
+            Some(slots) => u64::from(slots) * 8,
+            None => u64::from(self.resolution / WORKGROUP).pow(3),
+        }
+    }
+
+    /// A pass over the cells of multigrid level `level` (0: the grid itself) in 4³ workgroups: the
+    /// whole level on a dense grid; on a sparse one, the active bricks — counts the allocation writes,
+    /// within the bound of every slot.
+    fn cover(self, level: usize) -> (StagedDispatch, Option<IndirectDispatch>) {
+        match self.slots {
+            None => {
+                let groups = self.levels()[level].div_ceil(WORKGROUP);
+                (
+                    StagedDispatch {
+                        x: groups,
+                        y: groups,
+                        z: groups,
+                    },
+                    None,
+                )
+            }
+            Some(slots) => {
+                let per_brick = BRICK_EDGE.pow(3) >> (3 * level);
+                (
+                    StagedDispatch {
+                        x: (slots * per_brick).div_ceil(64),
+                        y: 1,
+                        z: 1,
+                    },
+                    Some(IndirectDispatch {
+                        resource: ResourceTypeId::new(RESOURCE_BRICK_DISPATCH),
+                        word: 4 * level as u32,
+                    }),
+                )
+            }
+        }
+    }
+
+    /// One pass of the solver program, run as `dispatch` (and `indirect`). On a sparse grid every
+    /// solver entry finds its cells through the bricks.
+    fn op(
+        self,
+        entry: &str,
+        mut accesses: Vec<ResourceAccess>,
+        (dispatch, indirect): (StagedDispatch, Option<IndirectDispatch>),
+    ) -> ExecutionOp {
+        let bricks = |access: &ResourceAccess| access.resource.as_str() == RESOURCE_BRICKS;
+        if self.slots.is_some() && !accesses.iter().any(bricks) {
+            accesses.push(ResourceAccess::read(RESOURCE_BRICKS));
+        }
+        ExecutionOp::Compute(ComputeOp {
+            name: format!("fluid/{entry}"),
+            program: Some(ComputeProgramId::new(self.program())),
+            entry_point: entry.into(),
+            accesses,
+            dispatch,
+            indirect,
+        })
+    }
+
+    /// A pass over the grid's cells.
+    fn pass(self, entry: &str, accesses: Vec<ResourceAccess>) -> ExecutionOp {
+        self.op(entry, accesses, self.cover(0))
+    }
+
+    /// A single-workgroup pass.
+    fn single(self, entry: &str, accesses: Vec<ResourceAccess>) -> ExecutionOp {
+        self.op(entry, accesses, (StagedDispatch { x: 1, y: 1, z: 1 }, None))
+    }
+
+    /// A sparse grid's allocation (`grid_sparse.wgsl`), first in every tick: the bricks the fluid
+    /// needs are given slots, and those it left are freed.
+    fn allocation(self, fire: bool) -> Vec<ExecutionOp> {
+        use ResourceAccess as Access;
+        let constants = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
+        let table = StagedDispatch {
+            x: self.brick_table().div_ceil(64) as u32,
+            y: 1,
+            z: 1,
+        };
+        let mut activity = vec![
+            Access::read(RESOURCE_BRICKS),
+            Access::write(RESOURCE_BRICK_SCRATCH),
+            Access::read(RESOURCE_DENSITY),
+            constants(),
+        ];
+        let mut zero = vec![
+            Access::read(RESOURCE_BRICKS),
+            Access::read(RESOURCE_BRICK_SCRATCH),
+            Access::write(RESOURCE_VELOCITY),
+            Access::write(RESOURCE_DENSITY),
+            Access::write(RESOURCE_PRESSURE),
+            constants(),
+        ];
+        if fire {
+            activity.extend([
+                Access::read(RESOURCE_TEMPERATURE),
+                Access::read(RESOURCE_FUEL),
+            ]);
+            zero.extend([
+                Access::write(RESOURCE_TEMPERATURE),
+                Access::write(RESOURCE_FUEL),
+            ]);
+        }
+        let suffix = if fire { "_fire" } else { "" };
+        vec![
+            // Last tick's bricks, one workgroup each.
+            self.op(&format!("brick_activity{suffix}"), activity, self.cover(1)),
+            self.op(
+                "brick_need",
+                vec![
+                    Access::read(RESOURCE_BRICKS),
+                    Access::read_write(RESOURCE_BRICK_SCRATCH),
+                    constants(),
+                    Access::read(AESTRA_RESOURCE_FRAME),
+                    Access::read(AESTRA_RESOURCE_HOST_BINDINGS),
+                ],
+                (table, None),
+            ),
+            self.single(
+                "brick_plan",
+                vec![
+                    Access::read(RESOURCE_BRICKS),
+                    Access::read_write(RESOURCE_BRICK_SCRATCH),
+                    constants(),
+                ],
+            ),
+            self.op(
+                "brick_assign",
+                vec![
+                    Access::read_write(RESOURCE_BRICKS),
+                    Access::read_write(RESOURCE_BRICK_SCRATCH),
+                    constants(),
+                ],
+                (table, None),
+            ),
+            self.single(
+                "brick_compact",
+                vec![
+                    Access::read_write(RESOURCE_BRICKS),
+                    Access::read(RESOURCE_BRICK_SCRATCH),
+                    Access::write(RESOURCE_BRICK_DISPATCH),
+                    constants(),
+                ],
+            ),
+            // This tick's bricks.
+            self.op(&format!("brick_zero{suffix}"), zero, self.cover(0)),
+        ]
     }
 }
 
 /// The velocity carried one step without flow maps: semi-Lagrangian, and with MacCormack its
 /// correction, then copied back.
-fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
+fn advect_velocity(grid: Grid, sharp: bool) -> Vec<ExecutionOp> {
     let constants = || ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
     let frame = || ResourceAccess::read(AESTRA_RESOURCE_FRAME);
     let copy = |from: &str, to: &str| {
@@ -1684,7 +2029,7 @@ fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
             to: ResourceTypeId::new(to),
         })
     };
-    let mut ops = vec![solver_op(
+    let mut ops = vec![grid.pass(
         "advect_velocity",
         vec![
             ResourceAccess::read(RESOURCE_VELOCITY),
@@ -1692,11 +2037,10 @@ fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
             constants(),
             frame(),
         ],
-        dispatch,
     )];
     if sharp {
         // MacCormack: correct the semi-Lagrangian result, then take the corrected one.
-        ops.push(solver_op(
+        ops.push(grid.pass(
             "correct_velocity",
             vec![
                 ResourceAccess::read(RESOURCE_VELOCITY),
@@ -1705,7 +2049,6 @@ fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
                 constants(),
                 frame(),
             ],
-            dispatch,
         ));
         ops.push(copy(RESOURCE_VELOCITY_HAT, RESOURCE_VELOCITY));
     } else {
@@ -1716,7 +2059,7 @@ fn advect_velocity(sharp: bool, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
 
 /// Jacobi sweeps that ping-pong between the pressure grids: a pair per repeat, no copies; an odd
 /// count ends with one sweep copied back.
-fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp> {
+fn jacobi_pressure(grid: Grid, iterations: u32) -> Vec<ExecutionOp> {
     let relax = |back: bool| {
         let (entry, from, to) = if back {
             (
@@ -1727,7 +2070,7 @@ fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp
         } else {
             ("relax_pressure", RESOURCE_PRESSURE, RESOURCE_PRESSURE_NEXT)
         };
-        solver_op(
+        grid.pass(
             entry,
             vec![
                 ResourceAccess::read(from),
@@ -1736,7 +2079,6 @@ fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp
                 ResourceAccess::read(RESOURCE_SOLID),
                 ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
             ],
-            dispatch,
         )
     };
     let mut ops = Vec::new();
@@ -1767,16 +2109,14 @@ fn jacobi_pressure(iterations: u32, dispatch: StagedDispatch) -> Vec<ExecutionOp
 /// repeat that stops on the device once the relative residual is at most `tolerance` — at most
 /// `iterations` times. No copies: the whole solve runs in one compute pass.
 fn multigrid_pressure(
-    resolution: u32,
+    grid: Grid,
     iterations: u32,
     tolerance: f32,
     colliders: bool,
     coarsen: bool,
 ) -> Vec<ExecutionOp> {
     use ResourceAccess as Access;
-    let levels = multigrid_levels(resolution);
-    let fine = level_dispatch(resolution);
-    let single = StagedDispatch { x: 1, y: 1, z: 1 };
+    let levels = grid.levels();
     let constants = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
     // A pass's own accesses, and what finding a cell's neighbours reads: the solid flags and the
     // open sides.
@@ -1803,16 +2143,18 @@ fn multigrid_pressure(
                 constants(),
             ],
         };
-        solver_op(&pass.entry(level), accesses, level_dispatch(levels[level]))
+        grid.op(&pass.entry(level), accesses, grid.cover(level))
     };
-    // A single-workgroup pass summing the partials into the scalars.
+    // A single-workgroup pass summing the partials into the scalars: a dense grid counts them from its
+    // resolution, a sparse one from its active bricks — and the setup reads the open sides.
     let reduce = |entry: &str| {
-        solver_op(
-            entry,
-            vec![Access::read_write(RESOURCE_PCG_REDUCTION), constants()],
-            single,
-        )
+        let mut accesses = vec![Access::read_write(RESOURCE_PCG_REDUCTION)];
+        if grid.slots.is_none() || entry == "pcg_setup_finalize" {
+            accesses.push(constants());
+        }
+        grid.single(entry, accesses)
     };
+    let fine = |entry: &str, accesses: Vec<ResourceAccess>| grid.pass(entry, accesses);
 
     let mut ops = Vec::new();
     // The solid flags, once a tick (a second solve reuses them).
@@ -1821,7 +2163,7 @@ fn multigrid_pressure(
             ops.push(level_pass(LevelPass::Coarsen, level));
         }
     }
-    ops.push(solver_op(
+    ops.push(fine(
         "pcg_setup",
         with_walls(vec![
             Access::read(RESOURCE_DIVERGENCE),
@@ -1829,18 +2171,16 @@ fn multigrid_pressure(
             Access::write(RESOURCE_MG_RHS),
             Access::write(RESOURCE_PCG_REDUCTION),
         ]),
-        fine,
     ));
     ops.push(reduce("pcg_setup_finalize"));
     // r loses b's mean (a closed domain), and the first V-cycle's red sweep.
-    ops.push(solver_op(
+    ops.push(fine(
         "pcg_start",
         with_walls(vec![
             Access::read_write(RESOURCE_MG_RHS),
             Access::read(RESOURCE_PCG_REDUCTION),
             Access::write(RESOURCE_MG_SOLUTION),
         ]),
-        fine,
     ));
 
     // One iteration: z = M⁻¹·r (a V-cycle, whose fine red sweep the previous pass took), β,
@@ -1861,27 +2201,25 @@ fn multigrid_pressure(
         }
     }
     // The fine level's last red sweep, with the partials of r·z.
-    body.push(solver_op(
+    body.push(fine(
         "pcg_smooth_dot",
         with_walls(vec![
             Access::read_write(RESOURCE_MG_SOLUTION),
             Access::read(RESOURCE_MG_RHS),
             Access::write(RESOURCE_PCG_REDUCTION),
         ]),
-        fine,
     ));
     body.push(reduce("pcg_beta"));
-    body.push(solver_op(
+    body.push(fine(
         "pcg_apply",
         with_walls(vec![
             Access::read(RESOURCE_MG_SOLUTION),
             Access::read_write(RESOURCE_PCG_VECTORS),
             Access::read_write(RESOURCE_PCG_REDUCTION),
         ]),
-        fine,
     ));
     body.push(reduce("pcg_alpha"));
-    body.push(solver_op(
+    body.push(fine(
         "pcg_step",
         with_walls(vec![
             Access::read_write(RESOURCE_PRESSURE),
@@ -1890,7 +2228,6 @@ fn multigrid_pressure(
             Access::read_write(RESOURCE_PCG_REDUCTION),
             Access::write(RESOURCE_MG_SOLUTION),
         ]),
-        fine,
     ));
     body.push(reduce("pcg_residual"));
     ops.push(ExecutionOp::Repeat {
@@ -1917,6 +2254,13 @@ impl StageLowerer for FluidSolverLowerer {
     ) -> Result<Vec<StagePresentation>, String> {
         let temperature = ResourceTypeId::new(RESOURCE_TEMPERATURE);
         let fire = block.field(&temperature).is_some();
+        // A sparse grid (fluid F7) declares no field layouts yet, so nothing can draw it.
+        if block
+            .field(&ResourceTypeId::new(RESOURCE_DENSITY))
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
         let open_sides = modules_of(input.modules, MODULE_GRID)
             .next()
             .map_or(0, |grid| open_side_mask(&grid.parameters));
@@ -1941,7 +2285,7 @@ impl StageLowerer for FluidSolverLowerer {
 
     fn lower(&self, input: &StageLoweringInput<'_>) -> Result<ExecutionBlock, String> {
         let PackedStage {
-            resolution,
+            grid,
             iterations,
             cell_size,
             origin,
@@ -1954,22 +2298,8 @@ impl StageLowerer for FluidSolverLowerer {
             flow_map_cycle,
         } = pack_constants(input.modules)?;
         let flow_map = flow_map_cycle > 0;
-        let groups = resolution / WORKGROUP;
-        let dispatch = StagedDispatch {
-            x: groups,
-            y: groups,
-            z: groups,
-        };
-        let pass = |entry: &str, accesses: Vec<ResourceAccess>| {
-            ExecutionOp::Compute(ComputeOp {
-                name: format!("fluid/{entry}"),
-                program: Some(ComputeProgramId::new(PROGRAM_SOLVER)),
-                entry_point: entry.into(),
-                accesses,
-                dispatch,
-                indirect: None,
-            })
-        };
+        let resolution = grid.resolution;
+        let pass = |entry: &str, accesses: Vec<ResourceAccess>| grid.pass(entry, accesses);
         let copy = |from: &str, to: &str| {
             ExecutionOp::Copy(CopyOp {
                 from: ResourceTypeId::new(from),
@@ -2005,6 +2335,10 @@ impl StageLowerer for FluidSolverLowerer {
         };
 
         let mut steps = Vec::new();
+        if grid.slots.is_some() {
+            // A sparse grid first sets which bricks this tick simulates.
+            steps.extend(grid.allocation(fire));
+        }
         if colliders {
             // Solids first: every later pass sees this tick's colliders.
             steps.push(pass(
@@ -2130,7 +2464,7 @@ impl StageLowerer for FluidSolverLowerer {
             ));
             steps.push(copy(RESOURCE_VELOCITY_NEXT, RESOURCE_VELOCITY));
         } else {
-            steps.extend(advect_velocity(sharp, dispatch));
+            steps.extend(advect_velocity(grid, sharp));
         }
         steps.push(pass(
             "compute_divergence",
@@ -2143,9 +2477,9 @@ impl StageLowerer for FluidSolverLowerer {
         ));
         let solve = |coarsen: bool| {
             if multigrid {
-                multigrid_pressure(resolution, iterations, tolerance, colliders, coarsen)
+                multigrid_pressure(grid, iterations, tolerance, colliders, coarsen)
             } else {
-                jacobi_pressure(iterations, dispatch)
+                jacobi_pressure(grid, iterations)
             }
         };
         steps.extend(solve(true));
@@ -2288,18 +2622,14 @@ impl StageLowerer for FluidSolverLowerer {
                     frame_read(),
                 ],
             ));
-            steps.push(ExecutionOp::Compute(ComputeOp {
-                name: "fluid/lfm_energy_total".into(),
-                program: Some(ComputeProgramId::new(PROGRAM_SOLVER)),
-                entry_point: "lfm_energy_total".into(),
-                accesses: vec![
+            steps.push(grid.single(
+                "lfm_energy_total",
+                vec![
                     read_write(RESOURCE_PCG_REDUCTION),
                     constants_read(),
                     frame_read(),
                 ],
-                dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
-                indirect: None,
-            }));
+            ));
             steps.push(pass(
                 "lfm_restart",
                 vec![
@@ -2313,8 +2643,12 @@ impl StageLowerer for FluidSolverLowerer {
             ));
         }
 
+        // A sparse grid's fields are not laid out as a grid yet: nothing reads them in place.
+        if grid.slots.is_some() {
+            fields.clear();
+        }
         Ok(ExecutionBlock {
-            resources: resources(resolution, constants.len(), fire, multigrid, flow_map_cycle),
+            resources: resources(grid, constants.len(), fire, multigrid, flow_map_cycle),
             ops: with_barriers(steps),
             constants,
             // The persistent grids, for debug views, field sampling and renderers.

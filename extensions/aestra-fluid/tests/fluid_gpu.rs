@@ -250,11 +250,26 @@ fn the_solver_builds_on_every_available_backend() {
         &mut everything,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     );
+    // And on a sparse grid (fluid F7), which runs without flow maps.
+    let mut sparse_everything = sparse(everything.clone(), 64, 1e-3);
+    set_input(
+        &mut sparse_everything,
+        MODULE_GRID,
+        "resolution",
+        Value::U32(64),
+    );
     set_input(&mut everything, MODULE_GRID, "flow_map", Value::Bool(true));
-    let effect = EffectCompiler::with_extensions(registry.clone())
-        .compile(&everything)
-        .unwrap();
-    let block = &effect.extension_stages[0].block;
+    let blocks: Vec<_> = [everything, sparse_everything]
+        .iter()
+        .map(|effect| {
+            EffectCompiler::with_extensions(registry.clone())
+                .compile(effect)
+                .unwrap()
+                .extension_stages[0]
+                .block
+                .clone()
+        })
+        .collect();
     for backends in [
         wgpu::Backends::VULKAN,
         wgpu::Backends::DX12,
@@ -271,14 +286,16 @@ fn the_solver_builds_on_every_available_backend() {
         else {
             continue;
         };
-        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let executor = StageExecutor::new(&device, &queue, block, &registry.programs, 4);
-        let error = pollster::block_on(scope.pop());
-        assert!(
-            executor.is_ok() && error.is_none(),
-            "{backends:?}: {:?} {error:?}",
-            executor.err()
-        );
+        for block in &blocks {
+            let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let executor = StageExecutor::new(&device, &queue, block, &registry.programs, 4);
+            let error = pollster::block_on(scope.pop());
+            assert!(
+                executor.is_ok() && error.is_none(),
+                "{backends:?}: {:?} {error:?}",
+                executor.err()
+            );
+        }
         // The volume look's march function, with the interface it is composed with (fluid F3).
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         volume_pipeline(&device);
@@ -1802,6 +1819,311 @@ fn bench_flow_maps() {
                     "BENCH {n}³ {kind} {label}: {per_tick:.3} ms/tick, state {state_mb:.1} MiB"
                 );
             }
+        }
+    }
+}
+
+// ---- Sparse bricks (fluid F7) ----
+
+/// `effect` on a sparse grid of `budget` bricks, each kept while a cell holds more than `threshold`
+/// (negative: every brick is kept, so the grid is stored whole).
+fn sparse(mut effect: EffectAsset, budget: u32, threshold: f32) -> EffectAsset {
+    set_input(&mut effect, MODULE_GRID, "sparse", Value::Bool(true));
+    set_input(&mut effect, MODULE_GRID, "brick_budget", Value::U32(budget));
+    set_input(
+        &mut effect,
+        MODULE_GRID,
+        "brick_threshold",
+        Value::Scalar(threshold),
+    );
+    effect
+}
+
+/// A sparse grid's bricks as read back: the active slots in list order, each slot's packed brick
+/// (+1; 0 when free) and each brick's slot (0 when inactive).
+struct Bricks {
+    list: Vec<u32>,
+    coords: Vec<u32>,
+    table: Vec<u32>,
+}
+
+impl Fluid {
+    fn words(&self, gpu: &Gpu, resource: &str) -> Vec<u32> {
+        self.floats(gpu, resource)
+            .into_iter()
+            .map(f32::to_bits)
+            .collect()
+    }
+
+    fn bricks(&self, gpu: &Gpu, budget: u32, resolution: u32) -> Bricks {
+        let words = self.words(gpu, aestra_fluid::RESOURCE_BRICKS);
+        let slots = budget as usize + 1;
+        let count = words[0] as usize;
+        let table = ((resolution / 8) as usize).pow(3);
+        Bricks {
+            list: words[16..16 + count].to_vec(),
+            coords: words[16 + slots..16 + 2 * slots].to_vec(),
+            table: words[16 + 2 * slots..16 + 2 * slots + table].to_vec(),
+        }
+    }
+
+    /// A sparse field laid out like the dense grid (inactive bricks zero), `components` floats a cell.
+    fn unbricked(
+        &self,
+        gpu: &Gpu,
+        resource: &str,
+        components: usize,
+        budget: u32,
+        resolution: u32,
+    ) -> Vec<f32> {
+        let pool = self.floats(gpu, resource);
+        let bricks = self.bricks(gpu, budget, resolution);
+        let (n, g) = (resolution as usize, resolution as usize / 8);
+        let mut grid = vec![0.0; n * n * n * components];
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    let slot = bricks.table[((z / 8) * g + y / 8) * g + x / 8] as usize;
+                    let from = (slot * 512 + ((z % 8) * 8 + y % 8) * 8 + x % 8) * components;
+                    let to = ((z * n + y) * n + x) * components;
+                    grid[to..to + components].copy_from_slice(&pool[from..from + components]);
+                }
+            }
+        }
+        grid
+    }
+}
+
+fn bits(values: &[f32]) -> Vec<u32> {
+    values.iter().map(|value| value.to_bits()).collect()
+}
+
+#[test]
+fn a_sparse_grid_stored_whole_computes_what_the_dense_grid_does() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let all = (RESOLUTION / 8).pow(3);
+    // Jacobi sweeps are per-cell arithmetic only: stored whole, the bricks agree bit for bit.
+    let dense = Fluid::new(&gpu, &registry, &jacobi(effect(&registry, false, 24)));
+    let whole = Fluid::new(
+        &gpu,
+        &registry,
+        &sparse(jacobi(effect(&registry, false, 24)), all, -1.0),
+    );
+    dense.run(&gpu, 0..40);
+    whole.run(&gpu, 0..40);
+    assert_eq!(
+        whole.bricks(&gpu, all, RESOLUTION).list.len(),
+        all as usize,
+        "every brick stored"
+    );
+    for (resource, components) in [
+        (RESOURCE_VELOCITY, 4),
+        (RESOURCE_DENSITY, 1),
+        (aestra_fluid::RESOURCE_PRESSURE, 1),
+    ] {
+        assert_eq!(
+            bits(&whole.unbricked(&gpu, resource, components, all, RESOLUTION)),
+            bits(&dense.floats(&gpu, resource)),
+            "{resource}"
+        );
+    }
+
+    // MGPCG: the bricks' V-cycle goes one level coarser and sums in another order, so the two agree
+    // to the solve's tolerance, not bit for bit.
+    let dense = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    let whole = Fluid::new(
+        &gpu,
+        &registry,
+        &sparse(effect(&registry, false, 24), all, -1.0),
+    );
+    dense.run(&gpu, 0..40);
+    whole.run(&gpu, 0..40);
+    let expected = dense.floats(&gpu, RESOURCE_DENSITY);
+    let got = whole.unbricked(&gpu, RESOURCE_DENSITY, 1, all, RESOLUTION);
+    let peak = expected.iter().fold(0.0f32, |p, d| p.max(d.abs()));
+    let worst = expected
+        .iter()
+        .zip(&got)
+        .fold(0.0f32, |w, (a, b)| w.max((a - b).abs()));
+    eprintln!("sparse vs dense MGPCG density: worst {worst} of peak {peak}");
+    assert!(worst < 1e-2 * peak, "{worst} vs peak {peak}");
+}
+
+/// The smoke plume on a sparse 64³ grid of 0.05-unit cells: the test box, 8³ bricks of it.
+const SPARSE_RESOLUTION: u32 = 64;
+
+fn sparse_plume(registry: &ExtensionRegistry, budget: u32) -> EffectAsset {
+    let mut plume = sparse(effect(registry, false, 24), budget, 1e-3);
+    set_input(
+        &mut plume,
+        MODULE_GRID,
+        "resolution",
+        Value::U32(SPARSE_RESOLUTION),
+    );
+    set_input(&mut plume, MODULE_GRID, "cell_size", Value::Scalar(0.05));
+    plume
+}
+
+#[test]
+fn a_sparse_plume_simulates_only_the_bricks_around_its_smoke() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let budget = 512;
+    let fluid = Fluid::new(&gpu, &registry, &sparse_plume(&registry, budget));
+    let n = SPARSE_RESOLUTION as usize;
+    let height = |density: &[f32]| {
+        let mass: f32 = density.iter().sum();
+        let lift: f32 = density
+            .iter()
+            .enumerate()
+            .map(|(index, d)| d * (index / n % n) as f32)
+            .sum();
+        (mass, lift / mass)
+    };
+    fluid.run(&gpu, 0..20);
+    let (_, early) = height(&fluid.unbricked(&gpu, RESOURCE_DENSITY, 1, budget, SPARSE_RESOLUTION));
+    fluid.run(&gpu, 20..60);
+    let bricks = fluid.bricks(&gpu, budget, SPARSE_RESOLUTION);
+    let total = (SPARSE_RESOLUTION / 8).pow(3) as usize;
+    eprintln!(
+        "sparse plume: {} of {total} bricks active",
+        bricks.list.len()
+    );
+    assert!(!bricks.list.is_empty() && bricks.list.len() < total / 2);
+    // The list is the active slots in slot order; each names its brick, which names it back.
+    assert!(bricks.list.windows(2).all(|pair| pair[0] < pair[1]));
+    let g = n / 8;
+    for &slot in &bricks.list {
+        let packed = bricks.coords[slot as usize] - 1;
+        let brick = [packed & 1023, (packed >> 10) & 1023, packed >> 20].map(|c| c as usize);
+        assert_eq!(bricks.table[(brick[2] * g + brick[1]) * g + brick[0]], slot);
+    }
+    assert_eq!(
+        bricks.table.iter().filter(|&&slot| slot != 0).count(),
+        bricks.list.len()
+    );
+    let (mass, late) =
+        height(&fluid.unbricked(&gpu, RESOURCE_DENSITY, 1, budget, SPARSE_RESOLUTION));
+    assert!(mass > 0.0 && late > early + 1.0, "rises: {early} → {late}");
+
+    // The same run reproduces the same bits, allocation included.
+    let again = Fluid::new(&gpu, &registry, &sparse_plume(&registry, budget));
+    again.run(&gpu, 0..60);
+    for resource in [
+        RESOURCE_VELOCITY,
+        RESOURCE_DENSITY,
+        aestra_fluid::RESOURCE_BRICKS,
+    ] {
+        assert_eq!(
+            again.words(&gpu, resource),
+            fluid.words(&gpu, resource),
+            "{resource}"
+        );
+    }
+}
+
+#[test]
+fn a_sparse_checkpoint_replays_bit_for_bit() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &sparse_plume(&registry, 256));
+    fluid.run(&gpu, 0..30);
+    let checkpoint = fluid.stage.checkpoint(&gpu.device, &gpu.queue).unwrap();
+    fluid.run(&gpu, 30..60);
+    let uninterrupted = (
+        fluid.state(&gpu),
+        fluid.words(&gpu, aestra_fluid::RESOURCE_BRICKS),
+    );
+    fluid.stage.restore(&gpu.queue, &checkpoint).unwrap();
+    fluid.run(&gpu, 30..60);
+    assert_eq!(
+        (
+            fluid.state(&gpu),
+            fluid.words(&gpu, aestra_fluid::RESOURCE_BRICKS)
+        ),
+        uninterrupted
+    );
+}
+
+#[test]
+fn a_sparse_grid_stays_within_its_brick_budget() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fluid = Fluid::new(&gpu, &registry, &sparse_plume(&registry, 6));
+    fluid.run(&gpu, 0..30);
+    let bricks = fluid.bricks(&gpu, 6, SPARSE_RESOLUTION);
+    assert_eq!(bricks.list.len(), 6, "full, and no further");
+    let density = fluid.unbricked(&gpu, RESOURCE_DENSITY, 1, 6, SPARSE_RESOLUTION);
+    assert!(density.iter().all(|d| d.is_finite()) && density.iter().sum::<f32>() > 0.0);
+}
+
+/// The F7 acceptance: a plume in a sparse 512³ grid against the same plume in a dense 128³ one, cells
+/// of the same size, timed on the device while the plume grows (the sparse budget, 4096 bricks, holds
+/// as many cells as the dense grid). Not a pass/fail test — run with `--ignored --nocapture` on the
+/// reference GPU.
+#[test]
+#[ignore]
+fn bench_sparse_grid() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let h = 0.1f32;
+    for (label, resolution, sparse_budget) in [
+        ("dense 128³", 128u32, None),
+        ("sparse 512³", 512, Some(4096u32)),
+    ] {
+        let mut plume = smoke_effect(&registry);
+        // The floor at y = 0; the source low, in the middle.
+        let half = resolution as f32 * h * 0.5;
+        for (name, value) in [
+            ("resolution", Value::U32(resolution)),
+            ("cell_size", Value::Scalar(h)),
+            ("center", Value::Vec3([0.0, half, 0.0])),
+        ] {
+            set_input(&mut plume, MODULE_GRID, name, value);
+        }
+        for (name, value) in [
+            ("position", Value::Vec3([0.0, 1.5, 0.0])),
+            ("radius", Value::Scalar(1.0)),
+            ("velocity", Value::Vec3([0.0, 3.0, 0.0])),
+        ] {
+            set_input(&mut plume, MODULE_DENSITY_SOURCE, name, value);
+        }
+        if let Some(budget) = sparse_budget {
+            plume = sparse(plume, budget, 1e-3);
+        }
+        let fluid = Fluid::new(&gpu, &registry, &plume);
+        let wait = || {
+            gpu.device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(std::time::Duration::from_secs(120)),
+                })
+                .unwrap();
+        };
+        let mut tick = 0;
+        for phase in 0..4 {
+            fluid.run(&gpu, tick..tick + 90);
+            tick += 90;
+            wait();
+            let ticks = 60;
+            let start = std::time::Instant::now();
+            fluid.run(&gpu, tick..tick + ticks);
+            wait();
+            tick += ticks;
+            let per_tick = start.elapsed().as_secs_f64() * 1000.0 / f64::from(ticks);
+            let bricks = sparse_budget.map_or(String::new(), |budget| {
+                let active = fluid.bricks(&gpu, budget, resolution).list.len();
+                format!(", {active} bricks")
+            });
+            let iterations = fluid
+                .stage
+                .convergent_iterations(&gpu.device, &gpu.queue)
+                .unwrap();
+            eprintln!(
+                "BENCH {label} after {tick} ticks (phase {phase}): {per_tick:.2} ms/tick{bricks}, \
+                 pressure iterations {iterations:?}"
+            );
         }
     }
 }

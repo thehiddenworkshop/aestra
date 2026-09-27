@@ -126,7 +126,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   gathered along the maps, so an open side's projection stays exact; a global energy safeguard starts
   a cycle from the midpoint velocity when the maps have distorted too much. It also has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
-  as lit, self-shadowed volumetric smoke with blackbody fire. It adds nothing to core.
+  as lit, self-shadowed volumetric smoke with blackbody fire. Since fluid F7 a grid can be *sparse*
+  (`sparse`, up to 512³): only the 8³-cell bricks holding smoke, heat or fuel, touching a source, or
+  next to such a brick are stored — up to a brick budget — in pools indexed through a brick table,
+  and every pass covers only them, sized on the device. The allocation runs first each tick in
+  integer prefix sums, so it is deterministic; the same solver WGSL is composed with a sparse or a
+  dense indexing module (`grid_sparse.wgsl` / `grid_dense.wgsl`); an inactive brick is still, open
+  air (p = 0). Stored whole (a negative threshold), a sparse grid computes the dense grid's bits under
+  Jacobi sweeps. It adds nothing to core.
 
 ### `aestra-compiler`
 

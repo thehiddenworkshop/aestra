@@ -340,7 +340,8 @@ fn store_backward(i: u32, d: u32, s: MapPoint) {
 // path integral, without each needing a force field of its own. The grid's velocity dissipation is a
 // linear drag among them.
 @compute @workgroup_size(4, 4, 4)
-fn lfm_forces(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_forces(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let u = velocity[i].xyz;
@@ -386,7 +387,8 @@ fn lfm_advect_face(c: vec3<u32>, a: u32) -> f32 {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn lfm_advect(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_advect(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     velocity_next[cell_index(cell)] = vec4<f32>(
         lfm_advect_face(cell, 0u),
@@ -423,7 +425,8 @@ fn lfm_forward_face(c: vec3<u32>, d: u32) -> f32 {
 // After the projection: the midpoint velocity is stored, the forward maps marched and the forces
 // gathered into the cycle's initial velocity.
 @compute @workgroup_size(4, 4, 4)
-fn lfm_march_forward(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_march_forward(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let gathered = vec3<f32>(
@@ -461,7 +464,8 @@ fn lfm_backward_face(c: vec3<u32>, d: u32) -> vec2<f32> {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn lfm_pull_back(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_pull_back(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell) || !lfm_reinit()) { return; }
     let x = lfm_backward_face(cell, 0u);
     let y = lfm_backward_face(cell, 1u);
@@ -497,7 +501,8 @@ fn lfm_error_face(i: u32, d: u32) -> f32 {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn lfm_measure_error(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_measure_error(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell) || !lfm_reinit()) { return; }
     let i = cell_index(cell);
     lfm_force[i] = vec4<f32>(lfm_error_face(i, 0u), lfm_error_face(i, 1u), lfm_error_face(i, 2u), 0.0);
@@ -532,7 +537,8 @@ fn lfm_compensated_face(c: vec3<u32>, d: u32) -> f32 {
 
 // The compensated impulse replaces the velocity, to be projected.
 @compute @workgroup_size(4, 4, 4)
-fn lfm_compensate(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_compensate(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell) || !lfm_reinit()) { return; }
     let i = cell_index(cell);
     velocity[i] = vec4<f32>(
@@ -546,13 +552,15 @@ fn lfm_compensate(@builtin(global_invocation_id) cell: vec3<u32>) {
 // The impulse's divergence — none on the other steps, so their second solve starts converged and runs
 // no iteration.
 @compute @workgroup_size(4, 4, 4)
-fn lfm_impulse_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_impulse_divergence(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     divergence[cell_index(cell)] = select(0.0, divergence_at(cell), lfm_reinit());
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn lfm_project(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_project(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell) || !lfm_reinit()) { return; }
     project_cell(cell);
 }
@@ -564,10 +572,11 @@ fn lfm_project(@builtin(global_invocation_id) cell: vec3<u32>) {
 // solve's reductions.
 @compute @workgroup_size(4, 4, 4)
 fn lfm_energy(
-    @builtin(global_invocation_id) cell: vec3<u32>,
+    @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(local_invocation_index) local: u32,
     @builtin(workgroup_id) group: vec3<u32>,
 ) {
+    let cell = grid_cell(gid);
     if (!lfm_reinit()) { return; }
     var energies = vec4<f32>(0.0);
     if (in_grid(cell)) {
@@ -596,7 +605,8 @@ fn lfm_energy_total(@builtin(local_invocation_index) local: u32) {
 // again as the last midpoint velocity), from that midpoint velocity: the cycle degrades to plain
 // advection instead of feeding an error.
 @compute @workgroup_size(4, 4, 4)
-fn lfm_restart(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn lfm_restart(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell) || !lfm_reinit()) { return; }
     let i = cell_index(cell);
     let energies = pcg_reduction[0];

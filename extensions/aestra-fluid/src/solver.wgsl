@@ -48,16 +48,19 @@
 @group(0) @binding(22) var<storage, read_write> lfm_backward: array<f32>;
 @group(0) @binding(23) var<storage, read_write> lfm_force: array<vec4<f32>>;
 @group(0) @binding(24) var<storage, read_write> lfm_impulse: array<vec4<f32>>;
+// Bindings 25–27 are a sparse grid's bricks (fluid F7, `grid_sparse.wgsl`): always declared — a few
+// bytes each on a dense grid — so the fire grids keep their bindings.
 // Fire (fluid F3): declared only by a stage with a Combustion module, after every other resource, so
 // a smoke-only block binds none of them and none of its passes reads them.
-@group(0) @binding(25) var<storage, read_write> temperature: array<f32>;
-@group(0) @binding(26) var<storage, read_write> temperature_next: array<f32>;
-@group(0) @binding(27) var<storage, read_write> fuel: array<f32>;
-@group(0) @binding(28) var<storage, read_write> fuel_next: array<f32>;
+@group(0) @binding(28) var<storage, read_write> temperature: array<f32>;
+@group(0) @binding(29) var<storage, read_write> temperature_next: array<f32>;
+@group(0) @binding(30) var<storage, read_write> fuel: array<f32>;
+@group(0) @binding(31) var<storage, read_write> fuel_next: array<f32>;
 
-// Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs).
+// Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs). The grid's cells
+// are indexed by the dense or the sparse grid composed with this file (`cell_index`, `grid_cell`).
 const NO_SLOT: u32 = 0xffffffffu;
-const SOURCE_BASE: u32 = 20u;
+const SOURCE_BASE: u32 = 24u;
 const COLLIDER_WORDS: u32 = 24u;
 const SOURCE_WORDS: u32 = 16u;
 
@@ -119,10 +122,6 @@ fn inside(cell: vec3<i32>) -> bool {
     return all(cell >= vec3<i32>(0)) && all(cell < vec3<i32>(i32(grid_res())));
 }
 
-fn cell_index(cell: vec3<u32>) -> u32 {
-    let n = grid_res();
-    return (cell.z * n + cell.y) * n + cell.x;
-}
 
 // The index of `cell` clamped into the grid — neighbours past a wall read the wall cell.
 fn clamped_index(cell: vec3<i32>) -> u32 {
@@ -165,6 +164,11 @@ fn face(cell: vec3<i32>, axis: u32) -> f32 {
             return component(velocity[clamped_index(cell - axis_step(axis))], axis);
         }
         return 0.0;
+    }
+    // A face of an inactive brick of a sparse grid (fluid F7) borders open air: extrapolated from the
+    // cell below it, as on an open side.
+    if (!cell_active(cell)) {
+        return component(velocity[clamped_index(cell - axis_step(axis))], axis);
     }
     return component(velocity[clamped_index(cell)], axis);
 }
@@ -245,7 +249,8 @@ fn source_falloff(base: u32, point: vec3<f32>) -> f32 {
 
 // Injects density at the cell's centre, and pulls each of its faces toward the sources' velocity.
 @compute @workgroup_size(4, 4, 4)
-fn add_sources(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn add_sources(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let delta = frame_dt();
@@ -347,7 +352,8 @@ fn turbulence_force(c: vec3<i32>, here: f32, below: vec3<f32>) -> vec3<f32> {
 // Buoyancy: dense (and, with fire, hot) fluid lifts each y face by the mean of its two cells. The
 // turbulence acts in the same pass.
 @compute @workgroup_size(4, 4, 4)
-fn apply_buoyancy(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn apply_buoyancy(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
@@ -367,7 +373,8 @@ fn presence(i: u32) -> f32 {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn apply_buoyancy_fire(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn apply_buoyancy_fire(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
@@ -385,7 +392,8 @@ fn apply_buoyancy_fire(@builtin(global_invocation_id) cell: vec3<u32>) {
 
 // Vorticity ω = ∇ × u of the cell-centred velocity (central differences); `w` holds |ω|.
 @compute @workgroup_size(4, 4, 4)
-fn compute_vorticity(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn compute_vorticity(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let last = i32(grid_res()) - 1;
@@ -406,7 +414,8 @@ fn compute_vorticity(@builtin(global_invocation_id) cell: vec3<u32>) {
 // Vorticity confinement force at the cell's centre, along N × ω with N = ∇|ω| / |∇|ω||; written to
 // `velocity_next`, scratch until the advection overwrites it.
 @compute @workgroup_size(4, 4, 4)
-fn vorticity_force(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn vorticity_force(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
@@ -425,7 +434,8 @@ fn vorticity_force(@builtin(global_invocation_id) cell: vec3<u32>) {
 
 // Applies the confinement force to each face: the mean of the forces of the face's two cells.
 @compute @workgroup_size(4, 4, 4)
-fn apply_vorticity(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn apply_vorticity(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let c = vec3<i32>(cell);
     let i = cell_index(cell);
@@ -459,7 +469,8 @@ fn forward_decay(rate: f32) -> f32 {
 
 // Each face's component is carried along the flow from where it was one step ago.
 @compute @workgroup_size(4, 4, 4)
-fn advect_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let p = vec3<f32>(cell);
     let advected = vec3<f32>(
@@ -471,7 +482,8 @@ fn advect_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn advect_density(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn advect_density(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let s = trilinear(backtrace(vec3<f32>(cell)));
     let x0 = mix(density[s.corners[0]], density[s.corners[1]], s.t.x);
@@ -529,7 +541,8 @@ fn collider_distance(base: u32, p: vec3<f32>) -> f32 {
 // Marks the cells inside a collider with its velocity and boundary condition, and clears the smoke
 // inside it.
 @compute @workgroup_size(4, 4, 4)
-fn mark_solids(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn mark_solids(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let center = grid_origin() + (vec3<f32>(cell) + vec3<f32>(0.5)) * cell_size();
@@ -559,7 +572,8 @@ fn bounded_face(c: vec3<i32>, axis: u32) -> f32 {
 
 // The divergence of each fluid cell: the net flow out through its six faces (solids impose theirs).
 @compute @workgroup_size(4, 4, 4)
-fn compute_divergence(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn compute_divergence(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     divergence[cell_index(cell)] = divergence_at(cell);
 }
@@ -618,13 +632,15 @@ fn jacobi(cell: vec3<u32>, back: bool) -> f32 {
 
 // The Jacobi sweeps ping-pong between the two pressure grids, so no copy ends each iteration.
 @compute @workgroup_size(4, 4, 4)
-fn relax_pressure(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn relax_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     pressure_next[cell_index(cell)] = jacobi(cell, false);
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn relax_pressure_back(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn relax_pressure_back(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     pressure[cell_index(cell)] = jacobi(cell, true);
 }
@@ -632,7 +648,8 @@ fn relax_pressure_back(@builtin(global_invocation_id) cell: vec3<u32>) {
 // Subtracts the pressure gradient across each face. A face on a closed side carries no flow; on an
 // open side, the pressure outside is zero.
 @compute @workgroup_size(4, 4, 4)
-fn project(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn project(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     project_cell(cell);
 }
@@ -692,7 +709,8 @@ fn solid_face(cell: vec3<i32>, axis: u32, projected: f32) -> f32 {
 
 // Injects heat and fuel from every source (source words 14 and 15: rates per second at the centre).
 @compute @workgroup_size(4, 4, 4)
-fn add_heat(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn add_heat(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let delta = frame_dt();
@@ -712,7 +730,8 @@ fn add_heat(@builtin(global_invocation_id) cell: vec3<u32>) {
 // Burns fuel where it is hot enough, releasing heat and smoke; hot gas cools. (It rises through
 // `apply_buoyancy_fire`.)
 @compute @workgroup_size(4, 4, 4)
-fn combust(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn combust(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let i = cell_index(cell);
     let delta = frame_dt();
@@ -730,7 +749,8 @@ fn combust(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn advect_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn advect_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let s = trilinear(backtrace(vec3<f32>(cell)));
     let x0 = mix(temperature[s.corners[0]], temperature[s.corners[1]], s.t.x);
@@ -741,7 +761,8 @@ fn advect_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn advect_fuel(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn advect_fuel(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let s = trilinear(backtrace(vec3<f32>(cell)));
     let x0 = mix(fuel[s.corners[0]], fuel[s.corners[1]], s.t.x);
@@ -854,7 +875,8 @@ fn corrected_component(p: vec3<f32>, axis: u32, original: f32, hat: f32) -> f32 
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn correct_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn correct_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let p = vec3<f32>(cell);
     let i = cell_index(cell);
@@ -869,7 +891,8 @@ fn correct_velocity(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn correct_density(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn correct_density(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let p = vec3<f32>(cell);
     let i = cell_index(cell);
@@ -881,7 +904,8 @@ fn correct_density(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn correct_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn correct_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let p = vec3<f32>(cell);
     let i = cell_index(cell);
@@ -892,7 +916,8 @@ fn correct_temperature(@builtin(global_invocation_id) cell: vec3<u32>) {
 }
 
 @compute @workgroup_size(4, 4, 4)
-fn correct_fuel(@builtin(global_invocation_id) cell: vec3<u32>) {
+fn correct_fuel(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
     if (!in_grid(cell)) { return; }
     let p = vec3<f32>(cell);
     let i = cell_index(cell);
