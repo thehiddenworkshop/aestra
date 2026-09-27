@@ -3,7 +3,7 @@
   "status": "succeeded",
   "errors": [],
   "effect": {
-    "id": "15cc71e8-5fe2-479d-add9-193329594619",
+    "id": "7562e469-32ae-47c7-bafa-483cef806c18",
     "name": "Fluid Fire",
     "duration_seconds": 6.0,
     "playback_mode": "LoopContinuous",
@@ -155,23 +155,23 @@
     },
     "alive_particles": {
       "source": "measured",
-      "value": 49
+      "value": 51
     },
     "submitted_instances": {
       "source": "measured",
-      "value": 49
+      "value": 51
     },
     "submitted_vertices": {
       "source": "measured",
-      "value": 294
+      "value": 306
     },
     "submitted_primitives": {
       "source": "measured",
-      "value": 196
+      "value": 204
     },
     "peak_particles": {
       "source": "estimated",
-      "value": 49
+      "value": 51
     },
     "particle_capacity": {
       "source": "measured",
@@ -187,7 +187,7 @@
     },
     "dispatch_count": {
       "source": "estimated",
-      "value": 574
+      "value": 298
     },
     "estimated_overdraw": {
       "source": "unavailable"
@@ -198,7 +198,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 15716732
+      "value": 15716900
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -209,10 +209,10 @@
     },
     "emitters": [
       {
-        "id": "3f4ad374-fc8d-40c6-b974-be71e049510f",
+        "id": "9662a8bd-3e81-4d8e-9992-22824fffa050",
         "name": "Fluid Fire [root] / Embers",
-        "alive_particles": 49,
-        "peak_particles": 49,
+        "alive_particles": 51,
+        "peak_particles": 51,
         "particle_capacity": 256
       }
     ],
@@ -221,7 +221,7 @@
   "instances": [
     {
       "clip_path": [],
-      "effect": "15cc71e8-5fe2-479d-add9-193329594619",
+      "effect": "7562e469-32ae-47c7-bafa-483cef806c18",
       "name": "Fluid Fire",
       "metrics": {
         "trail_capacity": {
@@ -266,23 +266,23 @@
         },
         "alive_particles": {
           "source": "measured",
-          "value": 49
+          "value": 51
         },
         "submitted_instances": {
           "source": "measured",
-          "value": 49
+          "value": 51
         },
         "submitted_vertices": {
           "source": "measured",
-          "value": 294
+          "value": 306
         },
         "submitted_primitives": {
           "source": "measured",
-          "value": 196
+          "value": 204
         },
         "peak_particles": {
           "source": "estimated",
-          "value": 49
+          "value": 51
         },
         "particle_capacity": {
           "source": "measured",
@@ -298,7 +298,7 @@
         },
         "dispatch_count": {
           "source": "estimated",
-          "value": 574
+          "value": 298
         },
         "estimated_overdraw": {
           "source": "unavailable"
@@ -309,7 +309,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 15716732
+          "value": 15716900
         },
         "texture_memory_bytes": {
           "source": "estimated",
@@ -320,10 +320,10 @@
         },
         "emitters": [
           {
-            "id": "3f4ad374-fc8d-40c6-b974-be71e049510f",
+            "id": "9662a8bd-3e81-4d8e-9992-22824fffa050",
             "name": "Embers",
-            "alive_particles": 49,
-            "peak_particles": 49,
+            "alive_particles": 51,
+            "peak_particles": 51,
             "particle_capacity": 256
           }
         ],

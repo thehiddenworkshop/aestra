@@ -921,6 +921,7 @@ fn the_committed_smoke_sample_compiles_and_survives_a_missing_plugin_unchanged()
         .expect("the density grid declares its field layout");
     assert_eq!(density.dims, [48; 3]);
     assert_eq!(density.components, 1);
+    assert!(compiled.emitters.is_empty(), "the volume is the smoke");
 
     // Opened where the plugin is not linked: named, not dropped, and saved back unchanged.
     let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
@@ -971,7 +972,8 @@ fn the_committed_fire_sample_burns_glows_and_survives_a_missing_plugin_unchanged
 
 #[test]
 fn followers_resolve_to_the_domains_velocity_and_are_gpu_only() {
-    let source = include_str!("../../../sample-project/effects/fluid_smoke.aestra.ron");
+    // The fire's embers ride the flames.
+    let source = include_str!("../../../sample-project/effects/fluid_fire.aestra.ron");
     let effect = EffectAsset::from_ron(source).unwrap();
     let compiled = EffectCompiler::with_extensions(fluid_registry())
         .compile(&effect)
@@ -980,8 +982,9 @@ fn followers_resolve_to_the_domains_velocity_and_are_gpu_only() {
         .block
         .field(&aestra_core::ResourceTypeId::new(RESOURCE_VELOCITY))
         .unwrap();
+    assert!(!compiled.emitters.is_empty());
     for emitter in &compiled.emitters {
-        let follow = emitter.field_follow.as_ref().expect("both emitters follow");
+        let follow = emitter.field_follow.as_ref().expect("the embers follow");
         assert_eq!(follow.stage, 0);
         assert_eq!(&follow.field, velocity);
         assert_eq!(

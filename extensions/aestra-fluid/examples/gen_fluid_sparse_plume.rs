@@ -1,15 +1,14 @@
 //! Generates `sample-project/effects/fluid_sparse_plume.aestra.ron` (fluid F7): a tall smoke plume in
 //! a sparse 192³ grid — only the bricks around the smoke are stored and simulated — drawn as lit
-//! volumetric smoke, with puffs that ride it. Written through the real `save_ron`, reloaded, and
-//! compiled with the fluid extension installed.
+//! volumetric smoke. Written through the real `save_ron`, reloaded, and compiled with the fluid
+//! extension installed.
 //!
 //! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_sparse_plume`; an
 //! argument writes it elsewhere instead.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
-    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
-    ModuleTypeId, ScalarRange, StageKind, Value,
+    EffectAsset, EffectPlaybackMode, ModuleParameters, ModuleTypeId, StageKind, Value,
 };
 use aestra_fluid::{
     FluidExtension, MODULE_BUOYANCY, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_TURBULENCE,
@@ -30,33 +29,6 @@ fn set(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
     values.insert(name.into(), value);
 }
 
-/// Light puffs spawned in the source that ride the plume up.
-fn puffs() -> Emitter {
-    let mut emitter = Emitter::basic_sprite("Smoke Puffs", 8.0);
-    emitter.max_particles = 1024;
-    let appearance = emitter
-        .modules
-        .iter()
-        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
-        .cloned()
-        .expect("a sprite emitter has an appearance");
-    emitter.modules = vec![
-        ModuleInstance::emission(80.0, 0),
-        ModuleInstance::shape(EmitterShape::Sphere { radius: 10.0 }),
-        ModuleInstance::initialize(
-            ScalarRange::new(5.0, 7.0),
-            ScalarRange::new(0.0, 5.0),
-            [0.0, 1.0, 0.0],
-            60.0,
-            ScalarRange::new(0.0, 0.0),
-        ),
-        ModuleInstance::motion([0.0, 0.0, 0.0], 0.0, 0.0),
-        ModuleInstance::follow_field(6.0),
-        appearance,
-    ];
-    emitter
-}
-
 fn main() {
     let mut registry = ExtensionRegistry::builtin();
     registry.install(&FluidExtension).expect("install");
@@ -65,7 +37,7 @@ fn main() {
     effect.name = "Fluid Sparse Plume".into();
     effect.duration = 8.0;
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
-    effect.emitters = vec![puffs()];
+    effect.emitters = Vec::new();
     let mut turbulence = registry
         .modules
         .instantiate(&ModuleTypeId::new(MODULE_TURBULENCE))

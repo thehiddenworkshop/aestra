@@ -3,15 +3,15 @@
   "status": "succeeded",
   "errors": [],
   "effect": {
-    "id": "9235e13e-338c-49ee-87cb-5db6a34a6c09",
+    "id": "149b4630-3a83-4ebb-a1ae-80f5011a2377",
     "name": "Fluid Sparse Plume",
     "duration_seconds": 8.0,
     "playback_mode": "LoopContinuous",
     "seek_mode": "RestartReplay",
-    "emitter_count": 1,
+    "emitter_count": 0,
     "material_count": 1,
     "material_program_count": 0,
-    "max_particles": 1024
+    "max_particles": 0
   },
   "capture": {
     "tick_rate": 60,
@@ -78,9 +78,9 @@
       "material_function_calls_authored": 0,
       "material_function_calls_eliminated": 0,
       "material_function_calls_live": 0,
-      "constant_expressions": 15,
+      "constant_expressions": 1,
       "runtime_parameter_reads": 0,
-      "eliminated_attributes": 1,
+      "eliminated_attributes": 0,
       "material_common_subexpressions": 0,
       "material_specialized_parameter_reads": 0,
       "material_pruned_static_branches": 0,
@@ -140,7 +140,8 @@
       "source": "unavailable"
     },
     "gpu_simulation_time_ns": {
-      "source": "unavailable"
+      "source": "measured",
+      "value": 0
     },
     "gpu_trail_compaction_time_ns": {
       "source": "measured",
@@ -151,43 +152,44 @@
       "value": 0
     },
     "gpu_stage_time_ns": {
-      "source": "unavailable"
+      "source": "measured",
+      "value": 4590592
     },
     "alive_particles": {
       "source": "measured",
-      "value": 446
+      "value": 0
     },
     "submitted_instances": {
       "source": "measured",
-      "value": 446
+      "value": 0
     },
     "submitted_vertices": {
       "source": "measured",
-      "value": 2676
+      "value": 0
     },
     "submitted_primitives": {
       "source": "measured",
-      "value": 1784
+      "value": 0
     },
     "peak_particles": {
-      "source": "estimated",
-      "value": 446
+      "source": "measured",
+      "value": 0
     },
     "particle_capacity": {
       "source": "measured",
-      "value": 1024
+      "value": 0
     },
     "emitter_count": {
       "source": "measured",
-      "value": 1
+      "value": 0
     },
     "draw_calls": {
       "source": "measured",
-      "value": 1
+      "value": 0
     },
     "dispatch_count": {
       "source": "estimated",
-      "value": 250
+      "value": 248
     },
     "estimated_overdraw": {
       "source": "unavailable"
@@ -198,7 +200,7 @@
     },
     "buffer_memory_bytes": {
       "source": "estimated",
-      "value": 132426140
+      "value": 132360588
     },
     "texture_memory_bytes": {
       "source": "estimated",
@@ -207,21 +209,13 @@
     "collision_time_ns": {
       "source": "unavailable"
     },
-    "emitters": [
-      {
-        "id": "874d0cda-da0a-4330-89af-cc1967a4f961",
-        "name": "Fluid Sparse Plume [root] / Smoke Puffs",
-        "alive_particles": 446,
-        "peak_particles": 446,
-        "particle_capacity": 1024
-      }
-    ],
+    "emitters": [],
     "platform_warnings": []
   },
   "instances": [
     {
       "clip_path": [],
-      "effect": "9235e13e-338c-49ee-87cb-5db6a34a6c09",
+      "effect": "149b4630-3a83-4ebb-a1ae-80f5011a2377",
       "name": "Fluid Sparse Plume",
       "metrics": {
         "trail_capacity": {
@@ -251,7 +245,8 @@
           "source": "unavailable"
         },
         "gpu_simulation_time_ns": {
-          "source": "unavailable"
+          "source": "measured",
+          "value": 0
         },
         "gpu_trail_compaction_time_ns": {
           "source": "measured",
@@ -262,43 +257,44 @@
           "value": 0
         },
         "gpu_stage_time_ns": {
-          "source": "unavailable"
+          "source": "measured",
+          "value": 4590592
         },
         "alive_particles": {
           "source": "measured",
-          "value": 446
+          "value": 0
         },
         "submitted_instances": {
           "source": "measured",
-          "value": 446
+          "value": 0
         },
         "submitted_vertices": {
           "source": "measured",
-          "value": 2676
+          "value": 0
         },
         "submitted_primitives": {
           "source": "measured",
-          "value": 1784
+          "value": 0
         },
         "peak_particles": {
-          "source": "estimated",
-          "value": 446
+          "source": "measured",
+          "value": 0
         },
         "particle_capacity": {
           "source": "measured",
-          "value": 1024
+          "value": 0
         },
         "emitter_count": {
           "source": "measured",
-          "value": 1
+          "value": 0
         },
         "draw_calls": {
           "source": "measured",
-          "value": 1
+          "value": 0
         },
         "dispatch_count": {
           "source": "estimated",
-          "value": 250
+          "value": 248
         },
         "estimated_overdraw": {
           "source": "unavailable"
@@ -309,7 +305,7 @@
         },
         "buffer_memory_bytes": {
           "source": "estimated",
-          "value": 132426140
+          "value": 132360588
         },
         "texture_memory_bytes": {
           "source": "estimated",
@@ -318,15 +314,7 @@
         "collision_time_ns": {
           "source": "unavailable"
         },
-        "emitters": [
-          {
-            "id": "874d0cda-da0a-4330-89af-cc1967a4f961",
-            "name": "Smoke Puffs",
-            "alive_particles": 446,
-            "peak_particles": 446,
-            "particle_capacity": 1024
-          }
-        ],
+        "emitters": [],
         "platform_warnings": []
       }
     }

@@ -1,7 +1,7 @@
 //! Generates `sample-project/effects/fluid_fire.aestra.ron` (fluid F3): a looping fire — an
 //! effect-level *Fluid Solver* domain whose source emits fuel and the heat that ignites it, a
 //! Combustion module burning it into heat and smoke, and a Volume Look drawing the flames as blackbody
-//! emission inside lit smoke — plus embers riding the flames. Written through the real `save_ron`,
+//! emission inside lit smoke — plus a few embers riding the flames. Written through the real `save_ron`,
 //! reloaded, and compiled with the fluid extension installed.
 //!
 //! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_fire`; an argument
@@ -9,8 +9,8 @@
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
-    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
-    ModuleTypeId, ScalarRange, StageKind, Value,
+    ColorKey, Curve, CurveKey, EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, Gradient,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ScalarRange, StageKind, Value,
 };
 use aestra_fluid::{
     FluidExtension, MODULE_BUOYANCY, MODULE_COMBUSTION, MODULE_DENSITY_SOURCE, MODULE_GRID,
@@ -31,28 +31,42 @@ fn set(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
     values.insert(name.into(), value);
 }
 
-/// Sparks spawned in the burning core that the flames carry up, against gravity.
+/// Sparks spawned in the burning core that the flames carry up, against gravity: small, additive
+/// (the default sprite material), white-hot yellow cooling to a deep red as they fade.
 fn embers() -> Emitter {
     let mut emitter = Emitter::basic_sprite("Embers", 6.0);
     emitter.max_particles = 256;
-    let appearance = emitter
-        .modules
-        .iter()
-        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
-        .cloned()
-        .expect("a sprite emitter has an appearance");
+    let appearance = ModuleInstance::appearance(
+        Curve::new(vec![
+            CurveKey::new(0.0, 6.0),
+            CurveKey::new(0.4, 4.0),
+            CurveKey::new(1.0, 1.5),
+        ]),
+        Curve::new(vec![
+            CurveKey::new(0.0, 0.0),
+            CurveKey::new(0.05, 1.0),
+            CurveKey::new(0.6, 0.7),
+            CurveKey::new(1.0, 0.0),
+        ]),
+        Gradient::new(vec![
+            ColorKey::new(0.0, [1.0, 0.85, 0.45, 1.0]),
+            ColorKey::new(0.35, [1.0, 0.45, 0.1, 1.0]),
+            ColorKey::new(1.0, [0.45, 0.05, 0.02, 1.0]),
+        ]),
+    );
     emitter.modules = vec![
-        ModuleInstance::emission(30.0, 0),
+        ModuleInstance::emission(18.0, 0),
         ModuleInstance::shape(EmitterShape::Sphere { radius: 6.0 }),
+        // They outlive the flames and drift out of them, cooling as they go.
         ModuleInstance::initialize(
-            ScalarRange::new(1.0, 2.0),
-            ScalarRange::new(5.0, 15.0),
+            ScalarRange::new(2.0, 3.5),
+            ScalarRange::new(10.0, 25.0),
             [0.0, 1.0, 0.0],
-            40.0,
+            45.0,
             ScalarRange::new(0.0, 0.0),
         ),
-        ModuleInstance::motion([0.0, -15.0, 0.0], 0.0, 0.0),
-        ModuleInstance::follow_field(4.0),
+        ModuleInstance::motion([0.0, -10.0, 0.0], 0.0, 0.0),
+        ModuleInstance::follow_field(2.0),
         appearance,
     ];
     emitter

@@ -1,7 +1,6 @@
 //! Generates `sample-project/effects/fluid_smoke.aestra.ron` (fluid F2/F3): a looping smoke plume — an
-//! effect-level *Fluid Solver* domain (grid, density source, buoyancy, vorticity), drawn as lit volumetric
-//! smoke by its Volume Look — and two emitters whose particles follow it: light "Smoke Puffs" that ride
-//! the plume, and heavier "Embers" pulled more weakly against gravity.
+//! effect-level *Fluid Solver* domain (grid, density source, buoyancy, vorticity, turbulence), drawn as
+//! lit volumetric smoke by its Volume Look. The volume is the smoke: no particles.
 //! Written through the real `save_ron`, reloaded, and compiled with the fluid extension installed.
 //!
 //! Run from the repository root: `cargo run -p aestra-fluid --example gen_fluid_smoke`; an argument
@@ -9,8 +8,7 @@
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{
-    EffectAsset, EffectPlaybackMode, Emitter, EmitterShape, ModuleInstance, ModuleParameters,
-    ModuleTypeId, ScalarRange, StageKind, Value,
+    EffectAsset, EffectPlaybackMode, ModuleParameters, ModuleTypeId, StageKind, Value,
 };
 use aestra_fluid::{
     FluidExtension, MODULE_DENSITY_SOURCE, MODULE_GRID, MODULE_TURBULENCE, MODULE_VORTICITY,
@@ -31,40 +29,6 @@ fn set(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
     values.insert(name.into(), value);
 }
 
-/// A sprite emitter spawning around the origin (inside the plume) whose particles follow the domain.
-fn follower(
-    name: &str,
-    rate: f32,
-    lifetime: (f32, f32),
-    speed: (f32, f32),
-    gravity: f32,
-    strength: f32,
-) -> Emitter {
-    let mut emitter = Emitter::basic_sprite(name, 6.0);
-    emitter.max_particles = 512;
-    let appearance = emitter
-        .modules
-        .iter()
-        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
-        .cloned()
-        .expect("a sprite emitter has an appearance");
-    emitter.modules = vec![
-        ModuleInstance::emission(rate, 0),
-        ModuleInstance::shape(EmitterShape::Sphere { radius: 8.0 }),
-        ModuleInstance::initialize(
-            ScalarRange::new(lifetime.0, lifetime.1),
-            ScalarRange::new(speed.0, speed.1),
-            [0.0, 1.0, 0.0],
-            60.0,
-            ScalarRange::new(0.0, 0.0),
-        ),
-        ModuleInstance::motion([0.0, gravity, 0.0], 0.0, 0.0),
-        ModuleInstance::follow_field(strength),
-        appearance,
-    ];
-    emitter
-}
-
 fn main() {
     let mut registry = ExtensionRegistry::builtin();
     registry.install(&FluidExtension).expect("install");
@@ -73,11 +37,7 @@ fn main() {
     effect.name = "Fluid Smoke".into();
     effect.duration = 6.0;
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
-    // Two emitters following the one domain (fluid F2b): Follow Field makes each stateful.
-    effect.emitters = vec![
-        follower("Smoke Puffs", 60.0, (3.0, 4.0), (0.0, 4.0), 0.0, 8.0),
-        follower("Embers", 25.0, (1.5, 2.5), (10.0, 20.0), -20.0, 3.0),
-    ];
+    effect.emitters = Vec::new();
     // A gentle stir, so the plume wavers instead of rising as a regular column.
     let mut turbulence = registry
         .modules
@@ -146,14 +106,9 @@ fn main() {
         .expect("the sample compiles with the fluid");
     let stage = &compiled.extension_stages[0];
     println!(
-        "wrote {path}: domain '{}' ({}), {} dispatches per tick; followers: {:?}",
+        "wrote {path}: domain '{}' ({}), {} dispatches per tick",
         stage.name,
         stage.stage_type.as_str(),
         stage.block.compute_pass_count(),
-        compiled
-            .emitters
-            .iter()
-            .map(|emitter| (emitter.name.as_str(), emitter.field_follow.is_some()))
-            .collect::<Vec<_>>()
     );
 }
