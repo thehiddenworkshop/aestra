@@ -37,7 +37,7 @@ fn saved_players_and_framing_are_deterministic_and_do_not_modify_source() {
 }
 
 #[test]
-fn cancelled_and_over_budget_effects_fail_before_gpu_work() {
+fn cancelled_effects_fail_and_large_particle_caps_are_preview_only() {
     assert_eq!(
         prepare(project(), Path::new("."), &AtomicBool::new(true))
             .err()
@@ -46,12 +46,9 @@ fn cancelled_and_over_budget_effects_fail_before_gpu_work() {
     );
     let mut saved = project();
     saved.root.emitters[0].max_particles = 4097;
-    assert!(
-        prepare(saved, Path::new("."), &AtomicBool::new(false))
-            .err()
-            .unwrap()
-            .contains("limit")
-    );
+    let prepared = prepare(saved.clone(), Path::new("."), &AtomicBool::new(false)).unwrap();
+    assert_eq!(saved.root.emitters[0].max_particles, 4097);
+    assert_eq!(prepared.players[0].effect().emitters[0].max_particles, 4096);
 }
 
 #[test]
@@ -100,6 +97,23 @@ fn volume_only_fluid_examples_prepare_bounded_thumbnails_without_changing_the_as
 }
 
 #[test]
+fn liquid_fluid_examples_prepare_bounded_thumbnails_without_changing_the_asset() {
+    aestra_fluid::link();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    for name in ["fluid_dam_break", "fluid_waterfall"] {
+        let saved = fixture_project(&root, name);
+        let original = saved.clone();
+        let prepared = prepare(saved.clone(), &root, &AtomicBool::new(false)).unwrap();
+        assert_eq!(saved.root, original.root);
+        assert!(prepared.center.is_finite() && prepared.radius.is_finite());
+        assert_eq!(prepared.players.len(), 1);
+        let preview = prepared.players[0].effect();
+        volume::check_budget(preview).unwrap();
+        assert!(preview.emitters.iter().all(|e| e.max_particles <= 4096));
+    }
+}
+
+#[test]
 fn plugin_particle_thumbnail_does_not_wait_for_a_non_presenting_legacy_stage() {
     aestra_example_extension::link();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
@@ -125,6 +139,33 @@ fn fixture_project(root: &Path, name: &str) -> ResolvedEffectProject {
     content
         .cached_effect_project_with_materials(&asset, BTreeMap::new())
         .unwrap()
+}
+
+#[test]
+fn every_bundled_sample_effect_prepares_a_bounded_thumbnail() {
+    aestra_fluid::link();
+    aestra_example_extension::link();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sample-project");
+    let mut names = std::fs::read_dir(root.join("effects"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter_map(|name| name.strip_suffix(".aestra.ron").map(str::to_owned))
+        .collect::<Vec<_>>();
+    names.sort();
+    assert!(!names.is_empty());
+    for name in names {
+        let saved = fixture_project(&root, &name);
+        let prepared = prepare(saved, &root, &AtomicBool::new(false))
+            .unwrap_or_else(|error| panic!("{name} thumbnail preparation failed: {error}"));
+        assert!(
+            !prepared.players.is_empty(),
+            "{name} has no preview players"
+        );
+        assert!(prepared.center.is_finite() && prepared.radius.is_finite());
+        for player in &prepared.players {
+            volume::check_budget(player.effect()).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -263,6 +304,15 @@ fn native_gpu_prism_thumbnail_fills_the_tile() {
 fn native_gpu_fluid_thumbnails_capture_volumes_without_emitters() {
     aestra_fluid::link();
     for name in ["fluid_smoke", "fluid_sparse_plume", "fluid_fire"] {
+        capture_fixture(name, true);
+    }
+}
+
+#[test]
+#[ignore = "requires native GPU and shader compilation"]
+fn native_gpu_liquid_thumbnails_capture_volumes_and_spray() {
+    aestra_fluid::link();
+    for name in ["fluid_dam_break", "fluid_waterfall"] {
         capture_fixture(name, true);
     }
 }

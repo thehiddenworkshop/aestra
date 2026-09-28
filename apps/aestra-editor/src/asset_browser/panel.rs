@@ -738,6 +738,10 @@ pub(super) fn sync_panel(
                         TextColor(theme::TEXT_MUTED),
                     ))
                     .id();
+                let first_effect = catalog.entries().is_empty()
+                    && state.collection == BrowserCollection::Folder
+                    && state.query.is_empty()
+                    && state.kinds.is_empty();
                 if let Some(error) = content
                     .source(state.folder_id(content))
                     .and_then(|e| e.error.as_deref())
@@ -745,7 +749,9 @@ pub(super) fn sync_panel(
                 {
                     text(parent, error);
                 } else if entries.is_empty() {
-                    let key = if state.query.is_empty() && state.kinds.is_empty() {
+                    let key = if first_effect {
+                        "browser-first-effect-empty"
+                    } else if state.query.is_empty() && state.kinds.is_empty() {
                         match state.collection {
                             BrowserCollection::Favorites => "browser-favorites-empty",
                             BrowserCollection::Recent => "browser-recent-empty",
@@ -756,11 +762,7 @@ pub(super) fn sync_panel(
                     };
                     text(parent, localizer.text(key));
                 }
-                if catalog.entries().is_empty()
-                    && state.collection == BrowserCollection::Folder
-                    && state.query.is_empty()
-                    && state.kinds.is_empty()
-                {
+                if first_effect {
                     spawn_feathers_action_button(
                         parent,
                         &localizer.text("effect-create-confirm"),

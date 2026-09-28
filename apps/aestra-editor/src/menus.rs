@@ -212,6 +212,7 @@ pub(crate) fn spawn_tab_context_menu(
 pub(crate) fn spawn_menu_bar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
     menu: &MenuState,
     layout: &WorkspaceLayout,
     localizer: &Localizer,
@@ -245,27 +246,50 @@ pub(crate) fn spawn_menu_bar(
                 flex_grow: 1.0,
                 ..default()
             });
-            let file = session
-                .source_path
-                .as_ref()
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled");
             bar.spawn((
                 DocumentMenuLabel,
-                Text::new(format!(
-                    "{}{}  |  {}",
-                    if session.dirty { "* " } else { "" },
-                    session.effect.name,
-                    file
-                )),
+                Text::new(document_identity(session, catalog, localizer)),
+                TextLayout::no_wrap(),
                 TextFont {
-                    font_size: FontSize::Px(10.0),
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
-                TextColor(theme::TEXT_FAINT),
+                TextColor(theme::TEXT_MUTED),
+                Node {
+                    min_width: Val::Px(0.0),
+                    max_width: Val::Percent(45.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
             ));
         });
+}
+
+pub(crate) fn document_identity(
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) -> String {
+    let root = catalog.root();
+    let project_root = if root.file_name().is_some_and(|name| name == "assets") {
+        root.parent().unwrap_or(root)
+    } else {
+        root
+    };
+    let project = project_root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| project_root.display().to_string());
+    let state = localizer.text(if session.source_path.is_none() || session.dirty {
+        "save-state-unsaved"
+    } else {
+        "save-state-saved"
+    });
+    let mut args = FluentArgs::new();
+    args.set("project", project);
+    args.set("effect", session.effect.name.as_str());
+    args.set("state", state);
+    localizer.text_with("editor-document-identity", &args)
 }
 
 fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localizer: &Localizer) {

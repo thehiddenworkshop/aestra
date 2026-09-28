@@ -246,27 +246,31 @@ fn browser_texture_rows_publish_previews_without_editing_or_loading_hidden_rows(
     }
     let world = app.world_mut();
     let rows: Vec<_> = world
-        .query::<&Thumbnail>()
+        .query::<(Entity, &Thumbnail)>()
         .iter(world)
-        .map(|thumbnail| (thumbnail.rendered.clone(), thumbnail.image))
+        .map(|(entity, thumbnail)| (entity, thumbnail.rendered.clone(), thumbnail.image))
         .collect();
     assert_eq!(rows.len(), 3);
     assert_eq!(
         rows.iter()
-            .filter(|(preview, _)| matches!(preview, Some(Preview::Ready(_))))
+            .filter(|(_, preview, _)| matches!(preview, Some(Preview::Ready(_))))
             .count(),
         2
     );
     assert_eq!(
         rows.iter()
-            .filter(|(preview, _)| matches!(preview, Some(Preview::Failed(_))))
+            .filter(|(_, preview, _)| matches!(preview, Some(Preview::Failed(_))))
             .count(),
         1
     );
-    for (preview, image) in rows {
+    for (entity, preview, image) in rows {
         assert_eq!(
             world.get::<ImageNode>(image).is_some(),
             matches!(preview, Some(Preview::Ready(_)))
+        );
+        assert_eq!(
+            world.get::<EditorTooltip>(entity).is_some(),
+            matches!(preview, Some(Preview::Failed(_)))
         );
     }
     assert_eq!(world.resource::<EditorSession>().effect, before);

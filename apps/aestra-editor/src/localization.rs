@@ -85,6 +85,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "file-save",
     "file-save-as",
     "file-save-all",
+    "editor-document-identity",
+    "browser-first-effect-empty",
     "file-settings",
     "file-exit",
     "edit-undo",

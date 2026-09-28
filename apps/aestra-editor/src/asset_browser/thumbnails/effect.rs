@@ -179,6 +179,13 @@ pub(super) fn assemble(
     for effect in saved.dependencies.values_mut() {
         volume::bound_fluid_preview(effect);
     }
+    // A thumbnail never needs the full live particle capacity. Bound only the job-owned
+    // copies so high-capacity effects remain previewable without changing the saved asset.
+    for effect in std::iter::once(&mut saved.root).chain(saved.dependencies.values_mut()) {
+        for emitter in &mut effect.emitters {
+            emitter.max_particles = emitter.max_particles.min(PARTICLES as u32);
+        }
+    }
     if !keep_functions {
         // The project resolver includes the entire function library, including unrelated WESL.
         // Calls are rejected below for this slice, so none of those definitions are required.

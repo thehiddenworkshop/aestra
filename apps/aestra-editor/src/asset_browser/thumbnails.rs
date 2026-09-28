@@ -415,7 +415,15 @@ fn update(
             if let Ok(bytes) = &result {
                 let framing = job.framing();
                 if let Some(key) = cache.pending_thumbnail_keys.remove(&job.source) {
-                    disk_cache::write(&key, bytes, Some(&framing));
+                    // PNG encoding and disk publication are best-effort cache work, not part of
+                    // the interactive render frame. Keep the ready preview visible immediately.
+                    let pixels = bytes.clone();
+                    let cached_framing = framing.clone();
+                    IoTaskPool::get()
+                        .spawn(async move {
+                            disk_cache::write(&key, &pixels, Some(&cached_framing));
+                        })
+                        .detach();
                 }
                 cache.effect_framing.insert(job.source, framing);
             }
@@ -636,7 +644,7 @@ fn update(
             },
         );
     }
-    for (_, mut thumbnail) in &mut thumbnails {
+    for (entity, mut thumbnail) in &mut thumbnails {
         let preview = if wanted.contains(&thumbnail.source) {
             cache
                 .entries
@@ -648,6 +656,13 @@ fn update(
         };
         if thumbnail.rendered.as_ref() == Some(&preview) && !locale.is_changed() {
             continue;
+        }
+        if let Preview::Failed(error) = &preview {
+            commands
+                .entity(entity)
+                .insert(EditorTooltip::description(error.clone()));
+        } else {
+            commands.entity(entity).remove::<EditorTooltip>();
         }
         let ready = matches!(preview, Preview::Ready(_));
         commands.entity(thumbnail.fallback).insert(Node {

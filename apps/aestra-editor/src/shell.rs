@@ -218,7 +218,7 @@ fn spawn_editor_ui(
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, session, menu, layout, localizer);
+            spawn_menu_bar(root, session, catalog, menu, layout, localizer);
             spawn_toolbar(
                 root,
                 session,
@@ -706,11 +706,13 @@ fn document_save_status(session: &EditorSession, localizer: &Localizer) -> Strin
     let mut args = fluent_bundle::FluentArgs::new();
     args.set(
         "effect",
-        localizer.text(if session.effect_is_dirty() {
-            "save-state-unsaved"
-        } else {
-            "save-state-saved"
-        }),
+        localizer.text(
+            if session.source_path.is_none() || session.effect_is_dirty() {
+                "save-state-unsaved"
+            } else {
+                "save-state-saved"
+            },
+        ),
     );
     args.set("count", session.material_drafts.count() as i64);
     localizer.text_with("save-status", &args)
@@ -996,32 +998,30 @@ fn stage_editor_ui_rebuild(
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    localizer: Res<Localizer>,
     mut labels: Query<(
         &mut Text,
         Option<&PropertiesTitle>,
         Option<&DocumentMenuLabel>,
     )>,
 ) {
-    if !session.is_changed() {
+    if !session.is_changed() && !catalog.is_changed() && !localizer.is_changed() {
         return;
     }
     let layer = session.selected_layer();
     for (mut text, title, document_menu) in &mut labels {
         if title.is_some() {
-            text.0 = layer.map_or_else(|| session.effect.name.clone(), |layer| layer.name.clone());
+            let next =
+                layer.map_or_else(|| session.effect.name.clone(), |layer| layer.name.clone());
+            if text.0 != next {
+                text.0 = next;
+            }
         } else if document_menu.is_some() {
-            let file = session
-                .source_path
-                .as_ref()
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled");
-            text.0 = format!(
-                "{}{}  |  {}",
-                if session.dirty { "* " } else { "" },
-                session.effect.name,
-                file
-            );
+            let next = crate::menus::document_identity(&session, &catalog, &localizer);
+            if text.0 != next {
+                text.0 = next;
+            }
         }
     }
 }
@@ -1124,10 +1124,14 @@ mod tests {
     #[test]
     fn empty_effect_labels_update_without_an_emitter() {
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_test_effect(
-            aestra_core::EffectAsset::new("Empty", 4.0),
-        ))
-        .add_systems(Update, update_editor_labels);
+        let project = tempfile::tempdir().unwrap();
+        let mut session =
+            EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
+        session.source_path = None;
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog::scan(project.path()))
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, update_editor_labels);
         let title = app
             .world_mut()
             .spawn((Text::default(), PropertiesTitle))
@@ -1138,13 +1142,39 @@ mod tests {
             .id();
         app.update();
         assert_eq!(app.world().get::<Text>(title).unwrap().0, "Empty");
+        let identity = &app.world().get::<Text>(document).unwrap().0;
+        assert!(identity.contains("Empty"));
+        assert!(identity.contains("Unsaved"));
+        assert!(identity.contains(project.path().file_name().unwrap().to_str().unwrap()));
+        assert!(
+            document_save_status(
+                app.world().resource::<EditorSession>(),
+                app.world().resource::<Localizer>()
+            )
+            .contains("Unsaved")
+        );
+
+        {
+            let mut session = app.world_mut().resource_mut::<EditorSession>();
+            session.source_path = Some(project.path().join("effects/Empty.aestra.ron"));
+            session.dirty = false;
+        }
+        app.update();
         assert!(
             app.world()
                 .get::<Text>(document)
                 .unwrap()
                 .0
-                .contains("Empty")
+                .contains("Saved")
         );
+        let other_project = tempfile::tempdir().unwrap();
+        let assets = other_project.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        app.insert_resource(ProjectEffectCatalog::scan(&assets));
+        app.update();
+        let identity = &app.world().get::<Text>(document).unwrap().0;
+        assert!(identity.contains(other_project.path().file_name().unwrap().to_str().unwrap()));
+        assert!(!identity.starts_with("assets"));
     }
 
     #[test]

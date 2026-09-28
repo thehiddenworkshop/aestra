@@ -5,6 +5,7 @@ use aestra_runtime::{CompiledEffect, StagePresentation};
 
 const GRID_EDGE: u32 = 32;
 const STAGE_BYTES: u64 = 64 * 1024 * 1024;
+const LIQUID_PARTICLES: u32 = 32_768;
 
 pub(super) fn bound_fluid_preview(effect: &mut EffectAsset) {
     for module in effect
@@ -21,13 +22,20 @@ pub(super) fn bound_fluid_preview(effect: &mut EffectAsset) {
         let ModuleParameters::Custom(values) = &mut module.parameters else {
             continue;
         };
-        if module.module_type.0 == aestra_fluid::MODULE_GRID {
+        if module.module_type.0 == aestra_fluid::MODULE_GRID
+            || module.module_type.0 == aestra_fluid::MODULE_LIQUID_GRID
+        {
+            let stride = if module.module_type.0 == aestra_fluid::MODULE_LIQUID_GRID {
+                4
+            } else {
+                8
+            };
             // Leave malformed inputs alone so compilation still diagnoses them. Preserve the
             // domain's world size and source placement, not the full-resolution allocation.
             if let (Some(Value::U32(resolution)), Some(Value::Scalar(cell_size))) =
                 (values.get("resolution"), values.get("cell_size"))
                 && *resolution > GRID_EDGE
-                && resolution.is_multiple_of(8)
+                && resolution.is_multiple_of(stride)
                 && cell_size.is_finite()
                 && *cell_size > 0.0
             {
@@ -40,7 +48,14 @@ pub(super) fn bound_fluid_preview(effect: &mut EffectAsset) {
                     *value = (*value).min(cap);
                 }
             }
-        } else if module.module_type.0 == aestra_fluid::MODULE_VOLUME_LOOK {
+            if module.module_type.0 == aestra_fluid::MODULE_LIQUID_GRID
+                && let Some(Value::U32(value)) = values.get_mut("particle_budget")
+            {
+                *value = (*value).min(LIQUID_PARTICLES);
+            }
+        } else if module.module_type.0 == aestra_fluid::MODULE_VOLUME_LOOK
+            || module.module_type.0 == aestra_fluid::MODULE_LIQUID_LOOK
+        {
             for (name, cap) in [("steps", 64), ("shadow_steps", 2)] {
                 if let Some(Value::U32(value)) = values.get_mut(name) {
                     *value = (*value).min(cap);

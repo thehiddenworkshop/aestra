@@ -86,10 +86,25 @@ Manual acceptance:
 
 ## FX4 — Editing feedback
 
-- Clear project/effect identity and saved/unsaved status.
-- Actionable empty states and readable loading/error feedback.
-- Sensible initial framing/selection, without persistent viewport navigation hints.
-- Keep the preview and UI responsive during preparation and thumbnail work.
+Implemented:
+
+- The menu bar names the active project and effect and explicitly shows Saved or
+  Unsaved. An effect without a source file is Unsaved even before its first edit;
+  project changes and locale changes update the label without rebuilding the UI.
+- Empty project folders explain how to start and retain the Create Effect action.
+  Project/effect creation already exposes busy, retryable error, and cancellation
+  states; initial effect creation frames the preview and selects its emitter.
+- Effect thumbnail cache encoding and writes run off the UI thread. Preparation
+  remains worker-bounded and the ready in-memory preview appears immediately.
+
+Manual acceptance:
+
+1. Create a project and an effect; verify the project/effect names and Unsaved/Saved
+   status update across creation, edits, save, and opening another project.
+2. Browse an empty project; verify the Create Effect action and explanatory text,
+   then check invalid-name and write-failure feedback can be corrected and retried.
+3. Open a project with many effect thumbnails; verify the preview and controls stay
+   responsive while thumbnails are generated and cached.
 
 ## FX5 — Complete journey verification
 
