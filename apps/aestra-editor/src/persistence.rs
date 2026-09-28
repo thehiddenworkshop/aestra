@@ -2,6 +2,7 @@
 mod background;
 mod material;
 mod new_project;
+pub(crate) mod project_launcher;
 pub(crate) mod recovery_dialog;
 mod recovery_target;
 
@@ -33,6 +34,7 @@ pub(crate) enum PersistenceSet {
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {
         new_project::register(app);
+        project_launcher::register(app);
         app.init_resource::<DocumentProtectionState>()
             .init_resource::<recovery_dialog::RecoveryDialogState>()
             .init_resource::<crate::project_content::io::ProjectIoTasks>()
@@ -76,6 +78,9 @@ pub(crate) enum DocumentAction {
     NewProject,
     Open,
     OpenProject,
+    OpenRecentProject(usize),
+    ExploreExamples,
+    ShowProjectLauncher,
     OpenCatalog(EffectAssetRef),
     OpenCatalogClip(EffectAssetRef, EffectClipId),
     OpenSource(EffectAssetRef),
@@ -161,6 +166,7 @@ pub(crate) struct DocumentProtectionState {
     pub(crate) asset_create_open: bool,
     pub(crate) transaction_open: bool,
     pub(crate) creation_open: bool,
+    pub(crate) project_launcher_open: bool,
     pending: Option<DocumentAction>,
     reload_target: Option<crate::material_document::MaterialEditingTarget>,
     /// The editor view awaiting a dirty-close decision (Save / Discard / Cancel), if any.
@@ -190,6 +196,7 @@ impl DocumentProtectionState {
             || self.asset_create_open
             || self.transaction_open
             || self.creation_open
+            || self.project_launcher_open
     }
 }
 
@@ -604,6 +611,10 @@ fn execute_document_action(
     wesl: Option<Res<crate::wesl_document::WeslDocuments>>,
 ) {
     if !crate::project_content::io::idle(io_tasks) || protection.is_open() {
+        return;
+    }
+    if *action == DocumentAction::ShowProjectLauncher {
+        commands.trigger(project_launcher::OpenProjectLauncher);
         return;
     }
     if *action == DocumentAction::SaveAll {

@@ -57,7 +57,42 @@ impl EditorSettings {
         }
         self.extensions.disabled.sort();
         self.extensions.disabled.dedup();
+        self.general
+            .recent_projects
+            .retain(|path| path.is_absolute());
+        let mut seen_projects = std::collections::BTreeSet::new();
+        self.general
+            .recent_projects
+            .retain(|path| seen_projects.insert(path.clone()));
+        self.general.recent_projects.truncate(8);
+        if self
+            .general
+            .active_project
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            self.general.active_project = None;
+            self.general.active_effect = None;
+        }
         self
+    }
+}
+
+impl GeneralSettings {
+    pub(crate) fn remember_project(&mut self, root: &Path, effect: Option<&Path>) {
+        // Catalog roots point at assets/ in conventional projects. Keep the path the
+        // user chose, not that implementation detail, in the recent-project list.
+        let project = if root.file_name().is_some_and(|name| name == "assets") {
+            root.parent().unwrap_or(root)
+        } else {
+            root
+        }
+        .to_owned();
+        self.recent_projects.retain(|path| path != &project);
+        self.recent_projects.insert(0, project.clone());
+        self.recent_projects.truncate(8);
+        self.active_project = Some(project);
+        self.active_effect = effect.map(Path::to_owned);
     }
 }
 
@@ -67,6 +102,10 @@ pub(crate) struct GeneralSettings {
     pub(crate) confirm_unsaved_changes: bool,
     pub(crate) autosave_enabled: bool,
     pub(crate) autosave_interval_seconds: u16,
+    /// Last successfully opened project and a small, most-recent-first history.
+    pub(crate) active_project: Option<PathBuf>,
+    pub(crate) recent_projects: Vec<PathBuf>,
+    pub(crate) active_effect: Option<PathBuf>,
 }
 
 impl Default for GeneralSettings {
@@ -75,6 +114,9 @@ impl Default for GeneralSettings {
             confirm_unsaved_changes: true,
             autosave_enabled: true,
             autosave_interval_seconds: 30,
+            active_project: None,
+            recent_projects: Vec::new(),
+            active_effect: None,
         }
     }
 }
@@ -531,6 +573,20 @@ mod tests {
             EditorSettings::default().general.autosave_interval_seconds,
             30
         );
+    }
+
+    #[test]
+    fn project_history_keeps_project_folder_and_latest_effect() {
+        let mut general = GeneralSettings::default();
+        let first = std::env::temp_dir().join("aestra-recent-first");
+        let second = std::env::temp_dir().join("aestra-recent-second");
+        let effect = first.join("assets/effects/first.aestra.ron");
+        general.remember_project(&first.join("assets"), Some(&effect));
+        general.remember_project(&second.join("assets"), None);
+        general.remember_project(&first.join("assets"), Some(&effect));
+        assert_eq!(general.recent_projects, [first.clone(), second]);
+        assert_eq!(general.active_project, Some(first));
+        assert_eq!(general.active_effect, Some(effect));
     }
 
     #[test]

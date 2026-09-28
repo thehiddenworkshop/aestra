@@ -53,7 +53,9 @@ pub(super) fn queue_open(
     ) {
         return false;
     }
-    let plan = match open_plan(action, session, catalog, localizer, timeline, navigation) {
+    let plan = match open_plan(
+        action, session, catalog, settings, localizer, timeline, navigation,
+    ) {
         Ok(Some(plan)) => plan,
         Ok(None) => {
             set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
@@ -297,6 +299,8 @@ fn queue_plan(
                 // Successful document switches deliberately discard the approved old drafts.
                 world.resource_mut::<ProjectEffectCatalog>().material_drafts = default();
                 io::publish_catalog(world, prepared_catalog);
+                crate::persistence::project_launcher::project_opened(world);
+                remember_current_project(world);
                 if let OpenTarget::Effect(path) = &plan.target {
                     let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
                     if let Ok(relative) = path.strip_prefix(&root) {
@@ -364,10 +368,28 @@ fn queue_plan(
     );
 }
 
+fn remember_current_project(world: &mut World) {
+    let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
+    let source = world.resource::<EditorSession>().source_path.clone();
+    if let Some(mut settings) = world.get_resource_mut::<EditorSettings>() {
+        settings.general.remember_project(
+            &root,
+            source.as_deref().filter(|path| path.starts_with(&root)),
+        );
+        let settings = settings.clone();
+        if let Some(mut persistence) = world.get_resource_mut::<SettingsPersistence>()
+            && let Err(error) = persistence.persist(&settings)
+        {
+            warn!("Project history could not be saved: {error}");
+        }
+    }
+}
+
 fn open_plan(
     action: DocumentAction,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
+    settings: &EditorSettings,
     localizer: &Localizer,
     timeline: Option<&TimelineState>,
     navigation: Option<&SourceNavigationState>,
@@ -380,6 +402,19 @@ fn open_plan(
         emitter: None,
     };
     match action {
+        DocumentAction::OpenRecentProject(index) => {
+            let folder = settings
+                .general
+                .recent_projects
+                .get(index)
+                .ok_or("Recent project is no longer available")?;
+            plan.target = OpenTarget::Folder(folder.clone());
+            plan.navigation.clear();
+        }
+        DocumentAction::ExploreExamples => {
+            plan.target = OpenTarget::Folder(crate::project_content::default_project_root());
+            plan.navigation.clear();
+        }
         DocumentAction::OpenProject => {
             let Some(folder) = FileDialog::new()
                 .set_title(localizer.text("project-open-title"))
@@ -580,6 +615,9 @@ pub(super) fn queue_save(
                 session.set_material_drafts(drafts);
             }
             io::publish_catalog(world, prepared);
+            if success {
+                remember_current_project(world);
+            }
             if success
                 && let Some(action) = continuation
                 && world.resource::<DocumentProtectionState>().pending == Some(action)

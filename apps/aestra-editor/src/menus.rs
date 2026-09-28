@@ -284,26 +284,39 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                     for (message_id, shortcut, action) in [
                         ("file-new-project", "", DocumentAction::NewProject),
                         ("file-new-effect", "Ctrl+N", DocumentAction::New),
+                    ] {
+                        spawn_file_action(
+                            dropdown, message_id, shortcut, action, standalone, localizer,
+                        );
+                    }
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
+                    for (message_id, shortcut, action) in [
                         ("file-open", "Ctrl+O", DocumentAction::Open),
                         ("file-open-project", "", DocumentAction::OpenProject),
+                        (
+                            "file-recent-projects",
+                            "",
+                            DocumentAction::ShowProjectLauncher,
+                        ),
+                        ("file-explore-examples", "", DocumentAction::ExploreExamples),
+                    ] {
+                        spawn_file_action(
+                            dropdown, message_id, shortcut, action, standalone, localizer,
+                        );
+                    }
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
+                    for (message_id, shortcut, action) in [
                         ("file-save", "Ctrl+S", DocumentAction::Save),
-                        ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
                         ("file-save-all", "Ctrl+Alt+S", DocumentAction::SaveAll),
                         ("file-reload-material", "", DocumentAction::ReloadMaterial),
                     ] {
-                        let message_id = if action == DocumentAction::Save && standalone {
-                            "file-save-material"
-                        } else {
-                            message_id
-                        };
-                        let mut item = spawn_feathers_menu_item(
-                            dropdown, message_id, shortcut, action, localizer,
+                        spawn_file_action(
+                            dropdown, message_id, shortcut, action, standalone, localizer,
                         );
-                        item.insert(FileTargetItem);
-                        if !file_action_visible(action, standalone) {
-                            item.entry::<Node>()
-                                .and_modify(|mut node| node.display = Display::None);
-                        }
                     }
                     dropdown
                         .spawn_empty()
@@ -329,10 +342,25 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
         });
 }
 
+fn spawn_file_action(
+    dropdown: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    shortcut: &'static str,
+    action: DocumentAction,
+    standalone: bool,
+    localizer: &Localizer,
+) {
+    let mut item = spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
+    item.insert(FileTargetItem);
+    if !file_action_visible(action, standalone) {
+        item.entry::<Node>()
+            .and_modify(|mut node| node.display = Display::None);
+    }
+}
+
 fn file_action_visible(action: DocumentAction, standalone: bool) -> bool {
     match action {
         DocumentAction::ReloadMaterial => standalone,
-        DocumentAction::SaveAs => !standalone,
         _ => true,
     }
 }
@@ -365,24 +393,13 @@ fn update_file_menu_target(
         if node.display != display {
             node.display = display;
         }
-        if !matches!(
-            *action,
-            DocumentAction::Save | DocumentAction::ReloadMaterial
-        ) {
+        if *action != DocumentAction::ReloadMaterial {
             continue;
         }
-        let message = if *action == DocumentAction::ReloadMaterial {
-            if session.standalone_function().is_some() {
-                "file-reload-function"
-            } else {
-                "file-reload-material"
-            }
-        } else if session.standalone_function().is_some() {
-            "file-save-function"
-        } else if standalone {
-            "file-save-material"
+        let message = if session.standalone_function().is_some() {
+            "file-reload-function"
         } else {
-            "file-save"
+            "file-reload-material"
         };
         let label = localizer.text(message);
         if accessible.0 != label {
@@ -1099,7 +1116,30 @@ mod tests {
             .iter(app.world())
             .map(|(entity, action)| (*action, entity))
             .collect::<Vec<_>>();
-        assert_eq!(items.len(), 8, "all target-specific items must be retained");
+        assert_eq!(items.len(), 9, "all target-specific items must be retained");
+        assert!(
+            items
+                .iter()
+                .any(|(action, _)| *action == DocumentAction::Save)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|(action, _)| *action == DocumentAction::SaveAll)
+        );
+        assert!(
+            !items
+                .iter()
+                .any(|(action, _)| *action == DocumentAction::SaveAs)
+        );
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<bevy::feathers::controls::FeathersMenuDivider>>()
+                .iter(app.world())
+                .count(),
+            4,
+            "New, Open, Save, Settings, and Exit should be visually grouped"
+        );
         for standalone in [false, true, false, true] {
             app.world_mut()
                 .resource_mut::<EditorSession>()
@@ -1118,11 +1158,7 @@ mod tests {
                     file_action_visible(*action, standalone)
                 );
                 if *action == DocumentAction::Save {
-                    let message = if standalone {
-                        "file-save-material"
-                    } else {
-                        "file-save"
-                    };
+                    let message = "file-save";
                     assert_eq!(
                         app.world().get::<AccessibleLabel>(*entity).unwrap().0,
                         localizer.text(message)

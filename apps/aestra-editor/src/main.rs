@@ -159,6 +159,7 @@ use viewport::{
     ViewportSet, emitter_transform_from_bevy,
 };
 
+#[cfg(test)]
 const EFFECT_SOURCE: &str = include_str!("../../../assets/test/effects/prism_bloom.aestra.ron");
 #[cfg(test)]
 const MATERIAL_GRAPH_LAB_EFFECT_SOURCE: &str =
@@ -197,6 +198,27 @@ fn set_editor_window_icon(world: &mut World) {
     });
 }
 
+fn startup_workspace(
+    settings: &EditorSettings,
+) -> (EditorSession, Option<ProjectEffectCatalog>, bool) {
+    let mut session = EditorSession::for_unopened_project();
+    let Some(folder) = settings.general.active_project.as_deref() else {
+        return (session, None, true);
+    };
+    let Ok(catalog) = project::catalog_for_folder(folder) else {
+        // A missing drive or moved project must not silently switch to examples.
+        return (session, None, true);
+    };
+    if let Some(path) = settings.general.active_effect.as_deref()
+        && project::contains_source(&catalog, path)
+        && let Ok(effect) = EffectAsset::load_ron(path)
+        && let Ok(compiled) = catalog.compile_project(&effect)
+    {
+        session.open_compiled_effect(path, effect, compiled.root);
+    }
+    (session, Some(catalog), false)
+}
+
 fn main() {
     // Linked extensions (extensible-stages M10) register before the module catalog is built or any
     // effect is compiled.
@@ -220,12 +242,16 @@ fn main() {
     );
     let localization = EditorLocalizationPlugin::new(&settings.language.locale);
     settings.language.locale = localization.locale().into();
-    let session = EditorSession::from_embedded_sample(EFFECT_SOURCE);
+    let (session, startup_catalog, show_project_launcher) = startup_workspace(&settings);
     let show_grid = settings.preview.show_grid;
     let ui_scale = settings.appearance.ui_scale;
     App::new()
         .insert_resource(ClearColor(theme::APP_BG))
         .insert_resource(session)
+        .insert_resource(startup_catalog.unwrap_or_default())
+        .insert_resource(persistence::project_launcher::ProjectLauncherState::new(
+            show_project_launcher,
+        ))
         .insert_resource(settings)
         .insert_resource(persistence)
         .insert_resource(settings_ui::SettingsPanelState::with_extension_report(
@@ -378,6 +404,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fresh_and_missing_project_launches_require_explicit_project_choice() {
+        let settings = EditorSettings::default();
+        let (session, catalog, show_launcher) = startup_workspace(&settings);
+        assert!(show_launcher);
+        assert!(catalog.is_none());
+        assert!(session.source_path.is_none());
+        assert!(session.is_untouched_starter());
+        assert_ne!(session.effect.name, "Prism Bloom");
+
+        let mut settings = settings;
+        settings.general.active_project = Some(std::env::temp_dir().join("aestra-missing-project"));
+        let (_, catalog, show_launcher) = startup_workspace(&settings);
+        assert!(show_launcher);
+        assert!(catalog.is_none());
+    }
+
+    #[test]
+    fn previous_project_and_effect_are_restored_when_available() {
+        let temporary = tempfile::tempdir().unwrap();
+        let request = project::CreateProjectRequest {
+            name: "First Project".into(),
+            parent: temporary.path().to_owned(),
+        };
+        let catalog = project::create_project(&request).unwrap();
+        let effect = session::blank_effect();
+        let path = catalog.effect_root().join("first.aestra.ron");
+        effect.save_ron(&path).unwrap();
+        let mut settings = EditorSettings::default();
+        settings
+            .general
+            .remember_project(catalog.root(), Some(&path));
+
+        let (session, restored, show_launcher) = startup_workspace(&settings);
+        assert!(!show_launcher);
+        assert_eq!(restored.unwrap().root(), catalog.root());
+        assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+        assert_eq!(session.effect.id, effect.id);
+    }
+
+    #[test]
     fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {
         assert_eq!(dock_pane_background(Some(ToolPanel::Viewport)), Color::NONE);
         assert_eq!(
@@ -434,11 +500,8 @@ mod tests {
     }
 
     #[test]
-    fn bundled_effect_clip_sources_resolve_in_the_default_project() {
-        // The welcome effect opens against the default project (sample-project), so every effect it
-        // nests via an effect clip must exist there — otherwise the editor shows an "invalid
-        // reference" diagnostic on launch. Guards against the default effect and default project
-        // drifting apart.
+    fn bundled_example_clip_sources_resolve_in_the_example_project() {
+        // Example effects must retain valid nested references when opened explicitly.
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
         let catalog = ProjectEffectCatalog::default();
         for clip in &effect.effect_clips {

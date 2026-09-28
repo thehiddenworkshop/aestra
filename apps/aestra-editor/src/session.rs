@@ -143,6 +143,7 @@ impl EditorSession {
         self.update_dirty_state();
         self.ui_revision += 1;
     }
+    #[cfg(test)]
     pub fn from_embedded_sample(source: &str) -> Self {
         let effect = EffectAsset::from_ron(source)
             .expect("the bundled Prism Bloom sample must always be valid");
@@ -151,6 +152,15 @@ impl EditorSession {
             None,
             "Previewing embedded Prism Bloom — use Save As to create a document".into(),
         )
+    }
+
+    pub(crate) fn for_unopened_project() -> Self {
+        let mut session = Self::from_effect(blank_effect(), None, "Choose a project".into());
+        session.unsaved_starter = Some(session.effect.clone());
+        session.saved_effect = None;
+        session.dirty = true;
+        session.playing = false;
+        session
     }
 
     fn from_effect(effect: EffectAsset, source_path: Option<PathBuf>, status: String) -> Self {

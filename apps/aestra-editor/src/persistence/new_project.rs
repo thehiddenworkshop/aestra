@@ -138,7 +138,7 @@ fn validation(
 }
 
 // Canonical Windows paths are useful for I/O, but their device prefix is not UI copy.
-fn display_path(path: &Path) -> String {
+pub(super) fn display_path(path: &Path) -> String {
     let path = path.to_string_lossy();
     if let Some(network) = path.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{network}")

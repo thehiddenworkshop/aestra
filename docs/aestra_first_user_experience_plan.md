@@ -60,11 +60,29 @@ Manual acceptance:
 4. Cancel, invalid/outside folders, existing names, and Save/Discard of edited effects preserve work.
 5. Edit, save, close, and reopen the newly created effect.
 
-## FX3 — First launch and returning users (next)
+## FX3 — First launch and returning users
 
-- New Project, Open Project, Recent Projects, and explicit Explore Examples entry points.
-- Stop treating the bundled sample project as the implicit new-user working project.
-- Keep project/workspace restoration for returning users and handle missing recent locations.
+Implemented:
+
+- First launch opens a project chooser with New Project, Open Project, Explore Examples,
+  and a recent-project list. The bundled sample remains an explicit example choice,
+  not the user's silent working project.
+- The most recently opened project and effect reopen on launch when available. If the
+  effect is unavailable, the project still opens with an untouched starter effect.
+- Successful project/effect opens and effect saves update a bounded recent-project history. Missing
+  locations are shown but cannot be selected; an unavailable last project returns to
+  the chooser without silently opening examples.
+- File menu entry points expose the chooser and Explore Examples directly. Cancelling
+  project creation or folder selection on first launch returns to the chooser.
+- Recovery takes precedence over the first-launch chooser; restored work is preserved.
+
+Manual acceptance:
+
+1. Start with no settings: verify the chooser appears and examples require an explicit click.
+2. Create a project, an effect, quit and relaunch: verify both project and effect restore.
+3. Open another project, relaunch, and choose an earlier project from Recent Projects.
+4. Move/delete the last project: verify the chooser shows it as missing and remains usable.
+5. Start with an unsaved recovery snapshot: resolve recovery before the chooser appears.
 
 ## FX4 — Editing feedback
 
