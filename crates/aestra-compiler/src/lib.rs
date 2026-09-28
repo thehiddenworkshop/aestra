@@ -87,6 +87,7 @@ pub struct EmitterSimulationClass {
 #[derive(Debug, Clone)]
 pub struct EffectCompiler {
     registry: ExtensionRegistry,
+    tier: aestra_runtime::QualityTier,
 }
 
 impl Default for EffectCompiler {
@@ -105,7 +106,22 @@ impl EffectCompiler {
 
     /// Builds a compiler directly from a unified extension registry.
     pub fn with_extensions(registry: ExtensionRegistry) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            tier: aestra_runtime::QualityTier::default(),
+        }
+    }
+
+    /// The same compiler, compiling for quality tier `tier` (fluid F12): each tier gives its own
+    /// deterministic artifact. The default is `high`, the authored effect.
+    pub fn with_tier(mut self, tier: aestra_runtime::QualityTier) -> Self {
+        self.tier = tier;
+        self
+    }
+
+    /// The quality tier this compiler compiles for.
+    pub fn tier(&self) -> &aestra_runtime::QualityTier {
+        &self.tier
     }
 
     pub fn registry(&self) -> &ModuleRegistry {
@@ -315,6 +331,7 @@ impl EffectCompiler {
             name,
             particle_capacity,
             modules: &plans,
+            tier: &self.tier,
         };
         let block = match stage_lowerer.lower(&input) {
             Ok(block) => block,
@@ -1127,6 +1144,7 @@ impl EffectCompiler {
             requirements,
             source_map,
             optimizations,
+            tier: self.tier.clone(),
         })
     }
 

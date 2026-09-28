@@ -246,6 +246,8 @@ pub struct StageLoweringInput<'a> {
     pub name: &'a str,
     pub particle_capacity: u32,
     pub modules: &'a [ExtensionModulePlan],
+    /// The quality tier being compiled for (fluid F12): the lowerer scales what it lowers by it.
+    pub tier: &'a aestra_runtime::QualityTier,
 }
 
 /// Lowers an authored plugin stage into a portable [`ExecutionBlock`] (§6.3 `StageLowerer`) — one or

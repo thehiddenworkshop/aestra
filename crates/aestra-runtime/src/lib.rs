@@ -18,6 +18,7 @@ mod profile;
 mod sdf;
 mod staged;
 mod stateful;
+mod tier;
 pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
@@ -38,6 +39,7 @@ pub use stateful::{
     Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
     StatefulSimulation,
 };
+pub use tier::QualityTier;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
@@ -1043,6 +1045,8 @@ pub struct CompiledEffect {
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,
+    /// The quality tier the effect was compiled for (fluid F12); `high` is the authored effect.
+    pub tier: QualityTier,
 }
 
 #[derive(Debug, Clone, PartialEq)]

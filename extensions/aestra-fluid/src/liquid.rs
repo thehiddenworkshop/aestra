@@ -363,7 +363,10 @@ pub(super) fn liquid_look_metadata(requires: CapabilityExpression) -> ModuleMeta
 }
 
 /// Packs a Liquid Look's inputs into the constant words `liquid_look.wgsl` reads.
-pub(super) fn pack_liquid_look(payload: &PropertyBag) -> Result<Vec<u32>, String> {
+pub(super) fn pack_liquid_look(
+    payload: &PropertyBag,
+    tier: &QualityTier,
+) -> Result<Vec<u32>, String> {
     let steps = count(payload, "steps")?;
     if !(1..=MAX_VOLUME_STEPS).contains(&steps) {
         return Err(format!(
@@ -387,7 +390,8 @@ pub(super) fn pack_liquid_look(payload: &PropertyBag) -> Result<Vec<u32>, String
         return Err("the light direction must not be zero".into());
     }
     let mut words = vec![0u32; 16];
-    words[0] = steps;
+    // A quality tier (fluid F12) marches fewer steps.
+    words[0] = QualityTier::scale_count(steps, tier.presentation, 1, steps.min(8));
     words[1] = level.to_bits();
     words[2] = non_negative("absorption")?.to_bits();
     words[3] = non_negative("ambient")?.to_bits();
@@ -467,7 +471,7 @@ pub(super) fn validate_liquid_module(
             }
         }
         MODULE_LIQUID_LOOK => {
-            pack_liquid_look(payload)?;
+            pack_liquid_look(payload, &QualityTier::high())?;
         }
         other => return Err(format!("'{other}' is not a liquid module")),
     }
@@ -495,7 +499,10 @@ struct PackedLiquid {
 /// box, no gas terms), the sources in the Density Source's record layout (the rate in its density
 /// word), the colliders, then the liquid block — budget, substeps, gravity, the blocks — whose first
 /// word header word 21 names.
-fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> {
+fn pack_liquid(
+    modules: &[ExtensionModulePlan],
+    tier: &QualityTier,
+) -> Result<PackedLiquid, String> {
     let of = |type_id: &'static str| modules_of(modules, type_id);
     let mut grids = of(MODULE_LIQUID_GRID);
     let grid = grids
@@ -519,8 +526,11 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
         ));
     }
     let parameters = &grid.parameters;
-    let resolution = count(parameters, "resolution")?;
-    let cell_size = scalar(parameters, "cell_size")?;
+    // The quality tier (fluid F12) coarsens the grid over the same box; the blocks seed 8 particles a
+    // (bigger) cell, so they seed fewer.
+    let scaled = TierScale::of(tier, count(parameters, "resolution")?, false);
+    let resolution = scaled.resolution;
+    let cell_size = scalar(parameters, "cell_size")? * scaled.cell_growth;
     let center = vec3(parameters, "center")?;
     let half_extent = resolution as f32 * cell_size * 0.5;
     let origin = center.map(|axis| axis - half_extent);
@@ -560,7 +570,12 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
         words.extend(pack_collider(collider)?);
     }
     let world = pack_world(modules, &mut words)?;
-    let budget = count(parameters, "particle_budget")?;
+    let budget = QualityTier::scale_count(
+        count(parameters, "particle_budget")?,
+        tier.particles,
+        64,
+        64,
+    );
     let substeps = count(parameters, "substeps")?;
     // Spatiotemporal FLIP (fluid F9).
     words[22] = u32::from(parameters.get_bool("spatiotemporal").unwrap_or(false));
@@ -592,7 +607,7 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
     // candidates are the particles, in workgroups of 64.
     let emission = match emission_module(modules)? {
         Some(module) => {
-            let block = pack_emission(module, u64::from(budget.div_ceil(64)))?;
+            let block = pack_emission(module, u64::from(budget.div_ceil(64)), &scaled, tier)?;
             words[23] = words.len() as u32;
             words.extend(block);
             Some(block[3])
@@ -612,7 +627,12 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
         constants: words,
         budget,
         substeps,
-        iterations: count(parameters, "pressure_iterations")?,
+        iterations: QualityTier::scale_count(
+            count(parameters, "pressure_iterations")?,
+            tier.iterations,
+            1,
+            1,
+        ),
         tolerance: scalar(parameters, "pressure_tolerance")?,
         colliders: !colliders.is_empty(),
     })
@@ -634,7 +654,7 @@ impl StageLowerer for LiquidSolverLowerer {
                     program: ComputeProgramId::new(PROGRAM_LIQUID_LOOK),
                     entry_point: LIQUID_LOOK_ENTRY.into(),
                     fields: vec![ResourceTypeId::new(RESOURCE_DENSITY)],
-                    constants: pack_liquid_look(&look.parameters)?,
+                    constants: pack_liquid_look(&look.parameters, input.tier)?,
                 }))
             })
             .collect()
@@ -654,7 +674,7 @@ impl StageLowerer for LiquidSolverLowerer {
             colliders,
             emission,
             world,
-        } = pack_liquid(input.modules)?;
+        } = pack_liquid(input.modules, input.tier)?;
         let constants_read = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
         let frame_read = || Access::read(AESTRA_RESOURCE_FRAME);
         let host_read = || Access::read(AESTRA_RESOURCE_HOST_BINDINGS);

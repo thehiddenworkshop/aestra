@@ -58,8 +58,9 @@ use aestra_extension::{
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
     AESTRA_RESOURCE_WORLD_SDF, CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock,
-    ExecutionOp, ExtensionModulePlan, FieldLayout, IndirectDispatch, RepeatPolicy, ResourceAccess,
-    ResourceDescriptor, ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
+    ExecutionOp, ExtensionModulePlan, FieldLayout, IndirectDispatch, QualityTier, RepeatPolicy,
+    ResourceAccess, ResourceDescriptor, ResourceLifetime, StagePresentation, StagedDispatch,
+    VolumePresentation,
 };
 use std::sync::Arc;
 
@@ -1242,9 +1243,38 @@ fn secondary_emission_metadata(requires: CapabilityExpression) -> ModuleMetadata
     .with_cost(2)
 }
 
+/// What a quality tier (fluid F12) does to one grid: its resolution, scaled to a valid multiple and
+/// never below the minimum, and how much each cell grows so the box keeps its size.
+struct TierScale {
+    resolution: u32,
+    cell_growth: f32,
+}
+
+impl TierScale {
+    fn of(tier: &QualityTier, authored: u32, sparse: bool) -> Self {
+        let multiple = if sparse { BRICK_EDGE } else { WORKGROUP };
+        let resolution =
+            QualityTier::scale_count(authored, tier.resolution, multiple, MIN_RESOLUTION);
+        Self {
+            resolution,
+            cell_growth: authored as f32 / resolution as f32,
+        }
+    }
+
+    /// A brick budget for the coarser grid: the same region needs fewer bricks.
+    fn bricks(&self, authored: u32) -> u32 {
+        ((authored as f32 / self.cell_growth.powi(3)).ceil() as u32).max(1)
+    }
+}
+
 /// A Secondary Emission's constant block (fluid F10), as `emit.wgsl` reads it: rate, minimum speed,
 /// threshold, capacity, and the workgroups of candidates its mask pass runs at most.
-fn pack_emission(module: &ExtensionModulePlan, groups: u64) -> Result<[u32; 5], String> {
+fn pack_emission(
+    module: &ExtensionModulePlan,
+    groups: u64,
+    scaled: &TierScale,
+    tier: &QualityTier,
+) -> Result<[u32; 5], String> {
     let parameters = &module.parameters;
     let capacity = count(parameters, "capacity")?;
     if !(1..=MAX_EMISSION_CAPACITY).contains(&capacity) {
@@ -1256,6 +1286,10 @@ fn pack_emission(module: &ExtensionModulePlan, groups: u64) -> Result<[u32; 5], 
     let [rate, min_speed, threshold] =
         ["rate", "min_speed", "threshold"].map(|name| scalar(parameters, name));
     let (rate, min_speed, threshold) = (rate?, min_speed?, threshold?);
+    // A tier asks for its share of the particles: the list's capacity scales, and each candidate
+    // (fewer, bigger cells; fewer liquid particles) asks more often to make up for their number.
+    let capacity = QualityTier::scale_count(capacity, tier.particles, 1, 1);
+    let rate = rate * scaled.cell_growth.powi(3) * tier.particles;
     if rate < 0.0 || min_speed < 0.0 {
         return Err("a secondary emission's rate and minimum speed must not be negative".into());
     }
@@ -1803,7 +1837,7 @@ impl ModuleLowerer for FluidModuleLowerer {
                 "apply_buoyancy"
             }
             MODULE_VOLUME_LOOK => {
-                pack_volume(payload)?;
+                pack_volume(payload, &QualityTier::high())?;
                 VOLUME_ENTRY
             }
             MODULE_WORLD_COLLIDER => {
@@ -1822,6 +1856,8 @@ impl ModuleLowerer for FluidModuleLowerer {
                         host_fields: Default::default(),
                     },
                     1,
+                    &TierScale::of(&QualityTier::high(), MIN_RESOLUTION, false),
+                    &QualityTier::high(),
                 )?;
                 "emit_offsets"
             }
@@ -2060,7 +2096,10 @@ struct PackedStage {
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
-fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String> {
+fn pack_constants(
+    modules: &[ExtensionModulePlan],
+    tier: &QualityTier,
+) -> Result<PackedStage, String> {
     let of = |type_id: &'static str| modules_of(modules, type_id);
 
     let mut grids = of(MODULE_GRID);
@@ -2083,9 +2122,17 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
             .sum::<Result<f32, String>>()
     };
 
-    let resolution = count(&grid.parameters, "resolution")?;
-    let iterations = count(&grid.parameters, "pressure_iterations")?;
-    let cell_size = scalar(&grid.parameters, "cell_size")?;
+    // The quality tier (fluid F12) coarsens the grid over the same box and caps the solve lower.
+    let sparse = grid.parameters.get_bool("sparse").unwrap_or(false);
+    let scaled = TierScale::of(tier, count(&grid.parameters, "resolution")?, sparse);
+    let resolution = scaled.resolution;
+    let iterations = QualityTier::scale_count(
+        count(&grid.parameters, "pressure_iterations")?,
+        tier.iterations,
+        1,
+        1,
+    );
+    let cell_size = scalar(&grid.parameters, "cell_size")? * scaled.cell_growth;
     let center = vec3(&grid.parameters, "center")?;
     let half_extent = resolution as f32 * cell_size * 0.5;
     let origin = center.map(|axis| axis - half_extent);
@@ -2109,8 +2156,8 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     words[11] = u32::from(grid.parameters.get_bool("sharp_advection").unwrap_or(true));
     // A sparse grid (fluid F7): its slots — the budget and the empty slot 0 — and the threshold that
     // keeps a brick active; 0 slots for a dense grid.
-    let slots = if grid.parameters.get_bool("sparse").unwrap_or(false) {
-        let slots = count(&grid.parameters, "brick_budget")? + 1;
+    let slots = if sparse {
+        let slots = scaled.bricks(count(&grid.parameters, "brick_budget")?) + 1;
         words[19] = slots;
         words[20] = scalar(&grid.parameters, "brick_threshold")?.to_bits();
         Some(slots)
@@ -2180,7 +2227,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     // A Secondary Emission's block (fluid F10) goes last, header word 23 naming its first word.
     let emission = match emission_module(modules)? {
         Some(module) => {
-            let block = pack_emission(module, grid_of.groups())?;
+            let block = pack_emission(module, grid_of.groups(), &scaled, tier)?;
             words[23] = words.len() as u32;
             words.extend(block);
             Some(block[3])
@@ -2208,7 +2255,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
 }
 
 /// Packs a Volume Look's inputs into the constant words `volume.wgsl` reads.
-fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
+fn pack_volume(payload: &PropertyBag, tier: &QualityTier) -> Result<Vec<u32>, String> {
     let steps = count(payload, "steps")?;
     if !(1..=MAX_VOLUME_STEPS).contains(&steps) {
         return Err(format!(
@@ -2234,8 +2281,13 @@ fn pack_volume(payload: &PropertyBag) -> Result<Vec<u32>, String> {
         return Err("the light direction must not be zero".into());
     }
     let mut words = vec![0u32; 16];
-    words[0] = steps;
-    words[1] = shadow_steps;
+    // A quality tier (fluid F12) marches fewer steps (the look integrates over distance, so it holds).
+    words[0] = QualityTier::scale_count(steps, tier.presentation, 1, steps.min(8));
+    words[1] = if shadow_steps == 0 {
+        0
+    } else {
+        QualityTier::scale_count(shadow_steps, tier.presentation, 1, 1)
+    };
     words[2] = non_negative("opacity")?.to_bits();
     words[3] = non_negative("ambient")?.to_bits();
     for (axis, value) in vec3(payload, "color")?.into_iter().enumerate() {
@@ -2747,7 +2799,7 @@ impl StageLowerer for FluidSolverLowerer {
         modules_of(input.modules, MODULE_VOLUME_LOOK)
             .map(|look| {
                 let mut fields = vec![ResourceTypeId::new(RESOURCE_DENSITY)];
-                let mut constants = pack_volume(&look.parameters)?;
+                let mut constants = pack_volume(&look.parameters, input.tier)?;
                 constants[VOLUME_OPEN_SIDES] = open_sides;
                 if fire {
                     constants[VOLUME_TEMPERATURE_SLOT] = fields.len() as u32;
@@ -2778,7 +2830,7 @@ impl StageLowerer for FluidSolverLowerer {
             flow_map_cycle,
             emission,
             world,
-        } = pack_constants(input.modules)?;
+        } = pack_constants(input.modules, input.tier)?;
         let flow_map = flow_map_cycle > 0;
         let resolution = grid.resolution;
         let pass = |entry: &str, accesses: Vec<ResourceAccess>| grid.pass(entry, accesses);

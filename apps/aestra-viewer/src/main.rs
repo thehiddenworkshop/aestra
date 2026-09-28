@@ -58,7 +58,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -209,6 +209,8 @@ struct ViewerConfig {
     /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
     /// one. Otherwise the viewer is 2-D.
     view_3d: bool,
+    /// The quality tier the effect is compiled for (fluid F12); `high` is the authored effect.
+    tier: aestra_bevy::QualityTier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,6 +261,7 @@ impl ViewerConfig {
         let mut diagnostics = false;
         let mut gpu_bench = None;
         let mut view_3d = false;
+        let mut tier = aestra_bevy::QualityTier::default();
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -383,6 +386,11 @@ impl ViewerConfig {
                         return Err("--max-gpu-particles must be greater than zero".into());
                     }
                 }
+                "--tier" => {
+                    let name = args.next().ok_or("--tier requires high, medium or low")?;
+                    tier = aestra_bevy::QualityTier::preset(&name)
+                        .ok_or_else(|| format!("unknown tier '{name}'"))?;
+                }
                 "--seed" => {
                     let value = args.next().ok_or("--seed requires an integer")?;
                     preview_seed = Some(parse_seed(&value)?);
@@ -405,6 +413,7 @@ impl ViewerConfig {
             diagnostics,
             gpu_bench,
             view_3d,
+            tier,
         })
     }
 
@@ -631,6 +640,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
     diagnostics.sort();
     diagnostics.dedup();
     let project = EffectCompiler::default()
+        .with_tier(config.tier.clone())
         .compile_resolved_project(&resolved)
         .map_err(|error| PreparationFailure {
             message: format!("could not compile viewer project: {error}"),
@@ -1460,6 +1470,7 @@ mod tests {
             diagnostics: false,
             gpu_bench: None,
             view_3d: false,
+            tier: aestra_bevy::QualityTier::default(),
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");

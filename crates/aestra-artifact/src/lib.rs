@@ -120,6 +120,19 @@ struct EffectV1 {
     max_particles: u64,
     source_map: Vec<SourceMapEntryV1>,
     optimizations: OptimizationStatsV1,
+    /// The quality tier compiled for (fluid F12, additive): absent for `high`, the authored effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tier: Option<TierV4>,
+}
+
+/// A quality tier (fluid F12): see [`aestra_runtime::QualityTier`].
+#[derive(Debug, Serialize, Deserialize)]
+struct TierV4 {
+    name: String,
+    resolution: f32,
+    iterations: f32,
+    presentation: f32,
+    particles: f32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -663,6 +676,13 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .map(|(source, location)| SourceMapEntryV1::encode(*source, *location))
                 .collect::<Result<_, _>>()?,
             optimizations: OptimizationStatsV1::encode(effect.optimizations)?,
+            tier: (effect.tier != aestra_runtime::QualityTier::high()).then(|| TierV4 {
+                name: effect.tier.name.clone(),
+                resolution: effect.tier.resolution,
+                iterations: effect.tier.iterations,
+                presentation: effect.tier.presentation,
+                particles: effect.tier.particles,
+            }),
         })
     }
 }
@@ -672,6 +692,22 @@ impl TryFrom<EffectV1> for CompiledEffect {
 
     fn try_from(effect: EffectV1) -> Result<Self, Self::Error> {
         require_finite_positive(effect.duration, "effect.duration")?;
+        let tier = match effect.tier {
+            None => aestra_runtime::QualityTier::high(),
+            Some(tier) => {
+                let tier = aestra_runtime::QualityTier {
+                    name: tier.name,
+                    resolution: tier.resolution,
+                    iterations: tier.iterations,
+                    presentation: tier.presentation,
+                    particles: tier.particles,
+                };
+                if let Err(message) = tier.validate() {
+                    return invalid("effect.tier", message);
+                }
+                tier
+            }
+        };
         let parameters = effect
             .parameters
             .into_iter()
@@ -882,6 +918,7 @@ impl TryFrom<EffectV1> for CompiledEffect {
             max_particles: decode_usize(effect.max_particles, "effect.max_particles")?,
             source_map,
             optimizations: effect.optimizations.decode()?,
+            tier,
         })
     }
 }

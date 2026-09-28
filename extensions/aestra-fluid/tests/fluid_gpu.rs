@@ -201,7 +201,18 @@ struct Fluid {
 
 impl Fluid {
     fn new(gpu: &Gpu, registry: &ExtensionRegistry, effect: &EffectAsset) -> Self {
+        Self::at_tier(gpu, registry, effect, aestra_runtime::QualityTier::high())
+    }
+
+    /// The effect compiled for quality tier `tier` (fluid F12).
+    fn at_tier(
+        gpu: &Gpu,
+        registry: &ExtensionRegistry,
+        effect: &EffectAsset,
+        tier: aestra_runtime::QualityTier,
+    ) -> Self {
         let compiled = EffectCompiler::with_extensions(registry.clone())
+            .with_tier(tier)
             .compile(effect)
             .expect("the fluid effect compiles");
         let block = compiled.extension_stages[0].block.clone();
@@ -3306,4 +3317,103 @@ fn a_collider_moving_through_still_smoke_feels_it_drag() {
     eprintln!("drag on a sphere moving +x: {drag:?}");
     assert!(drag[0] < 0.0, "against its motion: {drag:?}");
     assert!(drag[1].abs() < drag[0].abs() && drag[2].abs() < drag[0].abs());
+}
+
+// ---- Quality tiers (fluid F12) ----
+
+#[test]
+fn every_tier_reruns_bit_for_bit_and_its_plume_still_rises() {
+    use aestra_runtime::QualityTier;
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fire = fire(&registry);
+    for tier in QualityTier::presets() {
+        let first = Fluid::at_tier(&gpu, &registry, &fire, tier.clone());
+        first.run(&gpu, 0..60);
+        let density = first.floats(&gpu, RESOURCE_DENSITY);
+        assert!(density.iter().all(|d| d.is_finite()), "{}", tier.name);
+        let again = Fluid::at_tier(&gpu, &registry, &fire, tier.clone());
+        again.run(&gpu, 0..60);
+        assert_eq!(
+            again.floats(&gpu, RESOURCE_DENSITY),
+            density,
+            "{}",
+            tier.name
+        );
+        // The smoke's centroid rises above the source (at 0.5), whatever the grid.
+        let layout = first
+            .stage
+            .block()
+            .field(&aestra_core::ResourceTypeId::new(RESOURCE_DENSITY))
+            .unwrap()
+            .clone();
+        let n = layout.dims[0] as usize;
+        let (mut mass, mut height) = (0.0f32, 0.0f32);
+        for (index, d) in density.iter().enumerate() {
+            let y = layout.origin[1] + (((index / n) % n) as f32 + 0.5) * layout.cell_size;
+            mass += d;
+            height += d * y;
+        }
+        eprintln!(
+            "{} ({n}³): smoke centroid at y {}",
+            tier.name,
+            height / mass
+        );
+        assert!(
+            mass > 0.0 && height / mass > 0.55,
+            "{}: {}",
+            tier.name,
+            height / mass
+        );
+    }
+}
+
+/// The sample effects' simulation cost per quality tier (fluid F12): each sample's domain compiled at
+/// every tier and ticked back to back — the GPU kept busy, as in a game frame — with the dispatches a
+/// tick issues and its size. Not a pass/fail test — run with `--ignored --nocapture` on the reference
+/// GPU. Coupled particles and rendering are not included (see the viewer's `--gpu-bench --tier`).
+#[test]
+#[ignore]
+fn bench_tiers() {
+    use aestra_runtime::QualityTier;
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let wait = || {
+        gpu.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_secs(120)),
+            })
+            .unwrap();
+    };
+    for sample in [
+        "fluid_smoke",
+        "fluid_fire",
+        "fluid_sparse_plume",
+        "fluid_fireball",
+        "fluid_dam_break",
+        "fluid_waterfall",
+    ] {
+        let path = format!(
+            "{}/../../sample-project/effects/{sample}.aestra.ron",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let effect = EffectAsset::load_ron(&path).unwrap();
+        for tier in QualityTier::presets() {
+            let fluid = Fluid::at_tier(&gpu, &registry, &effect, tier.clone());
+            let block = fluid.stage.block();
+            let cells = block.fields.first().map_or(0, |field| field.dims[0]);
+            fluid.run(&gpu, 0..60);
+            wait();
+            let start = std::time::Instant::now();
+            fluid.run(&gpu, 60..180);
+            wait();
+            let per_tick = start.elapsed().as_secs_f64() * 1000.0 / 120.0;
+            eprintln!(
+                "BENCH {sample:<20} {:<7} {cells:>4}³  {:>4} dispatches  {per_tick:6.2} ms/tick",
+                tier.name,
+                block.compute_pass_count(),
+            );
+        }
+    }
 }

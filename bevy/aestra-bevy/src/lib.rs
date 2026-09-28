@@ -74,7 +74,7 @@ pub use aestra_runtime::{
     ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind,
     RuntimeValue, SeekOrigin, SeekPlan, SeekQuality, SimulationSeekMode,
 };
-pub use aestra_runtime::{EffectOutputEvent, SdfVolume, StageOutputValue};
+pub use aestra_runtime::{EffectOutputEvent, QualityTier, SdfVolume, StageOutputValue};
 
 use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;

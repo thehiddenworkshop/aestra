@@ -1508,3 +1508,140 @@ fn entry_points(ops: &[ExecutionOp]) -> Vec<String> {
     }
     entries
 }
+
+// ---- Quality tiers (fluid F12) ----
+
+fn compile_tier(
+    registry: &ExtensionRegistry,
+    effect: &EffectAsset,
+    tier: aestra_runtime::QualityTier,
+) -> aestra_runtime::CompiledEffect {
+    EffectCompiler::with_extensions(registry.clone())
+        .with_tier(tier)
+        .compile(effect)
+        .expect("compiles at every tier")
+}
+
+#[test]
+fn a_tier_coarsens_the_grid_over_the_same_box_and_trims_the_rest() {
+    use aestra_runtime::QualityTier;
+    let registry = fluid_registry();
+    let mut smoke = smoke_effect(&registry);
+    // The smoke with a secondary emission, to see its capacity scale too.
+    let mut emission = registry
+        .modules
+        .instantiate(&aestra_core::ModuleTypeId::new(
+            aestra_fluid::MODULE_SECONDARY_EMISSION,
+        ))
+        .unwrap();
+    emission.stage = aestra_core::StageKind::Simulation(smoke.simulation_stages[0].name.clone());
+    smoke.simulation_stages[0].modules.push(emission);
+    set_input(&mut smoke, MODULE_GRID, "resolution", Value::U32(48));
+    set_input(
+        &mut smoke,
+        MODULE_GRID,
+        "pressure_iterations",
+        Value::U32(12),
+    );
+    set_input(&mut smoke, MODULE_VOLUME_LOOK, "steps", Value::U32(64));
+    let velocity = ResourceTypeId::new(RESOURCE_VELOCITY);
+    let emission_list = ResourceTypeId::new(aestra_fluid::RESOURCE_EMISSION);
+    let high = compile_tier(&registry, &smoke, QualityTier::high());
+    assert_eq!(
+        high.extension_stages,
+        compile_stage_effect(&registry, &smoke).extension_stages,
+        "high is the authored effect"
+    );
+    let extent = |compiled: &aestra_runtime::CompiledEffect| {
+        let field = compiled.extension_stages[0].block.field(&velocity).unwrap();
+        (
+            field.dims[0],
+            field.dims[0] as f32 * field.cell_size,
+            field.origin,
+        )
+    };
+    let steps = |compiled: &aestra_runtime::CompiledEffect| {
+        let StagePresentation::Volume(look) = &compiled.extension_stages[0].presentations[0];
+        look.constants[0]
+    };
+    let (high_cells, high_box, high_origin) = extent(&high);
+    assert_eq!(high_cells, 48);
+    for (tier, cells, iterations, march, capacity) in [
+        (QualityTier::medium(), 36, 9, 48, 512),
+        (QualityTier::low(), 24, 6, 32, 256),
+    ] {
+        let compiled = compile_tier(&registry, &smoke, tier.clone());
+        assert_eq!(compiled.tier, tier);
+        let block = &compiled.extension_stages[0].block;
+        check_program_block(block, &registry.programs).unwrap();
+        let (dims, size, origin) = extent(&compiled);
+        assert_eq!(dims, cells, "{}", tier.name);
+        assert!(
+            (size - high_box).abs() < 1e-3,
+            "the same box: {size} vs {high_box}"
+        );
+        assert_eq!(origin, high_origin);
+        assert_eq!(block.constants[0], cells);
+        assert_eq!(steps(&compiled), march, "{}", tier.name);
+        assert_eq!(block.emission(&emission_list).unwrap().capacity, capacity);
+        // The pressure solve's cap sits in its convergent repeat.
+        let cap = block
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                ExecutionOp::Repeat { policy, .. } => Some(policy.count()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(cap, iterations, "{}", tier.name);
+        // Each tier is its own artifact.
+        let decoded =
+            aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+                .unwrap();
+        assert_eq!(decoded, compiled);
+    }
+
+    // A sparse grid keeps whole bricks, and needs fewer of them.
+    let mut sparse = smoke_effect(&registry);
+    set_input(&mut sparse, MODULE_GRID, "sparse", Value::Bool(true));
+    set_input(&mut sparse, MODULE_GRID, "resolution", Value::U32(128));
+    set_input(&mut sparse, MODULE_GRID, "brick_budget", Value::U32(800));
+    let low = compile_tier(&registry, &sparse, QualityTier::low());
+    let field = low.extension_stages[0].block.field(&velocity).unwrap();
+    assert_eq!(field.dims, [64; 3]);
+    assert_eq!(field.bricks.as_ref().unwrap().slots, 100 + 1);
+
+    // A liquid: a coarser grid, a smaller particle budget and march.
+    let liquid = aestra_fluid::liquid_effect(&registry);
+    let high = compile_tier(&registry, &liquid, QualityTier::high());
+    let low = compile_tier(&registry, &liquid, QualityTier::low());
+    let particles = ResourceTypeId::new(aestra_fluid::RESOURCE_LIQUID_PARTICLES);
+    let bytes = |compiled: &aestra_runtime::CompiledEffect| {
+        compiled.extension_stages[0]
+            .block
+            .resources
+            .iter()
+            .find(|resource| resource.id == particles)
+            .unwrap()
+            .bytes
+    };
+    assert_eq!(bytes(&low) * 4, bytes(&high), "a quarter of the particles");
+    assert_eq!(
+        low.extension_stages[0].block.field(&velocity).unwrap().dims[0] * 2,
+        high.extension_stages[0]
+            .block
+            .field(&velocity)
+            .unwrap()
+            .dims[0]
+    );
+    check_program_block(&low.extension_stages[0].block, &registry.programs).unwrap();
+}
+
+fn compile_stage_effect(
+    registry: &ExtensionRegistry,
+    effect: &EffectAsset,
+) -> aestra_runtime::CompiledEffect {
+    EffectCompiler::with_extensions(registry.clone())
+        .compile(effect)
+        .unwrap()
+}
