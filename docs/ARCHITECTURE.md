@@ -138,8 +138,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   owned by the stage (a persistent resource, not an emitter's), transferred to the MAC grid with
   fixed-point integer atomics (order-independent sums, so reruns reproduce the same bits), made
   incompressible by the same multigrid solve with air cells at p = 0, and moved back with the grid's
-  velocity and its gradient; *Liquid Block*, *Liquid Source* and the colliders feed it. It adds
-  nothing fluid-specific to core.
+  velocity and its gradient; *Liquid Block*, *Liquid Source* and the colliders feed it. Since fluid
+  F9 a liquid is *spatiotemporal* by default (ST-FLIP, Braun et al. 2026): each particle carries a
+  time residual and samples its own jittered instant within the step, deposition weighs it by a
+  one-sided temporal kernel, and the deposited weights act as a phase field — air below ½, pressure
+  face coefficients 1/φ in the conjugate gradients' operator (the multigrid preconditioner keeps the
+  unweighted one; a gas's coefficients are 1). It adds nothing fluid-specific to core.
 
 ### `aestra-compiler`
 

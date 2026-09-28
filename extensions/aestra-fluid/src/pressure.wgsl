@@ -266,6 +266,36 @@ fn mg_child_state(level: u32, c: vec3<i32>) -> u32 {
 }
 // ---- PCG on the fine grid ----
 
+// The fine-level operator the conjugate gradients solve weights each face by its coefficient
+// (`face_coefficient`: 1 for a gas; a spatiotemporal liquid's phase-field coefficient, fluid F9) —
+// ∇·(β∇p) = ∇·u. The V-cycle preconditioner keeps the unweighted operator: it stays symmetric and
+// positive definite, which is all PCG asks of it. With every β at 1 the sums below are exactly the
+// unweighted ones.
+struct PcgFaces {
+    xm: f32,
+    xp: f32,
+    ym: f32,
+    yp: f32,
+    zm: f32,
+    zp: f32,
+}
+
+fn pcg_faces(c: vec3<i32>) -> PcgFaces {
+    return PcgFaces(
+        face_coefficient(c, 0u),
+        face_coefficient(c + X, 0u),
+        face_coefficient(c, 1u),
+        face_coefficient(c + Y, 1u),
+        face_coefficient(c, 2u),
+        face_coefficient(c + Z, 2u),
+    );
+}
+
+fn pcg_diagonal(s: MgStencil, f: PcgFaces) -> f32 {
+    return f.xm * mg_counts(s.xm) + f.xp * mg_counts(s.xp) + f.ym * mg_counts(s.ym)
+        + f.yp * mg_counts(s.yp) + f.zm * mg_counts(s.zm) + f.zp * mg_counts(s.zp) + MG_SHIFT;
+}
+
 fn pcg_group_index(group: vec3<u32>) -> u32 {
     return grid_group_index(group);
 }
@@ -309,9 +339,11 @@ fn pcg_setup(
         b = -h * h * divergence[i];
         fluid = 1.0;
         let s = mg_stencil(0u, vec3<i32>(cell));
-        let neighbours = pressure_at(s.xm) + pressure_at(s.xp) + pressure_at(s.ym)
-            + pressure_at(s.yp) + pressure_at(s.zm) + pressure_at(s.zp);
-        r = b - (mg_diagonal(s, 0u) * pressure[i] - neighbours);
+        let f = pcg_faces(vec3<i32>(cell));
+        let neighbours = f.xm * pressure_at(s.xm) + f.xp * pressure_at(s.xp)
+            + f.ym * pressure_at(s.ym) + f.yp * pressure_at(s.yp) + f.zm * pressure_at(s.zm)
+            + f.zp * pressure_at(s.zp);
+        r = b - (pcg_diagonal(s, f) * pressure[i] - neighbours);
     }
     if (in_grid(cell)) {
         mg_rhs[cell_index(cell)] = r;
@@ -437,9 +469,11 @@ fn pcg_apply(
         var az = 0.0;
         if (pcg_fluid(cell)) {
             let s = mg_stencil(0u, vec3<i32>(cell));
-            let neighbours = solution_at(s.xm) + solution_at(s.xp) + solution_at(s.ym)
-                + solution_at(s.yp) + solution_at(s.zm) + solution_at(s.zp);
-            az = mg_diagonal(s, 0u) * mg_solution[i] - neighbours;
+            let f = pcg_faces(vec3<i32>(cell));
+            let neighbours = f.xm * solution_at(s.xm) + f.xp * solution_at(s.xp)
+                + f.ym * solution_at(s.ym) + f.yp * solution_at(s.yp) + f.zm * solution_at(s.zm)
+                + f.zp * solution_at(s.zp);
+            az = pcg_diagonal(s, f) * mg_solution[i] - neighbours;
         }
         let pq_old = pcg_vectors[i];
         let p = mg_solution[i] + beta * pq_old.x;

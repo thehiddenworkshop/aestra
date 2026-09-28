@@ -46,6 +46,54 @@ fn liquid_block(block: u32) -> u32 { return liquid_base() + 6u + block * LIQUID_
 fn liquid_block_particles(block: u32) -> u32 { return constants[liquid_block(block) + 9u]; }
 fn liquid_dt() -> f32 { return frame_dt() / f32(liquid_substeps()); }
 
+// ---- Spatiotemporal FLIP (fluid F9; Braun, Winchenbach, Bender and Thuerey 2026) ----
+//
+// Particles are samples in space-time: each carries a time residual δt (in its velocity's w) — its
+// sample time is the step's time minus δt, spread over the step — and advects over its own jittered
+// interval. Deposition weighs each particle by a one-sided temporal kernel of its sample time, so the
+// grid holds the step's slab-integrated mass and momentum rather than an instant's, which removes the
+// temporal aliasing of large steps. The deposited weights double as a phase field: air where it is
+// under ½, and face coefficients 1/φ for the pressure (`face_coefficient`).
+fn liquid_spatiotemporal() -> bool { return constants[22] != 0u; }
+
+// The phase field's full-cell weight (8 particles a cell, each weight 1 on average: the temporal
+// kernel integrates to 1), its steepness, and the least phase a coefficient uses.
+const LIQUID_FULL_WEIGHT: f32 = 8.0;
+const LIQUID_PHASE_STEEPNESS: f32 = 0.5;
+const LIQUID_MIN_PHASE: f32 = 0.1;
+
+// The one-sided poly6 temporal kernel at normalized sample time τ ∈ [−½, ½], peaking at τ = ½ (the
+// latest samples): 35/16 (1 − (τ − ½)²)³.
+fn liquid_temporal_kernel(tau: f32) -> f32 {
+    if (abs(tau) > 0.5) {
+        return 0.0;
+    }
+    let r = tau - 0.5;
+    let s = 1.0 - r * r;
+    return 35.0 / 16.0 * s * s * s;
+}
+
+// A particle's deposition weight in time: 1 without spatiotemporal sampling.
+fn liquid_time_weight(residual: f32) -> f32 {
+    if (!liquid_spatiotemporal()) {
+        return 1.0;
+    }
+    return liquid_temporal_kernel(-residual / liquid_dt());
+}
+
+fn liquid_phase(weight: f32) -> f32 {
+    return min(sqrt(max(weight, 0.0) / (LIQUID_PHASE_STEEPNESS * LIQUID_FULL_WEIGHT)), 1.0);
+}
+
+// The pressure coefficient of `cell`'s minimum `axis` face: 1/φ with spatiotemporal sampling (stored
+// by `liquid_mark` in the corrected-velocity scratch, which a liquid does not otherwise use), else 1.
+fn face_coefficient(cell: vec3<i32>, axis: u32) -> f32 {
+    if (!liquid_spatiotemporal() || !inside(cell)) {
+        return 1.0;
+    }
+    return component(velocity_hat[cell_index(vec3<u32>(cell))], axis);
+}
+
 fn fixed(value: f32) -> i32 {
     return i32(round(clamp(value, -LIQUID_MAX_SPEED, LIQUID_MAX_SPEED) * LIQUID_FIXED));
 }
@@ -185,6 +233,7 @@ fn liquid_p2g(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let x = liquid_particles[at].xyz;
     let v = liquid_particles[at + 1u].xyz;
+    let time_weight = liquid_time_weight(liquid_particles[at + 1u].w);
     let p = liquid_cell_position(x);
     let n = i32(grid_res());
     let h = cell_size();
@@ -198,7 +247,7 @@ fn liquid_p2g(@builtin(global_invocation_id) gid: vec3<u32>) {
         let offset = liquid_corner(corner);
         let c = vec3<i32>(splat) + vec3<i32>(offset);
         if (inside(c)) {
-            let w = liquid_corner_weight(p - splat, offset);
+            let w = liquid_corner_weight(p - splat, offset) * time_weight;
             atomicAdd(&liquid_transfer[cell_index(vec3<u32>(c)) * LIQUID_CELL_WORDS + 7u], fixed(w));
         }
     }
@@ -213,7 +262,7 @@ fn liquid_p2g(@builtin(global_invocation_id) gid: vec3<u32>) {
             let offset = liquid_corner(corner);
             let f = vec3<i32>(base) + vec3<i32>(offset);
             if (all(f >= vec3<i32>(0)) && all(f < vec3<i32>(n))) {
-                let w = liquid_corner_weight(t, offset);
+                let w = liquid_corner_weight(t, offset) * time_weight;
                 let value = speed + dot(c_row, (vec3<f32>(f) - q) * h);
                 let word = cell_index(vec3<u32>(f)) * LIQUID_CELL_WORDS;
                 atomicAdd(&liquid_transfer[word + axis], fixed(w * value));
@@ -223,10 +272,9 @@ fn liquid_p2g(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 }
 
-// The faces' velocities (weighted means, plus gravity), the cell's state for the pressure solve, and
-// the liquid fraction the look draws. Air and solid cells hold no pressure.
+// The faces' velocities: the weighted means, plus gravity.
 @compute @workgroup_size(4, 4, 4)
-fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn liquid_faces(@builtin(global_invocation_id) gid: vec3<u32>) {
     let cell = grid_cell(gid);
     if (!in_grid(cell)) {
         return;
@@ -245,11 +293,36 @@ fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (wy > 0) { faces.y = f32(my) / f32(wy) + gravity.y; }
     if (wz > 0) { faces.z = f32(mz) / f32(wz) + gravity.z; }
     velocity[i] = vec4<f32>(faces, 0.0);
+}
+
+// The cell's state for the pressure solve — fluid where it holds a particle (with spatiotemporal
+// sampling: where its phase is at least ½), solid in a collider, air otherwise — the faces' pressure
+// coefficients, and the liquid fraction the look draws. Air and solid cells hold no pressure.
+@compute @workgroup_size(4, 4, 4)
+fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let cell = grid_cell(gid);
+    if (!in_grid(cell)) {
+        return;
+    }
+    let i = cell_index(cell);
+    let base = i * LIQUID_CELL_WORDS;
     density[i] = liquid_smoothed_fraction(vec3<i32>(cell));
+    var liquid = atomicLoad(&liquid_transfer[base + 6u]) > 0;
+    if (liquid_spatiotemporal()) {
+        let weights = vec3<f32>(
+            f32(atomicLoad(&liquid_transfer[base + 3u])),
+            f32(atomicLoad(&liquid_transfer[base + 4u])),
+            f32(atomicLoad(&liquid_transfer[base + 5u])),
+        ) / LIQUID_FIXED;
+        let phases = vec3<f32>(liquid_phase(weights.x), liquid_phase(weights.y), liquid_phase(weights.z));
+        velocity_hat[i] = vec4<f32>(vec3<f32>(1.0) / max(phases, vec3<f32>(LIQUID_MIN_PHASE)), 0.0);
+        let mass = f32(atomicLoad(&liquid_transfer[base + 7u])) / LIQUID_FIXED;
+        liquid = liquid_phase(mass) >= 0.5;
+    }
     var flag = MG_AIR;
     if (collider_count() > 0u && solid[i].w > 0.5) {
         flag = MG_SOLID;
-    } else if (atomicLoad(&liquid_transfer[base + 6u]) > 0) {
+    } else if (liquid) {
         flag = MG_FLUID;
     }
     mg_flags[u32(lv_slot(0u, vec3<i32>(cell)))] = flag;
@@ -336,6 +409,25 @@ fn liquid_collide(position: vec3<f32>, velocity_in: vec3<f32>) -> LiquidMotion {
     return LiquidMotion(x, v);
 }
 
+// The grid velocity at `x`.
+fn liquid_grid_velocity(x: vec3<f32>) -> vec3<f32> {
+    let p = liquid_cell_position(x);
+    return vec3<f32>(liquid_sample(p, 0u).w, liquid_sample(p, 1u).w, liquid_sample(p, 2u).w);
+}
+
+// Moves `x` through the grid velocity for `interval`, in midpoint (RK2) steps that each cross at most
+// about a cell (at most 8).
+fn liquid_advect(x: vec3<f32>, speed: f32, interval: f32) -> vec3<f32> {
+    let steps = clamp(u32(ceil(speed * interval / cell_size())), 1u, 8u);
+    let step = interval / f32(steps);
+    var at = x;
+    for (var k = 0u; k < steps; k += 1u) {
+        let middle = at + 0.5 * step * liquid_grid_velocity(at);
+        at = at + step * liquid_grid_velocity(middle);
+    }
+    return at;
+}
+
 @compute @workgroup_size(64)
 fn liquid_g2p(@builtin(global_invocation_id) gid: vec3<u32>) {
     let at = gid.x * LIQUID_STRIDE;
@@ -349,15 +441,28 @@ fn liquid_g2p(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sy = liquid_sample(p, 1u);
     let sz = liquid_sample(p, 2u);
     var v = vec3<f32>(sx.w, sy.w, sz.w);
+    // Its own interval: the step's, or with spatiotemporal sampling the step plus the residual it
+    // carries plus a jitter (fading out where the flow is calm), clamped to [0, 2Δt]; what the clamp
+    // leaves is the next residual.
+    let dt = liquid_dt();
+    var interval = dt;
+    var residual = 0.0;
+    if (liquid_spatiotemporal()) {
+        let carried = liquid_particles[at + 1u].w;
+        let calm = smoothstep(0.0, 1.0, length(v) * dt / h);
+        let xi = liquid_hash01(gid.x, frame[0] * 7919u ^ bitcast<u32>(x.y)) - 0.5;
+        interval = clamp(dt + carried + calm * xi * dt, 0.0, 2.0 * dt);
+        residual = dt + carried - interval;
+    }
     // Walls: the particle stays a quarter cell inside the box, without velocity into the wall.
-    let moved = x + v * liquid_dt();
+    let moved = liquid_advect(x, length(v), interval);
     let low = grid_origin() + vec3<f32>(0.25 * h);
     let high = grid_origin() + vec3<f32>(f32(grid_res()) * h - 0.25 * h);
     let into_wall = ((moved < low) & (v < vec3<f32>(0.0))) | ((moved > high) & (v > vec3<f32>(0.0)));
     v = select(v, vec3<f32>(0.0), into_wall);
     let collided = liquid_collide(clamp(moved, low, high), v);
     liquid_particles[at] = vec4<f32>(collided.position, 1.0);
-    liquid_particles[at + 1u] = vec4<f32>(collided.velocity, 0.0);
+    liquid_particles[at + 1u] = vec4<f32>(collided.velocity, residual);
     liquid_particles[at + 2u] = vec4<f32>(sx.xyz, 0.0);
     liquid_particles[at + 3u] = vec4<f32>(sy.xyz, 0.0);
     liquid_particles[at + 4u] = vec4<f32>(sz.xyz, 0.0);

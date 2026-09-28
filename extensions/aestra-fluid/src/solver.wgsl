@@ -672,7 +672,13 @@ fn project_cell(cell: vec3<u32>) {
     let at_wall = vec3<bool>(cell.x == 0u, cell.y == 0u, cell.z == 0u);
     let open = vec3<bool>(side_open(0u, false), side_open(1u, false), side_open(2u, false));
     let outside = select(below, vec3<f32>(0.0), at_wall);
-    v = v - (vec3<f32>(own) - outside) / h;
+    // Each face moves by its coefficient times the pressure gradient (1 for a gas; fluid F9).
+    let coefficients = vec3<f32>(
+        face_coefficient(c, 0u),
+        face_coefficient(c, 1u),
+        face_coefficient(c, 2u),
+    );
+    v = v - coefficients * (vec3<f32>(own) - outside) / h;
     v = select(v, vec3<f32>(0.0), at_wall & !open);
     // Solids (fluid F4): a face touching one carries the solid's velocity; next to a sticky one, the
     // face takes its velocity too (no slip).

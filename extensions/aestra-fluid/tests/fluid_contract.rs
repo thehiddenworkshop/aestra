@@ -1212,21 +1212,21 @@ fn a_liquid_lowers_to_checked_particle_and_grid_passes() {
             _ => None,
         })
         .collect();
-    // Plan and emit once a tick, then two substeps of transfer, solve and move.
+    // Plan and emit once a tick, then a substep of transfer, solve and move (the default).
     assert_eq!(entries[..2], ["liquid_plan", "liquid_emit"]);
     assert_eq!(
         entries
             .iter()
             .filter(|entry| *entry == "liquid_p2g")
             .count(),
-        2
+        1
     );
     assert_eq!(
         entries
             .iter()
             .filter(|entry| *entry == "liquid_g2p")
             .count(),
-        2
+        1
     );
     // The particles persist; the grid velocity and liquid fraction are fields.
     let particles = stage

@@ -57,11 +57,12 @@ pub fn liquid_program_wgsl() -> String {
 }
 
 /// The liquid's own entry points.
-pub const LIQUID_ENTRY_POINTS: [&str; 6] = [
+pub const LIQUID_ENTRY_POINTS: [&str; 7] = [
     "liquid_plan",
     "liquid_emit",
     "liquid_clear",
     "liquid_p2g",
+    "liquid_faces",
     "liquid_mark",
     "liquid_g2p",
 ];
@@ -139,9 +140,21 @@ pub(super) fn liquid_grid_metadata(requires: CapabilityExpression) -> ModuleMeta
         InputMetadata::new(
             "substeps",
             "Substeps",
-            "Steps per tick: more keep fast liquid from crossing more than a cell a step.",
-            Value::U32(2),
+            "Steps per tick: more follow fast liquid more closely, at a proportional cost. With \
+             Spatiotemporal on, one is usually enough.",
+            Value::U32(1),
             number(1.0, 1.0, Some(MAX_LIQUID_SUBSTEPS as f32)),
+        ),
+        InputMetadata::new(
+            "spatiotemporal",
+            "Spatiotemporal",
+            "Spatiotemporal FLIP (Braun et al. 2026): each particle samples its own instant within the \
+             step and the grid holds the step's average, so large steps — few substeps — keep a \
+             smooth surface instead of rippling. The pressure then weighs each face by how full it \
+             is. On a violent dam break at one substep a tick it follows the four-substep result \
+             about as closely as plain FLIP does at two, for ~40% less time.",
+            Value::Bool(true),
+            InputControl::Toggle,
         ),
         InputMetadata::new(
             "gravity",
@@ -529,6 +542,8 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
     }
     let budget = count(parameters, "particle_budget")?;
     let substeps = count(parameters, "substeps")?;
+    // Spatiotemporal FLIP (fluid F9).
+    words[22] = u32::from(parameters.get_bool("spatiotemporal").unwrap_or(false));
     words[21] = words.len() as u32;
     words.push(budget);
     words.push(substeps);
@@ -672,20 +687,30 @@ impl StageLowerer for LiquidSolverLowerer {
                     Access::read(RESOURCE_LIQUID_PARTICLES),
                     Access::read_write(RESOURCE_LIQUID_TRANSFER),
                     constants_read(),
+                    frame_read(),
                 ],
                 4,
+            ));
+            steps.push(grid.pass(
+                "liquid_faces",
+                vec![
+                    Access::read(RESOURCE_LIQUID_TRANSFER),
+                    Access::write(RESOURCE_VELOCITY),
+                    constants_read(),
+                    frame_read(),
+                ],
             ));
             steps.push(grid.pass(
                 "liquid_mark",
                 vec![
                     Access::read(RESOURCE_LIQUID_TRANSFER),
-                    Access::write(RESOURCE_VELOCITY),
                     Access::write(RESOURCE_DENSITY),
                     Access::write(RESOURCE_MG_FLAGS),
                     Access::write(RESOURCE_PRESSURE),
                     Access::read(RESOURCE_SOLID),
+                    // The spatiotemporal pressure coefficients (fluid F9).
+                    Access::write(RESOURCE_VELOCITY_HAT),
                     constants_read(),
-                    frame_read(),
                 ],
             ));
             steps.push(grid.pass(
@@ -706,6 +731,7 @@ impl StageLowerer for LiquidSolverLowerer {
                     Access::read_write(RESOURCE_VELOCITY),
                     Access::read(RESOURCE_PRESSURE),
                     Access::read(RESOURCE_SOLID),
+                    Access::read(RESOURCE_VELOCITY_HAT),
                     constants_read(),
                 ],
             ));

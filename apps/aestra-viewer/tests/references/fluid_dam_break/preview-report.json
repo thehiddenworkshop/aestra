@@ -3,7 +3,7 @@
   "status": "succeeded",
   "errors": [],
   "effect": {
-    "id": "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+    "id": "de93159c-7f8c-4810-900a-40d2ed05072e",
     "name": "Fluid Dam Break",
     "duration_seconds": 4.0,
     "playback_mode": "LoopContinuous",
@@ -153,7 +153,7 @@
     },
     "gpu_stage_time_ns": {
       "source": "measured",
-      "value": 6000704
+      "value": 3936256
     },
     "alive_particles": {
       "source": "measured",
@@ -189,7 +189,7 @@
     },
     "dispatch_count": {
       "source": "estimated",
-      "value": 1133
+      "value": 569
     },
     "estimated_overdraw": {
       "source": "unavailable"
@@ -215,7 +215,7 @@
   "instances": [
     {
       "clip_path": [],
-      "effect": "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+      "effect": "de93159c-7f8c-4810-900a-40d2ed05072e",
       "name": "Fluid Dam Break",
       "metrics": {
         "trail_capacity": {
@@ -258,7 +258,7 @@
         },
         "gpu_stage_time_ns": {
           "source": "measured",
-          "value": 6000704
+          "value": 3936256
         },
         "alive_particles": {
           "source": "measured",
@@ -294,7 +294,7 @@
         },
         "dispatch_count": {
           "source": "estimated",
-          "value": 1133
+          "value": 569
         },
         "estimated_overdraw": {
           "source": "unavailable"

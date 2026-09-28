@@ -1,6 +1,6 @@
 (
     format_version: 4,
-    id: "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+    id: "de93159c-7f8c-4810-900a-40d2ed05072e",
     name: "Fluid Dam Break",
     duration: 4.0,
     playback_mode: LoopContinuous,
@@ -22,7 +22,7 @@
             stage_type: "org.example.aestra-fluid::stage/liquid_solver",
             modules: [
                 (
-                    id: "9425aad8-6f17-48b9-ac33-009473cabe29",
+                    id: "f3809017-6575-496e-b028-75b976bff6dc",
                     module_type: "org.example.aestra-fluid::module/liquid_grid",
                     enabled: true,
                     parameters: Custom({
@@ -33,11 +33,12 @@
                         "pressure_iterations": U32(24),
                         "pressure_tolerance": Scalar(0.001),
                         "resolution": U32(48),
-                        "substeps": U32(2),
+                        "spatiotemporal": Bool(true),
+                        "substeps": U32(1),
                     }),
                 ),
                 (
-                    id: "7d2d10c5-e236-4bfd-a621-1a767b55f2ea",
+                    id: "652acb54-4dc2-4f05-930f-20fe2eba3a97",
                     module_type: "org.example.aestra-fluid::module/liquid_block",
                     enabled: true,
                     parameters: Custom({
@@ -47,7 +48,7 @@
                     }),
                 ),
                 (
-                    id: "707e06c3-42f7-4816-94df-e491e66a5b8f",
+                    id: "9a5f483f-129e-41bc-9180-6f61424ae085",
                     module_type: "org.example.aestra-fluid::module/liquid_look",
                     enabled: true,
                     parameters: Custom({
@@ -63,7 +64,7 @@
                     }),
                 ),
                 (
-                    id: "cb218c52-66d1-439a-948a-4ee2b5dba1ed",
+                    id: "9f9f6196-1916-4127-93ec-cf4cdbb895ee",
                     module_type: "org.example.aestra-fluid::module/sphere_collider",
                     enabled: true,
                     parameters: Custom({

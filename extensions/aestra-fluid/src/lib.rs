@@ -140,6 +140,10 @@ pub const PRESSURE_WGSL: &str = include_str!("pressure.wgsl");
 pub const FLOWMAP_WGSL: &str = include_str!("flowmap.wgsl");
 /// The volume look's march function, composed after the backend's volume interface.
 pub const VOLUME_WGSL: &str = include_str!("volume.wgsl");
+/// A gas's pressure faces all weigh 1 (fluid F9: a spatiotemporal liquid weighs them by its phase
+/// field, `liquid.wgsl`).
+pub const UNIT_COEFFICIENTS_WGSL: &str =
+    "fn face_coefficient(cell: vec3<i32>, axis: u32) -> f32 {\n    return 1.0;\n}\n";
 /// How the solver indexes its cells (fluid F7): every cell stored, or only the active bricks'.
 pub const GRID_DENSE_WGSL: &str = include_str!("grid_dense.wgsl");
 pub const GRID_SPARSE_WGSL: &str = include_str!("grid_sparse.wgsl");
@@ -201,7 +205,7 @@ pub fn link() {
 /// per-level entry points, and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL
@@ -212,7 +216,7 @@ pub fn program_wgsl() -> String {
 /// sums it ranks with.
 pub fn sparse_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
@@ -2229,7 +2233,14 @@ fn multigrid_pressure(
         }
         grid.single(entry, accesses)
     };
-    let fine = |entry: &str, accesses: Vec<ResourceAccess>| grid.pass(entry, accesses);
+    // A pass over the fine grid. A liquid's operator reads its faces' pressure coefficients (fluid
+    // F9, `face_coefficient`).
+    let fine = |entry: &str, mut accesses: Vec<ResourceAccess>| {
+        if grid.liquid && matches!(entry, "pcg_setup" | "pcg_apply") {
+            accesses.push(Access::read(RESOURCE_VELOCITY_HAT));
+        }
+        grid.pass(entry, accesses)
+    };
 
     let mut ops = Vec::new();
     if grid.liquid {

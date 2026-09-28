@@ -2599,3 +2599,183 @@ fn bench_liquid() {
         );
     }
 }
+
+// ---- Spatiotemporal FLIP (fluid F9) ----
+
+/// The dam break on a 64³ grid of 1.5-unit cells (the same 96-unit box) with gravity 1600: about four
+/// cells a tick at the front, so one substep a tick is a CFL of ~4.
+fn hard_dam_break(
+    registry: &ExtensionRegistry,
+    substeps: u32,
+    spatiotemporal: bool,
+) -> EffectAsset {
+    let mut liquid = aestra_fluid::liquid_effect(registry);
+    for (name, value) in [
+        ("resolution", Value::U32(64)),
+        ("cell_size", Value::Scalar(1.5)),
+        ("gravity", Value::Vec3([0.0, -1600.0, 0.0])),
+        ("substeps", Value::U32(substeps)),
+        ("spatiotemporal", Value::Bool(spatiotemporal)),
+        ("particle_budget", Value::U32(400_000)),
+    ] {
+        liquid_input(&mut liquid, aestra_fluid::MODULE_LIQUID_GRID, name, value);
+    }
+    liquid
+}
+
+/// The surface of a dam break, which starts uniform along z: per 3-unit column the highest particle,
+/// averaged over z per x (the profile), and the RMS of the columns about their x's average — noise
+/// and aliasing, since the flow itself stays uniform along z.
+struct Surface {
+    profile: Vec<Option<f32>>,
+    spanwise: f32,
+}
+
+fn surface(particles: &[LiquidParticle]) -> Surface {
+    const BINS: usize = 32; // 3-unit columns over the 96-unit box
+    let mut top = vec![vec![f32::MIN; BINS]; BINS];
+    for (x, _) in particles {
+        let i = (((x[0] + 48.0) / 3.0) as usize).min(BINS - 1);
+        let k = (((x[2] + 48.0) / 3.0) as usize).min(BINS - 1);
+        top[i][k] = top[i][k].max(x[1]);
+    }
+    let mut profile = Vec::new();
+    let (mut sum, mut count) = (0.0f32, 0.0f32);
+    for column in &top {
+        let filled: Vec<f32> = column.iter().copied().filter(|h| *h > f32::MIN).collect();
+        if filled.len() < BINS / 2 {
+            profile.push(None);
+            continue;
+        }
+        let mean = filled.iter().sum::<f32>() / filled.len() as f32;
+        for h in &filled {
+            sum += (h - mean) * (h - mean);
+            count += 1.0;
+        }
+        profile.push(Some(mean));
+    }
+    Surface {
+        profile,
+        spanwise: (sum / count.max(1.0)).sqrt(),
+    }
+}
+
+#[test]
+fn a_spatiotemporal_liquid_keeps_its_particles_and_its_rest() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    // The hard dam break at one substep: bounded, nothing lost, the same bits on a rerun.
+    let liquid = hard_dam_break(&registry, 1, true);
+    let fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.run(&gpu, 0..60);
+    let (particles, count) = liquid_particles(&fluid, &gpu);
+    assert_eq!(particles.len(), count as usize);
+    assert!(particles.iter().all(|(x, v)| {
+        x.iter().chain(v).all(|value| value.is_finite()) && x[1] > 0.0 && x[1] < 96.0
+    }));
+    let again = Fluid::new(&gpu, &registry, &liquid);
+    again.run(&gpu, 0..60);
+    assert_eq!(
+        again.words(&gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES),
+        fluid.words(&gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES)
+    );
+    // A pool at rest stays at rest: the phase-field coefficients add no flow of their own.
+    let mut pool = aestra_fluid::liquid_effect(&registry);
+    for (name, value) in [
+        ("center", Value::Vec3([0.0, 15.0, 0.0])),
+        ("size", Value::Vec3([96.0, 30.0, 96.0])),
+    ] {
+        liquid_input(&mut pool, aestra_fluid::MODULE_LIQUID_BLOCK, name, value);
+    }
+    liquid_input(
+        &mut pool,
+        aestra_fluid::MODULE_LIQUID_GRID,
+        "spatiotemporal",
+        Value::Bool(true),
+    );
+    let fluid = Fluid::new(&gpu, &registry, &pool);
+    fluid.run(&gpu, 0..120);
+    let (particles, _) = liquid_particles(&fluid, &gpu);
+    let speed = particles
+        .iter()
+        .map(|(_, v)| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+        .sum::<f32>()
+        / particles.len() as f32;
+    eprintln!("spatiotemporal pool: mean speed {speed}");
+    assert!(speed < 10.0, "{speed}");
+}
+
+/// ST-FLIP against F8 on the hard dam break: at one and two substeps a tick, spatiotemporal and not,
+/// against F8 at four (the reference), after 0.5 s and 1 s — the surface's spanwise noise, its
+/// profile's distance to the reference's, the kinetic energy, and the cost per tick. Not a pass/fail
+/// test — run with `--ignored --nocapture` on the reference GPU.
+#[test]
+#[ignore]
+fn bench_spatiotemporal() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let wait = || {
+        gpu.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_secs(120)),
+            })
+            .unwrap();
+    };
+    let mut reference: Vec<Surface> = Vec::new();
+    for (label, substeps, spatiotemporal) in [
+        ("F8, 4 substeps (reference)", 4u32, false),
+        ("F8, 1 substep", 1, false),
+        ("ST, 1 substep", 1, true),
+        ("F8, 2 substeps", 2, false),
+        ("ST, 2 substeps", 2, true),
+    ] {
+        let fluid = Fluid::new(
+            &gpu,
+            &registry,
+            &hard_dam_break(&registry, substeps, spatiotemporal),
+        );
+        let mut report = Vec::new();
+        let mut tick = 0;
+        let mut elapsed = 0.0;
+        for (sample, until) in [30u32, 60].into_iter().enumerate() {
+            wait();
+            let start = std::time::Instant::now();
+            fluid.run(&gpu, tick..until);
+            wait();
+            elapsed += start.elapsed().as_secs_f64();
+            tick = until;
+            let (particles, _) = liquid_particles(&fluid, &gpu);
+            let energy = particles
+                .iter()
+                .map(|(_, v)| 0.5 * (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]))
+                .sum::<f32>()
+                / particles.len() as f32;
+            let now = surface(&particles);
+            let drift = reference.get(sample).map_or(0.0, |base| {
+                let pairs: Vec<f32> = now
+                    .profile
+                    .iter()
+                    .zip(&base.profile)
+                    .filter_map(|(a, b)| Some((a.as_ref()? - b.as_ref()?).abs()))
+                    .collect();
+                pairs.iter().sum::<f32>() / pairs.len().max(1) as f32
+            });
+            report.push(format!(
+                "t={:.1}s spanwise {:.2}, profile off reference {:.2}, energy/particle {:.0}",
+                f64::from(until) / 60.0,
+                now.spanwise,
+                drift,
+                energy
+            ));
+            if substeps == 4 && !spatiotemporal {
+                reference.push(now);
+            }
+        }
+        eprintln!(
+            "BENCH {label}: {:.2} ms/tick | {}",
+            elapsed * 1000.0 / 60.0,
+            report.join(" | ")
+        );
+    }
+}
