@@ -1195,3 +1195,63 @@ fn a_sparse_grid_takes_a_multiple_of_the_brick_up_to_512_and_no_flow_maps() {
     set_input(&mut dense, MODULE_GRID, "resolution", Value::U32(256));
     assert!(fails(&dense));
 }
+
+#[test]
+fn a_liquid_lowers_to_checked_particle_and_grid_passes() {
+    let registry = fluid_registry();
+    let liquid = aestra_fluid::liquid_effect(&registry);
+    let stage = compile_stage(&registry, &liquid);
+    check_program_block(&stage.block, &registry.programs).expect("liquid accesses are truthful");
+    assert_eq!(stage.stage_type.as_str(), aestra_fluid::STAGE_LIQUID_SOLVER);
+    let entries: Vec<String> = stage
+        .block
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            ExecutionOp::Compute(compute) => Some(compute.entry_point.clone()),
+            _ => None,
+        })
+        .collect();
+    // Plan and emit once a tick, then two substeps of transfer, solve and move.
+    assert_eq!(entries[..2], ["liquid_plan", "liquid_emit"]);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| *entry == "liquid_p2g")
+            .count(),
+        2
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| *entry == "liquid_g2p")
+            .count(),
+        2
+    );
+    // The particles persist; the grid velocity and liquid fraction are fields.
+    let particles = stage
+        .block
+        .resources
+        .iter()
+        .find(|resource| resource.id.as_str() == aestra_fluid::RESOURCE_LIQUID_PARTICLES)
+        .unwrap();
+    assert_eq!(particles.bytes, 131_072 * 80);
+    assert_eq!(
+        particles.lifetime,
+        aestra_runtime::ResourceLifetime::Persistent
+    );
+    assert!(
+        stage
+            .block
+            .field(&ResourceTypeId::new(RESOURCE_DENSITY))
+            .is_some()
+    );
+    // Through the artifact.
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&liquid)
+        .unwrap();
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+            .unwrap();
+    assert_eq!(decoded.extension_stages, compiled.extension_stages);
+}

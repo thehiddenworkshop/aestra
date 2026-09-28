@@ -23,7 +23,9 @@
 //! - **programs**: the solver (`solver.wgsl`) whose entry points the stage lowers to — composed once
 //!   with the dense grid and once with the sparse one (fluid F7: 8³-cell bricks allocated where the
 //!   fluid is, so a grid up to 512³ costs what its fluid occupies) — and the volume look's march
-//!   function (`volume.wgsl`).
+//!   function (`volume.wgsl`);
+//! - a second stage type, *Liquid Solver* (fluid F8, [`liquid`](crate::liquid_effect)): a
+//!   free-surface liquid of APIC particles on the same grid, pressure solve and colliders.
 //!
 //! The authored stage stays one semantic object; lowering expands it into the solver's passes:
 //!
@@ -60,6 +62,15 @@ use aestra_runtime::{
     ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
 };
 use std::sync::Arc;
+
+mod liquid;
+pub use liquid::{
+    CAPABILITY_LIQUID, LIQUID_ENTRY_POINTS, LIQUID_STAGE, LIQUID_WGSL, MAX_LIQUID_BLOCKS,
+    MAX_LIQUID_PARTICLES, MAX_LIQUID_SUBSTEPS, MODULE_LIQUID_BLOCK, MODULE_LIQUID_GRID,
+    MODULE_LIQUID_SOURCE, PROGRAM_LIQUID, RESOURCE_LIQUID_DISPATCH, RESOURCE_LIQUID_HEADER,
+    RESOURCE_LIQUID_PARTICLES, RESOURCE_LIQUID_TRANSFER, STAGE_LIQUID_SOLVER, liquid_effect,
+    liquid_entry_points, liquid_program_wgsl,
+};
 
 pub const PLUGIN_ID: &str = "org.example.aestra-fluid";
 pub const CAPABILITY_FLUID_GRID: &str = "org.example.aestra-fluid::capability/fluid_grid";
@@ -435,6 +446,8 @@ impl AestraExtension for FluidExtension {
     fn register(&self, registry: &mut ExtensionRegistry) -> Result<(), RegistryConflict> {
         let fluid_grid = CapabilityId::new(CAPABILITY_FLUID_GRID);
         registry.register_capability(fluid_grid.clone())?;
+        let liquid_capability = CapabilityId::new(CAPABILITY_LIQUID);
+        registry.register_capability(liquid_capability.clone())?;
         registry.domains.register(DomainDescriptor {
             type_id: DomainTypeId::new(DOMAIN_GRID3D),
             display_name: "Fluid Grid".into(),
@@ -557,7 +570,10 @@ impl AestraExtension for FluidExtension {
                 "Brick Workgroups",
                 ResourceLifetime::Persistent,
             ),
-        ] {
+        ]
+        .into_iter()
+        .chain(liquid::LIQUID_RESOURCES)
+        {
             registry.resources.register(ResourceTypeDescriptor {
                 type_id: ResourceTypeId::new(type_id),
                 display_name: display_name.into(),
@@ -570,7 +586,17 @@ impl AestraExtension for FluidExtension {
             "Fluid Solver",
             CapabilitySet::new([fluid_grid.clone()]),
         ))?;
-        let requires = CapabilityExpression::AnyOf(CapabilitySet::new([fluid_grid]));
+        registry.register_stage(StageTypeDescriptor::gpu_only(
+            StageTypeId::new(STAGE_LIQUID_SOLVER),
+            "Liquid Solver",
+            CapabilitySet::new([liquid_capability.clone()]),
+        ))?;
+        let requires = CapabilityExpression::AnyOf(CapabilitySet::new([fluid_grid.clone()]));
+        let liquid_requires =
+            CapabilityExpression::AnyOf(CapabilitySet::new([liquid_capability.clone()]));
+        // Colliders serve a gas and a liquid alike.
+        let either =
+            CapabilityExpression::AnyOf(CapabilitySet::new([fluid_grid, liquid_capability]));
         for metadata in [
             grid_metadata(requires.clone()),
             density_source_metadata(requires.clone()),
@@ -578,10 +604,13 @@ impl AestraExtension for FluidExtension {
             vorticity_metadata(requires.clone()),
             turbulence_metadata(requires.clone()),
             combustion_metadata(requires.clone()),
-            collider_metadata(MODULE_SPHERE_COLLIDER, requires.clone()),
-            collider_metadata(MODULE_BOX_COLLIDER, requires.clone()),
-            collider_metadata(MODULE_CAPSULE_COLLIDER, requires.clone()),
+            collider_metadata(MODULE_SPHERE_COLLIDER, either.clone()),
+            collider_metadata(MODULE_BOX_COLLIDER, either.clone()),
+            collider_metadata(MODULE_CAPSULE_COLLIDER, either),
             volume_look_metadata(requires),
+            liquid::liquid_grid_metadata(liquid_requires.clone()),
+            liquid::liquid_block_metadata(liquid_requires.clone()),
+            liquid::liquid_source_metadata(liquid_requires),
         ] {
             let type_id = metadata.type_id.clone();
             registry.register_module(metadata)?;
@@ -600,6 +629,11 @@ impl AestraExtension for FluidExtension {
             entry_points: sparse_entry_points(),
         })?;
         registry.register_program(ComputeProgram {
+            id: ComputeProgramId::new(PROGRAM_LIQUID),
+            wgsl: liquid_program_wgsl(),
+            entry_points: liquid_entry_points(),
+        })?;
+        registry.register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM_VOLUME),
             wgsl: VOLUME_WGSL.into(),
             entry_points: vec![VOLUME_ENTRY.into()],
@@ -607,6 +641,10 @@ impl AestraExtension for FluidExtension {
         registry.lowering.register_stage(
             StageTypeId::new(STAGE_FLUID_SOLVER),
             Arc::new(FluidSolverLowerer),
+        )?;
+        registry.lowering.register_stage(
+            StageTypeId::new(STAGE_LIQUID_SOLVER),
+            Arc::new(liquid::LiquidSolverLowerer),
         )?;
         Ok(())
     }
@@ -1400,6 +1438,13 @@ impl ModuleLowerer for FluidModuleLowerer {
                 pack_volume(payload)?;
                 VOLUME_ENTRY
             }
+            liquid @ (MODULE_LIQUID_GRID | MODULE_LIQUID_BLOCK | MODULE_LIQUID_SOURCE) => {
+                liquid::validate_liquid_module(liquid, payload)?;
+                match liquid {
+                    MODULE_LIQUID_GRID => "liquid_mark",
+                    _ => "liquid_emit",
+                }
+            }
             other => return Err(format!("'{other}' is not a fluid module")),
         };
         Ok(ExtensionModulePlan {
@@ -1733,7 +1778,11 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         words.extend(pack_collider(collider)?);
     }
     Ok(PackedStage {
-        grid: Grid { resolution, slots },
+        grid: Grid {
+            resolution,
+            slots,
+            liquid: false,
+        },
         iterations,
         cell_size,
         origin,
@@ -1820,6 +1869,8 @@ struct Grid {
     resolution: u32,
     /// A sparse grid's brick slots — its budget, and slot 0, which stays empty; `None` when dense.
     slots: Option<u32>,
+    /// A liquid's grid (fluid F8): its passes are the liquid program's.
+    liquid: bool,
 }
 
 /// Multigrid levels a sparse grid's bricks hold: 8³, 4³, 2³ and 1 cell.
@@ -1827,7 +1878,9 @@ const SPARSE_LEVELS: usize = 4;
 
 impl Grid {
     fn program(self) -> &'static str {
-        if self.slots.is_some() {
+        if self.liquid {
+            PROGRAM_LIQUID
+        } else if self.slots.is_some() {
             PROGRAM_SOLVER_SPARSE
         } else {
             PROGRAM_SOLVER
@@ -2170,8 +2223,14 @@ fn multigrid_pressure(
     let fine = |entry: &str, accesses: Vec<ResourceAccess>| grid.pass(entry, accesses);
 
     let mut ops = Vec::new();
-    // The solid flags, once a tick (a second solve reuses them).
-    if colliders && coarsen {
+    if grid.liquid {
+        // A liquid's fine flags come from its particles every step (`liquid_mark`); the coarse ones
+        // follow them.
+        for level in 1..levels.len() {
+            ops.push(level_pass(LevelPass::Coarsen, level));
+        }
+    } else if colliders && coarsen {
+        // The solid flags, once a tick (a second solve reuses them).
         for level in 0..levels.len() {
             ops.push(level_pass(LevelPass::Coarsen, level));
         }

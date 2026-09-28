@@ -45,12 +45,24 @@ fn mg_inside(n: u32, c: vec3<i32>) -> bool {
     return all(c >= vec3<i32>(0)) && all(c < vec3<i32>(i32(n)));
 }
 
-// Without colliders nothing is solid, on any level.
-fn mg_solid_at(index: i32) -> bool {
-    if (collider_count() == 0u || index < 0) {
-        return false;
+// A cell's state on its level: fluid (an unknown), solid (a Neumann wall) or — for a liquid's free
+// surface (fluid F8) — air, where the pressure is zero (an open neighbour, like an open side).
+const MG_FLUID: u32 = 0u;
+const MG_SOLID: u32 = 1u;
+const MG_AIR: u32 = 2u;
+
+// Without colliders or a free surface every cell is fluid, on any level: the flags are not read.
+fn mg_flag(index: i32) -> u32 {
+    if (index < 0 || (collider_count() == 0u && !free_surface())) {
+        return MG_FLUID;
     }
-    return mg_flags[u32(index)] != 0u;
+    return mg_flags[u32(index)];
+}
+
+
+// A solid or air cell holds no unknown: its value stays zero.
+fn mg_no_unknown(index: i32) -> bool {
+    return mg_flag(index) != MG_FLUID;
 }
 
 // The neighbour of `c` across one face.
@@ -61,8 +73,12 @@ fn mg_neighbour(level: u32, c: vec3<i32>, axis: u32, positive: bool) -> i32 {
         return select(MG_WALL, MG_OPEN, side_open(axis, positive));
     }
     let index = lv_slot(level, neighbour);
-    if (mg_solid_at(index)) {
+    let flag = mg_flag(index);
+    if (flag == MG_SOLID) {
         return MG_WALL;
+    }
+    if (flag == MG_AIR) {
+        return MG_OPEN;
     }
     return index;
 }
@@ -129,7 +145,7 @@ fn mg_smooth(level: u32, cell: vec3<u32>, parity: u32) {
     let c = vec3<i32>(cell);
     let index = lv_slot(level, c);
     let i = u32(index);
-    if (mg_solid_at(index)) {
+    if (mg_no_unknown(index)) {
         mg_solution[i] = 0.0;
         return;
     }
@@ -141,7 +157,7 @@ fn mg_smooth(level: u32, cell: vec3<u32>, parity: u32) {
 // The residual r − A z of one fine cell.
 fn mg_residual(level: u32, c: vec3<i32>) -> f32 {
     let index = lv_slot(level, c);
-    if (mg_solid_at(index)) {
+    if (mg_no_unknown(index)) {
         return 0.0;
     }
     let s = mg_stencil(level, c);
@@ -170,7 +186,7 @@ fn mg_restrict_smooth(coarse: u32, cell: vec3<u32>) {
     mg_rhs[i] = rhs;
     if (((cell.x + cell.y + cell.z) & 1u) == 0u) {
         var z = 0.0;
-        if (!mg_solid_at(index)) {
+        if (!mg_no_unknown(index)) {
             let diagonal = mg_diagonal(mg_stencil(coarse, c), coarse);
             z = select(0.0, rhs / diagonal, diagonal > 0.0);
         }
@@ -201,7 +217,7 @@ fn mg_prolong_smooth(fine: u32, cell: vec3<u32>) {
     let c = vec3<i32>(cell);
     let index = lv_slot(fine, c);
     let i = u32(index);
-    if (mg_solid_at(index)) {
+    if (mg_no_unknown(index)) {
         mg_solution[i] = 0.0;
         return;
     }
@@ -213,8 +229,10 @@ fn mg_prolong_smooth(fine: u32, cell: vec3<u32>) {
     mg_solution[i] = select(0.0, (mg_rhs[i] + sum) / diagonal, diagonal > 0.0);
 }
 
-// The solid flags, level by level from the fine one: a fine cell is solid inside a collider, a coarse
-// one when all 8 of its children are.
+// The flags, level by level from the fine one. A fine cell is solid inside a collider (a liquid's
+// fine flags come from its particles instead, `liquid.wgsl`). A coarse cell is fluid when any of its
+// 8 children is, otherwise air when any is, otherwise solid: so a gas's coarse cell is solid only
+// when all its children are.
 fn mg_coarsen(level: u32, cell: vec3<u32>) {
     let n = mg_level_res(level);
     if (any(cell >= vec3<u32>(n))) {
@@ -222,20 +240,29 @@ fn mg_coarsen(level: u32, cell: vec3<u32>) {
     }
     let i = u32(lv_slot(level, vec3<i32>(cell)));
     if (level == 0u) {
-        mg_flags[i] = select(0u, 1u, solid[cell_index(cell)].w > 0.5);
+        mg_flags[i] = select(MG_FLUID, MG_SOLID, solid[cell_index(cell)].w > 0.5);
         return;
     }
     let fine = level - 1u;
     let o = vec3<i32>(cell) * 2;
-    let all_solid = mg_child_solid(fine, o) && mg_child_solid(fine, o + X)
-        && mg_child_solid(fine, o + Y) && mg_child_solid(fine, o + X + Y)
-        && mg_child_solid(fine, o + Z) && mg_child_solid(fine, o + X + Z)
-        && mg_child_solid(fine, o + Y + Z) && mg_child_solid(fine, o + X + Y + Z);
-    mg_flags[i] = select(0u, 1u, all_solid);
+    let states = mg_child_state(fine, o) | mg_child_state(fine, o + X) | mg_child_state(fine, o + Y)
+        | mg_child_state(fine, o + X + Y) | mg_child_state(fine, o + Z) | mg_child_state(fine, o + X + Z)
+        | mg_child_state(fine, o + Y + Z) | mg_child_state(fine, o + X + Y + Z);
+    var flag = MG_SOLID;
+    if ((states & 1u) != 0u) {
+        flag = MG_FLUID;
+    } else if ((states & 4u) != 0u) {
+        flag = MG_AIR;
+    }
+    mg_flags[i] = flag;
 }
 
-fn mg_child_solid(level: u32, c: vec3<i32>) -> bool {
-    return mg_inside(mg_level_res(level), c) && mg_solid_at(lv_slot(level, c));
+// A child's state as a bit: 1 fluid (or outside the level), 2 solid, 4 air.
+fn mg_child_state(level: u32, c: vec3<i32>) -> u32 {
+    if (!mg_inside(mg_level_res(level), c)) {
+        return 1u;
+    }
+    return 1u << mg_flag(lv_slot(level, c));
 }
 // ---- PCG on the fine grid ----
 
@@ -254,7 +281,7 @@ fn pcg_total(local: u32) -> vec4<f32> {
 }
 
 fn pcg_fluid(cell: vec3<u32>) -> bool {
-    return in_grid(cell) && !mg_solid_at(lv_slot(0u, vec3<i32>(cell)));
+    return in_grid(cell) && !mg_no_unknown(lv_slot(0u, vec3<i32>(cell)));
 }
 
 fn pressure_at(neighbour: i32) -> f32 {
@@ -304,7 +331,8 @@ fn pcg_setup(
 fn pcg_setup_finalize(@builtin(local_invocation_index) local: u32) {
     let total = pcg_total(local);
     if (local == 0u) {
-        let closed = grid_fully_closed() && total.z > 0.0;
+        // A free surface is open air: never closed.
+        let closed = grid_fully_closed() && !free_surface() && total.z > 0.0;
         let mean = select(0.0, total.x / max(total.z, 1.0), closed);
         let rr0 = max(total.y - total.z * mean * mean, 0.0);
         pcg_reduction[1] = vec4<f32>(rr0, mean, 0.0, 0.0);
@@ -312,8 +340,9 @@ fn pcg_setup_finalize(@builtin(local_invocation_index) local: u32) {
         if (closed) {
             residual = 1.0;
         }
-        // r·z: any non-zero — the first iteration's direction is z plus a multiple of the zero p.
-        pcg_reduction[0] = vec4<f32>(residual, 1.0, 0.0, 0.0);
+        // No previous r·z: β = 0, so the first iteration's direction is z itself, whatever an earlier
+        // solve in the tick left in p (a liquid solves every substep, fluid F8).
+        pcg_reduction[0] = vec4<f32>(residual, 0.0, 0.0, 0.0);
     }
 }
 
@@ -360,7 +389,7 @@ fn pcg_smooth_dot(
         if (((cell.x + cell.y + cell.z) & 1u) == 0u) {
             z = 0.0;
             let c = vec3<i32>(cell);
-            if (!mg_solid_at(lv_slot(0u, c))) {
+            if (!mg_no_unknown(lv_slot(0u, c))) {
                 let s = mg_stencil(0u, c);
                 let diagonal = mg_diagonal(s, 0u);
                 z = select(0.0, (mg_rhs[i] + mg_solution_sum(s)) / diagonal, diagonal > 0.0);

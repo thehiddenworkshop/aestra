@@ -301,7 +301,11 @@ fn the_solver_builds_on_every_available_backend() {
         Value::U32(64),
     );
     set_input(&mut everything, MODULE_GRID, "flow_map", Value::Bool(true));
-    let blocks: Vec<_> = [everything, sparse_everything]
+    // And a liquid (fluid F8) with a source and a collider.
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    with_module(&registry, &mut liquid, aestra_fluid::MODULE_LIQUID_SOURCE);
+    with_module(&registry, &mut liquid, aestra_fluid::MODULE_SPHERE_COLLIDER);
+    let blocks: Vec<_> = [everything, sparse_everything, liquid]
         .iter()
         .map(|effect| {
             EffectCompiler::with_extensions(registry.clone())
@@ -1031,7 +1035,7 @@ fn with_module(
         .modules
         .instantiate(&aestra_core::ModuleTypeId::new(type_id))
         .unwrap();
-    module.stage = aestra_core::StageKind::Simulation(aestra_fluid::SMOKE_STAGE.into());
+    module.stage = aestra_core::StageKind::Simulation(effect.simulation_stages[0].name.clone());
     let id = module.id;
     effect.simulation_stages[0].modules.push(module);
     id
@@ -2380,6 +2384,210 @@ fn a_sparse_field_is_drawn_from_its_brick_atlas_as_the_dense_field_is() {
         assert!(
             (a - b).abs() <= 1e-2 * peak,
             "probe {index}: dense {a}, bricks {b}"
+        );
+    }
+}
+
+// ---- Liquids (fluid F8) ----
+
+/// A liquid particle's position and velocity.
+type LiquidParticle = ([f32; 3], [f32; 3]);
+
+/// The liquid's live particles and its count.
+fn liquid_particles(fluid: &Fluid, gpu: &Gpu) -> (Vec<LiquidParticle>, u32) {
+    let words = fluid.floats(gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES);
+    let count = fluid.words(gpu, aestra_fluid::RESOURCE_LIQUID_HEADER)[0];
+    let particles = words
+        .chunks(20)
+        .take(count as usize)
+        .filter(|p| p[3] > 0.5)
+        .map(|p| ([p[0], p[1], p[2]], [p[4], p[5], p[6]]))
+        .collect();
+    (particles, count)
+}
+
+fn liquid_input(effect: &mut EffectAsset, type_id: &str, name: &str, value: Value) {
+    set_input(effect, type_id, name, value);
+}
+
+#[test]
+fn a_liquid_block_collapses_and_spreads_like_a_dam_break() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let liquid = aestra_fluid::liquid_effect(&registry);
+    let fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.run(&gpu, 0..1);
+    let (start, count) = liquid_particles(&fluid, &gpu);
+    assert!(count > 30_000, "the block seeds 8 a cell ({count})");
+    let front =
+        |particles: &[LiquidParticle]| particles.iter().map(|(x, _)| x[0]).fold(f32::MIN, f32::max);
+    let height = |particles: &[LiquidParticle]| {
+        particles.iter().map(|(x, _)| x[1]).sum::<f32>() / particles.len() as f32
+    };
+    fluid.run(&gpu, 1..90);
+    let (end, still) = liquid_particles(&fluid, &gpu);
+    assert_eq!(still, count, "particles are neither lost nor added");
+    eprintln!(
+        "dam break: front {} → {}, mean height {} → {}",
+        front(&start),
+        front(&end),
+        height(&start),
+        height(&end)
+    );
+    // The box is 96 units wide from x = -48, the floor at y = 0.
+    assert!(end.iter().all(|(x, v)| {
+        x.iter().chain(v).all(|value| value.is_finite())
+            && x[0] > -48.0
+            && x[0] < 48.0
+            && x[1] > 0.0
+            && x[1] < 96.0
+    }));
+    assert!(
+        front(&end) > front(&start) + 30.0,
+        "the column collapses across the floor"
+    );
+    assert!(height(&end) < height(&start), "and settles lower");
+
+    // The same run, the same bits.
+    let again = Fluid::new(&gpu, &registry, &liquid);
+    again.run(&gpu, 0..90);
+    assert_eq!(
+        again.words(&gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES),
+        fluid.words(&gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES)
+    );
+}
+
+#[test]
+fn a_pool_at_rest_stays_at_rest() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    // Water 30 units deep over the whole floor.
+    liquid_input(
+        &mut liquid,
+        aestra_fluid::MODULE_LIQUID_BLOCK,
+        "center",
+        Value::Vec3([0.0, 15.0, 0.0]),
+    );
+    liquid_input(
+        &mut liquid,
+        aestra_fluid::MODULE_LIQUID_BLOCK,
+        "size",
+        Value::Vec3([96.0, 30.0, 96.0]),
+    );
+    let fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.run(&gpu, 0..120);
+    let (particles, _) = liquid_particles(&fluid, &gpu);
+    let speed = particles
+        .iter()
+        .map(|(_, v)| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+        .sum::<f32>()
+        / particles.len() as f32;
+    let top = particles.iter().map(|(x, _)| x[1]).fold(f32::MIN, f32::max);
+    eprintln!("pool: mean speed {speed}, top {top}");
+    // Free fall for 2 s would reach 800 units/s: the pressure holds the water up.
+    assert!(speed < 10.0, "the water stays still ({speed} units/s)");
+    assert!((top - 30.0).abs() < 4.0, "its surface stays level ({top})");
+}
+
+#[test]
+fn a_liquid_source_emits_its_rate_exactly() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    liquid.simulation_stages[0]
+        .modules
+        .retain(|module| module.module_type.0 != aestra_fluid::MODULE_LIQUID_BLOCK);
+    with_module(&registry, &mut liquid, aestra_fluid::MODULE_LIQUID_SOURCE);
+    liquid_input(
+        &mut liquid,
+        aestra_fluid::MODULE_LIQUID_SOURCE,
+        "rate",
+        Value::Scalar(600.0),
+    );
+    let fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.run(&gpu, 0..60);
+    let (particles, count) = liquid_particles(&fluid, &gpu);
+    assert_eq!(count, 600, "a second at 600 a second");
+    assert_eq!(particles.len(), 600);
+    // Poured downward from y = 70, it falls.
+    let mean = particles.iter().map(|(x, _)| x[1]).sum::<f32>() / 600.0;
+    assert!(mean < 70.0, "{mean}");
+}
+
+#[test]
+fn a_liquid_checkpoint_replays_bit_for_bit() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    with_module(&registry, &mut liquid, aestra_fluid::MODULE_LIQUID_SOURCE);
+    let fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.run(&gpu, 0..30);
+    let checkpoint = fluid.stage.checkpoint(&gpu.device, &gpu.queue).unwrap();
+    fluid.run(&gpu, 30..60);
+    let state = |fluid: &Fluid| {
+        (
+            fluid.words(&gpu, aestra_fluid::RESOURCE_LIQUID_PARTICLES),
+            fluid.words(&gpu, aestra_fluid::RESOURCE_LIQUID_HEADER),
+        )
+    };
+    let uninterrupted = state(&fluid);
+    fluid.stage.restore(&gpu.queue, &checkpoint).unwrap();
+    fluid.run(&gpu, 30..60);
+    assert_eq!(state(&fluid), uninterrupted);
+}
+
+/// A liquid's cost per tick: the dam break at 32³ (about 33 000 particles) and 64³ (about 270 000),
+/// two substeps each. Not a pass/fail test — run with `--ignored --nocapture` on the reference GPU.
+#[test]
+#[ignore]
+fn bench_liquid() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    for (resolution, cell) in [(32u32, 3.0f32), (64, 1.5)] {
+        let mut liquid = aestra_fluid::liquid_effect(&registry);
+        liquid_input(
+            &mut liquid,
+            aestra_fluid::MODULE_LIQUID_GRID,
+            "resolution",
+            Value::U32(resolution),
+        );
+        liquid_input(
+            &mut liquid,
+            aestra_fluid::MODULE_LIQUID_GRID,
+            "cell_size",
+            Value::Scalar(cell),
+        );
+        liquid_input(
+            &mut liquid,
+            aestra_fluid::MODULE_LIQUID_GRID,
+            "particle_budget",
+            Value::U32(400_000),
+        );
+        let fluid = Fluid::new(&gpu, &registry, &liquid);
+        let wait = || {
+            gpu.device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(std::time::Duration::from_secs(120)),
+                })
+                .unwrap();
+        };
+        fluid.run(&gpu, 0..30);
+        wait();
+        let ticks = 60;
+        let start = std::time::Instant::now();
+        fluid.run(&gpu, 30..30 + ticks);
+        wait();
+        let per_tick = start.elapsed().as_secs_f64() * 1000.0 / f64::from(ticks);
+        let (_, count) = liquid_particles(&fluid, &gpu);
+        let iterations = fluid
+            .stage
+            .convergent_iterations(&gpu.device, &gpu.queue)
+            .unwrap();
+        eprintln!(
+            "BENCH liquid {resolution}³, {count} particles: {per_tick:.2} ms/tick, pressure \
+             iterations {iterations:?}"
         );
     }
 }

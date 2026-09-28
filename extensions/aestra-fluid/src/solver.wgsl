@@ -89,6 +89,10 @@ fn turbulence_evolution() -> f32 { return bitcast<f32>(constants[16]); }
 fn turbulence_masked() -> bool { return constants[17] != 0u; }
 // Leapfrog flow maps: the steps in a reinitialization cycle (0 without flow maps).
 fn lfm_cycle() -> u32 { return constants[18]; }
+// A liquid (fluid F8, `liquid.wgsl`): the word its parameter block starts at; 0 for a gas. A liquid
+// has a free surface: the pressure is zero in the air around it.
+fn liquid_base() -> u32 { return constants[21]; }
+fn free_surface() -> bool { return liquid_base() != 0u; }
 fn frame_dt() -> f32 { return bitcast<f32>(frame[1]); }
 fn frame_time() -> f32 { return bitcast<f32>(frame[2]); }
 fn frame_seed() -> u32 { return frame[3]; }

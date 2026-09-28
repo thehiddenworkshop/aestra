@@ -134,7 +134,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   dense indexing module (`grid_sparse.wgsl` / `grid_dense.wgsl`); an inactive brick is still, open
   air (p = 0). Stored whole (a negative threshold), a sparse grid computes the dense grid's bits under
   Jacobi sweeps. Its fields declare a generic `BrickLayout`, so they are drawn, followed and sliced
-  like dense ones. It adds nothing fluid-specific to core.
+  like dense ones. Since fluid F8 the extension also has a *Liquid Solver* stage: APIC particles
+  owned by the stage (a persistent resource, not an emitter's), transferred to the MAC grid with
+  fixed-point integer atomics (order-independent sums, so reruns reproduce the same bits), made
+  incompressible by the same multigrid solve with air cells at p = 0, and moved back with the grid's
+  velocity and its gradient; *Liquid Block*, *Liquid Source* and the colliders feed it. It adds
+  nothing fluid-specific to core.
 
 ### `aestra-compiler`
 
