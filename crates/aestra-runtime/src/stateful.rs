@@ -230,6 +230,12 @@ impl StatefulSimulation {
         self.homing_input = target;
     }
 
+    /// Moves where the following ticks' spawns land (an attached emitter, host bindings HB7b).
+    /// Particles already in flight keep their motion, so a moving placement leaves a wake.
+    pub fn set_placement(&mut self, placement: SpawnPlacement) {
+        self.config.placement = placement;
+    }
+
     /// The absolute fixed tick this simulation has reached.
     pub fn tick(&self) -> u64 {
         self.tick

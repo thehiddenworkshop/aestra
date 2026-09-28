@@ -238,6 +238,9 @@ pub struct V4Emitter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_color: Option<[f32; 4]>,
     pub transform: EmitterTransform,
+    /// The bound object the emitter follows (host bindings HB7b, additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<crate::EmitterAttachment>,
     pub start_time: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_reference: Option<MarkerTimeReference>,
@@ -369,6 +372,7 @@ fn emitter_to_v4(emitter: &Emitter) -> Result<V4Emitter, V4ConversionError> {
         enabled: emitter.enabled,
         display_color: emitter.display_color,
         transform: emitter.transform,
+        attachment: emitter.attachment,
         start_time: emitter.start_time,
         start_reference: emitter.start_reference,
         duration: emitter.duration,
@@ -419,6 +423,7 @@ fn emitter_from_v4(emitter: V4Emitter) -> Emitter {
         enabled: emitter.enabled,
         display_color: emitter.display_color,
         transform: emitter.transform,
+        attachment: emitter.attachment,
         start_time: emitter.start_time,
         start_reference: emitter.start_reference,
         duration: emitter.duration,
@@ -524,6 +529,7 @@ mod tests {
             enabled: true,
             display_color: None,
             transform: EmitterTransform::default(),
+            attachment: None,
             start_time: 0.0,
             start_reference: None,
             duration: 3.0,

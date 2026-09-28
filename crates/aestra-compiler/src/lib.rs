@@ -169,6 +169,12 @@ impl EffectCompiler {
                 promoted_by = Some(module.module_type.clone());
             }
         }
+        // An attached emitter (host bindings HB7b) is at least stateful: its spawns must stay where
+        // the object was, which a time-only evaluation cannot remember. No module promoted it.
+        if emitter.attachment.is_some() && requirements.derived_class() == SimulationClass::Analytic
+        {
+            return (SimulationClass::Stateful, None);
+        }
         (requirements.derived_class(), promoted_by)
     }
 
@@ -1015,6 +1021,25 @@ impl EffectCompiler {
                     }
                     _ => None,
                 });
+            // Attachment (host bindings HB7b): the bound object's position, and its rotation when
+            // inherited. Validation has checked the binding declares both.
+            let attachment = emitter.attachment.and_then(|attachment| {
+                let field = |name: &str| {
+                    host_field_ref(
+                        asset,
+                        &bindings,
+                        &aestra_core::HostFieldRef::new(attachment.binding, name),
+                    )
+                };
+                Some(aestra_runtime::CompiledAttachment {
+                    position: field(aestra_core::AESTRA_FIELD_POSITION)?,
+                    rotation: if attachment.inherit.rotation() {
+                        Some(field(aestra_core::AESTRA_FIELD_ROTATION)?)
+                    } else {
+                        None
+                    },
+                })
+            });
             let colliders: Vec<Collider> = emitter
                 .modules
                 .iter()
@@ -1057,6 +1082,7 @@ impl EffectCompiler {
                     field_follow: field_follow.clone(),
                     domain_spawn: domain_spawn.clone(),
                     homing: homing.clone(),
+                    attachment: attachment.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
                         &execution, emitter.id,
                     ),
@@ -1741,6 +1767,47 @@ impl EffectCompiler {
         }
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{emitter_index}]");
+            // An attachment (host bindings HB7b) names a declared binding supplying a position, and
+            // a rotation when the emitter turns with its object.
+            if let Some(attachment) = &emitter.attachment {
+                let path = format!("{emitter_path}.attachment");
+                match asset
+                    .bindings
+                    .iter()
+                    .find(|binding| binding.id == attachment.binding)
+                {
+                    None => push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            path,
+                            format!("binding {} is not declared", attachment.binding),
+                        ),
+                    ),
+                    Some(binding) => {
+                        let mut needed = vec![aestra_core::AESTRA_FIELD_POSITION];
+                        if attachment.inherit.rotation() {
+                            needed.push(aestra_core::AESTRA_FIELD_ROTATION);
+                        }
+                        for field in needed {
+                            if !binding.fields().any(|declared| declared.as_str() == field) {
+                                push_unique(
+                                    report,
+                                    Diagnostic::error(
+                                        DiagnosticCode::InvalidReference,
+                                        path.clone(),
+                                        format!(
+                                            "emitter '{}' is attached to binding '{}', which does \
+                                             not declare '{field}'",
+                                            emitter.name, binding.name
+                                        ),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 // The host stage's provided capabilities come from its registered stage type
                 // (extensible-stages M10), so a plugin stage hosts exactly what it declares.

@@ -2568,3 +2568,94 @@ fn a_homing_target_bound_to_a_host_object_resolves_into_effect_space_and_can_be_
     assert_eq!(tracker.resolve(KeepDirection, None), None);
     assert_eq!(tracker.resolve(Kill, None), None);
 }
+
+#[test]
+fn an_attached_emitter_follows_its_bound_object_into_effect_space() {
+    use aestra_core::{
+        AESTRA_FIELD_ROTATION, AttachmentInherit, BindingFieldId, BindingUpdateMode, EffectBinding,
+        EmitterAttachment,
+    };
+    use aestra_runtime::{BindingSlot, EffectInstance, SpatialBindingSnapshot};
+    let mut effect = EffectAsset::new("Attached", 4.0);
+    let mut blade = EffectBinding::spatial("Blade", BindingUpdateMode::Live);
+    let mut emitter = aestra_core::Emitter::basic_sprite("Wake", 4.0);
+    emitter.transform.translation = [1.0, 0.0, 0.0];
+    emitter.attachment = Some(EmitterAttachment {
+        binding: blade.id,
+        inherit: AttachmentInherit::PositionAndRotation,
+    });
+    effect.emitters.push(emitter);
+    effect.bindings.push(blade.clone());
+
+    // Inheriting rotation needs the binding to declare it.
+    let report = EffectCompiler::default().compile(&effect).unwrap_err();
+    assert!(
+        report.to_string().contains(AESTRA_FIELD_ROTATION),
+        "the missing rotation field is named: {report}"
+    );
+    blade
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_ROTATION));
+    effect.bindings[0] = blade.clone();
+    // An undeclared binding is rejected.
+    let mut stray = effect.clone();
+    stray.emitters[0].attachment.as_mut().unwrap().binding = aestra_core::BindingId::new();
+    let report = EffectCompiler::default().compile(&stray).unwrap_err();
+    assert!(
+        report.to_string().contains("is not declared"),
+        "the stray binding is reported: {report}"
+    );
+
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let emitter = &compiled.emitters[0];
+    assert_eq!(
+        emitter.simulation_class,
+        aestra_runtime::SimulationClass::Stateful,
+        "an attachment promotes the emitter: its spawns must remember where the object was"
+    );
+    let attachment = emitter.attachment.clone().expect("the attachment compiled");
+    assert!(attachment.rotation.is_some());
+    let authored = emitter.transform;
+
+    // The effect placed 10 along +x and scaled 2: world (14, 0, 0) is effect (2, 0, 0).
+    let world_to_effect = [
+        [0.5, 0.0, 0.0, -5.0],
+        [0.0, 0.5, 0.0, 0.0],
+        [0.0, 0.0, 0.5, 0.0],
+    ];
+    let mut instance = EffectInstance::new(std::sync::Arc::new(compiled));
+    assert_eq!(
+        attachment.resolve(&instance, world_to_effect, authored),
+        None,
+        "unbound: the caller keeps the last placement"
+    );
+    let layout = instance.effect().bindings[0].layout.clone();
+    // The blade turned a quarter about +y: the authored +x offset becomes -z.
+    let half = std::f32::consts::FRAC_1_SQRT_2;
+    let mut snapshot = SpatialBindingSnapshot::at([14.0, 0.0, 0.0]);
+    snapshot.rotation = [0.0, half, 0.0, half];
+    instance
+        .set_binding(BindingSlot(0), Some(snapshot.to_snapshot(&layout)))
+        .unwrap();
+    let placed = attachment
+        .resolve(&instance, world_to_effect, authored)
+        .unwrap();
+    let near = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-5);
+    assert!(near(placed.translation, [2.0, 0.0, -1.0]), "{placed:?}");
+    let rotation = placed.rotation;
+    assert!(
+        near([rotation[0], rotation[1], rotation[2]], [0.0, half, 0.0])
+            && (rotation[3] - half).abs() < 1e-5,
+        "{placed:?}"
+    );
+    assert_eq!(placed.scale, authored.scale);
+
+    // Position only: the offset stays unrotated and the authored rotation is kept.
+    let mut position_only = attachment.clone();
+    position_only.rotation = None;
+    let placed = position_only
+        .resolve(&instance, world_to_effect, authored)
+        .unwrap();
+    assert!(near(placed.translation, [3.0, 0.0, 0.0]), "{placed:?}");
+    assert_eq!(placed.rotation, authored.rotation);
+}

@@ -196,6 +196,9 @@ struct StatefulDispatch {
     homing: Option<aestra_runtime::CompiledHoming>,
     homing_target: Option<aestra_runtime::HomingTarget>,
     homing_tracker: aestra_runtime::HomingTracker,
+    /// The host binding the emitter follows (host bindings HB7b): `placement` is then resolved from
+    /// it each frame, and kept while the binding supplies no pose.
+    attachment: Option<aestra_runtime::CompiledAttachment>,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -953,6 +956,7 @@ pub(crate) fn prepare_gpu_effects(
                                 homing: compiled.homing.clone(),
                                 homing_target: None,
                                 homing_tracker: aestra_runtime::HomingTracker::default(),
+                                attachment: compiled.attachment.clone(),
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1367,7 +1371,11 @@ fn update_gpu_inputs(
     for (mut player, mut gpu, runtime, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // A transform-only edit (a gizmo drag) swaps the effect in place: re-place future spawns.
+        // Attached emitters are placed from their binding instead (see `sync_gpu_render_transforms`).
         for index in 0..gpu.stateful_dispatch.len() {
+            if gpu.stateful_dispatch[index].attachment.is_some() {
+                continue;
+            }
             let emitter = gpu.stateful_dispatch[index].emitter_index as usize;
             if let Some(emitter) = player.effect().emitters.get(emitter) {
                 let placement = spawn_placement(emitter.transform);
@@ -1636,22 +1644,31 @@ fn sync_gpu_render_transforms(
             );
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
-        // Homing targets (host bindings HB7): this frame's, from the bindings, into effect space.
+        // Homing targets (host bindings HB7) and attached emitters' placements (HB7b): this frame's,
+        // from the bindings, into effect space. An attachment without a pose keeps its last placement.
         if gpu
             .stateful_dispatch
             .iter()
-            .any(|dispatch| dispatch.homing.is_some())
+            .any(|dispatch| dispatch.homing.is_some() || dispatch.attachment.is_some())
         {
             let effect_from_world = world.inverse();
             let rows: [[f32; 4]; 3] = std::array::from_fn(|row| {
                 let r = effect_from_world.row(row);
                 [r.x, r.y, r.z, r.w]
             });
+            let emitters = &player.instance.effect().emitters;
             for dispatch in &mut gpu.stateful_dispatch {
                 if let Some(homing) = &dispatch.homing {
                     let input = homing.resolve(&player.instance, rows);
                     dispatch.homing_target =
                         dispatch.homing_tracker.resolve(homing.config.lost, input);
+                }
+                if let Some(attachment) = &dispatch.attachment
+                    && let Some(emitter) = emitters.get(dispatch.emitter_index as usize)
+                    && let Some(transform) =
+                        attachment.resolve(&player.instance, rows, emitter.transform)
+                {
+                    dispatch.placement = spawn_placement(transform);
                 }
             }
         }
@@ -3548,6 +3565,7 @@ mod tests {
             homing: None,
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
+            attachment: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4390,6 +4408,7 @@ mod coupled_tests {
             homing: None,
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
+            attachment: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };

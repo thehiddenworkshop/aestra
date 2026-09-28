@@ -2482,6 +2482,27 @@ fn advance_production_homing(
     seed: u64,
     targets: &[Option<aestra_runtime::HomingTarget>],
 ) -> Result<Vec<(u64, [f32; 3])>, String> {
+    let homing = config.homing.expect("a homing config");
+    let mut tracker = aestra_runtime::HomingTracker::default();
+    let ticks: Vec<Vec<u32>> = targets
+        .iter()
+        .map(|target| {
+            let resolved = tracker.resolve(homing.lost, *target);
+            let mut words = stateful_params(config, seed, 0, 0);
+            aestra_gpu::pack_stateful_homing(Some(&homing), resolved.as_ref(), &mut words);
+            words
+        })
+        .collect();
+    advance_production_ticks(harness, config, &ticks)
+}
+
+/// Runs the *production* unified module's `death_integrate` + `spawn` once per entry of `ticks` —
+/// each that tick's packed params — and returns the live `(ordinal, position)` set.
+fn advance_production_ticks(
+    harness: &Harness,
+    config: &StatefulConfig,
+    ticks: &[Vec<u32>],
+) -> Result<Vec<(u64, [f32; 3])>, String> {
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("homing"),
@@ -2536,14 +2557,9 @@ fn advance_production_homing(
         scratch(8),
         scratch(4),
     );
-    let homing = config.homing.expect("a homing config");
-    let mut tracker = aestra_runtime::HomingTracker::default();
     let mut encoder = device.create_command_encoder(&Default::default());
-    for target in targets {
-        let resolved = tracker.resolve(homing.lost, *target);
-        let mut words = stateful_params(config, seed, 0, 0);
-        aestra_gpu::pack_stateful_homing(Some(&homing), resolved.as_ref(), &mut words);
-        let params = buffer("params", encode(&words)?, wgpu::BufferUsages::empty());
+    for words in ticks {
+        let params = buffer("params", encode(words)?, wgpu::BufferUsages::empty());
         let entries: Vec<wgpu::BindGroupEntry> = [
             &state,
             &free_list,
@@ -2742,5 +2758,75 @@ fn gpu_homing_steers_like_the_cpu_reference_toward_a_moving_target() {
         cpu.len() < 240 / 2,
         "most arrived and retired: {} of 240 spawned are left",
         cpu.len()
+    );
+}
+
+// ---- Attachment (host bindings HB7b) ----
+
+#[test]
+fn gpu_spawns_follow_a_moving_attachment_like_the_cpu_reference_and_leave_a_wake() {
+    // An emitter attached to a blade sweeping along +x and turning: each tick's spawns land where the
+    // blade is that tick (the host resolves the placement per frame), the ones in flight keep their
+    // motion — the same by ordinal on both sides, and spread out behind the blade.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let base = StatefulConfig {
+        gravity: [0.0, 0.0, 0.0],
+        spawn_per_tick: 3,
+        speed: (0.5, 1.0),
+        lifetime: (0.8, 1.0),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.4,
+        drag: 0.5,
+        shape: SpawnShape::Sphere { radius: 0.1 },
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 512,
+        homing: None,
+    };
+    let seed = 0x00AB_007B_0000_0001_u64;
+    // The host's trig: the blade tip moves 0.5 per tick along +x and turns about +y.
+    let placements: Vec<SpawnPlacement> = (0..90)
+        .map(|tick| {
+            let half = tick as f32 * 0.01;
+            SpawnPlacement {
+                translation: [-20.0 + 0.5 * tick as f32, 2.0, 0.0],
+                rotation: [0.0, half.sin(), 0.0, half.cos()],
+                scale: [1.0; 3],
+            }
+        })
+        .collect();
+    let ticks: Vec<Vec<u32>> = placements
+        .iter()
+        .map(|placement| {
+            let config = StatefulConfig {
+                placement: *placement,
+                ..base
+            };
+            stateful_params(&config, seed, 0, 0)
+        })
+        .collect();
+    let gpu = advance_production_ticks(&harness, &base, &ticks).unwrap();
+    let mut simulation = StatefulSimulation::new(base, seed);
+    for placement in &placements {
+        simulation.set_placement(*placement);
+        simulation.advance_tick();
+    }
+    let cpu = simulation.alive_particles();
+    assert!(!cpu.is_empty());
+    assert_same_particles(&cpu, &gpu);
+    // A wake: the live particles stretch back along the blade's path (~0.9 s at 30 units/s), where a
+    // still emitter's would stay within a couple of units.
+    let (min_x, max_x) = cpu.iter().fold((f32::MAX, f32::MIN), |(lo, hi), (_, p)| {
+        (lo.min(p[0]), hi.max(p[0]))
+    });
+    assert!(max_x - min_x > 20.0, "the wake spans {min_x}..{max_x}");
+    let tip = placements.last().unwrap().translation[0];
+    assert!(
+        (max_x - tip).abs() < 2.0,
+        "the newest spawns are at the tip ({max_x} vs {tip})"
     );
 }

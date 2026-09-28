@@ -385,6 +385,9 @@ struct EmitterV1 {
     /// Homing steering (host bindings HB7, v4 additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     homing: Option<HomingV4>,
+    /// The host binding this emitter follows (host bindings HB7b, v4 additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attachment: Option<AttachmentV4>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
     /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
@@ -520,6 +523,59 @@ impl From<&aestra_runtime::CompiledDomainSpawn> for DomainSpawnV4 {
             capacity: spawn.emission.capacity,
             inherit: spawn.inherit,
         }
+    }
+}
+
+/// A compiled emitter attachment (host bindings HB7b): the bound object's position field, and its
+/// rotation field when the emitter inherits it.
+#[derive(Debug, Serialize, Deserialize)]
+struct AttachmentV4 {
+    position: v4::HostFieldRefV4,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<v4::HostFieldRefV4>,
+}
+
+impl AttachmentV4 {
+    fn encode(
+        attachment: &aestra_runtime::CompiledAttachment,
+        path: &str,
+    ) -> Result<Self, ArtifactError> {
+        Ok(Self {
+            position: v4::HostFieldRefV4::encode(
+                &attachment.position,
+                &format!("{path}.position"),
+            )?,
+            rotation: attachment
+                .rotation
+                .as_ref()
+                .map(|rotation| v4::HostFieldRefV4::encode(rotation, &format!("{path}.rotation")))
+                .transpose()?,
+        })
+    }
+
+    fn decode(
+        self,
+        path: &str,
+        bindings: &[aestra_runtime::CompiledBinding],
+    ) -> Result<aestra_runtime::CompiledAttachment, ArtifactError> {
+        let position = self
+            .position
+            .decode(&format!("{path}.position"), bindings)?;
+        let rotation = self
+            .rotation
+            .map(|rotation| rotation.decode(&format!("{path}.rotation"), bindings))
+            .transpose()?;
+        if position.field.as_str() != aestra_core::AESTRA_FIELD_POSITION
+            || rotation.as_ref().is_some_and(|rotation| {
+                rotation.field.as_str() != aestra_core::AESTRA_FIELD_ROTATION
+            })
+        {
+            return invalid(
+                path.to_string(),
+                "an attachment reads a binding's position and rotation fields",
+            );
+        }
+        Ok(aestra_runtime::CompiledAttachment { position, rotation })
     }
 }
 
@@ -1979,6 +2035,16 @@ impl EmitterV1 {
                 .as_ref()
                 .map(|homing| HomingV4::encode(homing, &format!("effect.emitters[{index}].homing")))
                 .transpose()?,
+            attachment: emitter
+                .attachment
+                .as_ref()
+                .map(|attachment| {
+                    AttachmentV4::encode(
+                        attachment,
+                        &format!("effect.emitters[{index}].attachment"),
+                    )
+                })
+                .transpose()?,
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -2042,6 +2108,12 @@ impl EmitterV1 {
             homing: self
                 .homing
                 .map(|homing| homing.decode(&format!("{path}.homing"), parameters.bindings))
+                .transpose()?,
+            attachment: self
+                .attachment
+                .map(|attachment| {
+                    attachment.decode(&format!("{path}.attachment"), parameters.bindings)
+                })
                 .transpose()?,
             stages,
             execution,

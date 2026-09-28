@@ -537,6 +537,16 @@ Rules:
 - Particle lifecycle `EventLink`s (`OnSpawn`, `OnDeath`, `OnCollision`) are preserved in assets but
   **not executed** by the current runtime. Timeline `ChoreographyEvent`s are the working event path.
 
+### Attached emitters
+
+An emitter can be *attached* to a binding (`Emitter::attachment`, HB7b): its transform then follows
+the bound object — position, and rotation when `PositionAndRotation` — composed with its authored
+transform as an offset, while the effect itself stays where the host placed it. Attached emitters are
+promoted to stateful: each spawn lands where the object is at that frame and keeps its own motion, so
+a swinging blade or a running character leaves a wake (`examples/sword_trail.rs`). While the binding
+supplies no pose the emitter holds its last one. Placement is resolved once per frame, and history is
+forward-only: a seek replays under the current pose (binding history is HB8).
+
 ### Gameplay authority
 
 Who owns a projectile decides how its effect is wired. There are two patterns, and a game should pick
@@ -544,8 +554,8 @@ one per projectile deliberately:
 
 1. **Game-authoritative projectile, Aestra visual follower (recommended for gameplay and
    networking).** The game simulates the projectile — movement, hit detection, replication — and the
-   effect only dresses it: it is placed on (later attached to, HB7b) the game's entity, and reads the
-   target through a binding if it needs one. Hits are the game's decisions; networked games replicate
+   effect only dresses it: it is placed on the game's entity, or its emitters are attached to it
+   (HB7b), and it reads the target through a binding if it needs one. Hits are the game's decisions; networked games replicate
    the game's projectile, the effect's seed and major events, never particle or fluid state.
 2. **Aestra-owned visual projectile (decorative or cinematic).** The effect's particles *are* the
    projectile: a Homing module steers them to a bound target (`aestra.update.homing`), retiring them

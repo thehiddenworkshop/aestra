@@ -771,6 +771,90 @@ impl CompiledHoming {
     }
 }
 
+/// An emitter attached to a host binding (host bindings HB7b): its transform follows the bound
+/// object — a hand, a blade tip — while the effect itself stays put. Attached emitters are stateful,
+/// so each spawn lands where the object is at that tick and the particles in flight keep their
+/// motion: a moving object leaves a wake.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledAttachment {
+    /// The binding field supplying the object's position (world space).
+    pub position: CompiledHostFieldRef,
+    /// The binding field supplying its rotation (a unit quaternion `xyzw`, world space), when the
+    /// emitter inherits it.
+    pub rotation: Option<CompiledHostFieldRef>,
+}
+
+impl CompiledAttachment {
+    /// The emitter's effect-space transform this frame: `authored`, relative to the bound pose taken
+    /// into effect space by `world_to_effect` (3×4 rows, as [`FrameConstants`]). The translation is the
+    /// bound position plus the authored offset (rotated by the bound rotation when inherited); the
+    /// rotation is the bound one composed with the authored one when inherited, else the authored one;
+    /// the scale is the authored one. `None` while the binding supplies no position — the caller keeps
+    /// the last transform, so an emitter whose object vanishes stays where it was last seen.
+    pub fn resolve(
+        &self,
+        instance: &EffectInstance,
+        world_to_effect: [[f32; 4]; 3],
+        authored: EmitterTransform,
+    ) -> Option<EmitterTransform> {
+        let read = |source: &CompiledHostFieldRef| {
+            let snapshot = instance.binding(source.binding)?;
+            let layout = &instance.effect().bindings[source.binding.0].layout;
+            snapshot.field(layout, &source.field).map(<[f32]>::to_vec)
+        };
+        let position = match read(&self.position)?.as_slice() {
+            [x, y, z] => glam::Vec3::new(*x, *y, *z),
+            _ => return None,
+        };
+        let rows = world_to_effect;
+        let linear = glam::Mat3::from_cols_array_2d(&[
+            [rows[0][0], rows[0][1], rows[0][2]],
+            [rows[1][0], rows[1][1], rows[1][2]],
+            [rows[2][0], rows[2][1], rows[2][2]],
+        ])
+        .transpose();
+        let offset = glam::Vec3::new(rows[0][3], rows[1][3], rows[2][3]);
+        let bound = linear * position + offset;
+        let authored_translation = glam::Vec3::from_array(authored.translation);
+        let authored_rotation = glam::Quat::from_array(authored.rotation);
+        let authored_rotation = if authored_rotation.length_squared() > 1e-12 {
+            authored_rotation.normalize()
+        } else {
+            glam::Quat::IDENTITY
+        };
+        let Some(source) = &self.rotation else {
+            return Some(EmitterTransform {
+                translation: (bound + authored_translation).to_array(),
+                ..authored
+            });
+        };
+        let world_rotation = match read(source).as_deref() {
+            Some([x, y, z, w]) => glam::Quat::from_xyzw(*x, *y, *z, *w),
+            _ => glam::Quat::IDENTITY,
+        };
+        // The effect's rotation, without its scale: each column of `linear` normalized.
+        let columns = [linear.x_axis, linear.y_axis, linear.z_axis];
+        let rotation = if columns.iter().all(|column| column.length_squared() > 1e-12) {
+            glam::Quat::from_mat3(&glam::Mat3::from_cols(
+                columns[0].normalize(),
+                columns[1].normalize(),
+                columns[2].normalize(),
+            ))
+        } else {
+            glam::Quat::IDENTITY
+        };
+        let bound_rotation = (rotation * world_rotation).normalize();
+        if !bound_rotation.is_finite() {
+            return None;
+        }
+        Some(EmitterTransform {
+            translation: (bound + bound_rotation * authored_translation).to_array(),
+            rotation: (bound_rotation * authored_rotation).to_array(),
+            scale: authored.scale,
+        })
+    }
+}
+
 /// A stateful emitter spawning its particles where one of the effect's domains asks for them (fluid
 /// F10, G8): each tick, after the domain's, one particle per record of the domain's emission list —
 /// at the record's position, with the record's velocity scaled by `inherit` plus the emitter's own
@@ -993,6 +1077,8 @@ pub struct CompiledEmitter {
     pub domain_spawn: Option<CompiledDomainSpawn>,
     /// Homing steering (host bindings HB7), when a Homing module is enabled. Run by the stateful path.
     pub homing: Option<CompiledHoming>,
+    /// The host binding this emitter follows (host bindings HB7b), when it is attached to one.
+    pub attachment: Option<CompiledAttachment>,
     /// The interpreter's execution input (typed, three lifecycle slots).
     pub execution: ExecutionPlan,
     /// The generic, stage-identified compiled stage plan (extensible-stages M5). Holds the same

@@ -1203,6 +1203,11 @@ pub struct Emitter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_color: Option<[f32; 4]>,
     pub transform: EmitterTransform,
+    /// The bound object the emitter follows (host bindings HB7b): its `transform` is then relative
+    /// to that object, not to the effect. The asset holds only the binding declaration; the host binds
+    /// the object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<EmitterAttachment>,
     pub start_time: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_reference: Option<MarkerTimeReference>,
@@ -1220,6 +1225,29 @@ pub struct Emitter {
     /// its own namespaced type, which is how the compiler finds its capabilities and lowering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub simulation_stage_types: BTreeMap<String, StageTypeId>,
+}
+
+/// An emitter following a bound object (host bindings HB7b): the effect binding supplying it, and
+/// what it takes from it.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmitterAttachment {
+    pub binding: crate::BindingId,
+    pub inherit: AttachmentInherit,
+}
+
+/// What an attached emitter takes from its object: always its position; optionally its rotation
+/// (the emitter turns with it — a blade tip). Scale stays the emitter's own.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum AttachmentInherit {
+    #[default]
+    Position,
+    PositionAndRotation,
+}
+
+impl AttachmentInherit {
+    pub fn rotation(self) -> bool {
+        self == Self::PositionAndRotation
+    }
 }
 
 impl Emitter {
@@ -1322,6 +1350,7 @@ impl Emitter {
             enabled: true,
             display_color: None,
             transform: EmitterTransform::default(),
+            attachment: None,
             start_time: 0.0,
             start_reference: None,
             duration,

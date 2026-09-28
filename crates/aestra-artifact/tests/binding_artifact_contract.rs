@@ -215,3 +215,21 @@ fn a_homing_module_bound_to_a_target_round_trips() {
     let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
     assert_eq!(decoded.emitters, compiled.emitters);
 }
+
+#[test]
+fn an_emitter_attached_to_a_binding_round_trips() {
+    use aestra_core::{AESTRA_FIELD_ROTATION, AttachmentInherit, EmitterAttachment};
+    let mut blade = EffectBinding::spatial("Blade", BindingUpdateMode::Live);
+    blade
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_ROTATION));
+    let mut effect = effect("Attached", vec![blade.clone()]);
+    effect.emitters[0].attachment = Some(EmitterAttachment {
+        binding: blade.id,
+        inherit: AttachmentInherit::PositionAndRotation,
+    });
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    assert!(compiled.emitters[0].attachment.is_some());
+    let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(decoded.emitters, compiled.emitters);
+}
