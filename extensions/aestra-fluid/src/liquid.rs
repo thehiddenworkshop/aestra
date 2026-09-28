@@ -19,7 +19,12 @@ pub const STAGE_LIQUID_SOLVER: &str = "org.example.aestra-fluid::stage/liquid_so
 pub const MODULE_LIQUID_GRID: &str = "org.example.aestra-fluid::module/liquid_grid";
 pub const MODULE_LIQUID_BLOCK: &str = "org.example.aestra-fluid::module/liquid_block";
 pub const MODULE_LIQUID_SOURCE: &str = "org.example.aestra-fluid::module/liquid_source";
+pub const MODULE_LIQUID_LOOK: &str = "org.example.aestra-fluid::module/liquid_look";
 pub const PROGRAM_LIQUID: &str = "org.example.aestra-fluid::program/liquid";
+/// The liquid look's march function (`liquid_look.wgsl`), composed after the volume interface.
+pub const PROGRAM_LIQUID_LOOK: &str = "org.example.aestra-fluid::program/liquid_look";
+pub const LIQUID_LOOK_ENTRY: &str = "liquid_look";
+pub const LIQUID_LOOK_WGSL: &str = include_str!("liquid_look.wgsl");
 /// The liquid's particles: per particle 5 `vec4`s — position (w: 1 when the slot holds one),
 /// velocity, and the rows of the APIC matrix C.
 pub const RESOURCE_LIQUID_PARTICLES: &str = "org.example.aestra-fluid::resource/liquid_particles";
@@ -251,6 +256,127 @@ pub(super) fn liquid_source_metadata(requires: CapabilityExpression) -> ModuleMe
     .with_cost(1)
 }
 
+pub(super) fn liquid_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    fluid_module(
+        MODULE_LIQUID_LOOK,
+        "Liquid Look",
+        "Draws the liquid's surface as water: tinted by what it absorbs, reflective at grazing \
+         angles, with a highlight from one light.",
+        requires,
+    )
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        InputMetadata::new(
+            "color",
+            "Color",
+            "The colour light takes on through the liquid.",
+            Value::Vec3([0.18, 0.46, 0.72]),
+            colour(),
+        ),
+        InputMetadata::new(
+            "absorption",
+            "Absorption",
+            "How much light the liquid absorbs per unit of thickness: low is clear, high is opaque.",
+            Value::Scalar(0.08),
+            number(0.01, 0.0, None),
+        ),
+        InputMetadata::new(
+            "surface_level",
+            "Surface Level",
+            "The liquid fraction the surface is drawn at: lower is fuller and blobbier, higher is \
+             tighter and shows fewer stray drops.",
+            Value::Scalar(0.5),
+            number(0.05, 0.01, Some(4.0)),
+        ),
+        InputMetadata::new(
+            "steps",
+            "March Steps",
+            "Samples along each view ray to find the surface: about one a cell.",
+            Value::U32(96),
+            number(1.0, 4.0, Some(MAX_VOLUME_STEPS as f32)),
+        ),
+        InputMetadata::new(
+            "ambient",
+            "Ambient",
+            "Light reaching the liquid from every direction.",
+            Value::Scalar(0.35),
+            number(0.01, 0.0, None),
+        ),
+        InputMetadata::new(
+            "light_direction",
+            "Light Direction",
+            "Direction towards the light, in the effect's space.",
+            Value::Vec3([-0.55, 0.75, -0.35]),
+            vector(),
+        ),
+        InputMetadata::new(
+            "light_color",
+            "Light Color",
+            "Colour of the light.",
+            Value::Vec3([1.0, 0.97, 0.92]),
+            colour(),
+        ),
+        InputMetadata::new(
+            "light_intensity",
+            "Light Intensity",
+            "Brightness of the light.",
+            Value::Scalar(1.2),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "shininess",
+            "Shininess",
+            "How tight the highlight is.",
+            Value::Scalar(96.0),
+            number(1.0, 1.0, None),
+        ),
+    ])
+    .with_cost(4)
+}
+
+/// Packs a Liquid Look's inputs into the constant words `liquid_look.wgsl` reads.
+pub(super) fn pack_liquid_look(payload: &PropertyBag) -> Result<Vec<u32>, String> {
+    let steps = count(payload, "steps")?;
+    if !(1..=MAX_VOLUME_STEPS).contains(&steps) {
+        return Err(format!(
+            "march steps must be between 1 and {MAX_VOLUME_STEPS}, got {steps}"
+        ));
+    }
+    let non_negative = |name: &str| {
+        let value = scalar(payload, name)?;
+        if value < 0.0 {
+            return Err(format!("'{name}' must not be negative"));
+        }
+        Ok(value)
+    };
+    let level = scalar(payload, "surface_level")?;
+    if level <= 0.0 {
+        return Err("the surface level must be positive".into());
+    }
+    let direction = vec3(payload, "light_direction")?;
+    let length = direction.iter().map(|axis| axis * axis).sum::<f32>().sqrt();
+    if length <= 1e-6 {
+        return Err("the light direction must not be zero".into());
+    }
+    let mut words = vec![0u32; 16];
+    words[0] = steps;
+    words[1] = level.to_bits();
+    words[2] = non_negative("absorption")?.to_bits();
+    words[3] = non_negative("ambient")?.to_bits();
+    for (axis, value) in vec3(payload, "color")?.into_iter().enumerate() {
+        words[4 + axis] = value.to_bits();
+    }
+    words[7] = non_negative("light_intensity")?.to_bits();
+    for axis in 0..3 {
+        words[8 + axis] = (direction[axis] / length).to_bits();
+    }
+    words[11] = scalar(payload, "shininess")?.max(1.0).to_bits();
+    for (axis, value) in vec3(payload, "light_color")?.into_iter().enumerate() {
+        words[12 + axis] = value.to_bits();
+    }
+    Ok(words)
+}
+
 /// Validates a liquid module's resolved inputs.
 pub(super) fn validate_liquid_module(
     module_type: &str,
@@ -311,6 +437,9 @@ pub(super) fn validate_liquid_module(
             if scalar(payload, "rate")? < 0.0 {
                 return Err("a liquid source's rate must not be negative".into());
             }
+        }
+        MODULE_LIQUID_LOOK => {
+            pack_liquid_look(payload)?;
         }
         other => return Err(format!("'{other}' is not a liquid module")),
     }
@@ -445,6 +574,24 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
 pub(super) struct LiquidSolverLowerer;
 
 impl StageLowerer for LiquidSolverLowerer {
+    /// A Liquid Look draws the liquid fraction's surface as water.
+    fn present(
+        &self,
+        input: &StageLoweringInput<'_>,
+        _block: &ExecutionBlock,
+    ) -> Result<Vec<StagePresentation>, String> {
+        modules_of(input.modules, MODULE_LIQUID_LOOK)
+            .map(|look| {
+                Ok(StagePresentation::Volume(VolumePresentation {
+                    program: ComputeProgramId::new(PROGRAM_LIQUID_LOOK),
+                    entry_point: LIQUID_LOOK_ENTRY.into(),
+                    fields: vec![ResourceTypeId::new(RESOURCE_DENSITY)],
+                    constants: pack_liquid_look(&look.parameters)?,
+                }))
+            })
+            .collect()
+    }
+
     fn lower(&self, input: &StageLoweringInput<'_>) -> Result<ExecutionBlock, String> {
         use ResourceAccess as Access;
         let PackedLiquid {

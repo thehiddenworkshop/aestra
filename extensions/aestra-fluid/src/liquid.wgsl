@@ -245,7 +245,7 @@ fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (wy > 0) { faces.y = f32(my) / f32(wy) + gravity.y; }
     if (wz > 0) { faces.z = f32(mz) / f32(wz) + gravity.z; }
     velocity[i] = vec4<f32>(faces, 0.0);
-    density[i] = f32(atomicLoad(&liquid_transfer[base + 7u])) / (LIQUID_FIXED * LIQUID_PER_CELL);
+    density[i] = liquid_smoothed_fraction(vec3<i32>(cell));
     var flag = MG_AIR;
     if (collider_count() > 0u && solid[i].w > 0.5) {
         flag = MG_SOLID;
@@ -256,6 +256,26 @@ fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (flag != MG_FLUID) {
         pressure[i] = 0.0;
     }
+}
+
+// The liquid fraction the look draws at `c`: the particles' splat, smoothed by a 3³ tent (weights 8,
+// 4, 2, 1 by distance, over 64) so the surface shows the liquid's shape rather than its particles.
+fn liquid_smoothed_fraction(c: vec3<i32>) -> f32 {
+    var sum = 0;
+    var weights = 0;
+    for (var dz = -1; dz <= 1; dz += 1) {
+        for (var dy = -1; dy <= 1; dy += 1) {
+            for (var dx = -1; dx <= 1; dx += 1) {
+                let n = c + vec3<i32>(dx, dy, dz);
+                if (inside(n)) {
+                    let weight = 8 >> u32(abs(dx) + abs(dy) + abs(dz));
+                    sum += weight * atomicLoad(&liquid_transfer[cell_index(vec3<u32>(n)) * LIQUID_CELL_WORDS + 7u]);
+                    weights += weight;
+                }
+            }
+        }
+    }
+    return f32(sum) / (f32(weights) * LIQUID_FIXED * LIQUID_PER_CELL);
 }
 
 // The projected face velocity of component `axis` at face `f` (0 past the grid: a closed wall).

@@ -1,0 +1,86 @@
+(
+    format_version: 4,
+    id: "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+    name: "Fluid Dam Break",
+    duration: 4.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "67f41a82-ce1c-ec9d-d5b3-bcad154fb990",
+            name: "Liquid",
+            stage_type: "org.example.aestra-fluid::stage/liquid_solver",
+            modules: [
+                (
+                    id: "9425aad8-6f17-48b9-ac33-009473cabe29",
+                    module_type: "org.example.aestra-fluid::module/liquid_grid",
+                    enabled: true,
+                    parameters: Custom({
+                        "cell_size": Scalar(2.0),
+                        "center": Vec3((0.0, 48.0, 0.0)),
+                        "gravity": Vec3((0.0, -400.0, 0.0)),
+                        "particle_budget": U32(131072),
+                        "pressure_iterations": U32(24),
+                        "pressure_tolerance": Scalar(0.001),
+                        "resolution": U32(48),
+                        "substeps": U32(2),
+                    }),
+                ),
+                (
+                    id: "7d2d10c5-e236-4bfd-a621-1a767b55f2ea",
+                    module_type: "org.example.aestra-fluid::module/liquid_block",
+                    enabled: true,
+                    parameters: Custom({
+                        "center": Vec3((-28.0, 20.0, 0.0)),
+                        "size": Vec3((36.0, 36.0, 88.0)),
+                        "velocity": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "707e06c3-42f7-4816-94df-e491e66a5b8f",
+                    module_type: "org.example.aestra-fluid::module/liquid_look",
+                    enabled: true,
+                    parameters: Custom({
+                        "absorption": Scalar(0.08),
+                        "ambient": Scalar(0.35),
+                        "color": Vec3((0.18, 0.46, 0.72)),
+                        "light_color": Vec3((1.0, 0.97, 0.92)),
+                        "light_direction": Vec3((-0.55, 0.75, -0.35)),
+                        "light_intensity": Scalar(1.2),
+                        "shininess": Scalar(96.0),
+                        "steps": U32(128),
+                        "surface_level": Scalar(0.5),
+                    }),
+                ),
+                (
+                    id: "cb218c52-66d1-439a-948a-4ee2b5dba1ed",
+                    module_type: "org.example.aestra-fluid::module/sphere_collider",
+                    enabled: true,
+                    parameters: Custom({
+                        "no_slip": Bool(false),
+                        "position": Vec3((12.0, 6.0, 0.0)),
+                        "radius": Scalar(14.0),
+                        "velocity": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+)

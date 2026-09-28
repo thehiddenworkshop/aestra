@@ -1255,3 +1255,43 @@ fn a_liquid_lowers_to_checked_particle_and_grid_passes() {
             .unwrap();
     assert_eq!(decoded.extension_stages, compiled.extension_stages);
 }
+
+#[test]
+fn a_liquid_look_presents_the_liquid_fraction_with_a_valid_march() {
+    let registry = fluid_registry();
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    let mut look = registry
+        .modules
+        .instantiate(&aestra_core::ModuleTypeId::new(
+            aestra_fluid::MODULE_LIQUID_LOOK,
+        ))
+        .unwrap();
+    look.stage = aestra_core::StageKind::Simulation(aestra_fluid::LIQUID_STAGE.into());
+    liquid.simulation_stages[0].modules.push(look);
+    let stage = compile_stage(&registry, &liquid);
+    let [StagePresentation::Volume(volume)] = stage.presentations.as_slice() else {
+        panic!("one volume presentation, got {:?}", stage.presentations);
+    };
+    assert_eq!(volume.program.as_str(), aestra_fluid::PROGRAM_LIQUID_LOOK);
+    assert_eq!(volume.entry_point, aestra_fluid::LIQUID_LOOK_ENTRY);
+    assert_eq!(volume.fields, [ResourceTypeId::new(RESOURCE_DENSITY)]);
+    volume
+        .layouts(&stage.block)
+        .expect("the fraction is a declared field");
+    // The march function composes with the volume interface into valid WGSL.
+    let source = format!(
+        "{}\n{}\n@fragment fn main() -> @location(0) vec4<f32> {{\n    \
+         return {}(AestraVolumeRay(vec3<f32>(0.5), vec3<f32>(0.0, 0.0, 1.0), 0.0, 1.0, \
+         vec3<f32>(96.0), vec2<f32>(0.0)));\n}}",
+        aestra_gpu::volume::volume_interface_wgsl("0"),
+        aestra_fluid::LIQUID_LOOK_WGSL,
+        aestra_fluid::LIQUID_LOOK_ENTRY,
+    );
+    let module = naga::front::wgsl::parse_str(&source).expect("parses");
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::default(),
+    )
+    .validate(&module)
+    .expect("validates");
+}

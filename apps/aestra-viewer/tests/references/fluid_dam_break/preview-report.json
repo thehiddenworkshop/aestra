@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "status": "succeeded",
+  "errors": [],
+  "effect": {
+    "id": "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+    "name": "Fluid Dam Break",
+    "duration_seconds": 4.0,
+    "playback_mode": "LoopContinuous",
+    "seek_mode": "RestartReplay",
+    "emitter_count": 0,
+    "material_count": 1,
+    "material_program_count": 0,
+    "max_particles": 0
+  },
+  "capture": {
+    "tick_rate": 60,
+    "seed": "0xa3572a115eed0001",
+    "frame_width": 960,
+    "frame_height": 540,
+    "contact_sheet_columns": 3,
+    "contact_sheet_rows": 3,
+    "contact_sheet": "contact-sheet.png",
+    "frames": [
+      {
+        "index": 0,
+        "simulation_frame": 15,
+        "time_seconds": 0.25,
+        "image": "frame-000.png"
+      },
+      {
+        "index": 1,
+        "simulation_frame": 45,
+        "time_seconds": 0.75,
+        "image": "frame-001.png"
+      },
+      {
+        "index": 2,
+        "simulation_frame": 75,
+        "time_seconds": 1.25,
+        "image": "frame-002.png"
+      },
+      {
+        "index": 3,
+        "simulation_frame": 105,
+        "time_seconds": 1.75,
+        "image": "frame-003.png"
+      },
+      {
+        "index": 4,
+        "simulation_frame": 135,
+        "time_seconds": 2.25,
+        "image": "frame-004.png"
+      },
+      {
+        "index": 5,
+        "simulation_frame": 165,
+        "time_seconds": 2.75,
+        "image": "frame-005.png"
+      },
+      {
+        "index": 6,
+        "simulation_frame": 195,
+        "time_seconds": 3.25,
+        "image": "frame-006.png"
+      },
+      {
+        "index": 7,
+        "simulation_frame": 225,
+        "time_seconds": 3.75,
+        "image": "frame-007.png"
+      }
+    ]
+  },
+  "compiler": {
+    "diagnostics": [],
+    "optimizations": {
+      "material_function_calls_authored": 0,
+      "material_function_calls_eliminated": 0,
+      "material_function_calls_live": 0,
+      "constant_expressions": 1,
+      "runtime_parameter_reads": 0,
+      "eliminated_attributes": 0,
+      "material_common_subexpressions": 0,
+      "material_specialized_parameter_reads": 0,
+      "material_pruned_static_branches": 0,
+      "material_pruned_features": 0,
+      "material_texture_samples_authored": 0,
+      "material_texture_samples_eliminated": 0,
+      "material_texture_samples_live": 0
+    },
+    "material_program_fingerprints": []
+  },
+  "runtime": {
+    "requested_backend": "Gpu",
+    "active_backend": "native GPU",
+    "selection_reason": "compute, vertex storage, and indirect drawing are supported",
+    "compatibility": {
+      "target": "native GPU",
+      "compatible": true,
+      "issues": []
+    },
+    "adapter": {
+      "detected": true,
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "device_type": "DiscreteGpu",
+      "driver": "NVIDIA",
+      "limitations": []
+    },
+    "physical_gpu_particle_capacity": 4194240,
+    "configured_gpu_particle_budget": 262144,
+    "effective_gpu_particle_budget": 262144
+  },
+  "metrics": {
+    "trail_capacity": {
+      "source": "measured",
+      "value": 0
+    },
+    "occupied_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "retired_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "trail_evictions": {
+      "source": "measured",
+      "value": 0
+    },
+    "truncated_trails": {
+      "source": "measured",
+      "value": 0
+    },
+    "cpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_simulation_time_ns": {
+      "source": "measured",
+      "value": 0
+    },
+    "gpu_trail_compaction_time_ns": {
+      "source": "measured",
+      "value": 0
+    },
+    "gpu_trail_culling_time_ns": {
+      "source": "measured",
+      "value": 0
+    },
+    "gpu_stage_time_ns": {
+      "source": "measured",
+      "value": 6000704
+    },
+    "alive_particles": {
+      "source": "measured",
+      "value": 0
+    },
+    "submitted_instances": {
+      "source": "measured",
+      "value": 0
+    },
+    "submitted_vertices": {
+      "source": "measured",
+      "value": 0
+    },
+    "submitted_primitives": {
+      "source": "measured",
+      "value": 0
+    },
+    "peak_particles": {
+      "source": "measured",
+      "value": 0
+    },
+    "particle_capacity": {
+      "source": "measured",
+      "value": 0
+    },
+    "emitter_count": {
+      "source": "measured",
+      "value": 0
+    },
+    "draw_calls": {
+      "source": "measured",
+      "value": 0
+    },
+    "dispatch_count": {
+      "source": "estimated",
+      "value": 1133
+    },
+    "estimated_overdraw": {
+      "source": "unavailable"
+    },
+    "texture_sample_count": {
+      "source": "estimated",
+      "value": 0
+    },
+    "buffer_memory_bytes": {
+      "source": "estimated",
+      "value": 27955924
+    },
+    "texture_memory_bytes": {
+      "source": "estimated",
+      "value": 0
+    },
+    "collision_time_ns": {
+      "source": "unavailable"
+    },
+    "emitters": [],
+    "platform_warnings": []
+  },
+  "instances": [
+    {
+      "clip_path": [],
+      "effect": "02060aa1-3f6b-4ff9-a16b-a77e30d1d838",
+      "name": "Fluid Dam Break",
+      "metrics": {
+        "trail_capacity": {
+          "source": "measured",
+          "value": 0
+        },
+        "occupied_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "retired_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "trail_evictions": {
+          "source": "measured",
+          "value": 0
+        },
+        "truncated_trails": {
+          "source": "measured",
+          "value": 0
+        },
+        "cpu_time_ns": {
+          "source": "unavailable"
+        },
+        "gpu_time_ns": {
+          "source": "unavailable"
+        },
+        "gpu_simulation_time_ns": {
+          "source": "measured",
+          "value": 0
+        },
+        "gpu_trail_compaction_time_ns": {
+          "source": "measured",
+          "value": 0
+        },
+        "gpu_trail_culling_time_ns": {
+          "source": "measured",
+          "value": 0
+        },
+        "gpu_stage_time_ns": {
+          "source": "measured",
+          "value": 6000704
+        },
+        "alive_particles": {
+          "source": "measured",
+          "value": 0
+        },
+        "submitted_instances": {
+          "source": "measured",
+          "value": 0
+        },
+        "submitted_vertices": {
+          "source": "measured",
+          "value": 0
+        },
+        "submitted_primitives": {
+          "source": "measured",
+          "value": 0
+        },
+        "peak_particles": {
+          "source": "measured",
+          "value": 0
+        },
+        "particle_capacity": {
+          "source": "measured",
+          "value": 0
+        },
+        "emitter_count": {
+          "source": "measured",
+          "value": 0
+        },
+        "draw_calls": {
+          "source": "measured",
+          "value": 0
+        },
+        "dispatch_count": {
+          "source": "estimated",
+          "value": 1133
+        },
+        "estimated_overdraw": {
+          "source": "unavailable"
+        },
+        "texture_sample_count": {
+          "source": "estimated",
+          "value": 0
+        },
+        "buffer_memory_bytes": {
+          "source": "estimated",
+          "value": 27955924
+        },
+        "texture_memory_bytes": {
+          "source": "estimated",
+          "value": 0
+        },
+        "collision_time_ns": {
+          "source": "unavailable"
+        },
+        "emitters": [],
+        "platform_warnings": []
+      }
+    }
+  ]
+}

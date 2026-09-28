@@ -342,17 +342,25 @@ fn the_solver_builds_on_every_available_backend() {
                 executor.err()
             );
         }
-        // The volume look's march function, with the interface it is composed with (fluid F3).
-        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        volume_pipeline(&device);
-        let error = pollster::block_on(scope.pop());
-        assert!(error.is_none(), "{backends:?} volume: {error:?}");
+        // The looks' march functions, with the interface they are composed with (fluid F3, F8).
+        for (wgsl, entry) in [
+            (aestra_fluid::VOLUME_WGSL, aestra_fluid::VOLUME_ENTRY),
+            (
+                aestra_fluid::LIQUID_LOOK_WGSL,
+                aestra_fluid::LIQUID_LOOK_ENTRY,
+            ),
+        ] {
+            let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+            volume_pipeline(&device, wgsl, entry);
+            let error = pollster::block_on(scope.pop());
+            assert!(error.is_none(), "{backends:?} {entry}: {error:?}");
+        }
     }
 }
 
 /// A render pipeline around the volume look's march function: the interface, the plugin's WGSL and
 /// a full-screen triangle whose fragment marches a fixed ray.
-fn volume_pipeline(device: &wgpu::Device) -> wgpu::RenderPipeline {
+fn volume_pipeline(device: &wgpu::Device, march: &str, entry: &str) -> wgpu::RenderPipeline {
     let source = format!(
         "{}\n{}\n\
          @vertex fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {{\n    \
@@ -363,8 +371,8 @@ fn volume_pipeline(device: &wgpu::Device) -> wgpu::RenderPipeline {
          return {}(AestraVolumeRay(vec3<f32>(u, 0.5, 0.0), vec3<f32>(0.0, 0.0, 1.0 / 3.2), 0.0, 3.2, \
          vec3<f32>(3.2), pixel.xy));\n}}",
         aestra_gpu::volume::volume_interface_wgsl("0"),
-        aestra_fluid::VOLUME_WGSL,
-        aestra_fluid::VOLUME_ENTRY,
+        march,
+        entry,
     );
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("fluid volume test"),

@@ -65,9 +65,10 @@ use std::sync::Arc;
 
 mod liquid;
 pub use liquid::{
-    CAPABILITY_LIQUID, LIQUID_ENTRY_POINTS, LIQUID_STAGE, LIQUID_WGSL, MAX_LIQUID_BLOCKS,
-    MAX_LIQUID_PARTICLES, MAX_LIQUID_SUBSTEPS, MODULE_LIQUID_BLOCK, MODULE_LIQUID_GRID,
-    MODULE_LIQUID_SOURCE, PROGRAM_LIQUID, RESOURCE_LIQUID_DISPATCH, RESOURCE_LIQUID_HEADER,
+    CAPABILITY_LIQUID, LIQUID_ENTRY_POINTS, LIQUID_LOOK_ENTRY, LIQUID_LOOK_WGSL, LIQUID_STAGE,
+    LIQUID_WGSL, MAX_LIQUID_BLOCKS, MAX_LIQUID_PARTICLES, MAX_LIQUID_SUBSTEPS, MODULE_LIQUID_BLOCK,
+    MODULE_LIQUID_GRID, MODULE_LIQUID_LOOK, MODULE_LIQUID_SOURCE, PROGRAM_LIQUID,
+    PROGRAM_LIQUID_LOOK, RESOURCE_LIQUID_DISPATCH, RESOURCE_LIQUID_HEADER,
     RESOURCE_LIQUID_PARTICLES, RESOURCE_LIQUID_TRANSFER, STAGE_LIQUID_SOLVER, liquid_effect,
     liquid_entry_points, liquid_program_wgsl,
 };
@@ -610,7 +611,8 @@ impl AestraExtension for FluidExtension {
             volume_look_metadata(requires),
             liquid::liquid_grid_metadata(liquid_requires.clone()),
             liquid::liquid_block_metadata(liquid_requires.clone()),
-            liquid::liquid_source_metadata(liquid_requires),
+            liquid::liquid_source_metadata(liquid_requires.clone()),
+            liquid::liquid_look_metadata(liquid_requires),
         ] {
             let type_id = metadata.type_id.clone();
             registry.register_module(metadata)?;
@@ -632,6 +634,11 @@ impl AestraExtension for FluidExtension {
             id: ComputeProgramId::new(PROGRAM_LIQUID),
             wgsl: liquid_program_wgsl(),
             entry_points: liquid_entry_points(),
+        })?;
+        registry.register_program(ComputeProgram {
+            id: ComputeProgramId::new(PROGRAM_LIQUID_LOOK),
+            wgsl: LIQUID_LOOK_WGSL.into(),
+            entry_points: vec![LIQUID_LOOK_ENTRY.into()],
         })?;
         registry.register_program(ComputeProgram {
             id: ComputeProgramId::new(PROGRAM_VOLUME),
@@ -1438,10 +1445,12 @@ impl ModuleLowerer for FluidModuleLowerer {
                 pack_volume(payload)?;
                 VOLUME_ENTRY
             }
-            liquid @ (MODULE_LIQUID_GRID | MODULE_LIQUID_BLOCK | MODULE_LIQUID_SOURCE) => {
+            liquid @ (MODULE_LIQUID_GRID | MODULE_LIQUID_BLOCK | MODULE_LIQUID_SOURCE
+            | MODULE_LIQUID_LOOK) => {
                 liquid::validate_liquid_module(liquid, payload)?;
                 match liquid {
                     MODULE_LIQUID_GRID => "liquid_mark",
+                    MODULE_LIQUID_LOOK => LIQUID_LOOK_ENTRY,
                     _ => "liquid_emit",
                 }
             }
