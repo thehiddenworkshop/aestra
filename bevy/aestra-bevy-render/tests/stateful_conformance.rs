@@ -619,7 +619,7 @@ impl Harness {
             compilation_options: Default::default(),
             cache: None,
         });
-        // The production unified module (9 bindings): here we drive its `present` entry, which both
+        // The production unified module (10 bindings): here we drive its `present` entry, which both
         // extracts presentation and compacts the live slots into alive_indices/indirect/counters.
         let unified_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Aestra unified stateful bindings"),
@@ -633,6 +633,7 @@ impl Harness {
                 storage(6, false), // alive_indices
                 storage(7, false), // indirect
                 storage(8, false), // counters
+                storage(9, false), // particle events (host bindings HB9b)
             ],
         });
         let unified_pipeline_layout =
@@ -1441,6 +1442,7 @@ impl Harness {
             true,
         );
         let counters = buffer("present-compact counters", &encode(&vec![0_u32; 2])?, true);
+        let events = buffer("present-compact events", &encode(&vec![0_u32; 4])?, false);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("present-compact bind group"),
             layout: &self.unified_layout,
@@ -1480,6 +1482,10 @@ impl Harness {
                 wgpu::BindGroupEntry {
                     binding: 8,
                     resource: counters.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: events.as_entire_binding(),
                 },
             ],
         });
@@ -2569,6 +2575,7 @@ fn advance_production_counted(
         scratch(8),
     );
     let counters = buffer("counters", vec![0u8; 16], wgpu::BufferUsages::COPY_SRC);
+    let events = scratch(4);
     let mut encoder = device.create_command_encoder(&Default::default());
     for words in ticks {
         let params = buffer("params", encode(words)?, wgpu::BufferUsages::empty());
@@ -2582,6 +2589,7 @@ fn advance_production_counted(
             &alive,
             &indirect,
             &counters,
+            &events,
         ]
         .iter()
         .enumerate()
@@ -2882,4 +2890,334 @@ fn gpu_homing_counts_arrivals_like_the_cpu_reference_only_when_asked() {
     let silent: Vec<Vec<u32>> = (0..120).map(|_| pack(false)).collect();
     let (_, counters) = advance_production_counted(&harness, &config, &silent).unwrap();
     assert_eq!(counters[3], 0, "a replay raises nothing");
+}
+
+// ---- Particle event links (host bindings HB9b) ----
+
+/// One emitter's live `(ordinal, position)` set.
+type LiveParticles = Vec<(u64, [f32; 3])>;
+
+/// Runs several emitters in lockstep through the *production* kernels, as the Bevy backend does for an
+/// effect with event links: each tick every emitter's `death_integrate` + `spawn` (its event buffer
+/// cleared first, its params asking for the triggers its links read), then each link's gather and
+/// event spawn into its target. Returns each emitter's live `(ordinal, position)` set.
+fn advance_production_linked(
+    harness: &Harness,
+    configs: &[StatefulConfig],
+    links: &[aestra_runtime::CompiledEventLink],
+    seed: u64,
+    ticks: u32,
+) -> Result<Vec<LiveParticles>, String> {
+    use aestra_bevy_render::execution::{DomainSpawnPipeline, EventGatherPipeline, SpawnState};
+    let device = &harness.device;
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("linked"),
+        bind_group_layouts: &[Some(&harness.unified_layout)],
+        immediate_size: 0,
+    });
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("linked"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Owned(stateful_simulation_wgsl())),
+    });
+    let pipeline = |entry: &str| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&layout),
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    };
+    let (death, spawn) = (pipeline("death_integrate"), pipeline("spawn"));
+    let gather = EventGatherPipeline::new(device);
+    let spawner = DomainSpawnPipeline::new(device);
+    let buffer = |label: &str, bytes: Vec<u8>, usage: wgpu::BufferUsages| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: &bytes,
+            usage: wgpu::BufferUsages::STORAGE | usage,
+        })
+    };
+    let masks: Vec<u32> = (0..configs.len())
+        .map(|index| {
+            links
+                .iter()
+                .filter(|link| link.source == index)
+                .fold(0, |mask, link| {
+                    mask | aestra_runtime::event_trigger_bit(link.trigger)
+                })
+        })
+        .collect();
+    struct Emitter {
+        state: wgpu::Buffer,
+        free_list: wgpu::Buffer,
+        free_count: wgpu::Buffer,
+        spawn_counter: wgpu::Buffer,
+        scratch: [wgpu::Buffer; 4],
+        events: wgpu::Buffer,
+    }
+    let event_bytes = EventGatherPipeline::buffer_bytes() as usize;
+    let emitters: Vec<Emitter> = configs
+        .iter()
+        .map(|config| -> Result<Emitter, String> {
+            let capacity = config.capacity;
+            let scratch =
+                |words: usize| buffer("scratch", vec![0u8; words * 4], wgpu::BufferUsages::empty());
+            Ok(Emitter {
+                state: buffer(
+                    "state",
+                    encode(&vec![0.0_f32; capacity as usize * 9])?,
+                    wgpu::BufferUsages::COPY_SRC,
+                ),
+                free_list: buffer(
+                    "free list",
+                    encode(&(0..capacity).collect::<Vec<u32>>())?,
+                    wgpu::BufferUsages::empty(),
+                ),
+                free_count: buffer(
+                    "free count",
+                    encode(&capacity)?,
+                    wgpu::BufferUsages::empty(),
+                ),
+                spawn_counter: buffer(
+                    "spawn counter",
+                    encode(&0_u32)?,
+                    wgpu::BufferUsages::empty(),
+                ),
+                scratch: [
+                    scratch(capacity as usize * 12),
+                    scratch(capacity as usize),
+                    scratch(8),
+                    scratch(4),
+                ],
+                events: buffer(
+                    "events",
+                    vec![0u8; event_bytes],
+                    wgpu::BufferUsages::COPY_DST,
+                ),
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let lists: Vec<wgpu::Buffer> = links
+        .iter()
+        .map(|_| {
+            buffer(
+                "event list",
+                vec![0u8; event_bytes],
+                wgpu::BufferUsages::COPY_DST,
+            )
+        })
+        .collect();
+    let emitter_seed = |index: usize| seed ^ (index as u64).wrapping_mul(0x9E37_79B9);
+    let mut encoder = device.create_command_encoder(&Default::default());
+    for _ in 0..ticks {
+        let mut params = Vec::new();
+        for (index, (config, emitter)) in configs.iter().zip(&emitters).enumerate() {
+            let mut words = stateful_params(config, emitter_seed(index), index as u32, 0);
+            aestra_gpu::pack_stateful_events(
+                masks[index],
+                aestra_runtime::PARTICLE_EVENT_CAPACITY,
+                &mut words,
+            );
+            let tick_params = buffer("params", encode(&words)?, wgpu::BufferUsages::empty());
+            encoder.clear_buffer(&emitter.events, 0, Some(4));
+            let entries: Vec<wgpu::BindGroupEntry> = [
+                &emitter.state,
+                &emitter.free_list,
+                &emitter.free_count,
+                &emitter.spawn_counter,
+                &tick_params,
+                &emitter.scratch[0],
+                &emitter.scratch[1],
+                &emitter.scratch[2],
+                &emitter.scratch[3],
+                &emitter.events,
+            ]
+            .iter()
+            .enumerate()
+            .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect();
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("linked tick"),
+                layout: &harness.unified_layout,
+                entries: &entries,
+            });
+            {
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_bind_group(0, &group, &[]);
+                pass.set_pipeline(&death);
+                pass.dispatch_workgroups(config.capacity.div_ceil(WORKGROUP), 1, 1);
+                pass.set_pipeline(&spawn);
+                pass.dispatch_workgroups(config.spawn_per_tick.div_ceil(WORKGROUP).max(1), 1, 1);
+            }
+            params.push(tick_params);
+        }
+        for (link, list) in links.iter().zip(&lists) {
+            gather.encode(
+                device,
+                &mut encoder,
+                &emitters[link.source].events,
+                list,
+                link,
+            );
+            let target = &emitters[link.target];
+            spawner.encode(
+                device,
+                &mut encoder,
+                SpawnState {
+                    state: &target.state,
+                    free_list: &target.free_list,
+                    free_count: &target.free_count,
+                    spawn_counter: &target.spawn_counter,
+                    params: &params[link.target],
+                },
+                list,
+                &EventGatherPipeline::spawn(link),
+            );
+        }
+        // Submit tick by tick, so the per-tick buffers and bind groups are released as we go.
+        harness.queue.submit(Some(encoder.finish()));
+        encoder = device.create_command_encoder(&Default::default());
+    }
+    let sizes: Vec<u64> = configs
+        .iter()
+        .map(|config| config.capacity as u64 * 36)
+        .collect();
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("linked readback"),
+        size: sizes.iter().sum(),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut offset = 0;
+    for (emitter, size) in emitters.iter().zip(&sizes) {
+        encoder.copy_buffer_to_buffer(&emitter.state, 0, &staging, offset, *size);
+        offset += size;
+    }
+    let raw = harness.read_back_u32(encoder, &staging)?;
+    let mut live = Vec::new();
+    let mut at = 0;
+    for config in configs {
+        let mut particles = Vec::new();
+        for slot in 0..config.capacity as usize {
+            let base = at + slot * 9;
+            let (age, lifetime) = (f32::from_bits(raw[base + 6]), f32::from_bits(raw[base + 7]));
+            if lifetime > 0.0 && age < lifetime {
+                particles.push((
+                    raw[base + 8] as u64,
+                    [
+                        f32::from_bits(raw[base]),
+                        f32::from_bits(raw[base + 1]),
+                        f32::from_bits(raw[base + 2]),
+                    ],
+                ));
+            }
+        }
+        at += config.capacity as usize * 9;
+        live.push(particles);
+    }
+    Ok(live)
+}
+
+#[test]
+fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
+    // A fountain bouncing on the ground feeds three sub-emitters: a splash per bounce (OnCollision,
+    // two particles, inheriting some velocity), a puff per death (OnDeath, three, capped by a small
+    // capacity), and a spark per spawn (OnSpawn, inheriting all of it). Every particle of every
+    // emitter matches the CPU reference by ordinal, whatever order the GPU raised the events in.
+    use aestra_core::EventTrigger;
+    use aestra_runtime::CompiledEventLink;
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let ground = Collider {
+        shape: ColliderShape::Plane {
+            normal: [0.0, 1.0, 0.0],
+            distance: 0.0,
+        },
+        restitution: 0.5,
+        friction: 0.2,
+        kill: false,
+    };
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    colliders[0] = ground;
+    let fountain = StatefulConfig {
+        gravity: [0.0, -18.0, 0.0],
+        spawn_per_tick: 4,
+        speed: (6.0, 10.0),
+        lifetime: (1.0, 1.3),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.4,
+        drag: 0.1,
+        shape: SpawnShape::Sphere { radius: 0.5 },
+        turbulence: 2.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders,
+        collider_count: 1,
+        capacity: 512,
+        homing: None,
+    };
+    let sub = |capacity: u32| StatefulConfig {
+        gravity: [0.0, -4.0, 0.0],
+        spawn_per_tick: 0,
+        speed: (1.0, 2.0),
+        lifetime: (0.3, 0.5),
+        spread: 1.0,
+        turbulence: 0.0,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity,
+        ..fountain
+    };
+    let configs = [fountain, sub(2048), sub(64), sub(1024)];
+    let link = |trigger, target, count, inherit| CompiledEventLink {
+        source: 0,
+        trigger,
+        target,
+        count,
+        inherit,
+    };
+    let links = [
+        link(EventTrigger::OnCollision, 1, 2, 0.3),
+        link(EventTrigger::OnDeath, 2, 3, 0.0),
+        link(EventTrigger::OnSpawn, 3, 1, 1.0),
+    ];
+    let seed = 0x00AB_009B_0000_0001_u64;
+    let ticks = 150;
+    let gpu = advance_production_linked(&harness, &configs, &links, seed, ticks).unwrap();
+
+    let mut sims: Vec<StatefulSimulation> = configs
+        .iter()
+        .enumerate()
+        .map(|(index, config)| {
+            StatefulSimulation::new(*config, seed ^ (index as u64).wrapping_mul(0x9E37_79B9))
+        })
+        .collect();
+    let mut raised = [0usize; 3];
+    for _ in 0..ticks {
+        for sim in &mut sims {
+            sim.advance_tick();
+        }
+        for (index, link) in links.iter().enumerate() {
+            let events = sims[link.source].events(link.trigger).to_vec();
+            raised[index] += events.len();
+            sims[link.target].spawn_from_events(&events, link.count, link.inherit);
+        }
+    }
+    eprintln!("events raised per link: {raised:?}");
+    assert!(raised.iter().all(|count| *count > 50), "{raised:?}");
+    for (index, sim) in sims.iter().enumerate() {
+        let cpu = sim.alive_particles();
+        assert!(!cpu.is_empty(), "emitter {index} has particles");
+        assert_same_particles(&cpu, &gpu[index]);
+    }
+    assert_eq!(
+        sims[2].alive_particles().len(),
+        64,
+        "the puffs fill their small capacity and the rest are dropped alike"
+    );
 }

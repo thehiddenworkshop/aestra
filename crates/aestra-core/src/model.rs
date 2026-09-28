@@ -442,12 +442,20 @@ impl EffectAsset {
         }
         for (index, event) in self.events.iter().enumerate() {
             let path = format!("effect.events[{index}]");
-            report.push(Diagnostic {
-                severity: crate::DiagnosticSeverity::Warning,
-                code: DiagnosticCode::UnsupportedEventLink,
-                path: path.clone(),
-                message: "Particle event links are preserved in the asset but are not executed by the current runtime.".into(),
-            });
+            if event.count == 0 || event.count > MAX_EVENT_LINK_COUNT {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.count"),
+                    format!("an event link spawns 1 to {MAX_EVENT_LINK_COUNT} particles per event"),
+                ));
+            }
+            if !event.inherit_velocity.is_finite() {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.inherit_velocity"),
+                    "an event link's inherited velocity must be finite",
+                ));
+            }
             register_id(
                 &mut report,
                 &mut semantic_ids,
@@ -3483,12 +3491,43 @@ pub enum FlipbookPlaybackMode {
     PingPong,
 }
 
+/// A particle event link (host bindings HB9b): each time a particle of `source` spawns, dies or
+/// collides, `target` spawns `count` particles where it happened, starting with `inherit_velocity` ×
+/// its velocity plus the target's own launch velocity. An emitter any link targets is a
+/// *sub-emitter*: it spawns only from its links. Both emitters run stateful.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EventLink {
     pub id: EventId,
     pub source: EmitterId,
     pub trigger: EventTrigger,
     pub target: EmitterId,
+    /// Particles the target spawns per event.
+    #[serde(default = "default_event_count")]
+    pub count: u32,
+    /// The share of the source particle's velocity the spawned particles start with.
+    #[serde(default)]
+    pub inherit_velocity: f32,
+}
+
+fn default_event_count() -> u32 {
+    1
+}
+
+/// Particles a link spawns per event, at most.
+pub const MAX_EVENT_LINK_COUNT: u32 = 64;
+
+impl EventLink {
+    /// A link spawning one particle per event, inheriting no velocity.
+    pub fn new(source: EmitterId, trigger: EventTrigger, target: EmitterId) -> Self {
+        Self {
+            id: EventId::new(),
+            source,
+            trigger,
+            target,
+            count: 1,
+            inherit_velocity: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

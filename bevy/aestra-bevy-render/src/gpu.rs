@@ -136,6 +136,8 @@ pub(crate) struct GpuEffectBuffers {
     /// One stateful dispatch descriptor per enabled stateful emitter (hybrid roadmap M6), in compiled
     /// emitter order. Empty for a fully analytic effect.
     stateful_dispatch: Vec<StatefulDispatch>,
+    /// The effect's particle event links (host bindings HB9b).
+    event_links: Vec<aestra_runtime::CompiledEventLink>,
     /// True when *every* enabled emitter is stateful, so the effect skips the analytic reset+simulate
     /// entirely. False for a mixed analytic+stateful effect, where the analytic path runs first (its
     /// `simulate` skips the stateful emitters' slots) and the stateful dispatches fill them after,
@@ -204,6 +206,14 @@ struct StatefulDispatch {
     arrival_word: Option<u32>,
     /// Where the homing target is this frame, in world space, for the events it raises.
     homing_world_target: Option<[f32; 3]>,
+    /// The particle events this emitter reports for event links (host bindings HB9b): a mask of
+    /// `aestra_runtime::event_trigger_bit`s; zero reports none.
+    event_mask: u32,
+    /// A hash of every event link into or out of this emitter: a change is a different simulation.
+    event_signature: u64,
+    /// The `counters` word this emitter's event overflow count is copied to each frame, when it
+    /// reports events: the events beyond the buffer's capacity, dropped (host bindings HB9b).
+    overflow_word: Option<u32>,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -249,6 +259,27 @@ impl StatefulAppearance {
             max_scale: 1.0,
         }
     }
+}
+
+/// A hash of the event links into and out of emitter `index` (host bindings HB9b).
+fn event_signature(effect: &aestra_runtime::CompiledEffect, index: usize) -> u64 {
+    effect
+        .event_links
+        .iter()
+        .filter(|link| link.source == index || link.target == index)
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, link| {
+            [
+                link.source as u32,
+                link.target as u32,
+                aestra_runtime::event_trigger_bit(link.trigger),
+                link.count,
+                link.inherit.to_bits(),
+            ]
+            .into_iter()
+            .fold(hash, |hash, bits| {
+                (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+        })
 }
 
 /// The spawn placement of an emitter transform, with the rotation normalized for the trig-free kernel.
@@ -310,6 +341,9 @@ impl StatefulDispatch {
                 hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
             }
         }
+        // So do its event links (host bindings HB9b).
+        hash = (hash ^ u64::from(self.event_mask)).wrapping_mul(0x0000_0100_0000_01b3);
+        hash = (hash ^ self.event_signature).wrapping_mul(0x0000_0100_0000_01b3);
         // So does homing (host bindings HB7) — its steering, not where the target is.
         if let Some(homing) = &self.homing {
             let config = &homing.config;
@@ -928,7 +962,12 @@ pub(crate) fn prepare_gpu_effects(
                                 slot_offset: emitter.slot_offset,
                                 emitter_index: index as u32,
                                 emitter_count,
-                                spawn_rate: 0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y),
+                                // A sub-emitter spawns only from its event links (host bindings HB9b).
+                                spawn_rate: if player.effect().is_event_target(index) {
+                                    0.0
+                                } else {
+                                    0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y)
+                                },
                                 speed: (emitter.speed.x, emitter.speed.y),
                                 lifetime: (emitter.lifetime.x, emitter.lifetime.y),
                                 direction: [
@@ -964,6 +1003,9 @@ pub(crate) fn prepare_gpu_effects(
                                 attachment: compiled.attachment.clone(),
                                 arrival_word: None,
                                 homing_world_target: None,
+                                event_mask: player.effect().event_mask(index),
+                                event_signature: event_signature(player.effect(), index),
+                                overflow_word: None,
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1043,6 +1085,14 @@ pub(crate) fn prepare_gpu_effects(
             dispatch.arrival_word = Some(arrivals_base + arrival_words);
             arrival_words += 1;
         }
+        // Then each event-reporting emitter's overflow count (host bindings HB9b).
+        for dispatch in stateful_dispatch
+            .iter_mut()
+            .filter(|dispatch| dispatch.event_mask != 0)
+        {
+            dispatch.overflow_word = Some(arrivals_base + arrival_words);
+            arrival_words += 1;
+        }
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             (arrivals_base + arrival_words)
@@ -1093,6 +1143,7 @@ pub(crate) fn prepare_gpu_effects(
                 simulation_state: artifact.simulation_state,
                 stateful_dispatch,
                 stateful_only,
+                event_links: player.effect().event_links.clone(),
             },
             GpuPresentationPrepared,
             particle_statistics,
@@ -1909,6 +1960,22 @@ fn receive_homing_arrivals(
     let words: Vec<u32> = event.to_shader_type();
     let effect = readback.effect;
     for dispatch in &gpu.stateful_dispatch {
+        // Particle events dropped past the per-tick capacity (host bindings HB9b): the sub-emitters
+        // missed them, and that tick no longer reproduces exactly.
+        if let Some(word) = dispatch.overflow_word
+            && let Some(&dropped) = words.get(word as usize)
+        {
+            let seen = readback.seen.insert(word, dropped).unwrap_or(0);
+            if dropped > seen {
+                warn!(
+                    "aestra: emitter {} of {effect} raised more than {} particle events in a tick; \
+                     {} dropped so far (event links spawn from the rest)",
+                    dispatch.emitter_index,
+                    aestra_runtime::PARTICLE_EVENT_CAPACITY,
+                    dropped
+                );
+            }
+        }
         let Some(word) = dispatch.arrival_word else {
             continue;
         };
@@ -2076,9 +2143,9 @@ fn init_pipeline(
 }
 
 /// Builds the stateful backend's compute pipelines (hybrid roadmap M6) from the unified
-/// `aestra_gpu::stateful_simulation_wgsl` module. The nine-binding layout is shared across the three
+/// `aestra_gpu::stateful_simulation_wgsl` module. The ten-binding layout is shared across the three
 /// entry points (each uses a subset). Gated on the same device limits as the analytic pipeline plus
-/// the nine-binding requirement; when unavailable the resource is simply absent and stateful effects
+/// the ten-binding requirement; when unavailable the resource is simply absent and stateful effects
 /// fall back like any unsupported artifact.
 fn init_stateful_pipeline(
     mut commands: Commands,
@@ -2114,6 +2181,7 @@ fn init_stateful_pipeline(
                 storage_buffer::<Vec<u32>>(false),           // 6: alive indices (compaction)
                 storage_buffer::<Vec<u32>>(false),           // 7: indirect draw commands (atomic)
                 storage_buffer::<Vec<u32>>(false),           // 8: live counters (atomic)
+                storage_buffer::<Vec<u32>>(false),           // 9: particle events (HB9b)
             ),
         ),
     );
@@ -2232,6 +2300,10 @@ struct StatefulPersistentState {
     free_count: Buffer,
     /// Atomic spawn ordinal counter; initialised to 0.
     spawn_counter: Buffer,
+    /// The particle events of the current tick, for event links (host bindings HB9b): see
+    /// `aestra_gpu::particle_event_words`. Cleared each tick, never checkpointed; four words when the
+    /// emitter reports none.
+    events: Buffer,
     /// The last fixed tick the persistent state was advanced to. A target below this is a backward seek.
     last_tick: u32,
     /// Fractional spawn carry, so a non-integer per-tick spawn rate emits the right long-run count.
@@ -2255,9 +2327,25 @@ impl StatefulPersistentState {
     /// Allocates and initialises one emitter's persistent buffers for `records` slots: zeroed state, a
     /// full free list (`0..records`), a free count of `records`, and a spawn counter of 0. All four
     /// buffers are copy source+dest so they can be snapshot to / restored from a checkpoint.
-    fn allocate(render_device: &RenderDevice, records: u32, stride: u32, fingerprint: u64) -> Self {
+    fn allocate(
+        render_device: &RenderDevice,
+        records: u32,
+        stride: u32,
+        fingerprint: u64,
+        reports_events: bool,
+    ) -> Self {
         let (state, free_list, free_count, spawn_counter) =
             Self::fresh_buffers(render_device, records, stride);
+        let event_bytes = if reports_events {
+            crate::execution::EventGatherPipeline::buffer_bytes()
+        } else {
+            16
+        };
+        let events = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra stateful particle events"),
+            contents: &vec![0u8; event_bytes as usize],
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+        });
         Self {
             records,
             stride,
@@ -2266,6 +2354,7 @@ impl StatefulPersistentState {
             free_list,
             free_count,
             spawn_counter,
+            events,
             last_tick: 0,
             spawn_accumulator: 0.0,
             checkpoints: Vec::new(),
@@ -2488,6 +2577,7 @@ fn prepare_stateful_states(
                         dispatch.capacity,
                         stride,
                         dispatch.fingerprint(),
+                        dispatch.event_mask != 0,
                     );
                     state.placement = dispatch.placement;
                     state
@@ -2666,6 +2756,11 @@ fn stateful_params_bytes(
         dispatch.arrival_word.filter(|_| live),
         &mut words,
     );
+    aestra_gpu::pack_stateful_events(
+        dispatch.event_mask,
+        aestra_runtime::PARTICLE_EVENT_CAPACITY,
+        &mut words,
+    );
     let look = &dispatch.appearance;
     aestra_gpu::pack_stateful_appearance(
         &look.size,
@@ -2717,6 +2812,7 @@ fn stateful_bind_group(
             render.alive.as_entire_buffer_binding(),
             render.indirect.as_entire_buffer_binding(),
             render.counters.as_entire_buffer_binding(),
+            persistent.events.as_entire_buffer_binding(),
         )),
     )
 }
@@ -2866,6 +2962,8 @@ pub(super) struct Coupling<'a> {
     pub inputs: crate::execution::StageInputs<'a>,
     pub follower: &'a crate::execution::FieldFollowPipeline,
     pub spawner: &'a crate::execution::DomainSpawnPipeline,
+    /// Gathers event links' events (host bindings HB9b).
+    pub gatherer: &'a crate::execution::EventGatherPipeline,
 }
 
 /// The latest tick at or before `target` that every store holds a checkpoint for.
@@ -2907,12 +3005,24 @@ fn run_coupled_stateful(
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
     coupling: Coupling<'_>,
+    links: &[aestra_runtime::CompiledEventLink],
     render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
     budget: u32,
 ) -> u32 {
     let (death_integrate, spawn, present) = pipelines;
     let domains = coupling.domains;
+    // Each link's events and emission list (host bindings HB9b): the dispatches at either end, and a
+    // list buffer reused across this frame's ticks.
+    let dispatch_of = |emitter: usize| {
+        dispatches
+            .iter()
+            .position(|dispatch| dispatch.emitter_index as usize == emitter)
+    };
+    let link_ends: Vec<(usize, usize, &aestra_runtime::CompiledEventLink)> = links
+        .iter()
+        .filter_map(|link| Some((dispatch_of(link.source)?, dispatch_of(link.target)?, link)))
+        .collect();
     let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
     let last = persistent_states.first().map_or(0, |state| state.last_tick);
     let in_step = persistent_states
@@ -2945,7 +3055,25 @@ fn run_coupled_stateful(
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
     let live = in_step && is_live_advance(last, target);
     let ticks = target.saturating_sub(now).min(budget);
+    let lists: Vec<Buffer> = if ticks > 0 {
+        link_ends
+            .iter()
+            .map(|_| {
+                device.create_buffer_with_data(&BufferInitDescriptor {
+                    label: Some("aestra event list"),
+                    contents: &vec![
+                        0u8;
+                        crate::execution::EventGatherPipeline::buffer_bytes() as usize
+                    ],
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     for _ in 0..ticks {
+        let mut tick_params = Vec::with_capacity(dispatches.len());
         let next = persistent_states[0].last_tick + 1;
         for domain in domains.iter_mut().flatten() {
             if let Err(error) = domain.advance_to(
@@ -2962,6 +3090,9 @@ fn run_coupled_stateful(
         for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
             let (group, params) =
                 stateful_tick_group(device, layout, persistent, dispatch, render, live);
+            if dispatch.event_mask != 0 {
+                encoder.clear_buffer(&persistent.events, 0, Some(4));
+            }
             {
                 let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
                 let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -3007,6 +3138,35 @@ fn run_coupled_stateful(
                     STATEFUL_TICK_DT,
                 );
             }
+            tick_params.push(params);
+        }
+        // Event links (host bindings HB9b): after every emitter's tick, each link's events of it
+        // become its target's particles, in link order.
+        for ((source, target, link), list) in link_ends.iter().zip(&lists) {
+            coupling.gatherer.encode(
+                device.wgpu_device(),
+                encoder,
+                &persistent_states[*source].events,
+                list,
+                link,
+            );
+            let persistent = &persistent_states[*target];
+            coupling.spawner.encode(
+                device.wgpu_device(),
+                encoder,
+                crate::execution::SpawnState {
+                    state: &persistent.state,
+                    free_list: &persistent.free_list,
+                    free_count: &persistent.free_count,
+                    spawn_counter: &persistent.spawn_counter,
+                    params: &tick_params[*target],
+                },
+                list,
+                &crate::execution::EventGatherPipeline::spawn(link),
+            );
+        }
+        // Checkpoints capture each emitter after the tick's event spawns.
+        for persistent in persistent_states.iter_mut() {
             persistent.last_tick += 1;
             if persistent
                 .last_tick
@@ -3074,6 +3234,7 @@ fn run_stateful_dispatches(
     layout: &BindGroupLayout,
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
+    links: &[aestra_runtime::CompiledEventLink],
     render: &StatefulRenderBuffers<'_>,
     coupling: Option<Coupling<'_>>,
     simulation_time: f32,
@@ -3088,10 +3249,11 @@ fn run_stateful_dispatches(
         encoder.clear_buffer(render.counters, 0, Some(4));
     }
     // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
-    // with it.
-    let coupled = dispatches
-        .iter()
-        .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
+    // with it; so do emitters joined by event links (host bindings HB9b), with one another.
+    let coupled = !links.is_empty()
+        || dispatches
+            .iter()
+            .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
     match coupling.filter(|_| coupled) {
         Some(coupling) => {
             // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
@@ -3107,6 +3269,7 @@ fn run_stateful_dispatches(
                 persistent_states,
                 dispatches,
                 coupling,
+                links,
                 render,
                 simulation_time,
                 budget,
@@ -3131,6 +3294,18 @@ fn run_stateful_dispatches(
                     seek_quality,
                 );
             }
+        }
+    }
+    // Event overflow counts (host bindings HB9b), for the host to read back and report.
+    for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+        if let Some(word) = dispatch.overflow_word {
+            encoder.copy_buffer_to_buffer(
+                &persistent.events,
+                4,
+                render.counters,
+                u64::from(word) * 4,
+                4,
+            );
         }
     }
     if owns_shared_reset && let Some(first) = dispatches.first() {
@@ -3251,6 +3426,7 @@ fn run_simulation(
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
+                    &effect.event_links,
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -3262,7 +3438,12 @@ fn run_simulation(
                         entity,
                         extracted_stages,
                         follower.as_deref(),
-                    ),
+                    )
+                    .or_else(|| {
+                        (!effect.event_links.is_empty())
+                            .then(|| extension_stages::link_coupling(follower.as_deref()))
+                            .flatten()
+                    }),
                     effect.simulation_time,
                     effect.seek_quality,
                     effect.statistics_token,
@@ -3502,6 +3683,7 @@ fn run_simulation(
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
+                    &effect.event_links,
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -3513,7 +3695,12 @@ fn run_simulation(
                         entity,
                         extracted_stages,
                         follower.as_deref(),
-                    ),
+                    )
+                    .or_else(|| {
+                        (!effect.event_links.is_empty())
+                            .then(|| extension_stages::link_coupling(follower.as_deref()))
+                            .flatten()
+                    }),
                     effect.simulation_time,
                     effect.seek_quality,
                     effect.statistics_token,
@@ -3701,6 +3888,9 @@ mod tests {
             attachment: None,
             arrival_word: None,
             homing_world_target: None,
+            event_mask: 0,
+            event_signature: 0,
+            overflow_word: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -3836,6 +4026,7 @@ mod tests {
                     simulation_state: default(),
                     stateful_dispatch: Vec::new(),
                     stateful_only: false,
+                    event_links: Vec::new(),
                 },
             ))
             .id();
@@ -4412,6 +4603,7 @@ mod coupled_tests {
         pipelines: [ComputePipeline; 3],
         follower: FieldFollowPipeline,
         spawner: DomainSpawnPipeline,
+        gatherer: crate::execution::EventGatherPipeline,
         states: Vec<StatefulPersistentState>,
         dispatches: Vec<StatefulDispatch>,
         domains: Vec<Option<StageTimeline>>,
@@ -4470,7 +4662,7 @@ mod coupled_tests {
             .unwrap()
             .clone();
 
-        // The production stateful program and its explicit 9-binding layout.
+        // The production stateful program and its explicit 10-binding layout.
         let layout = device.create_bind_group_layout(
             "coupled test stateful",
             &BindGroupLayoutEntries::sequential(
@@ -4482,6 +4674,7 @@ mod coupled_tests {
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer_read_only::<Vec<u32>>(false),
                     storage_buffer::<Vec<GpuParticle>>(false),
+                    storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
@@ -4546,6 +4739,9 @@ mod coupled_tests {
             attachment: None,
             arrival_word: None,
             homing_world_target: None,
+            event_mask: 0,
+            event_signature: 0,
+            overflow_word: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4553,7 +4749,13 @@ mod coupled_tests {
         let states = dispatches
             .iter()
             .map(|d| {
-                StatefulPersistentState::allocate(&device, d.capacity, STRIDE, d.fingerprint())
+                StatefulPersistentState::allocate(
+                    &device,
+                    d.capacity,
+                    STRIDE,
+                    d.fingerprint(),
+                    false,
+                )
             })
             .collect();
         let buffer = |bytes: u64| {
@@ -4572,6 +4774,7 @@ mod coupled_tests {
         ];
         let follower = FieldFollowPipeline::new(device.wgpu_device());
         let spawner = DomainSpawnPipeline::new(device.wgpu_device());
+        let gatherer = crate::execution::EventGatherPipeline::new(device.wgpu_device());
         Some(Scene {
             device,
             queue,
@@ -4579,11 +4782,164 @@ mod coupled_tests {
             pipelines,
             follower,
             spawner,
+            gatherer,
             states,
             dispatches,
             domains,
             render,
         })
+    }
+
+    /// Host bindings HB9b: the production lockstep loop turns a rocket's death into its burst's
+    /// particles — one rocket every few ticks, each death 48 sparks.
+    #[test]
+    fn event_links_spawn_sub_emitters_in_the_production_lockstep_loop() {
+        let Some(mut scene) = scene(false) else {
+            return;
+        };
+        scene.domains.clear();
+        let template = scene.dispatches[0].clone();
+        let rockets = StatefulDispatch {
+            capacity: 64,
+            slot_offset: 0,
+            emitter_index: 0,
+            spawn_rate: 3.0,
+            speed: (38.0, 46.0),
+            lifetime: (1.1, 1.5),
+            spread: 0.1,
+            gravity: [0.0, -25.0, 0.0],
+            shape_kind: 0,
+            event_mask: 2,
+            ..template.clone()
+        };
+        let burst = StatefulDispatch {
+            capacity: 4096,
+            slot_offset: 64,
+            emitter_index: 1,
+            spawn_rate: 0.0,
+            lifetime: (1.2, 1.8),
+            event_mask: 4,
+            colliders: vec![aestra_core::Collider {
+                shape: aestra_core::ColliderShape::Plane {
+                    normal: [0.0, 1.0, 0.0],
+                    distance: 0.0,
+                },
+                restitution: 0.3,
+                friction: 0.5,
+                kill: false,
+            }],
+            ..template.clone()
+        };
+        let glints = StatefulDispatch {
+            capacity: 2048,
+            slot_offset: 4160,
+            emitter_index: 2,
+            spawn_rate: 0.0,
+            lifetime: (0.3, 0.6),
+            ..template
+        };
+        scene.dispatches = vec![rockets, burst, glints];
+        let buffer = |bytes: u64| {
+            scene.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: bytes,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        scene.render = [buffer(6208 * 48), buffer(6208 * 4), buffer(64), buffer(16)];
+        scene.states = scene
+            .dispatches
+            .iter()
+            .map(|d| {
+                StatefulPersistentState::allocate(
+                    &scene.device,
+                    d.capacity,
+                    STRIDE,
+                    d.fingerprint(),
+                    d.event_mask != 0,
+                )
+            })
+            .collect();
+        let links = [
+            aestra_runtime::CompiledEventLink {
+                source: 0,
+                trigger: aestra_core::EventTrigger::OnDeath,
+                target: 1,
+                count: 48,
+                inherit: 0.2,
+            },
+            aestra_runtime::CompiledEventLink {
+                source: 1,
+                trigger: aestra_core::EventTrigger::OnCollision,
+                target: 2,
+                count: 2,
+                inherit: 0.0,
+            },
+        ];
+        for tick in 1..=240 {
+            let mut encoder = scene.device.create_command_encoder(&Default::default());
+            let [particles, alive, indirect, counters] = &scene.render;
+            run_coupled_stateful(
+                &scene.device,
+                &mut encoder,
+                (
+                    &scene.pipelines[0],
+                    &scene.pipelines[1],
+                    &scene.pipelines[2],
+                ),
+                &scene.layout,
+                &mut scene.states,
+                &scene.dispatches,
+                Coupling {
+                    domains: &mut [],
+                    inputs: StageInputs::default(),
+                    follower: &scene.follower,
+                    spawner: &scene.spawner,
+                    gatherer: &scene.gatherer,
+                },
+                &links,
+                &StatefulRenderBuffers {
+                    particles,
+                    alive,
+                    indirect,
+                    counters,
+                },
+                (tick as f32 + 0.5) * STATEFUL_TICK_DT,
+                4,
+            );
+            scene.queue.submit([encoder.finish()]);
+        }
+        let staging = scene.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 8,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = scene.device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&scene.states[0].spawn_counter, 0, &staging, 0, 4);
+        encoder.copy_buffer_to_buffer(&scene.states[1].spawn_counter, 0, &staging, 4, 4);
+        scene.queue.submit([encoder.finish()]);
+        staging.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        scene
+            .device
+            .wgpu_device()
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_secs(60)),
+            })
+            .unwrap();
+        let words: Vec<u32> = staging
+            .slice(..)
+            .get_mapped_range()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| u32::from_le_bytes(*bytes))
+            .collect();
+        eprintln!("rockets spawned {}, sparks spawned {}", words[0], words[1]);
+        assert!(words[0] >= 10, "{words:?}");
+        assert!(words[1] >= 48 * 5, "every rocket death bursts: {words:?}");
     }
 
     impl Scene {
@@ -4609,7 +4965,9 @@ mod coupled_tests {
                         },
                         follower: &self.follower,
                         spawner: &self.spawner,
+                        gatherer: &self.gatherer,
                     },
+                    &[],
                     &StatefulRenderBuffers {
                         particles,
                         alive,

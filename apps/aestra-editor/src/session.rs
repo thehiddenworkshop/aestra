@@ -1478,6 +1478,8 @@ impl EditorSession {
             source,
             trigger,
             target,
+            count: 1,
+            inherit_velocity: 0.0,
         };
         let id = event.id;
         if self.execute(
@@ -3212,10 +3214,10 @@ mod tests {
                 .validation_report()
                 .diagnostics
                 .iter()
-                .any(|diagnostic| {
-                    diagnostic.code == aestra_core::DiagnosticCode::UnsupportedEventLink
-                        && diagnostic.severity == aestra_core::DiagnosticSeverity::Warning
-                })
+                .all(|diagnostic| {
+                    diagnostic.code != aestra_core::DiagnosticCode::UnsupportedEventLink
+                }),
+            "event links run (host bindings HB9b): no longer reported unsupported"
         );
         while session.can_undo() {
             session.undo();

@@ -912,6 +912,8 @@ fn deleting_an_emitter_removes_and_restores_connected_events() {
         source,
         trigger: EventTrigger::OnDeath,
         target,
+        count: 1,
+        inherit_velocity: 0.0,
     };
     effect.events.push(event.clone());
     let mut history = CommandHistory::default();

@@ -56,8 +56,14 @@ fn stateful_emitters_reserve_persistent_state_sized_by_capacity() {
 
     let built = dynamics(&stateful_compiler(), &asset);
     assert_eq!(
-        built.simulation_state.stride, 8,
-        "prototype state stride is position + velocity + age + lifetime = 8 floats"
+        built.simulation_state.stride,
+        aestra_gpu::STATEFUL_STATE_STRIDE,
+        "the GPU record: position + velocity + age + lifetime, plus the spawn ordinal"
+    );
+    assert_eq!(aestra_gpu::STATEFUL_STATE_STRIDE, 9);
+    assert!(
+        aestra_gpu::STATEFUL_PRESENT_WGSL.contains("const AESTRA_STATE_STRIDE: u32 = 9u;"),
+        "the kernels index the state with the same stride the buffer is sized with"
     );
     assert_eq!(
         built.simulation_state.records, capacity,

@@ -335,17 +335,35 @@ impl ExtractedStages {
     }
 }
 
-/// The Follow Field (fluid F2b) and Spawn From Domain (fluid F10) pipelines the stateful path uses for
-/// coupled emitters.
+/// The Follow Field (fluid F2b), Spawn From Domain (fluid F10) and event gather (host bindings HB9b)
+/// pipelines the stateful path uses for emitters advancing in lockstep.
 #[derive(Resource)]
-pub(crate) struct FieldFollow(FieldFollowPipeline, DomainSpawnPipeline);
+pub(crate) struct FieldFollow(
+    FieldFollowPipeline,
+    DomainSpawnPipeline,
+    crate::execution::EventGatherPipeline,
+);
 
 fn init_field_follow(mut commands: Commands, device: Res<RenderDevice>) {
     let device = device.wgpu_device();
     commands.insert_resource(FieldFollow(
         FieldFollowPipeline::new(device),
         DomainSpawnPipeline::new(device),
+        crate::execution::EventGatherPipeline::new(device),
     ));
+}
+
+/// The lockstep coupling for an effect with particle event links but no coupled domains (host
+/// bindings HB9b): its emitters advance tick by tick together, with no domain.
+pub(super) fn link_coupling(follower: Option<&FieldFollow>) -> Option<super::Coupling<'_>> {
+    let follower = follower?;
+    Some(super::Coupling {
+        domains: &mut [],
+        inputs: crate::execution::StageInputs::default(),
+        follower: &follower.0,
+        spawner: &follower.1,
+        gatherer: &follower.2,
+    })
 }
 
 /// The coupling for an effect whose stateful emitters follow its domains (fluid F2b), when it has one
@@ -364,6 +382,7 @@ pub(super) fn coupling<'a>(
         inputs: extracted.inputs(),
         follower: &follower.0,
         spawner: &follower.1,
+        gatherer: &follower.2,
     })
 }
 

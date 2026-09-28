@@ -32,8 +32,7 @@ use aestra_core::{
 };
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, CompiledVec3Curve, EffectInstance, ExecutionPlan, Instruction,
-    MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, SimulationClass,
-    SimulationStateLayout, VectorSource,
+    MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, SimulationClass, VectorSource,
 };
 use encase::ShaderType;
 use glam::{Mat4, Quat, UVec2, UVec3, Vec2, Vec3, Vec4};
@@ -498,6 +497,12 @@ fn aestra_free_push(slot: u32) {
 /// (hybrid roadmap M8): the position is extrapolated by `velocity * subtick` and the age by `subtick`,
 /// so stateful particles move smoothly between the 60 Hz ticks and stay coherent with the continuous
 /// time analytic emitters evaluate at. Pass `0` for the raw tick state.
+/// Floats in one GPU persistent-state record of a stateful particle: the logical state
+/// (`aestra_runtime::SimulationStateLayout`: position, velocity, age, lifetime — 8 floats) plus the
+/// particle's spawn ordinal, which keys its deterministic randomness and its identity. The kernels'
+/// `AESTRA_STATE_STRIDE`; the render backend sizes the state buffer from it.
+pub const STATEFUL_STATE_STRIDE: u32 = 9;
+
 pub const STATEFUL_PRESENT_WGSL: &str = r#"
 const AESTRA_STATE_STRIDE: u32 = 9u;
 const AESTRA_PRESENT_STRIDE: u32 = 12u;
@@ -738,6 +743,7 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 @group(0) @binding(6) var<storage, read_write> alive_indices: array<u32>;
 @group(0) @binding(7) var<storage, read_write> indirect: array<atomic<u32>>;
 @group(0) @binding(8) var<storage, read_write> counters: array<atomic<u32>>;
+@group(0) @binding(9) var<storage, read_write> events: array<atomic<u32>>;
 "#;
 
 /// The three entry points of the unified stateful simulation module (hybrid roadmap M6), over the
@@ -759,7 +765,76 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
 /// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78; then the appearance
 /// `present` draws with (see [`pack_stateful_appearance`]), from 78.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_HOMING_BASE + STATEFUL_HOMING_WORDS;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_EVENTS_BASE + STATEFUL_EVENTS_WORDS;
+
+/// Where the particle-events block starts in the stateful params (host bindings HB9b), and its
+/// length: see [`pack_stateful_events`].
+pub const STATEFUL_EVENTS_BASE: usize = STATEFUL_HOMING_BASE + STATEFUL_HOMING_WORDS;
+pub const STATEFUL_EVENTS_WORDS: usize = 4;
+// The WGSL's AESTRA_EVENTS_BASE and AESTRA_HOMING_BASE.
+const _: () = assert!(STATEFUL_EVENTS_BASE == 172 && STATEFUL_HOMING_BASE == 156);
+
+/// Words of an emitter's particle-event buffer (binding 9 of the stateful module, host bindings
+/// HB9b) holding `capacity` events: a header `[count, overflowed, 0, 0]` — `count` may run past the
+/// capacity, the excess counted in `overflowed`, which is never cleared — then 8-word records
+/// `[trigger bit, ordinal, position xyz, velocity xyz]` (floats as bits), in no particular order.
+pub fn particle_event_words(capacity: u32) -> usize {
+    4 + 8 * capacity as usize
+}
+
+/// Packs which events an emitter's particles report (host bindings HB9b) into its stateful params:
+/// the trigger mask (`aestra_runtime::event_trigger_bit`s: spawn 1, death 2, collision 4) and the
+/// event buffer's capacity. A zero mask reports nothing.
+pub fn pack_stateful_events(mask: u32, capacity: u32, words: &mut [u32]) {
+    words[STATEFUL_EVENTS_BASE] = mask;
+    words[STATEFUL_EVENTS_BASE + 1] = capacity;
+}
+
+/// Words of the gather kernel's `gather_params`: `[trigger bit, count per event, list capacity, event
+/// capacity]`.
+pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 4;
+
+/// Gathers one link's events for a tick (host bindings HB9b): the events of one trigger in a source
+/// emitter's event buffer become an emission list in the layout Spawn From Domain reads (header
+/// `[count, 0, 0, 0]`, then 8-word records: position, a pad, velocity, a pad), each event repeated
+/// `count` times, **in source-ordinal order** — each event's rank is the number of same-trigger events
+/// with a smaller ordinal, so however the source's threads appended them, the list comes out the same
+/// and the spawns reproduce every bit. At most the list's capacity. The list's count word must be
+/// zero before; one thread per event slot.
+pub const PARTICLE_EVENT_GATHER_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read> events: array<u32>;
+@group(0) @binding(1) var<storage, read_write> emission: array<atomic<u32>>;
+@group(0) @binding(2) var<storage, read> gather_params: array<u32>;
+
+@compute @workgroup_size(64)
+fn gather_events(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let n = min(events[0], gather_params[3]);
+    let i = gid.x;
+    if (i >= n) { return; }
+    let kind = gather_params[0];
+    let r = 4u + i * 8u;
+    if (events[r] != kind) { return; }
+    let ordinal = events[r + 1u];
+    var rank = 0u;
+    for (var j = 0u; j < n; j = j + 1u) {
+        let other = 4u + j * 8u;
+        if (events[other] == kind && events[other + 1u] < ordinal) {
+            rank = rank + 1u;
+        }
+    }
+    let count = gather_params[1];
+    for (var k = 0u; k < count; k = k + 1u) {
+        let index = rank * count + k;
+        if (index >= gather_params[2]) { return; }
+        let o = 4u + index * 8u;
+        for (var axis = 0u; axis < 3u; axis = axis + 1u) {
+            atomicStore(&emission[o + axis], events[r + 2u + axis]);
+            atomicStore(&emission[o + 4u + axis], events[r + 5u + axis]);
+        }
+        atomicAdd(&emission[0], 1u);
+    }
+}
+"#;
 
 /// Where the homing block starts in the stateful params (host bindings HB7), and its length: see
 /// [`pack_stateful_homing`].
@@ -818,6 +893,7 @@ pub fn pack_stateful_homing_counted(
 /// `params: array<u32>` binding.
 pub const STATEFUL_HOMING_WGSL: &str = r#"
 const AESTRA_HOMING_BASE: u32 = 156u;
+const AESTRA_EVENTS_BASE: u32 = 172u;
 
 struct AestraHoming {
     velocity: vec3<f32>,
@@ -973,6 +1049,26 @@ fn aestra_place_point(local: vec3<f32>) -> vec3<f32> {
 "#;
 
 pub const STATEFUL_SIMULATION_ENTRIES: &str = r#"
+// Reports a particle event (host bindings HB9b) when the params' events block asks for its trigger:
+// appends a record to the event buffer, or counts an overflow when it is full.
+fn aestra_emit_event(kind: u32, ordinal: u32, position: vec3<f32>, velocity: vec3<f32>) {
+    if ((params[AESTRA_EVENTS_BASE] & kind) == 0u) { return; }
+    let index = atomicAdd(&events[0], 1u);
+    if (index >= params[AESTRA_EVENTS_BASE + 1u]) {
+        atomicAdd(&events[1], 1u);
+        return;
+    }
+    let r = 4u + index * 8u;
+    atomicStore(&events[r], kind);
+    atomicStore(&events[r + 1u], ordinal);
+    atomicStore(&events[r + 2u], bitcast<u32>(position.x));
+    atomicStore(&events[r + 3u], bitcast<u32>(position.y));
+    atomicStore(&events[r + 4u], bitcast<u32>(position.z));
+    atomicStore(&events[r + 5u], bitcast<u32>(velocity.x));
+    atomicStore(&events[r + 6u], bitcast<u32>(velocity.y));
+    atomicStore(&events[r + 7u], bitcast<u32>(velocity.z));
+}
+
 @compute @workgroup_size(64)
 fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let slot = gid.x;
@@ -996,6 +1092,11 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (homing.arrived && arrivals != 0u) {
                 atomicAdd(&counters[arrivals - 1u], 1u);
             }
+            aestra_emit_event(
+                2u,
+                ordinal,
+                vec3<f32>(state[base + 0u], state[base + 1u], state[base + 2u]),
+                vec3<f32>(state[base + 3u], state[base + 4u], state[base + 5u]));
             state[base + 6u] = lifetime;
             state[base + 7u] = 0.0;
             aestra_free_push(slot);
@@ -1028,7 +1129,14 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         var new_age = age + dt;
         if (collision.killed) { new_age = lifetime; }
         state[base + 6u] = new_age;
+        // A contact (host bindings HB9b): a kill, or a bounce that moved or redirected the particle.
+        let moved = any(collision.position != vec3<f32>(px, py, pz))
+            || any(collision.velocity != vec3<f32>(vx, vy, vz));
+        if (collision.killed || moved) {
+            aestra_emit_event(4u, ordinal, collision.position, collision.velocity);
+        }
         if (new_age >= lifetime) {
+            aestra_emit_event(2u, ordinal, collision.position, collision.velocity);
             state[base + 7u] = 0.0; // mark the slot free
             aestra_free_push(slot);
         }
@@ -1070,6 +1178,7 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
+    aestra_emit_event(1u, ordinal, position, launch);
 }
 
 @compute @workgroup_size(64)
@@ -1841,7 +1950,8 @@ impl GpuEffectArtifact {
             });
         let simulation_state = if stateful_records > 0 {
             GpuSimulationState {
-                stride: SimulationStateLayout::for_class(SimulationClass::Stateful).stride_floats(),
+                // The logical layout plus the spawn ordinal: the kernels' record.
+                stride: STATEFUL_STATE_STRIDE,
                 records: stateful_records,
             }
         } else {

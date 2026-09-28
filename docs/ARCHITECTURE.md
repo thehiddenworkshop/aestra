@@ -534,8 +534,23 @@ Rules:
   Portable code never calls into the engine per module or per particle.
 - **Capability** keeps its extension-SDK meaning: what a stage provides and what a module requires.
   What a binding supplies is a *field*, not a capability.
-- Particle lifecycle `EventLink`s (`OnSpawn`, `OnDeath`, `OnCollision`) are preserved in assets but
-  **not executed** by the current runtime. Timeline `ChoreographyEvent`s are the working event path.
+- Particle lifecycle `EventLink`s (`OnSpawn`, `OnDeath`, `OnCollision`) run on the stateful GPU
+  path (HB9b; see "Particle event links" below). Timeline `ChoreographyEvent`s remain the path for
+  authored, time-based cues.
+
+### Particle event links
+
+An `EventLink` makes one emitter spawn particles where another's particles spawn, die or collide:
+`count` per event, inheriting `inherit_velocity` × the source particle's velocity. The link's target
+is a *sub-emitter*: it spawns only from its links. Both ends run stateful, and an effect with links
+advances its emitters in lockstep. Each tick, every emitter advances; source kernels append their
+events to a bounded per-emitter buffer; then each link gathers its trigger's events **in
+source-ordinal order** and spawns them into its target through the Spawn From Domain kernels. The
+order doesn't depend on thread scheduling, so a rerun reproduces every particle. The CPU reference
+(`StatefulSimulation::events` / `spawn_from_events`) matches the GPU by ordinal. Events stay on the
+GPU. At most `PARTICLE_EVENT_CAPACITY` (1024) events per source and tick are kept; the rest are
+counted as overflow and reported as a warning, and that tick is no longer exactly reproducible.
+Particles spawned by a link do not raise `OnSpawn`.
 
 ### Attached emitters
 

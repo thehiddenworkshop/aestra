@@ -143,7 +143,7 @@ impl EffectCompiler {
             .iter()
             .filter(|emitter| emitter.enabled)
             .map(|emitter| {
-                let (class, promoted_by) = self.emitter_simulation(emitter);
+                let (class, promoted_by) = self.emitter_simulation(asset, emitter);
                 EmitterSimulationClass {
                     emitter: emitter.id,
                     name: emitter.name.clone(),
@@ -156,7 +156,11 @@ impl EffectCompiler {
 
     /// Derives one emitter's simulation class by aggregating its enabled modules' requirements, and
     /// the first module that promoted it above `Analytic`. Shared by classification and lowering.
-    fn emitter_simulation(&self, emitter: &Emitter) -> (SimulationClass, Option<ModuleTypeId>) {
+    fn emitter_simulation(
+        &self,
+        asset: &EffectAsset,
+        emitter: &Emitter,
+    ) -> (SimulationClass, Option<ModuleTypeId>) {
         let mut requirements = SimulationRequirements::ANALYTIC;
         let mut promoted_by = None;
         for module in emitter.modules.iter().filter(|module| module.enabled) {
@@ -170,8 +174,15 @@ impl EffectCompiler {
             }
         }
         // An attached emitter (host bindings HB7b) is at least stateful: its spawns must stay where
-        // the object was, which a time-only evaluation cannot remember. No module promoted it.
-        if emitter.attachment.is_some() && requirements.derived_class() == SimulationClass::Analytic
+        // the object was, which a time-only evaluation cannot remember. So is either end of a particle
+        // event link (HB9b): events come from, and spawn into, persistent particles. No module
+        // promoted it.
+        let linked = asset
+            .events
+            .iter()
+            .any(|link| link.source == emitter.id || link.target == emitter.id);
+        if (emitter.attachment.is_some() || linked)
+            && requirements.derived_class() == SimulationClass::Analytic
         {
             return (SimulationClass::Stateful, None);
         }
@@ -922,7 +933,7 @@ impl EffectCompiler {
                 })
                 .collect();
             // Every region of an emitter shares its modules, hence its simulation class (hybrid M3).
-            let simulation_class = self.emitter_simulation(emitter).0;
+            let simulation_class = self.emitter_simulation(asset, emitter).0;
             // Collision colliders (hybrid roadmap M10): gathered from the emitter's enabled collision
             // modules in order, so the stateful backend resolves them after each tick. Their presence
             // is also what promoted the emitter to a stateful class above.
@@ -1097,8 +1108,10 @@ impl EffectCompiler {
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
+        let event_links = compile_event_links(asset, &emitters)?;
 
         Ok(CompiledEffect {
+            event_links,
             source: asset.id,
             name: asset.name.clone(),
             duration: asset.duration,
@@ -3000,4 +3013,52 @@ fn invalid_presentation(
         ));
     }
     volume.layouts(block).err()
+}
+
+/// Resolves the effect's particle event links (host bindings HB9b) to compiled emitter indices. Both
+/// ends must be enabled emitters compiled to a single timeline region; a link to or from a disabled
+/// emitter is dropped (it raises and receives nothing).
+fn compile_event_links(
+    asset: &EffectAsset,
+    emitters: &[CompiledEmitter],
+) -> Result<Vec<aestra_runtime::CompiledEventLink>, CompileError> {
+    let mut report = ValidationReport::default();
+    let mut links = Vec::new();
+    for (index, link) in asset.events.iter().enumerate() {
+        let find = |id: aestra_core::EmitterId, end: &str| {
+            let regions: Vec<usize> = emitters
+                .iter()
+                .enumerate()
+                .filter(|(_, emitter)| emitter.source == id)
+                .map(|(index, _)| index)
+                .collect();
+            match regions.as_slice() {
+                [single] => Ok(emitters[*single].enabled.then_some(*single)),
+                _ => Err(Diagnostic::error(
+                    DiagnosticCode::InvalidReference,
+                    format!("effect.events[{index}].{end}"),
+                    "an event link's emitters must each play as a single timeline region",
+                )),
+            }
+        };
+        match (find(link.source, "source"), find(link.target, "target")) {
+            (Ok(Some(source)), Ok(Some(target))) => links.push(aestra_runtime::CompiledEventLink {
+                source,
+                trigger: link.trigger,
+                target,
+                count: link.count,
+                inherit: link.inherit_velocity,
+            }),
+            (Ok(_), Ok(_)) => {}
+            (source, target) => {
+                for diagnostic in [source.err(), target.err()].into_iter().flatten() {
+                    report.push(diagnostic);
+                }
+            }
+        }
+    }
+    if !report.diagnostics.is_empty() {
+        return Err(CompileError::Validation(report));
+    }
+    Ok(links)
 }

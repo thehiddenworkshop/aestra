@@ -233,3 +233,19 @@ fn an_emitter_attached_to_a_binding_round_trips() {
     let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
     assert_eq!(decoded.emitters, compiled.emitters);
 }
+
+#[test]
+fn particle_event_links_round_trip() {
+    use aestra_core::{EventLink, EventTrigger};
+    let mut effect = effect("Linked", Vec::new());
+    let burst = Emitter::basic_sprite("Burst", 1.0);
+    let mut link = EventLink::new(effect.emitters[0].id, EventTrigger::OnCollision, burst.id);
+    link.count = 3;
+    link.inherit_velocity = 0.5;
+    effect.emitters.push(burst);
+    effect.events.push(link);
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    assert_eq!(compiled.event_links.len(), 1);
+    let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(decoded.event_links, compiled.event_links);
+}

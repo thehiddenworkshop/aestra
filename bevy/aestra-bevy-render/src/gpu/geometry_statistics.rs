@@ -356,6 +356,7 @@ mod tests {
                 simulation_state: default(),
                 stateful_dispatch: Vec::new(),
                 stateful_only: false,
+                event_links: Vec::new(),
             },
         ));
         for _ in 0..MAX_IN_FLIGHT + 1 {

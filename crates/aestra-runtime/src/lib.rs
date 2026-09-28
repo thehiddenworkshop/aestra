@@ -37,8 +37,8 @@ pub use staged::{
 };
 pub use stateful::{
     Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingRetire, HomingTarget,
-    HomingTracker, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig, StatefulSimulation,
-    TargetChange, steer_homing,
+    HomingTracker, MAX_COLLIDERS, ParticleEvent, SpawnPlacement, SpawnShape, StatefulConfig,
+    StatefulSimulation, TargetChange, steer_homing,
 };
 pub use tier::QualityTier;
 
@@ -1180,12 +1180,62 @@ pub struct CompiledEffect {
     pub extension_stages: Vec<CompiledExtensionStage>,
     pub effect_clips: Vec<CompiledEffectClip>,
     pub choreography_events: Vec<CompiledChoreographyEvent>,
+    /// Particle event links (host bindings HB9b), in authored order — the order they apply each tick.
+    pub event_links: Vec<CompiledEventLink>,
     pub requirements: EffectRequirements,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,
     /// The quality tier the effect was compiled for (fluid F12); `high` is the authored effect.
     pub tier: QualityTier,
+}
+
+/// A compiled particle event link (host bindings HB9b): after every emitter has advanced a tick, the
+/// events of `trigger` that emitter `source`'s particles raised in it become particles of `target` —
+/// `count` per event, in source-ordinal order (so a rerun reproduces every bit), at the event's
+/// position, with `inherit` × its velocity plus `target`'s launch velocity. At most
+/// [`PARTICLE_EVENT_CAPACITY`] events per source emitter and tick are kept, and at most
+/// [`PARTICLE_EVENT_CAPACITY`] particles per link and tick spawned; beyond that the backend counts an
+/// overflow (and determinism is lost for that tick).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CompiledEventLink {
+    /// Index of the source emitter in [`CompiledEffect::emitters`].
+    pub source: usize,
+    pub trigger: aestra_core::EventTrigger,
+    /// Index of the target (sub-)emitter in [`CompiledEffect::emitters`].
+    pub target: usize,
+    pub count: u32,
+    pub inherit: f32,
+}
+
+/// Particle events kept per source emitter and tick, and particles spawned per link and tick, at most
+/// (host bindings HB9b).
+pub const PARTICLE_EVENT_CAPACITY: u32 = 1024;
+
+impl CompiledEffect {
+    /// Whether emitter `index` is a sub-emitter: some event link targets it, so it spawns only from
+    /// its links (host bindings HB9b).
+    pub fn is_event_target(&self, index: usize) -> bool {
+        self.event_links.iter().any(|link| link.target == index)
+    }
+
+    /// The triggers emitter `index`'s particles must report (host bindings HB9b), as a
+    /// bit set of [`event_trigger_bit`]s.
+    pub fn event_mask(&self, index: usize) -> u32 {
+        self.event_links
+            .iter()
+            .filter(|link| link.source == index)
+            .fold(0, |mask, link| mask | event_trigger_bit(link.trigger))
+    }
+}
+
+/// The bit of `trigger` in an emitter's event mask: spawn 1, death 2, collision 4.
+pub fn event_trigger_bit(trigger: aestra_core::EventTrigger) -> u32 {
+    match trigger {
+        aestra_core::EventTrigger::OnSpawn => 1,
+        aestra_core::EventTrigger::OnDeath => 2,
+        aestra_core::EventTrigger::OnCollision => 4,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

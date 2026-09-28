@@ -214,6 +214,24 @@ impl HomingTracker {
     }
 }
 
+/// A particle event the simulation raised in its last tick (host bindings HB9b): which particle (its
+/// spawn ordinal), where, and how fast it was going.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParticleEvent {
+    pub ordinal: u64,
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
+}
+
+/// The slot of each trigger in the per-tick event lists.
+fn trigger_index(trigger: aestra_core::EventTrigger) -> usize {
+    match trigger {
+        aestra_core::EventTrigger::OnSpawn => 0,
+        aestra_core::EventTrigger::OnDeath => 1,
+        aestra_core::EventTrigger::OnCollision => 2,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct StateParticle {
     /// The particle's spawn ordinal — its stable identity, used to match against the GPU backend
@@ -240,6 +258,8 @@ pub struct StatefulSimulation {
     homing_tracker: HomingTracker,
     /// Particles that reached their homing target so far (the `impact` event, host bindings HB9).
     arrivals: u64,
+    /// The spawn, death and collision events of the last tick (host bindings HB9b).
+    events: [Vec<ParticleEvent>; 3],
 }
 
 impl StatefulSimulation {
@@ -256,6 +276,7 @@ impl StatefulSimulation {
             homing_input: None,
             homing_tracker: HomingTracker::default(),
             arrivals: 0,
+            events: Default::default(),
         }
     }
 
@@ -269,6 +290,47 @@ impl StatefulSimulation {
     /// Particles already in flight keep their motion, so a moving placement leaves a wake.
     pub fn set_placement(&mut self, placement: SpawnPlacement) {
         self.config.placement = placement;
+    }
+
+    /// The events of `trigger` the last tick raised (host bindings HB9b): every spawn (not those made
+    /// by [`Self::spawn_from_events`]), every retirement, every contact with a collider.
+    pub fn events(&self, trigger: aestra_core::EventTrigger) -> &[ParticleEvent] {
+        &self.events[trigger_index(trigger)]
+    }
+
+    /// Spawns `count` particles per event (host bindings HB9b), after the tick, exactly as the GPU's
+    /// event spawn does: events in ordinal order, each repeated `count` times, at most
+    /// [`crate::PARTICLE_EVENT_CAPACITY`] and as many as there is room for; each becomes the next
+    /// ordinal, at the event's position, with `inherit` × its velocity plus the launch velocity the
+    /// ordinal samples (no shape, no placement: the event is already where it happened), and a
+    /// lifetime in range.
+    pub fn spawn_from_events(&mut self, events: &[ParticleEvent], count: u32, inherit: f32) {
+        let mut sorted = events.to_vec();
+        sorted.sort_by_key(|event| event.ordinal);
+        let room = (self.config.capacity as usize).saturating_sub(self.particles.len());
+        let records = sorted
+            .iter()
+            .flat_map(|event| std::iter::repeat_n(event, count as usize))
+            .take((crate::PARTICLE_EVENT_CAPACITY as usize).min(room));
+        for event in records {
+            let ordinal = self.spawned;
+            let launch = launch_velocity(&self.config, self.seed, ordinal);
+            let velocity =
+                std::array::from_fn(|axis| inherit * event.velocity[axis] + launch[axis]);
+            let lifetime = lerp(
+                self.config.lifetime.0,
+                self.config.lifetime.1,
+                spawn_uniform(self.seed, ordinal, 1),
+            );
+            self.particles.push(StateParticle {
+                id: ordinal,
+                position: event.position,
+                velocity,
+                age: 0.0,
+                lifetime,
+            });
+            self.spawned += 1;
+        }
     }
 
     /// How many particles have reached their homing target so far (host bindings HB9).
@@ -350,6 +412,10 @@ impl StatefulSimulation {
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;
         let drag = self.config.drag;
+        for events in &mut self.events {
+            events.clear();
+        }
+        let [spawned_events, deaths, collisions] = &mut self.events;
         let homing = self.config.homing.map(|homing| {
             let target = self.homing_tracker.resolve(homing.lost, self.homing_input);
             (homing, target)
@@ -369,6 +435,11 @@ impl StatefulSimulation {
                     self.arrivals += 1;
                 }
                 particle.age = particle.lifetime;
+                deaths.push(ParticleEvent {
+                    ordinal: particle.id,
+                    position: particle.position,
+                    velocity: particle.velocity,
+                });
                 continue;
             }
             // Semi-implicit (symplectic) Euler with linear drag and value-noise turbulence: the
@@ -390,16 +461,29 @@ impl StatefulSimulation {
             // Collision resolution against the authored colliders, in order. A killed particle is
             // retired immediately by forcing `age == lifetime` so the shared death check retires it
             // (matching the GPU death loop, which frees the slot on the same condition).
+            let before = (particle.position, particle.velocity);
             let killed = resolve_colliders(
                 &self.config.colliders,
                 self.config.collider_count,
                 &mut particle.position,
                 &mut particle.velocity,
             );
+            let event = ParticleEvent {
+                ordinal: particle.id,
+                position: particle.position,
+                velocity: particle.velocity,
+            };
+            // A contact: a kill, or a bounce that moved or redirected the particle.
+            if killed || before != (particle.position, particle.velocity) {
+                collisions.push(event);
+            }
             if killed {
                 particle.age = particle.lifetime;
             } else {
                 particle.age += dt;
+            }
+            if particle.age >= particle.lifetime {
+                deaths.push(event);
             }
         }
         self.particles
@@ -427,6 +511,11 @@ impl StatefulSimulation {
                 velocity,
                 age: 0.0,
                 lifetime,
+            });
+            spawned_events.push(ParticleEvent {
+                ordinal,
+                position,
+                velocity,
             });
             self.spawned += 1;
         }

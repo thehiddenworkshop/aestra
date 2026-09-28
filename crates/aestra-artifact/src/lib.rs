@@ -116,6 +116,9 @@ struct EffectV1 {
     emitters: Vec<EmitterV1>,
     effect_clips: Vec<EffectClipV1>,
     choreography_events: Vec<ChoreographyEventV1>,
+    /// Particle event links (host bindings HB9b, v4 additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    event_links: Vec<EventLinkV4>,
     requirements: RequirementsV1,
     max_particles: u64,
     source_map: Vec<SourceMapEntryV1>,
@@ -123,6 +126,48 @@ struct EffectV1 {
     /// The quality tier compiled for (fluid F12, additive): absent for `high`, the authored effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tier: Option<TierV4>,
+}
+
+/// A compiled particle event link (host bindings HB9b): emitter indices, checked on reload.
+#[derive(Debug, Serialize, Deserialize)]
+struct EventLinkV4 {
+    source: u32,
+    trigger: aestra_core::EventTrigger,
+    target: u32,
+    count: u32,
+    inherit: f32,
+}
+
+impl EventLinkV4 {
+    fn decode(
+        self,
+        index: usize,
+        emitters: usize,
+    ) -> Result<aestra_runtime::CompiledEventLink, ArtifactError> {
+        let path = format!("effect.event_links[{index}]");
+        if self.source as usize >= emitters || self.target as usize >= emitters {
+            return invalid(
+                path,
+                "an event link names an emitter the effect does not have",
+            );
+        }
+        if self.count == 0
+            || self.count > aestra_core::MAX_EVENT_LINK_COUNT
+            || !self.inherit.is_finite()
+        {
+            return invalid(
+                path,
+                "an event link's count or inherited velocity is out of range",
+            );
+        }
+        Ok(aestra_runtime::CompiledEventLink {
+            source: self.source as usize,
+            trigger: self.trigger,
+            target: self.target as usize,
+            count: self.count,
+            inherit: self.inherit,
+        })
+    }
 }
 
 /// A quality tier (fluid F12): see [`aestra_runtime::QualityTier`].
@@ -809,6 +854,17 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .iter()
                 .map(ChoreographyEventV1::from)
                 .collect(),
+            event_links: effect
+                .event_links
+                .iter()
+                .map(|link| EventLinkV4 {
+                    source: link.source as u32,
+                    trigger: link.trigger,
+                    target: link.target as u32,
+                    count: link.count,
+                    inherit: link.inherit,
+                })
+                .collect(),
             requirements: RequirementsV1::encode(&effect.requirements)?,
             max_particles: encode_u64(effect.max_particles, "effect.max_particles")?,
             source_map: effect
@@ -1046,6 +1102,15 @@ impl TryFrom<EffectV1> for CompiledEffect {
             binding_slots,
             host_fields,
             particle_layout: effect.particle_layout.into(),
+            event_links: {
+                let count = emitters.len();
+                effect
+                    .event_links
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, link)| link.decode(index, count))
+                    .collect::<Result<Vec<_>, _>>()?
+            },
             emitters,
             extension_stages,
             effect_clips,

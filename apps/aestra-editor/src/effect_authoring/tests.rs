@@ -22,6 +22,8 @@ fn reusable_effect_extraction_replaces_selected_emitters_and_is_undoable() {
         source: first_id,
         trigger: EventTrigger::OnDeath,
         target: second_id,
+        count: 1,
+        inherit_velocity: 0.0,
     });
     owner.choreography_order = vec![
         ChoreographyTrackId::Emitter(first_id),
@@ -92,6 +94,8 @@ fn reusable_effect_extraction_rejects_cross_boundary_event_links() {
         source: first_id,
         trigger: EventTrigger::OnSpawn,
         target: second_id,
+        count: 1,
+        inherit_velocity: 0.0,
     });
 
     let error = reusable_effect_plan(&owner, &[first_id], "Partial").unwrap_err();

@@ -2659,3 +2659,86 @@ fn an_attached_emitter_follows_its_bound_object_into_effect_space() {
     assert!(near(placed.translation, [3.0, 0.0, 0.0]), "{placed:?}");
     assert_eq!(placed.rotation, authored.rotation);
 }
+
+#[test]
+fn event_links_compile_to_stateful_emitters_and_sub_emitters() {
+    use aestra_core::{EventLink, EventTrigger};
+    let mut effect = EffectAsset::new("Fireworks", 4.0);
+    let rockets = aestra_core::Emitter::basic_sprite("Rockets", 4.0);
+    let burst = aestra_core::Emitter::basic_sprite("Burst", 4.0);
+    let mut link = EventLink::new(rockets.id, EventTrigger::OnDeath, burst.id);
+    link.count = 48;
+    link.inherit_velocity = 0.25;
+    effect.emitters = vec![rockets, burst];
+    effect.events.push(link.clone());
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != aestra_core::DiagnosticCode::UnsupportedEventLink),
+        "event links run (host bindings HB9b)"
+    );
+
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    assert!(
+        compiled
+            .emitters
+            .iter()
+            .all(|emitter| emitter.simulation_class == aestra_runtime::SimulationClass::Stateful),
+        "both ends of a link simulate persistent particles"
+    );
+    assert_eq!(
+        compiled.event_links,
+        [aestra_runtime::CompiledEventLink {
+            source: 0,
+            trigger: EventTrigger::OnDeath,
+            target: 1,
+            count: 48,
+            inherit: 0.25,
+        }]
+    );
+    assert!(compiled.is_event_target(1) && !compiled.is_event_target(0));
+    assert_eq!(
+        compiled.event_mask(0),
+        aestra_runtime::event_trigger_bit(EventTrigger::OnDeath)
+    );
+    assert_eq!(compiled.event_mask(1), 0);
+
+    // A count out of range is rejected.
+    let mut bad = effect.clone();
+    bad.events[0].count = 0;
+    assert!(EffectCompiler::default().compile(&bad).is_err());
+    // A link from a disabled emitter is dropped: it raises nothing.
+    let mut disabled = effect.clone();
+    disabled.emitters[0].enabled = false;
+    assert!(
+        EffectCompiler::default()
+            .compile(&disabled)
+            .unwrap()
+            .event_links
+            .is_empty()
+    );
+    // Older assets without the new fields read their defaults.
+    let path = std::env::temp_dir().join(format!(
+        "aestra-event-links-{}.aestra.ron",
+        std::process::id()
+    ));
+    effect.save_ron(&path).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let old = text
+        .replace("count:48,", "")
+        .replace("count: 48,", "")
+        .replace("inherit_velocity:0.25,", "")
+        .replace("inherit_velocity: 0.25,", "");
+    assert_ne!(old, text, "the fields were written");
+    let reloaded = EffectAsset::from_ron(&old).unwrap();
+    assert_eq!(
+        (
+            reloaded.events[0].count,
+            reloaded.events[0].inherit_velocity
+        ),
+        (1, 0.0)
+    );
+}

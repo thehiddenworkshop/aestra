@@ -1521,6 +1521,99 @@ impl DomainSpawnPipeline {
     }
 }
 
+/// Particle event links on the device (host bindings HB9b): gathers one link's events of a tick into
+/// an emission list in source-ordinal order ([`aestra_gpu::PARTICLE_EVENT_GATHER_WGSL`]), which
+/// [`DomainSpawnPipeline`] then turns into the target's particles ([`Self::spawn`]). Engine-neutral,
+/// like [`StageExecutor`].
+pub struct EventGatherPipeline {
+    pipeline: wgpu::ComputePipeline,
+}
+
+impl EventGatherPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("aestra event gather"),
+            source: wgpu::ShaderSource::Wgsl(aestra_gpu::PARTICLE_EVENT_GATHER_WGSL.into()),
+        });
+        Self {
+            pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("aestra event gather"),
+                layout: None,
+                module: &module,
+                entry_point: Some("gather_events"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
+        }
+    }
+
+    /// Bytes of a source emitter's event buffer, and of a link's emission list.
+    pub fn buffer_bytes() -> u64 {
+        aestra_gpu::particle_event_words(aestra_runtime::PARTICLE_EVENT_CAPACITY) as u64 * 4
+    }
+
+    /// The Spawn From Domain a link's list is spawned with.
+    pub fn spawn(link: &aestra_runtime::CompiledEventLink) -> aestra_runtime::CompiledDomainSpawn {
+        aestra_runtime::CompiledDomainSpawn {
+            stage: 0,
+            emission: aestra_runtime::EmissionLayout {
+                resource: aestra_core::ResourceTypeId::new("aestra.resource.particle_events"),
+                capacity: aestra_runtime::PARTICLE_EVENT_CAPACITY,
+            },
+            inherit: link.inherit,
+        }
+    }
+
+    /// Encodes one tick's gather of `link`'s events from the source's `events` buffer into `list`
+    /// (cleared first).
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        events: &wgpu::Buffer,
+        list: &wgpu::Buffer,
+        link: &aestra_runtime::CompiledEventLink,
+    ) {
+        encoder.clear_buffer(list, 0, Some(4));
+        let capacity = aestra_runtime::PARTICLE_EVENT_CAPACITY;
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra event gather params"),
+            contents: &words_to_bytes(&[
+                aestra_runtime::event_trigger_bit(link.trigger),
+                link.count,
+                capacity,
+                capacity,
+            ]),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra event gather"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: events.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: list.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra event gather"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups(capacity.div_ceil(64), 1, 1);
+    }
+}
+
 /// Copies a grid field into an `rgba16float` 3-D storage texture of the grid's size (fluid F3), so
 /// volume presentations sample it with hardware trilinear filtering (see
 /// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]); a bricked field (fluid F7) into a brick atlas and
