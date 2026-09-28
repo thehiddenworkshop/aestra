@@ -7,6 +7,8 @@ use fluent_bundle::FluentArgs;
 use std::time::Duration;
 
 const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(250);
+const MENU_POPUP_MIN_WIDTH: f32 = 292.0;
+const MENU_SHORTCUT_WIDTH: f32 = 96.0;
 
 /// Owns menu state and all menu-specific UI synchronization.
 pub(crate) struct EditorMenusPlugin {
@@ -280,6 +282,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, standalone: bool, localize
                     MenuSurface,
                     RelativeCursorPosition::default(),
                 ))
+                .queue(widen_editor_menu_popup)
                 .with_children(|dropdown| {
                     for (message_id, shortcut, action) in [
                         ("file-new-project", "", DocumentAction::NewProject),
@@ -450,6 +453,7 @@ fn spawn_edit_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
                     MenuSurface,
                     RelativeCursorPosition::default(),
                 ))
+                .queue(widen_editor_menu_popup)
                 .with_children(|dropdown| {
                     spawn_feathers_menu_item(
                         dropdown,
@@ -515,6 +519,12 @@ fn menu_button(
         });
 }
 
+fn widen_editor_menu_popup(mut entity: bevy::ecs::world::EntityWorldMut) {
+    if let Some(mut node) = entity.get_mut::<Node>() {
+        node.min_width = Val::Px(MENU_POPUP_MIN_WIDTH);
+    }
+}
+
 fn spawn_dropdown(
     parent: &mut ChildSpawnerCommands,
     menu: MenuKind,
@@ -529,6 +539,7 @@ fn spawn_dropdown(
             MenuSurface,
             RelativeCursorPosition::default(),
         ))
+        .queue(widen_editor_menu_popup)
         .with_children(|dropdown| {
             for (message_id, shortcut, action) in items {
                 spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
@@ -555,6 +566,7 @@ fn spawn_view_menu(
                     MenuSurface,
                     RelativeCursorPosition::default(),
                 ))
+                .queue(widen_editor_menu_popup)
                 .with_children(|dropdown| {
                     spawn_checkable_menu_item(
                         dropdown,
@@ -706,6 +718,7 @@ fn spawn_menu_item_content(
     item.spawn((
         LocalizedText(message_id),
         Text::new(label),
+        TextLayout::no_wrap(),
         ThemedText,
         Pickable::IGNORE,
     ));
@@ -715,6 +728,11 @@ fn spawn_menu_item_content(
     });
     item.spawn((
         Text::new(shortcut),
+        Node {
+            width: Val::Px(MENU_SHORTCUT_WIDTH),
+            ..default()
+        },
+        TextLayout::no_wrap().with_justify(Justify::Right),
         ThemeTextColor(tokens::TEXT_DIM),
         Pickable::IGNORE,
     ));
@@ -768,6 +786,7 @@ fn spawn_checkable_menu_item<A: Component>(
             item.spawn((
                 LocalizedText(message_id),
                 Text::new(label),
+                TextLayout::no_wrap(),
                 ThemedText,
                 Pickable::IGNORE,
             ));
@@ -777,6 +796,11 @@ fn spawn_checkable_menu_item<A: Component>(
             });
             item.spawn((
                 Text::new(shortcut),
+                Node {
+                    width: Val::Px(MENU_SHORTCUT_WIDTH),
+                    ..default()
+                },
+                TextLayout::no_wrap().with_justify(Justify::Right),
                 ThemeTextColor(tokens::TEXT_DIM),
                 Pickable::IGNORE,
             ));
@@ -1110,6 +1134,14 @@ mod tests {
                 spawn_file_menu(parent, false, &localizer);
             });
         app.world_mut().flush();
+        let popup = app
+            .world_mut()
+            .query_filtered::<(Entity, &Node), With<MenuDropdown>>()
+            .iter(app.world())
+            .next()
+            .map(|(entity, node)| (entity, node.min_width))
+            .unwrap();
+        assert_eq!(popup.1, Val::Px(MENU_POPUP_MIN_WIDTH));
         let items = app
             .world_mut()
             .query_filtered::<(Entity, &DocumentAction), With<FileTargetItem>>()
@@ -1126,6 +1158,30 @@ mod tests {
             items
                 .iter()
                 .any(|(action, _)| *action == DocumentAction::SaveAll)
+        );
+        let save = items
+            .iter()
+            .find(|(action, _)| *action == DocumentAction::Save)
+            .unwrap()
+            .1;
+        let shortcut = app
+            .world()
+            .get::<Children>(save)
+            .unwrap()
+            .iter()
+            .find(|child| {
+                app.world()
+                    .get::<Text>(*child)
+                    .is_some_and(|text| text.0 == "Ctrl+S")
+            })
+            .unwrap();
+        assert_eq!(
+            app.world().get::<Node>(shortcut).unwrap().width,
+            Val::Px(MENU_SHORTCUT_WIDTH)
+        );
+        assert_eq!(
+            app.world().get::<TextLayout>(shortcut).unwrap().justify,
+            Justify::Right
         );
         assert!(
             !items

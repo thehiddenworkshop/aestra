@@ -5,6 +5,8 @@ use bevy::{
 
 pub const APP_BG: Color = Color::srgb(0.027, 0.031, 0.047);
 pub const MENU: Color = Color::srgb(0.032, 0.037, 0.055);
+pub const MENU_ITEM_HOVER: Color = Color::srgb(0.19, 0.20, 0.25);
+pub const MENU_ITEM_PRESSED: Color = Color::srgb(0.28, 0.22, 0.42);
 pub const PANEL_DARK: Color = Color::srgb(0.039, 0.045, 0.066);
 pub const PANEL: Color = Color::srgb(0.055, 0.062, 0.087);
 pub const PANEL_LIGHT: Color = Color::srgb(0.070, 0.078, 0.105);
@@ -186,9 +188,9 @@ pub fn feathers_theme() -> UiTheme {
     colors.insert(tokens::COLOR_PLANE_BG, PANEL_DARK);
     colors.insert(tokens::MENU_BG, MENU);
     colors.insert(tokens::MENU_BORDER, BORDER_BRIGHT);
-    colors.insert(tokens::MENUITEM_BG_HOVER, PANEL_LIGHT);
-    colors.insert(tokens::MENUITEM_BG_PRESSED, SELECTION);
-    colors.insert(tokens::MENUITEM_BG_FOCUSED, SELECTION);
+    colors.insert(tokens::MENUITEM_BG_HOVER, MENU_ITEM_HOVER);
+    colors.insert(tokens::MENUITEM_BG_PRESSED, MENU_ITEM_PRESSED);
+    colors.insert(tokens::MENUITEM_BG_FOCUSED, MENU_ITEM_HOVER);
     colors.insert(tokens::MENUITEM_TEXT, TEXT);
     colors.insert(tokens::MENUITEM_TEXT_DISABLED, TEXT_FAINT);
 
@@ -223,4 +225,18 @@ pub fn feathers_theme() -> UiTheme {
     colors.insert(tokens::LISTROW_TEXT_DISABLED, TEXT_FAINT);
 
     theme
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menu_items_share_visible_hover_and_keyboard_focus_colors() {
+        let theme = feathers_theme();
+        assert_eq!(theme.color(&tokens::MENUITEM_BG_HOVER), MENU_ITEM_HOVER);
+        assert_eq!(theme.color(&tokens::MENUITEM_BG_FOCUSED), MENU_ITEM_HOVER);
+        assert_eq!(theme.color(&tokens::MENUITEM_BG_PRESSED), MENU_ITEM_PRESSED);
+        assert_ne!(MENU_ITEM_HOVER, theme.color(&tokens::MENU_BG));
+    }
 }
