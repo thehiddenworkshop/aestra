@@ -41,9 +41,11 @@ mod bindings;
 mod choreography_tests;
 mod project;
 mod project_profile;
+mod world;
 pub use bindings::{AestraBindings, AestraLinearVelocity, binding_frame, spatial_snapshot};
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
+pub use world::sdf_from_meshes;
 
 pub use aestra_bevy_render::material::{MaterialRuntimeBinding, compile_material_program};
 pub use aestra_bevy_render::{
@@ -53,6 +55,8 @@ pub use aestra_bevy_render::{
     EffectRequirements, EffectRuntimeStatus, GpuCapabilities, PresentationMode, PresentedEffect,
     RendererCapability, gpu,
 };
+// The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
+pub use aestra_bevy_render::gpu::{AestraEffectOutputs, AestraOutputEvent, AestraWorldSdf};
 pub use aestra_compiler::{
     AestraExtension, CompileError, EffectCompiler, ExtensionManifest, ExtensionRegistry,
     ModuleRegistry, ProjectCompileError, link_extension,
@@ -70,6 +74,7 @@ pub use aestra_runtime::{
     ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind,
     RuntimeValue, SeekOrigin, SeekPlan, SeekQuality, SimulationSeekMode,
 };
+pub use aestra_runtime::{EffectOutputEvent, SdfVolume, StageOutputValue};
 
 use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;

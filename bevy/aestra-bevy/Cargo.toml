@@ -22,4 +22,6 @@ aestra-artifact = { path = "../../crates/aestra-artifact" }
 # compiled project. The crate itself plays an already-compiled project, so this
 # stays a dev-dependency: producing the artifact is the host application's job.
 aestra-project = { path = "../../crates/aestra-project" }
+# The `fluid_world` example's smoke and water (fluid F11).
+aestra-fluid = { path = "../../extensions/aestra-fluid" }
 wesl = "0.3.2"
