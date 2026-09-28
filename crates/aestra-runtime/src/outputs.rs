@@ -1,7 +1,10 @@
-//! Stage outputs on the host side (fluid F11, host bindings HB9): the values a stage reports
-//! ([`StageOutput`]) read out of the words the host read back, and the runtime events they raise.
-//! Engine-neutral: a host adapter (Bevy, say) reads the output resources back after each frame's
-//! ticks, hands the words here, and maps the events onto its own event model.
+//! Runtime events and stage outputs on the host side (fluid F11, host bindings HB9): the values a
+//! stage reports ([`StageOutput`]) read out of the words the host read back, the runtime events they
+//! raise, and the effect's other runtime events — a homing target lost or acquired, particles
+//! reaching it, the playback finishing. Engine-neutral: a host adapter (Bevy, say) reads what the
+//! backend reports after each frame's ticks and maps the events onto its own event model. Events are
+//! visual outcomes for gameplay to *hear*, never state it must obey (see `docs/ARCHITECTURE.md`,
+//! "Gameplay authority").
 
 use crate::{ExecutionBlock, OutputEvent, StageOutput};
 use aestra_core::{ModuleId, ResourceTypeId};
@@ -27,17 +30,82 @@ impl StageOutputValue {
     }
 }
 
-/// A runtime event an output raised: its magnitude rose past its event's threshold.
+/// Something hit: a stage output rose past its threshold (a fluid pushing a collider), or homing
+/// particles reached their target. Its magnitude is the force, or the number of arrivals.
+pub const EVENT_IMPACT: &str = "impact";
+/// The homing target is no longer supplied; the value is where it was last seen (world space).
+pub const EVENT_TARGET_LOST: &str = "target_lost";
+/// The homing target is supplied again (or for the first time); the value is where (world space).
+pub const EVENT_TARGET_ACQUIRED: &str = "target_acquired";
+/// A play-once effect's playback reached its end. Particles may still be alive.
+pub const EVENT_FINISHED: &str = "finished";
+
+/// What raised a runtime event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventOrigin {
+    /// An extension stage, as indexed in `CompiledEffect::all_extension_stages`.
+    Stage(usize),
+    /// An emitter, by index in `CompiledEffect::emitters`.
+    Emitter(usize),
+    /// The effect as a whole.
+    Effect,
+}
+
+/// A runtime event an effect raised (host bindings HB9): an output rose past its threshold, a homing
+/// target was lost or acquired, particles reached it, the playback finished. `kind` is one of the
+/// `EVENT_*` names, or a plugin's own.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectOutputEvent {
-    /// The event's kind, e.g. `impact`.
+    /// The event's kind, e.g. [`EVENT_IMPACT`].
     pub kind: String,
-    /// The output that raised it, e.g. `force`.
+    /// The output that raised it, e.g. `force`; `homing` for homing events; empty otherwise.
     pub output: String,
+    /// The authored module that raised it, when one did.
     pub source: Option<ModuleId>,
-    pub stage: usize,
+    pub origin: EventOrigin,
     pub value: Vec<f32>,
     pub magnitude: f32,
+}
+
+impl EffectOutputEvent {
+    /// An event with no output behind it: `kind` from `origin`, carrying `value`.
+    pub fn new(
+        kind: &str,
+        origin: EventOrigin,
+        output: &str,
+        value: Vec<f32>,
+        magnitude: f32,
+    ) -> Self {
+        Self {
+            kind: kind.into(),
+            output: output.into(),
+            source: None,
+            origin,
+            value,
+            magnitude,
+        }
+    }
+}
+
+/// Raises `finished` once when a play-once effect's playback reaches its end, and again after each
+/// restart that reaches it again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FinishedTracker {
+    finished: bool,
+}
+
+impl FinishedTracker {
+    /// Observes `instance`'s playback; returns the event when it has just finished.
+    pub fn observe(&mut self, instance: &crate::EffectInstance) -> Option<EffectOutputEvent> {
+        let effect = instance.effect();
+        let done = effect.playback_mode == aestra_core::EffectPlaybackMode::Once
+            && instance.time() >= effect.duration;
+        let raised = done && !self.finished;
+        self.finished = done;
+        raised.then(|| {
+            EffectOutputEvent::new(EVENT_FINISHED, EventOrigin::Effect, "", Vec::new(), 0.0)
+        })
+    }
 }
 
 /// Reads stage `stage`'s outputs from `words`, the read-back contents of its output resources.
@@ -95,7 +163,7 @@ impl OutputEventTracker {
                         kind: event.kind.clone(),
                         output: value.name.clone(),
                         source: value.source,
-                        stage: value.stage,
+                        origin: EventOrigin::Stage(value.stage),
                         value: value.value.clone(),
                         magnitude,
                     });
@@ -168,10 +236,10 @@ mod tests {
         assert_eq!(
             (
                 events[0].kind.as_str(),
-                events[0].stage,
+                events[0].origin,
                 events[0].magnitude
             ),
-            ("impact", 2, 13.0)
+            ("impact", EventOrigin::Stage(2), 13.0)
         );
         assert!(
             tracker.observe(&read([0.0, 20.0, 0.0])).is_empty(),

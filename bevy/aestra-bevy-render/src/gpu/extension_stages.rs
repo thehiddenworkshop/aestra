@@ -106,7 +106,9 @@ impl AestraEffectOutputs {
 }
 
 /// A runtime event an effect raised for gameplay (host bindings HB9): an output rose past its
-/// threshold — a fluid pushing a collider hard enough for an `impact`, say.
+/// threshold (a fluid pushing a collider hard enough for an `impact`), homing particles reached their
+/// target (`impact`), the target was lost or acquired, a play-once effect finished. Visual outcomes
+/// to hear, never gameplay state to obey: see `aestra_runtime::EVENT_IMPACT` and its siblings.
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct AestraOutputEvent {
     /// The effect that raised it.
@@ -170,6 +172,34 @@ fn receive_stage_outputs(
                     .entity(entity)
                     .insert((AestraEffectOutputs { values }, fresh));
             }
+        }
+    }
+}
+
+/// Whether an effect's playback has finished (host bindings HB9), to raise `finished` once.
+#[derive(Component, Default)]
+struct FinishedWatch(aestra_runtime::FinishedTracker);
+
+fn raise_finished_events(
+    mut commands: Commands,
+    mut effects: Query<(Entity, &PresentedEffect, Option<&mut FinishedWatch>)>,
+    mut events: MessageWriter<AestraOutputEvent>,
+) {
+    for (entity, presented, watch) in &mut effects {
+        let mut fresh = FinishedWatch::default();
+        let raised = match watch {
+            Some(mut watch) => watch.0.observe(&presented.instance),
+            None => {
+                let raised = fresh.0.observe(&presented.instance);
+                commands.entity(entity).insert(fresh);
+                raised
+            }
+        };
+        if let Some(event) = raised {
+            events.write(AestraOutputEvent {
+                effect: entity,
+                event,
+            });
         }
     }
 }
@@ -394,6 +424,7 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(outputs.clone())
         .add_message::<AestraOutputEvent>()
         .add_systems(PreUpdate, receive_stage_outputs)
+        .add_systems(PostUpdate, raise_finished_events)
         .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
         .add_systems(PreUpdate, receive_stage_timings)
         .add_systems(PreUpdate, receive_stage_progress)
@@ -1252,6 +1283,65 @@ mod tests {
             && message.event.kind == aestra_fluid::EVENT_IMPACT
             && message.event.source == Some(shield_id)));
         assert_eq!(raised[1].event.value, [30.0, 0.0, 0.0]);
+    }
+
+    /// Host bindings HB9: a play-once effect raises `finished` once when its playback reaches the end,
+    /// and again after a restart reaches it again; a looping one never does.
+    #[test]
+    fn a_play_once_effect_raises_finished_once_per_playthrough() {
+        use bevy::ecs::message::Messages;
+        use bevy::ecs::system::RunSystemOnce;
+        let compile = |mode: aestra_core::EffectPlaybackMode| {
+            let mut effect = aestra_core::EffectAsset::new("Burst", 2.0);
+            effect.playback_mode = mode;
+            effect
+                .emitters
+                .push(aestra_core::Emitter::basic_sprite("Sparks", 2.0));
+            Arc::new(
+                aestra_compiler::EffectCompiler::default()
+                    .compile(&effect)
+                    .unwrap(),
+            )
+        };
+        let mut world = World::new();
+        world.init_resource::<Messages<AestraOutputEvent>>();
+        let once = world
+            .spawn(PresentedEffect::new(compile(
+                aestra_core::EffectPlaybackMode::Once,
+            )))
+            .id();
+        let looping = world
+            .spawn(PresentedEffect::new(compile(
+                aestra_core::EffectPlaybackMode::LoopRestart,
+            )))
+            .id();
+        let frame = |world: &mut World, time: f32| -> Vec<AestraOutputEvent> {
+            for entity in [once, looping] {
+                world
+                    .get_mut::<PresentedEffect>(entity)
+                    .unwrap()
+                    .instance
+                    .set_playback_time(time);
+            }
+            world.run_system_once(raise_finished_events).unwrap();
+            world.flush();
+            world
+                .resource_mut::<Messages<AestraOutputEvent>>()
+                .drain()
+                .collect()
+        };
+        let mut raised = Vec::new();
+        for time in [0.5, 1.9, 2.0, 2.5, 3.0] {
+            raised.extend(frame(&mut world, time));
+        }
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert_eq!(raised[0].effect, once);
+        assert_eq!(raised[0].event.kind, aestra_runtime::EVENT_FINISHED);
+        assert_eq!(raised[0].event.origin, aestra_runtime::EventOrigin::Effect);
+        // A restart, played through again.
+        raised.extend(frame(&mut world, 0.0));
+        raised.extend(frame(&mut world, 2.0));
+        assert_eq!(raised.len(), 2);
     }
 
     #[test]

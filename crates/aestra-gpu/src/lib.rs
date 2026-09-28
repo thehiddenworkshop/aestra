@@ -775,6 +775,18 @@ pub fn pack_stateful_homing(
     target: Option<&aestra_runtime::HomingTarget>,
     words: &mut [u32],
 ) {
+    pack_stateful_homing_counted(config, target, None, words);
+}
+
+/// [`pack_stateful_homing`], also counting arrivals (the `impact` event, host bindings HB9): each
+/// particle that reaches the target this tick adds one to word `arrivals` of the `counters` binding.
+/// `None` counts nothing (a replay must not raise its events again).
+pub fn pack_stateful_homing_counted(
+    config: Option<&aestra_runtime::HomingConfig>,
+    target: Option<&aestra_runtime::HomingTarget>,
+    arrivals: Option<u32>,
+    words: &mut [u32],
+) {
     let block = &mut words[STATEFUL_HOMING_BASE..STATEFUL_HOMING_BASE + STATEFUL_HOMING_WORDS];
     block.fill(0);
     let Some(config) = config else {
@@ -797,6 +809,7 @@ pub fn pack_stateful_homing(
     block[11] = config.acceleration.to_bits();
     block[12] = config.turn_rate.to_bits();
     block[13] = config.arrival_radius.to_bits();
+    block[14] = arrivals.map_or(0, |word| word + 1);
 }
 
 /// Homing for the stateful GPU backend (host bindings HB7): `aestra_homing_steer` steers a particle's
@@ -809,6 +822,8 @@ const AESTRA_HOMING_BASE: u32 = 156u;
 struct AestraHoming {
     velocity: vec3<f32>,
     killed: bool,
+    // Killed because it reached the target (not because the target was lost).
+    arrived: bool,
 }
 
 fn aestra_homing_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
@@ -829,7 +844,7 @@ fn aestra_homing_f32(word: u32) -> f32 {
 
 fn aestra_homing_steer(position: vec3<f32>, velocity: vec3<f32>) -> AestraHoming {
     if (params[AESTRA_HOMING_BASE] == 0u) {
-        return AestraHoming(velocity, false);
+        return AestraHoming(velocity, false, false);
     }
     let dt = bitcast<f32>(params[8]);
     let cruise = aestra_homing_f32(10u);
@@ -842,7 +857,7 @@ fn aestra_homing_steer(position: vec3<f32>, velocity: vec3<f32>) -> AestraHoming
         let to = goal - position;
         let distance = sqrt(aestra_homing_dot(to, to));
         if (distance <= aestra_homing_f32(13u)) {
-            return AestraHoming(velocity, true);
+            return AestraHoming(velocity, true, true);
         }
         let reach = distance / max(cruise, 1e-6);
         let aim = goal + target_velocity * reach - position;
@@ -851,7 +866,7 @@ fn aestra_homing_steer(position: vec3<f32>, velocity: vec3<f32>) -> AestraHoming
         let blended = heading + (desired - heading) * turn;
         direction = aestra_homing_normalize(blended, desired);
     } else if (params[AESTRA_HOMING_BASE + 2u] == 2u) {
-        return AestraHoming(velocity, true);
+        return AestraHoming(velocity, true, false);
     }
     var speed = cruise;
     let acceleration = aestra_homing_f32(11u);
@@ -859,7 +874,7 @@ fn aestra_homing_steer(position: vec3<f32>, velocity: vec3<f32>) -> AestraHoming
         let step = acceleration * dt;
         speed = speed_now + clamp(cruise - speed_now, -step, step);
     }
-    return AestraHoming(direction * speed, false);
+    return AestraHoming(direction * speed, false, false);
 }
 "#;
 
@@ -976,6 +991,11 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
             vec3<f32>(state[base + 0u], state[base + 1u], state[base + 2u]),
             vec3<f32>(state[base + 3u], state[base + 4u], state[base + 5u]));
         if (homing.killed) {
+            // Arrivals are counted for the `impact` event (host bindings HB9) when asked to.
+            let arrivals = params[AESTRA_HOMING_BASE + 14u];
+            if (homing.arrived && arrivals != 0u) {
+                atomicAdd(&counters[arrivals - 1u], 1u);
+            }
             state[base + 6u] = lifetime;
             state[base + 7u] = 0.0;
             aestra_free_push(slot);

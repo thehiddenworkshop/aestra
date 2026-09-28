@@ -142,7 +142,7 @@ pub const RESOURCE_COLLIDER_FORCES: &str = "org.example.aestra-fluid::resource/c
 pub const RESOURCE_OUTPUTS: &str = "org.example.aestra-fluid::resource/outputs";
 /// The output a collider reports its force as, and the event a push past its threshold raises.
 pub const OUTPUT_FORCE: &str = "force";
-pub const EVENT_IMPACT: &str = "impact";
+pub const EVENT_IMPACT: &str = aestra_runtime::EVENT_IMPACT;
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");

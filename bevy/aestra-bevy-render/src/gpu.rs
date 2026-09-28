@@ -199,6 +199,11 @@ struct StatefulDispatch {
     /// The host binding the emitter follows (host bindings HB7b): `placement` is then resolved from
     /// it each frame, and kept while the binding supplies no pose.
     attachment: Option<aestra_runtime::CompiledAttachment>,
+    /// The `counters` word this emitter's homing arrivals are counted into (the `impact` event, host
+    /// bindings HB9), when it homes.
+    arrival_word: Option<u32>,
+    /// Where the homing target is this frame, in world space, for the events it raises.
+    homing_world_target: Option<[f32; 3]>,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -906,7 +911,7 @@ pub(crate) fn prepare_gpu_effects(
                 false
             }
         };
-        let stateful_dispatch: Vec<StatefulDispatch> =
+        let mut stateful_dispatch: Vec<StatefulDispatch> =
             if artifact.simulation_state.records > 0 && collision_supported {
                 compiled_emitters
                     .iter()
@@ -957,6 +962,8 @@ pub(crate) fn prepare_gpu_effects(
                                 homing_target: None,
                                 homing_tracker: aestra_runtime::HomingTracker::default(),
                                 attachment: compiled.attachment.clone(),
+                                arrival_word: None,
+                                homing_world_target: None,
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1021,13 +1028,25 @@ pub(crate) fn prepare_gpu_effects(
                 1
             }
         ]));
+        // Words 0..2 count live particles, then the trails' statistics, then each homing emitter's
+        // arrivals (host bindings HB9), cumulative: the host raises `impact` on each increase.
+        let arrivals_base = 2 + if has_trails {
+            6 * player.effect().emitters.len() as u32
+        } else {
+            0
+        };
+        let mut arrival_words = 0;
+        for dispatch in stateful_dispatch
+            .iter_mut()
+            .filter(|dispatch| dispatch.homing.is_some())
+        {
+            dispatch.arrival_word = Some(arrivals_base + arrival_words);
+            arrival_words += 1;
+        }
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
-            2 + if has_trails {
-                6 * player.effect().emitters.len()
-            } else {
-                0
-            }
+            (arrivals_base + arrival_words)
+                as usize
         ]));
         let mut indirect_buffer = ShaderBuffer::from(indirect_draw_commands);
         indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
@@ -1100,6 +1119,19 @@ pub(crate) fn prepare_gpu_effects(
                         ))
                         .observe(receive_trail_statistics);
                 });
+        }
+        if arrival_words > 0 {
+            commands.entity(entity).with_children(|parent| {
+                parent
+                    .spawn((
+                        Readback::buffer(counters.clone()),
+                        GpuArrivalReadback {
+                            effect: entity,
+                            seen: BTreeMap::new(),
+                        },
+                    ))
+                    .observe(receive_homing_arrivals);
+            });
         }
         let render_mode = gpu_render_mode(player.render_mode());
         commands
@@ -1506,6 +1538,8 @@ fn update_gpu_inputs(
 }
 
 fn install_visibility_updates(app: &mut App) {
+    // `sync_gpu_render_transforms` raises homing target events (host bindings HB9).
+    app.add_message::<AestraOutputEvent>();
     app.add_systems(
         PostUpdate,
         sync_host_motion_draw_globals
@@ -1625,13 +1659,15 @@ fn sync_host_motion_draw_transforms(
 fn sync_gpu_render_transforms(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut players: Query<(
+        Entity,
         &PresentedEffect,
         &GlobalTransform,
         &mut GpuEffectBuffers,
         &mut GpuParticleStatistics,
     )>,
+    mut events: MessageWriter<AestraOutputEvent>,
 ) {
-    for (player, transform, mut gpu, mut statistics) in &mut players {
+    for (entity, player, transform, mut gpu, mut statistics) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
         gpu.statistics_token = statistics_token;
         let placement = Mat4::from(transform.affine());
@@ -1662,6 +1698,35 @@ fn sync_gpu_render_transforms(
                     let input = homing.resolve(&player.instance, rows);
                     dispatch.homing_target =
                         dispatch.homing_tracker.resolve(homing.config.lost, input);
+                    let in_world = |target: aestra_runtime::HomingTarget| {
+                        world
+                            .transform_point3(Vec3::from_array(target.position))
+                            .to_array()
+                    };
+                    dispatch.homing_world_target = dispatch.homing_target.map(in_world);
+                    // The target appearing or vanishing (host bindings HB9), where it was.
+                    if let Some(change) = dispatch.homing_tracker.take_change() {
+                        let (kind, target) = match change {
+                            aestra_runtime::TargetChange::Lost(target) => {
+                                (aestra_runtime::EVENT_TARGET_LOST, target)
+                            }
+                            aestra_runtime::TargetChange::Acquired(target) => {
+                                (aestra_runtime::EVENT_TARGET_ACQUIRED, target)
+                            }
+                        };
+                        events.write(AestraOutputEvent {
+                            effect: entity,
+                            event: aestra_runtime::EffectOutputEvent::new(
+                                kind,
+                                aestra_runtime::EventOrigin::Emitter(
+                                    dispatch.emitter_index as usize,
+                                ),
+                                "homing",
+                                in_world(target).to_vec(),
+                                0.0,
+                            ),
+                        });
+                    }
                 }
                 if let Some(attachment) = &dispatch.attachment
                     && let Some(emitter) = emitters.get(dispatch.emitter_index as usize)
@@ -1818,6 +1883,57 @@ impl GpuTrailStatistics {
 
 #[derive(Component)]
 struct GpuTrailReadbackOwner(Entity);
+
+/// Reads an effect's cumulative homing-arrival counts back (host bindings HB9), remembering the last
+/// count of each `counters` word to raise `impact` on each increase.
+#[derive(Component)]
+struct GpuArrivalReadback {
+    effect: Entity,
+    seen: BTreeMap<u32, u32>,
+}
+
+/// Raises `impact` for each homing emitter whose particles reached the target since the last read,
+/// its magnitude the number that did, its value where the target is (world space).
+fn receive_homing_arrivals(
+    event: On<ReadbackComplete>,
+    mut readbacks: Query<&mut GpuArrivalReadback>,
+    effects: Query<&GpuEffectBuffers>,
+    mut events: MessageWriter<AestraOutputEvent>,
+) {
+    let Ok(mut readback) = readbacks.get_mut(event.event_target()) else {
+        return;
+    };
+    let Ok(gpu) = effects.get(readback.effect) else {
+        return;
+    };
+    let words: Vec<u32> = event.to_shader_type();
+    let effect = readback.effect;
+    for dispatch in &gpu.stateful_dispatch {
+        let Some(word) = dispatch.arrival_word else {
+            continue;
+        };
+        let Some(&count) = words.get(word as usize) else {
+            continue;
+        };
+        let seen = readback.seen.insert(word, count).unwrap_or(0);
+        // A smaller count is a rebuilt buffer, not arrivals.
+        if count > seen {
+            events.write(AestraOutputEvent {
+                effect,
+                event: aestra_runtime::EffectOutputEvent::new(
+                    aestra_runtime::EVENT_IMPACT,
+                    aestra_runtime::EventOrigin::Emitter(dispatch.emitter_index as usize),
+                    "homing",
+                    dispatch
+                        .homing_world_target
+                        .map(|target| target.to_vec())
+                        .unwrap_or_default(),
+                    (count - seen) as f32,
+                ),
+            });
+        }
+    }
+}
 
 fn receive_trail_statistics(
     event: On<ReadbackComplete>,
@@ -2504,11 +2620,12 @@ fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
 
 /// The stateful params words for one dispatch (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`):
 /// `spawn_per_tick` varies across advance ticks and `subtick` is the presentation-interpolation time
-/// `present` uses.
+/// `present` uses. `live` ticks count homing arrivals for the `impact` event; replays do not.
 fn stateful_params_bytes(
     dispatch: &StatefulDispatch,
     spawn_per_tick: u32,
     subtick: f32,
+    live: bool,
 ) -> Vec<u8> {
     let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
     words[..26].copy_from_slice(&[
@@ -2543,9 +2660,10 @@ fn stateful_params_bytes(
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
     pack_colliders(&dispatch.colliders, &mut words);
     aestra_gpu::pack_spawn_placement(&dispatch.placement, &mut words);
-    aestra_gpu::pack_stateful_homing(
+    aestra_gpu::pack_stateful_homing_counted(
         dispatch.homing.as_ref().map(|homing| &homing.config),
         dispatch.homing_target.as_ref(),
+        dispatch.arrival_word.filter(|_| live),
         &mut words,
     );
     let look = &dispatch.appearance;
@@ -2557,6 +2675,17 @@ fn stateful_params_bytes(
         &mut words,
     );
     words.into_iter().flat_map(u32::to_le_bytes).collect()
+}
+
+/// Ticks one frame may advance and still count as live playback, whose runtime events (host bindings
+/// HB9) are raised: real time at down to 6 frames per second. Longer advances are catch-up after a
+/// seek or a rebuild — replays of ticks whose events were raised already, or never happened live.
+const LIVE_EVENT_TICKS: u32 = 10;
+
+/// Whether advancing from `last` to `target` is live playback (see [`LIVE_EVENT_TICKS`]): forward, and
+/// no longer than real time allows.
+fn is_live_advance(last: u32, target: u32) -> bool {
+    target >= last && target - last <= LIVE_EVENT_TICKS
 }
 
 /// The effect-wide render buffers a stateful emitter presents into.
@@ -2593,13 +2722,14 @@ fn stateful_bind_group(
 }
 
 /// One tick's bind group and params (with this tick's spawn count, advancing the fractional spawn
-/// carry).
+/// carry). A `live` tick raises its events; a replayed one does not.
 fn stateful_tick_group(
     device: &RenderDevice,
     layout: &BindGroupLayout,
     persistent: &mut StatefulPersistentState,
     dispatch: &StatefulDispatch,
     render: &StatefulRenderBuffers<'_>,
+    live: bool,
 ) -> (BindGroup, Buffer) {
     persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
     let spawn_count = persistent.spawn_accumulator.floor();
@@ -2607,7 +2737,7 @@ fn stateful_tick_group(
     let spawn_count = (spawn_count as u32).min(dispatch.capacity);
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful tick params"),
-        contents: &stateful_params_bytes(dispatch, spawn_count, 0.0),
+        contents: &stateful_params_bytes(dispatch, spawn_count, 0.0, live),
         usage: BufferUsages::STORAGE,
     });
     let group = stateful_bind_group(device, layout, persistent, &params, render);
@@ -2637,7 +2767,7 @@ fn present_stateful_emitter(
         .clamp(0.0, STATEFUL_TICK_DT);
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful present params"),
-        contents: &stateful_params_bytes(dispatch, 0, subtick),
+        contents: &stateful_params_bytes(dispatch, 0, subtick, false),
         usage: BufferUsages::STORAGE,
     });
     let group = stateful_bind_group(device, layout, persistent, &params, render);
@@ -2672,6 +2802,7 @@ fn dispatch_stateful_effect(
     seek_quality: SeekQuality,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
+    let live = is_live_advance(persistent.last_tick, target_tick);
     if target_tick < persistent.last_tick {
         match persistent.restore_nearest(encoder, target_tick) {
             Some((tick, accumulator)) => {
@@ -2691,7 +2822,7 @@ fn dispatch_stateful_effect(
             STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
         let segment = remaining.min(to_boundary);
         let groups: Vec<BindGroup> = (0..segment)
-            .map(|_| stateful_tick_group(device, layout, persistent, dispatch, render).0)
+            .map(|_| stateful_tick_group(device, layout, persistent, dispatch, render, live).0)
             .collect();
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -2812,6 +2943,7 @@ fn run_coupled_stateful(
         }
     }
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
+    let live = in_step && is_live_advance(last, target);
     let ticks = target.saturating_sub(now).min(budget);
     for _ in 0..ticks {
         let next = persistent_states[0].last_tick + 1;
@@ -2828,7 +2960,8 @@ fn run_coupled_stateful(
             }
         }
         for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
-            let (group, params) = stateful_tick_group(device, layout, persistent, dispatch, render);
+            let (group, params) =
+                stateful_tick_group(device, layout, persistent, dispatch, render, live);
             {
                 let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
                 let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -3566,6 +3699,8 @@ mod tests {
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
             attachment: None,
+            arrival_word: None,
+            homing_world_target: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4409,6 +4544,8 @@ mod coupled_tests {
             homing_target: None,
             homing_tracker: aestra_runtime::HomingTracker::default(),
             attachment: None,
+            arrival_word: None,
+            homing_world_target: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };

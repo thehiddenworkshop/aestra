@@ -152,12 +152,33 @@ pub struct HomingTarget {
     pub velocity: [f32; 3],
 }
 
+/// Why a homing particle retired (host bindings HB7/HB9): it reached the target, or the target was
+/// lost under [`HomingLostPolicy::Kill`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HomingRetire {
+    Arrived,
+    Lost,
+}
+
+/// A change in whether the host supplies the homing target (host bindings HB9): the runtime events
+/// `target_lost` / `target_acquired`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TargetChange {
+    /// The target was supplied and no longer is; where it was last seen.
+    Lost(HomingTarget),
+    /// The target is supplied again (or for the first time).
+    Acquired(HomingTarget),
+}
+
 /// Resolves the target a tick steers toward from the host's input: the input when there is one,
 /// else — with [`HomingLostPolicy::KeepLastPosition`] — the last one seen, standing still. Shared by
-/// this reference and the GPU host, so both lose a target the same way.
+/// this reference and the GPU host, so both lose a target the same way. It also notes when the input
+/// appears or disappears: [`Self::take_change`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct HomingTracker {
     last: Option<HomingTarget>,
+    present: bool,
+    change: Option<TargetChange>,
 }
 
 impl HomingTracker {
@@ -166,6 +187,12 @@ impl HomingTracker {
         policy: HomingLostPolicy,
         input: Option<HomingTarget>,
     ) -> Option<HomingTarget> {
+        match (input, self.present) {
+            (Some(target), false) => self.change = Some(TargetChange::Acquired(target)),
+            (None, true) => self.change = self.last.map(TargetChange::Lost),
+            _ => {}
+        }
+        self.present = input.is_some();
         match input {
             Some(target) => {
                 self.last = Some(target);
@@ -179,6 +206,11 @@ impl HomingTracker {
             }
             None => None,
         }
+    }
+
+    /// The latest appearance or loss of the target since the last call, if any.
+    pub fn take_change(&mut self) -> Option<TargetChange> {
+        self.change.take()
     }
 }
 
@@ -206,6 +238,8 @@ pub struct StatefulSimulation {
     /// The homing target the next ticks steer toward (host bindings HB7), as the host last set it.
     homing_input: Option<HomingTarget>,
     homing_tracker: HomingTracker,
+    /// Particles that reached their homing target so far (the `impact` event, host bindings HB9).
+    arrivals: u64,
 }
 
 impl StatefulSimulation {
@@ -221,6 +255,7 @@ impl StatefulSimulation {
             particles: Vec::new(),
             homing_input: None,
             homing_tracker: HomingTracker::default(),
+            arrivals: 0,
         }
     }
 
@@ -234,6 +269,11 @@ impl StatefulSimulation {
     /// Particles already in flight keep their motion, so a moving placement leaves a wake.
     pub fn set_placement(&mut self, placement: SpawnPlacement) {
         self.config.placement = placement;
+    }
+
+    /// How many particles have reached their homing target so far (host bindings HB9).
+    pub fn arrivals(&self) -> u64 {
+        self.arrivals
     }
 
     /// The absolute fixed tick this simulation has reached.
@@ -317,7 +357,7 @@ impl StatefulSimulation {
         for particle in &mut self.particles {
             // Homing (HB7) steers the velocity before the forces act on it.
             if let Some((homing, target)) = &homing
-                && steer_homing(
+                && let Some(retire) = steer_homing(
                     homing,
                     target.as_ref(),
                     particle.position,
@@ -325,6 +365,9 @@ impl StatefulSimulation {
                     dt,
                 )
             {
+                if retire == HomingRetire::Arrived {
+                    self.arrivals += 1;
+                }
                 particle.age = particle.lifetime;
                 continue;
             }
@@ -566,7 +609,8 @@ fn normalize_or(v: [f32; 3], fallback: [f32; 3]) -> [f32; 3] {
 }
 
 /// Steers one particle's `velocity` toward `target` for a tick of `dt` (host bindings HB7),
-/// returning whether it retires (it arrived, or the target is lost under [`HomingLostPolicy::Kill`]).
+/// returning why it retires, if it does (it arrived, or the target is lost under
+/// [`HomingLostPolicy::Kill`]).
 /// The direction to aim along leads the target by the time to reach it at `speed`; the heading turns
 /// `min(turn_rate × dt, 1)` of the way there, renormalized; the speed moves toward `speed` by at
 /// most `acceleration × dt`. Without a target the particle keeps its heading. Only `+ - * /`,
@@ -577,7 +621,7 @@ pub fn steer_homing(
     position: [f32; 3],
     velocity: &mut [f32; 3],
     dt: f32,
-) -> bool {
+) -> Option<HomingRetire> {
     let speed_now = dot(*velocity, *velocity).sqrt();
     let heading = normalize_or(*velocity, [0.0, 1.0, 0.0]);
     let direction = match target {
@@ -589,7 +633,7 @@ pub fn steer_homing(
             ];
             let distance = dot(to, to).sqrt();
             if distance <= config.arrival_radius {
-                return true;
+                return Some(HomingRetire::Arrived);
             }
             let reach = distance / config.speed.max(1e-6);
             let aim = [
@@ -606,7 +650,7 @@ pub fn steer_homing(
             ];
             normalize_or(blended, desired)
         }
-        None if config.lost == HomingLostPolicy::Kill => return true,
+        None if config.lost == HomingLostPolicy::Kill => return Some(HomingRetire::Lost),
         None => heading,
     };
     let speed = if config.acceleration > 0.0 {
@@ -618,7 +662,7 @@ pub fn steer_homing(
     for axis in 0..3 {
         velocity[axis] = direction[axis] * speed;
     }
-    false
+    None
 }
 
 /// Applies each active collider to a particle's post-integration `position`/`velocity`, in array
@@ -1150,5 +1194,99 @@ mod tests {
             "friction 0.5 keeps half the tangential speed"
         );
         assert!(position[1] >= -1e-6, "push-out lifts to the surface");
+    }
+
+    #[test]
+    fn the_tracker_reports_the_target_appearing_and_vanishing_once_each() {
+        let seen = HomingTarget {
+            position: [1.0, 2.0, 3.0],
+            velocity: [0.0; 3],
+        };
+        let mut tracker = HomingTracker::default();
+        tracker.resolve(HomingLostPolicy::KeepDirection, None);
+        assert_eq!(
+            tracker.take_change(),
+            None,
+            "never supplied: nothing to lose"
+        );
+        tracker.resolve(HomingLostPolicy::KeepDirection, Some(seen));
+        assert_eq!(tracker.take_change(), Some(TargetChange::Acquired(seen)));
+        tracker.resolve(HomingLostPolicy::KeepDirection, Some(seen));
+        assert_eq!(tracker.take_change(), None, "still there");
+        tracker.resolve(HomingLostPolicy::KeepDirection, None);
+        tracker.resolve(HomingLostPolicy::KeepDirection, None);
+        assert_eq!(
+            tracker.take_change(),
+            Some(TargetChange::Lost(seen)),
+            "where it was last seen, once"
+        );
+        assert_eq!(tracker.take_change(), None);
+    }
+
+    #[test]
+    fn homing_particles_retire_for_arriving_or_for_a_lost_target_and_only_arrivals_count() {
+        let config = HomingConfig {
+            speed: 10.0,
+            acceleration: 0.0,
+            turn_rate: 5.0,
+            arrival_radius: 1.0,
+            lost: HomingLostPolicy::Kill,
+        };
+        let target = HomingTarget {
+            position: [0.5, 0.0, 0.0],
+            velocity: [0.0; 3],
+        };
+        let mut velocity = [0.0, 1.0, 0.0];
+        assert_eq!(
+            steer_homing(&config, Some(&target), [0.0; 3], &mut velocity, 0.1),
+            Some(HomingRetire::Arrived)
+        );
+        assert_eq!(
+            steer_homing(&config, None, [0.0; 3], &mut velocity, 0.1),
+            Some(HomingRetire::Lost)
+        );
+        let far = HomingTarget {
+            position: [50.0, 0.0, 0.0],
+            velocity: [0.0; 3],
+        };
+        assert_eq!(
+            steer_homing(&config, Some(&far), [0.0; 3], &mut velocity, 0.1),
+            None
+        );
+
+        let stateful = StatefulConfig {
+            gravity: [0.0; 3],
+            spawn_per_tick: 2,
+            speed: (4.0, 6.0),
+            lifetime: (3.0, 3.5),
+            direction: [0.0, 1.0, 0.0],
+            spread: 0.5,
+            drag: 0.0,
+            shape: SpawnShape::Point,
+            turbulence: 0.0,
+            placement: SpawnPlacement::IDENTITY,
+            colliders: [Collider::NONE; MAX_COLLIDERS],
+            collider_count: 0,
+            capacity: 256,
+            homing: Some(HomingConfig {
+                speed: 20.0,
+                acceleration: 40.0,
+                arrival_radius: 1.5,
+                ..config
+            }),
+        };
+        let mut simulation = StatefulSimulation::new(stateful, 7);
+        simulation.set_homing_target(Some(HomingTarget {
+            position: [0.0, 3.0, 0.0],
+            velocity: [0.0; 3],
+        }));
+        simulation.advance_to_tick(90);
+        let arrived = simulation.arrivals();
+        assert!(arrived > 100, "{arrived} of 180 arrived");
+        // Losing the target kills the rest under `Kill`: none of those count.
+        simulation.set_homing_target(None);
+        simulation.advance_to_tick(91);
+        assert_eq!(simulation.arrivals(), arrived);
+        assert!(simulation.live_count() <= 2, "only this tick's spawns live");
     }
 }

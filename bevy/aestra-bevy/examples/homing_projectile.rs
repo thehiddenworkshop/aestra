@@ -7,17 +7,24 @@
 //! when they reach it. This is the *Aestra-owned visual projectile* pattern — decorative; a game whose
 //! hits matter owns the projectile itself (see `docs/ARCHITECTURE.md`, "Gameplay authority").
 //!
+//! The effect reports back through runtime events (host bindings HB9), as `AestraOutputEvent`
+//! messages: `impact` when sparks reach the enemy (its magnitude is how many did), `target_lost` when
+//! the enemy cloaks — the game unbinds it — and `target_acquired` when it reappears. The game only
+//! *hears* them: here the enemy flashes on impacts. It never takes damage from them.
+//!
 //! ```sh
 //! cargo run -p aestra-bevy --example homing_projectile --release
 //! ```
 //!
-//! With `AESTRA_EXAMPLE_CAPTURE=<file.png>` it saves a screenshot after four seconds and exits.
+//! With `AESTRA_EXAMPLE_CAPTURE=<file.png>` it saves a screenshot after six seconds, prints the
+//! events it heard, and exits.
 
 use aestra_bevy::{
     AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, AestraBindings, AestraLinearVelocity,
-    AestraPlugin, BindingFieldId, BindingUpdateMode, ColorKey, Curve, CurveKey, EffectAsset,
-    EffectBinding, EffectPlaybackMode, EffectPlayer, Emitter, EmitterShape, Gradient, HostFieldRef,
-    ModuleInstance, PropertySource, ScalarRange,
+    AestraOutputEvent, AestraPlugin, BindingFieldId, BindingUpdateMode, ColorKey, Curve, CurveKey,
+    EVENT_IMPACT, EVENT_TARGET_ACQUIRED, EVENT_TARGET_LOST, EffectAsset, EffectBinding,
+    EffectPlaybackMode, EffectPlayer, Emitter, EmitterShape, Gradient, HomingLostPolicy,
+    HostFieldRef, ModuleInstance, PropertySource, ScalarRange,
 };
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -28,6 +35,23 @@ const STAFF_TIP: Vec3 = Vec3::new(-40.0, 14.0, 0.0);
 #[derive(Component)]
 struct Enemy;
 
+/// The effect entity, to bind and unbind the enemy on.
+#[derive(Component)]
+struct Fire;
+
+/// How long the enemy keeps flashing after an impact.
+#[derive(Component, Default)]
+struct Flash(f32);
+
+/// The events heard so far: impacts (and the sparks they count), losses, reacquisitions.
+#[derive(Resource, Default, Debug)]
+struct Heard {
+    impacts: u32,
+    sparks: f32,
+    lost: u32,
+    acquired: u32,
+}
+
 #[derive(Resource, Default)]
 struct Frames(u32);
 
@@ -35,13 +59,14 @@ fn main() {
     App::new()
         .add_plugins((DefaultPlugins, AestraPlugin))
         .init_resource::<Frames>()
+        .init_resource::<Heard>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (dodge, capture))
+        .add_systems(Update, (dodge, cloak, listen, flash, capture))
         .run();
 }
 
 /// Homing fire: sparks leave the staff upward and outward, then turn toward the target, leading it,
-/// at up to 70 units/s; they retire within 3 units of it.
+/// at up to 70 units/s; they retire within 4 units of it (they hit the 6-unit enemy).
 fn homing_fire() -> EffectAsset {
     let mut effect = EffectAsset::new("Homing Fire", 4.0);
     effect.playback_mode = EffectPlaybackMode::LoopContinuous;
@@ -59,8 +84,13 @@ fn homing_fire() -> EffectAsset {
     } = &mut homing.parameters
     {
         *acceleration = 60.0;
-        *turn_rate = 2.5;
-        *arrival_radius = 3.0;
+        // Tight enough to hit: at 70 units/s a turn rate of 25 circles within ~3 units.
+        *turn_rate = 25.0;
+        *arrival_radius = 4.0;
+    }
+    if let aestra_bevy::ModuleParameters::Homing { lost_target, .. } = &mut homing.parameters {
+        // While the enemy is cloaked the sparks fly on, then home again when it reappears.
+        *lost_target = HomingLostPolicy::KeepDirection;
     }
     for (input, field) in [
         ("target", AESTRA_FIELD_POSITION),
@@ -149,9 +179,11 @@ fn setup(
             })),
             Transform::from_xyz(35.0, 8.0, 0.0),
             AestraLinearVelocity::default(),
+            Flash::default(),
         ))
         .id();
     commands.spawn((
+        Fire,
         EffectPlayer::new(&homing_fire()),
         AestraBindings::new().bind("Target", enemy),
         Transform::from_translation(STAFF_TIP),
@@ -177,18 +209,97 @@ fn dodge(
     }
 }
 
-/// `AESTRA_EXAMPLE_CAPTURE`: a screenshot after four seconds, then exit.
-fn capture(mut commands: Commands, mut frames: ResMut<Frames>, mut exit: MessageWriter<AppExit>) {
+/// From three seconds on, every five seconds, the enemy cloaks for a second and a half: the game hides it and unbinds it from
+/// the effect's `Target`, so the sparks lose it.
+fn cloak(
+    time: Res<Time>,
+    mut fire: Query<&mut AestraBindings, With<Fire>>,
+    mut enemies: Query<(Entity, &mut Visibility), With<Enemy>>,
+) {
+    let cloaked = time.elapsed_secs() > 3.0 && (time.elapsed_secs() - 3.0).rem_euclid(5.0) < 1.5;
+    for (enemy, mut visibility) in &mut enemies {
+        let shown = if cloaked {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+        visibility.set_if_neq(shown);
+        for mut bindings in &mut fire {
+            match (cloaked, bindings.get("Target")) {
+                (true, Some(_)) => {
+                    bindings.unbind("Target");
+                }
+                (false, None) => bindings.set("Target", enemy),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Gameplay hears the effect's events. It only reacts visually — nothing here is damage.
+fn listen(
+    mut events: MessageReader<AestraOutputEvent>,
+    mut heard: ResMut<Heard>,
+    mut enemies: Query<&mut Flash, With<Enemy>>,
+) {
+    for message in events.read() {
+        match message.event.kind.as_str() {
+            EVENT_IMPACT => {
+                heard.impacts += 1;
+                heard.sparks += message.event.magnitude;
+                for mut flash in &mut enemies {
+                    flash.0 = 0.1;
+                }
+            }
+            EVENT_TARGET_LOST => {
+                heard.lost += 1;
+                info!("target lost at {:?}", message.event.value);
+            }
+            EVENT_TARGET_ACQUIRED => {
+                heard.acquired += 1;
+                info!("target acquired at {:?}", message.event.value);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The enemy glows while flashing.
+fn flash(
+    time: Res<Time>,
+    mut enemies: Query<(&mut Flash, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (mut flash, material) in &mut enemies {
+        flash.0 = (flash.0 - time.delta_secs()).max(0.0);
+        if let Some(mut material) = materials.get_mut(&material.0) {
+            material.emissive = if flash.0 > 0.0 {
+                LinearRgba::rgb(4.0, 2.0, 0.5)
+            } else {
+                LinearRgba::BLACK
+            };
+        }
+    }
+}
+
+/// `AESTRA_EXAMPLE_CAPTURE`: a screenshot after six seconds, the events heard, then exit.
+fn capture(
+    mut commands: Commands,
+    mut frames: ResMut<Frames>,
+    heard: Res<Heard>,
+    mut exit: MessageWriter<AppExit>,
+) {
     let Ok(path) = std::env::var("AESTRA_EXAMPLE_CAPTURE") else {
         return;
     };
     frames.0 += 1;
-    if frames.0 == 240 {
+    if frames.0 == 360 {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path));
     }
-    if frames.0 == 250 {
+    if frames.0 == 370 {
+        println!("heard: {heard:?}");
         exit.write(AppExit::Success);
     }
 }

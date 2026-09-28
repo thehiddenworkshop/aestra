@@ -36,8 +36,9 @@ pub use staged::{
     StagedResourceLifetime, diffuse_2d, diffuse_2d_step,
 };
 pub use stateful::{
-    Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingTarget, HomingTracker,
-    MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig, StatefulSimulation, steer_homing,
+    Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingRetire, HomingTarget,
+    HomingTracker, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig, StatefulSimulation,
+    TargetChange, steer_homing,
 };
 pub use tier::QualityTier;
 

@@ -547,6 +547,23 @@ a swinging blade or a running character leaves a wake (`examples/sword_trail.rs`
 supplies no pose the emitter holds its last one. Placement is resolved once per frame, and history is
 forward-only: a seek replays under the current pose (binding history is HB8).
 
+### Runtime events
+
+An effect reports back to the game through one portable event type, `EffectOutputEvent` (a kind, an
+origin — stage, emitter or effect — a value and a magnitude), which the Bevy adapter writes as
+`AestraOutputEvent` messages (HB9). The built-in kinds are:
+
+- `impact`: a stage output rising past its threshold (a fluid pushing a collider), or homing
+  particles reaching their target. The magnitude is the force, or the number of arrivals.
+- `target_lost` / `target_acquired`: the homing target's binding stops or starts supplying it,
+  where it was (world space).
+- `finished`: a play-once effect's playback reached its end.
+
+Homing arrivals are counted on the GPU into the effect's counters buffer and read back
+asynchronously, so events arrive a frame or two after the ticks that caused them. Only live playback
+raises events: ticks replayed after a seek or rebuild count nothing. Events are visual outcomes to
+hear, never gameplay state to obey (see below).
+
 ### Gameplay authority
 
 Who owns a projectile decides how its effect is wired. There are two patterns, and a game should pick

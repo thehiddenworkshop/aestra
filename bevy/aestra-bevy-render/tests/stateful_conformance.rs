@@ -2503,6 +2503,18 @@ fn advance_production_ticks(
     config: &StatefulConfig,
     ticks: &[Vec<u32>],
 ) -> Result<Vec<(u64, [f32; 3])>, String> {
+    advance_production_counted(harness, config, ticks).map(|(live, _)| live)
+}
+
+/// The live `(ordinal, position)` set, and the four `counters` words the kernels counted into.
+type CountedRun = (Vec<(u64, [f32; 3])>, Vec<u32>);
+
+/// [`advance_production_ticks`], also returning the `counters` words.
+fn advance_production_counted(
+    harness: &Harness,
+    config: &StatefulConfig,
+    ticks: &[Vec<u32>],
+) -> Result<CountedRun, String> {
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("homing"),
@@ -2551,12 +2563,12 @@ fn advance_production_ticks(
     );
     let scratch =
         |words: usize| buffer("scratch", vec![0u8; words * 4], wgpu::BufferUsages::empty());
-    let (present, alive, indirect, counters) = (
+    let (present, alive, indirect) = (
         scratch(capacity as usize * 12),
         scratch(capacity as usize),
         scratch(8),
-        scratch(4),
     );
+    let counters = buffer("counters", vec![0u8; 16], wgpu::BufferUsages::COPY_SRC);
     let mut encoder = device.create_command_encoder(&Default::default());
     for words in ticks {
         let params = buffer("params", encode(words)?, wgpu::BufferUsages::empty());
@@ -2592,12 +2604,14 @@ fn advance_production_ticks(
     }
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("homing readback"),
-        size: state_bytes.len() as u64,
+        size: state_bytes.len() as u64 + 16,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+    encoder.copy_buffer_to_buffer(&counters, 0, &staging, state_bytes.len() as u64, 16);
     let raw = harness.read_back_u32(encoder, &staging)?;
+    let counted = raw[capacity as usize * 9..].to_vec();
     let mut live = Vec::new();
     for slot in 0..capacity as usize {
         let base = slot * 9;
@@ -2613,7 +2627,7 @@ fn advance_production_ticks(
             ));
         }
     }
-    Ok(live)
+    Ok((live, counted))
 }
 
 fn homing_config(lost: aestra_runtime::HomingLostPolicy, arrival_radius: f32) -> StatefulConfig {
@@ -2829,4 +2843,43 @@ fn gpu_spawns_follow_a_moving_attachment_like_the_cpu_reference_and_leave_a_wake
         (max_x - tip).abs() < 2.0,
         "the newest spawns are at the tip ({max_x} vs {tip})"
     );
+}
+
+#[test]
+fn gpu_homing_counts_arrivals_like_the_cpu_reference_only_when_asked() {
+    // The `impact` event (host bindings HB9): each particle reaching the target adds one to the
+    // counters word the params name — as many as the CPU reference's `arrivals()` — and a tick whose
+    // params name none (a replay) counts nothing.
+    use aestra_runtime::HomingLostPolicy;
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let seed = 0x00AB_0019_0000_0001_u64;
+    let still = aestra_runtime::HomingTarget {
+        position: [0.0, 3.0, 0.0],
+        velocity: [0.0; 3],
+    };
+    let config = homing_config(HomingLostPolicy::KeepDirection, 1.5);
+    let homing = config.homing.unwrap();
+    let pack = |count: bool| {
+        let mut words = stateful_params(&config, seed, 0, 0);
+        aestra_gpu::pack_stateful_homing_counted(
+            Some(&homing),
+            Some(&still),
+            count.then_some(3),
+            &mut words,
+        );
+        words
+    };
+    let ticks: Vec<Vec<u32>> = (0..120).map(|_| pack(true)).collect();
+    let (gpu, counters) = advance_production_counted(&harness, &config, &ticks).unwrap();
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.set_homing_target(Some(still));
+    simulation.advance_to_tick(120);
+    assert_same_particles(&simulation.alive_particles(), &gpu);
+    assert!(simulation.arrivals() > 100, "{}", simulation.arrivals());
+    assert_eq!(u64::from(counters[3]), simulation.arrivals());
+    let silent: Vec<Vec<u32>> = (0..120).map(|_| pack(false)).collect();
+    let (_, counters) = advance_production_counted(&harness, &config, &silent).unwrap();
+    assert_eq!(counters[3], 0, "a replay raises nothing");
 }
