@@ -153,6 +153,14 @@ pub fn module_summary(module: &ModuleInstance) -> String {
             };
             format!("Follows {domain} · {}", num(*strength))
         }
+        ModuleParameters::SpawnFromDomain { domain, .. } => {
+            let domain = if domain.is_empty() {
+                "domain"
+            } else {
+                domain.as_str()
+            };
+            format!("Born from {domain}")
+        }
         ModuleParameters::Custom(values) => match values.len() {
             0 => "No properties".to_string(),
             1 => "1 property".to_string(),

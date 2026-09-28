@@ -20,9 +20,9 @@ pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
     AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, BrickLayout, ComputeOp, CopyOp,
-    ExecutionBlock, ExecutionError, ExecutionOp, FieldLayout, FrameConstants, IDENTITY_AFFINE,
-    IndirectDispatch, ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode,
-    ResourceDescriptor, ResourceLifetime, execute_reference, lower_stage_fused,
+    EmissionLayout, ExecutionBlock, ExecutionError, ExecutionOp, FieldLayout, FrameConstants,
+    IDENTITY_AFFINE, IndirectDispatch, ReferenceExecutionTrace, RepeatPolicy, ResourceAccess,
+    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use staged::{
@@ -714,6 +714,20 @@ pub struct CompiledFieldFollow {
     pub strength: f32,
 }
 
+/// A stateful emitter spawning its particles where one of the effect's domains asks for them (fluid
+/// F10, G8): each tick, after the domain's, one particle per record of the domain's emission list —
+/// at the record's position, with the record's velocity scaled by `inherit` plus the emitter's own
+/// launch velocity. Lifetimes and the rest come from the emitter's modules.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledDomainSpawn {
+    /// Index of the domain in [`CompiledEffect::extension_stages`].
+    pub stage: usize,
+    /// The emission list read.
+    pub emission: EmissionLayout,
+    /// How much of the record's velocity the particle starts with.
+    pub inherit: f32,
+}
+
 /// A compiled *extension* stage (extensible-stages M10): an authored simulation stage whose registered
 /// stage type comes from a plugin, lowered by that plugin into a portable [`ExecutionBlock`]. Carried
 /// generically beside the lifecycle stages — like [`CompiledExtensionRenderer`], no core enum grows.
@@ -917,6 +931,9 @@ pub struct CompiledEmitter {
     /// enabled. Only the stateful GPU backend runs it; the CPU reference cannot (the field lives on
     /// the GPU), which the effect's requirements report as `gpu_fields`.
     pub field_follow: Option<CompiledFieldFollow>,
+    /// The domain this emitter spawns from (fluid F10), when a Spawn From Domain module is enabled —
+    /// in addition to its own rate. GPU-only, like `field_follow`.
+    pub domain_spawn: Option<CompiledDomainSpawn>,
     /// The interpreter's execution input (typed, three lifecycle slots).
     pub execution: ExecutionPlan,
     /// The generic, stage-identified compiled stage plan (extensible-stages M5). Holds the same
@@ -933,6 +950,12 @@ pub struct CompiledEmitter {
 }
 
 impl CompiledEmitter {
+    /// Whether the emitter reads a domain's state — follows its field (fluid F2b) or spawns from its
+    /// emission list (fluid F10) — and so must advance in lockstep with the effect's domains.
+    pub fn coupled(&self) -> bool {
+        self.field_follow.is_some() || self.domain_spawn.is_some()
+    }
+
     /// The simulation-state layout this emitter-region requires between ticks, derived from its
     /// class (hybrid roadmap M4). Analytic emitters return an empty layout — no persistent buffer.
     pub fn simulation_state_layout(&self) -> SimulationStateLayout {

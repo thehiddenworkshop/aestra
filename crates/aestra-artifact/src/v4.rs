@@ -10,9 +10,9 @@ use aestra_core::{
 use aestra_runtime::{
     BindingLayout, BindingSlot, CompiledBinding, CompiledBindingField, CompiledBindingForward,
     CompiledExtensionStage, CompiledHostField, CompiledHostFieldRef, ComputeOp, CopyOp,
-    ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout, IndirectDispatch, RepeatPolicy,
-    ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime, StagePresentation,
-    StagedDispatch, VolumePresentation,
+    EmissionLayout, ExecutionBlock, ExecutionOp, ExtensionModulePlan, FieldLayout,
+    IndirectDispatch, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
+    ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -309,6 +309,9 @@ struct ExecutionBlockV4 {
     constants: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     fields: Vec<FieldLayoutV4>,
+    /// Emission lists (fluid F10, additive): each resource and its capacity in records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    emissions: Vec<(ResourceTypeId, u32)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -582,6 +585,12 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                         bricks: field.bricks.as_ref().map(BrickLayoutV4::from),
                     })
                     .collect(),
+                emissions: stage
+                    .block
+                    .emissions
+                    .iter()
+                    .map(|emission| (emission.resource.clone(), emission.capacity))
+                    .collect(),
             },
             cpu_reference: stage.cpu_reference,
             presentations: stage
@@ -628,6 +637,12 @@ impl ExtensionStageV4 {
                     staggered: field.staggered,
                     bricks: field.bricks.map(Into::into),
                 })
+                .collect(),
+            emissions: self
+                .block
+                .emissions
+                .into_iter()
+                .map(|(resource, capacity)| EmissionLayout { resource, capacity })
                 .collect(),
         };
         if let Err(error) = block.validate() {

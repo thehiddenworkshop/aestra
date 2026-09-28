@@ -540,5 +540,40 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_multiplicity(ModuleMultiplicity::Single)
         .with_tags(vec!["simulation", "stateful", "field", "fluid"])
         .with_cost(4),
+        metadata(
+            MODULE_SPAWN_FROM_DOMAIN,
+            "Spawn From Domain",
+            "Spawns this emitter's particles where an effect domain asks for them — a fluid's spray, \
+             foam or sparks, say: each tick one particle per point the domain emitted, at that point, \
+             with its velocity. The emitter's own rate still spawns too. The points live on the GPU, \
+             so this runs on GPU simulation only.",
+            "Spawn",
+            StageKind::ParticleSpawn,
+        )
+        .with_inputs(vec![
+            input(
+                "inherit",
+                "Inherit Velocity",
+                "How much of the domain's velocity at the point a particle starts with; the \
+                 emitter's own launch velocity is added.",
+                aestra_core::Value::Scalar(1.0),
+                InputControl::Number {
+                    step: 0.05,
+                    min: None,
+                    max: None,
+                },
+            ),
+        ])
+        // Its particles are born mid-simulation from GPU state, so — like Follow Field — it needs the
+        // stateful class, and has no CPU reference.
+        .with_flow(vec![], vec![A::Position, A::Velocity])
+        .with_simulation(SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..SimulationRequirements::ANALYTIC
+        })
+        .with_capabilities(vec![CapabilityId::new(CAPABILITY_PARTICLE_SIMULATION)])
+        .with_multiplicity(ModuleMultiplicity::Single)
+        .with_tags(vec!["spawn", "stateful", "fluid"])
+        .with_cost(4),
     ]
 }

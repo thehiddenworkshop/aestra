@@ -429,6 +429,7 @@ impl StageLowerer for TemplateStageLowerer {
             ops: expand(&self.template.ops, input, None),
             constants: Vec::new(),
             fields: Vec::new(),
+            emissions: Vec::new(),
         })
     }
 }

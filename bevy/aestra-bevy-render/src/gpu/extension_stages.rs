@@ -28,8 +28,8 @@
 
 use super::*;
 use crate::execution::{
-    FieldFollowPipeline, PassTimestamps, ProgramCache, StageExecutor, StageInputs, StageTimeline,
-    TimelinePolicy,
+    DomainSpawnPipeline, FieldFollowPipeline, PassTimestamps, ProgramCache, StageExecutor,
+    StageInputs, StageTimeline, TimelinePolicy,
 };
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
@@ -173,12 +173,17 @@ impl ExtractedStages {
     }
 }
 
-/// The Follow Field pipeline the stateful path uses for coupled emitters (fluid F2b).
+/// The Follow Field (fluid F2b) and Spawn From Domain (fluid F10) pipelines the stateful path uses for
+/// coupled emitters.
 #[derive(Resource)]
-pub(crate) struct FieldFollow(FieldFollowPipeline);
+pub(crate) struct FieldFollow(FieldFollowPipeline, DomainSpawnPipeline);
 
 fn init_field_follow(mut commands: Commands, device: Res<RenderDevice>) {
-    commands.insert_resource(FieldFollow(FieldFollowPipeline::new(device.wgpu_device())));
+    let device = device.wgpu_device();
+    commands.insert_resource(FieldFollow(
+        FieldFollowPipeline::new(device),
+        DomainSpawnPipeline::new(device),
+    ));
 }
 
 /// The coupling for an effect whose stateful emitters follow its domains (fluid F2b), when it has one
@@ -191,10 +196,12 @@ pub(super) fn coupling<'a>(
 ) -> Option<super::Coupling<'a>> {
     let extracted = extracted.filter(|extracted| extracted.coupled)?;
     let runtime = runtimes.0.get_mut(&entity)?;
+    let follower = follower?;
     Some(super::Coupling {
         domains: &mut runtime.timelines,
         inputs: extracted.inputs(),
-        follower: &follower?.0,
+        follower: &follower.0,
+        spawner: &follower.1,
     })
 }
 
@@ -351,7 +358,7 @@ pub(super) fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery
             coupled: effect
                 .emitters
                 .iter()
-                .any(|emitter| emitter.enabled && emitter.field_follow.is_some()),
+                .any(|emitter| emitter.enabled && emitter.coupled()),
             view: view.map(|view| view.target.clone()),
             volumes: volumes
                 .map(super::volume::VolumeViews::targets)

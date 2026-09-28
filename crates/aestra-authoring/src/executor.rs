@@ -1250,6 +1250,11 @@ fn set_module_parameter(
         {
             Some(Value::Scalar(std::mem::replace(strength, value)))
         }
+        (ModuleParameters::SpawnFromDomain { inherit, .. }, Value::Scalar(value))
+            if parameter == "inherit" =>
+        {
+            Some(Value::Scalar(std::mem::replace(inherit, value)))
+        }
         (ModuleParameters::Initialize { lifetime, .. }, Value::Range(value))
             if parameter == "lifetime" =>
         {

@@ -800,6 +800,7 @@ impl StageLowerer for LiquidSolverLowerer {
                 field(RESOURCE_VELOCITY, 4, true),
                 field(RESOURCE_DENSITY, 1, false),
             ],
+            emissions: Vec::new(),
         })
     }
 }

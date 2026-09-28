@@ -366,6 +366,9 @@ struct EmitterV1 {
     /// The domain field this emitter follows (fluid F2b, v4 additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     field_follow: Option<FieldFollowV4>,
+    /// The domain emission list this emitter spawns from (fluid F10, v4 additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    domain_spawn: Option<DomainSpawnV4>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
     /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
@@ -479,6 +482,40 @@ impl From<&aestra_runtime::CompiledFieldFollow> for FieldFollowV4 {
             strength: follow.strength,
             staggered: follow.field.staggered,
             bricks: follow.field.bricks.as_ref().map(v4::BrickLayoutV4::from),
+        }
+    }
+}
+
+/// A compiled Spawn From Domain reference (fluid F10): the domain stage index, its emission list,
+/// and the inherited velocity. Checked against the decoded domains on reload.
+#[derive(Debug, Serialize, Deserialize)]
+struct DomainSpawnV4 {
+    stage: u32,
+    resource: aestra_core::ResourceTypeId,
+    capacity: u32,
+    inherit: f32,
+}
+
+impl From<&aestra_runtime::CompiledDomainSpawn> for DomainSpawnV4 {
+    fn from(spawn: &aestra_runtime::CompiledDomainSpawn) -> Self {
+        Self {
+            stage: spawn.stage as u32,
+            resource: spawn.emission.resource.clone(),
+            capacity: spawn.emission.capacity,
+            inherit: spawn.inherit,
+        }
+    }
+}
+
+impl DomainSpawnV4 {
+    fn into_runtime(self) -> aestra_runtime::CompiledDomainSpawn {
+        aestra_runtime::CompiledDomainSpawn {
+            stage: self.stage as usize,
+            emission: aestra_runtime::EmissionLayout {
+                resource: self.resource,
+                capacity: self.capacity,
+            },
+            inherit: self.inherit,
         }
     }
 }
@@ -764,6 +801,21 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 return invalid(
                     format!("effect.emitters[{index}].field_follow"),
                     "followed field is not declared by that domain",
+                );
+            }
+        }
+        // Likewise a spawned-from emission list (fluid F10).
+        for (index, emitter) in emitters.iter().enumerate() {
+            let Some(spawn) = &emitter.domain_spawn else {
+                continue;
+            };
+            let declared = extension_stages
+                .get(spawn.stage)
+                .and_then(|stage| stage.block.emission(&spawn.emission.resource));
+            if declared != Some(&spawn.emission) {
+                return invalid(
+                    format!("effect.emitters[{index}].domain_spawn"),
+                    "emission list is not declared by that domain",
                 );
             }
         }
@@ -1799,6 +1851,7 @@ impl EmitterV1 {
             simulation_class: emitter.simulation_class.into(),
             colliders: emitter.colliders.clone(),
             field_follow: emitter.field_follow.as_ref().map(FieldFollowV4::from),
+            domain_spawn: emitter.domain_spawn.as_ref().map(DomainSpawnV4::from),
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -1858,6 +1911,7 @@ impl EmitterV1 {
             simulation_class: self.simulation_class.into(),
             colliders: self.colliders,
             field_follow: self.field_follow.map(FieldFollowV4::into_runtime),
+            domain_spawn: self.domain_spawn.map(DomainSpawnV4::into_runtime),
             stages,
             execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),

@@ -288,6 +288,7 @@ impl StageLowerer for FieldForcesLowerer {
             ops,
             constants: Vec::new(),
             fields: Vec::new(),
+            emissions: Vec::new(),
         })
     }
 }

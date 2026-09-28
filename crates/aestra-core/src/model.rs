@@ -30,6 +30,8 @@ pub const MODULE_PERSISTENT: &str = "aestra.update.persistent";
 pub const MODULE_COLLISION: &str = "aestra.update.collision";
 /// Particles follow a vector field an effect domain simulates, e.g. a fluid's velocity (fluid F2b).
 pub const MODULE_FOLLOW_FIELD: &str = "aestra.update.follow_field";
+/// Particles are born where an effect domain asks for them, e.g. a fluid's spray (fluid F10).
+pub const MODULE_SPAWN_FROM_DOMAIN: &str = "aestra.spawn.from_domain";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
@@ -2044,6 +2046,27 @@ impl ModuleInstance {
         }
     }
 
+    /// Particles are born where a domain asks (fluid F10); see [`ModuleParameters::SpawnFromDomain`].
+    pub fn spawn_from_domain(inherit: f32) -> Self {
+        Self {
+            id: ModuleId::new(),
+            module_type: ModuleTypeId::new(MODULE_SPAWN_FROM_DOMAIN),
+            stage: StageKind::ParticleSpawn,
+            enabled: true,
+            parameters: ModuleParameters::SpawnFromDomain {
+                domain: String::new(),
+                emission: String::new(),
+                inherit,
+            },
+            property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
+            label: None,
+            schema_version: None,
+        }
+    }
+
     pub fn appearance(size: Curve, opacity: Curve, color: Gradient) -> Self {
         Self {
             id: ModuleId::new(),
@@ -2097,6 +2120,7 @@ impl ModuleInstance {
             (ModuleParameters::Emission { .. }, "burst_count") => Some(ValueType::U32),
             (ModuleParameters::Shape { .. }, "shape") => Some(ValueType::Shape),
             (ModuleParameters::FollowField { .. }, "strength") => Some(ValueType::Scalar),
+            (ModuleParameters::SpawnFromDomain { .. }, "inherit") => Some(ValueType::Scalar),
             (ModuleParameters::Initialize { .. }, "lifetime" | "speed" | "angular_velocity") => {
                 Some(ValueType::Range)
             }
@@ -2122,6 +2146,9 @@ impl ModuleInstance {
             (ModuleParameters::Shape { shape }, "shape") => Some(Value::Shape(*shape)),
             (ModuleParameters::FollowField { strength, .. }, "strength") => {
                 Some(Value::Scalar(*strength))
+            }
+            (ModuleParameters::SpawnFromDomain { inherit, .. }, "inherit") => {
+                Some(Value::Scalar(*inherit))
             }
             (ModuleParameters::Initialize { lifetime, .. }, "lifetime") => {
                 Some(Value::Range(*lifetime))
@@ -2275,6 +2302,9 @@ impl ModuleInstance {
             ModuleParameters::FollowField { .. } => {
                 (MODULE_FOLLOW_FIELD, StageKind::ParticleUpdate)
             }
+            ModuleParameters::SpawnFromDomain { .. } => {
+                (MODULE_SPAWN_FROM_DOMAIN, StageKind::ParticleSpawn)
+            }
             ModuleParameters::Appearance { .. } => (MODULE_APPEARANCE, StageKind::ParticleUpdate),
             ModuleParameters::Custom(values) => {
                 if self.module_type.0.trim().is_empty() {
@@ -2397,6 +2427,9 @@ impl ModuleInstance {
                     path,
                     "follow-field strength must be finite and non-negative",
                 );
+            }
+            ModuleParameters::SpawnFromDomain { inherit, .. } if !inherit.is_finite() => {
+                invalid_value(report, path, "inherited velocity must be finite");
             }
             ModuleParameters::Collision { colliders } => {
                 for (index, collider) in colliders.iter().enumerate() {
@@ -2527,6 +2560,19 @@ pub enum ModuleParameters {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         field: String,
         strength: f32,
+    },
+    /// Spawn where an effect domain asks (fluid F10, G8): each tick one particle per record of the
+    /// domain's emission list — a fluid's spray or sparks, say — at the record's position, starting
+    /// with `inherit` × the record's velocity plus the emitter's own launch velocity; lifetime,
+    /// motion and look come from the emitter's other modules, and its own rate still spawns too. Empty
+    /// `domain`/`emission` pick the effect's first domain declaring an emission list, and its first
+    /// list. Promotes the emitter to a stateful class; the list lives on the GPU, so it is GPU-only.
+    SpawnFromDomain {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        domain: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        emission: String,
+        inherit: f32,
     },
     Custom(BTreeMap<String, Value>),
 }

@@ -1250,6 +1250,130 @@ impl FieldFollowPipeline {
     }
 }
 
+/// An emitter's persistent buffers, as Spawn From Domain binds them.
+pub struct SpawnState<'a> {
+    pub state: &'a wgpu::Buffer,
+    pub free_list: &'a wgpu::Buffer,
+    pub free_count: &'a wgpu::Buffer,
+    pub spawn_counter: &'a wgpu::Buffer,
+    /// The emitter's stateful params for the tick.
+    pub params: &'a wgpu::Buffer,
+}
+
+/// Spawn From Domain for stateful particles (fluid F10, G8): turns a domain's emission list into
+/// particles on the device — a one-thread plan, then an indirect dispatch over the planned records
+/// (see [`aestra_gpu::DOMAIN_SPAWN_PLAN_WGSL`] and [`aestra_gpu::domain_spawn_wgsl`]). Engine-neutral,
+/// like [`StageExecutor`].
+pub struct DomainSpawnPipeline {
+    plan: wgpu::ComputePipeline,
+    spawn: wgpu::ComputePipeline,
+}
+
+impl DomainSpawnPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let pipeline = |label: &str, source: String, entry: &str| {
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(label),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: None,
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        Self {
+            plan: pipeline(
+                "aestra domain spawn plan",
+                aestra_gpu::DOMAIN_SPAWN_PLAN_WGSL.into(),
+                "domain_spawn_plan",
+            ),
+            spawn: pipeline(
+                "aestra domain spawn",
+                aestra_gpu::domain_spawn_wgsl(),
+                "domain_spawn",
+            ),
+        }
+    }
+
+    /// Encodes one tick's spawn of `emission`'s records into `target`, as `spawn` says.
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: SpawnState<'_>,
+        emission: &wgpu::Buffer,
+        spawn: &aestra_runtime::CompiledDomainSpawn,
+    ) {
+        let spawn_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra domain spawn params"),
+            contents: &words_to_bytes(&aestra_gpu::domain_spawn_params(spawn)),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let plan = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aestra domain spawn plan"),
+            size: aestra_gpu::DOMAIN_SPAWN_PLAN_WORDS as u64 * 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        });
+        let group = |pipeline: &wgpu::ComputePipeline, buffers: &[&wgpu::Buffer]| {
+            let entries: Vec<wgpu::BindGroupEntry> = buffers
+                .iter()
+                .enumerate()
+                .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                    binding: binding as u32,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect();
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("aestra domain spawn"),
+                layout: &pipeline.get_bind_group_layout(0),
+                entries: &entries,
+            })
+        };
+        let plan_group = group(
+            &self.plan,
+            &[
+                target.free_count,
+                target.spawn_counter,
+                emission,
+                &plan,
+                &spawn_params,
+            ],
+        );
+        let spawn_group = group(
+            &self.spawn,
+            &[
+                target.state,
+                target.free_list,
+                target.params,
+                emission,
+                &plan,
+                &spawn_params,
+            ],
+        );
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("aestra domain spawn plan"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.plan);
+            pass.set_bind_group(0, &plan_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra domain spawn"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.spawn);
+        pass.set_bind_group(0, &spawn_group, &[]);
+        pass.dispatch_workgroups_indirect(&plan, 0);
+    }
+}
+
 /// Copies a grid field into an `rgba16float` 3-D storage texture of the grid's size (fluid F3), so
 /// volume presentations sample it with hardware trilinear filtering (see
 /// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]); a bricked field (fluid F7) into a brick atlas and

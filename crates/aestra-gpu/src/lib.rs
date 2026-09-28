@@ -1138,6 +1138,95 @@ pub fn field_follow_params(
     ]
 }
 
+/// Words of the `spawn_params` both domain-spawn kernels read: `[list capacity, inherit (f32 bits),
+/// 0, 0]`.
+pub const DOMAIN_SPAWN_PARAM_WORDS: usize = 4;
+/// Words of the plan [`DOMAIN_SPAWN_PLAN_WGSL`] writes: the indirect dispatch `[x, y, z]` of
+/// [`domain_spawn_wgsl`], then `[count, free slots before, first ordinal]`, then padding.
+pub const DOMAIN_SPAWN_PLAN_WORDS: usize = 8;
+
+/// The plan of Spawn From Domain (fluid F10, G8) for one emitter and tick, one thread: how many of
+/// the domain's emission records become particles — all of them, up to the list's capacity and the
+/// free slots — which free slots they take (the top `count` of the free list), and which ordinals
+/// (the next `count`). It pops those slots and ordinals itself, so [`domain_spawn_wgsl`] claims none
+/// with atomics: record `i` always becomes ordinal `first + i` in the same slot, and a rerun
+/// reproduces every bit. Runs after the tick's own `spawn`.
+pub const DOMAIN_SPAWN_PLAN_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read_write> free_count: atomic<u32>;
+@group(0) @binding(1) var<storage, read_write> spawn_counter: atomic<u32>;
+@group(0) @binding(2) var<storage, read> emission: array<u32>;
+@group(0) @binding(3) var<storage, read_write> plan: array<u32>;
+@group(0) @binding(4) var<storage, read> spawn_params: array<u32>;
+
+@compute @workgroup_size(1)
+fn domain_spawn_plan() {
+    let free = atomicLoad(&free_count);
+    let count = min(min(emission[0], spawn_params[0]), free);
+    let first = atomicLoad(&spawn_counter);
+    atomicStore(&free_count, free - count);
+    atomicStore(&spawn_counter, first + count);
+    plan[0] = (count + 63u) / 64u;
+    plan[1] = 1u;
+    plan[2] = 1u;
+    plan[3] = count;
+    plan[4] = free;
+    plan[5] = first;
+}
+"#;
+
+/// Spawn From Domain (fluid F10, G8): one thread per planned record (an indirect dispatch of the
+/// plan), writing a particle into the persistent state (`AESTRA_STATE_STRIDE` = 9 floats) at the
+/// record's position, with `inherit` × the record's velocity plus the emitter's launch velocity, and
+/// a lifetime in the emitter's range — both sampled from `(seed, ordinal)` exactly as `spawn` does.
+/// `params` is the emitter's stateful params for the tick ([`STATEFUL_SIMULATION_PARAM_WORDS`]); the
+/// emitter's placement does not apply, since the records are already in the domain's space, where
+/// the particle then lives.
+pub fn domain_spawn_wgsl() -> String {
+    format!("{DOMAIN_SPAWN_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{DOMAIN_SPAWN_ENTRY}")
+}
+
+const DOMAIN_SPAWN_BINDINGS: &str = r#"
+@group(0) @binding(0) var<storage, read_write> state: array<f32>;
+@group(0) @binding(1) var<storage, read> free_list: array<u32>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
+@group(0) @binding(3) var<storage, read> emission: array<u32>;
+@group(0) @binding(4) var<storage, read> plan: array<u32>;
+@group(0) @binding(5) var<storage, read> spawn_params: array<u32>;
+"#;
+
+const DOMAIN_SPAWN_ENTRY: &str = r#"
+@compute @workgroup_size(64)
+fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= plan[3]) { return; }
+    let slot = free_list[plan[4] - 1u - i];
+    let ordinal = plan[5] + i;
+    let seed = vec2<u32>(params[2], params[3]);
+    let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
+    let launch = spawn_launch_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let lifetime = bitcast<f32>(params[6])
+        + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
+    let r = 4u + i * 8u;
+    let inherit = bitcast<f32>(spawn_params[1]);
+    let base = slot * 9u;
+    for (var axis = 0u; axis < 3u; axis = axis + 1u) {
+        state[base + axis] = bitcast<f32>(emission[r + axis]);
+        state[base + 3u + axis] = inherit * bitcast<f32>(emission[r + 4u + axis]) + launch[axis];
+    }
+    state[base + 6u] = 0.0;
+    state[base + 7u] = lifetime;
+    state[base + 8u] = bitcast<f32>(ordinal);
+}
+"#;
+
+/// The `spawn_params` of both domain-spawn kernels for `spawn`.
+pub fn domain_spawn_params(
+    spawn: &aestra_runtime::CompiledDomainSpawn,
+) -> [u32; DOMAIN_SPAWN_PARAM_WORDS] {
+    [spawn.emission.capacity, spawn.inherit.to_bits(), 0, 0]
+}
+
 /// The 2D-diffusion compute pass — the first staged-simulation validation workload (hybrid roadmap
 /// M13). One explicit (Jacobi) diffusion step on a periodic grid: it reads the front grid buffer and
 /// writes the back, and the staged executor ping-pongs them across iterations. Bindings match the

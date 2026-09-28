@@ -304,6 +304,32 @@ impl FieldLayout {
     }
 }
 
+/// Declares that a resource is an emission list (fluid F10, G8): the points a stage asks particles to
+/// be born at this tick, which an emitter spawning from the stage turns into particles on the device,
+/// with no readback. Word 0 holds how many records the stage emitted (a spawner reads at most
+/// `capacity`); words 1..4 are reserved; record `i` is the [`Self::RECORD_WORDS`] `f32`s from word
+/// `4 + 8i`: a position (`xyz`, `w` reserved) then a velocity (`xyz`, `w` reserved), in the stage's
+/// space. The stage rewrites it every tick in an order that depends only on its state — a scan, never
+/// an atomic append — so the particles spawned from it reproduce on a rerun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmissionLayout {
+    pub resource: ResourceTypeId,
+    pub capacity: u32,
+}
+
+impl EmissionLayout {
+    /// Words before the first record.
+    pub const HEADER_WORDS: u32 = 4;
+    /// Words per record.
+    pub const RECORD_WORDS: u32 = 8;
+
+    /// Bytes the list occupies at its capacity.
+    pub fn bytes(&self) -> u64 {
+        (u64::from(Self::HEADER_WORDS) + u64::from(self.capacity) * u64::from(Self::RECORD_WORDS))
+            * 4
+    }
+}
+
 /// The ordered execution plan of one stage (extensible-stages M6): declared resources plus the ops
 /// that run over them, in order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -315,6 +341,8 @@ pub struct ExecutionBlock {
     pub constants: Vec<u32>,
     /// Grid-field layouts of some of the block's resources (fluid F1).
     pub fields: Vec<FieldLayout>,
+    /// Emission lists among the block's resources (fluid F10).
+    pub emissions: Vec<EmissionLayout>,
 }
 
 /// Why an [`ExecutionBlock`] is invalid.
@@ -332,6 +360,8 @@ pub enum ExecutionError {
     InvalidBuiltinResource(ResourceTypeId),
     /// A field layout names an undeclared resource, is empty, or does not fit its resource.
     InvalidField(ResourceTypeId),
+    /// An emission list names an undeclared resource, has no capacity, or does not fit its resource.
+    InvalidEmission(ResourceTypeId),
     /// A convergent repeat's body holds a copy or a nested repeat, or its tolerance is not a finite,
     /// non-negative number.
     InvalidConvergentRepeat,
@@ -363,6 +393,11 @@ impl core::fmt::Display for ExecutionError {
             Self::InvalidField(id) => write!(
                 f,
                 "field layout of '{}' is empty or does not fit the declared resource",
+                id.as_str()
+            ),
+            Self::InvalidEmission(id) => write!(
+                f,
+                "emission list '{}' has no capacity or does not fit the declared resource",
                 id.as_str()
             ),
             Self::InvalidBuiltinResource(id) => write!(
@@ -428,6 +463,13 @@ impl ExecutionBlock {
                 return Err(ExecutionError::InvalidField(field.resource.clone()));
             }
         }
+        for emission in &self.emissions {
+            if emission.capacity == 0
+                || !bytes_of(&emission.resource).is_some_and(|bytes| bytes >= emission.bytes())
+            {
+                return Err(ExecutionError::InvalidEmission(emission.resource.clone()));
+            }
+        }
         let sizes = self
             .resources
             .iter()
@@ -439,6 +481,13 @@ impl ExecutionBlock {
     /// The field layout of a resource, if the block declares one.
     pub fn field(&self, id: &ResourceTypeId) -> Option<&FieldLayout> {
         self.fields.iter().find(|field| &field.resource == id)
+    }
+
+    /// The emission list of a resource, if the block declares one.
+    pub fn emission(&self, id: &ResourceTypeId) -> Option<&EmissionLayout> {
+        self.emissions
+            .iter()
+            .find(|emission| &emission.resource == id)
     }
 
     /// The binding index of a declared resource — its position in [`Self::resources`].
@@ -626,6 +675,7 @@ pub fn lower_stage_fused(
         })],
         constants: Vec::new(),
         fields: Vec::new(),
+        emissions: Vec::new(),
     }
 }
 
@@ -656,6 +706,7 @@ mod tests {
             ops,
             constants: Vec::new(),
             fields: Vec::new(),
+            emissions: Vec::new(),
         }
     }
 
@@ -697,6 +748,7 @@ mod tests {
             ops: vec![compute("A")],
             constants: Vec::new(),
             fields: Vec::new(),
+            emissions: Vec::new(),
         };
         assert!(matches!(
             undeclared.validate(),

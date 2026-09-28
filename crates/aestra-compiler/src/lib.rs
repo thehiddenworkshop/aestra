@@ -23,9 +23,9 @@ use aestra_core::{
     Collider, ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     Emitter, EmitterId, Gradient, MODULE_APPEARANCE, MODULE_COLLISION, MODULE_EMISSION,
     MODULE_FOLLOW_FIELD, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE,
-    MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance, ModuleParameters,
-    ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON, RENDERER_SPRITE,
-    RENDERER_TRAIL, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
+    MODULE_SPAWN_FROM_DOMAIN, MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance,
+    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON,
+    RENDERER_SPRITE, RENDERER_TRAIL, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
     ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
@@ -933,6 +933,34 @@ impl EffectCompiler {
                     _ => None,
                 })
                 .transpose()?;
+            // Spawn From Domain (fluid F10): resolved likewise, to the domain's emission list.
+            let domain_spawn = emitter
+                .modules
+                .iter()
+                .enumerate()
+                .filter(|(_, module)| module.enabled)
+                .find_map(|(module_index, module)| match &module.parameters {
+                    ModuleParameters::SpawnFromDomain {
+                        domain,
+                        emission,
+                        inherit,
+                    } => Some(
+                        resolve_domain_spawn(&extension_stages, domain, emission, *inherit)
+                            .map_err(|message| {
+                                let mut report = ValidationReport::default();
+                                report.push(Diagnostic::error(
+                                    DiagnosticCode::InvalidReference,
+                                    format!(
+                                        "effect.emitters[{emitter_index}].modules[{module_index}]"
+                                    ),
+                                    message,
+                                ));
+                                CompileError::Validation(report)
+                            }),
+                    ),
+                    _ => None,
+                })
+                .transpose()?;
             let colliders: Vec<Collider> = emitter
                 .modules
                 .iter()
@@ -973,6 +1001,7 @@ impl EffectCompiler {
                     simulation_class,
                     colliders: colliders.clone(),
                     field_follow: field_follow.clone(),
+                    domain_spawn: domain_spawn.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
                         &execution, emitter.id,
                     ),
@@ -2140,7 +2169,7 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
         renderers,
         gpu_fields: emitters
             .iter()
-            .any(|emitter| emitter.enabled && emitter.field_follow.is_some()),
+            .any(|emitter| emitter.enabled && emitter.coupled()),
     }
 }
 
@@ -2171,6 +2200,40 @@ fn resolve_field_follow(
         (false, true) => format!("Follow Field: domain '{domain}' declares no vector field"),
         (false, false) => {
             format!("Follow Field: domain '{domain}' declares no vector field '{field}'")
+        }
+    })
+}
+
+/// Resolves a Spawn From Domain module (fluid F10) to the domain stage and emission list it spawns
+/// from: the named domain (else any), and the named list (else its first).
+fn resolve_domain_spawn(
+    stages: &[aestra_runtime::CompiledExtensionStage],
+    domain: &str,
+    emission: &str,
+    inherit: f32,
+) -> Result<aestra_runtime::CompiledDomainSpawn, String> {
+    for (index, stage) in stages.iter().enumerate() {
+        if !domain.is_empty() && stage.name != domain {
+            continue;
+        }
+        if let Some(layout) = stage
+            .block
+            .emissions
+            .iter()
+            .find(|layout| emission.is_empty() || layout.resource.as_str() == emission)
+        {
+            return Ok(aestra_runtime::CompiledDomainSpawn {
+                stage: index,
+                emission: layout.clone(),
+                inherit,
+            });
+        }
+    }
+    Err(match (domain.is_empty(), emission.is_empty()) {
+        (true, _) => "Spawn From Domain: the effect has no domain emitting particles".into(),
+        (false, true) => format!("Spawn From Domain: domain '{domain}' emits no particles"),
+        (false, false) => {
+            format!("Spawn From Domain: domain '{domain}' has no emission list '{emission}'")
         }
     })
 }
@@ -2449,6 +2512,8 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         // Follow Field (fluid F2b) likewise: it promotes the class and is resolved onto the compiled
         // emitter (`field_follow`) for the stateful GPU backend, which runs it after each tick.
         ModuleParameters::FollowField { .. } => return None,
+        // Spawn From Domain likewise (domain_spawn): the stateful backend spawns from the list.
+        ModuleParameters::SpawnFromDomain { .. } => return None,
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
@@ -2712,6 +2777,7 @@ fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
             | MODULE_PERSISTENT
             | MODULE_COLLISION
             | MODULE_FOLLOW_FIELD
+            | MODULE_SPAWN_FROM_DOMAIN
             | MODULE_APPEARANCE
     )
 }
@@ -2730,6 +2796,10 @@ fn parameters_match(module: &ModuleInstance) -> bool {
             | (MODULE_PERSISTENT, ModuleParameters::Persistent {})
             | (MODULE_COLLISION, ModuleParameters::Collision { .. })
             | (MODULE_FOLLOW_FIELD, ModuleParameters::FollowField { .. })
+            | (
+                MODULE_SPAWN_FROM_DOMAIN,
+                ModuleParameters::SpawnFromDomain { .. }
+            )
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
 }

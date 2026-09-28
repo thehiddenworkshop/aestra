@@ -2746,6 +2746,7 @@ impl StageLowerer for FluidSolverLowerer {
                     bricks: grid.brick_layout(),
                 })
                 .collect(),
+            emissions: Vec::new(),
         })
     }
 }

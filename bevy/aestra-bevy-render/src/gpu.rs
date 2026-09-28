@@ -185,6 +185,8 @@ struct StatefulDispatch {
     colliders: Vec<aestra_core::Collider>,
     /// The domain field these particles follow (fluid F2b); they then advance in lockstep with it.
     field_follow: Option<aestra_runtime::CompiledFieldFollow>,
+    /// The domain emission list these particles are also born from (fluid F10); lockstep likewise.
+    domain_spawn: Option<aestra_runtime::CompiledDomainSpawn>,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -287,6 +289,16 @@ impl StatefulDispatch {
                 follow.field.dims[0],
                 follow.field.cell_size.to_bits(),
                 follow.field.origin[1].to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        // So does spawning from a domain (fluid F10).
+        if let Some(spawn) = &self.domain_spawn {
+            for bits in [
+                spawn.stage as u32,
+                spawn.emission.capacity,
+                spawn.inherit.to_bits(),
             ] {
                 hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
             }
@@ -915,6 +927,7 @@ pub(crate) fn prepare_gpu_effects(
                                 seed,
                                 colliders: compiled.colliders.clone(),
                                 field_follow: compiled.field_follow.clone(),
+                                domain_spawn: compiled.domain_spawn.clone(),
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -2513,15 +2526,15 @@ fn stateful_bind_group(
     )
 }
 
-/// One tick's params (with this tick's spawn count, advancing the fractional spawn carry) and its bind
-/// group.
+/// One tick's bind group and params (with this tick's spawn count, advancing the fractional spawn
+/// carry).
 fn stateful_tick_group(
     device: &RenderDevice,
     layout: &BindGroupLayout,
     persistent: &mut StatefulPersistentState,
     dispatch: &StatefulDispatch,
     render: &StatefulRenderBuffers<'_>,
-) -> BindGroup {
+) -> (BindGroup, Buffer) {
     persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
     let spawn_count = persistent.spawn_accumulator.floor();
     persistent.spawn_accumulator -= spawn_count;
@@ -2531,7 +2544,8 @@ fn stateful_tick_group(
         contents: &stateful_params_bytes(dispatch, spawn_count, 0.0),
         usage: BufferUsages::STORAGE,
     });
-    stateful_bind_group(device, layout, persistent, &params, render)
+    let group = stateful_bind_group(device, layout, persistent, &params, render);
+    (group, params)
 }
 
 /// Resets one emitter's indirect instance count, then presents + compacts its live slots into the
@@ -2611,7 +2625,7 @@ fn dispatch_stateful_effect(
             STATEFUL_CHECKPOINT_CADENCE - (persistent.last_tick % STATEFUL_CHECKPOINT_CADENCE);
         let segment = remaining.min(to_boundary);
         let groups: Vec<BindGroup> = (0..segment)
-            .map(|_| stateful_tick_group(device, layout, persistent, dispatch, render))
+            .map(|_| stateful_tick_group(device, layout, persistent, dispatch, render).0)
             .collect();
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -2654,6 +2668,7 @@ pub(super) struct Coupling<'a> {
     pub domains: &'a mut [Option<crate::execution::StageTimeline>],
     pub inputs: crate::execution::StageInputs<'a>,
     pub follower: &'a crate::execution::FieldFollowPipeline,
+    pub spawner: &'a crate::execution::DomainSpawnPipeline,
 }
 
 /// The latest tick at or before `target` that every store holds a checkpoint for.
@@ -2747,7 +2762,7 @@ fn run_coupled_stateful(
             }
         }
         for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
-            let group = stateful_tick_group(device, layout, persistent, dispatch, render);
+            let (group, params) = stateful_tick_group(device, layout, persistent, dispatch, render);
             {
                 let workgroups = dispatch.capacity.div_ceil(WORKGROUP_SIZE);
                 let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -2759,6 +2774,25 @@ fn run_coupled_stateful(
                 pass.dispatch_workgroups(workgroups, 1, 1);
                 pass.set_pipeline(spawn);
                 pass.dispatch_workgroups(workgroups, 1, 1);
+            }
+            // Particles the domain asked for this tick are born after the emitter's own (fluid F10).
+            if let Some(spawn) = &dispatch.domain_spawn
+                && let Some(Some(domain)) = domains.get(spawn.stage)
+                && let Some(emission) = domain.executor().buffer(spawn.emission.resource.as_str())
+            {
+                coupling.spawner.encode(
+                    device.wgpu_device(),
+                    encoder,
+                    crate::execution::SpawnState {
+                        state: &persistent.state,
+                        free_list: &persistent.free_list,
+                        free_count: &persistent.free_count,
+                        spawn_counter: &persistent.spawn_counter,
+                        params: &params,
+                    },
+                    emission,
+                    spawn,
+                );
             }
             if let Some(follow) = &dispatch.field_follow
                 && let Some(Some(domain)) = domains.get(follow.stage)
@@ -2854,10 +2888,11 @@ fn run_stateful_dispatches(
         // Clear the shared live counter once, before any emitter's present bumps it.
         encoder.clear_buffer(render.counters, 0, Some(4));
     }
-    // Emitters following a domain's field advance in lockstep with it (fluid F2b).
+    // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
+    // with it.
     let coupled = dispatches
         .iter()
-        .any(|dispatch| dispatch.field_follow.is_some());
+        .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
     match coupling.filter(|_| coupled) {
         Some(coupling) => {
             // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
@@ -3460,6 +3495,7 @@ mod tests {
             seed: 42,
             colliders: Vec::new(),
             field_follow: None,
+            domain_spawn: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4153,7 +4189,9 @@ mod tests {
 #[cfg(test)]
 mod coupled_tests {
     use super::*;
-    use crate::execution::{FieldFollowPipeline, StageExecutor, StageInputs, StageTimeline};
+    use crate::execution::{
+        DomainSpawnPipeline, FieldFollowPipeline, StageExecutor, StageInputs, StageTimeline,
+    };
     use aestra_extension::ExtensionRegistry;
     use bevy::render::render_resource::{PipelineLayoutDescriptor, RawComputePipelineDescriptor};
     use bevy::render::renderer::WgpuWrapper;
@@ -4168,6 +4206,7 @@ mod coupled_tests {
         layout: BindGroupLayout,
         pipelines: [ComputePipeline; 3],
         follower: FieldFollowPipeline,
+        spawner: DomainSpawnPipeline,
         states: Vec<StatefulPersistentState>,
         dispatches: Vec<StatefulDispatch>,
         domains: Vec<Option<StageTimeline>>,
@@ -4295,6 +4334,7 @@ mod coupled_tests {
                 field: field.clone(),
                 strength,
             }),
+            domain_spawn: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4320,12 +4360,14 @@ mod coupled_tests {
             buffer(16),
         ];
         let follower = FieldFollowPipeline::new(device.wgpu_device());
+        let spawner = DomainSpawnPipeline::new(device.wgpu_device());
         Some(Scene {
             device,
             queue,
             layout,
             pipelines,
             follower,
+            spawner,
             states,
             dispatches,
             domains,
@@ -4355,6 +4397,7 @@ mod coupled_tests {
                             ..Default::default()
                         },
                         follower: &self.follower,
+                        spawner: &self.spawner,
                     },
                     &StatefulRenderBuffers {
                         particles,

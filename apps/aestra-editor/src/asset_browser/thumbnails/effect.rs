@@ -157,7 +157,7 @@ fn requires_stage_progress(effect: &aestra_runtime::CompiledEffect) -> bool {
         || effect
             .emitters
             .iter()
-            .any(|emitter| emitter.enabled && emitter.field_follow.is_some())
+            .any(|emitter| emitter.enabled && emitter.coupled())
 }
 
 /// Compiles a resolved project, schedules its instances, builds the presented players,
