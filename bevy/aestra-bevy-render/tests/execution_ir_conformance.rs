@@ -362,6 +362,7 @@ fn synthetic_block() -> ExecutionBlock {
         constants: Vec::new(),
         fields: Vec::new(),
         emissions: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 

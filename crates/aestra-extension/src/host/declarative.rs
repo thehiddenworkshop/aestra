@@ -430,6 +430,7 @@ impl StageLowerer for TemplateStageLowerer {
             constants: Vec::new(),
             fields: Vec::new(),
             emissions: Vec::new(),
+            outputs: Vec::new(),
         })
     }
 }

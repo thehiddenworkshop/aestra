@@ -199,6 +199,7 @@ fn halving(tolerance: f32, max: u32, test_first: bool) -> ExecutionBlock {
         constants: Vec::new(),
         fields: Vec::new(),
         emissions: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -400,6 +401,7 @@ fn the_shared_reduction_sums_in_a_fixed_order() {
         constants: Vec::new(),
         fields: Vec::new(),
         emissions: Vec::new(),
+        outputs: Vec::new(),
     };
     let stage = StageExecutor::new(&gpu.device, &gpu.queue, &block, &registry.programs, 4).unwrap();
     let bytes: Vec<u8> = values

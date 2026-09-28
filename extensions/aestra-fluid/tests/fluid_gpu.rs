@@ -3200,3 +3200,110 @@ fn a_liquid_cannot_enter_the_geometry_the_host_supplies() {
         "the wall holds the liquid back"
     );
 }
+
+// ---- Colliders' forces and impact events (fluid F11) ----
+
+/// The force outputs `fluid` reports now (zeroing them: the next read starts a new frame).
+fn forces(fluid: &Fluid, gpu: &Gpu) -> Vec<aestra_runtime::StageOutputValue> {
+    let words = fluid.stage.read_outputs(&gpu.device, &gpu.queue).unwrap();
+    aestra_runtime::read_stage_outputs(0, fluid.stage.block(), &words)
+}
+
+/// The smoke with a plate above its source — the slab of the world-collider test, as a box collider —
+/// pushed by the rising plume; `impact` sets its impact threshold.
+fn plate(registry: &ExtensionRegistry, source_rate: f32, impact: f32) -> EffectAsset {
+    let mut smoke = effect(registry, false, 24);
+    set_input(
+        &mut smoke,
+        MODULE_DENSITY_SOURCE,
+        "density_rate",
+        Value::Scalar(source_rate),
+    );
+    if source_rate == 0.0 {
+        set_input(
+            &mut smoke,
+            MODULE_DENSITY_SOURCE,
+            "velocity",
+            Value::Vec3([0.0; 3]),
+        );
+    }
+    let id = with_module(registry, &mut smoke, aestra_fluid::MODULE_BOX_COLLIDER);
+    set_module_input(&mut smoke, id, "position", Value::Vec3([0.0, 1.6, 0.0]));
+    set_module_input(&mut smoke, id, "half_extents", Value::Vec3([0.8, 0.2, 0.8]));
+    set_module_input(&mut smoke, id, "impact_threshold", Value::Scalar(impact));
+    smoke
+}
+
+#[test]
+fn a_rising_plume_pushes_the_plate_above_it_up_and_tells_gameplay_once() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let pushed = Fluid::new(&gpu, &registry, &plate(&registry, 5.0, 0.0));
+    let mut ups = Vec::new();
+    for span in 0..6 {
+        pushed.run(&gpu, span * 20..(span + 1) * 20);
+        let read = forces(&pushed, &gpu);
+        assert_eq!(read.len(), 1);
+        ups.push(read[0].value.clone());
+    }
+    eprintln!("force on the plate, every 20 ticks: {ups:?}");
+    let last = &ups[5];
+    assert!(last[1] > 0.0, "the plume pushes it up: {last:?}");
+    assert!(
+        last[0].abs() < 0.1 * last[1] && last[2].abs() < 0.1 * last[1],
+        "and hardly sideways: {last:?}"
+    );
+    // Still air pushes nothing, whatever buoyancy the smoke-free source adds.
+    let still = Fluid::new(&gpu, &registry, &plate(&registry, 0.0, 0.0));
+    still.run(&gpu, 0..120);
+    let at_rest = forces(&still, &gpu)[0].magnitude();
+    assert!(at_rest < 0.01 * last[1], "{at_rest} vs {}", last[1]);
+    // A rerun reports the same bits.
+    let again = Fluid::new(&gpu, &registry, &plate(&registry, 5.0, 0.0));
+    for span in 0..6 {
+        again.run(&gpu, span * 20..(span + 1) * 20);
+        assert_eq!(forces(&again, &gpu)[0].value, ups[span as usize]);
+    }
+    // With an impact threshold under the push, gameplay hears of it once, as it rises past it.
+    let threshold = 0.5 * last[1];
+    let hit = Fluid::new(&gpu, &registry, &plate(&registry, 5.0, threshold));
+    let mut tracker = aestra_runtime::OutputEventTracker::default();
+    let mut events = Vec::new();
+    for span in 0..6 {
+        hit.run(&gpu, span * 20..(span + 1) * 20);
+        events.extend(tracker.observe(&forces(&hit, &gpu)));
+    }
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].kind, aestra_fluid::EVENT_IMPACT);
+    assert_eq!(events[0].output, aestra_fluid::OUTPUT_FORCE);
+    assert!(events[0].magnitude > threshold);
+    assert_eq!(
+        events[0].source,
+        hit.stage.block().outputs[0].source,
+        "it names the collider"
+    );
+}
+
+#[test]
+fn a_collider_moving_through_still_smoke_feels_it_drag() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut smoke = effect(&registry, false, 24);
+    set_input(
+        &mut smoke,
+        MODULE_DENSITY_SOURCE,
+        "velocity",
+        Value::Vec3([0.0; 3]),
+    );
+    set_input(&mut smoke, MODULE_BUOYANCY, "strength", Value::Scalar(0.0));
+    let id = with_module(&registry, &mut smoke, aestra_fluid::MODULE_SPHERE_COLLIDER);
+    set_module_input(&mut smoke, id, "position", Value::Vec3([0.0, 1.6, 0.0]));
+    set_module_input(&mut smoke, id, "radius", Value::Scalar(0.4));
+    set_module_input(&mut smoke, id, "velocity", Value::Vec3([2.0, 0.0, 0.0]));
+    let fluid = Fluid::new(&gpu, &registry, &smoke);
+    fluid.run(&gpu, 0..30);
+    let drag = forces(&fluid, &gpu)[0].value.clone();
+    eprintln!("drag on a sphere moving +x: {drag:?}");
+    assert!(drag[0] < 0.0, "against its motion: {drag:?}");
+    assert!(drag[1].abs() < drag[0].abs() && drag[2].abs() < drag[0].abs());
+}

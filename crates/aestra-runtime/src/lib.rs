@@ -13,6 +13,7 @@ mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
+mod outputs;
 mod profile;
 mod sdf;
 mod staged;
@@ -22,11 +23,12 @@ pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
     AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, AESTRA_RESOURCE_WORLD_SDF,
     BrickLayout, ComputeOp, CopyOp, EmissionLayout, ExecutionBlock, ExecutionError, ExecutionOp,
-    FieldLayout, FrameConstants, IDENTITY_AFFINE, IndirectDispatch, ReferenceExecutionTrace,
-    RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime,
-    execute_reference, lower_stage_fused,
+    FieldLayout, FrameConstants, IDENTITY_AFFINE, IndirectDispatch, OutputEvent,
+    ReferenceExecutionTrace, RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor,
+    ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
+pub use outputs::*;
 pub use sdf::*;
 pub use staged::{
     StagedDispatch, StagedPass, StagedPlan, StagedPlanError, StagedResource,

@@ -82,6 +82,98 @@ fn progress_target_tick(time: f32, tick_dt: f32, coupled: bool) -> u32 {
 #[derive(Resource, Default, Clone)]
 struct StageProgressMailbox(Arc<Mutex<HashMap<Entity, Option<StageProgressSample>>>>);
 
+/// What the stages of an effect report to the host (fluid F11, host bindings HB9): the latest value of
+/// every output (the force on each fluid collider, say), as read after the last frame that advanced
+/// them. Values arrive a frame or two after the ticks that produced them.
+#[derive(Component, Debug, Default, Clone)]
+pub struct AestraEffectOutputs {
+    values: Vec<aestra_runtime::StageOutputValue>,
+}
+
+impl AestraEffectOutputs {
+    /// Every output's latest value.
+    pub fn values(&self) -> &[aestra_runtime::StageOutputValue] {
+        &self.values
+    }
+
+    /// The latest value of the output `name` of authored module `source`.
+    pub fn get(&self, name: &str, source: aestra_core::ModuleId) -> Option<&[f32]> {
+        self.values
+            .iter()
+            .find(|value| value.name == name && value.source == Some(source))
+            .map(|value| value.value.as_slice())
+    }
+}
+
+/// A runtime event an effect raised for gameplay (host bindings HB9): an output rose past its
+/// threshold — a fluid pushing a collider hard enough for an `impact`, say.
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct AestraOutputEvent {
+    /// The effect that raised it.
+    pub effect: Entity,
+    pub event: aestra_runtime::EffectOutputEvent,
+}
+
+/// Where the render world leaves output readbacks for the main world: the effect, the stage, and the
+/// words of its output resources.
+#[derive(Resource, Default, Clone)]
+struct StageOutputMailbox(Arc<Mutex<Vec<OutputRead>>>);
+
+/// One stage's output read: the effect, the stage, the words of each output resource.
+type OutputRead = (Entity, usize, BTreeMap<ResourceTypeId, Vec<u32>>);
+
+/// The events an effect's outputs have raised so far, to raise each one once.
+#[derive(Component, Default)]
+struct OutputEvents(aestra_runtime::OutputEventTracker);
+
+fn receive_stage_outputs(
+    mailbox: Res<StageOutputMailbox>,
+    mut commands: Commands,
+    mut effects: Query<(
+        &PresentedEffect,
+        Option<&mut AestraEffectOutputs>,
+        Option<&mut OutputEvents>,
+    )>,
+    mut events: MessageWriter<AestraOutputEvent>,
+) {
+    let reads = match mailbox.0.lock() {
+        Ok(mut reads) => std::mem::take(&mut *reads),
+        Err(_) => return,
+    };
+    for (entity, stage, words) in reads {
+        let Ok((presented, outputs, tracker)) = effects.get_mut(entity) else {
+            continue;
+        };
+        let Some(block) = stages(presented.effect())
+            .nth(stage)
+            .map(|stage| &stage.block)
+        else {
+            continue;
+        };
+        let values = aestra_runtime::read_stage_outputs(stage, block, &words);
+        let mut fresh = OutputEvents::default();
+        let raised = match tracker {
+            Some(mut tracker) => tracker.0.observe(&values),
+            None => fresh.0.observe(&values),
+        };
+        events.write_batch(raised.into_iter().map(|event| AestraOutputEvent {
+            effect: entity,
+            event,
+        }));
+        match outputs {
+            Some(mut outputs) => {
+                outputs.values.retain(|value| value.stage != stage);
+                outputs.values.extend(values);
+            }
+            None => {
+                commands
+                    .entity(entity)
+                    .insert((AestraEffectOutputs { values }, fresh));
+            }
+        }
+    }
+}
+
 fn receive_stage_progress(
     mailbox: Res<StageProgressMailbox>,
     mut commands: Commands,
@@ -294,10 +386,14 @@ fn stages(effect: &CompiledEffect) -> impl Iterator<Item = &CompiledExtensionSta
 pub(super) fn install(app: &mut App) {
     let mailbox = StageTimingMailbox::default();
     let progress = StageProgressMailbox::default();
+    let outputs = StageOutputMailbox::default();
     app.init_resource::<AestraDebugViews>()
         .init_resource::<super::AestraCatchupPacing>()
         .insert_resource(mailbox.clone())
         .insert_resource(progress.clone())
+        .insert_resource(outputs.clone())
+        .add_message::<AestraOutputEvent>()
+        .add_systems(PreUpdate, receive_stage_outputs)
         .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
         .add_systems(PreUpdate, receive_stage_timings)
         .add_systems(PreUpdate, receive_stage_progress)
@@ -313,6 +409,7 @@ pub(super) fn install(app: &mut App) {
     render_app
         .insert_resource(mailbox)
         .insert_resource(progress)
+        .insert_resource(outputs)
         .init_resource::<StageRuntimes>()
         .init_resource::<super::CatchupPacer>()
         .add_systems(ExtractSchedule, extract_catchup_pacing)
@@ -638,6 +735,8 @@ struct EffectStages {
     host_epoch: u64,
     /// One per stage; `None` when the stage could not be prepared (logged once).
     timelines: Vec<Option<StageTimeline>>,
+    /// Per stage, the tick its outputs were last read at (fluid F11): read again only once it moved.
+    read_ticks: Vec<Option<u32>>,
 }
 
 #[derive(Resource, Default)]
@@ -718,6 +817,7 @@ fn prepare_stage_runtimes(
             EffectStages {
                 key: StagesKey::of(extracted),
                 host_epoch: extracted.host_epoch,
+                read_ticks: vec![None; stages(&extracted.effect).count()],
                 timelines,
             },
         );
@@ -735,6 +835,7 @@ fn run_extension_stages(
     mailbox: Res<StageTimingMailbox>,
     mut pacer: ResMut<super::CatchupPacer>,
     progress: Res<StageProgressMailbox>,
+    outputs: Res<StageOutputMailbox>,
     mut timer: Local<SimulationTimer>,
     slice_pipeline: Option<Res<FieldSlicePipeline>>,
     volume_pipeline: Option<Res<super::volume::FieldVolume>>,
@@ -829,6 +930,29 @@ fn run_extension_stages(
                     time: extracted.time,
                 }),
             );
+        }
+        // Outputs (fluid F11): read back once the stage moved — this frame, or in the coupled
+        // particle pass before it — and zeroed for the next frame's ticks.
+        for (index, timeline) in runtime.timelines.iter().enumerate() {
+            let Some(timeline) = timeline else {
+                continue;
+            };
+            if runtime.read_ticks[index] == Some(timeline.last_tick()) {
+                continue;
+            }
+            let mailbox = outputs.0.clone();
+            let owner = main_entity.id();
+            if timeline.executor().encode_output_readback(
+                wgpu_device,
+                render_context.command_encoder(),
+                move |words| {
+                    if let Ok(mut reads) = mailbox.lock() {
+                        reads.push((owner, index, words));
+                    }
+                },
+            ) {
+                runtime.read_ticks[index] = Some(timeline.last_tick());
+            }
         }
         // The debug field slice.
         if let (Some(view), Some(pipeline)) = (&extracted.view, &slice_pipeline)
@@ -1054,6 +1178,80 @@ mod tests {
             volumes: Vec::new(),
             world: None,
         }
+    }
+
+    /// Fluid F11: the render world's output reads become the effect's latest outputs, and an impact
+    /// reaches gameplay as a message — once per rise past the collider's threshold.
+    #[test]
+    fn output_reads_update_the_effect_and_raise_impacts_once() {
+        use bevy::ecs::message::Messages;
+        use bevy::ecs::system::RunSystemOnce;
+        let mut registry = ExtensionRegistry::builtin();
+        registry.install(&aestra_fluid::FluidExtension).unwrap();
+        let mut effect = aestra_fluid::fire_effect(&registry);
+        let mut shield = registry
+            .modules
+            .instantiate(&aestra_core::ModuleTypeId::new(
+                aestra_fluid::MODULE_SPHERE_COLLIDER,
+            ))
+            .unwrap();
+        shield.stage = aestra_core::StageKind::Simulation(effect.simulation_stages[0].name.clone());
+        let shield_id = shield.id;
+        let aestra_core::ModuleParameters::Custom(values) = &mut shield.parameters else {
+            unreachable!("plugin modules carry a generic payload");
+        };
+        values.insert("impact_threshold".into(), aestra_core::Value::Scalar(10.0));
+        effect.simulation_stages[0].modules.push(shield);
+        let compiled = aestra_compiler::EffectCompiler::with_extensions(registry)
+            .compile(&effect)
+            .unwrap();
+        let mut world = World::new();
+        world.init_resource::<Messages<AestraOutputEvent>>();
+        let mailbox = StageOutputMailbox::default();
+        world.insert_resource(mailbox.clone());
+        let entity = world.spawn(PresentedEffect::new(Arc::new(compiled))).id();
+        let push = |force: [f32; 3]| {
+            let mut words = vec![0u32; 16];
+            for (axis, value) in force.iter().enumerate() {
+                words[axis] = value.to_bits();
+            }
+            mailbox.0.lock().unwrap().push((
+                entity,
+                0,
+                BTreeMap::from([(ResourceTypeId::new(aestra_fluid::RESOURCE_OUTPUTS), words)]),
+            ));
+        };
+        let mut raised = Vec::new();
+        let mut run = |world: &mut World| {
+            world.run_system_once(receive_stage_outputs).unwrap();
+            world.flush();
+            raised.extend(
+                world
+                    .resource_mut::<Messages<AestraOutputEvent>>()
+                    .drain()
+                    .collect::<Vec<_>>(),
+            );
+        };
+        push([0.0, 20.0, 0.0]);
+        run(&mut world);
+        assert_eq!(
+            world
+                .get::<AestraEffectOutputs>(entity)
+                .unwrap()
+                .get(aestra_fluid::OUTPUT_FORCE, shield_id),
+            Some(&[0.0, 20.0, 0.0][..])
+        );
+        push([0.0, 25.0, 0.0]);
+        run(&mut world);
+        push([0.0, 1.0, 0.0]);
+        run(&mut world);
+        push([30.0, 0.0, 0.0]);
+        run(&mut world);
+        assert_eq!(raised.len(), 2, "one impact per rise: {raised:?}");
+        assert!(raised.iter().all(|message| message.effect == entity
+            && message.event.kind == aestra_fluid::EVENT_IMPACT
+            && message.event.source == Some(shield_id)));
+        assert_eq!(raised[1].event.value, [30.0, 0.0, 0.0]);
     }
 
     #[test]

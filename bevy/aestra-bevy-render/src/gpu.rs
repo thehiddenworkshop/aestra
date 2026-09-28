@@ -71,7 +71,8 @@ use bevy::{
     },
 };
 pub use extension_stages::{
-    AestraDebugViews, AestraFieldView, AestraWorldSdf, GpuStageProgress, GpuStageTiming,
+    AestraDebugViews, AestraEffectOutputs, AestraFieldView, AestraOutputEvent, AestraWorldSdf,
+    GpuStageProgress, GpuStageTiming,
 };
 // AestraCatchupPacing is defined below, beside the pacer it configures.
 pub use particle_statistics::GpuParticleStatistics;

@@ -49,7 +49,7 @@ const BLOCK_WORDS: usize = 12;
 /// grid, the pressure solve with its per-level entry points, and the liquid's own passes.
 pub fn liquid_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{EMIT_WGSL}\n{EMIT_LIQUID_WGSL}\n{WORLD_WGSL}\n{WORLD_LIQUID_WGSL}\n{}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{EMIT_WGSL}\n{EMIT_LIQUID_WGSL}\n{WORLD_WGSL}\n{WORLD_LIQUID_WGSL}\n{FORCES_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
@@ -778,6 +778,10 @@ impl StageLowerer for LiquidSolverLowerer {
                     constants_read(),
                 ],
             ));
+            if colliders {
+                // The pressure's push on each collider, for the host (fluid F11).
+                steps.extend(force_passes(grid));
+            }
             steps.push(particles(
                 "liquid_g2p",
                 vec![
@@ -874,6 +878,15 @@ impl StageLowerer for LiquidSolverLowerer {
         if world {
             world_resource(&mut resources);
         }
+        let mut outputs = Vec::new();
+        if colliders {
+            let modules: Vec<&ExtensionModulePlan> = input
+                .modules
+                .iter()
+                .filter(|module| is_collider(&module.module_type.0))
+                .collect();
+            outputs = force_resources(&mut resources, &modules, grid.groups())?;
+        }
         let field = |id: &str, components, staggered| FieldLayout {
             resource: ResourceTypeId::new(id),
             dims: [grid.resolution; 3],
@@ -893,6 +906,7 @@ impl StageLowerer for LiquidSolverLowerer {
                 field(RESOURCE_DENSITY, 1, false),
             ],
             emissions,
+            outputs,
         })
     }
 }

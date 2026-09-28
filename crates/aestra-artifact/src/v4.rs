@@ -312,6 +312,23 @@ struct ExecutionBlockV4 {
     /// Emission lists (fluid F10, additive): each resource and its capacity in records.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     emissions: Vec<(ResourceTypeId, u32)>,
+    /// Values reported to the host (fluid F11, additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    outputs: Vec<StageOutputV4>,
+}
+
+/// A stage output (fluid F11): see [`aestra_runtime::StageOutput`].
+#[derive(Debug, Serialize, Deserialize)]
+struct StageOutputV4 {
+    name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<ModuleId>,
+    resource: ResourceTypeId,
+    word: u32,
+    components: u32,
+    /// The event's kind and threshold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    event: Option<(String, f32)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -591,6 +608,22 @@ impl From<&CompiledExtensionStage> for ExtensionStageV4 {
                     .iter()
                     .map(|emission| (emission.resource.clone(), emission.capacity))
                     .collect(),
+                outputs: stage
+                    .block
+                    .outputs
+                    .iter()
+                    .map(|output| StageOutputV4 {
+                        name: output.name.clone(),
+                        source: output.source,
+                        resource: output.resource.clone(),
+                        word: output.word,
+                        components: output.components,
+                        event: output
+                            .event
+                            .as_ref()
+                            .map(|event| (event.kind.clone(), event.threshold)),
+                    })
+                    .collect(),
             },
             cpu_reference: stage.cpu_reference,
             presentations: stage
@@ -643,6 +676,21 @@ impl ExtensionStageV4 {
                 .emissions
                 .into_iter()
                 .map(|(resource, capacity)| EmissionLayout { resource, capacity })
+                .collect(),
+            outputs: self
+                .block
+                .outputs
+                .into_iter()
+                .map(|output| aestra_runtime::StageOutput {
+                    name: output.name,
+                    source: output.source,
+                    resource: output.resource,
+                    word: output.word,
+                    components: output.components,
+                    event: output
+                        .event
+                        .map(|(kind, threshold)| aestra_runtime::OutputEvent { kind, threshold }),
+                })
                 .collect(),
         };
         if let Err(error) = block.validate() {

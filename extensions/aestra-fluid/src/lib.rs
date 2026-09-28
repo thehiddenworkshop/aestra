@@ -136,6 +136,12 @@ pub const RESOURCE_BRICK_DISPATCH: &str = "org.example.aestra-fluid::resource/br
 /// Secondary emission (fluid F10): the emission list a Spawn From Domain emitter reads, and its ranks.
 pub const RESOURCE_EMISSION: &str = "org.example.aestra-fluid::resource/emission";
 pub const RESOURCE_EMISSION_SCRATCH: &str = "org.example.aestra-fluid::resource/emission_scratch";
+/// Colliders' forces (fluid F11): per-workgroup partials, and the outputs the host reads.
+pub const RESOURCE_COLLIDER_FORCES: &str = "org.example.aestra-fluid::resource/collider_forces";
+pub const RESOURCE_OUTPUTS: &str = "org.example.aestra-fluid::resource/outputs";
+/// The output a collider reports its force as, and the event a push past its threshold raises.
+pub const OUTPUT_FORCE: &str = "force";
+pub const EVENT_IMPACT: &str = "impact";
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
@@ -160,6 +166,8 @@ pub const EMIT_LIQUID_WGSL: &str = include_str!("emit_liquid.wgsl");
 pub const WORLD_WGSL: &str = include_str!("world.wgsl");
 /// A liquid's particles against the world collider.
 pub const WORLD_LIQUID_WGSL: &str = include_str!("world_liquid.wgsl");
+/// The colliders' forces, reported to the host (fluid F11), in every fluid program.
+pub const FORCES_WGSL: &str = include_str!("forces.wgsl");
 /// Records a Secondary Emission module's list holds at most.
 pub const MAX_EMISSION_CAPACITY: u32 = 16384;
 
@@ -220,7 +228,7 @@ pub fn link() {
 /// per-level entry points, and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{FORCES_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
@@ -233,7 +241,7 @@ pub fn program_wgsl() -> String {
 /// sums it ranks with.
 pub fn sparse_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{FORCES_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
@@ -341,12 +349,15 @@ fn multigrid_entries_wgsl() -> String {
 
 /// The secondary emission's (fluid F10) and the world collider's (fluid F11) entry points, in every
 /// fluid program.
-pub const EMIT_ENTRY_POINTS: [&str; 5] = [
+pub const EMIT_ENTRY_POINTS: [&str; 7] = [
     "emit_cells",
     "emit_cells_fire",
     "emit_cells_write",
     "emit_offsets",
     "mark_world_solids",
+    // The colliders' forces (fluid F11).
+    "measure_collider_forces",
+    "collider_force_total",
 ];
 
 /// Every entry point of the solver program: [`ENTRY_POINTS`], the secondary emission's and the
@@ -609,6 +620,12 @@ impl AestraExtension for FluidExtension {
                 ResourceLifetime::Persistent,
             ),
             (RESOURCE_EMISSION, "Emission", ResourceLifetime::Transient),
+            (
+                RESOURCE_COLLIDER_FORCES,
+                "Collider Forces",
+                ResourceLifetime::Transient,
+            ),
+            (RESOURCE_OUTPUTS, "Outputs", ResourceLifetime::Persistent),
             (
                 RESOURCE_EMISSION_SCRATCH,
                 "Emission Ranks",
@@ -1108,6 +1125,17 @@ fn collider_metadata(type_id: &'static str, requires: CapabilityExpression) -> M
         Value::Bool(false),
         InputControl::Toggle,
     ));
+    inputs.push(
+        InputMetadata::new(
+            "impact_threshold",
+            "Impact Threshold",
+            "The force the fluid must push the collider with to tell gameplay of an impact; 0 tells \
+             it nothing (the force is reported either way).",
+            Value::Scalar(0.0),
+            number(1.0, 0.0, None),
+        )
+        .with_unit("force"),
+    );
     fluid_module(type_id, display_name, description, requires)
         .with_inputs(inputs)
         .with_cost(2)
@@ -1255,7 +1283,7 @@ fn emission_module(
 /// The optional resources past the first 28, in binding order: the fire grids, the liquid's, the
 /// emission's (fluid F10) and the world SDF (fluid F11). A stage declaring a later one declares every
 /// earlier one — a 16-byte stand-in where it does not use it — so each keeps its binding.
-const OPTIONAL_RESOURCES: [&str; 11] = [
+const OPTIONAL_RESOURCES: [&str; 13] = [
     RESOURCE_TEMPERATURE,
     RESOURCE_TEMPERATURE_NEXT,
     RESOURCE_FUEL,
@@ -1267,6 +1295,8 @@ const OPTIONAL_RESOURCES: [&str; 11] = [
     RESOURCE_EMISSION,
     RESOURCE_EMISSION_SCRATCH,
     AESTRA_RESOURCE_WORLD_SDF,
+    RESOURCE_COLLIDER_FORCES,
+    RESOURCE_OUTPUTS,
 ];
 
 /// Stand-ins for the optional resources up to binding `binding`.
@@ -1288,6 +1318,75 @@ fn world_resource(resources: &mut Vec<ResourceDescriptor>) {
         bytes: 0,
         lifetime: ResourceLifetime::Persistent,
     });
+}
+
+/// The colliders' forces (fluid F11): the partials at binding 39, the outputs the host reads at 40 —
+/// one per collider, in module order, raising `impact` past its threshold.
+fn force_resources(
+    resources: &mut Vec<ResourceDescriptor>,
+    colliders: &[&ExtensionModulePlan],
+    groups: u64,
+) -> Result<Vec<aestra_runtime::StageOutput>, String> {
+    pad_resources(resources, 39);
+    resources.push(ResourceDescriptor {
+        id: ResourceTypeId::new(RESOURCE_COLLIDER_FORCES),
+        bytes: groups * MAX_COLLIDERS as u64 * 16,
+        lifetime: ResourceLifetime::Transient,
+    });
+    resources.push(ResourceDescriptor {
+        id: ResourceTypeId::new(RESOURCE_OUTPUTS),
+        bytes: MAX_COLLIDERS as u64 * FORCE_RECORD_WORDS * 4,
+        lifetime: ResourceLifetime::Persistent,
+    });
+    colliders
+        .iter()
+        .enumerate()
+        .map(|(index, collider)| {
+            let threshold = scalar(&collider.parameters, "impact_threshold")?;
+            if !(threshold.is_finite() && threshold >= 0.0) {
+                return Err("a collider's impact threshold must be finite and not negative".into());
+            }
+            Ok(aestra_runtime::StageOutput {
+                name: OUTPUT_FORCE.into(),
+                source: Some(collider.source),
+                resource: ResourceTypeId::new(RESOURCE_OUTPUTS),
+                word: index as u32 * FORCE_RECORD_WORDS as u32,
+                components: 3,
+                event: (threshold > 0.0).then(|| aestra_runtime::OutputEvent {
+                    kind: EVENT_IMPACT.into(),
+                    threshold,
+                }),
+            })
+        })
+        .collect()
+}
+
+/// Words per collider in the outputs (`forces.wgsl`'s `FORCE_RECORD`): force xyz, then its size.
+const FORCE_RECORD_WORDS: u64 = 4;
+
+/// The passes measuring the colliders' forces after a projection (fluid F11).
+fn force_passes(grid: Grid) -> Vec<ExecutionOp> {
+    vec![
+        grid.pass(
+            "measure_collider_forces",
+            vec![
+                ResourceAccess::read(RESOURCE_PRESSURE),
+                ResourceAccess::read(RESOURCE_SOLID),
+                ResourceAccess::write(RESOURCE_COLLIDER_FORCES),
+                ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
+                ResourceAccess::read(AESTRA_RESOURCE_FRAME),
+                ResourceAccess::read(AESTRA_RESOURCE_HOST_BINDINGS),
+            ],
+        ),
+        grid.single(
+            "collider_force_total",
+            vec![
+                ResourceAccess::read(RESOURCE_COLLIDER_FORCES),
+                ResourceAccess::read_write(RESOURCE_OUTPUTS),
+                ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
+            ],
+        ),
+    ]
 }
 
 /// The emission list and its ranks (fluid F10), at bindings 36 and 37.
@@ -2879,6 +2978,10 @@ impl StageLowerer for FluidSolverLowerer {
                 constants_read(),
             ],
         ));
+        if colliders {
+            // The pressure's push on each collider, for the host (fluid F11).
+            steps.extend(force_passes(grid));
+        }
         if flow_map {
             // The projected midpoint velocity is stored and the forward maps marched through it.
             steps.push(pass(
@@ -3066,6 +3169,15 @@ impl StageLowerer for FluidSolverLowerer {
         if world {
             world_resource(&mut resources);
         }
+        let mut outputs = Vec::new();
+        if colliders {
+            let modules: Vec<&ExtensionModulePlan> = input
+                .modules
+                .iter()
+                .filter(|module| is_collider(&module.module_type.0))
+                .collect();
+            outputs = force_resources(&mut resources, &modules, grid.groups())?;
+        }
 
         Ok(ExecutionBlock {
             resources,
@@ -3086,6 +3198,7 @@ impl StageLowerer for FluidSolverLowerer {
                 })
                 .collect(),
             emissions,
+            outputs,
         })
     }
 }

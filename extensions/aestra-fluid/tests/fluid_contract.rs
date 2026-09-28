@@ -470,19 +470,20 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let plain = compile_stage(&registry, &smoke_effect(&registry));
     assert_eq!(plain.block.constants[12], 0, "no colliders");
     let mut effect = smoke_effect(&registry);
+    let mut ids_of_colliders = Vec::new();
     for type_id in [
         aestra_fluid::MODULE_SPHERE_COLLIDER,
         aestra_fluid::MODULE_BOX_COLLIDER,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     ] {
-        with_module(&registry, &mut effect, type_id);
+        ids_of_colliders.push(with_module(&registry, &mut effect, type_id));
     }
     let stage = compile_stage(&registry, &effect);
     check_program_block(&stage.block, &registry.programs).expect("accesses are truthful");
     assert_eq!(
         stage.block.compute_pass_count(),
-        plain.block.compute_pass_count() + 1 + 4,
-        "one mark_solids pass, and the solid flags of the 4 multigrid levels of 32³"
+        plain.block.compute_pass_count() + 1 + 4 + 2,
+        "one mark_solids pass, the solid flags of the 4 multigrid levels of 32³, and the forces' two"
     );
     let first = stage
         .block
@@ -502,7 +503,33 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
             .map(|resource| resource.id.clone())
             .collect::<Vec<_>>()
     };
-    assert_eq!(ids(&stage), ids(&plain), "same bindings");
+    // The same bindings, then the colliders' forces (fluid F11) at 39 and 40 for the host.
+    assert_eq!(ids(&stage)[..28], ids(&plain)[..], "same bindings");
+    assert_eq!(
+        ids(&stage)[39..],
+        [
+            ResourceTypeId::new(aestra_fluid::RESOURCE_COLLIDER_FORCES),
+            ResourceTypeId::new(aestra_fluid::RESOURCE_OUTPUTS),
+        ]
+    );
+    let outputs = &stage.block.outputs;
+    assert_eq!(
+        outputs
+            .iter()
+            .map(|output| (
+                output.name.as_str(),
+                output.source,
+                output.word,
+                output.event.is_some()
+            ))
+            .collect::<Vec<_>>(),
+        ids_of_colliders
+            .iter()
+            .enumerate()
+            .map(|(index, id)| ("force", Some(*id), index as u32 * 4, false))
+            .collect::<Vec<_>>(),
+        "a force per collider; no impact event at the default threshold of 0"
+    );
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;

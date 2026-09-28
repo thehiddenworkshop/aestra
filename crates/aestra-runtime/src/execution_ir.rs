@@ -337,6 +337,33 @@ impl EmissionLayout {
     }
 }
 
+/// A value a stage reports to the host (fluid F11, host bindings HB9) — a reduced output such as the
+/// net force on a collider: `components` `f32` words from word `word` of `resource`. The host reads
+/// the resource back after each frame's ticks and then zeroes it, so what a stage keeps there is its
+/// own business per frame (the fluid keeps the frame's strongest tick); such a resource is the host's,
+/// never part of the stage's checkpoints. With `event`, the host also raises a runtime event when the
+/// value's magnitude rises past a threshold.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageOutput {
+    /// What gameplay knows the value by, e.g. `force`.
+    pub name: String,
+    /// The authored module the value belongs to (a collider), when it belongs to one.
+    pub source: Option<aestra_core::ModuleId>,
+    pub resource: ResourceTypeId,
+    pub word: u32,
+    pub components: u32,
+    pub event: Option<OutputEvent>,
+}
+
+/// The runtime event an output raises when its magnitude rises past `threshold`: its value was at or
+/// below it at the previous read (or there was none) and is above it now.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputEvent {
+    /// What gameplay knows the event by, e.g. `impact`.
+    pub kind: String,
+    pub threshold: f32,
+}
+
 /// The ordered execution plan of one stage (extensible-stages M6): declared resources plus the ops
 /// that run over them, in order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -350,6 +377,8 @@ pub struct ExecutionBlock {
     pub fields: Vec<FieldLayout>,
     /// Emission lists among the block's resources (fluid F10).
     pub emissions: Vec<EmissionLayout>,
+    /// Values the stage reports to the host (fluid F11).
+    pub outputs: Vec<StageOutput>,
 }
 
 /// Why an [`ExecutionBlock`] is invalid.
@@ -369,6 +398,9 @@ pub enum ExecutionError {
     InvalidField(ResourceTypeId),
     /// An emission list names an undeclared resource, has no capacity, or does not fit its resource.
     InvalidEmission(ResourceTypeId),
+    /// An output names an undeclared or non-persistent resource, has no components, does not fit its
+    /// resource, or has a threshold that is not a finite, non-negative number.
+    InvalidOutput(String),
     /// A convergent repeat's body holds a copy or a nested repeat, or its tolerance is not a finite,
     /// non-negative number.
     InvalidConvergentRepeat,
@@ -406,6 +438,11 @@ impl core::fmt::Display for ExecutionError {
                 f,
                 "emission list '{}' has no capacity or does not fit the declared resource",
                 id.as_str()
+            ),
+            Self::InvalidOutput(name) => write!(
+                f,
+                "output '{name}' does not fit a persistent resource of the block, or its event's \
+                 threshold is not a finite, non-negative number"
             ),
             Self::InvalidBuiltinResource(id) => write!(
                 f,
@@ -477,6 +514,21 @@ impl ExecutionBlock {
                 return Err(ExecutionError::InvalidEmission(emission.resource.clone()));
             }
         }
+        for output in &self.outputs {
+            let persistent = self.resources.iter().any(|resource| {
+                resource.id == output.resource && resource.lifetime == ResourceLifetime::Persistent
+            });
+            let fits = bytes_of(&output.resource).is_some_and(|bytes| {
+                bytes >= (u64::from(output.word) + u64::from(output.components)) * 4
+            });
+            let threshold_ok = output
+                .event
+                .as_ref()
+                .is_none_or(|event| event.threshold.is_finite() && event.threshold >= 0.0);
+            if !persistent || output.components == 0 || !fits || !threshold_ok {
+                return Err(ExecutionError::InvalidOutput(output.name.clone()));
+            }
+        }
         let sizes = self
             .resources
             .iter()
@@ -488,6 +540,11 @@ impl ExecutionBlock {
     /// The field layout of a resource, if the block declares one.
     pub fn field(&self, id: &ResourceTypeId) -> Option<&FieldLayout> {
         self.fields.iter().find(|field| &field.resource == id)
+    }
+
+    /// Whether `id` holds outputs (fluid F11): the host's, never checkpointed.
+    pub fn is_output(&self, id: &ResourceTypeId) -> bool {
+        self.outputs.iter().any(|output| &output.resource == id)
     }
 
     /// The emission list of a resource, if the block declares one.
@@ -683,6 +740,7 @@ pub fn lower_stage_fused(
         constants: Vec::new(),
         fields: Vec::new(),
         emissions: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -714,6 +772,7 @@ mod tests {
             constants: Vec::new(),
             fields: Vec::new(),
             emissions: Vec::new(),
+            outputs: Vec::new(),
         }
     }
 
@@ -756,6 +815,7 @@ mod tests {
             constants: Vec::new(),
             fields: Vec::new(),
             emissions: Vec::new(),
+            outputs: Vec::new(),
         };
         assert!(matches!(
             undeclared.validate(),

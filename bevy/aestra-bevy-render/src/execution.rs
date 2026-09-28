@@ -969,6 +969,80 @@ impl StageExecutor {
         read_buffer(device, queue, &self.buffers[self.require_binding(id)?])
     }
 
+    /// Copies the stage's output resources out for the host and zeroes them, in `encoder` (fluid F11):
+    /// ticks encoded after it start a new frame of outputs. Once the encoder's work is submitted and
+    /// done, `done` receives the words of each output resource (from the device's poll; nothing when
+    /// the mapping fails). False for a stage without outputs.
+    pub fn encode_output_readback(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        done: impl FnOnce(BTreeMap<ResourceTypeId, Vec<u32>>) + Send + 'static,
+    ) -> bool {
+        let mut bindings: Vec<usize> = Vec::new();
+        for output in &self.block.outputs {
+            if let Some(binding) = self.binding(output.resource.as_str())
+                && !bindings.contains(&binding)
+            {
+                bindings.push(binding);
+            }
+        }
+        if bindings.is_empty() {
+            return false;
+        }
+        let mut layout = Vec::new();
+        let mut offset = 0;
+        for &binding in &bindings {
+            let size = self.buffers[binding].size();
+            layout.push((self.block.resources[binding].id.clone(), offset, size));
+            offset += size;
+        }
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aestra stage outputs"),
+            size: offset,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        for (&binding, (_, offset, size)) in bindings.iter().zip(&layout) {
+            encoder.copy_buffer_to_buffer(&self.buffers[binding], 0, &staging, *offset, *size);
+            encoder.clear_buffer(&self.buffers[binding], 0, None);
+        }
+        let mapped = staging.clone();
+        encoder.map_buffer_on_submit(&staging, wgpu::MapMode::Read, .., move |result| {
+            if result.is_err() {
+                return;
+            }
+            let words = split_outputs(&layout, &mapped.slice(..).get_mapped_range());
+            mapped.unmap();
+            done(words);
+        });
+        true
+    }
+
+    /// The stage's outputs now, as their resources' words, zeroing them (blocking: tests and tools).
+    pub fn read_outputs(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<BTreeMap<ResourceTypeId, Vec<u32>>, String> {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let (sender, receiver) = mpsc::channel();
+        if !self.encode_output_readback(device, &mut encoder, move |words| {
+            let _ = sender.send(words);
+        }) {
+            return Ok(BTreeMap::new());
+        }
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(READBACK_TIMEOUT),
+            })
+            .map_err(|error| error.to_string())?;
+        receiver
+            .recv_timeout(READBACK_TIMEOUT)
+            .map_err(|error| error.to_string())
+    }
     /// Reads every persistent resource the stage owns back to the CPU (blocking).
     pub fn checkpoint(
         &self,
@@ -1010,6 +1084,8 @@ impl StageExecutor {
                             | AESTRA_RESOURCE_HOST_BINDINGS
                             | AESTRA_RESOURCE_WORLD_SDF
                     )
+                    // Outputs are the host's (fluid F11).
+                    && !self.block.is_output(&resource.id)
             })
             .map(|(binding, _)| binding)
     }
@@ -1671,6 +1747,25 @@ fn read_buffer(
     let bytes = slice.get_mapped_range().to_vec();
     readback.unmap();
     Ok(bytes)
+}
+
+fn split_outputs(
+    layout: &[(ResourceTypeId, u64, u64)],
+    bytes: &[u8],
+) -> BTreeMap<ResourceTypeId, Vec<u32>> {
+    layout
+        .iter()
+        .map(|(id, offset, size)| {
+            let range = &bytes[*offset as usize..(*offset + *size) as usize];
+            let words = range
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| u32::from_le_bytes(*chunk))
+                .collect();
+            (id.clone(), words)
+        })
+        .collect()
 }
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {

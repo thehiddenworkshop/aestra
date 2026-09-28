@@ -237,6 +237,7 @@ fn a_scan_compacts_a_set_and_sizes_the_pass_over_it_on_the_device() {
         constants: Vec::new(),
         fields: Vec::new(),
         emissions: Vec::new(),
+        outputs: Vec::new(),
     };
     let stage = StageExecutor::new(&gpu.device, &gpu.queue, &block, &registry.programs, 4)
         .expect("the block runs");
