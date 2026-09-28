@@ -34,16 +34,18 @@ impl QualityTier {
         Self::new("high", 1.0, 1.0, 1.0, 1.0)
     }
 
-    /// Three quarters of the resolution (about 40% of the cells) and half the particles: for
-    /// mid-range GPUs.
+    /// Three quarters of the resolution (about 40% of the cells), half the solver iterations and half
+    /// the particles: for mid-range GPUs. (Iterative solves are capped harder than the grid is
+    /// coarsened: a GPU pays for every capped iteration, converged or not, and the pressure solves
+    /// converge in well under their authored caps.)
     pub fn medium() -> Self {
-        Self::new("medium", 0.75, 0.75, 0.75, 0.5)
+        Self::new("medium", 0.75, 0.5, 0.75, 0.5)
     }
 
-    /// Half the resolution (an eighth of the cells) and a quarter of the particles: for entry-level
-    /// GPUs.
+    /// Half the resolution (an eighth of the cells), about a third of the solver iterations and a
+    /// quarter of the particles: for entry-level GPUs.
     pub fn low() -> Self {
-        Self::new("low", 0.5, 0.5, 0.5, 0.25)
+        Self::new("low", 0.5, 0.35, 0.5, 0.25)
     }
 
     /// The built-in tiers, best first.

@@ -1567,8 +1567,8 @@ fn a_tier_coarsens_the_grid_over_the_same_box_and_trims_the_rest() {
     let (high_cells, high_box, high_origin) = extent(&high);
     assert_eq!(high_cells, 48);
     for (tier, cells, iterations, march, capacity) in [
-        (QualityTier::medium(), 36, 9, 48, 512),
-        (QualityTier::low(), 24, 6, 32, 256),
+        (QualityTier::medium(), 36, 6, 48, 512),
+        (QualityTier::low(), 24, 4, 32, 256),
     ] {
         let compiled = compile_tier(&registry, &smoke, tier.clone());
         assert_eq!(compiled.tier, tier);

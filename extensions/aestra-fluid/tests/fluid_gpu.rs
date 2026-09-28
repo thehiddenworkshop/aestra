@@ -3417,3 +3417,116 @@ fn bench_tiers() {
         }
     }
 }
+
+// ---- Hardening (fluid F12) ----
+
+/// Several fluids on one device, ticked interleaved — gas and liquid, at different tiers: each
+/// reaches exactly the bits it reaches alone, so no instance leaks into another.
+#[test]
+fn many_fluids_interleaved_on_one_device_each_match_their_solo_run() {
+    use aestra_runtime::QualityTier;
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let fire = fire(&registry);
+    let liquid = aestra_fluid::liquid_effect(&registry);
+    let setups = [
+        (&fire, QualityTier::high()),
+        (&fire, QualityTier::low()),
+        (&liquid, QualityTier::low()),
+        (&fire, QualityTier::medium()),
+        (&liquid, QualityTier::medium()),
+    ];
+    let crowd: Vec<Fluid> = setups
+        .iter()
+        .map(|(effect, tier)| Fluid::at_tier(&gpu, &registry, effect, tier.clone()))
+        .collect();
+    for tick in 0..40 {
+        for fluid in &crowd {
+            fluid.run(&gpu, tick..tick + 1);
+        }
+    }
+    let bytes: u64 = crowd
+        .iter()
+        .map(|fluid| fluid.stage.persistent_bytes())
+        .sum();
+    eprintln!("{} fluids, {bytes} bytes of persistent state", crowd.len());
+    for ((effect, tier), fluid) in setups.iter().zip(&crowd) {
+        let solo = Fluid::at_tier(&gpu, &registry, effect, tier.clone());
+        solo.run(&gpu, 0..40);
+        assert_eq!(
+            fluid.floats(&gpu, RESOURCE_VELOCITY),
+            solo.floats(&gpu, RESOURCE_VELOCITY),
+            "{} at {}",
+            effect.name,
+            tier.name
+        );
+    }
+}
+
+/// Every sample at every tier for 30 simulated seconds: its state stays finite, a liquid within its
+/// particle budget, a sparse grid within its bricks. Not run by default — `--ignored` on the
+/// reference GPU (a few minutes).
+#[test]
+#[ignore]
+fn soak_every_sample_at_every_tier() {
+    use aestra_runtime::QualityTier;
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    for sample in [
+        "fluid_smoke",
+        "fluid_fire",
+        "fluid_sparse_plume",
+        "fluid_fireball",
+        "fluid_dam_break",
+        "fluid_waterfall",
+    ] {
+        let path = format!(
+            "{}/../../sample-project/effects/{sample}.aestra.ron",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let effect = EffectAsset::load_ron(&path).unwrap();
+        for tier in QualityTier::presets() {
+            let fluid = Fluid::at_tier(&gpu, &registry, &effect, tier.clone());
+            let block = fluid.stage.block().clone();
+            for span in 0..6 {
+                fluid.run(&gpu, span * 300..(span + 1) * 300);
+                let velocity = fluid.floats(&gpu, RESOURCE_VELOCITY);
+                assert!(
+                    velocity.iter().all(|v| v.is_finite()),
+                    "{sample} at {} went non-finite by tick {}",
+                    tier.name,
+                    (span + 1) * 300
+                );
+                if block
+                    .binding_of(&aestra_core::ResourceTypeId::new(
+                        aestra_fluid::RESOURCE_LIQUID_PARTICLES,
+                    ))
+                    .is_some()
+                {
+                    let (particles, count) = liquid_particles(&fluid, &gpu);
+                    let budget = block
+                        .resources
+                        .iter()
+                        .find(|r| r.id.as_str() == aestra_fluid::RESOURCE_LIQUID_PARTICLES)
+                        .unwrap()
+                        .bytes
+                        / 80;
+                    assert!(u64::from(count) <= budget, "{sample}: {count} > {budget}");
+                    assert!(
+                        particles
+                            .iter()
+                            .all(|(x, v)| x.iter().chain(v).all(|value| value.is_finite()))
+                    );
+                }
+                if let Some(bricks) = block.fields[0].bricks.as_ref() {
+                    let words = fluid.words(&gpu, aestra_fluid::RESOURCE_BRICKS);
+                    assert!(words[0] < bricks.slots, "{sample}: {} bricks", words[0]);
+                }
+            }
+            eprintln!(
+                "SOAK {sample:<20} {:<7} 1800 ticks: finite and bounded",
+                tier.name
+            );
+        }
+    }
+}
