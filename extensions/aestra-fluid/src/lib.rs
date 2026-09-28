@@ -189,7 +189,7 @@ const OPEN_X_MAX: u32 = 1 << 1;
 const OPEN_Y_MAX: u32 = 1 << 3;
 const OPEN_Z_MIN: u32 = 1 << 4;
 const OPEN_Z_MAX: u32 = 1 << 5;
-const SOURCE_WORDS: usize = 16;
+const SOURCE_WORDS: usize = 17;
 const NO_SLOT: u32 = u32::MAX;
 
 /// Every fluid module is stateful, iterative and reads a grid neighbourhood — the compiler derives
@@ -937,6 +937,14 @@ fn density_source_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             Value::Scalar(0.0),
             number(0.1, 0.0, None),
         ),
+        InputMetadata::new(
+            "duration",
+            "Duration",
+            "How long the source runs from the effect's start — a burst, say; 0 runs it throughout.",
+            Value::Scalar(0.0),
+            number(0.05, 0.0, None),
+        )
+        .with_unit("s"),
     ])
     .with_cost(2)
 }
@@ -1574,6 +1582,9 @@ impl ModuleLowerer for FluidModuleLowerer {
                 for name in ["density_rate", "temperature_rate", "fuel_rate"] {
                     scalar(payload, name)?;
                 }
+                if scalar(payload, "duration")? < 0.0 {
+                    return Err("a source's duration must not be negative".into());
+                }
                 "add_sources"
             }
             collider if is_collider(collider) => {
@@ -1943,6 +1954,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
         words[base + 11..base + 14].copy_from_slice(&host_ref(source.host_fields.get("velocity"))?);
         words[base + 14] = scalar(&source.parameters, "temperature_rate")?.to_bits();
         words[base + 15] = scalar(&source.parameters, "fuel_rate")?.to_bits();
+        words[base + 16] = scalar(&source.parameters, "duration")?.to_bits();
     }
     // The Combustion block follows the sources (see `combustion` in solver.wgsl).
     let mut combustions = of(MODULE_COMBUSTION);

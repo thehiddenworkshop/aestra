@@ -184,6 +184,9 @@ fn brick_touches_source(brick: vec3<u32>) -> bool {
     let high = low + vec3<f32>(h);
     for (var s = 0u; s < source_count(); s += 1u) {
         let base = SOURCE_BASE + s * SOURCE_WORDS;
+        if (!source_active(base)) {
+            continue;
+        }
         let center = source_vec3(base, 0u, 8u, 1.0);
         let nearest = clamp(center, low, high);
         if (length(nearest - center) < bitcast<f32>(constants[base + 3u])) {

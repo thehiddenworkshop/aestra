@@ -506,7 +506,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;
-    assert_eq!(base, 24 + 16, "after the one source");
+    assert_eq!(base, 24 + 17, "after the one source");
     let kinds: Vec<u32> = (0..3).map(|index| words[base + index * 24]).collect();
     assert_eq!(kinds, [0, 1, 2], "sphere, box, capsule");
     assert_eq!(
@@ -843,9 +843,9 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
             1
         );
     }
-    // The Combustion block follows the one source's 16 words.
-    assert_eq!(fire.block.constants.len(), 24 + 16 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[40]), 0.5, "ignition");
+    // The Combustion block follows the one source's 17 words.
+    assert_eq!(fire.block.constants.len(), 24 + 17 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[41]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =
@@ -1384,4 +1384,38 @@ fn a_spawner_without_an_emitting_domain_is_an_invalid_reference() {
         diagnostic.code == DiagnosticCode::InvalidReference
             && diagnostic.message.contains("no domain emitting particles")
     }));
+}
+
+#[test]
+fn the_fireball_and_waterfall_samples_spawn_from_their_domains() {
+    let registry = fluid_registry();
+    for (source, list) in [
+        (
+            include_str!("../../../sample-project/effects/fluid_fireball.aestra.ron"),
+            aestra_fluid::RESOURCE_EMISSION,
+        ),
+        (
+            include_str!("../../../sample-project/effects/fluid_waterfall.aestra.ron"),
+            aestra_fluid::RESOURCE_EMISSION,
+        ),
+    ] {
+        let effect = EffectAsset::from_ron(source).unwrap();
+        let compiled = EffectCompiler::with_extensions(registry.clone())
+            .compile(&effect)
+            .unwrap();
+        let stage = &compiled.extension_stages[0];
+        check_program_block(&stage.block, &registry.programs).unwrap();
+        let declared = stage.block.emission(&ResourceTypeId::new(list)).unwrap();
+        let spawn = compiled.emitters[0].domain_spawn.as_ref().unwrap();
+        assert_eq!(&spawn.emission, declared, "{}", effect.name);
+        assert_eq!(
+            effect.to_pretty_ron().unwrap().replace("\r\n", "\n"),
+            source.replace("\r\n", "\n")
+        );
+        // Without the fluid, the sample is diagnosed, not dropped.
+        let error = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+            .compile(&effect)
+            .unwrap_err();
+        assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
+    }
 }

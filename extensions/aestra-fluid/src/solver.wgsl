@@ -62,7 +62,7 @@
 const NO_SLOT: u32 = 0xffffffffu;
 const SOURCE_BASE: u32 = 24u;
 const COLLIDER_WORDS: u32 = 24u;
-const SOURCE_WORDS: u32 = 16u;
+const SOURCE_WORDS: u32 = 17u;
 
 fn grid_res() -> u32 { return constants[0]; }
 fn cell_size() -> f32 { return bitcast<f32>(constants[1]); }
@@ -251,6 +251,12 @@ fn source_falloff(base: u32, point: vec3<f32>) -> f32 {
     return max(1.0 - distance_to_source / radius, 0.0);
 }
 
+// Whether the source at constant word `base` still emits: always, or for its first `duration` seconds.
+fn source_active(base: u32) -> bool {
+    let duration = bitcast<f32>(constants[base + 16u]);
+    return duration <= 0.0 || frame_time() < duration;
+}
+
 // Injects density at the cell's centre, and pulls each of its faces toward the sources' velocity.
 @compute @workgroup_size(4, 4, 4)
 fn add_sources(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -264,6 +270,9 @@ fn add_sources(@builtin(global_invocation_id) gid: vec3<u32>) {
     var v = velocity[i].xyz;
     for (var s = 0u; s < source_count(); s += 1u) {
         let base = SOURCE_BASE + s * SOURCE_WORDS;
+        if (!source_active(base)) {
+            continue;
+        }
         d += bitcast<f32>(constants[base + 7u]) * source_falloff(base, center) * delta;
         let emitted = source_vec3(base, 4u, 11u, 0.0);
         let pull = vec3<f32>(
@@ -729,6 +738,9 @@ fn add_heat(@builtin(global_invocation_id) gid: vec3<u32>) {
     var burnable = fuel[i];
     for (var s = 0u; s < source_count(); s += 1u) {
         let base = SOURCE_BASE + s * SOURCE_WORDS;
+        if (!source_active(base)) {
+            continue;
+        }
         let falloff = source_falloff(base, center);
         heat += bitcast<f32>(constants[base + 14u]) * falloff * delta;
         burnable += bitcast<f32>(constants[base + 15u]) * falloff * delta;

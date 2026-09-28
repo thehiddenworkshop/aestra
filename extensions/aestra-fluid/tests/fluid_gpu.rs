@@ -3003,3 +3003,32 @@ fn sparks_a_fire_asks_for_become_particles_where_it_asked() {
         assert_eq!(state[slot + 8].to_bits(), i as u32);
     }
 }
+
+#[test]
+fn a_timed_source_stops_emitting_after_its_duration() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mass = |duration: f32| {
+        let mut burst = effect(&registry, false, 24);
+        set_input(
+            &mut burst,
+            MODULE_DENSITY_SOURCE,
+            "duration",
+            Value::Scalar(duration),
+        );
+        let fluid = Fluid::new(&gpu, &registry, &burst);
+        fluid.run(&gpu, 0..30);
+        let early = mass_and_centroid(&fluid.floats(&gpu, RESOURCE_DENSITY)).0;
+        fluid.run(&gpu, 30..60);
+        (
+            early,
+            mass_and_centroid(&fluid.floats(&gpu, RESOURCE_DENSITY)).0,
+        )
+    };
+    // A quarter-second burst: nothing is added after tick 15.
+    let (early, late) = mass(0.25);
+    assert!(late <= early * 1.0001, "{early} -> {late}");
+    // Running throughout, it keeps adding.
+    let (early, late) = mass(0.0);
+    assert!(late > early * 1.2, "{early} -> {late}");
+}

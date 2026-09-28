@@ -1,0 +1,286 @@
+(
+    format_version: 4,
+    id: "a53829e9-ab25-4538-9455-39322118c3e2",
+    name: "Fluid Waterfall",
+    duration: 4.0,
+    playback_mode: LoopContinuous,
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000001",
+            name: "Default Sprite",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.5),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    simulation_stages: [
+        (
+            id: "67f41a82-ce1c-ec9d-d5b3-bcad154fb990",
+            name: "Liquid",
+            stage_type: "org.example.aestra-fluid::stage/liquid_solver",
+            modules: [
+                (
+                    id: "72e94d3f-0f48-4018-8d38-d7251caf8d0f",
+                    module_type: "org.example.aestra-fluid::module/liquid_grid",
+                    enabled: true,
+                    parameters: Custom({
+                        "cell_size": Scalar(2.0),
+                        "center": Vec3((0.0, 48.0, 0.0)),
+                        "gravity": Vec3((0.0, -400.0, 0.0)),
+                        "particle_budget": U32(400000),
+                        "pressure_iterations": U32(24),
+                        "pressure_tolerance": Scalar(0.001),
+                        "resolution": U32(48),
+                        "spatiotemporal": Bool(true),
+                        "substeps": U32(1),
+                    }),
+                ),
+                (
+                    id: "6e16cb66-7351-4855-ba84-53df2d4a5c46",
+                    module_type: "org.example.aestra-fluid::module/liquid_block",
+                    enabled: true,
+                    parameters: Custom({
+                        "center": Vec3((8.0, 4.0, 0.0)),
+                        "size": Vec3((80.0, 8.0, 96.0)),
+                        "velocity": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "51c4dcc2-da06-4a0d-a858-723c0398d039",
+                    module_type: "org.example.aestra-fluid::module/box_collider",
+                    enabled: true,
+                    parameters: Custom({
+                        "half_extents": Vec3((8.0, 30.0, 48.0)),
+                        "no_slip": Bool(false),
+                        "position": Vec3((-40.0, 30.0, 0.0)),
+                        "velocity": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "8c3ab960-cde0-43ba-b2b8-b3c07245fd9d",
+                    module_type: "org.example.aestra-fluid::module/liquid_look",
+                    enabled: true,
+                    parameters: Custom({
+                        "absorption": Scalar(0.08),
+                        "ambient": Scalar(0.35),
+                        "color": Vec3((0.18, 0.46, 0.72)),
+                        "light_color": Vec3((1.0, 0.97, 0.92)),
+                        "light_direction": Vec3((-0.55, 0.75, -0.35)),
+                        "light_intensity": Scalar(1.2),
+                        "shininess": Scalar(96.0),
+                        "steps": U32(128),
+                        "surface_level": Scalar(0.5),
+                    }),
+                ),
+                (
+                    id: "226dd74c-8637-408c-a00a-818d8c406f72",
+                    module_type: "org.example.aestra-fluid::module/secondary_emission",
+                    enabled: true,
+                    parameters: Custom({
+                        "capacity": U32(1024),
+                        "min_speed": Scalar(60.0),
+                        "rate": Scalar(5.0),
+                        "threshold": Scalar(0.35),
+                    }),
+                ),
+                (
+                    id: "6fadbf58-32e9-4b44-bce6-a1f5e16754ef",
+                    module_type: "org.example.aestra-fluid::module/liquid_source",
+                    enabled: true,
+                    parameters: Custom({
+                        "position": Vec3((-38.0, 66.0, -27.0)),
+                        "radius": Scalar(6.0),
+                        "rate": Scalar(4000.0),
+                        "velocity": Vec3((45.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "3ae2a53f-1cf6-4518-bd54-35aa217b1c70",
+                    module_type: "org.example.aestra-fluid::module/liquid_source",
+                    enabled: true,
+                    parameters: Custom({
+                        "position": Vec3((-38.0, 66.0, -9.0)),
+                        "radius": Scalar(6.0),
+                        "rate": Scalar(4000.0),
+                        "velocity": Vec3((45.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "abce17e3-c0c7-4073-9c75-6fa6a8a34317",
+                    module_type: "org.example.aestra-fluid::module/liquid_source",
+                    enabled: true,
+                    parameters: Custom({
+                        "position": Vec3((-38.0, 66.0, 9.0)),
+                        "radius": Scalar(6.0),
+                        "rate": Scalar(4000.0),
+                        "velocity": Vec3((45.0, 0.0, 0.0)),
+                    }),
+                ),
+                (
+                    id: "02ad5dbf-bd59-466c-b776-e478b3a9b23e",
+                    module_type: "org.example.aestra-fluid::module/liquid_source",
+                    enabled: true,
+                    parameters: Custom({
+                        "position": Vec3((-38.0, 66.0, 27.0)),
+                        "radius": Scalar(6.0),
+                        "rate": Scalar(4000.0),
+                        "velocity": Vec3((45.0, 0.0, 0.0)),
+                    }),
+                ),
+            ],
+        ),
+    ],
+    emitters: [
+        (
+            id: "5c833c29-cefb-41c3-a519-934be4bf2f59",
+            name: "Spray",
+            enabled: true,
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 4.0,
+            max_particles: 16384,
+            domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (
+                    modules: [
+                        (
+                            id: "6a07a385-faa2-499c-aea0-109099faa930",
+                            module_type: "aestra.emission.rate",
+                            enabled: true,
+                            parameters: Emission(
+                                spawn_rate: 0.0,
+                                burst_count: 0,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_spawn: (
+                    modules: [
+                        (
+                            id: "002fcbc5-a864-4fde-bfac-4512c5f68604",
+                            module_type: "aestra.spawn.shape",
+                            enabled: true,
+                            parameters: Shape(
+                                shape: Point,
+                            ),
+                        ),
+                        (
+                            id: "3e11d2df-21d6-4b96-8a39-7e45eb5e7b05",
+                            module_type: "aestra.spawn.initialize",
+                            enabled: true,
+                            parameters: Initialize(
+                                lifetime: (
+                                    min: 0.4,
+                                    max: 1.0,
+                                ),
+                                speed: (
+                                    min: 0.0,
+                                    max: 20.0,
+                                ),
+                                direction: (0.0, 1.0, 0.0),
+                                spread_degrees: 180.0,
+                                angular_velocity: (
+                                    min: 0.0,
+                                    max: 0.0,
+                                ),
+                            ),
+                        ),
+                        (
+                            id: "a87b2a70-93b9-4f61-b6c1-175459ce1706",
+                            module_type: "aestra.spawn.from_domain",
+                            enabled: true,
+                            parameters: SpawnFromDomain(
+                                inherit: 0.8,
+                            ),
+                        ),
+                    ],
+                ),
+                particle_update: (
+                    modules: [
+                        (
+                            id: "9bcf351f-7794-4314-acc0-461986e48607",
+                            module_type: "aestra.update.motion",
+                            enabled: true,
+                            parameters: Motion(
+                                gravity: (0.0, -200.0, 0.0),
+                                drag: 2.0,
+                                turbulence: 0.0,
+                            ),
+                        ),
+                        (
+                            id: "48b8af2b-ea79-47ec-8012-a86ef7556ef5",
+                            module_type: "aestra.update.appearance",
+                            enabled: true,
+                            parameters: Appearance(
+                                size: (
+                                    id: "2c26afbc-ba43-4362-84d9-7db5dbfa89f4",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 1.5,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 3.0,
+                                        ),
+                                    ],
+                                ),
+                                opacity: (
+                                    id: "073e783a-a195-4f09-b67b-191f9aee3aa0",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            value: 0.45,
+                                        ),
+                                        (
+                                            time: 0.5,
+                                            value: 0.25,
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            value: 0.0,
+                                        ),
+                                    ],
+                                ),
+                                color: (
+                                    id: "3b51b8b0-e7e4-487d-a903-fc6e36683455",
+                                    keys: [
+                                        (
+                                            time: 0.0,
+                                            color: (0.9, 0.96, 1.0, 1.0),
+                                        ),
+                                        (
+                                            time: 1.0,
+                                            color: (0.7, 0.82, 0.92, 1.0),
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            renderers: [
+                (
+                    id: "3c3724de-8281-49e0-a8eb-eb51309a577b",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000000001",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    extensions: [
+        (
+            plugin: "org.example.aestra-fluid",
+            version: "^0.1.0",
+        ),
+    ],
+)
