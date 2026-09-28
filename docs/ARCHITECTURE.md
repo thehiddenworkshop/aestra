@@ -537,6 +537,22 @@ Rules:
 - Particle lifecycle `EventLink`s (`OnSpawn`, `OnDeath`, `OnCollision`) are preserved in assets but
   **not executed** by the current runtime. Timeline `ChoreographyEvent`s are the working event path.
 
+### Gameplay authority
+
+Who owns a projectile decides how its effect is wired. There are two patterns, and a game should pick
+one per projectile deliberately:
+
+1. **Game-authoritative projectile, Aestra visual follower (recommended for gameplay and
+   networking).** The game simulates the projectile — movement, hit detection, replication — and the
+   effect only dresses it: it is placed on (later attached to, HB7b) the game's entity, and reads the
+   target through a binding if it needs one. Hits are the game's decisions; networked games replicate
+   the game's projectile, the effect's seed and major events, never particle or fluid state.
+2. **Aestra-owned visual projectile (decorative or cinematic).** The effect's particles *are* the
+   projectile: a Homing module steers them to a bound target (`aestra.update.homing`), retiring them
+   on arrival. The host moves the target every tick without writing any parameter. The game may hear
+   of outcomes through runtime events (HB9), but they are visual outcomes: never base damage or
+   replicated state on them.
+
 The design and milestone plan live in `docs/new/AESTRA_HOST_BINDINGS_WORLD_INTERACTION_ROADMAP.md`
 (milestones `HB0`–`HB13`).
 
