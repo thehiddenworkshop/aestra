@@ -14,17 +14,20 @@ pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
 mod profile;
+mod sdf;
 mod staged;
 mod stateful;
 pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
-    AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, BrickLayout, ComputeOp, CopyOp,
-    EmissionLayout, ExecutionBlock, ExecutionError, ExecutionOp, FieldLayout, FrameConstants,
-    IDENTITY_AFFINE, IndirectDispatch, ReferenceExecutionTrace, RepeatPolicy, ResourceAccess,
-    ResourceAccessMode, ResourceDescriptor, ResourceLifetime, execute_reference, lower_stage_fused,
+    AESTRA_RESOURCE_PARTICLES, AESTRA_RESOURCE_STAGE_CONSTANTS, AESTRA_RESOURCE_WORLD_SDF,
+    BrickLayout, ComputeOp, CopyOp, EmissionLayout, ExecutionBlock, ExecutionError, ExecutionOp,
+    FieldLayout, FrameConstants, IDENTITY_AFFINE, IndirectDispatch, ReferenceExecutionTrace,
+    RepeatPolicy, ResourceAccess, ResourceAccessMode, ResourceDescriptor, ResourceLifetime,
+    execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
+pub use sdf::*;
 pub use staged::{
     StagedDispatch, StagedPass, StagedPlan, StagedPlanError, StagedResource,
     StagedResourceLifetime, diffuse_2d, diffuse_2d_step,

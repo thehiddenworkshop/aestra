@@ -57,9 +57,9 @@ use aestra_extension::{
 };
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
-    CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock, ExecutionOp, ExtensionModulePlan,
-    FieldLayout, IndirectDispatch, RepeatPolicy, ResourceAccess, ResourceDescriptor,
-    ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
+    AESTRA_RESOURCE_WORLD_SDF, CompiledHostFieldRef, ComputeOp, CopyOp, ExecutionBlock,
+    ExecutionOp, ExtensionModulePlan, FieldLayout, IndirectDispatch, RepeatPolicy, ResourceAccess,
+    ResourceDescriptor, ResourceLifetime, StagePresentation, StagedDispatch, VolumePresentation,
 };
 use std::sync::Arc;
 
@@ -88,6 +88,7 @@ pub const MODULE_SPHERE_COLLIDER: &str = "org.example.aestra-fluid::module/spher
 pub const MODULE_BOX_COLLIDER: &str = "org.example.aestra-fluid::module/box_collider";
 pub const MODULE_CAPSULE_COLLIDER: &str = "org.example.aestra-fluid::module/capsule_collider";
 pub const MODULE_SECONDARY_EMISSION: &str = "org.example.aestra-fluid::module/secondary_emission";
+pub const MODULE_WORLD_COLLIDER: &str = "org.example.aestra-fluid::module/world_collider";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
 /// The same solver over a sparse grid of bricks (fluid F7), with the brick allocation.
 pub const PROGRAM_SOLVER_SPARSE: &str = "org.example.aestra-fluid::program/solver_sparse";
@@ -155,6 +156,10 @@ pub const GRID_SPARSE_WGSL: &str = include_str!("grid_sparse.wgsl");
 pub const EMIT_WGSL: &str = include_str!("emit.wgsl");
 /// A liquid's secondary emission: its particles.
 pub const EMIT_LIQUID_WGSL: &str = include_str!("emit_liquid.wgsl");
+/// The world collider (fluid F11): solids from the host's world SDF, in every fluid program.
+pub const WORLD_WGSL: &str = include_str!("world.wgsl");
+/// A liquid's particles against the world collider.
+pub const WORLD_LIQUID_WGSL: &str = include_str!("world_liquid.wgsl");
 /// Records a Secondary Emission module's list holds at most.
 pub const MAX_EMISSION_CAPACITY: u32 = 16384;
 
@@ -178,7 +183,7 @@ pub const MAX_SOURCES: usize = 8;
 pub const WORKGROUP: u32 = 4;
 
 /// The stage-constant layout `solver.wgsl` reads (words).
-const SOURCE_BASE: usize = 24;
+const SOURCE_BASE: usize = 32;
 /// Words one collider record takes (see `pack_collider`).
 const COLLIDER_WORDS: usize = 24;
 /// Colliders one stage packs into its constants.
@@ -215,11 +220,12 @@ pub fn link() {
 /// per-level entry points, and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
-        aestra_gpu::scan::SCAN_WGSL
+        aestra_gpu::scan::SCAN_WGSL,
+        aestra_gpu::WORLD_SDF_WGSL
     )
 }
 
@@ -227,11 +233,12 @@ pub fn program_wgsl() -> String {
 /// sums it ranks with.
 pub fn sparse_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{WORLD_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
-        aestra_gpu::scan::SCAN_WGSL
+        aestra_gpu::scan::SCAN_WGSL,
+        aestra_gpu::WORLD_SDF_WGSL
     )
 }
 
@@ -332,12 +339,14 @@ fn multigrid_entries_wgsl() -> String {
     wgsl
 }
 
-/// The secondary emission's entry points (fluid F10), in every fluid program.
-pub const EMIT_ENTRY_POINTS: [&str; 4] = [
+/// The secondary emission's (fluid F10) and the world collider's (fluid F11) entry points, in every
+/// fluid program.
+pub const EMIT_ENTRY_POINTS: [&str; 5] = [
     "emit_cells",
     "emit_cells_fire",
     "emit_cells_write",
     "emit_offsets",
+    "mark_world_solids",
 ];
 
 /// Every entry point of the solver program: [`ENTRY_POINTS`], the secondary emission's and the
@@ -642,7 +651,8 @@ impl AestraExtension for FluidExtension {
             collider_metadata(MODULE_SPHERE_COLLIDER, either.clone()),
             collider_metadata(MODULE_BOX_COLLIDER, either.clone()),
             collider_metadata(MODULE_CAPSULE_COLLIDER, either.clone()),
-            secondary_emission_metadata(either),
+            secondary_emission_metadata(either.clone()),
+            world_collider_metadata(either),
             volume_look_metadata(requires),
             liquid::liquid_grid_metadata(liquid_requires.clone()),
             liquid::liquid_block_metadata(liquid_requires.clone()),
@@ -1103,6 +1113,61 @@ fn collider_metadata(type_id: &'static str, requires: CapabilityExpression) -> M
         .with_cost(2)
 }
 
+fn world_collider_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    fluid_module(
+        MODULE_WORLD_COLLIDER,
+        "World Collider",
+        "The scene the host supplies — level geometry as a signed distance field — which the fluid \
+         flows around and a liquid's particles cannot enter. Without a world from the host, nothing \
+         collides.",
+        requires,
+    )
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        InputMetadata::new(
+            "offset",
+            "Offset",
+            "How far outside the geometry's surface the fluid stops: positive thickens it, negative \
+             thins it.",
+            Value::Scalar(0.0),
+            InputControl::Number {
+                step: 0.1,
+                min: None,
+                max: None,
+            },
+        )
+        .with_unit("units"),
+        InputMetadata::new(
+            "no_slip",
+            "Sticky",
+            "The fluid sticks to the geometry (no slip) instead of sliding along it.",
+            Value::Bool(false),
+            InputControl::Toggle,
+        ),
+    ])
+    .with_cost(2)
+}
+
+/// Packs a stage's World Collider (fluid F11), at most one, into header words 24–26: present, surface
+/// offset, sticky. False without one.
+fn pack_world(modules: &[ExtensionModulePlan], words: &mut [u32]) -> Result<bool, String> {
+    let mut worlds = modules_of(modules, MODULE_WORLD_COLLIDER);
+    let Some(world) = worlds.next() else {
+        return Ok(false);
+    };
+    if worlds.next().is_some() {
+        return Err("a stage takes one World Collider module".into());
+    }
+    let offset = scalar(&world.parameters, "offset")?;
+    if !offset.is_finite() {
+        return Err("the world collider's offset must be finite".into());
+    }
+    words[24] = 1;
+    words[25] = offset.to_bits();
+    words[26] = u32::from(world.parameters.get_bool("no_slip").unwrap_or(false));
+    Ok(true)
+}
+
 fn secondary_emission_metadata(requires: CapabilityExpression) -> ModuleMetadata {
     fluid_module(
         MODULE_SECONDARY_EMISSION,
@@ -1187,35 +1252,51 @@ fn emission_module(
     Ok(emission)
 }
 
-/// The emission list and its ranks (fluid F10), at bindings 36 and 37 — after the fire grids (or
-/// their stand-ins) and the liquid's (or theirs).
+/// The optional resources past the first 28, in binding order: the fire grids, the liquid's, the
+/// emission's (fluid F10) and the world SDF (fluid F11). A stage declaring a later one declares every
+/// earlier one — a 16-byte stand-in where it does not use it — so each keeps its binding.
+const OPTIONAL_RESOURCES: [&str; 11] = [
+    RESOURCE_TEMPERATURE,
+    RESOURCE_TEMPERATURE_NEXT,
+    RESOURCE_FUEL,
+    RESOURCE_FUEL_NEXT,
+    RESOURCE_LIQUID_PARTICLES,
+    RESOURCE_LIQUID_HEADER,
+    RESOURCE_LIQUID_DISPATCH,
+    RESOURCE_LIQUID_TRANSFER,
+    RESOURCE_EMISSION,
+    RESOURCE_EMISSION_SCRATCH,
+    AESTRA_RESOURCE_WORLD_SDF,
+];
+
+/// Stand-ins for the optional resources up to binding `binding`.
+fn pad_resources(resources: &mut Vec<ResourceDescriptor>, binding: usize) {
+    while resources.len() < binding {
+        resources.push(ResourceDescriptor {
+            id: ResourceTypeId::new(OPTIONAL_RESOURCES[resources.len() - 28]),
+            bytes: 16,
+            lifetime: ResourceLifetime::Transient,
+        });
+    }
+}
+
+/// The host's world SDF (fluid F11), at binding 38: sized and written by the host.
+fn world_resource(resources: &mut Vec<ResourceDescriptor>) {
+    pad_resources(resources, 38);
+    resources.push(ResourceDescriptor {
+        id: ResourceTypeId::new(AESTRA_RESOURCE_WORLD_SDF),
+        bytes: 0,
+        lifetime: ResourceLifetime::Persistent,
+    });
+}
+
+/// The emission list and its ranks (fluid F10), at bindings 36 and 37.
 fn emission_resources(
     resources: &mut Vec<ResourceDescriptor>,
     capacity: u32,
     groups: u64,
 ) -> aestra_runtime::EmissionLayout {
-    let placeholder = |id: &str| ResourceDescriptor {
-        id: ResourceTypeId::new(id),
-        bytes: 16,
-        lifetime: ResourceLifetime::Transient,
-    };
-    for (index, id) in [
-        RESOURCE_TEMPERATURE,
-        RESOURCE_TEMPERATURE_NEXT,
-        RESOURCE_FUEL,
-        RESOURCE_FUEL_NEXT,
-        RESOURCE_LIQUID_PARTICLES,
-        RESOURCE_LIQUID_HEADER,
-        RESOURCE_LIQUID_DISPATCH,
-        RESOURCE_LIQUID_TRANSFER,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        if resources.len() == 28 + index {
-            resources.push(placeholder(id));
-        }
-    }
+    pad_resources(resources, 36);
     let layout = aestra_runtime::EmissionLayout {
         resource: ResourceTypeId::new(RESOURCE_EMISSION),
         capacity,
@@ -1626,6 +1707,12 @@ impl ModuleLowerer for FluidModuleLowerer {
                 pack_volume(payload)?;
                 VOLUME_ENTRY
             }
+            MODULE_WORLD_COLLIDER => {
+                if !scalar(payload, "offset")?.is_finite() {
+                    return Err("the world collider's offset must be finite".into());
+                }
+                "mark_world_solids"
+            }
             MODULE_SECONDARY_EMISSION => {
                 pack_emission(
                     &ExtensionModulePlan {
@@ -1869,6 +1956,8 @@ struct PackedStage {
     flow_map_cycle: u32,
     /// A Secondary Emission's list capacity (fluid F10), when the stage has one.
     emission: Option<u32>,
+    /// A World Collider is present (fluid F11): solids are also marked from the host's world SDF.
+    world: bool,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -1983,6 +2072,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     for collider in &colliders {
         words.extend(pack_collider(collider)?);
     }
+    let world = pack_world(modules, &mut words)?;
     let grid_of = Grid {
         resolution,
         slots,
@@ -2001,6 +2091,7 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     Ok(PackedStage {
         grid: grid_of,
         emission,
+        world,
         iterations,
         cell_size,
         origin,
@@ -2587,6 +2678,7 @@ impl StageLowerer for FluidSolverLowerer {
             tolerance,
             flow_map_cycle,
             emission,
+            world,
         } = pack_constants(input.modules)?;
         let flow_map = flow_map_cycle > 0;
         let resolution = grid.resolution;
@@ -2642,6 +2734,10 @@ impl StageLowerer for FluidSolverLowerer {
                     read(AESTRA_RESOURCE_HOST_BINDINGS),
                 ],
             ));
+        }
+        if world {
+            // The host's scene (fluid F11), after the analytic colliders.
+            steps.push(world_solids(grid));
         }
         if flow_map {
             // The velocity before the force passes: what they add is the flow maps' force field.
@@ -2768,7 +2864,7 @@ impl StageLowerer for FluidSolverLowerer {
         ));
         let solve = |coarsen: bool| {
             if multigrid {
-                multigrid_pressure(grid, iterations, tolerance, colliders, coarsen)
+                multigrid_pressure(grid, iterations, tolerance, colliders || world, coarsen)
             } else {
                 jacobi_pressure(grid, iterations)
             }
@@ -2967,6 +3063,9 @@ impl StageLowerer for FluidSolverLowerer {
             ));
             emissions.push(emission_resources(&mut resources, capacity, grid.groups()));
         }
+        if world {
+            world_resource(&mut resources);
+        }
 
         Ok(ExecutionBlock {
             resources,
@@ -2989,6 +3088,20 @@ impl StageLowerer for FluidSolverLowerer {
             emissions,
         })
     }
+}
+
+/// The pass marking the cells inside the host's world SDF solid (fluid F11).
+fn world_solids(grid: Grid) -> ExecutionOp {
+    grid.pass(
+        "mark_world_solids",
+        vec![
+            ResourceAccess::write(RESOURCE_SOLID),
+            ResourceAccess::write(RESOURCE_DENSITY),
+            ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
+            ResourceAccess::read(AESTRA_RESOURCE_FRAME),
+            ResourceAccess::read(AESTRA_RESOURCE_WORLD_SDF),
+        ],
+    )
 }
 
 /// The one-workgroup pass turning a secondary emission's workgroup totals into offsets (fluid F10).

@@ -292,12 +292,13 @@ fn the_solver_builds_on_every_available_backend() {
         &mut everything,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     );
-    // With secondary emission (fluid F10): burning, it masks the temperature.
-    with_module(
-        &registry,
-        &mut everything,
+    // With secondary emission (fluid F10): burning, it masks the temperature. And the world (F11).
+    for module in [
         aestra_fluid::MODULE_SECONDARY_EMISSION,
-    );
+        aestra_fluid::MODULE_WORLD_COLLIDER,
+    ] {
+        with_module(&registry, &mut everything, module);
+    }
     // And on a sparse grid (fluid F7), which runs without flow maps.
     let mut sparse_everything = sparse(everything.clone(), 64, 1e-3);
     set_input(
@@ -311,11 +312,12 @@ fn the_solver_builds_on_every_available_backend() {
     let mut liquid = aestra_fluid::liquid_effect(&registry);
     with_module(&registry, &mut liquid, aestra_fluid::MODULE_LIQUID_SOURCE);
     with_module(&registry, &mut liquid, aestra_fluid::MODULE_SPHERE_COLLIDER);
-    with_module(
-        &registry,
-        &mut liquid,
+    for module in [
         aestra_fluid::MODULE_SECONDARY_EMISSION,
-    );
+        aestra_fluid::MODULE_WORLD_COLLIDER,
+    ] {
+        with_module(&registry, &mut liquid, module);
+    }
     // And smoke emitting from its density, without fire.
     let mut smoke = effect(&registry, false, 24);
     with_module(
@@ -3031,4 +3033,170 @@ fn a_timed_source_stops_emitting_after_its_duration() {
     // Running throughout, it keeps adding.
     let (early, late) = mass(0.0);
     assert!(late > early * 1.2, "{early} -> {late}");
+}
+
+// ---- The world collider (fluid F11) ----
+
+/// An axis-aligned box as 12 triangles.
+fn box_mesh(low: [f32; 3], high: [f32; 3]) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let corner = |i: u32| {
+        [
+            if i & 1 != 0 { high[0] } else { low[0] },
+            if i & 2 != 0 { high[1] } else { low[1] },
+            if i & 4 != 0 { high[2] } else { low[2] },
+        ]
+    };
+    let triangles = vec![
+        [0, 2, 1],
+        [1, 2, 3],
+        [4, 5, 6],
+        [5, 7, 6],
+        [0, 1, 4],
+        [1, 5, 4],
+        [2, 6, 3],
+        [3, 6, 7],
+        [0, 4, 2],
+        [2, 4, 6],
+        [1, 3, 5],
+        [3, 7, 5],
+    ];
+    ((0..8).map(corner).collect(), triangles)
+}
+
+impl Fluid {
+    /// Hands the stage the host's world, as revision `revision`; true when it was uploaded.
+    fn with_world(&mut self, gpu: &Gpu, volume: &aestra_runtime::SdfVolume, revision: u64) -> bool {
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let uploaded = self.stage.provide_world_sdf(
+            &gpu.device,
+            &mut encoder,
+            &aestra_gpu::GpuWorldSdf::new(volume, revision),
+        );
+        gpu.queue.submit([encoder.finish()]);
+        uploaded
+    }
+}
+
+/// A slab hanging over the smoke source: 1.6 wide, 0.4 thick, its underside 1.4 up.
+fn slab() -> aestra_runtime::SdfVolume {
+    let (positions, triangles) = box_mesh([-0.8, 1.4, -0.8], [0.8, 1.8, 0.8]);
+    aestra_runtime::SdfVolume::bake_triangle_mesh(&positions, &triangles, 0.1, 0.4).unwrap()
+}
+
+#[test]
+fn smoke_flows_around_the_geometry_the_host_supplies() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut smoke = effect(&registry, false, 24);
+    with_module(&registry, &mut smoke, aestra_fluid::MODULE_WORLD_COLLIDER);
+    let world = slab();
+    let mut fluid = Fluid::new(&gpu, &registry, &smoke);
+    assert!(fluid.with_world(&gpu, &world, 1));
+    assert!(
+        !fluid.with_world(&gpu, &world, 1),
+        "the same revision is not uploaded again"
+    );
+    fluid.run(&gpu, 0..300);
+    let density = fluid.floats(&gpu, RESOURCE_DENSITY);
+    // The baked slab marks the very cells an analytic box of its shape marks: the same bits.
+    let mut boxed = effect(&registry, false, 24);
+    let id = with_module(&registry, &mut boxed, aestra_fluid::MODULE_BOX_COLLIDER);
+    set_module_input(&mut boxed, id, "position", Value::Vec3([0.0, 1.6, 0.0]));
+    set_module_input(&mut boxed, id, "half_extents", Value::Vec3([0.8, 0.2, 0.8]));
+    let analytic = Fluid::new(&gpu, &registry, &boxed);
+    analytic.run(&gpu, 0..300);
+    assert_eq!(analytic.floats(&gpu, RESOURCE_DENSITY), density);
+    let above = |density: &[f32]| {
+        (0..density.len())
+            .filter(|&index| {
+                let c = cell_center(index);
+                c[1] > 1.9 && c[1] < 2.6 && c[0].abs() < 0.4 && c[2].abs() < 0.4
+            })
+            .map(|index| density[index])
+            .sum::<f32>()
+    };
+    let open = Fluid::new(&gpu, &registry, &effect(&registry, false, 24));
+    open.run(&gpu, 0..300);
+    // Inside the slab, next to nothing — the solids are marked (and cleared) as each tick starts, so
+    // only what one tick's advection carries in; above its middle, far less than without it.
+    let inside = |density: &[f32]| {
+        (0..density.len())
+            .filter(|&index| world.sample(cell_center(index)) < 0.0)
+            .map(|index| density[index])
+            .sum::<f32>()
+    };
+    let (held, filled) = (
+        inside(&density),
+        inside(&open.floats(&gpu, RESOURCE_DENSITY)),
+    );
+    eprintln!("smoke inside the slab: {held} with it, {filled} without");
+    assert!(held < 0.1 * filled, "{held} vs {filled}");
+    let (blocked, free) = (above(&density), above(&open.floats(&gpu, RESOURCE_DENSITY)));
+    eprintln!("smoke above the slab's middle: {blocked} with it, {free} without");
+    assert!(blocked < 0.5 * free, "{blocked} vs {free}");
+    // Deflected: spread out beside the slab's footprint, where the free plume never goes.
+    let beside = |density: &[f32]| {
+        (0..density.len())
+            .filter(|&index| {
+                let c = cell_center(index);
+                c[1] > 1.0 && (c[0].abs() > 0.9 || c[2].abs() > 0.9)
+            })
+            .map(|index| density[index])
+            .sum::<f32>()
+    };
+    let (spread, narrow) = (
+        beside(&density),
+        beside(&open.floats(&gpu, RESOURCE_DENSITY)),
+    );
+    eprintln!("smoke beside the slab's footprint: {spread} with it, {narrow} without");
+    assert!(
+        spread > 1.0 && spread > 10.0 * narrow,
+        "{spread} vs {narrow}"
+    );
+    // Reruns match, and a world swapped for another of a different size is taken (the stage's
+    // bindings are rebuilt) — here, one out of the grid.
+    let mut again = Fluid::new(&gpu, &registry, &smoke);
+    again.with_world(&gpu, &world, 1);
+    again.run(&gpu, 0..300);
+    assert_eq!(again.floats(&gpu, RESOURCE_DENSITY), density);
+    let (positions, triangles) = box_mesh([5.0, 5.0, 5.0], [6.0, 6.0, 6.0]);
+    let far =
+        aestra_runtime::SdfVolume::bake_triangle_mesh(&positions, &triangles, 0.5, 0.5).unwrap();
+    let mut elsewhere = Fluid::new(&gpu, &registry, &smoke);
+    elsewhere.with_world(&gpu, &world, 1);
+    assert!(elsewhere.with_world(&gpu, &far, 2));
+    elsewhere.run(&gpu, 0..300);
+    assert_eq!(
+        elsewhere.floats(&gpu, RESOURCE_DENSITY),
+        open.floats(&gpu, RESOURCE_DENSITY),
+        "geometry out of the grid changes nothing"
+    );
+}
+
+#[test]
+fn a_liquid_cannot_enter_the_geometry_the_host_supplies() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    with_module(&registry, &mut liquid, aestra_fluid::MODULE_WORLD_COLLIDER);
+    // A wall across the dam break's path, 8 thick and taller than the water.
+    let (positions, triangles) = box_mesh([4.0, 0.0, -48.0], [12.0, 60.0, 48.0]);
+    let wall =
+        aestra_runtime::SdfVolume::bake_triangle_mesh(&positions, &triangles, 2.0, 4.0).unwrap();
+    let mut fluid = Fluid::new(&gpu, &registry, &liquid);
+    fluid.with_world(&gpu, &wall, 1);
+    fluid.run(&gpu, 0..90);
+    let (particles, count) = liquid_particles(&fluid, &gpu);
+    assert_eq!(particles.len(), count as usize, "none lost");
+    let inside = particles
+        .iter()
+        .filter(|(x, _)| wall.sample(*x) < -1.0)
+        .count();
+    let beyond = particles.iter().filter(|(x, _)| x[0] > 12.0).count();
+    eprintln!("liquid against the wall: {inside} inside it, {beyond} beyond it");
+    assert_eq!(inside, 0);
+    assert!(
+        beyond < particles.len() / 100,
+        "the wall holds the liquid back"
+    );
 }

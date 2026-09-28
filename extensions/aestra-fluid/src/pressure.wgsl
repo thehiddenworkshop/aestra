@@ -53,7 +53,7 @@ const MG_AIR: u32 = 2u;
 
 // Without colliders or a free surface every cell is fluid, on any level: the flags are not read.
 fn mg_flag(index: i32) -> u32 {
-    if (index < 0 || (collider_count() == 0u && !free_surface())) {
+    if (index < 0 || (!has_solids() && !free_surface())) {
         return MG_FLUID;
     }
     return mg_flags[u32(index)];

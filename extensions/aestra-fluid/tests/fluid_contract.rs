@@ -506,7 +506,7 @@ fn colliders_pack_their_shapes_and_mark_solids_first() {
     let words = &stage.block.constants;
     assert_eq!(words[12], 3);
     let base = words[13] as usize;
-    assert_eq!(base, 24 + 17, "after the one source");
+    assert_eq!(base, 32 + 17, "after the one source");
     let kinds: Vec<u32> = (0..3).map(|index| words[base + index * 24]).collect();
     assert_eq!(kinds, [0, 1, 2], "sphere, box, capsule");
     assert_eq!(
@@ -670,23 +670,23 @@ fn host_bound_source_inputs_pack_their_slot_presence_bit_and_offset() {
             .insert(input.into(), HostFieldRef::new(emitter_id, field));
     }
     let stage = compile_stage(&registry, &effect);
-    // Source 0 starts at word 24; its references at +8 (position) and +11 (velocity).
+    // Source 0 starts at word 32; its references at +8 (position) and +11 (velocity).
     let words = &stage.block.constants;
     assert_eq!(words[9], 1, "one source");
     assert_eq!(
-        &words[32..35],
+        &words[40..43],
         &[0, 0, 0],
         "slot 0, bit 0 (position), offset 0"
     );
     assert_eq!(
-        &words[35..38],
+        &words[43..46],
         &[0, 1, 3],
         "linear velocity: the layout's second field (bit 1), packed after position's 3 words"
     );
 
     // An unbound source reads the constant fallback marker.
     let stage = compile_stage(&registry, &smoke_effect(&registry));
-    assert_eq!(stage.block.constants[32], u32::MAX);
+    assert_eq!(stage.block.constants[40], u32::MAX);
 }
 
 #[test]
@@ -844,8 +844,8 @@ fn combustion_adds_the_fire_grids_passes_and_glow_and_nothing_else() {
         );
     }
     // The Combustion block follows the one source's 17 words.
-    assert_eq!(fire.block.constants.len(), 24 + 17 + 6);
-    assert_eq!(f32::from_bits(fire.block.constants[41]), 0.5, "ignition");
+    assert_eq!(fire.block.constants.len(), 32 + 17 + 6);
+    assert_eq!(f32::from_bits(fire.block.constants[49]), 0.5, "ignition");
 
     // The look burns only where there is fire: the temperature is its slot 1.
     let (StagePresentation::Volume(fire_look), StagePresentation::Volume(smoke_look)) =
@@ -1418,4 +1418,66 @@ fn the_fireball_and_waterfall_samples_spawn_from_their_domains() {
             .unwrap_err();
         assert!(codes(error).contains(&DiagnosticCode::MissingExtension));
     }
+}
+
+// ---- The world collider (fluid F11) ----
+
+#[test]
+fn a_world_collider_marks_solids_from_the_hosts_sdf_in_every_fluid_program() {
+    let registry = fluid_registry();
+    let world_sdf = ResourceTypeId::new(aestra_runtime::AESTRA_RESOURCE_WORLD_SDF);
+    let with_world = |mut effect: EffectAsset| {
+        let mut module = registry
+            .modules
+            .instantiate(&aestra_core::ModuleTypeId::new(
+                aestra_fluid::MODULE_WORLD_COLLIDER,
+            ))
+            .unwrap();
+        module.stage = aestra_core::StageKind::Simulation(effect.simulation_stages[0].name.clone());
+        effect.simulation_stages[0].modules.push(module);
+        effect
+    };
+    let mut sparse = smoke_effect(&registry);
+    set_input(&mut sparse, MODULE_GRID, "sparse", Value::Bool(true));
+    set_input(&mut sparse, MODULE_GRID, "resolution", Value::U32(64));
+    for (effect, pushes_particles) in [
+        (smoke_effect(&registry), false),
+        (fire_effect(&registry), false),
+        (sparse, false),
+        (aestra_fluid::liquid_effect(&registry), true),
+    ] {
+        let plain = compile_stage(&registry, &effect);
+        assert!(
+            plain.block.binding_of(&world_sdf).is_none(),
+            "no world, no resource"
+        );
+        let stage = compile_stage(&registry, &with_world(effect));
+        check_program_block(&stage.block, &registry.programs).unwrap();
+        // The host sizes and writes it; the solver reads it at binding 38, never checkpointed.
+        assert_eq!(stage.block.binding_of(&world_sdf), Some(38));
+        let resource = &stage.block.resources[38];
+        assert_eq!(resource.bytes, 0);
+        let entries = entry_points(&stage.block.ops);
+        assert!(entries.contains(&"mark_world_solids".to_string()));
+        assert_eq!(
+            entries.contains(&"liquid_world_collide".to_string()),
+            pushes_particles
+        );
+        assert_eq!(
+            stage.block.constants[24], 1,
+            "the header says the world is there"
+        );
+    }
+}
+/// Every compute op's entry point, repeats' bodies included.
+fn entry_points(ops: &[ExecutionOp]) -> Vec<String> {
+    let mut entries = Vec::new();
+    for op in ops {
+        match op {
+            ExecutionOp::Compute(compute) => entries.push(compute.entry_point.clone()),
+            ExecutionOp::Repeat { body, .. } => entries.extend(entry_points(body)),
+            _ => {}
+        }
+    }
+    entries
 }

@@ -60,7 +60,7 @@
 // Stage-constant layout, packed by the stage lowerer (`pack_constants` in lib.rs). The grid's cells
 // are indexed by the dense or the sparse grid composed with this file (`cell_index`, `grid_cell`).
 const NO_SLOT: u32 = 0xffffffffu;
-const SOURCE_BASE: u32 = 24u;
+const SOURCE_BASE: u32 = 32u;
 const COLLIDER_WORDS: u32 = 24u;
 const SOURCE_WORDS: u32 = 17u;
 
@@ -81,6 +81,8 @@ fn sharp_advection() -> bool { return constants[11] != 0u; }
 // Colliders (fluid F4): how many, and the word their records start at (after sources and Combustion).
 fn collider_count() -> u32 { return constants[12]; }
 fn collider_base() -> u32 { return constants[13]; }
+// Whether anything is solid: analytic colliders, or the host's world (fluid F11, header word 24).
+fn has_solids() -> bool { return collider_count() > 0u || constants[24] != 0u; }
 // Turbulence: its acceleration, noise cycles per unit of length (1 / the largest swirls' size),
 // pattern renewals per second, and whether it acts only where there is smoke or heat.
 fn turbulence_strength() -> f32 { return bitcast<f32>(constants[14]); }
@@ -511,7 +513,7 @@ fn advect_density(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // Without colliders nothing is solid: skip the read (a uniform test the hot Jacobi loop benefits from).
 fn is_solid(cell: vec3<i32>) -> bool {
-    return collider_count() > 0u && inside(cell) && solid[clamped_index(cell)].w > 0.5;
+    return has_solids() && inside(cell) && solid[clamped_index(cell)].w > 0.5;
 }
 
 // The `axis` velocity through the minimum `axis` face of `cell`: a solid on either side of the face

@@ -49,11 +49,12 @@ const BLOCK_WORDS: usize = 12;
 /// grid, the pressure solve with its per-level entry points, and the liquid's own passes.
 pub fn liquid_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{EMIT_WGSL}\n{EMIT_LIQUID_WGSL}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{EMIT_WGSL}\n{EMIT_LIQUID_WGSL}\n{WORLD_WGSL}\n{WORLD_LIQUID_WGSL}\n{}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
-        aestra_gpu::scan::SCAN_WGSL
+        aestra_gpu::scan::SCAN_WGSL,
+        aestra_gpu::WORLD_SDF_WGSL
     )
 }
 
@@ -69,7 +70,12 @@ pub const LIQUID_ENTRY_POINTS: [&str; 7] = [
 ];
 
 /// A liquid's secondary emission entry points (fluid F10).
-pub const EMIT_LIQUID_ENTRY_POINTS: [&str; 2] = ["emit_particles", "emit_particles_write"];
+pub const EMIT_LIQUID_ENTRY_POINTS: [&str; 3] = [
+    "emit_particles",
+    "emit_particles_write",
+    // The world collider's push-out (fluid F11).
+    "liquid_world_collide",
+];
 
 /// Every entry point of the liquid program: the solver's and the liquid's.
 pub fn liquid_entry_points() -> Vec<String> {
@@ -481,6 +487,8 @@ struct PackedLiquid {
     colliders: bool,
     /// A Secondary Emission's list capacity (fluid F10), when the stage has one.
     emission: Option<u32>,
+    /// A World Collider is present (fluid F11).
+    world: bool,
 }
 
 /// Packs the constants `liquid.wgsl` and the shared solver kernels read: the solver's header (a closed
@@ -551,6 +559,7 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
     for collider in &colliders {
         words.extend(pack_collider(collider)?);
     }
+    let world = pack_world(modules, &mut words)?;
     let budget = count(parameters, "particle_budget")?;
     let substeps = count(parameters, "substeps")?;
     // Spatiotemporal FLIP (fluid F9).
@@ -592,6 +601,7 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
     };
     Ok(PackedLiquid {
         emission,
+        world,
         grid: Grid {
             resolution,
             slots: None,
@@ -643,6 +653,7 @@ impl StageLowerer for LiquidSolverLowerer {
             tolerance,
             colliders,
             emission,
+            world,
         } = pack_liquid(input.modules)?;
         let constants_read = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
         let frame_read = || Access::read(AESTRA_RESOURCE_FRAME);
@@ -679,6 +690,10 @@ impl StageLowerer for LiquidSolverLowerer {
                     host_read(),
                 ],
             ));
+        }
+        if world {
+            // The host's scene (fluid F11), after the analytic colliders.
+            steps.push(world_solids(grid));
         }
         steps.push(grid.single(
             "liquid_plan",
@@ -747,7 +762,11 @@ impl StageLowerer for LiquidSolverLowerer {
                 ],
             ));
             steps.extend(multigrid_pressure(
-                grid, iterations, tolerance, colliders, true,
+                grid,
+                iterations,
+                tolerance,
+                colliders || world,
+                true,
             ));
             steps.push(grid.pass(
                 "project",
@@ -770,6 +789,19 @@ impl StageLowerer for LiquidSolverLowerer {
                 ],
                 4,
             ));
+            if world {
+                steps.push(particles(
+                    "liquid_world_collide",
+                    vec![
+                        Access::read_write(RESOURCE_LIQUID_PARTICLES),
+                        Access::read(RESOURCE_LIQUID_HEADER),
+                        constants_read(),
+                        frame_read(),
+                        Access::read(AESTRA_RESOURCE_WORLD_SDF),
+                    ],
+                    4,
+                ));
+            }
         }
 
         let cells = grid.cells();
@@ -838,6 +870,9 @@ impl StageLowerer for LiquidSolverLowerer {
                 capacity,
                 u64::from(budget.div_ceil(64)),
             ));
+        }
+        if world {
+            world_resource(&mut resources);
         }
         let field = |id: &str, components, staggered| FieldLayout {
             resource: ResourceTypeId::new(id),

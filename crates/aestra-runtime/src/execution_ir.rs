@@ -30,6 +30,13 @@ pub const AESTRA_RESOURCE_PARTICLES: &str = "aestra.resource.particles";
 /// a plugin stage that reads bound objects declares it and a `Read` access on its compute ops.
 pub const AESTRA_RESOURCE_HOST_BINDINGS: &str = "aestra.resource.host_bindings";
 
+/// The built-in resource holding the host's world SDF, packed per the `aestra_gpu` world-SDF ABI
+/// (fluid F11, host bindings HB10): the scene geometry a simulation collides with, as a
+/// [`crate::SdfVolume`]. Host-written when the world changes, sized by the host, read-only to stages;
+/// never part of a stage's checkpoints. A stage that collides with the world declares it (bytes 0)
+/// and a `Read` access on its compute ops; without a world it reads as absent.
+pub const AESTRA_RESOURCE_WORLD_SDF: &str = "aestra.resource.world_sdf";
+
 /// The domain of host-supplied inputs (host bindings HB6).
 pub const AESTRA_DOMAIN_HOST_INPUT: &str = "aestra.domain.host_input";
 

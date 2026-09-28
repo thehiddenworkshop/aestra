@@ -14,6 +14,7 @@ pub mod ribbon_bounds;
 pub mod scan;
 pub mod shader;
 pub mod volume;
+mod world_sdf;
 
 pub use compute_program::{
     BindingUse, ProgramInterface, ProgramInterfaces, check_program_block,
@@ -23,6 +24,7 @@ pub use host_bindings::{
     GpuHostBindings, HOST_BINDING_BOUND, HOST_BINDING_HEADER_WORDS, HOST_BINDINGS_WGSL,
     host_binding_value_offsets, host_binding_value_word,
 };
+pub use world_sdf::{GpuWorldSdf, WORLD_SDF_HEADER_WORDS, WORLD_SDF_WGSL};
 
 use aestra_core::{
     BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, PropertyEvaluationDomain,

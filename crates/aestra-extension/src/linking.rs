@@ -184,6 +184,16 @@ impl ResourceTypeRegistry {
         registry
             .resources
             .insert(host_bindings.type_id.clone(), host_bindings);
+        // The host's world SDF, written when the world changes (fluid F11, host bindings HB10).
+        let world_sdf = ResourceTypeDescriptor {
+            type_id: ResourceTypeId::new(aestra_runtime::AESTRA_RESOURCE_WORLD_SDF),
+            display_name: "World SDF".into(),
+            domain: DomainTypeId::new(aestra_runtime::AESTRA_DOMAIN_HOST_INPUT),
+            lifetime: ResourceLifetime::Persistent,
+        };
+        registry
+            .resources
+            .insert(world_sdf.type_id.clone(), world_sdf);
         // Stage constants and the per-tick frame (extensible-stages M13).
         for (type_id, name) in [
             (

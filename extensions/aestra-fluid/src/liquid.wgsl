@@ -320,7 +320,7 @@ fn liquid_mark(@builtin(global_invocation_id) gid: vec3<u32>) {
         liquid = liquid_phase(mass) >= 0.5;
     }
     var flag = MG_AIR;
-    if (collider_count() > 0u && solid[i].w > 0.5) {
+    if (has_solids() && solid[i].w > 0.5) {
         flag = MG_SOLID;
     } else if (liquid) {
         flag = MG_FLUID;

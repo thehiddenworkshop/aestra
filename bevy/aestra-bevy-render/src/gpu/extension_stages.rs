@@ -33,7 +33,7 @@ use crate::execution::{
 };
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::ResourceTypeId;
-use aestra_gpu::GpuHostBindings;
+use aestra_gpu::{GpuHostBindings, GpuWorldSdf};
 use aestra_runtime::{
     CompiledEffect, CompiledExtensionStage, EffectInstance, FieldLayout, ProfileValue,
 };
@@ -103,6 +103,43 @@ pub struct AestraDebugViews {
     pub field_slices: bool,
 }
 
+/// The host's world geometry that simulations collide with (fluid F11, host bindings HB10): a signed
+/// distance volume in world space — level geometry baked offline (`aestra_runtime::SdfVolume`'s
+/// `.aestra-sdf` files) or from the scene's meshes. Every effect whose stages declare a World
+/// Collider collides with it; changing it uploads it once to each of them.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct AestraWorldSdf {
+    world: Option<GpuWorldSdf>,
+    revision: u64,
+}
+
+impl AestraWorldSdf {
+    /// A world made of `volume`.
+    pub fn new(volume: &aestra_runtime::SdfVolume) -> Self {
+        let mut world = Self::default();
+        world.set(volume);
+        world
+    }
+
+    /// Replaces the world with `volume`.
+    pub fn set(&mut self, volume: &aestra_runtime::SdfVolume) {
+        self.revision += 1;
+        self.world = Some(GpuWorldSdf::new(volume, self.revision));
+    }
+
+    /// Removes the world: nothing collides with it any more.
+    pub fn clear(&mut self) {
+        self.revision += 1;
+        let mut absent = GpuWorldSdf::absent();
+        absent.revision = self.revision;
+        self.world = Some(absent);
+    }
+
+    fn packed(&self) -> Option<&GpuWorldSdf> {
+        self.world.as_ref()
+    }
+}
+
 /// Requests, and tunes, the field slice view of one effect regardless of [`AestraDebugViews`].
 #[derive(Component, Debug, Clone)]
 pub struct AestraFieldView {
@@ -161,6 +198,8 @@ pub(crate) struct ExtractedStages {
     view: Option<FieldViewTarget>,
     /// Fields copied into volume textures after the stages advance (fluid F3).
     volumes: Vec<super::volume::VolumeFieldTarget>,
+    /// The host's world SDF (fluid F11), when it supplies one.
+    world: Option<GpuWorldSdf>,
 }
 
 impl ExtractedStages {
@@ -169,6 +208,7 @@ impl ExtractedStages {
         StageInputs {
             host_bindings: Some(&self.host),
             world_to_effect: self.world_to_effect,
+            world_sdf: self.world.as_ref(),
         }
     }
 }
@@ -334,7 +374,12 @@ fn world_to_local(transform: &GlobalTransform) -> [[f32; 4]; 3] {
 }
 
 /// Mirrors each presented effect's stage inputs for extraction (or removes them).
-pub(super) fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery) {
+pub(super) fn sync_stage_inputs(
+    mut commands: Commands,
+    effects: StageInputQuery,
+    world: Option<Res<AestraWorldSdf>>,
+) {
+    let world: Option<&GpuWorldSdf> = world.as_ref().and_then(|world| world.packed());
     for (entity, presented, transform, view, volumes, extracted, timed) in &effects {
         let effect = presented.effect();
         if stages(effect).next().is_none() {
@@ -363,6 +408,7 @@ pub(super) fn sync_stage_inputs(mut commands: Commands, effects: StageInputQuery
             volumes: volumes
                 .map(super::volume::VolumeViews::targets)
                 .unwrap_or_default(),
+            world: world.cloned(),
         });
         if !timed {
             entity.insert(GpuStageTiming::default());
@@ -1006,6 +1052,7 @@ mod tests {
             coupled: false,
             view: None,
             volumes: Vec::new(),
+            world: None,
         }
     }
 

@@ -29,11 +29,13 @@
 
 use aestra_compiler::{ComputeProgram, ComputeProgramRegistry};
 use aestra_core::{ComputeProgramId, ResourceTypeId};
-use aestra_gpu::{GpuHostBindings, ProgramInterfaces, check_program_block_cached, source_hash};
+use aestra_gpu::{
+    GpuHostBindings, GpuWorldSdf, ProgramInterfaces, check_program_block_cached, source_hash,
+};
 use aestra_runtime::{
     AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS, AESTRA_RESOURCE_STAGE_CONSTANTS,
-    ExecutionBlock, ExecutionOp, FieldLayout, FrameConstants, RepeatPolicy, ResourceLifetime,
-    StagedDispatch,
+    AESTRA_RESOURCE_WORLD_SDF, ExecutionBlock, ExecutionOp, FieldLayout, FrameConstants,
+    RepeatPolicy, ResourceLifetime, StagedDispatch,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
@@ -237,6 +239,11 @@ pub struct StageExecutor {
     pipelines: Vec<wgpu::ComputePipeline>,
     /// Per compute op, in depth-first op order (repeat bodies once): its pipeline and bind group.
     dispatches: Vec<(usize, wgpu::BindGroup)>,
+    /// Per compute op, likewise: its name and the bindings its bind group holds, so the groups can be
+    /// built again when a host-sized resource (the world SDF) is reallocated.
+    dispatch_bindings: Vec<(String, Vec<u32>)>,
+    /// The revision of the world SDF uploaded, if any (fluid F11).
+    world_revision: Option<u64>,
     /// A tick's steps, repeats expanded.
     steps: Vec<Step>,
     /// Convergent repeats, in depth-first op order, and the test pipelines they share: after an
@@ -290,6 +297,8 @@ impl StageExecutor {
             };
             let bytes = match resource.id.as_str() {
                 AESTRA_RESOURCE_HOST_BINDINGS => host_binding_bytes,
+                // Absent until the host supplies a world (fluid F11): a zeroed header says so.
+                AESTRA_RESOURCE_WORLD_SDF => GpuWorldSdf::absent().byte_len(),
                 _ => resource.bytes,
             };
             if bytes == 0 {
@@ -313,6 +322,8 @@ impl StageExecutor {
             buffers,
             pipelines: Vec::new(),
             dispatches: Vec::new(),
+            dispatch_bindings: Vec::new(),
+            world_revision: None,
             steps: Vec::new(),
             convergent: Vec::new(),
             check: None,
@@ -493,26 +504,19 @@ impl StageExecutor {
                             self.pipelines.len() - 1
                         }
                     };
-                    let entries: Vec<wgpu::BindGroupEntry> = compute
+                    let bindings: Vec<u32> = compute
                         .accesses
                         .iter()
                         .map(|access| {
-                            let binding = self
-                                .block
+                            self.block
                                 .binding_of(&access.resource)
-                                .expect("validated block");
-                            wgpu::BindGroupEntry {
-                                binding,
-                                resource: self.buffers[binding as usize].as_entire_binding(),
-                            }
+                                .expect("validated block")
                         })
                         .collect();
-                    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some(&compute.name),
-                        layout: &self.pipelines[index].get_bind_group_layout(0),
-                        entries: &entries,
-                    });
+                    let bind_group = self.bind_group(device, index, &compute.name, &bindings);
                     dispatches.push((index, bind_group));
+                    self.dispatch_bindings
+                        .push((compute.name.clone(), bindings));
                 }
                 ExecutionOp::Repeat { body, .. } => {
                     self.prepare_ops(device, body, programs, cache, pipeline_index, dispatches)?;
@@ -521,6 +525,66 @@ impl StageExecutor {
             }
         }
         Ok(())
+    }
+
+    fn bind_group(
+        &self,
+        device: &wgpu::Device,
+        pipeline: usize,
+        name: &str,
+        bindings: &[u32],
+    ) -> wgpu::BindGroup {
+        let entries: Vec<wgpu::BindGroupEntry> = bindings
+            .iter()
+            .map(|&binding| wgpu::BindGroupEntry {
+                binding,
+                resource: self.buffers[binding as usize].as_entire_binding(),
+            })
+            .collect();
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(name),
+            layout: &self.pipelines[pipeline].get_bind_group_layout(0),
+            entries: &entries,
+        })
+    }
+
+    /// Hands the stage the host's world SDF (fluid F11): uploaded in `encoder` when its revision is
+    /// new, into a buffer reallocated (and the bind groups built again) when its size changed. Ticks
+    /// encoded after it see it. A stage that does not collide with the world ignores it. True when
+    /// something was uploaded.
+    pub fn provide_world_sdf(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        world: &GpuWorldSdf,
+    ) -> bool {
+        let Some(binding) = self.binding(AESTRA_RESOURCE_WORLD_SDF) else {
+            return false;
+        };
+        if self.world_revision == Some(world.revision) {
+            return false;
+        }
+        if self.buffers[binding].size() != world.byte_len() {
+            self.buffers[binding] = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(AESTRA_RESOURCE_WORLD_SDF),
+                size: world.byte_len(),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let dispatches = (0..self.dispatches.len())
+                .map(|op| {
+                    let (name, bindings) = &self.dispatch_bindings[op];
+                    let pipeline = self.dispatches[op].0;
+                    (pipeline, self.bind_group(device, pipeline, name, bindings))
+                })
+                .collect();
+            self.dispatches = dispatches;
+        }
+        self.stage_upload(device, encoder, binding, &world.to_bytes());
+        self.world_revision = Some(world.revision);
+        true
     }
 
     /// Expands `ops` into steps. `cursor` walks the prepared dispatches, `repeat` the convergent
@@ -944,6 +1008,7 @@ impl StageExecutor {
                         AESTRA_RESOURCE_FRAME
                             | AESTRA_RESOURCE_STAGE_CONSTANTS
                             | AESTRA_RESOURCE_HOST_BINDINGS
+                            | AESTRA_RESOURCE_WORLD_SDF
                     )
             })
             .map(|(binding, _)| binding)
@@ -983,6 +1048,8 @@ impl Default for TimelinePolicy {
 pub struct StageInputs<'a> {
     pub host_bindings: Option<&'a GpuHostBindings>,
     pub world_to_effect: [[f32; 4]; 3],
+    /// The host's world SDF (fluid F11), uploaded to stages that collide with it when it changes.
+    pub world_sdf: Option<&'a GpuWorldSdf>,
 }
 
 impl Default for StageInputs<'_> {
@@ -991,6 +1058,7 @@ impl Default for StageInputs<'_> {
         Self {
             host_bindings: None,
             world_to_effect: aestra_runtime::IDENTITY_AFFINE,
+            world_sdf: None,
         }
     }
 }
@@ -1113,6 +1181,9 @@ impl StageTimeline {
         timestamps: Option<PassTimestamps<'_>>,
     ) -> Result<AdvanceReport, String> {
         let mut report = AdvanceReport::default();
+        if let Some(world) = inputs.world_sdf {
+            self.executor.provide_world_sdf(device, encoder, world);
+        }
         if target < self.last_tick {
             let nearest = self
                 .checkpoints
