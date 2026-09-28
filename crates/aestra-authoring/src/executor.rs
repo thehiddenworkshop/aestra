@@ -1250,6 +1250,47 @@ fn set_module_parameter(
         {
             Some(Value::Scalar(std::mem::replace(strength, value)))
         }
+        (ModuleParameters::Homing { target, .. }, Value::Vec3(value)) if parameter == "target" => {
+            Some(Value::Vec3(std::mem::replace(target, value)))
+        }
+        (
+            ModuleParameters::Homing {
+                target_velocity, ..
+            },
+            Value::Vec3(value),
+        ) if parameter == "target_velocity" => {
+            Some(Value::Vec3(std::mem::replace(target_velocity, value)))
+        }
+        (
+            ModuleParameters::Homing {
+                speed,
+                acceleration,
+                turn_rate,
+                arrival_radius,
+                ..
+            },
+            Value::Scalar(value),
+        ) if matches!(
+            parameter,
+            "speed" | "acceleration" | "turn_rate" | "arrival_radius"
+        ) =>
+        {
+            let slot = match parameter {
+                "speed" => speed,
+                "acceleration" => acceleration,
+                "turn_rate" => turn_rate,
+                _ => arrival_radius,
+            };
+            Some(Value::Scalar(std::mem::replace(slot, value)))
+        }
+        (ModuleParameters::Homing { lost_target, .. }, Value::Text(value))
+            if parameter == "lost_target" =>
+        {
+            let policy = aestra_core::HomingLostPolicy::from_name(&value).ok_or_else(unknown)?;
+            Some(Value::Text(
+                std::mem::replace(lost_target, policy).name().into(),
+            ))
+        }
         (ModuleParameters::SpawnFromDomain { inherit, .. }, Value::Scalar(value))
             if parameter == "inherit" =>
         {

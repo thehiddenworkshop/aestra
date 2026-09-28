@@ -36,8 +36,8 @@ pub use staged::{
     StagedResourceLifetime, diffuse_2d, diffuse_2d_step,
 };
 pub use stateful::{
-    Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
-    StatefulSimulation,
+    Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingTarget, HomingTracker,
+    MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig, StatefulSimulation, steer_homing,
 };
 pub use tier::QualityTier;
 
@@ -721,6 +721,56 @@ pub struct CompiledFieldFollow {
     pub strength: f32,
 }
 
+/// A stateful emitter homing on a target (host bindings HB7): how it steers, and where its target
+/// comes from — a host binding's fields (world space), or a fixed point (effect space).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledHoming {
+    pub config: HomingConfig,
+    /// The target without a binding, in effect space.
+    pub target: [f32; 3],
+    pub target_velocity: [f32; 3],
+    /// The binding field supplying the target's position, when one does.
+    pub target_source: Option<CompiledHostFieldRef>,
+    /// The binding field supplying its velocity, when one does.
+    pub velocity_source: Option<CompiledHostFieldRef>,
+}
+
+impl CompiledHoming {
+    /// The target for the current tick from `instance`'s bindings: the bound position (and velocity),
+    /// taken into effect space by `world_to_effect` (3×4 rows, as [`FrameConstants`]), while the
+    /// binding supplies it; `None` while it does not (the target is lost); the fixed target when the
+    /// input is not bound.
+    pub fn resolve(
+        &self,
+        instance: &EffectInstance,
+        world_to_effect: [[f32; 4]; 3],
+    ) -> Option<HomingTarget> {
+        let read = |source: &CompiledHostFieldRef| {
+            let snapshot = instance.binding(source.binding)?;
+            let layout = &instance.effect().bindings[source.binding.0].layout;
+            match snapshot.field(layout, &source.field)? {
+                [x, y, z] => Some([*x, *y, *z]),
+                _ => None,
+            }
+        };
+        let place = |v: [f32; 3], w: f32| {
+            std::array::from_fn(|row| {
+                let r = world_to_effect[row];
+                r[0] * v[0] + r[1] * v[1] + r[2] * v[2] + r[3] * w
+            })
+        };
+        let position = match &self.target_source {
+            Some(source) => place(read(source)?, 1.0),
+            None => self.target,
+        };
+        let velocity = match &self.velocity_source {
+            Some(source) => read(source).map_or([0.0; 3], |v| place(v, 0.0)),
+            None => self.target_velocity,
+        };
+        Some(HomingTarget { position, velocity })
+    }
+}
+
 /// A stateful emitter spawning its particles where one of the effect's domains asks for them (fluid
 /// F10, G8): each tick, after the domain's, one particle per record of the domain's emission list —
 /// at the record's position, with the record's velocity scaled by `inherit` plus the emitter's own
@@ -941,6 +991,8 @@ pub struct CompiledEmitter {
     /// The domain this emitter spawns from (fluid F10), when a Spawn From Domain module is enabled —
     /// in addition to its own rate. GPU-only, like `field_follow`.
     pub domain_spawn: Option<CompiledDomainSpawn>,
+    /// Homing steering (host bindings HB7), when a Homing module is enabled. Run by the stateful path.
+    pub homing: Option<CompiledHoming>,
     /// The interpreter's execution input (typed, three lifecycle slots).
     pub execution: ExecutionPlan,
     /// The generic, stage-identified compiled stage plan (extensible-stages M5). Holds the same

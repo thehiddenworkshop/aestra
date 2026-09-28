@@ -762,6 +762,7 @@ fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool
             | ModuleParameters::Collision { .. }
             | ModuleParameters::FollowField { .. }
             | ModuleParameters::SpawnFromDomain { .. }
+            | ModuleParameters::Homing { .. }
             | ModuleParameters::Custom(_) => {}
         }
     }

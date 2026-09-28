@@ -11,7 +11,7 @@
 
 use crate::{DEFAULT_PLAYBACK_TICK_RATE, ParticleSample, SimulationClass, SimulationStateLayout};
 
-pub use aestra_core::{Collider, ColliderShape};
+pub use aestra_core::{Collider, ColliderShape, HomingLostPolicy};
 
 /// The volume new particles spawn within (hybrid roadmap M6). Sampled per particle from deterministic
 /// uniforms, trig-free so the GPU reproduces it bit-for-bit.
@@ -123,6 +123,63 @@ pub struct StatefulConfig {
     pub collider_count: u32,
     /// Maximum live particles; spawning stops at this bound (bounded allocation).
     pub capacity: u32,
+    /// Homing steering (host bindings HB7), when a Homing module is enabled. Its target is an input
+    /// that changes over time: [`StatefulSimulation::set_homing_target`].
+    pub homing: Option<HomingConfig>,
+}
+
+/// How homing particles steer (host bindings HB7). See [`steer_homing`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HomingConfig {
+    /// The speed particles settle at.
+    pub speed: f32,
+    /// How fast the speed changes toward `speed`, per second; `0` sets it at once.
+    pub acceleration: f32,
+    /// The share of the way from the current heading to the target's direction turned per second
+    /// (at most all of it in one tick).
+    pub turn_rate: f32,
+    /// Particles this close to the target have arrived: they retire.
+    pub arrival_radius: f32,
+    /// What particles do while the target is lost.
+    pub lost: HomingLostPolicy,
+}
+
+/// Where the target is for a tick, in the particles' space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HomingTarget {
+    pub position: [f32; 3],
+    /// Its velocity, to lead it (zero when unknown).
+    pub velocity: [f32; 3],
+}
+
+/// Resolves the target a tick steers toward from the host's input: the input when there is one,
+/// else — with [`HomingLostPolicy::KeepLastPosition`] — the last one seen, standing still. Shared by
+/// this reference and the GPU host, so both lose a target the same way.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct HomingTracker {
+    last: Option<HomingTarget>,
+}
+
+impl HomingTracker {
+    pub fn resolve(
+        &mut self,
+        policy: HomingLostPolicy,
+        input: Option<HomingTarget>,
+    ) -> Option<HomingTarget> {
+        match input {
+            Some(target) => {
+                self.last = Some(target);
+                Some(target)
+            }
+            None if policy == HomingLostPolicy::KeepLastPosition => {
+                self.last.map(|last| HomingTarget {
+                    position: last.position,
+                    velocity: [0.0; 3],
+                })
+            }
+            None => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -146,6 +203,9 @@ pub struct StatefulSimulation {
     /// Total particles ever spawned; the ordinal that seeds each particle's deterministic launch.
     spawned: u64,
     particles: Vec<StateParticle>,
+    /// The homing target the next ticks steer toward (host bindings HB7), as the host last set it.
+    homing_input: Option<HomingTarget>,
+    homing_tracker: HomingTracker,
 }
 
 impl StatefulSimulation {
@@ -159,7 +219,15 @@ impl StatefulSimulation {
             tick: 0,
             spawned: 0,
             particles: Vec::new(),
+            homing_input: None,
+            homing_tracker: HomingTracker::default(),
         }
+    }
+
+    /// Sets where the homing target is for the following ticks (host bindings HB7); `None` while it is
+    /// lost. Ignored without a homing config.
+    pub fn set_homing_target(&mut self, target: Option<HomingTarget>) {
+        self.homing_input = target;
     }
 
     /// The absolute fixed tick this simulation has reached.
@@ -236,7 +304,24 @@ impl StatefulSimulation {
     pub fn advance_tick(&mut self) {
         let dt = Self::TICK_DT;
         let drag = self.config.drag;
+        let homing = self.config.homing.map(|homing| {
+            let target = self.homing_tracker.resolve(homing.lost, self.homing_input);
+            (homing, target)
+        });
         for particle in &mut self.particles {
+            // Homing (HB7) steers the velocity before the forces act on it.
+            if let Some((homing, target)) = &homing
+                && steer_homing(
+                    homing,
+                    target.as_ref(),
+                    particle.position,
+                    &mut particle.velocity,
+                    dt,
+                )
+            {
+                particle.age = particle.lifetime;
+                continue;
+            }
             // Semi-implicit (symplectic) Euler with linear drag and value-noise turbulence: the
             // per-axis acceleration (gravity + turbulence at the current age) updates velocity first
             // (then damping), then position.
@@ -474,6 +559,62 @@ fn normalize_or(v: [f32; 3], fallback: [f32; 3]) -> [f32; 3] {
     }
 }
 
+/// Steers one particle's `velocity` toward `target` for a tick of `dt` (host bindings HB7),
+/// returning whether it retires (it arrived, or the target is lost under [`HomingLostPolicy::Kill`]).
+/// The direction to aim along leads the target by the time to reach it at `speed`; the heading turns
+/// `min(turn_rate × dt, 1)` of the way there, renormalized; the speed moves toward `speed` by at
+/// most `acceleration × dt`. Without a target the particle keeps its heading. Only `+ - * /`,
+/// `min`/`max`, comparisons and `sqrt` — the GPU's `aestra_homing_steer` reproduces it.
+pub fn steer_homing(
+    config: &HomingConfig,
+    target: Option<&HomingTarget>,
+    position: [f32; 3],
+    velocity: &mut [f32; 3],
+    dt: f32,
+) -> bool {
+    let speed_now = dot(*velocity, *velocity).sqrt();
+    let heading = normalize_or(*velocity, [0.0, 1.0, 0.0]);
+    let direction = match target {
+        Some(target) => {
+            let to = [
+                target.position[0] - position[0],
+                target.position[1] - position[1],
+                target.position[2] - position[2],
+            ];
+            let distance = dot(to, to).sqrt();
+            if distance <= config.arrival_radius {
+                return true;
+            }
+            let reach = distance / config.speed.max(1e-6);
+            let aim = [
+                target.position[0] + target.velocity[0] * reach - position[0],
+                target.position[1] + target.velocity[1] * reach - position[1],
+                target.position[2] + target.velocity[2] * reach - position[2],
+            ];
+            let desired = normalize_or(aim, heading);
+            let turn = (config.turn_rate * dt).min(1.0);
+            let blended = [
+                heading[0] + (desired[0] - heading[0]) * turn,
+                heading[1] + (desired[1] - heading[1]) * turn,
+                heading[2] + (desired[2] - heading[2]) * turn,
+            ];
+            normalize_or(blended, desired)
+        }
+        None if config.lost == HomingLostPolicy::Kill => return true,
+        None => heading,
+    };
+    let speed = if config.acceleration > 0.0 {
+        let step = config.acceleration * dt;
+        speed_now + (config.speed - speed_now).clamp(-step, step)
+    } else {
+        config.speed
+    };
+    for axis in 0..3 {
+        velocity[axis] = direction[axis] * speed;
+    }
+    false
+}
+
 /// Applies each active collider to a particle's post-integration `position`/`velocity`, in array
 /// order, returning whether the particle was killed. Canonical for both this CPU reference and the GPU
 /// death-loop kernel: every operation is `+ - * /`, comparison, or `sqrt` (all IEEE-correctly-rounded),
@@ -613,6 +754,7 @@ mod tests {
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,
             capacity: 128,
+            homing: None,
         }
     }
 
@@ -756,6 +898,7 @@ mod tests {
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,
             capacity: 8,
+            homing: None,
         };
         let dragged = StatefulConfig { drag: 2.0, ..base };
         let mut without = StatefulSimulation::new(base, 1);
@@ -902,6 +1045,7 @@ mod tests {
             },
             collider_count: 1,
             capacity: 64,
+            homing: None,
         };
         let mut simulation = StatefulSimulation::new(config, 0xB0_1CE);
         simulation.advance_to_tick(400);
@@ -934,6 +1078,7 @@ mod tests {
             colliders: [Collider::NONE; MAX_COLLIDERS],
             collider_count: 0,
             capacity: 4096,
+            homing: None,
         };
         let kill_floor = Collider {
             shape: ColliderShape::Plane {

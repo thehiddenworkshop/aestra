@@ -759,8 +759,109 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
 /// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78; then the appearance
 /// `present` draws with (see [`pack_stateful_appearance`]), from 78.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize =
-    STATEFUL_APPEARANCE_BASE + STATEFUL_APPEARANCE_WORDS;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_HOMING_BASE + STATEFUL_HOMING_WORDS;
+
+/// Where the homing block starts in the stateful params (host bindings HB7), and its length: see
+/// [`pack_stateful_homing`].
+pub const STATEFUL_HOMING_BASE: usize = STATEFUL_APPEARANCE_BASE + STATEFUL_APPEARANCE_WORDS;
+pub const STATEFUL_HOMING_WORDS: usize = 16;
+
+/// Packs an emitter's homing (host bindings HB7) for a tick into its stateful params: enabled, target
+/// present, the lost-target policy (0 keep last position, 1 keep direction, 2 kill), then the target's
+/// position and velocity, the speed, acceleration, turn rate and arrival radius (floats as bits). No
+/// config leaves the block zero: no steering.
+pub fn pack_stateful_homing(
+    config: Option<&aestra_runtime::HomingConfig>,
+    target: Option<&aestra_runtime::HomingTarget>,
+    words: &mut [u32],
+) {
+    let block = &mut words[STATEFUL_HOMING_BASE..STATEFUL_HOMING_BASE + STATEFUL_HOMING_WORDS];
+    block.fill(0);
+    let Some(config) = config else {
+        return;
+    };
+    block[0] = 1;
+    block[2] = match config.lost {
+        aestra_runtime::HomingLostPolicy::KeepLastPosition => 0,
+        aestra_runtime::HomingLostPolicy::KeepDirection => 1,
+        aestra_runtime::HomingLostPolicy::Kill => 2,
+    };
+    if let Some(target) = target {
+        block[1] = 1;
+        for axis in 0..3 {
+            block[4 + axis] = target.position[axis].to_bits();
+            block[7 + axis] = target.velocity[axis].to_bits();
+        }
+    }
+    block[10] = config.speed.to_bits();
+    block[11] = config.acceleration.to_bits();
+    block[12] = config.turn_rate.to_bits();
+    block[13] = config.arrival_radius.to_bits();
+}
+
+/// Homing for the stateful GPU backend (host bindings HB7): `aestra_homing_steer` steers a particle's
+/// velocity toward the target the params' homing block holds, the GPU counterpart of
+/// `aestra_runtime::steer_homing`, operation for operation. The including shader must declare the
+/// `params: array<u32>` binding.
+pub const STATEFUL_HOMING_WGSL: &str = r#"
+const AESTRA_HOMING_BASE: u32 = 156u;
+
+struct AestraHoming {
+    velocity: vec3<f32>,
+    killed: bool,
+}
+
+fn aestra_homing_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn aestra_homing_normalize(v: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let length_squared = aestra_homing_dot(v, v);
+    if (length_squared > 1e-12) {
+        return v / sqrt(length_squared);
+    }
+    return fallback;
+}
+
+fn aestra_homing_f32(word: u32) -> f32 {
+    return bitcast<f32>(params[AESTRA_HOMING_BASE + word]);
+}
+
+fn aestra_homing_steer(position: vec3<f32>, velocity: vec3<f32>) -> AestraHoming {
+    if (params[AESTRA_HOMING_BASE] == 0u) {
+        return AestraHoming(velocity, false);
+    }
+    let dt = bitcast<f32>(params[8]);
+    let cruise = aestra_homing_f32(10u);
+    let speed_now = sqrt(aestra_homing_dot(velocity, velocity));
+    let heading = aestra_homing_normalize(velocity, vec3<f32>(0.0, 1.0, 0.0));
+    var direction = heading;
+    if (params[AESTRA_HOMING_BASE + 1u] != 0u) {
+        let goal = vec3<f32>(aestra_homing_f32(4u), aestra_homing_f32(5u), aestra_homing_f32(6u));
+        let target_velocity = vec3<f32>(aestra_homing_f32(7u), aestra_homing_f32(8u), aestra_homing_f32(9u));
+        let to = goal - position;
+        let distance = sqrt(aestra_homing_dot(to, to));
+        if (distance <= aestra_homing_f32(13u)) {
+            return AestraHoming(velocity, true);
+        }
+        let reach = distance / max(cruise, 1e-6);
+        let aim = goal + target_velocity * reach - position;
+        let desired = aestra_homing_normalize(aim, heading);
+        let turn = min(aestra_homing_f32(12u) * dt, 1.0);
+        let blended = heading + (desired - heading) * turn;
+        direction = aestra_homing_normalize(blended, desired);
+    } else if (params[AESTRA_HOMING_BASE + 2u] == 2u) {
+        return AestraHoming(velocity, true);
+    }
+    var speed = cruise;
+    let acceleration = aestra_homing_f32(11u);
+    if (acceleration > 0.0) {
+        let step = acceleration * dt;
+        speed = speed_now + clamp(cruise - speed_now, -step, step);
+    }
+    return AestraHoming(direction * speed, false);
+}
+"#;
 
 /// Where the appearance block starts in the stateful params, and its length: the size and opacity
 /// curves (a count, the interpolation mode as `f32` bits, then 8 `(time, value)` keys each), the
@@ -869,15 +970,26 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         let drag = bitcast<f32>(params[16]);
         let seed = vec2<u32>(params[2], params[3]);
         let ordinal = bitcast<u32>(state[base + 8u]);
+        // Homing (host bindings HB7) steers the velocity before the forces act on it; an arrived
+        // particle retires.
+        let homing = aestra_homing_steer(
+            vec3<f32>(state[base + 0u], state[base + 1u], state[base + 2u]),
+            vec3<f32>(state[base + 3u], state[base + 4u], state[base + 5u]));
+        if (homing.killed) {
+            state[base + 6u] = lifetime;
+            state[base + 7u] = 0.0;
+            aestra_free_push(slot);
+            return;
+        }
         // Acceleration = gravity + value-noise turbulence at the current age.
         let turbulence = spawn_turbulence(seed, ordinal, age, bitcast<f32>(params[19]));
         let ax = bitcast<f32>(params[9]) + turbulence.x;
         let ay = bitcast<f32>(params[10]) + turbulence.y;
         let az = bitcast<f32>(params[11]) + turbulence.z;
         // Semi-implicit Euler with linear drag: accelerate, then damp, then position.
-        let vgx = state[base + 3u] + ax * dt;
-        let vgy = state[base + 4u] + ay * dt;
-        let vgz = state[base + 5u] + az * dt;
+        let vgx = homing.velocity.x + ax * dt;
+        let vgy = homing.velocity.y + ay * dt;
+        let vgz = homing.velocity.z + az * dt;
         let vx = vgx - drag * vgx * dt;
         let vy = vgy - drag * vgy * dt;
         let vz = vgz - drag * vgz * dt;
@@ -973,7 +1085,7 @@ pub fn stateful_simulation_wgsl() -> String {
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
          {STATEFUL_PRESENT_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
-         {STATEFUL_SIMULATION_ENTRIES}"
+         {STATEFUL_HOMING_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
     )
 }
 

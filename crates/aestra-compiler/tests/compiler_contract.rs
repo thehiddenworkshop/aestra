@@ -100,7 +100,7 @@ fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let registry = ModuleRegistry::builtin();
-    assert_eq!(registry.len(), 9);
+    assert_eq!(registry.len(), 10);
 
     let collision = registry
         .iter()
@@ -204,7 +204,7 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
 
     // Every built-in stays analytic except those that deliberately declare a previous-state
     // dependency: the Persistent solver (hybrid roadmap M6), Collision (M10), Follow Field (fluid
-    // F2b) and Spawn From Domain (fluid F10). Existing analytic effects — which never include those — are unaffected.
+    // F2b), Spawn From Domain (fluid F10) and Homing (host bindings HB7). Existing analytic effects — which never include those — are unaffected.
     for metadata in ModuleRegistry::builtin().iter() {
         if matches!(
             metadata.type_id.0.as_str(),
@@ -212,6 +212,7 @@ fn builtin_modules_are_analytic_and_the_class_derivation_is_correct() {
                 | "aestra.update.collision"
                 | "aestra.update.follow_field"
                 | "aestra.spawn.from_domain"
+                | "aestra.update.homing"
         ) {
             assert_eq!(
                 metadata.simulation.derived_class(),
@@ -361,7 +362,7 @@ fn extension_registry_hosts_builtins_registers_plugins_and_diagnoses_conflicts()
     // The built-in unified registry is internally consistent and hosts the built-in modules.
     let builtin = ExtensionRegistry::builtin();
     assert!(builtin.validate().is_empty());
-    assert_eq!(builtin.modules.len(), 9);
+    assert_eq!(builtin.modules.len(), 10);
     assert!(
         builtin
             .capabilities
@@ -2467,4 +2468,103 @@ fn duplicate_singleton_modules_in_one_stage_are_rejected() {
         compiler.compile(&ok).is_ok(),
         "one persistent solver is valid"
     );
+}
+
+#[test]
+fn a_homing_target_bound_to_a_host_object_resolves_into_effect_space_and_can_be_lost() {
+    use aestra_core::{
+        AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, BindingFieldId, BindingUpdateMode,
+        EffectBinding, HostFieldRef, ModuleInstance, PropertySource,
+    };
+    use aestra_runtime::{EffectInstance, HomingTarget, SpatialBindingSnapshot};
+    let mut effect = EffectAsset::new("Homing", 4.0);
+    let mut target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    target
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_LINEAR_VELOCITY));
+    let mut emitter = aestra_core::Emitter::basic_sprite("Sparks", 4.0);
+    let mut homing = ModuleInstance::homing([1.0, 2.0, 3.0], 30.0);
+    for (input, field) in [
+        ("target", AESTRA_FIELD_POSITION),
+        ("target_velocity", AESTRA_FIELD_LINEAR_VELOCITY),
+    ] {
+        homing
+            .property_sources
+            .insert(input.into(), PropertySource::HostBinding);
+        homing
+            .host_bindings
+            .insert(input.into(), HostFieldRef::new(target.id, field));
+    }
+    emitter.modules.push(homing);
+    effect.emitters.push(emitter);
+    effect.bindings.push(target);
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let emitter = &compiled.emitters[0];
+    assert_eq!(
+        emitter.simulation_class,
+        aestra_runtime::SimulationClass::Stateful,
+        "homing promotes the emitter"
+    );
+    let homing = emitter.homing.clone().expect("the homing module compiled");
+    assert!(homing.target_source.is_some() && homing.velocity_source.is_some());
+    assert_eq!(homing.config.speed, 30.0);
+
+    // The effect placed 10 along +x: world (15, 0, 0) is effect (5, 0, 0); a velocity only rotates.
+    let world_to_effect = [
+        [1.0, 0.0, 0.0, -10.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ];
+    let mut instance = EffectInstance::new(std::sync::Arc::new(compiled));
+    assert_eq!(
+        homing.resolve(&instance, world_to_effect),
+        None,
+        "unbound: the target is lost"
+    );
+    let layout = instance.effect().bindings[0].layout.clone();
+    let mut snapshot = SpatialBindingSnapshot::at([15.0, 0.0, 0.0]);
+    snapshot.linear_velocity = Some([0.0, 4.0, 0.0]);
+    instance
+        .set_binding(
+            aestra_runtime::BindingSlot(0),
+            Some(snapshot.to_snapshot(&layout)),
+        )
+        .unwrap();
+    assert_eq!(
+        homing.resolve(&instance, world_to_effect),
+        Some(HomingTarget {
+            position: [5.0, 0.0, 0.0],
+            velocity: [0.0, 4.0, 0.0],
+        })
+    );
+    // Not bound at all, the input is the authored point, as is.
+    let mut fixed = homing.clone();
+    fixed.target_source = None;
+    fixed.velocity_source = None;
+    assert_eq!(
+        fixed.resolve(&instance, world_to_effect),
+        Some(HomingTarget {
+            position: [1.0, 2.0, 3.0],
+            velocity: [0.0; 3],
+        })
+    );
+    // Losses under each policy.
+    let mut tracker = aestra_runtime::HomingTracker::default();
+    let seen = HomingTarget {
+        position: [5.0, 0.0, 0.0],
+        velocity: [0.0, 4.0, 0.0],
+    };
+    use aestra_runtime::HomingLostPolicy::*;
+    assert_eq!(tracker.resolve(KeepLastPosition, None), None, "never seen");
+    assert_eq!(tracker.resolve(KeepLastPosition, Some(seen)), Some(seen));
+    assert_eq!(
+        tracker.resolve(KeepLastPosition, None),
+        Some(HomingTarget {
+            position: seen.position,
+            velocity: [0.0; 3],
+        }),
+        "where it was, standing still"
+    );
+    assert_eq!(tracker.resolve(KeepDirection, None), None);
+    assert_eq!(tracker.resolve(Kill, None), None);
 }

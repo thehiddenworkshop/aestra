@@ -190,3 +190,28 @@ fn host_field_reads_round_trip_and_bad_slots_are_rejected() {
         Err(ArtifactError::InvalidData { .. })
     ));
 }
+
+#[test]
+fn a_homing_module_bound_to_a_target_round_trips() {
+    use aestra_core::{
+        AESTRA_FIELD_POSITION, BindingUpdateMode, EffectBinding, HostFieldRef, ModuleInstance,
+        PropertySource,
+    };
+    let target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    let mut effect = effect("Homing", vec![target.clone()]);
+    let mut emitter = aestra_core::Emitter::basic_sprite("Sparks", 1.0);
+    let mut homing = ModuleInstance::homing([1.0, 2.0, 3.0], 30.0);
+    homing
+        .property_sources
+        .insert("target".into(), PropertySource::HostBinding);
+    homing.host_bindings.insert(
+        "target".into(),
+        HostFieldRef::new(target.id, AESTRA_FIELD_POSITION),
+    );
+    emitter.modules.push(homing);
+    effect.emitters.push(emitter);
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    assert!(compiled.emitters[1].homing.is_some());
+    let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(decoded.emitters, compiled.emitters);
+}

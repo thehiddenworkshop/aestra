@@ -22,11 +22,11 @@ pub use module_stack::*;
 use aestra_core::{
     Collider, ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     Emitter, EmitterId, Gradient, MODULE_APPEARANCE, MODULE_COLLISION, MODULE_EMISSION,
-    MODULE_FOLLOW_FIELD, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT, MODULE_SHAPE,
-    MODULE_SPAWN_FROM_DOMAIN, MaterialInput, MaterialProgramId, MaterialProperties, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH, RENDERER_RIBBON,
-    RENDERER_SPRITE, RENDERER_TRAIL, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
-    ValidationReport, Value,
+    MODULE_FOLLOW_FIELD, MODULE_HOMING, MODULE_INITIALIZE, MODULE_MOTION, MODULE_PERSISTENT,
+    MODULE_SHAPE, MODULE_SPAWN_FROM_DOMAIN, MaterialInput, MaterialProgramId, MaterialProperties,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
+    RENDERER_RIBBON, RENDERER_SPRITE, RENDERER_TRAIL, RendererProperties, ScalarRange,
+    SpriteColorSource, StageKind, ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
@@ -978,6 +978,43 @@ impl EffectCompiler {
                     _ => None,
                 })
                 .transpose()?;
+            // Homing (host bindings HB7): how it steers, and the binding fields its target comes from.
+            let homing = emitter
+                .modules
+                .iter()
+                .filter(|module| module.enabled)
+                .find_map(|module| match &module.parameters {
+                    ModuleParameters::Homing {
+                        target,
+                        target_velocity,
+                        speed,
+                        acceleration,
+                        turn_rate,
+                        arrival_radius,
+                        lost_target,
+                    } => {
+                        let source = |input: &str| {
+                            (module.property_source(input) == Some(InputSourceKind::HostBinding))
+                                .then(|| module.host_bindings.get(input))
+                                .flatten()
+                                .and_then(|reference| host_field_ref(asset, &bindings, reference))
+                        };
+                        Some(aestra_runtime::CompiledHoming {
+                            config: aestra_runtime::HomingConfig {
+                                speed: *speed,
+                                acceleration: *acceleration,
+                                turn_rate: *turn_rate,
+                                arrival_radius: *arrival_radius,
+                                lost: *lost_target,
+                            },
+                            target: *target,
+                            target_velocity: *target_velocity,
+                            target_source: source("target"),
+                            velocity_source: source("target_velocity"),
+                        })
+                    }
+                    _ => None,
+                });
             let colliders: Vec<Collider> = emitter
                 .modules
                 .iter()
@@ -1019,6 +1056,7 @@ impl EffectCompiler {
                     colliders: colliders.clone(),
                     field_follow: field_follow.clone(),
                     domain_spawn: domain_spawn.clone(),
+                    homing: homing.clone(),
                     stages: aestra_runtime::CompiledLifecycleStages::from_execution_plan(
                         &execution, emitter.id,
                     ),
@@ -2532,6 +2570,8 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         ModuleParameters::FollowField { .. } => return None,
         // Spawn From Domain likewise (domain_spawn): the stateful backend spawns from the list.
         ModuleParameters::SpawnFromDomain { .. } => return None,
+        // Homing (host bindings HB7) likewise (`homing`): the stateful backend steers.
+        ModuleParameters::Homing { .. } => return None,
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
@@ -2796,6 +2836,7 @@ fn is_builtin_module(type_id: &ModuleTypeId) -> bool {
             | MODULE_COLLISION
             | MODULE_FOLLOW_FIELD
             | MODULE_SPAWN_FROM_DOMAIN
+            | MODULE_HOMING
             | MODULE_APPEARANCE
     )
 }
@@ -2818,6 +2859,7 @@ fn parameters_match(module: &ModuleInstance) -> bool {
                 MODULE_SPAWN_FROM_DOMAIN,
                 ModuleParameters::SpawnFromDomain { .. }
             )
+            | (MODULE_HOMING, ModuleParameters::Homing { .. })
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
 }

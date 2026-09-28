@@ -100,7 +100,7 @@ impl BindingV4 {
 
 /// Where a host field lives: binding slot and field, re-validated against the binding layout.
 #[derive(Debug, Serialize, Deserialize)]
-struct HostFieldRefV4 {
+pub(crate) struct HostFieldRefV4 {
     binding: u32,
     field: BindingFieldId,
     value_type: ValueType,
@@ -108,7 +108,7 @@ struct HostFieldRefV4 {
 }
 
 impl HostFieldRefV4 {
-    fn encode(source: &CompiledHostFieldRef, path: &str) -> Result<Self, ArtifactError> {
+    pub(crate) fn encode(source: &CompiledHostFieldRef, path: &str) -> Result<Self, ArtifactError> {
         Ok(Self {
             binding: encode_u32(source.binding.0, format!("{path}.binding"))?,
             field: source.field.clone(),
@@ -117,7 +117,7 @@ impl HostFieldRefV4 {
         })
     }
 
-    fn decode(
+    pub(crate) fn decode(
         self,
         path: &str,
         bindings: &[CompiledBinding],

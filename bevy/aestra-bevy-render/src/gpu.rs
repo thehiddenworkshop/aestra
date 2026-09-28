@@ -190,6 +190,12 @@ struct StatefulDispatch {
     field_follow: Option<aestra_runtime::CompiledFieldFollow>,
     /// The domain emission list these particles are also born from (fluid F10); lockstep likewise.
     domain_spawn: Option<aestra_runtime::CompiledDomainSpawn>,
+    /// Homing steering (host bindings HB7), and the target it steers toward this frame — resolved
+    /// from the effect's bindings each frame, into effect space, the tracker remembering the last one
+    /// seen for [`aestra_runtime::HomingLostPolicy::KeepLastPosition`].
+    homing: Option<aestra_runtime::CompiledHoming>,
+    homing_target: Option<aestra_runtime::HomingTarget>,
+    homing_tracker: aestra_runtime::HomingTracker,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -292,6 +298,19 @@ impl StatefulDispatch {
                 follow.field.dims[0],
                 follow.field.cell_size.to_bits(),
                 follow.field.origin[1].to_bits(),
+            ] {
+                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        // So does homing (host bindings HB7) — its steering, not where the target is.
+        if let Some(homing) = &self.homing {
+            let config = &homing.config;
+            for bits in [
+                config.speed.to_bits(),
+                config.acceleration.to_bits(),
+                config.turn_rate.to_bits(),
+                config.arrival_radius.to_bits(),
+                config.lost as u32,
             ] {
                 hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
             }
@@ -931,6 +950,9 @@ pub(crate) fn prepare_gpu_effects(
                                 colliders: compiled.colliders.clone(),
                                 field_follow: compiled.field_follow.clone(),
                                 domain_spawn: compiled.domain_spawn.clone(),
+                                homing: compiled.homing.clone(),
+                                homing_target: None,
+                                homing_tracker: aestra_runtime::HomingTracker::default(),
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1614,6 +1636,25 @@ fn sync_gpu_render_transforms(
             );
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
+        // Homing targets (host bindings HB7): this frame's, from the bindings, into effect space.
+        if gpu
+            .stateful_dispatch
+            .iter()
+            .any(|dispatch| dispatch.homing.is_some())
+        {
+            let effect_from_world = world.inverse();
+            let rows: [[f32; 4]; 3] = std::array::from_fn(|row| {
+                let r = effect_from_world.row(row);
+                [r.x, r.y, r.z, r.w]
+            });
+            for dispatch in &mut gpu.stateful_dispatch {
+                if let Some(homing) = &dispatch.homing {
+                    let input = homing.resolve(&player.instance, rows);
+                    dispatch.homing_target =
+                        dispatch.homing_tracker.resolve(homing.config.lost, input);
+                }
+            }
+        }
         gpu.history_epoch = player.instance.history_epoch();
         if gpu.has_trails {
             let seed = player.instance.seed();
@@ -2485,6 +2526,11 @@ fn stateful_params_bytes(
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
     pack_colliders(&dispatch.colliders, &mut words);
     aestra_gpu::pack_spawn_placement(&dispatch.placement, &mut words);
+    aestra_gpu::pack_stateful_homing(
+        dispatch.homing.as_ref().map(|homing| &homing.config),
+        dispatch.homing_target.as_ref(),
+        &mut words,
+    );
     let look = &dispatch.appearance;
     aestra_gpu::pack_stateful_appearance(
         &look.size,
@@ -3499,6 +3545,9 @@ mod tests {
             colliders: Vec::new(),
             field_follow: None,
             domain_spawn: None,
+            homing: None,
+            homing_target: None,
+            homing_tracker: aestra_runtime::HomingTracker::default(),
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4338,6 +4387,9 @@ mod coupled_tests {
                 strength,
             }),
             domain_spawn: None,
+            homing: None,
+            homing_target: None,
+            homing_tracker: aestra_runtime::HomingTracker::default(),
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };

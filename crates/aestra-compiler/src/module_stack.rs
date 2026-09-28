@@ -153,6 +153,14 @@ pub fn module_summary(module: &ModuleInstance) -> String {
             };
             format!("Follows {domain} · {}", num(*strength))
         }
+        ModuleParameters::Homing { speed, .. } => {
+            let target = if module.host_bindings.contains_key("target") {
+                "its bound target"
+            } else {
+                "a point"
+            };
+            format!("Homes on {target} · {}", num(*speed))
+        }
         ModuleParameters::SpawnFromDomain { domain, .. } => {
             let domain = if domain.is_empty() {
                 "domain"

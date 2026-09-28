@@ -593,6 +593,7 @@ impl ModuleRegistry {
             MODULE_PERSISTENT => Some(ModuleInstance::persistent()),
             MODULE_FOLLOW_FIELD => Some(ModuleInstance::follow_field(4.0)),
             MODULE_SPAWN_FROM_DOMAIN => Some(ModuleInstance::spawn_from_domain(1.0)),
+            MODULE_HOMING => Some(ModuleInstance::homing([0.0, 0.0, 0.0], 60.0)),
             MODULE_COLLISION => Some(ModuleInstance::collision(vec![Collider {
                 shape: aestra_core::ColliderShape::Plane {
                     normal: [0.0, 1.0, 0.0],

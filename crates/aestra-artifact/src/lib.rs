@@ -382,6 +382,9 @@ struct EmitterV1 {
     /// The domain emission list this emitter spawns from (fluid F10, v4 additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     domain_spawn: Option<DomainSpawnV4>,
+    /// Homing steering (host bindings HB7, v4 additive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    homing: Option<HomingV4>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
     /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
@@ -517,6 +520,88 @@ impl From<&aestra_runtime::CompiledDomainSpawn> for DomainSpawnV4 {
             capacity: spawn.emission.capacity,
             inherit: spawn.inherit,
         }
+    }
+}
+
+/// A compiled Homing module (host bindings HB7): how it steers and where its target comes from.
+#[derive(Debug, Serialize, Deserialize)]
+struct HomingV4 {
+    speed: f32,
+    acceleration: f32,
+    turn_rate: f32,
+    arrival_radius: f32,
+    lost: aestra_core::HomingLostPolicy,
+    target: [f32; 3],
+    target_velocity: [f32; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_source: Option<v4::HostFieldRefV4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    velocity_source: Option<v4::HostFieldRefV4>,
+}
+
+impl HomingV4 {
+    fn encode(homing: &aestra_runtime::CompiledHoming, path: &str) -> Result<Self, ArtifactError> {
+        let source = |source: &Option<aestra_runtime::CompiledHostFieldRef>, name: &str| {
+            source
+                .as_ref()
+                .map(|source| v4::HostFieldRefV4::encode(source, &format!("{path}.{name}")))
+                .transpose()
+        };
+        Ok(Self {
+            speed: homing.config.speed,
+            acceleration: homing.config.acceleration,
+            turn_rate: homing.config.turn_rate,
+            arrival_radius: homing.config.arrival_radius,
+            lost: homing.config.lost,
+            target: homing.target,
+            target_velocity: homing.target_velocity,
+            target_source: source(&homing.target_source, "target_source")?,
+            velocity_source: source(&homing.velocity_source, "velocity_source")?,
+        })
+    }
+
+    fn decode(
+        self,
+        path: &str,
+        bindings: &[aestra_runtime::CompiledBinding],
+    ) -> Result<aestra_runtime::CompiledHoming, ArtifactError> {
+        let finite = [
+            self.speed,
+            self.acceleration,
+            self.turn_rate,
+            self.arrival_radius,
+        ]
+        .iter()
+        .all(|value| value.is_finite() && *value >= 0.0)
+            && self
+                .target
+                .iter()
+                .chain(&self.target_velocity)
+                .all(|value| value.is_finite());
+        if !finite {
+            return invalid(
+                path.to_string(),
+                "homing inputs must be finite and not negative",
+            );
+        }
+        let source = |source: Option<v4::HostFieldRefV4>, name: &str| {
+            source
+                .map(|source| source.decode(&format!("{path}.{name}"), bindings))
+                .transpose()
+        };
+        Ok(aestra_runtime::CompiledHoming {
+            config: aestra_runtime::HomingConfig {
+                speed: self.speed,
+                acceleration: self.acceleration,
+                turn_rate: self.turn_rate,
+                arrival_radius: self.arrival_radius,
+                lost: self.lost,
+            },
+            target: self.target,
+            target_velocity: self.target_velocity,
+            target_source: source(self.target_source, "target_source")?,
+            velocity_source: source(self.velocity_source, "velocity_source")?,
+        })
     }
 }
 
@@ -1889,6 +1974,11 @@ impl EmitterV1 {
             colliders: emitter.colliders.clone(),
             field_follow: emitter.field_follow.as_ref().map(FieldFollowV4::from),
             domain_spawn: emitter.domain_spawn.as_ref().map(DomainSpawnV4::from),
+            homing: emitter
+                .homing
+                .as_ref()
+                .map(|homing| HomingV4::encode(homing, &format!("effect.emitters[{index}].homing")))
+                .transpose()?,
             execution: ExecutionPlanV1::encode(
                 &emitter.execution,
                 &format!("effect.emitters[{index}].execution"),
@@ -1949,6 +2039,10 @@ impl EmitterV1 {
             colliders: self.colliders,
             field_follow: self.field_follow.map(FieldFollowV4::into_runtime),
             domain_spawn: self.domain_spawn.map(DomainSpawnV4::into_runtime),
+            homing: self
+                .homing
+                .map(|homing| homing.decode(&format!("{path}.homing"), parameters.bindings))
+                .transpose()?,
             stages,
             execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),

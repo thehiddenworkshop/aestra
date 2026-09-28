@@ -2033,6 +2033,7 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
+        homing: None,
     };
     let ticks = 100_u32;
     let seed = 0x1234_5678_9abc_def0_u64;
@@ -2088,6 +2089,7 @@ fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
+        homing: None,
     };
     let seed = 0xC0FF_EE00_1234_5678_u64;
 
@@ -2175,6 +2177,7 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
+        homing: None,
     };
     let ticks = 90_u32;
     let seed = 0xDEAD_BEEF_CAFE_F00D_u64;
@@ -2249,6 +2252,7 @@ fn gpu_spawn_placement_matches_the_cpu_reference() {
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity: 512,
+        homing: None,
     };
     let seed = 0x0DD5_EED5_1234_5678_u64;
     let ticks = 90_u32;
@@ -2301,6 +2305,7 @@ fn collision_config(colliders: [Collider; MAX_COLLIDERS], collider_count: u32) -
         colliders,
         collider_count,
         capacity: 512,
+        homing: None,
     }
 }
 
@@ -2464,4 +2469,278 @@ fn gpu_collision_checkpoint_seek_reaches_the_uninterrupted_state() {
             );
         }
     }
+}
+
+// ---- Homing (host bindings HB7) ----
+
+/// Runs the *production* unified module's `death_integrate` + `spawn` for one tick per entry of
+/// `targets`, packing each tick's homing block from the host's input as the Bevy backend does (a
+/// `HomingTracker` resolving losses), and returns the live `(ordinal, position)` set.
+fn advance_production_homing(
+    harness: &Harness,
+    config: &StatefulConfig,
+    seed: u64,
+    targets: &[Option<aestra_runtime::HomingTarget>],
+) -> Result<Vec<(u64, [f32; 3])>, String> {
+    let device = &harness.device;
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("homing"),
+        bind_group_layouts: &[Some(&harness.unified_layout)],
+        immediate_size: 0,
+    });
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("homing"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Owned(stateful_simulation_wgsl())),
+    });
+    let pipeline = |entry: &str| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&layout),
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    };
+    let (death, spawn) = (pipeline("death_integrate"), pipeline("spawn"));
+    let capacity = config.capacity;
+    let buffer = |label: &str, bytes: Vec<u8>, usage: wgpu::BufferUsages| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: &bytes,
+            usage: wgpu::BufferUsages::STORAGE | usage,
+        })
+    };
+    let state_bytes = encode(&vec![0.0_f32; capacity as usize * 9])?;
+    let state = buffer("state", state_bytes.clone(), wgpu::BufferUsages::COPY_SRC);
+    let free_list = buffer(
+        "free list",
+        encode(&(0..capacity).collect::<Vec<u32>>())?,
+        wgpu::BufferUsages::empty(),
+    );
+    let free_count = buffer(
+        "free count",
+        encode(&capacity)?,
+        wgpu::BufferUsages::empty(),
+    );
+    let spawn_counter = buffer(
+        "spawn counter",
+        encode(&0_u32)?,
+        wgpu::BufferUsages::empty(),
+    );
+    let scratch =
+        |words: usize| buffer("scratch", vec![0u8; words * 4], wgpu::BufferUsages::empty());
+    let (present, alive, indirect, counters) = (
+        scratch(capacity as usize * 12),
+        scratch(capacity as usize),
+        scratch(8),
+        scratch(4),
+    );
+    let homing = config.homing.expect("a homing config");
+    let mut tracker = aestra_runtime::HomingTracker::default();
+    let mut encoder = device.create_command_encoder(&Default::default());
+    for target in targets {
+        let resolved = tracker.resolve(homing.lost, *target);
+        let mut words = stateful_params(config, seed, 0, 0);
+        aestra_gpu::pack_stateful_homing(Some(&homing), resolved.as_ref(), &mut words);
+        let params = buffer("params", encode(&words)?, wgpu::BufferUsages::empty());
+        let entries: Vec<wgpu::BindGroupEntry> = [
+            &state,
+            &free_list,
+            &free_count,
+            &spawn_counter,
+            &params,
+            &present,
+            &alive,
+            &indirect,
+            &counters,
+        ]
+        .iter()
+        .enumerate()
+        .map(|(binding, buffer)| wgpu::BindGroupEntry {
+            binding: binding as u32,
+            resource: buffer.as_entire_binding(),
+        })
+        .collect();
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("homing tick"),
+            layout: &harness.unified_layout,
+            entries: &entries,
+        });
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_pipeline(&death);
+        pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP), 1, 1);
+        pass.set_pipeline(&spawn);
+        pass.dispatch_workgroups(config.spawn_per_tick.div_ceil(WORKGROUP).max(1), 1, 1);
+    }
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("homing readback"),
+        size: state_bytes.len() as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_buffer_to_buffer(&state, 0, &staging, 0, state_bytes.len() as u64);
+    let raw = harness.read_back_u32(encoder, &staging)?;
+    let mut live = Vec::new();
+    for slot in 0..capacity as usize {
+        let base = slot * 9;
+        let (age, lifetime) = (f32::from_bits(raw[base + 6]), f32::from_bits(raw[base + 7]));
+        if lifetime > 0.0 && age < lifetime {
+            live.push((
+                raw[base + 8] as u64,
+                [
+                    f32::from_bits(raw[base]),
+                    f32::from_bits(raw[base + 1]),
+                    f32::from_bits(raw[base + 2]),
+                ],
+            ));
+        }
+    }
+    Ok(live)
+}
+
+fn homing_config(lost: aestra_runtime::HomingLostPolicy, arrival_radius: f32) -> StatefulConfig {
+    StatefulConfig {
+        gravity: [0.0, 0.0, 0.0],
+        spawn_per_tick: 2,
+        speed: (4.0, 6.0),
+        lifetime: (3.0, 3.5),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.8,
+        drag: 0.0,
+        shape: SpawnShape::Sphere { radius: 0.5 },
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 512,
+        homing: Some(aestra_runtime::HomingConfig {
+            speed: 20.0,
+            acceleration: 40.0,
+            turn_rate: 6.0,
+            arrival_radius,
+            lost,
+        }),
+    }
+}
+
+/// A target circling at radius 6 around (0, 4, 0) — moving each tick — and lost for ticks 60..120.
+fn circling_target(ticks: u32) -> Vec<Option<aestra_runtime::HomingTarget>> {
+    (0..ticks)
+        .map(|tick| {
+            if (60..120).contains(&tick) {
+                return None;
+            }
+            // Trig on the host only: the kernels receive the resolved point.
+            let angle = tick as f32 * 0.03;
+            Some(aestra_runtime::HomingTarget {
+                position: [6.0 * angle.cos(), 4.0, 6.0 * angle.sin()],
+                velocity: [-0.18 * angle.sin() * 60.0, 0.0, 0.18 * angle.cos() * 60.0],
+            })
+        })
+        .collect()
+}
+
+fn cpu_homing(
+    config: StatefulConfig,
+    seed: u64,
+    targets: &[Option<aestra_runtime::HomingTarget>],
+) -> Vec<(u64, [f32; 3])> {
+    let mut simulation = StatefulSimulation::new(config, seed);
+    for target in targets {
+        simulation.set_homing_target(*target);
+        simulation.advance_tick();
+    }
+    simulation.alive_particles()
+}
+
+fn assert_same_particles(cpu: &[(u64, [f32; 3])], gpu: &[(u64, [f32; 3])]) {
+    assert_eq!(
+        gpu.len(),
+        cpu.len(),
+        "live counts: GPU {} vs CPU {}",
+        gpu.len(),
+        cpu.len()
+    );
+    let by_id: std::collections::HashMap<u64, [f32; 3]> = gpu.iter().copied().collect();
+    for (id, expected) in cpu {
+        let actual = by_id
+            .get(id)
+            .unwrap_or_else(|| panic!("ordinal {id} is missing from the GPU"));
+        for axis in 0..3 {
+            let tolerance = 1e-3 + 1e-4 * expected[axis].abs().max(actual[axis].abs());
+            assert!(
+                (expected[axis] - actual[axis]).abs() <= tolerance,
+                "ordinal {id} axis {axis}: CPU {} GPU {}",
+                expected[axis],
+                actual[axis]
+            );
+        }
+    }
+}
+
+#[test]
+fn gpu_homing_steers_like_the_cpu_reference_toward_a_moving_target() {
+    use aestra_runtime::HomingLostPolicy;
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let seed = 0x00AB_0017_0000_0001_u64;
+    let targets = circling_target(180);
+    // A target that moves every tick, lost for a second, then back: GPU and CPU agree by ordinal.
+    let config = homing_config(HomingLostPolicy::KeepLastPosition, 0.3);
+    let gpu = advance_production_homing(&harness, &config, seed, &targets).unwrap();
+    let cpu = cpu_homing(config, seed, &targets);
+    assert!(!cpu.is_empty());
+    assert_same_particles(&cpu, &gpu);
+    // Homing does something: the particles a second old or more — time to catch up — gather near
+    // the target, unlike undirected ones.
+    let last = targets.last().unwrap().unwrap().position;
+    let spread = |particles: &[(u64, [f32; 3])]| {
+        let settled: Vec<_> = particles.iter().filter(|(id, _)| *id < 2 * 120).collect();
+        settled
+            .iter()
+            .map(|(_, p)| {
+                ((p[0] - last[0]).powi(2) + (p[1] - last[1]).powi(2) + (p[2] - last[2]).powi(2))
+                    .sqrt()
+            })
+            .sum::<f32>()
+            / settled.len().max(1) as f32
+    };
+    let mut free = homing_config(HomingLostPolicy::KeepLastPosition, 0.3);
+    free.homing = None;
+    let unsteered = cpu_homing(free, seed, &targets);
+    eprintln!(
+        "mean distance to the target: {} homing, {} without",
+        spread(&cpu),
+        spread(&unsteered)
+    );
+    assert!(spread(&cpu) < 0.5 * spread(&unsteered));
+
+    // Killed while lost: the same on both sides, and nothing older than the loss survives it.
+    let config = homing_config(HomingLostPolicy::Kill, 0.3);
+    let lost_until = &targets[..120];
+    let gpu = advance_production_homing(&harness, &config, seed, lost_until).unwrap();
+    let cpu = cpu_homing(config, seed, lost_until);
+    assert_same_particles(&cpu, &gpu);
+    assert!(cpu.iter().all(|(id, _)| *id >= 118), "{cpu:?}");
+
+    // Arrival retires them: a still target, a generous radius.
+    let still = vec![
+        Some(aestra_runtime::HomingTarget {
+            position: [0.0, 3.0, 0.0],
+            velocity: [0.0; 3],
+        });
+        120
+    ];
+    let config = homing_config(HomingLostPolicy::KeepDirection, 1.5);
+    let gpu = advance_production_homing(&harness, &config, seed, &still).unwrap();
+    let cpu = cpu_homing(config, seed, &still);
+    assert_same_particles(&cpu, &gpu);
+    assert!(
+        cpu.len() < 240 / 2,
+        "most arrived and retired: {} of 240 spawned are left",
+        cpu.len()
+    );
 }

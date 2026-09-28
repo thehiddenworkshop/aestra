@@ -206,6 +206,9 @@ pub(super) fn automation_lane_count(emitter: &Emitter) -> usize {
                 ModuleParameters::Collision { .. }
                 | ModuleParameters::FollowField { .. }
                 | ModuleParameters::SpawnFromDomain { .. } => Vec::new(),
+                ModuleParameters::Homing { .. } => {
+                    vec!["speed", "acceleration", "turn_rate", "arrival_radius"]
+                }
                 ModuleParameters::Custom(values) => values.keys().map(String::as_str).collect(),
             };
             parameters

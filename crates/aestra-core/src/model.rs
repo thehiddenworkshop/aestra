@@ -32,6 +32,8 @@ pub const MODULE_COLLISION: &str = "aestra.update.collision";
 pub const MODULE_FOLLOW_FIELD: &str = "aestra.update.follow_field";
 /// Particles are born where an effect domain asks for them, e.g. a fluid's spray (fluid F10).
 pub const MODULE_SPAWN_FROM_DOMAIN: &str = "aestra.spawn.from_domain";
+/// Particles steer toward a target — a bound, moving one, say (host bindings HB7).
+pub const MODULE_HOMING: &str = "aestra.update.homing";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
@@ -2067,6 +2069,31 @@ impl ModuleInstance {
         }
     }
 
+    /// Particles home on `target` at `speed` (host bindings HB7); see [`ModuleParameters::Homing`].
+    pub fn homing(target: [f32; 3], speed: f32) -> Self {
+        Self {
+            id: ModuleId::new(),
+            module_type: ModuleTypeId::new(MODULE_HOMING),
+            stage: StageKind::ParticleUpdate,
+            enabled: true,
+            parameters: ModuleParameters::Homing {
+                target,
+                target_velocity: [0.0; 3],
+                speed,
+                acceleration: 0.0,
+                turn_rate: 4.0,
+                arrival_radius: 1.0,
+                lost_target: HomingLostPolicy::KeepLastPosition,
+            },
+            property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            host_bindings: BTreeMap::new(),
+            label: None,
+            schema_version: None,
+        }
+    }
+
     pub fn appearance(size: Curve, opacity: Curve, color: Gradient) -> Self {
         Self {
             id: ModuleId::new(),
@@ -2127,6 +2154,14 @@ impl ModuleInstance {
             (ModuleParameters::Initialize { .. }, "direction") => Some(ValueType::Vec3),
             (ModuleParameters::Initialize { .. }, "spread_degrees") => Some(ValueType::Scalar),
             (ModuleParameters::Motion { .. }, "gravity") => Some(ValueType::Vec3),
+            (ModuleParameters::Homing { .. }, "target" | "target_velocity") => {
+                Some(ValueType::Vec3)
+            }
+            (
+                ModuleParameters::Homing { .. },
+                "speed" | "acceleration" | "turn_rate" | "arrival_radius",
+            ) => Some(ValueType::Scalar),
+            (ModuleParameters::Homing { .. }, "lost_target") => Some(ValueType::Text),
             (ModuleParameters::Motion { .. }, "drag" | "turbulence") => Some(ValueType::Scalar),
             (ModuleParameters::Appearance { .. }, "size" | "opacity") => Some(ValueType::Curve),
             (ModuleParameters::Appearance { .. }, "color") => Some(ValueType::Gradient),
@@ -2168,6 +2203,26 @@ impl ModuleInstance {
             ) => Some(Value::Range(*angular_velocity)),
             (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec3(*gravity)),
             (ModuleParameters::Motion { drag, .. }, "drag") => Some(Value::Scalar(*drag)),
+            (ModuleParameters::Homing { target, .. }, "target") => Some(Value::Vec3(*target)),
+            (
+                ModuleParameters::Homing {
+                    target_velocity, ..
+                },
+                "target_velocity",
+            ) => Some(Value::Vec3(*target_velocity)),
+            (ModuleParameters::Homing { speed, .. }, "speed") => Some(Value::Scalar(*speed)),
+            (ModuleParameters::Homing { acceleration, .. }, "acceleration") => {
+                Some(Value::Scalar(*acceleration))
+            }
+            (ModuleParameters::Homing { turn_rate, .. }, "turn_rate") => {
+                Some(Value::Scalar(*turn_rate))
+            }
+            (ModuleParameters::Homing { arrival_radius, .. }, "arrival_radius") => {
+                Some(Value::Scalar(*arrival_radius))
+            }
+            (ModuleParameters::Homing { lost_target, .. }, "lost_target") => {
+                Some(Value::Text(lost_target.name().into()))
+            }
             (ModuleParameters::Motion { turbulence, .. }, "turbulence") => {
                 Some(Value::Scalar(*turbulence))
             }
@@ -2305,6 +2360,7 @@ impl ModuleInstance {
             ModuleParameters::SpawnFromDomain { .. } => {
                 (MODULE_SPAWN_FROM_DOMAIN, StageKind::ParticleSpawn)
             }
+            ModuleParameters::Homing { .. } => (MODULE_HOMING, StageKind::ParticleUpdate),
             ModuleParameters::Appearance { .. } => (MODULE_APPEARANCE, StageKind::ParticleUpdate),
             ModuleParameters::Custom(values) => {
                 if self.module_type.0.trim().is_empty() {
@@ -2428,6 +2484,29 @@ impl ModuleInstance {
                     "follow-field strength must be finite and non-negative",
                 );
             }
+            ModuleParameters::Homing {
+                target,
+                target_velocity,
+                speed,
+                acceleration,
+                turn_rate,
+                arrival_radius,
+                ..
+            } if target
+                .iter()
+                .chain(target_velocity)
+                .any(|value| !value.is_finite())
+                || [*speed, *acceleration, *turn_rate, *arrival_radius]
+                    .iter()
+                    .any(|value| !value.is_finite() || *value < 0.0) =>
+            {
+                invalid_value(
+                    report,
+                    path,
+                    "homing inputs must be finite, and its speed, acceleration, turn rate and \
+                     arrival radius not negative",
+                );
+            }
             ModuleParameters::SpawnFromDomain { inherit, .. } if !inherit.is_finite() => {
                 invalid_value(report, path, "inherited velocity must be finite");
             }
@@ -2465,6 +2544,37 @@ impl ModuleInstance {
             }
             _ => {}
         }
+    }
+}
+
+/// What homing particles do when their target is lost (host bindings HB7): its binding unbound, or
+/// the target gone.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum HomingLostPolicy {
+    /// Keep steering toward where the target was last seen (straight on if it never was).
+    #[default]
+    KeepLastPosition,
+    /// Stop steering and fly straight on.
+    KeepDirection,
+    /// Retire the particles.
+    Kill,
+}
+
+impl HomingLostPolicy {
+    pub const ALL: [Self; 3] = [Self::KeepLastPosition, Self::KeepDirection, Self::Kill];
+
+    /// The policy's name as an input value: `keep_last_position`, `keep_direction` or `kill`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::KeepLastPosition => "keep_last_position",
+            Self::KeepDirection => "keep_direction",
+            Self::Kill => "kill",
+        }
+    }
+
+    /// The policy named `name`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|policy| policy.name() == name)
     }
 }
 
@@ -2573,6 +2683,24 @@ pub enum ModuleParameters {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         emission: String,
         inherit: f32,
+    },
+    /// Steer toward a target (host bindings HB7): each tick a particle's direction turns toward the
+    /// target — led by its velocity, when known — by `turn_rate × dt` of the way (at most all of it),
+    /// its speed moves toward `speed` by at most `acceleration × dt` (0: at once), and it retires on
+    /// arrival within `arrival_radius`. `target` and `target_velocity` are the inputs a host binding
+    /// drives (a moving enemy's position and velocity); without one, `target` is a fixed point.
+    /// Requires previous-tick state, so it promotes the emitter to a stateful class.
+    Homing {
+        target: [f32; 3],
+        #[serde(default)]
+        target_velocity: [f32; 3],
+        speed: f32,
+        #[serde(default)]
+        acceleration: f32,
+        turn_rate: f32,
+        arrival_radius: f32,
+        #[serde(default)]
+        lost_target: HomingLostPolicy,
     },
     Custom(BTreeMap<String, Value>),
 }

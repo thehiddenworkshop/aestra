@@ -575,5 +575,112 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_multiplicity(ModuleMultiplicity::Single)
         .with_tags(vec!["spawn", "stateful", "fluid"])
         .with_cost(4),
+        metadata(
+            MODULE_HOMING,
+            "Homing",
+            "Steers this emitter's particles toward a target — a moving enemy a host binding supplies, \
+             say: each tick they turn toward it, leading it by its velocity, settle at a speed, and \
+             retire on arrival.",
+            "Simulation",
+            StageKind::ParticleUpdate,
+        )
+        .with_inputs(vec![
+            input(
+                "target",
+                "Target",
+                "Where to home in on: bind it to a target's position (world space), or a fixed point \
+                 of the effect.",
+                aestra_core::Value::Vec3([0.0, 0.0, 0.0]),
+                InputControl::Vector {
+                    step: 1.0,
+                    min: None,
+                    max: None,
+                },
+            )
+            .with_unit("units")
+            .with_sources(vec![InputSourceKind::Constant, InputSourceKind::HostBinding]),
+            input(
+                "target_velocity",
+                "Target Velocity",
+                "How the target moves, to lead it; bind it to the target's velocity.",
+                aestra_core::Value::Vec3([0.0, 0.0, 0.0]),
+                InputControl::Vector {
+                    step: 1.0,
+                    min: None,
+                    max: None,
+                },
+            )
+            .with_unit("units/s")
+            .with_sources(vec![InputSourceKind::Constant, InputSourceKind::HostBinding]),
+            input(
+                "speed",
+                "Speed",
+                "The speed particles settle at.",
+                aestra_core::Value::Scalar(60.0),
+                InputControl::Number {
+                    step: 1.0,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("units/s"),
+            input(
+                "acceleration",
+                "Acceleration",
+                "How fast their speed changes toward Speed; 0 sets it at once.",
+                aestra_core::Value::Scalar(0.0),
+                InputControl::Number {
+                    step: 1.0,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("units/s²"),
+            input(
+                "turn_rate",
+                "Turn Rate",
+                "How much of the way toward the target's direction they turn per second (large values \
+                 turn at once).",
+                aestra_core::Value::Scalar(4.0),
+                InputControl::Number {
+                    step: 0.1,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("1/s"),
+            input(
+                "arrival_radius",
+                "Arrival Radius",
+                "Particles this close to the target have arrived and retire.",
+                aestra_core::Value::Scalar(1.0),
+                InputControl::Number {
+                    step: 0.1,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("units"),
+            input(
+                "lost_target",
+                "Lost Target",
+                "While the target is lost: keep_last_position (home on where it was), keep_direction \
+                 (fly straight on) or kill.",
+                aestra_core::Value::Text("keep_last_position".into()),
+                InputControl::Choice,
+            ),
+        ])
+        // Steering reads and writes previous-tick velocity: the stateful class, with a CPU reference.
+        .with_flow(
+            vec![A::Position, A::Velocity, A::Age],
+            vec![A::Velocity],
+        )
+        .with_simulation(SimulationRequirements {
+            temporal: TemporalRequirement::PreviousState,
+            ..SimulationRequirements::ANALYTIC
+        })
+        .with_multiplicity(ModuleMultiplicity::Single)
+        .with_tags(vec!["simulation", "stateful", "homing", "binding"])
+        .with_cost(5),
     ]
 }
