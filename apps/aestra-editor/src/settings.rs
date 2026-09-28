@@ -57,6 +57,7 @@ impl EditorSettings {
         }
         self.extensions.disabled.sort();
         self.extensions.disabled.dedup();
+        self.properties.legacy_stack_height = 0.0;
         self.general
             .recent_projects
             .retain(|path| path.is_absolute());
@@ -184,6 +185,10 @@ impl Default for AppearanceSettings {
 pub(crate) struct PropertiesSettings {
     /// User expansion choices keyed by stable module or renderer type.
     pub(crate) section_expansion: BTreeMap<String, bool>,
+    /// The former combined stack/properties splitter was removed when the panels
+    /// became separate dock tabs. Accept its saved value without writing it again.
+    #[serde(rename = "stack_height", skip_serializing)]
+    legacy_stack_height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -651,6 +656,39 @@ mod tests {
 
         assert_eq!(restored, EditorSettings::default());
         assert!(ron::to_string(&restored).unwrap().contains("properties:"));
+    }
+
+    #[test]
+    fn removed_stack_height_does_not_invalidate_saved_settings() {
+        let path = test_path("removed-stack-height");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let source = format!(
+            "(version: {SETTINGS_FORMAT_VERSION}, general: (autosave_enabled: false), properties: (section_expansion: {{\"module/aestra.update.motion\": true}}, stack_height: 230.0))"
+        );
+        fs::write(&path, &source).unwrap();
+
+        let (settings, mut state) = SettingsPersistence::load_from(path.clone());
+        assert!(state.diagnostic().is_none());
+        assert!(!settings.general.autosave_enabled);
+        assert_eq!(
+            settings
+                .properties
+                .section_expansion
+                .get("module/aestra.update.motion"),
+            Some(&true)
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
+
+        state.persist(&settings).unwrap();
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains("stack_height"));
+        assert!(
+            SettingsPersistence::load_from(path.clone())
+                .1
+                .diagnostic()
+                .is_none()
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
