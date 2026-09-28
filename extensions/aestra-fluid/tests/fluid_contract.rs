@@ -1295,3 +1295,93 @@ fn a_liquid_look_presents_the_liquid_fraction_with_a_valid_march() {
     .validate(&module)
     .expect("validates");
 }
+
+// ---- Secondary emission (fluid F10) ----
+
+/// A fire asking for sparks, and an emitter born from them.
+fn sparks_effect(registry: &ExtensionRegistry) -> EffectAsset {
+    let mut effect = fire_effect(registry);
+    let mut emission = registry
+        .modules
+        .instantiate(&aestra_core::ModuleTypeId::new(
+            aestra_fluid::MODULE_SECONDARY_EMISSION,
+        ))
+        .unwrap();
+    emission.stage = aestra_core::StageKind::Simulation(effect.simulation_stages[0].name.clone());
+    effect.simulation_stages[0].modules.push(emission);
+    effect.emitters[0]
+        .modules
+        .push(aestra_core::ModuleInstance::spawn_from_domain(0.8));
+    effect
+}
+
+#[test]
+fn spawners_resolve_to_the_domains_emission_list_and_are_gpu_only() {
+    let registry = fluid_registry();
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&sparks_effect(&registry))
+        .unwrap();
+    let stage = &compiled.extension_stages[0];
+    check_program_block(&stage.block, &registry.programs).unwrap();
+    let list = stage
+        .block
+        .emission(&ResourceTypeId::new(aestra_fluid::RESOURCE_EMISSION))
+        .expect("the fire declares its emission list");
+    assert_eq!(list.capacity, 1024);
+    // The list and its ranks bind where the emission program expects them.
+    assert_eq!(stage.block.binding_of(&list.resource), Some(36));
+    let spawn = compiled.emitters[0]
+        .domain_spawn
+        .as_ref()
+        .expect("the emitter spawns from the fire");
+    assert_eq!(
+        (spawn.stage, &spawn.emission, spawn.inherit),
+        (0, list, 0.8)
+    );
+    assert_eq!(
+        compiled.emitters[0].simulation_class,
+        aestra_runtime::SimulationClass::Stateful
+    );
+    assert!(compiled.requirements.gpu_fields);
+    let decoded =
+        aestra_artifact::decode_effect(&aestra_artifact::encode_effect(&compiled).unwrap())
+            .unwrap();
+    assert_eq!(decoded.emitters, compiled.emitters);
+    assert_eq!(decoded.extension_stages, compiled.extension_stages);
+
+    // The liquid's list binds in the same place.
+    let mut liquid = aestra_fluid::liquid_effect(&registry);
+    let mut emission = registry
+        .modules
+        .instantiate(&aestra_core::ModuleTypeId::new(
+            aestra_fluid::MODULE_SECONDARY_EMISSION,
+        ))
+        .unwrap();
+    emission.stage = aestra_core::StageKind::Simulation(liquid.simulation_stages[0].name.clone());
+    liquid.simulation_stages[0].modules.push(emission);
+    let compiled = EffectCompiler::with_extensions(registry.clone())
+        .compile(&liquid)
+        .unwrap();
+    let block = &compiled.extension_stages[0].block;
+    check_program_block(block, &registry.programs).unwrap();
+    assert_eq!(
+        block.binding_of(&ResourceTypeId::new(aestra_fluid::RESOURCE_EMISSION)),
+        Some(36)
+    );
+}
+
+#[test]
+fn a_spawner_without_an_emitting_domain_is_an_invalid_reference() {
+    let registry = fluid_registry();
+    let mut effect = fire_effect(&registry);
+    effect.emitters[0]
+        .modules
+        .push(aestra_core::ModuleInstance::spawn_from_domain(1.0));
+    let error = EffectCompiler::with_extensions(registry)
+        .compile(&effect)
+        .unwrap_err();
+    assert!(error.report().diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidReference
+            && diagnostic.message.contains("no domain emitting particles")
+    }));
+}

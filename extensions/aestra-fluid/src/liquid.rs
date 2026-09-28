@@ -49,10 +49,11 @@ const BLOCK_WORDS: usize = 12;
 /// grid, the pressure solve with its per-level entry points, and the liquid's own passes.
 pub fn liquid_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{LIQUID_WGSL}\n{EMIT_WGSL}\n{EMIT_LIQUID_WGSL}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
-        aestra_gpu::reduce::REDUCE_WGSL
+        aestra_gpu::reduce::REDUCE_WGSL,
+        aestra_gpu::scan::SCAN_WGSL
     )
 }
 
@@ -67,10 +68,18 @@ pub const LIQUID_ENTRY_POINTS: [&str; 7] = [
     "liquid_g2p",
 ];
 
+/// A liquid's secondary emission entry points (fluid F10).
+pub const EMIT_LIQUID_ENTRY_POINTS: [&str; 2] = ["emit_particles", "emit_particles_write"];
+
 /// Every entry point of the liquid program: the solver's and the liquid's.
 pub fn liquid_entry_points() -> Vec<String> {
     let mut entries = entry_points();
-    entries.extend(LIQUID_ENTRY_POINTS.iter().map(|entry| entry.to_string()));
+    entries.extend(
+        LIQUID_ENTRY_POINTS
+            .iter()
+            .chain(&EMIT_LIQUID_ENTRY_POINTS)
+            .map(|entry| entry.to_string()),
+    );
     entries
 }
 
@@ -470,6 +479,8 @@ struct PackedLiquid {
     iterations: u32,
     tolerance: f32,
     colliders: bool,
+    /// A Secondary Emission's list capacity (fluid F10), when the stage has one.
+    emission: Option<u32>,
 }
 
 /// Packs the constants `liquid.wgsl` and the shared solver kernels read: the solver's header (a closed
@@ -568,7 +579,19 @@ fn pack_liquid(modules: &[ExtensionModulePlan]) -> Result<PackedLiquid, String> 
             .min(u64::from(MAX_LIQUID_PARTICLES)) as u32;
         words.extend(record);
     }
+    // A Secondary Emission's block (fluid F10) goes last, header word 23 naming its first word; its
+    // candidates are the particles, in workgroups of 64.
+    let emission = match emission_module(modules)? {
+        Some(module) => {
+            let block = pack_emission(module, u64::from(budget.div_ceil(64)))?;
+            words[23] = words.len() as u32;
+            words.extend(block);
+            Some(block[3])
+        }
+        None => None,
+    };
     Ok(PackedLiquid {
+        emission,
         grid: Grid {
             resolution,
             slots: None,
@@ -619,6 +642,7 @@ impl StageLowerer for LiquidSolverLowerer {
             iterations,
             tolerance,
             colliders,
+            emission,
         } = pack_liquid(input.modules)?;
         let constants_read = || Access::read(AESTRA_RESOURCE_STAGE_CONSTANTS);
         let frame_read = || Access::read(AESTRA_RESOURCE_FRAME);
@@ -782,6 +806,39 @@ impl StageLowerer for LiquidSolverLowerer {
                 ResourceLifetime::Transient,
             ),
         ]);
+        let mut emissions = Vec::new();
+        if let Some(capacity) = emission {
+            // Last, the spray (fluid F10): particles masked and ranked, the ranks turned to offsets,
+            // the records written in particle order.
+            steps.push(particles(
+                "emit_particles",
+                vec![
+                    Access::read(RESOURCE_LIQUID_PARTICLES),
+                    Access::read(RESOURCE_LIQUID_HEADER),
+                    Access::read(RESOURCE_DENSITY),
+                    Access::write(RESOURCE_EMISSION_SCRATCH),
+                    constants_read(),
+                    frame_read(),
+                ],
+                4,
+            ));
+            steps.extend(emission_ranking(grid));
+            steps.push(particles(
+                "emit_particles_write",
+                vec![
+                    Access::read(RESOURCE_LIQUID_PARTICLES),
+                    Access::read(RESOURCE_EMISSION_SCRATCH),
+                    Access::write(RESOURCE_EMISSION),
+                    constants_read(),
+                ],
+                4,
+            ));
+            emissions.push(emission_resources(
+                &mut resources,
+                capacity,
+                u64::from(budget.div_ceil(64)),
+            ));
+        }
         let field = |id: &str, components, staggered| FieldLayout {
             resource: ResourceTypeId::new(id),
             dims: [grid.resolution; 3],
@@ -800,7 +857,7 @@ impl StageLowerer for LiquidSolverLowerer {
                 field(RESOURCE_VELOCITY, 4, true),
                 field(RESOURCE_DENSITY, 1, false),
             ],
-            emissions: Vec::new(),
+            emissions,
         })
     }
 }

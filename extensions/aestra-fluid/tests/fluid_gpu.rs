@@ -292,6 +292,12 @@ fn the_solver_builds_on_every_available_backend() {
         &mut everything,
         aestra_fluid::MODULE_CAPSULE_COLLIDER,
     );
+    // With secondary emission (fluid F10): burning, it masks the temperature.
+    with_module(
+        &registry,
+        &mut everything,
+        aestra_fluid::MODULE_SECONDARY_EMISSION,
+    );
     // And on a sparse grid (fluid F7), which runs without flow maps.
     let mut sparse_everything = sparse(everything.clone(), 64, 1e-3);
     set_input(
@@ -305,7 +311,19 @@ fn the_solver_builds_on_every_available_backend() {
     let mut liquid = aestra_fluid::liquid_effect(&registry);
     with_module(&registry, &mut liquid, aestra_fluid::MODULE_LIQUID_SOURCE);
     with_module(&registry, &mut liquid, aestra_fluid::MODULE_SPHERE_COLLIDER);
-    let blocks: Vec<_> = [everything, sparse_everything, liquid]
+    with_module(
+        &registry,
+        &mut liquid,
+        aestra_fluid::MODULE_SECONDARY_EMISSION,
+    );
+    // And smoke emitting from its density, without fire.
+    let mut smoke = effect(&registry, false, 24);
+    with_module(
+        &registry,
+        &mut smoke,
+        aestra_fluid::MODULE_SECONDARY_EMISSION,
+    );
+    let blocks: Vec<_> = [everything, sparse_everything, liquid, smoke]
         .iter()
         .map(|effect| {
             EffectCompiler::with_extensions(registry.clone())
@@ -2777,5 +2795,211 @@ fn bench_spatiotemporal() {
             elapsed * 1000.0 / 60.0,
             report.join(" | ")
         );
+    }
+}
+
+// ---- Secondary emission (fluid F10) ----
+
+/// The records of an emission list: count, then (position, velocity) per record.
+fn emission_records(fluid: &Fluid, gpu: &Gpu) -> (u32, Vec<LiquidParticle>) {
+    let words = fluid.words(gpu, aestra_fluid::RESOURCE_EMISSION);
+    let count = words[0];
+    let records = words[4..]
+        .chunks(8)
+        .take(count as usize)
+        .map(|r| {
+            let f = |i: usize| f32::from_bits(r[i]);
+            ([f(0), f(1), f(2)], [f(4), f(5), f(6)])
+        })
+        .collect();
+    (count, records)
+}
+
+/// An effect with a Secondary Emission module set by `inputs`.
+fn emitting(
+    registry: &ExtensionRegistry,
+    mut effect: EffectAsset,
+    inputs: &[(&str, Value)],
+) -> EffectAsset {
+    let id = with_module(
+        registry,
+        &mut effect,
+        aestra_fluid::MODULE_SECONDARY_EMISSION,
+    );
+    for (name, value) in inputs {
+        set_module_input(&mut effect, id, name, value.clone());
+    }
+    effect
+}
+
+fn inside_box(position: [f32; 3], low: [f32; 3], high: [f32; 3]) -> bool {
+    (0..3).all(|axis| position[axis] >= low[axis] && position[axis] <= high[axis])
+}
+
+#[test]
+fn a_fire_asks_for_sparks_where_it_burns_in_order_and_reproducibly() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let sparks = emitting(
+        &registry,
+        fire(&registry),
+        &[
+            ("rate", Value::Scalar(30.0)),
+            ("threshold", Value::Scalar(0.5)),
+            ("capacity", Value::U32(256)),
+        ],
+    );
+    let fluid = Fluid::new(&gpu, &registry, &sparks);
+    let mut asked = 0;
+    for span in 0..6 {
+        fluid.run(&gpu, span * 10..(span + 1) * 10);
+        let (count, records) = emission_records(&fluid, &gpu);
+        assert!(count <= 256);
+        let half = RESOLUTION as f32 * CELL_SIZE * 0.5;
+        let low = CENTER.map(|c| c - half);
+        let high = CENTER.map(|c| c + half);
+        let temperature = fluid.floats(&gpu, aestra_fluid::RESOURCE_TEMPERATURE);
+        for (position, velocity) in &records {
+            assert!(inside_box(*position, low, high), "{position:?}");
+            assert!(velocity.iter().all(|v| v.is_finite()));
+            // Each record lies in a cell at least as hot as the threshold.
+            let cell: Vec<usize> = (0..3)
+                .map(|axis| (((position[axis] - low[axis]) / CELL_SIZE) as usize).min(15))
+                .collect();
+            let index = (cell[2] * 16 + cell[1]) * 16 + cell[0];
+            assert!(temperature[index] >= 0.5, "{}", temperature[index]);
+        }
+        asked += count;
+    }
+    eprintln!("fire: {asked} sparks asked for over 60 ticks");
+    assert!(asked > 0, "a burning fire asks for sparks");
+    let again = Fluid::new(&gpu, &registry, &sparks);
+    again.run(&gpu, 0..60);
+    assert_eq!(
+        again.words(&gpu, aestra_fluid::RESOURCE_EMISSION),
+        fluid.words(&gpu, aestra_fluid::RESOURCE_EMISSION)
+    );
+}
+
+#[test]
+fn a_breaking_dam_throws_spray_clear_of_the_liquid() {
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let spray = emitting(
+        &registry,
+        aestra_fluid::liquid_effect(&registry),
+        &[
+            ("rate", Value::Scalar(20.0)),
+            ("threshold", Value::Scalar(0.4)),
+            ("min_speed", Value::Scalar(20.0)),
+            ("capacity", Value::U32(2048)),
+        ],
+    );
+    let fluid = Fluid::new(&gpu, &registry, &spray);
+    let mut asked = 0;
+    for span in 0..9 {
+        fluid.run(&gpu, span * 10..(span + 1) * 10);
+        let (count, records) = emission_records(&fluid, &gpu);
+        for (position, velocity) in &records {
+            assert!(
+                inside_box(*position, [-48.0, 0.0, -48.0], [48.0, 96.0, 48.0]),
+                "{position:?}"
+            );
+            let speed = velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
+            assert!(speed >= 20.0, "{speed}");
+        }
+        asked += count;
+    }
+    eprintln!("dam break: {asked} spray droplets asked for over 90 ticks");
+    assert!(asked > 0, "a breaking dam throws spray");
+    let again = Fluid::new(&gpu, &registry, &spray);
+    again.run(&gpu, 0..90);
+    assert_eq!(
+        again.words(&gpu, aestra_fluid::RESOURCE_EMISSION),
+        fluid.words(&gpu, aestra_fluid::RESOURCE_EMISSION)
+    );
+}
+
+/// The whole path (G8): a fire's own list becomes stateful particles on the device, record `i` as
+/// ordinal `i`, at the record's position.
+#[test]
+fn sparks_a_fire_asks_for_become_particles_where_it_asked() {
+    use aestra_bevy_render::execution::{DomainSpawnPipeline, SpawnState};
+    use wgpu::util::DeviceExt;
+    let Some(gpu) = gpu() else { return };
+    let registry = registry();
+    let sparks = emitting(
+        &registry,
+        fire(&registry),
+        &[
+            ("rate", Value::Scalar(30.0)),
+            ("threshold", Value::Scalar(0.5)),
+            ("capacity", Value::U32(256)),
+        ],
+    );
+    let fluid = Fluid::new(&gpu, &registry, &sparks);
+    fluid.run(&gpu, 0..40);
+    let (count, records) = emission_records(&fluid, &gpu);
+    assert!(count > 0, "the fire asks for sparks by tick 40");
+    const CAPACITY: u32 = 512;
+    let storage = |words: &[u32]| {
+        gpu.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: &words
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            })
+    };
+    let mut params = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    params[0] = CAPACITY;
+    params[6] = 1.0f32.to_bits();
+    params[7] = 1.0f32.to_bits();
+    params[13] = 1.0f32.to_bits();
+    let state = storage(&vec![0; CAPACITY as usize * 9]);
+    let free_list = storage(&(0..CAPACITY).collect::<Vec<_>>());
+    let free_count = storage(&[CAPACITY]);
+    let spawn_counter = storage(&[0]);
+    let params = storage(&params);
+    let emission = fluid
+        .stage
+        .block()
+        .emission(&aestra_core::ResourceTypeId::new(
+            aestra_fluid::RESOURCE_EMISSION,
+        ))
+        .unwrap()
+        .clone();
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    DomainSpawnPipeline::new(&gpu.device).encode(
+        &gpu.device,
+        &mut encoder,
+        SpawnState {
+            state: &state,
+            free_list: &free_list,
+            free_count: &free_count,
+            spawn_counter: &spawn_counter,
+            params: &params,
+        },
+        fluid.stage.buffer(aestra_fluid::RESOURCE_EMISSION).unwrap(),
+        &aestra_runtime::CompiledDomainSpawn {
+            stage: 0,
+            emission,
+            inherit: 1.0,
+        },
+    );
+    gpu.queue.submit([encoder.finish()]);
+    let state = read_floats(&gpu, &state);
+    assert_eq!(read_floats(&gpu, &spawn_counter)[0].to_bits(), count);
+    for (i, (position, velocity)) in records.iter().enumerate() {
+        let slot = (CAPACITY as usize - 1 - i) * 9;
+        assert_eq!(state[slot..slot + 3], position[..], "{i}");
+        // The record's velocity, and no launch speed of the emitter's own.
+        assert_eq!(state[slot + 3..slot + 6], velocity[..], "{i}");
+        assert_eq!(state[slot + 7], 1.0);
+        assert_eq!(state[slot + 8].to_bits(), i as u32);
     }
 }

@@ -87,6 +87,7 @@ pub const MODULE_COMBUSTION: &str = "org.example.aestra-fluid::module/combustion
 pub const MODULE_SPHERE_COLLIDER: &str = "org.example.aestra-fluid::module/sphere_collider";
 pub const MODULE_BOX_COLLIDER: &str = "org.example.aestra-fluid::module/box_collider";
 pub const MODULE_CAPSULE_COLLIDER: &str = "org.example.aestra-fluid::module/capsule_collider";
+pub const MODULE_SECONDARY_EMISSION: &str = "org.example.aestra-fluid::module/secondary_emission";
 pub const PROGRAM_SOLVER: &str = "org.example.aestra-fluid::program/solver";
 /// The same solver over a sparse grid of bricks (fluid F7), with the brick allocation.
 pub const PROGRAM_SOLVER_SPARSE: &str = "org.example.aestra-fluid::program/solver_sparse";
@@ -131,6 +132,9 @@ pub const RESOURCE_FUEL_NEXT: &str = "org.example.aestra-fluid::resource/fuel_sc
 pub const RESOURCE_BRICKS: &str = "org.example.aestra-fluid::resource/bricks";
 pub const RESOURCE_BRICK_SCRATCH: &str = "org.example.aestra-fluid::resource/brick_scratch";
 pub const RESOURCE_BRICK_DISPATCH: &str = "org.example.aestra-fluid::resource/brick_dispatch";
+/// Secondary emission (fluid F10): the emission list a Spawn From Domain emitter reads, and its ranks.
+pub const RESOURCE_EMISSION: &str = "org.example.aestra-fluid::resource/emission";
+pub const RESOURCE_EMISSION_SCRATCH: &str = "org.example.aestra-fluid::resource/emission_scratch";
 
 /// The solver's WGSL; see [`program_wgsl`] for the full program with the host-binding accessors.
 pub const SOLVER_WGSL: &str = include_str!("solver.wgsl");
@@ -147,6 +151,12 @@ pub const UNIT_COEFFICIENTS_WGSL: &str =
 /// How the solver indexes its cells (fluid F7): every cell stored, or only the active bricks'.
 pub const GRID_DENSE_WGSL: &str = include_str!("grid_dense.wgsl");
 pub const GRID_SPARSE_WGSL: &str = include_str!("grid_sparse.wgsl");
+/// Secondary emission (fluid F10): a gas's cells, and the ranking every stage shares.
+pub const EMIT_WGSL: &str = include_str!("emit.wgsl");
+/// A liquid's secondary emission: its particles.
+pub const EMIT_LIQUID_WGSL: &str = include_str!("emit_liquid.wgsl");
+/// Records a Secondary Emission module's list holds at most.
+pub const MAX_EMISSION_CAPACITY: u32 = 16384;
 
 /// The grid resolution per axis is bounded (plan §11.1): at 128³ every grid together — the solver's
 /// scratch and the multigrid levels included — is ~300 MB (~330 MB with fire).
@@ -205,10 +215,11 @@ pub fn link() {
 /// per-level entry points, and the shared host-binding accessors and reductions they call.
 pub fn program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_DENSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
-        aestra_gpu::reduce::REDUCE_WGSL
+        aestra_gpu::reduce::REDUCE_WGSL,
+        aestra_gpu::scan::SCAN_WGSL
     )
 }
 
@@ -216,7 +227,7 @@ pub fn program_wgsl() -> String {
 /// sums it ranks with.
 pub fn sparse_program_wgsl() -> String {
     format!(
-        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{}\n{}\n{}\n{}",
+        "{SOLVER_WGSL}\n{GRID_SPARSE_WGSL}\n{UNIT_COEFFICIENTS_WGSL}\n{PRESSURE_WGSL}\n{FLOWMAP_WGSL}\n{EMIT_WGSL}\n{}\n{}\n{}\n{}",
         multigrid_entries_wgsl(),
         aestra_gpu::HOST_BINDINGS_WGSL,
         aestra_gpu::reduce::REDUCE_WGSL,
@@ -321,9 +332,22 @@ fn multigrid_entries_wgsl() -> String {
     wgsl
 }
 
-/// Every entry point of the solver program: [`ENTRY_POINTS`] and the per-level V-cycle passes.
+/// The secondary emission's entry points (fluid F10), in every fluid program.
+pub const EMIT_ENTRY_POINTS: [&str; 4] = [
+    "emit_cells",
+    "emit_cells_fire",
+    "emit_cells_write",
+    "emit_offsets",
+];
+
+/// Every entry point of the solver program: [`ENTRY_POINTS`], the secondary emission's and the
+/// per-level V-cycle passes.
 pub fn entry_points() -> Vec<String> {
-    let mut entries: Vec<String> = ENTRY_POINTS.iter().map(|entry| entry.to_string()).collect();
+    let mut entries: Vec<String> = ENTRY_POINTS
+        .iter()
+        .chain(&EMIT_ENTRY_POINTS)
+        .map(|entry| entry.to_string())
+        .collect();
     for pass in LevelPass::ALL {
         entries.extend(pass.levels().map(|level| pass.entry(level)));
     }
@@ -575,6 +599,12 @@ impl AestraExtension for FluidExtension {
                 "Brick Workgroups",
                 ResourceLifetime::Persistent,
             ),
+            (RESOURCE_EMISSION, "Emission", ResourceLifetime::Transient),
+            (
+                RESOURCE_EMISSION_SCRATCH,
+                "Emission Ranks",
+                ResourceLifetime::Transient,
+            ),
         ]
         .into_iter()
         .chain(liquid::LIQUID_RESOURCES)
@@ -611,7 +641,8 @@ impl AestraExtension for FluidExtension {
             combustion_metadata(requires.clone()),
             collider_metadata(MODULE_SPHERE_COLLIDER, either.clone()),
             collider_metadata(MODULE_BOX_COLLIDER, either.clone()),
-            collider_metadata(MODULE_CAPSULE_COLLIDER, either),
+            collider_metadata(MODULE_CAPSULE_COLLIDER, either.clone()),
+            secondary_emission_metadata(either),
             volume_look_metadata(requires),
             liquid::liquid_grid_metadata(liquid_requires.clone()),
             liquid::liquid_block_metadata(liquid_requires.clone()),
@@ -1064,6 +1095,141 @@ fn collider_metadata(type_id: &'static str, requires: CapabilityExpression) -> M
         .with_cost(2)
 }
 
+fn secondary_emission_metadata(requires: CapabilityExpression) -> ModuleMetadata {
+    fluid_module(
+        MODULE_SECONDARY_EMISSION,
+        "Secondary Emission",
+        "Asks for particles where the fluid is lively — a gas's hot or dense cells, a liquid's spray \
+         — for an emitter's Spawn From Domain to turn into sparks, embers, droplets or mist.",
+        requires,
+    )
+    .with_multiplicity(ModuleMultiplicity::Single)
+    .with_inputs(vec![
+        InputMetadata::new(
+            "rate",
+            "Rate",
+            "How often each qualifying cell (or liquid particle) asks for a particle, per second.",
+            Value::Scalar(1.0),
+            number(0.1, 0.0, None),
+        )
+        .with_unit("1/s"),
+        InputMetadata::new(
+            "threshold",
+            "Threshold",
+            "In a gas, the density — or, burning, the temperature — a cell must reach; in a liquid, \
+             the liquid fraction a particle's cell must stay under (spray is clear of the liquid).",
+            Value::Scalar(0.5),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "min_speed",
+            "Minimum Speed",
+            "How fast the fluid must move there.",
+            Value::Scalar(0.0),
+            number(0.5, 0.0, None),
+        )
+        .with_unit("units/s"),
+        InputMetadata::new(
+            "capacity",
+            "Capacity",
+            "The most particles asked for in one tick; past it, the cells (or liquid particles) with \
+             the lowest indices win.",
+            Value::U32(1024),
+            number(64.0, 1.0, Some(MAX_EMISSION_CAPACITY as f32)),
+        ),
+    ])
+    .with_cost(2)
+}
+
+/// A Secondary Emission's constant block (fluid F10), as `emit.wgsl` reads it: rate, minimum speed,
+/// threshold, capacity, and the workgroups of candidates its mask pass runs at most.
+fn pack_emission(module: &ExtensionModulePlan, groups: u64) -> Result<[u32; 5], String> {
+    let parameters = &module.parameters;
+    let capacity = count(parameters, "capacity")?;
+    if !(1..=MAX_EMISSION_CAPACITY).contains(&capacity) {
+        return Err(format!(
+            "a secondary emission's capacity must be between 1 and {MAX_EMISSION_CAPACITY}, got \
+             {capacity}"
+        ));
+    }
+    let [rate, min_speed, threshold] =
+        ["rate", "min_speed", "threshold"].map(|name| scalar(parameters, name));
+    let (rate, min_speed, threshold) = (rate?, min_speed?, threshold?);
+    if rate < 0.0 || min_speed < 0.0 {
+        return Err("a secondary emission's rate and minimum speed must not be negative".into());
+    }
+    Ok([
+        rate.to_bits(),
+        min_speed.to_bits(),
+        threshold.to_bits(),
+        capacity,
+        u32::try_from(groups).map_err(|_| "too many emission candidates")?,
+    ])
+}
+
+/// A stage's Secondary Emission (fluid F10), at most one.
+fn emission_module(
+    modules: &[ExtensionModulePlan],
+) -> Result<Option<&ExtensionModulePlan>, String> {
+    let mut emissions = modules_of(modules, MODULE_SECONDARY_EMISSION);
+    let emission = emissions.next();
+    if emissions.next().is_some() {
+        return Err("a stage takes one Secondary Emission module".into());
+    }
+    Ok(emission)
+}
+
+/// The emission list and its ranks (fluid F10), at bindings 36 and 37 — after the fire grids (or
+/// their stand-ins) and the liquid's (or theirs).
+fn emission_resources(
+    resources: &mut Vec<ResourceDescriptor>,
+    capacity: u32,
+    groups: u64,
+) -> aestra_runtime::EmissionLayout {
+    let placeholder = |id: &str| ResourceDescriptor {
+        id: ResourceTypeId::new(id),
+        bytes: 16,
+        lifetime: ResourceLifetime::Transient,
+    };
+    for (index, id) in [
+        RESOURCE_TEMPERATURE,
+        RESOURCE_TEMPERATURE_NEXT,
+        RESOURCE_FUEL,
+        RESOURCE_FUEL_NEXT,
+        RESOURCE_LIQUID_PARTICLES,
+        RESOURCE_LIQUID_HEADER,
+        RESOURCE_LIQUID_DISPATCH,
+        RESOURCE_LIQUID_TRANSFER,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if resources.len() == 28 + index {
+            resources.push(placeholder(id));
+        }
+    }
+    let layout = aestra_runtime::EmissionLayout {
+        resource: ResourceTypeId::new(RESOURCE_EMISSION),
+        capacity,
+    };
+    resources.extend([
+        ResourceDescriptor {
+            id: layout.resource.clone(),
+            bytes: layout.bytes(),
+            lifetime: ResourceLifetime::Transient,
+        },
+        ResourceDescriptor {
+            id: ResourceTypeId::new(RESOURCE_EMISSION_SCRATCH),
+            bytes: (u64::from(EMISSION_SCRATCH_HEADER) + groups * 65) * 4,
+            lifetime: ResourceLifetime::Transient,
+        },
+    ]);
+    layout
+}
+
+/// Words before the emission ranks (`emit.wgsl`'s `EMISSION_SCRATCH_HEADER`).
+const EMISSION_SCRATCH_HEADER: u32 = 16;
+
 /// One collider's constant record (`COLLIDER_WORDS`), as `collider_distance` and `mark_solids` read
 /// it: kind, centre (value + host reference), velocity (value + host reference), size, radius, sticky.
 fn pack_collider(collider: &ExtensionModulePlan) -> Result<[u32; COLLIDER_WORDS], String> {
@@ -1449,6 +1615,19 @@ impl ModuleLowerer for FluidModuleLowerer {
                 pack_volume(payload)?;
                 VOLUME_ENTRY
             }
+            MODULE_SECONDARY_EMISSION => {
+                pack_emission(
+                    &ExtensionModulePlan {
+                        source: module.id,
+                        module_type: module.module_type.clone(),
+                        entry_point: String::new(),
+                        parameters: payload.clone(),
+                        host_fields: Default::default(),
+                    },
+                    1,
+                )?;
+                "emit_offsets"
+            }
             liquid @ (MODULE_LIQUID_GRID | MODULE_LIQUID_BLOCK | MODULE_LIQUID_SOURCE
             | MODULE_LIQUID_LOOK) => {
                 liquid::validate_liquid_module(liquid, payload)?;
@@ -1677,6 +1856,8 @@ struct PackedStage {
     tolerance: f32,
     /// Steps in a flow-map cycle (fluid F6); 0 without flow maps.
     flow_map_cycle: u32,
+    /// A Secondary Emission's list capacity (fluid F10), when the stage has one.
+    emission: Option<u32>,
 }
 
 /// Packs the stage constants `solver.wgsl` reads.
@@ -1790,12 +1971,24 @@ fn pack_constants(modules: &[ExtensionModulePlan]) -> Result<PackedStage, String
     for collider in &colliders {
         words.extend(pack_collider(collider)?);
     }
+    let grid_of = Grid {
+        resolution,
+        slots,
+        liquid: false,
+    };
+    // A Secondary Emission's block (fluid F10) goes last, header word 23 naming its first word.
+    let emission = match emission_module(modules)? {
+        Some(module) => {
+            let block = pack_emission(module, grid_of.groups())?;
+            words[23] = words.len() as u32;
+            words.extend(block);
+            Some(block[3])
+        }
+        None => None,
+    };
     Ok(PackedStage {
-        grid: Grid {
-            resolution,
-            slots,
-            liquid: false,
-        },
+        grid: grid_of,
+        emission,
         iterations,
         cell_size,
         origin,
@@ -2381,6 +2574,7 @@ impl StageLowerer for FluidSolverLowerer {
             multigrid,
             tolerance,
             flow_map_cycle,
+            emission,
         } = pack_constants(input.modules)?;
         let flow_map = flow_map_cycle > 0;
         let resolution = grid.resolution;
@@ -2728,8 +2922,42 @@ impl StageLowerer for FluidSolverLowerer {
             ));
         }
 
+        let mut resources = resources(grid, constants.len(), fire, multigrid, flow_map_cycle);
+        let mut emissions = Vec::new();
+        if let Some(capacity) = emission {
+            // Last, the cells the fluid asks particles of (fluid F10): masked and ranked, the ranks
+            // turned to offsets, the records written in cell order.
+            let (mask, value) = if fire {
+                ("emit_cells_fire", RESOURCE_TEMPERATURE)
+            } else {
+                ("emit_cells", RESOURCE_DENSITY)
+            };
+            steps.push(pass(
+                mask,
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read(value),
+                    write(RESOURCE_EMISSION_SCRATCH),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            steps.extend(emission_ranking(grid));
+            steps.push(pass(
+                "emit_cells_write",
+                vec![
+                    read(RESOURCE_VELOCITY),
+                    read(RESOURCE_EMISSION_SCRATCH),
+                    write(RESOURCE_EMISSION),
+                    constants_read(),
+                    frame_read(),
+                ],
+            ));
+            emissions.push(emission_resources(&mut resources, capacity, grid.groups()));
+        }
+
         Ok(ExecutionBlock {
-            resources: resources(grid, constants.len(), fire, multigrid, flow_map_cycle),
+            resources,
             ops: with_barriers(steps),
             constants,
             // The persistent grids, for debug views, field sampling and renderers.
@@ -2746,9 +2974,26 @@ impl StageLowerer for FluidSolverLowerer {
                     bricks: grid.brick_layout(),
                 })
                 .collect(),
-            emissions: Vec::new(),
+            emissions,
         })
     }
+}
+
+/// The one-workgroup pass turning a secondary emission's workgroup totals into offsets (fluid F10).
+/// It finds no cell, so even on a sparse grid it reads no bricks.
+fn emission_ranking(grid: Grid) -> Vec<ExecutionOp> {
+    vec![ExecutionOp::Compute(ComputeOp {
+        name: "fluid/emit_offsets".into(),
+        program: Some(ComputeProgramId::new(grid.program())),
+        entry_point: "emit_offsets".into(),
+        accesses: vec![
+            ResourceAccess::read_write(RESOURCE_EMISSION_SCRATCH),
+            ResourceAccess::write(RESOURCE_EMISSION),
+            ResourceAccess::read(AESTRA_RESOURCE_STAGE_CONSTANTS),
+        ],
+        dispatch: StagedDispatch { x: 1, y: 1, z: 1 },
+        indirect: None,
+    })]
 }
 
 /// Every step reads what the previous one wrote, so each is separated by a barrier.
