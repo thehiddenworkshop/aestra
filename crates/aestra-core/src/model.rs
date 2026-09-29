@@ -2565,6 +2565,7 @@ impl ModuleInstance {
                                 && max.iter().all(|value| value.is_finite())
                                 && (0..3).all(|axis| min[axis] <= max[axis])
                         }
+                        ColliderShape::World { radius } => radius.is_finite() && radius >= 0.0,
                     };
                     if !shape_finite
                         || !collider.restitution.is_finite()
@@ -2640,6 +2641,10 @@ pub enum ColliderShape {
     Sphere { center: [f32; 3], radius: f32 },
     /// The solid axis-aligned box; a particle inside it has collided.
     Aabb { min: [f32; 3], max: [f32; 3] },
+    /// The host's world geometry (host bindings HB10): the signed distance volume the host supplies
+    /// (a Bevy `AestraWorldSdf`, say). A particle closer to it than `radius` has collided. Nothing
+    /// collides while the host supplies no world.
+    World { radius: f32 },
 }
 
 impl Collider {

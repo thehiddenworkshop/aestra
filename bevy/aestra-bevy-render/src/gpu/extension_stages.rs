@@ -260,6 +260,53 @@ impl AestraWorldSdf {
     fn packed(&self) -> Option<&GpuWorldSdf> {
         self.world.as_ref()
     }
+
+    /// Changes whenever the world is set or cleared: stateful particles colliding with it restart
+    /// their history then (host bindings HB10).
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
+}
+
+impl bevy::render::extract_resource::ExtractResource for AestraWorldSdf {
+    type Source = Self;
+
+    fn extract_resource(source: &Self) -> Self {
+        source.clone()
+    }
+}
+
+/// The host's world SDF on the device for stateful particles' `World` colliders (host bindings
+/// HB10): uploaded again only on a new revision; a header saying "no world" until the host sets one.
+#[derive(Resource)]
+pub(crate) struct ParticleWorldBuffer {
+    revision: Option<u64>,
+    pub(crate) buffer: Buffer,
+}
+
+fn prepare_particle_world(
+    mut commands: Commands,
+    device: Res<RenderDevice>,
+    world: Option<Res<AestraWorldSdf>>,
+    current: Option<Res<ParticleWorldBuffer>>,
+) {
+    let packed = world.as_deref().and_then(AestraWorldSdf::packed);
+    let revision = packed.map(|packed| packed.revision);
+    if current
+        .as_ref()
+        .is_some_and(|current| current.revision == revision)
+    {
+        return;
+    }
+    let absent = GpuWorldSdf::absent();
+    let bytes = packed.unwrap_or(&absent).to_bytes();
+    let buffer =
+        device.create_buffer_with_data(&bevy::render::render_resource::BufferInitDescriptor {
+            label: Some("aestra particle world"),
+            contents: &bytes,
+            usage: bevy::render::render_resource::BufferUsages::STORAGE,
+        });
+    commands.insert_resource(ParticleWorldBuffer { revision, buffer });
 }
 
 /// Requests, and tunes, the field slice view of one effect regardless of [`AestraDebugViews`].
@@ -442,6 +489,9 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(progress.clone())
         .insert_resource(outputs.clone())
         .add_message::<AestraOutputEvent>()
+        .add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+            AestraWorldSdf,
+        >::default())
         .add_systems(PreUpdate, receive_stage_outputs)
         .add_systems(PostUpdate, raise_finished_events)
         .add_plugins(ExtractComponentPlugin::<ExtractedStages>::default())
@@ -469,7 +519,8 @@ pub(super) fn install(app: &mut App) {
         )
         .add_systems(
             Render,
-            prepare_stage_runtimes.in_set(RenderSystems::PrepareResources),
+            (prepare_stage_runtimes, prepare_particle_world)
+                .in_set(RenderSystems::PrepareResources),
         )
         .add_systems(
             RenderGraph,

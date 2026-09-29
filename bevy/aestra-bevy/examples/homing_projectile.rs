@@ -12,6 +12,10 @@
 //! the enemy cloaks — the game unbinds it — and `target_acquired` when it reappears. The game only
 //! *hears* them: here the enemy flashes on impacts. It never takes damage from them.
 //!
+//! A pillar stands between the staff and the enemy. The game gives Aestra its scene as a world SDF
+//! (`sdf_from_meshes` into `AestraWorldSdf`, host bindings HB10), and the sparks carry a `World`
+//! collider: they chase the bound enemy *and*, independently, bounce off the host's scene.
+//!
 //! ```sh
 //! cargo run -p aestra-bevy --example homing_projectile --release
 //! ```
@@ -26,6 +30,7 @@ use aestra_bevy::{
     EffectPlaybackMode, EffectPlayer, Emitter, EmitterShape, Gradient, HomingLostPolicy,
     HostFieldRef, ModuleInstance, PropertySource, ScalarRange,
 };
+use aestra_bevy::{AestraWorldSdf, Collider, ColliderShape, sdf_from_meshes};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
@@ -118,6 +123,13 @@ fn homing_fire() -> EffectAsset {
         ),
         ModuleInstance::motion([0.0; 3], 0.0, 0.0),
         homing,
+        // The host's scene: sparks bounce off whatever geometry the game supplies.
+        ModuleInstance::collision(vec![Collider {
+            shape: ColliderShape::World { radius: 0.5 },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        }]),
         ModuleInstance::appearance(
             Curve::new(vec![CurveKey::new(0.0, 3.0), CurveKey::new(1.0, 1.5)]),
             Curve::new(vec![
@@ -156,6 +168,21 @@ fn setup(
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(200.0, 120.0))),
         MeshMaterial3d(materials.add(Color::srgb(0.22, 0.24, 0.2))),
+    ));
+    // A pillar in the way, and the scene Aestra collides with: the pillar as a world SDF.
+    let pillar = Cuboid::new(5.0, 30.0, 14.0).mesh().build();
+    let pillar_transform = Transform::from_xyz(-4.0, 15.0, 0.0);
+    let world = sdf_from_meshes(
+        &[(&pillar, GlobalTransform::from(pillar_transform))],
+        1.0,
+        4.0,
+    )
+    .expect("the pillar bakes");
+    commands.insert_resource(AestraWorldSdf::new(&world));
+    commands.spawn((
+        Mesh3d(meshes.add(pillar)),
+        MeshMaterial3d(materials.add(Color::srgb(0.45, 0.45, 0.5))),
+        pillar_transform,
     ));
     // The wizard and the staff.
     commands.spawn((

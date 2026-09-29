@@ -223,6 +223,44 @@ pub struct ParticleEvent {
     pub velocity: [f32; 3],
 }
 
+/// The host's world geometry a stateful emitter's `World` colliders collide with (host bindings
+/// HB10), and where the effect sits in it: particles simulate in effect space, the volume is in world
+/// space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticleWorld {
+    pub volume: std::sync::Arc<crate::SdfVolume>,
+    /// The effect-to-world affine, 3×4 rows.
+    pub world_from_effect: [[f32; 4]; 3],
+}
+
+impl ParticleWorld {
+    /// Whether an effect-space `position` is within `radius` of the world, the effect-space outward
+    /// normal there, and how deep: the position taken to world space, the volume's distance and
+    /// normal there, the normal brought back to effect space (by the transposed linear part) and the
+    /// distance scaled by the effect's mean axis scale. The GPU's world collider mirrors it operation
+    /// for operation.
+    pub fn contact(&self, radius: f32, position: [f32; 3]) -> (bool, [f32; 3], f32) {
+        let r = self.world_from_effect;
+        let world: [f32; 3] = std::array::from_fn(|i| {
+            r[i][0] * position[0] + r[i][1] * position[1] + r[i][2] * position[2] + r[i][3]
+        });
+        let distance = self.volume.sample(world);
+        let n = self.volume.normal(world);
+        let normal: [f32; 3] =
+            std::array::from_fn(|j| r[0][j] * n[0] + r[1][j] * n[1] + r[2][j] * n[2]);
+        let length_squared = dot(normal, normal);
+        if length_squared <= 1e-12 {
+            return (false, [0.0, 1.0, 0.0], 0.0);
+        }
+        let length = length_squared.sqrt();
+        let normal = normal.map(|component| component / length);
+        let column = |j: usize| (r[0][j] * r[0][j] + r[1][j] * r[1][j] + r[2][j] * r[2][j]).sqrt();
+        let scale = (column(0) + column(1) + column(2)) / 3.0;
+        let distance = distance / scale;
+        (distance < radius, normal, radius - distance)
+    }
+}
+
 /// The slot of each trigger in the per-tick event lists.
 fn trigger_index(trigger: aestra_core::EventTrigger) -> usize {
     match trigger {
@@ -260,6 +298,8 @@ pub struct StatefulSimulation {
     arrivals: u64,
     /// The spawn, death and collision events of the last tick (host bindings HB9b).
     events: [Vec<ParticleEvent>; 3],
+    /// The world `World` colliders collide with (host bindings HB10); none collides without one.
+    world: Option<ParticleWorld>,
 }
 
 impl StatefulSimulation {
@@ -277,6 +317,7 @@ impl StatefulSimulation {
             homing_tracker: HomingTracker::default(),
             arrivals: 0,
             events: Default::default(),
+            world: None,
         }
     }
 
@@ -284,6 +325,11 @@ impl StatefulSimulation {
     /// lost. Ignored without a homing config.
     pub fn set_homing_target(&mut self, target: Option<HomingTarget>) {
         self.homing_input = target;
+    }
+
+    /// Sets the world `World` colliders collide with from the next tick (host bindings HB10).
+    pub fn set_world(&mut self, world: Option<ParticleWorld>) {
+        self.world = world;
     }
 
     /// Moves where the following ticks' spawns land (an attached emitter, host bindings HB7b).
@@ -405,7 +451,13 @@ impl StatefulSimulation {
         position: &mut [f32; 3],
         velocity: &mut [f32; 3],
     ) -> bool {
-        resolve_colliders(&config.colliders, config.collider_count, position, velocity)
+        resolve_colliders(
+            &config.colliders,
+            config.collider_count,
+            None,
+            position,
+            velocity,
+        )
     }
 
     /// Advances exactly one fixed tick: integrate alive particles, retire the dead, then spawn.
@@ -465,6 +517,7 @@ impl StatefulSimulation {
             let killed = resolve_colliders(
                 &self.config.colliders,
                 self.config.collider_count,
+                self.world.as_ref(),
                 &mut particle.position,
                 &mut particle.velocity,
             );
@@ -761,12 +814,13 @@ pub fn steer_homing(
 fn resolve_colliders(
     colliders: &[Collider; MAX_COLLIDERS],
     count: u32,
+    world: Option<&ParticleWorld>,
     position: &mut [f32; 3],
     velocity: &mut [f32; 3],
 ) -> bool {
     let count = (count as usize).min(MAX_COLLIDERS);
     for collider in &colliders[..count] {
-        if resolve_collider(collider, position, velocity) {
+        if resolve_collider(collider, world, position, velocity) {
             return true;
         }
     }
@@ -777,7 +831,12 @@ fn resolve_colliders(
 /// a `kill` collider (the caller retires it). Bounces push the particle back onto the surface along the
 /// contact normal, reflect the inbound normal velocity scaled by `restitution`, and damp the tangential
 /// velocity by `friction` — a single uniform response shared by every shape.
-fn resolve_collider(collider: &Collider, position: &mut [f32; 3], velocity: &mut [f32; 3]) -> bool {
+fn resolve_collider(
+    collider: &Collider,
+    world: Option<&ParticleWorld>,
+    position: &mut [f32; 3],
+    velocity: &mut [f32; 3],
+) -> bool {
     // Each shape reports (contact, outward unit normal, penetration depth ≥ 0).
     let (contact, normal, penetration) = match collider.shape {
         ColliderShape::Plane { normal, distance } => {
@@ -819,6 +878,10 @@ fn resolve_collider(collider: &Collider, position: &mut [f32; 3], velocity: &mut
             }
             (inside, best_normal, best_penetration)
         }
+        ColliderShape::World { radius } => match world {
+            Some(world) => world.contact(radius, *position),
+            None => (false, [0.0, 1.0, 0.0], 0.0),
+        },
     };
 
     if !contact {
@@ -1269,8 +1332,8 @@ mod tests {
         position[1] = -0.5;
         frictionless_pos[1] = -0.5;
 
-        resolve_collider(&plane_friction, &mut position, &mut velocity);
-        resolve_collider(&plane_free, &mut frictionless_pos, &mut frictionless);
+        resolve_collider(&plane_friction, None, &mut position, &mut velocity);
+        resolve_collider(&plane_free, None, &mut frictionless_pos, &mut frictionless);
 
         assert!(
             velocity[0] < frictionless[0],

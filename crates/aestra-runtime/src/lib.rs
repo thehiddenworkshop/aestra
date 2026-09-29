@@ -38,8 +38,8 @@ pub use staged::{
 };
 pub use stateful::{
     Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingRetire, HomingTarget,
-    HomingTracker, MAX_COLLIDERS, ParticleEvent, SpawnPlacement, SpawnShape, StatefulConfig,
-    StatefulSimulation, TargetChange, steer_homing,
+    HomingTracker, MAX_COLLIDERS, ParticleEvent, ParticleWorld, SpawnPlacement, SpawnShape,
+    StatefulConfig, StatefulSimulation, TargetChange, steer_homing,
 };
 pub use tier::QualityTier;
 pub use trace::{BindingRecorder, BindingTrace, trace_tick};
@@ -1146,7 +1146,27 @@ impl CompiledEmitter {
     /// source is authored colliders, so an emitter carrying colliders declares
     /// [`CollisionProvider::AUTHORED`]; engine scene-collision sources would surface here too.
     pub fn collision_provider(&self) -> Option<aestra_core::CollisionProvider> {
-        (!self.colliders.is_empty()).then_some(aestra_core::CollisionProvider::AUTHORED)
+        self.collision_providers().into_iter().next()
+    }
+
+    /// Every collision input provider this emitter requires (hybrid roadmap M11): authored colliders,
+    /// and the host's world geometry for `World` colliders (host bindings HB10) — static data within
+    /// a world revision (a new world restarts the history), so time-addressable.
+    pub fn collision_providers(&self) -> Vec<aestra_core::CollisionProvider> {
+        let world = |collider: &aestra_core::Collider| {
+            matches!(collider.shape, aestra_core::ColliderShape::World { .. })
+        };
+        let mut providers = Vec::new();
+        if self.colliders.iter().any(|collider| !world(collider)) {
+            providers.push(aestra_core::CollisionProvider::AUTHORED);
+        }
+        if self.colliders.iter().any(world) {
+            providers.push(aestra_core::CollisionProvider {
+                source: aestra_core::CollisionInputSource::SignedDistanceField,
+                availability: aestra_core::HostInputAvailability::TimeAddressable,
+            });
+        }
+        providers
     }
 }
 
@@ -1469,7 +1489,7 @@ impl CompiledEffect {
         aestra_core::CollisionInputs::from_providers(
             self.emitters
                 .iter()
-                .filter_map(CompiledEmitter::collision_provider),
+                .flat_map(CompiledEmitter::collision_providers),
         )
     }
 

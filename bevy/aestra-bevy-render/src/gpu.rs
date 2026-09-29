@@ -218,6 +218,12 @@ struct StatefulDispatch {
     /// tick, so each tick — live or replayed after a seek — uses its own recorded input. `None`
     /// without a trace: the frame's input then serves every tick of the frame.
     schedule: Option<Arc<TickSchedule>>,
+    /// Where the effect sits in the host's world, for `World` colliders (host bindings HB10): the
+    /// effect-to-world affine, 3×4 rows, updated each frame.
+    world_from_effect: [[f32; 4]; 3],
+    /// The host world's revision, for an emitter with `World` colliders (0 otherwise): a new world
+    /// is a different simulation.
+    world_revision: u64,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -365,6 +371,8 @@ impl StatefulDispatch {
                 hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
             }
         }
+        // So does the world it collides with (host bindings HB10).
+        hash = (hash ^ self.world_revision).wrapping_mul(0x0000_0100_0000_01b3);
         // So does the binding trace it replays (host bindings HB8).
         if let Some(schedule) = &self.schedule {
             hash = (hash ^ schedule.key).wrapping_mul(0x0000_0100_0000_01b3);
@@ -397,57 +405,12 @@ impl StatefulDispatch {
         }
         // Colliders change the simulation, so fold each one's shape and response into the fingerprint
         // (hybrid roadmap M10): editing a collider invalidates the persistent state and checkpoints.
-        for collider in &self.colliders {
-            let (kind, a, b) = collider_geometry(collider);
-            for bits in [
-                kind,
-                a[0].to_bits(),
-                a[1].to_bits(),
-                a[2].to_bits(),
-                b[0].to_bits(),
-                b[1].to_bits(),
-                b[2].to_bits(),
-                collider.restitution.to_bits(),
-                collider.friction.to_bits(),
-                u32::from(collider.kill),
-            ] {
-                hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
-            }
+        let mut block = [0u32; 27 + 10 * aestra_runtime::MAX_COLLIDERS];
+        aestra_gpu::pack_stateful_colliders(&self.colliders, &mut block);
+        for bits in &block[26..] {
+            hash = (hash ^ u64::from(*bits)).wrapping_mul(0x0000_0100_0000_01b3);
         }
         hash
-    }
-}
-
-/// Decodes a collider into the `(kind, a, b)` param packing shared by the GPU kernel and CPU reference
-/// (hybrid roadmap M10): `kind` 0 = plane (`a` = unit normal, `b.x` = distance), 1 = sphere (`a` =
-/// center, `b.x` = radius), 2 = box (`a` = min, `b` = max).
-fn collider_geometry(collider: &aestra_core::Collider) -> (u32, [f32; 3], [f32; 3]) {
-    match collider.shape {
-        aestra_core::ColliderShape::Plane { normal, distance } => (0, normal, [distance, 0.0, 0.0]),
-        aestra_core::ColliderShape::Sphere { center, radius } => (1, center, [radius, 0.0, 0.0]),
-        aestra_core::ColliderShape::Aabb { min, max } => (2, min, max),
-    }
-}
-
-/// Packs the emitter's colliders into the params buffer's collider block (count word at index 26, then
-/// up to `MAX_COLLIDERS` 10-word records from index 27), mirroring `aestra_gpu::STATEFUL_COLLISION_WGSL`
-/// and the CPU reference's `resolve_colliders`.
-fn pack_colliders(colliders: &[aestra_core::Collider], words: &mut [u32]) {
-    let count = colliders.len().min(aestra_runtime::MAX_COLLIDERS);
-    words[26] = count as u32;
-    for (index, collider) in colliders.iter().take(count).enumerate() {
-        let base = 27 + index * 10;
-        let (kind, a, b) = collider_geometry(collider);
-        words[base] = kind;
-        words[base + 1] = a[0].to_bits();
-        words[base + 2] = a[1].to_bits();
-        words[base + 3] = a[2].to_bits();
-        words[base + 4] = b[0].to_bits();
-        words[base + 5] = b[1].to_bits();
-        words[base + 6] = b[2].to_bits();
-        words[base + 7] = collider.restitution.to_bits();
-        words[base + 8] = collider.friction.to_bits();
-        words[base + 9] = u32::from(collider.kill);
     }
 }
 
@@ -956,14 +919,18 @@ pub(crate) fn prepare_gpu_effects(
             .count();
         let emitter_count = artifact.emitters.len() as u32;
         let seed = player.instance.seed();
-        // Collision input provider boundary (hybrid roadmap M11): this GPU backend supplies only
-        // authored colliders (it resolves them on-GPU, needing no engine scene data). If the effect's
+        // Collision input provider boundary (hybrid roadmap M11): this GPU backend supplies authored
+        // colliders (resolved on-GPU) and the host's world SDF (`AestraWorldSdf`, host bindings HB10)
+        // for `World` colliders. If the effect's
         // collision inputs need a source this backend cannot provide, refuse the stateful path
         // explicitly — a warning and no dispatches — rather than silently mis-simulating.
         let collision_inputs = player.instance.effect().collision_inputs();
-        let collision_supported = match collision_inputs
-            .resolve_against(&aestra_core::CollisionBackendCapabilities::authored_only())
-        {
+        let collision_supported = match collision_inputs.resolve_against(
+            &aestra_core::CollisionBackendCapabilities::new([
+                aestra_core::CollisionInputSource::AuthoredColliders,
+                aestra_core::CollisionInputSource::SignedDistanceField,
+            ]),
+        ) {
             Ok(()) => true,
             Err(error) => {
                 warn!(
@@ -1035,6 +1002,8 @@ pub(crate) fn prepare_gpu_effects(
                                 event_signature: event_signature(player.effect(), index),
                                 overflow_word: None,
                                 schedule: None,
+                                world_from_effect: aestra_runtime::IDENTITY_AFFINE,
+                                world_revision: 0,
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1746,6 +1715,7 @@ fn sync_gpu_render_transforms(
         &mut GpuParticleStatistics,
     )>,
     mut events: MessageWriter<AestraOutputEvent>,
+    world_sdf: Option<Res<AestraWorldSdf>>,
 ) {
     for (entity, player, transform, mut gpu, mut statistics) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
@@ -1760,6 +1730,22 @@ fn sync_gpu_render_transforms(
             );
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
+        // `World` colliders (host bindings HB10): where the effect sits in the host's world, and
+        // which world — a new one restarts their history.
+        let world_revision = world_sdf.as_deref().map_or(0, AestraWorldSdf::revision);
+        for dispatch in &mut gpu.stateful_dispatch {
+            if dispatch
+                .colliders
+                .iter()
+                .any(|collider| matches!(collider.shape, aestra_core::ColliderShape::World { .. }))
+            {
+                dispatch.world_from_effect = std::array::from_fn(|row| {
+                    let r = world.row(row);
+                    [r.x, r.y, r.z, r.w]
+                });
+                dispatch.world_revision = world_revision;
+            }
+        }
         // Homing targets (host bindings HB7) and attached emitters' placements (HB7b): this frame's,
         // from the bindings, into effect space. An attachment without a pose keeps its last placement.
         if gpu
@@ -2254,6 +2240,7 @@ fn init_stateful_pipeline(
                 storage_buffer::<Vec<u32>>(false),           // 7: indirect draw commands (atomic)
                 storage_buffer::<Vec<u32>>(false),           // 8: live counters (atomic)
                 storage_buffer::<Vec<u32>>(false),           // 9: particle events (HB9b)
+                storage_buffer_read_only::<Vec<u32>>(false), // 10: the host's world SDF (HB10)
             ),
         ),
     );
@@ -2840,7 +2827,7 @@ fn stateful_params_bytes(
     ]);
     // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
-    pack_colliders(&dispatch.colliders, &mut words);
+    aestra_gpu::pack_stateful_colliders(&dispatch.colliders, &mut words);
     aestra_gpu::pack_spawn_placement(&placement, &mut words);
     aestra_gpu::pack_stateful_homing_counted(
         dispatch.homing.as_ref().map(|homing| &homing.config),
@@ -2848,6 +2835,7 @@ fn stateful_params_bytes(
         dispatch.arrival_word.filter(|_| live),
         &mut words,
     );
+    aestra_gpu::pack_stateful_world(&dispatch.world_from_effect, &mut words);
     aestra_gpu::pack_stateful_events(
         dispatch.event_mask,
         aestra_runtime::PARTICLE_EVENT_CAPACITY,
@@ -2881,6 +2869,8 @@ struct StatefulRenderBuffers<'a> {
     alive: &'a Buffer,
     indirect: &'a Buffer,
     counters: &'a Buffer,
+    /// The host's world SDF, for `World` colliders (host bindings HB10).
+    world: &'a Buffer,
 }
 
 /// A bind group over one emitter's persistent buffers, `params`, and the effect's render buffers.
@@ -2905,6 +2895,7 @@ fn stateful_bind_group(
             render.indirect.as_entire_buffer_binding(),
             render.counters.as_entire_buffer_binding(),
             persistent.events.as_entire_buffer_binding(),
+            render.world.as_entire_buffer_binding(),
         )),
     )
 }
@@ -3429,6 +3420,7 @@ type SimulationState<'w, 's> = (
     ResMut<'w, extension_stages::StageRuntimes>,
     Option<Res<'w, extension_stages::FieldFollow>>,
     Option<ResMut<'w, CatchupPacer>>,
+    Option<Res<'w, extension_stages::ParticleWorldBuffer>>,
 );
 
 fn run_simulation(
@@ -3464,7 +3456,11 @@ fn run_simulation(
         mut stage_runtimes,
         follower,
         mut pacer,
+        particle_world,
     ) = state;
+    let Some(particle_world) = particle_world else {
+        return;
+    };
     // Resolve the stateful compute pipelines once (present only when the device supports the path and
     // the pipelines have finished compiling). The stateful branch below drives one enabled stateful
     // emitter end-to-end; other effects take the analytic path unchanged.
@@ -3530,6 +3526,7 @@ fn run_simulation(
                         alive,
                         indirect,
                         counters,
+                        world: &particle_world.buffer,
                     },
                     extension_stages::coupling(
                         &mut stage_runtimes,
@@ -3787,6 +3784,7 @@ fn run_simulation(
                         alive,
                         indirect,
                         counters,
+                        world: &particle_world.buffer,
                     },
                     extension_stages::coupling(
                         &mut stage_runtimes,
@@ -3990,6 +3988,8 @@ mod tests {
             event_signature: 0,
             overflow_word: None,
             schedule: None,
+            world_from_effect: aestra_runtime::IDENTITY_AFFINE,
+            world_revision: 0,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4703,6 +4703,8 @@ mod coupled_tests {
         follower: FieldFollowPipeline,
         spawner: DomainSpawnPipeline,
         gatherer: crate::execution::EventGatherPipeline,
+        /// A world SDF saying no world is supplied (host bindings HB10).
+        no_world: Buffer,
         states: Vec<StatefulPersistentState>,
         dispatches: Vec<StatefulDispatch>,
         domains: Vec<Option<StageTimeline>>,
@@ -4777,6 +4779,7 @@ mod coupled_tests {
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
+                    storage_buffer_read_only::<Vec<u32>>(false),
                 ),
             ),
         );
@@ -4842,6 +4845,8 @@ mod coupled_tests {
             event_signature: 0,
             overflow_word: None,
             schedule: None,
+            world_from_effect: aestra_runtime::IDENTITY_AFFINE,
+            world_revision: 0,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4875,7 +4880,13 @@ mod coupled_tests {
         let follower = FieldFollowPipeline::new(device.wgpu_device());
         let spawner = DomainSpawnPipeline::new(device.wgpu_device());
         let gatherer = crate::execution::EventGatherPipeline::new(device.wgpu_device());
+        let no_world = device.create_buffer_with_data(&BufferInitDescriptor {
+            label: None,
+            contents: &aestra_gpu::GpuWorldSdf::absent().to_bytes(),
+            usage: BufferUsages::STORAGE,
+        });
         Some(Scene {
+            no_world,
             device,
             queue,
             layout,
@@ -5004,6 +5015,7 @@ mod coupled_tests {
                     alive,
                     indirect,
                     counters,
+                    world: &scene.no_world,
                 },
                 (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                 4,
@@ -5125,6 +5137,7 @@ mod coupled_tests {
                         alive,
                         indirect,
                         counters,
+                        world: &scene.no_world,
                     },
                     (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                     TICKS_PER_SUBMISSION,
@@ -5227,6 +5240,7 @@ mod coupled_tests {
                         alive,
                         indirect,
                         counters,
+                        world: &self.no_world,
                     },
                     time,
                     TICKS_PER_SUBMISSION,

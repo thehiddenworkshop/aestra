@@ -628,8 +628,10 @@ fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick
 /// Colliders are packed into `params` starting at [`AESTRA_COLLIDER_COUNT_INDEX`]: one count word, then
 /// up to [`MAX_COLLIDERS`](aestra_runtime::MAX_COLLIDERS) records of 10 words each —
 /// `[kind, a.xyz, b.xyz, restitution, friction, kill]`. `kind` is `0` plane (`a` = unit normal,
-/// `b.x` = plane distance), `1` sphere (`a` = center, `b.x` = radius), `2` box (`a` = min, `b` = max).
-/// The including shader must declare the `params: array<u32>` binding.
+/// `b.x` = plane distance), `1` sphere (`a` = center, `b.x` = radius), `2` box (`a` = min, `b` = max),
+/// `3` the host's world (`a.x` = the particle radius, host bindings HB10). The including shader must
+/// declare the `params: array<u32>` binding and define `aestra_world_contact` — include
+/// [`STATEFUL_WORLD_WGSL`] (with its world binding), or [`STATEFUL_NO_WORLD_WGSL`].
 pub const STATEFUL_COLLISION_WGSL: &str = r#"
 const AESTRA_COLLIDER_COUNT_INDEX: u32 = 26u;
 const AESTRA_COLLIDER_BASE: u32 = 27u;
@@ -672,6 +674,12 @@ fn aestra_collider_at(base: u32, position: vec3<f32>, velocity: vec3<f32>) -> Ae
         contact = distance < b.x;
         if (len2 > 1e-12) { normal = delta / sqrt(len2); } else { normal = vec3<f32>(0.0, 1.0, 0.0); }
         penetration = b.x - distance;
+    } else if (kind == 3u) {
+        // The host's world (host bindings HB10).
+        let world = aestra_world_contact(a.x, position);
+        contact = world.contact;
+        normal = world.normal;
+        penetration = world.penetration;
     } else {
         // AABB: inside the box; exit along the axis/face of least penetration (strict < breaks ties
         // toward the earlier axis and toward min, matching the CPU reference exactly).
@@ -765,7 +773,155 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
 /// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78; then the appearance
 /// `present` draws with (see [`pack_stateful_appearance`]), from 78.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_EVENTS_BASE + STATEFUL_EVENTS_WORDS;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_WORLD_BASE + STATEFUL_WORLD_WORDS;
+
+/// Packs an emitter's colliders into the stateful params' collider block (hybrid roadmap M10): the
+/// count at 26, then up to `MAX_COLLIDERS` 10-word records from 27 — `[kind, a.xyz, b.xyz,
+/// restitution, friction, kill]` (see [`STATEFUL_COLLISION_WGSL`]). A `World` collider (host bindings
+/// HB10) is kind 3 with its radius in `a.x`.
+pub fn pack_stateful_colliders(colliders: &[aestra_core::Collider], words: &mut [u32]) {
+    let count = colliders.len().min(aestra_runtime::MAX_COLLIDERS);
+    words[26] = count as u32;
+    for (index, collider) in colliders.iter().take(count).enumerate() {
+        let base = 27 + index * 10;
+        let (kind, a, b) = match collider.shape {
+            aestra_core::ColliderShape::Plane { normal, distance } => {
+                (0, normal, [distance, 0.0, 0.0])
+            }
+            aestra_core::ColliderShape::Sphere { center, radius } => {
+                (1, center, [radius, 0.0, 0.0])
+            }
+            aestra_core::ColliderShape::Aabb { min, max } => (2, min, max),
+            aestra_core::ColliderShape::World { radius } => (3, [radius, 0.0, 0.0], [0.0; 3]),
+        };
+        words[base] = kind;
+        for axis in 0..3 {
+            words[base + 1 + axis] = a[axis].to_bits();
+            words[base + 4 + axis] = b[axis].to_bits();
+        }
+        words[base + 7] = collider.restitution.to_bits();
+        words[base + 8] = collider.friction.to_bits();
+        words[base + 9] = u32::from(collider.kill);
+    }
+}
+
+/// Where the world block starts in the stateful params (host bindings HB10), and its length: the
+/// effect-to-world affine, 3×4 rows, that `World` colliders place particles in the host's world with.
+pub const STATEFUL_WORLD_BASE: usize = STATEFUL_EVENTS_BASE + STATEFUL_EVENTS_WORDS;
+pub const STATEFUL_WORLD_WORDS: usize = 12;
+const _: () = assert!(STATEFUL_WORLD_BASE == 176);
+
+/// Packs where the effect sits in the host's world (host bindings HB10) into the stateful params.
+pub fn pack_stateful_world(world_from_effect: &[[f32; 4]; 3], words: &mut [u32]) {
+    for (index, value) in world_from_effect.iter().flatten().enumerate() {
+        words[STATEFUL_WORLD_BASE + index] = value.to_bits();
+    }
+}
+
+/// The world contact of `World` colliders (host bindings HB10) for the stateful module: the host's
+/// world SDF (the `aestra_gpu::world_sdf` ABI) bound as `aestra_particle_world` at binding 10, the
+/// effect placed in it by the params' world block. The GPU counterpart of
+/// `aestra_runtime::ParticleWorld::contact`, operation for operation (explicit lerps and sums, not
+/// `mix`/`length`, so the two round alike).
+pub const STATEFUL_WORLD_WGSL: &str = r#"
+@group(0) @binding(10) var<storage, read> aestra_particle_world: array<u32>;
+
+const AESTRA_WORLD_BASE: u32 = 176u;
+
+struct AestraWorldContact { contact: bool, normal: vec3<f32>, penetration: f32 };
+
+fn aestra_particle_world_voxel(cell: vec3<i32>) -> f32 {
+    let dims = vec3<i32>(
+        i32(aestra_particle_world[1]), i32(aestra_particle_world[2]), i32(aestra_particle_world[3]));
+    let c = clamp(cell, vec3<i32>(0), dims - vec3<i32>(1));
+    return bitcast<f32>(aestra_particle_world[8u + u32((c.z * dims.y + c.y) * dims.x + c.x)]);
+}
+
+fn aestra_particle_world_lerp(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t;
+}
+
+fn aestra_particle_world_distance(p: vec3<f32>) -> f32 {
+    if (aestra_particle_world[0] == 0u) {
+        return 1.0e30;
+    }
+    let origin = vec3<f32>(
+        bitcast<f32>(aestra_particle_world[4]),
+        bitcast<f32>(aestra_particle_world[5]),
+        bitcast<f32>(aestra_particle_world[6]));
+    let voxel = bitcast<f32>(aestra_particle_world[7]);
+    let top = vec3<f32>(
+        f32(aestra_particle_world[1] - 1u), f32(aestra_particle_world[2] - 1u), f32(aestra_particle_world[3] - 1u));
+    let g = (p - origin) / voxel - vec3<f32>(0.5);
+    let clamped = clamp(g, vec3<f32>(0.0), top);
+    let base = floor(clamped);
+    let t = clamped - base;
+    let b = vec3<i32>(base);
+    let x0 = aestra_particle_world_lerp(aestra_particle_world_voxel(b), aestra_particle_world_voxel(b + vec3<i32>(1, 0, 0)), t.x);
+    let x1 = aestra_particle_world_lerp(aestra_particle_world_voxel(b + vec3<i32>(0, 1, 0)), aestra_particle_world_voxel(b + vec3<i32>(1, 1, 0)), t.x);
+    let x2 = aestra_particle_world_lerp(aestra_particle_world_voxel(b + vec3<i32>(0, 0, 1)), aestra_particle_world_voxel(b + vec3<i32>(1, 0, 1)), t.x);
+    let x3 = aestra_particle_world_lerp(aestra_particle_world_voxel(b + vec3<i32>(0, 1, 1)), aestra_particle_world_voxel(b + vec3<i32>(1, 1, 1)), t.x);
+    let value = aestra_particle_world_lerp(
+        aestra_particle_world_lerp(x0, x1, t.y), aestra_particle_world_lerp(x2, x3, t.y), t.z);
+    let d = (g - clamped) * voxel;
+    return value + sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+}
+
+fn aestra_particle_world_normal(p: vec3<f32>) -> vec3<f32> {
+    let h = 0.5 * bitcast<f32>(aestra_particle_world[7]);
+    let gradient = vec3<f32>(
+        aestra_particle_world_distance(p + vec3<f32>(h, 0.0, 0.0)) - aestra_particle_world_distance(p - vec3<f32>(h, 0.0, 0.0)),
+        aestra_particle_world_distance(p + vec3<f32>(0.0, h, 0.0)) - aestra_particle_world_distance(p - vec3<f32>(0.0, h, 0.0)),
+        aestra_particle_world_distance(p + vec3<f32>(0.0, 0.0, h)) - aestra_particle_world_distance(p - vec3<f32>(0.0, 0.0, h)));
+    let length_squared = gradient.x * gradient.x + gradient.y * gradient.y + gradient.z * gradient.z;
+    if (length_squared < 1e-20) {
+        return vec3<f32>(0.0);
+    }
+    return gradient / sqrt(length_squared);
+}
+
+fn aestra_world_row(row: u32) -> vec4<f32> {
+    let base = AESTRA_WORLD_BASE + row * 4u;
+    return vec4<f32>(
+        bitcast<f32>(params[base]), bitcast<f32>(params[base + 1u]),
+        bitcast<f32>(params[base + 2u]), bitcast<f32>(params[base + 3u]));
+}
+
+fn aestra_world_contact(radius: f32, position: vec3<f32>) -> AestraWorldContact {
+    let r0 = aestra_world_row(0u);
+    let r1 = aestra_world_row(1u);
+    let r2 = aestra_world_row(2u);
+    let world = vec3<f32>(
+        r0.x * position.x + r0.y * position.y + r0.z * position.z + r0.w,
+        r1.x * position.x + r1.y * position.y + r1.z * position.z + r1.w,
+        r2.x * position.x + r2.y * position.y + r2.z * position.z + r2.w);
+    let distance = aestra_particle_world_distance(world);
+    let n = aestra_particle_world_normal(world);
+    let normal = vec3<f32>(
+        r0.x * n.x + r1.x * n.y + r2.x * n.z,
+        r0.y * n.x + r1.y * n.y + r2.y * n.z,
+        r0.z * n.x + r1.z * n.y + r2.z * n.z);
+    let length_squared = normal.x * normal.x + normal.y * normal.y + normal.z * normal.z;
+    if (length_squared <= 1e-12) {
+        return AestraWorldContact(false, vec3<f32>(0.0, 1.0, 0.0), 0.0);
+    }
+    let unit = normal / sqrt(length_squared);
+    let scale = (sqrt(r0.x * r0.x + r1.x * r1.x + r2.x * r2.x)
+        + sqrt(r0.y * r0.y + r1.y * r1.y + r2.y * r2.y)
+        + sqrt(r0.z * r0.z + r1.z * r1.z + r2.z * r2.z)) / 3.0;
+    let effect_distance = distance / scale;
+    return AestraWorldContact(effect_distance < radius, unit, radius - effect_distance);
+}
+"#;
+
+/// [`STATEFUL_COLLISION_WGSL`]'s world contact for a module with no world: nothing collides.
+pub const STATEFUL_NO_WORLD_WGSL: &str = r#"
+struct AestraWorldContact { contact: bool, normal: vec3<f32>, penetration: f32 };
+
+fn aestra_world_contact(radius: f32, position: vec3<f32>) -> AestraWorldContact {
+    return AestraWorldContact(false, vec3<f32>(0.0, 1.0, 0.0), 0.0);
+}
+"#;
 
 /// Where the particle-events block starts in the stateful params (host bindings HB9b), and its
 /// length: see [`pack_stateful_events`].
@@ -1213,7 +1369,7 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub fn stateful_simulation_wgsl() -> String {
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
-         {STATEFUL_PRESENT_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
+         {STATEFUL_PRESENT_WGSL}{STATEFUL_WORLD_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
          {STATEFUL_HOMING_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
     )
 }

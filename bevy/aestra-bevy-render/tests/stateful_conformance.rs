@@ -24,8 +24,9 @@
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
 use aestra_gpu::{
-    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_PLACEMENT_WGSL,
-    STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
+    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_NO_WORLD_WGSL,
+    STATEFUL_PLACEMENT_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
+    stateful_simulation_wgsl,
 };
 use aestra_runtime::{
     Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
@@ -104,25 +105,7 @@ fn stateful_params(
     ]);
     // Collider block (M10): count at 26, then up to MAX_COLLIDERS 10-word records from 27.
     let count = (config.collider_count as usize).min(MAX_COLLIDERS);
-    words[26] = count as u32;
-    for (index, collider) in config.colliders.iter().take(count).enumerate() {
-        let base = 27 + index * 10;
-        let (kind, a, b) = match collider.shape {
-            ColliderShape::Plane { normal, distance } => (0u32, normal, [distance, 0.0, 0.0]),
-            ColliderShape::Sphere { center, radius } => (1u32, center, [radius, 0.0, 0.0]),
-            ColliderShape::Aabb { min, max } => (2u32, min, max),
-        };
-        words[base] = kind;
-        words[base + 1] = a[0].to_bits();
-        words[base + 2] = a[1].to_bits();
-        words[base + 3] = a[2].to_bits();
-        words[base + 4] = b[0].to_bits();
-        words[base + 5] = b[1].to_bits();
-        words[base + 6] = b[2].to_bits();
-        words[base + 7] = collider.restitution.to_bits();
-        words[base + 8] = collider.friction.to_bits();
-        words[base + 9] = u32::from(collider.kill);
-    }
+    aestra_gpu::pack_stateful_colliders(&config.colliders[..count], &mut words);
     aestra_gpu::pack_spawn_placement(&config.placement, &mut words);
     plain_appearance(&mut words);
     words
@@ -426,6 +409,8 @@ struct Harness {
     present_layout: wgpu::BindGroupLayout,
     present_pipeline: wgpu::ComputePipeline,
     unified_layout: wgpu::BindGroupLayout,
+    /// A world SDF saying no world is supplied (host bindings HB10), for bindings that need one.
+    no_world: wgpu::Buffer,
     unified_present_pipeline: wgpu::ComputePipeline,
 }
 
@@ -566,8 +551,8 @@ impl Harness {
         let death_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Aestra death loop"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
-                "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{STATEFUL_COLLISION_WGSL}\
-                 {STATEFUL_PLACEMENT_WGSL}{DEATH_LOOP_WGSL}"
+                "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{STATEFUL_NO_WORLD_WGSL}\
+                 {STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}{DEATH_LOOP_WGSL}"
             ))),
         });
         let death_integrate_pipeline =
@@ -634,6 +619,7 @@ impl Harness {
                 storage(7, false), // indirect
                 storage(8, false), // counters
                 storage(9, false), // particle events (host bindings HB9b)
+                storage(10, true), // the host's world SDF (host bindings HB10)
             ],
         });
         let unified_pipeline_layout =
@@ -655,7 +641,13 @@ impl Harness {
                 compilation_options: Default::default(),
                 cache: None,
             });
+        let no_world = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("no world"),
+            contents: &[0u8; 32],
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         Ok(Some(Self {
+            no_world,
             device,
             queue,
             bind_group_layout,
@@ -1486,6 +1478,10 @@ impl Harness {
                 wgpu::BindGroupEntry {
                     binding: 9,
                     resource: events.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: self.no_world.as_entire_binding(),
                 },
             ],
         });
@@ -2521,6 +2517,17 @@ fn advance_production_counted(
     config: &StatefulConfig,
     ticks: &[Vec<u32>],
 ) -> Result<CountedRun, String> {
+    advance_production_in_world(harness, config, ticks, &harness.no_world)
+}
+
+/// [`advance_production_counted`] in the host world `world` (a packed world SDF, host bindings
+/// HB10).
+fn advance_production_in_world(
+    harness: &Harness,
+    config: &StatefulConfig,
+    ticks: &[Vec<u32>],
+    world: &wgpu::Buffer,
+) -> Result<CountedRun, String> {
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("homing"),
@@ -2590,6 +2597,7 @@ fn advance_production_counted(
             &indirect,
             &counters,
             &events,
+            world,
         ]
         .iter()
         .enumerate()
@@ -3033,6 +3041,7 @@ fn advance_production_linked(
                 &emitter.scratch[2],
                 &emitter.scratch[3],
                 &emitter.events,
+                &harness.no_world,
             ]
             .iter()
             .enumerate()
@@ -3219,5 +3228,119 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         sims[2].alive_particles().len(),
         64,
         "the puffs fill their small capacity and the rest are dropped alike"
+    );
+}
+
+// ---- World collision (host bindings HB10) ----
+
+/// A world of a ground at y = 0 with a spherical bump at the origin, as a signed distance volume.
+fn ground_with_bump() -> aestra_runtime::SdfVolume {
+    let (dims, origin, voxel) = ([24u32, 12, 24], [-24.0f32, -6.0, -24.0], 2.0f32);
+    let mut distances = Vec::new();
+    for z in 0..dims[2] {
+        for y in 0..dims[1] {
+            for x in 0..dims[0] {
+                let p = [
+                    origin[0] + (x as f32 + 0.5) * voxel,
+                    origin[1] + (y as f32 + 0.5) * voxel,
+                    origin[2] + (z as f32 + 0.5) * voxel,
+                ];
+                let bump = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt() - 5.0;
+                distances.push(p[1].min(bump));
+            }
+        }
+    }
+    aestra_runtime::SdfVolume {
+        dims,
+        origin,
+        voxel_size: voxel,
+        distances,
+    }
+}
+
+#[test]
+fn gpu_world_colliders_match_the_cpu_reference_in_a_placed_effect() {
+    // Sparks rain onto the host's world — a ground with a bump — from an effect placed in it
+    // (translated, tilted, scaled): the kernel's world collider bounces them exactly as the CPU
+    // reference does, by ordinal, and keeps them above the ground; without a world they fall through.
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let volume = std::sync::Arc::new(ground_with_bump());
+    let (sin, cos) = (0.3f32.sin(), 0.3f32.cos());
+    let scale = 1.5f32;
+    // world = translate(2, 14, 1) · rotate_x(0.3) · scale(1.5).
+    let world_from_effect = [
+        [scale, 0.0, 0.0, 2.0],
+        [0.0, scale * cos, -scale * sin, 14.0],
+        [0.0, scale * sin, scale * cos, 1.0],
+    ];
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    colliders[0] = Collider {
+        shape: ColliderShape::World { radius: 0.2 },
+        restitution: 0.4,
+        friction: 0.3,
+        kill: false,
+    };
+    let config = StatefulConfig {
+        gravity: [0.0, -12.0, 0.0],
+        spawn_per_tick: 3,
+        speed: (2.0, 6.0),
+        lifetime: (1.6, 2.0),
+        direction: [0.0, -1.0, 0.0],
+        spread: 0.8,
+        drag: 0.1,
+        shape: SpawnShape::Sphere { radius: 2.0 },
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders,
+        collider_count: 1,
+        capacity: 1024,
+        homing: None,
+    };
+    let seed = 0x00AB_0010_0000_0001_u64;
+    let ticks: Vec<Vec<u32>> = (0..110)
+        .map(|_| {
+            let mut words = stateful_params(&config, seed, 0, 0);
+            aestra_gpu::pack_stateful_world(&world_from_effect, &mut words);
+            words
+        })
+        .collect();
+    let world = harness
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("world"),
+            contents: &aestra_gpu::GpuWorldSdf::new(&volume, 1).to_bytes(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+    let (gpu, _) = advance_production_in_world(&harness, &config, &ticks, &world).unwrap();
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.set_world(Some(aestra_runtime::ParticleWorld {
+        volume: volume.clone(),
+        world_from_effect,
+    }));
+    simulation.advance_to_tick(110);
+    let cpu = simulation.alive_particles();
+    assert!(!cpu.is_empty());
+    assert_same_particles(&cpu, &gpu);
+
+    // They rest on the world: every particle's world position is above the ground and the bump.
+    let in_world = |p: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|i| {
+            let r = world_from_effect[i];
+            r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3]
+        })
+    };
+    let lowest = cpu
+        .iter()
+        .map(|(_, p)| volume.sample(in_world(*p)))
+        .fold(f32::MAX, f32::min);
+    assert!(lowest > -0.05, "a particle sank {lowest} into the world");
+    // Without a world they fall through the ground.
+    let (fallen, _) =
+        advance_production_in_world(&harness, &config, &ticks, &harness.no_world).unwrap();
+    assert!(
+        fallen.iter().any(|(_, p)| in_world(*p)[1] < -1.0),
+        "without a world nothing stops them"
     );
 }

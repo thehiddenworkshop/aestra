@@ -101,6 +101,27 @@ impl SdfVolume {
         value + outside
     }
 
+    /// The outward unit normal at `p`: the distance's gradient by central differences half a voxel
+    /// apart, zero where it vanishes. Mirrors the GPU's world-SDF normal.
+    pub fn normal(&self, p: [f32; 3]) -> [f32; 3] {
+        let h = 0.5 * self.voxel_size;
+        let difference = |axis: usize| {
+            let mut ahead = p;
+            let mut behind = p;
+            ahead[axis] += h;
+            behind[axis] -= h;
+            self.sample(ahead) - self.sample(behind)
+        };
+        let gradient = [difference(0), difference(1), difference(2)];
+        let length_squared =
+            gradient[0] * gradient[0] + gradient[1] * gradient[1] + gradient[2] * gradient[2];
+        if length_squared < 1e-20 {
+            return [0.0; 3];
+        }
+        let length = length_squared.sqrt();
+        gradient.map(|component| component / length)
+    }
+
     /// The volume as an `.aestra-sdf` file: the magic, the format version, dims, origin and voxel size,
     /// then the distances, all little-endian.
     pub fn to_bytes(&self) -> Vec<u8> {

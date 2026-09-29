@@ -2901,3 +2901,62 @@ fn a_recorded_binding_trace_drives_the_instance_and_makes_live_input_replayable(
         "the same content, the same identity"
     );
 }
+
+#[test]
+fn a_world_collider_requires_the_hosts_world_sdf() {
+    use aestra_core::{
+        Collider, ColliderShape, CollisionBackendCapabilities, CollisionInputSource, ModuleInstance,
+    };
+    let mut effect = EffectAsset::new("World Bounce", 2.0);
+    let mut emitter = aestra_core::Emitter::basic_sprite("Sparks", 2.0);
+    emitter.modules.push(ModuleInstance::collision(vec![
+        Collider {
+            shape: ColliderShape::World { radius: 0.25 },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        },
+        Collider {
+            shape: ColliderShape::Plane {
+                normal: [0.0, 1.0, 0.0],
+                distance: -50.0,
+            },
+            restitution: 0.0,
+            friction: 0.0,
+            kill: true,
+        },
+    ]));
+    effect.emitters.push(emitter);
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let inputs = compiled.collision_inputs();
+    assert_eq!(
+        inputs.sources(),
+        [
+            CollisionInputSource::AuthoredColliders,
+            CollisionInputSource::SignedDistanceField
+        ]
+    );
+    assert!(inputs.supports_exact_backward_seek());
+    assert!(
+        inputs
+            .resolve_against(&CollisionBackendCapabilities::authored_only())
+            .is_err(),
+        "a backend without a world SDF refuses it explicitly"
+    );
+    assert!(
+        inputs
+            .resolve_against(&CollisionBackendCapabilities::new([
+                CollisionInputSource::AuthoredColliders,
+                CollisionInputSource::SignedDistanceField,
+            ]))
+            .is_ok()
+    );
+    // A negative radius is invalid.
+    let mut bad = effect.clone();
+    if let aestra_core::ModuleParameters::Collision { colliders } =
+        &mut bad.emitters[0].modules.last_mut().unwrap().parameters
+    {
+        colliders[0].shape = ColliderShape::World { radius: -1.0 };
+    }
+    assert!(EffectCompiler::default().compile(&bad).is_err());
+}

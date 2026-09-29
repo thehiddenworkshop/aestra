@@ -563,6 +563,18 @@ supplies no pose the emitter holds its last one. Placement is resolved once per 
 input. A seek then replays under the current pose unless the input is recorded (see "Recorded host
 input").
 
+### World collision for particles
+
+A collider of shape `World { radius }` makes stateful particles collide with the host's scene
+(HB10): the signed distance volume the host supplies (`AestraWorldSdf` in Bevy, baked from meshes with
+`sdf_from_meshes` or loaded from an `.aestra-sdf` file). It uses the same restitution / friction /
+kill response as the authored shapes. Particles simulate in effect space: each tick the kernel takes
+a particle to world space by the effect's placement, samples the distance and its gradient, and
+brings the normal back. `ParticleWorld::contact` is the CPU reference, and the GPU matches it by
+ordinal. The emitter declares the `SignedDistanceField` collision input, which the Bevy backend
+supplies. A new world revision restarts the history. Object bindings and world geometry stay
+separate APIs: a projectile can home on a bound entity and, independently, bounce off the scene.
+
 ### Recorded host input
 
 Live bindings make a stateful history depend on input from outside the effect. `HostInputAvailability`
