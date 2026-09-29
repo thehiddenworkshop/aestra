@@ -74,6 +74,12 @@ pub struct EffectAsset {
     /// Live host objects the effect expects, as named, engine-independent slots (host bindings HB1).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bindings: Vec<crate::EffectBinding>,
+    /// Events the host may send the effect (event system E1); omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_inputs: Vec<crate::EventDefinition>,
+    /// Events the effect promises to raise for the host (event system E1); omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_outputs: Vec<crate::EventDefinition>,
     /// Simulation stages the effect itself owns, beside its emitters (fluid F2): a domain — such as a
     /// fluid solver — that several emitters share. Their modules are addressed with the owner
     /// [`EmitterId::EFFECT_SCOPE`].
@@ -119,6 +125,8 @@ impl EffectAsset {
             material_instances: Vec::new(),
             parameters: Vec::new(),
             bindings: Vec::new(),
+            event_inputs: Vec::new(),
+            event_outputs: Vec::new(),
             simulation_stages: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
@@ -288,6 +296,12 @@ impl EffectAsset {
             }
         }
         crate::binding::validate_bindings(&self.bindings, &mut report, &mut semantic_ids);
+        crate::event_interface::validate_event_definitions(
+            &self.event_inputs,
+            &self.event_outputs,
+            &mut report,
+            &mut semantic_ids,
+        );
         for (index, stage) in self.simulation_stages.iter().enumerate() {
             let path = format!("effect.simulation_stages[{index}]");
             stage.validate(&path, &mut report, &mut semantic_ids);

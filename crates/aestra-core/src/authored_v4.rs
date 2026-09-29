@@ -287,6 +287,11 @@ pub struct AuthoredV4Document {
     /// Live host binding slots (host bindings HB1); omitted when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bindings: Vec<crate::EffectBinding>,
+    /// Declared event inputs and outputs (event system E1); omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_inputs: Vec<crate::EventDefinition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_outputs: Vec<crate::EventDefinition>,
     #[serde(default, skip_serializing_if = "V4EffectLifecycle::is_empty")]
     pub lifecycle: V4EffectLifecycle,
     /// The effect's own simulation stages (fluid F2), shared by its emitters; omitted when none.
@@ -458,6 +463,8 @@ impl AuthoredV4Document {
             material_instances: effect.material_instances.clone(),
             parameters: effect.parameters.clone(),
             bindings: effect.bindings.clone(),
+            event_inputs: effect.event_inputs.clone(),
+            event_outputs: effect.event_outputs.clone(),
             lifecycle: V4EffectLifecycle::default(),
             simulation_stages: effect
                 .simulation_stages
@@ -492,6 +499,8 @@ impl AuthoredV4Document {
             material_instances: self.material_instances,
             parameters: self.parameters,
             bindings: self.bindings,
+            event_inputs: self.event_inputs,
+            event_outputs: self.event_outputs,
             simulation_stages: self
                 .simulation_stages
                 .into_iter()

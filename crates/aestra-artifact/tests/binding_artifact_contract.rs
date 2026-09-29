@@ -249,3 +249,23 @@ fn particle_event_links_round_trip() {
     let decoded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
     assert_eq!(decoded.event_links, compiled.event_links);
 }
+
+#[test]
+fn declared_events_round_trip_through_the_artifact() {
+    use aestra_core::{EventDefinition, EventField, EventFieldType};
+    let mut asset = effect("Fireball", Vec::new());
+    asset.event_inputs = vec![
+        EventDefinition::new("Detonate")
+            .with_field(EventField::new("position", EventFieldType::Vec3)),
+    ];
+    asset.event_outputs = vec![
+        EventDefinition::new("Hit").with_field(EventField::new("power", EventFieldType::Float)),
+    ];
+    let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&asset)
+        .unwrap();
+    assert_eq!(compiled.event_inputs, asset.event_inputs);
+    let reloaded = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(reloaded.event_inputs, asset.event_inputs);
+    assert_eq!(reloaded.event_outputs, asset.event_outputs);
+}

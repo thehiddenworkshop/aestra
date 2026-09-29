@@ -1685,3 +1685,77 @@ fn event_links_are_edited_in_place_with_undo_and_validation() {
     );
     assert_eq!(effect, before);
 }
+
+#[test]
+fn declared_events_are_added_renamed_and_removed_with_undo() {
+    use aestra_core::{EventDefinition, EventDirection, EventField, EventFieldType};
+    let mut effect = test_effect();
+    let original = effect.clone();
+    let detonate = EventDefinition::new("Detonate")
+        .with_field(EventField::new("position", EventFieldType::Vec3));
+    let id = detonate.id;
+    let mut history = CommandHistory::default();
+    let execute = |history: &mut CommandHistory, effect: &mut EffectAsset, command| {
+        history.execute(
+            effect,
+            &LockState::default(),
+            EffectTransaction::single("Edit declared events", command),
+        )
+    };
+    let diff = execute(
+        &mut history,
+        &mut effect,
+        EffectCommand::AddEventDefinition {
+            direction: EventDirection::Input,
+            definition: detonate.clone(),
+            index: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(diff.changes[0].path, "effect.event_inputs");
+    assert_eq!(effect.event_inputs, vec![detonate.clone()]);
+
+    let mut renamed = detonate.clone();
+    renamed.name = "Explode".into();
+    execute(
+        &mut history,
+        &mut effect,
+        EffectCommand::SetEventDefinition {
+            id,
+            definition: renamed,
+        },
+    )
+    .unwrap();
+    assert_eq!(effect.event_inputs[0].name, "Explode");
+    assert_eq!(effect.event_inputs[0].id, id);
+
+    // A built-in name is refused, atomically.
+    let mut builtin = detonate.clone();
+    builtin.name = "finished".into();
+    let before = effect.clone();
+    assert!(
+        execute(
+            &mut history,
+            &mut effect,
+            EffectCommand::SetEventDefinition {
+                id,
+                definition: builtin,
+            },
+        )
+        .is_err()
+    );
+    assert_eq!(effect, before);
+
+    execute(
+        &mut history,
+        &mut effect,
+        EffectCommand::RemoveEventDefinition { id },
+    )
+    .unwrap();
+    assert!(effect.event_inputs.is_empty());
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect.event_inputs[0].name, "Explode");
+    history.undo(&mut effect).unwrap();
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+}

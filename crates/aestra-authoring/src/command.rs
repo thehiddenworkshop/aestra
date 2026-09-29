@@ -136,6 +136,20 @@ pub enum EffectCommand {
         id: aestra_core::BindingId,
         binding: aestra_core::EffectBinding,
     },
+    /// Declares an event input or output (event system E1).
+    AddEventDefinition {
+        direction: aestra_core::EventDirection,
+        definition: aestra_core::EventDefinition,
+        index: usize,
+    },
+    RemoveEventDefinition {
+        id: aestra_core::EventDefinitionId,
+    },
+    /// Replaces a declared event's name and fields, keeping its id, direction and place.
+    SetEventDefinition {
+        id: aestra_core::EventDefinitionId,
+        definition: aestra_core::EventDefinition,
+    },
     AddMaterial {
         material: MaterialDefinition,
         index: usize,

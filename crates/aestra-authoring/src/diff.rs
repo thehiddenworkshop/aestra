@@ -136,6 +136,36 @@ impl EffectDiff {
                 after.bindings.len(),
             );
         }
+        // Declared events (event system E1): which ones, by name.
+        for (path, before_events, after_events) in [
+            (
+                "effect.event_inputs",
+                &before.event_inputs,
+                &after.event_inputs,
+            ),
+            (
+                "effect.event_outputs",
+                &before.event_outputs,
+                &after.event_outputs,
+            ),
+        ] {
+            if before_events != after_events {
+                let names = |events: &[aestra_core::EventDefinition]| {
+                    events
+                        .iter()
+                        .map(|event| event.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                modified(
+                    &mut changes,
+                    SemanticTarget::Effect(after.id),
+                    path,
+                    names(before_events),
+                    names(after_events),
+                );
+            }
+        }
         if before.materials != after.materials {
             modified(
                 &mut changes,

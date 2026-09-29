@@ -346,6 +346,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::AddBinding { .. }
         | EffectCommand::RemoveBinding { .. }
         | EffectCommand::SetBinding { .. }
+        | EffectCommand::AddEventDefinition { .. }
+        | EffectCommand::RemoveEventDefinition { .. }
+        | EffectCommand::SetEventDefinition { .. }
         | EffectCommand::AddMaterial { .. }
         | EffectCommand::RemoveMaterial { .. }
         | EffectCommand::SetMaterial { .. }

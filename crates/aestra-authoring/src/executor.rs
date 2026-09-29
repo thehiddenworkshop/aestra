@@ -477,6 +477,41 @@ fn apply_command(
             let binding = effect.bindings.remove(index);
             vec![EffectCommand::AddBinding { binding, index }]
         }
+        EffectCommand::AddEventDefinition {
+            direction,
+            definition,
+            index,
+        } => {
+            checked_insert(
+                event_definitions_mut(effect, *direction),
+                *index,
+                definition.clone(),
+                "effect event definitions",
+            )?;
+            vec![EffectCommand::RemoveEventDefinition { id: definition.id }]
+        }
+        EffectCommand::RemoveEventDefinition { id } => {
+            let (direction, index) = find_event_definition(effect, *id)?;
+            let definition = event_definitions_mut(effect, direction).remove(index);
+            vec![EffectCommand::AddEventDefinition {
+                direction,
+                definition,
+                index,
+            }]
+        }
+        EffectCommand::SetEventDefinition { id, definition } => {
+            let (direction, index) = find_event_definition(effect, *id)?;
+            let mut replacement = definition.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(
+                &mut event_definitions_mut(effect, direction)[index],
+                replacement,
+            );
+            vec![EffectCommand::SetEventDefinition {
+                id: *id,
+                definition: previous,
+            }]
+        }
         EffectCommand::SetBinding { id, binding } => {
             let index = effect
                 .bindings
@@ -1818,6 +1853,36 @@ fn checked_move<T>(
     let item = items.remove(old_index);
     items.insert(new_index, item);
     Ok(())
+}
+
+/// The declared events of one direction (event system E1).
+fn event_definitions_mut(
+    effect: &mut EffectAsset,
+    direction: aestra_core::EventDirection,
+) -> &mut Vec<aestra_core::EventDefinition> {
+    match direction {
+        aestra_core::EventDirection::Input => &mut effect.event_inputs,
+        aestra_core::EventDirection::Output => &mut effect.event_outputs,
+    }
+}
+
+/// Where a declared event is: its direction and index.
+fn find_event_definition(
+    effect: &EffectAsset,
+    id: aestra_core::EventDefinitionId,
+) -> Result<(aestra_core::EventDirection, usize), CommandError> {
+    [
+        (aestra_core::EventDirection::Input, &effect.event_inputs),
+        (aestra_core::EventDirection::Output, &effect.event_outputs),
+    ]
+    .into_iter()
+    .find_map(|(direction, definitions)| {
+        definitions
+            .iter()
+            .position(|definition| definition.id == id)
+            .map(|index| (direction, index))
+    })
+    .ok_or_else(|| not_found("event definition", &id))
 }
 
 fn not_found(kind: &'static str, id: &impl ToString) -> CommandError {

@@ -119,6 +119,11 @@ struct EffectV1 {
     /// Particle event links (host bindings HB9b, v4 additive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     event_links: Vec<EventLinkV4>,
+    /// Declared event inputs and outputs (event system E1, v4 additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    event_inputs: Vec<aestra_core::EventDefinition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    event_outputs: Vec<aestra_core::EventDefinition>,
     requirements: RequirementsV1,
     max_particles: u64,
     source_map: Vec<SourceMapEntryV1>,
@@ -865,6 +870,8 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                     inherit: link.inherit,
                 })
                 .collect(),
+            event_inputs: effect.event_inputs.clone(),
+            event_outputs: effect.event_outputs.clone(),
             requirements: RequirementsV1::encode(&effect.requirements)?,
             max_particles: encode_u64(effect.max_particles, "effect.max_particles")?,
             source_map: effect
@@ -1120,6 +1127,8 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 .enumerate()
                 .map(|(index, event)| event.decode(index))
                 .collect::<Result<_, _>>()?,
+            event_inputs: effect.event_inputs,
+            event_outputs: effect.event_outputs,
             requirements: effect.requirements.decode()?,
             max_particles: decode_usize(effect.max_particles, "effect.max_particles")?,
             source_map,

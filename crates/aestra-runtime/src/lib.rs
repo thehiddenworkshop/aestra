@@ -34,8 +34,8 @@ pub use execution_ir::{
 pub use host_transform::CompiledHostTransformTrack;
 pub use interface::{
     CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, EffectInterface, EventChannel,
-    INPUT_RESTART, InterfaceBinding, InterfaceEvent, InterfaceField, InterfaceParameter,
-    InterfaceWorldRequirement, field_label, world_label,
+    INPUT_RESTART, InterfaceBinding, InterfaceEvent, InterfaceEventField, InterfaceField,
+    InterfaceInput, InterfaceParameter, InterfaceWorldRequirement, field_label, world_label,
 };
 pub use outputs::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
@@ -1258,6 +1258,10 @@ pub struct CompiledEffect {
     pub choreography_events: Vec<CompiledChoreographyEvent>,
     /// Particle event links (host bindings HB9b), in authored order — the order they apply each tick.
     pub event_links: Vec<CompiledEventLink>,
+    /// Declared event inputs (event system E1), as authored: part of the public interface.
+    pub event_inputs: Vec<aestra_core::EventDefinition>,
+    /// Declared event outputs (event system E1), as authored.
+    pub event_outputs: Vec<aestra_core::EventDefinition>,
     pub requirements: EffectRequirements,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,

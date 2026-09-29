@@ -70,6 +70,8 @@ semantic_id!(GradientId);
 semantic_id!(ParameterId);
 semantic_id!(BindingId);
 semantic_id!(EventId);
+semantic_id!(EventDefinitionId);
+semantic_id!(EventFieldId);
 semantic_id!(AssetId);
 semantic_id!(MaterialId);
 semantic_id!(MaterialProgramId);

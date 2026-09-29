@@ -3047,6 +3047,11 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
             aestra_core::ChoreographyEventPayload::PlaySound { cue: "boom".into() },
         ),
     ];
+    // Declared events (event system E1).
+    effect.event_inputs = vec![aestra_core::EventDefinition::new("Detonate").with_field(
+        aestra_core::EventField::new("position", aestra_core::EventFieldType::Vec3),
+    )];
+    effect.event_outputs = vec![aestra_core::EventDefinition::new("Exploded")];
     let interface = EffectCompiler::default()
         .compile(&effect)
         .unwrap()
@@ -3076,7 +3081,7 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
     assert_eq!(source.update_mode, BindingUpdateMode::SnapshotOnSpawn);
     assert!(!source.read, "declared but read by nothing");
 
-    use aestra_runtime::EventChannel::{Runtime, Timeline};
+    use aestra_runtime::EventChannel::{Declared, Runtime, Timeline};
     let events: Vec<(&str, &str, aestra_runtime::EventChannel)> = interface
         .output_events
         .iter()
@@ -3091,9 +3096,25 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
             ("finished", "Homing Bolt", Runtime),
             ("whoosh", "Launch", Timeline),
             (aestra_runtime::CUE_PLAY_SOUND, "Boom", Timeline),
+            ("Exploded", "", Declared),
         ]
     );
-    assert_eq!(interface.input_events, [aestra_runtime::INPUT_RESTART]);
+    let inputs: Vec<(&str, bool, usize)> = interface
+        .input_events
+        .iter()
+        .map(|input| (input.name.as_str(), input.built_in, input.fields.len()))
+        .collect();
+    assert_eq!(
+        inputs,
+        [
+            (aestra_runtime::INPUT_RESTART, true, 0),
+            ("Detonate", false, 1)
+        ]
+    );
+    assert_eq!(
+        interface.input_events[1].fields[0].field_type,
+        aestra_core::EventFieldType::Vec3
+    );
     assert_eq!(interface.world.len(), 1);
     assert_eq!(interface.world[0].label, "Physics Query");
     assert_eq!(

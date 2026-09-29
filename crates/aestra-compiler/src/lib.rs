@@ -1112,6 +1112,8 @@ impl EffectCompiler {
 
         Ok(CompiledEffect {
             event_links,
+            event_inputs: asset.event_inputs.clone(),
+            event_outputs: asset.event_outputs.clone(),
             source: asset.id,
             name: asset.name.clone(),
             duration: asset.duration,

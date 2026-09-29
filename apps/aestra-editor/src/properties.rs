@@ -40,6 +40,7 @@ mod asset_picker;
 mod event_links;
 mod inspector;
 mod interface;
+mod interface_events;
 mod material_document;
 mod mesh_drop;
 mod module_controls;
@@ -105,6 +106,7 @@ impl Plugin for PropertiesPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
         interface::register(app);
+        interface_events::register(app);
         event_links::register(app);
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()

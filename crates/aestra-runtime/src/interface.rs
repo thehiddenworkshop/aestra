@@ -8,16 +8,16 @@ use crate::{
 };
 use aestra_core::{
     BindingUpdateMode, ChoreographyEventPayload, CollisionInputSource, EffectPlaybackMode,
-    HostInputAvailability, ValueType,
+    EventDefinition, EventFieldType, HostInputAvailability, ValueType,
 };
 
 /// The input every effect accepts: play again from the start (event system E0.5).
 pub const INPUT_RESTART: &str = "restart";
-/// A timeline cue asking the host to play a sound (ChoreographyEventPayload::PlaySound).
+/// A timeline cue asking the host to play a sound (`ChoreographyEventPayload::PlaySound`).
 pub const CUE_PLAY_SOUND: &str = "play_sound";
-/// A timeline cue asking the host to shake the camera (ChoreographyEventPayload::CameraShake).
+/// A timeline cue asking the host to shake the camera (`ChoreographyEventPayload::CameraShake`).
 pub const CUE_CAMERA_SHAKE: &str = "camera_shake";
-/// A timeline cue asking the host to spawn another effect (ChoreographyEventPayload::SpawnChildEffect).
+/// A timeline cue asking the host to spawn another effect (`ChoreographyEventPayload::SpawnChildEffect`).
 pub const CUE_SPAWN_CHILD_EFFECT: &str = "spawn_child_effect";
 
 /// An effect parameter a game may set.
@@ -61,6 +61,38 @@ pub enum EventChannel {
     Runtime,
     /// A cue authored on the timeline, delivered as playback crosses it.
     Timeline,
+    /// Declared on the effect's interface (event system E1); routes raise it (E3).
+    Declared,
+}
+
+/// One field of a declared event's payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterfaceEventField {
+    pub name: String,
+    pub field_type: EventFieldType,
+    pub required: bool,
+}
+
+fn payload(definition: &EventDefinition) -> Vec<InterfaceEventField> {
+    definition
+        .fields
+        .iter()
+        .map(|field| InterfaceEventField {
+            name: field.name.clone(),
+            field_type: field.field_type,
+            required: field.required,
+        })
+        .collect()
+}
+
+/// An event the game can send the effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterfaceInput {
+    pub name: String,
+    /// Its payload, when declared (event system E1); built-in inputs carry none.
+    pub fields: Vec<InterfaceEventField>,
+    /// Whether every effect has it (`restart`), rather than this effect declaring it.
+    pub built_in: bool,
 }
 
 /// An event the effect raises for the game to hear.
@@ -68,9 +100,12 @@ pub enum EventChannel {
 pub struct InterfaceEvent {
     /// The event's kind, e.g. `impact`, or a timeline cue's topic.
     pub kind: String,
-    /// What raises it: an emitter's or a stage's name, the effect's, or a timeline cue's.
+    /// What raises it: an emitter's or a stage's name, the effect's, or a timeline cue's. Empty for a
+    /// declared output nothing raises yet.
     pub raised_by: String,
     pub channel: EventChannel,
+    /// Its payload, when declared (event system E1).
+    pub fields: Vec<InterfaceEventField>,
 }
 
 /// Something from the game's world the effect collides with.
@@ -88,8 +123,8 @@ pub struct InterfaceWorldRequirement {
 pub struct EffectInterface {
     pub parameters: Vec<InterfaceParameter>,
     pub bindings: Vec<InterfaceBinding>,
-    /// Events the game can send the effect: [`INPUT_RESTART`] for now.
-    pub input_events: Vec<String>,
+    /// Events the game can send the effect: the built-in [`INPUT_RESTART`], then declared ones.
+    pub input_events: Vec<InterfaceInput>,
     pub output_events: Vec<InterfaceEvent>,
     pub world: Vec<InterfaceWorldRequirement>,
 }
@@ -164,6 +199,7 @@ impl CompiledEffect {
                 kind: kind.to_string(),
                 raised_by: raised_by.to_string(),
                 channel,
+                fields: Vec::new(),
             };
             if !output_events.contains(&event) {
                 output_events.push(event);
@@ -205,6 +241,25 @@ impl CompiledEffect {
             };
             raise(kind, &cue.name, EventChannel::Timeline);
         }
+        // Declared outputs (event system E1): listed even before anything raises them.
+        for definition in &self.event_outputs {
+            output_events.push(InterfaceEvent {
+                kind: definition.name.clone(),
+                raised_by: String::new(),
+                channel: EventChannel::Declared,
+                fields: payload(definition),
+            });
+        }
+        let mut input_events = vec![InterfaceInput {
+            name: INPUT_RESTART.to_string(),
+            fields: Vec::new(),
+            built_in: true,
+        }];
+        input_events.extend(self.event_inputs.iter().map(|definition| InterfaceInput {
+            name: definition.name.clone(),
+            fields: payload(definition),
+            built_in: false,
+        }));
 
         let collision = self.collision_inputs();
         let mut world: Vec<InterfaceWorldRequirement> = collision
@@ -244,7 +299,7 @@ impl CompiledEffect {
         EffectInterface {
             parameters,
             bindings,
-            input_events: vec![INPUT_RESTART.to_string()],
+            input_events,
             output_events,
             world,
         }

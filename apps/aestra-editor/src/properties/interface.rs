@@ -669,20 +669,33 @@ pub(super) fn spawn_interface(
             });
 
             heading(card, localizer.text("interface-output-events"));
-            if interface.output_events.is_empty() {
+            // Declared outputs are edited below; the others are raised by the effect itself.
+            let intrinsic = interface
+                .output_events
+                .iter()
+                .filter(|event| event.channel != aestra_runtime::EventChannel::Declared)
+                .collect::<Vec<_>>();
+            if intrinsic.is_empty() && session.effect.event_outputs.is_empty() {
                 card.spawn_empty()
                     .apply_scene(label_dim(localizer.text("interface-output-events-empty")));
             }
-            for event in &interface.output_events {
+            for event in intrinsic {
                 let mut args = FluentArgs::new();
                 args.set("kind", event.kind.clone());
                 args.set("source", event.raised_by.clone());
                 let message = match event.channel {
                     aestra_runtime::EventChannel::Runtime => "interface-output-event",
                     aestra_runtime::EventChannel::Timeline => "interface-output-cue",
+                    aestra_runtime::EventChannel::Declared => unreachable!("filtered above"),
                 };
                 line(card, localizer.text_with(message, &args));
             }
+            super::interface_events::spawn_declared_events(
+                card,
+                session,
+                aestra_core::EventDirection::Output,
+                localizer,
+            );
 
             heading(card, localizer.text("interface-world"));
             if interface.world.is_empty() {
@@ -701,15 +714,21 @@ pub(super) fn spawn_interface(
             }
 
             heading(card, localizer.text("interface-input-events"));
-            for input in &interface.input_events {
-                let description = match input.as_str() {
+            for input in interface.input_events.iter().filter(|input| input.built_in) {
+                let description = match input.name.as_str() {
                     aestra_runtime::INPUT_RESTART => localizer.text("interface-input-restart"),
                     _ => String::new(),
                 };
-                line(card, format!("{input} — {description}"));
+                line(card, format!("{} — {description}", input.name));
             }
             card.spawn_empty()
                 .apply_scene(label_dim(localizer.text("interface-input-events-playback")));
+            super::interface_events::spawn_declared_events(
+                card,
+                session,
+                aestra_core::EventDirection::Input,
+                localizer,
+            );
         });
 }
 
