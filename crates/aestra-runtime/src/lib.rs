@@ -1269,9 +1269,10 @@ pub struct CompiledEffect {
 /// events of `trigger` that emitter `source`'s particles raised in it become particles of `target` —
 /// `count` per event, in source-ordinal order (so a rerun reproduces every bit), at the event's
 /// position, with `inherit` × its velocity plus `target`'s launch velocity. At most
-/// [`PARTICLE_EVENT_CAPACITY`] events per source emitter and tick are kept, and at most
-/// [`PARTICLE_EVENT_CAPACITY`] particles per link and tick spawned; beyond that the backend counts an
-/// overflow (and determinism is lost for that tick).
+/// [`PARTICLE_EVENT_CAPACITY`] events per source emitter and tick are kept. The GPU allocates each
+/// link's emission list for the captured source capacity times `count` (up to 65,536 children),
+/// so fan-out beyond 1,024 does not itself discard children. Source-buffer overflow is still
+/// possible and loses deterministic event ordering for that tick.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompiledEventLink {
     /// Index of the source emitter in [`CompiledEffect::emitters`].
@@ -1283,8 +1284,7 @@ pub struct CompiledEventLink {
     pub inherit: f32,
 }
 
-/// Particle events kept per source emitter and tick, and particles spawned per link and tick, at most
-/// (host bindings HB9b).
+/// Particle events kept per source emitter and tick (host bindings HB9b).
 pub const PARTICLE_EVENT_CAPACITY: u32 = 1024;
 
 impl CompiledEffect {

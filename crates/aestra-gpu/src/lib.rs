@@ -1139,21 +1139,23 @@ pub fn pack_stateful_events(mask: u32, capacity: u32, words: &mut [u32]) {
     words[STATEFUL_EVENTS_BASE + 1] = capacity;
 }
 
-/// Words of the gather kernel's `gather_params`: `[trigger bit, count per event, list capacity, event
-/// capacity]`.
-pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 4;
+/// Words of the gather kernel's `gather_params`: `[trigger bit, count per event, list capacity,
+/// event capacity, persistent overflow-counter word]`.
+pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 5;
 
 /// Gathers one link's events for a tick (host bindings HB9b): the events of one trigger in a source
 /// emitter's event buffer become an emission list in the layout Spawn From Domain reads (header
 /// `[count, 0, 0, 0]`, then 8-word records: position, a pad, velocity, a pad), each event repeated
 /// `count` times, **in source-ordinal order** — each event's rank is the number of same-trigger events
 /// with a smaller ordinal, so however the source's threads appended them, the list comes out the same
-/// and the spawns reproduce every bit. At most the list's capacity. The list's count word must be
-/// zero before; one thread per event slot.
+/// and the spawns reproduce every bit. At most the list's capacity. The link's omitted children
+/// are added to a persistent counter at `gather_params[4]` when that word exists. The list's count
+/// word must be zero before; one thread per event slot.
 pub const PARTICLE_EVENT_GATHER_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read> events: array<u32>;
 @group(0) @binding(1) var<storage, read_write> emission: array<atomic<u32>>;
 @group(0) @binding(2) var<storage, read> gather_params: array<u32>;
+@group(0) @binding(3) var<storage, read_write> counters: array<atomic<u32>>;
 
 @compute @workgroup_size(64)
 fn gather_events(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -1172,9 +1174,21 @@ fn gather_events(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
     let count = gather_params[1];
+    let first = rank * count;
+    let capacity = gather_params[2];
+    var dropped = 0u;
+    if (first >= capacity) {
+        dropped = count;
+    } else if (count > capacity - first) {
+        dropped = count - (capacity - first);
+    }
+    let overflow_word = gather_params[4];
+    if (dropped > 0u && overflow_word < arrayLength(&counters)) {
+        atomicAdd(&counters[overflow_word], dropped);
+    }
     for (var k = 0u; k < count; k = k + 1u) {
-        let index = rank * count + k;
-        if (index >= gather_params[2]) { return; }
+        let index = first + k;
+        if (index >= capacity) { return; }
         let o = 4u + index * 8u;
         for (var axis = 0u; axis < 3u; axis = axis + 1u) {
             atomicStore(&emission[o + axis], events[r + 2u + axis]);

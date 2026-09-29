@@ -1529,6 +1529,18 @@ pub struct EventGatherPipeline {
     pipeline: wgpu::ComputePipeline,
 }
 
+/// A persistent counter word for children omitted by one event link's bounded list.
+pub struct EventOverflowCounter<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    pub word: u32,
+}
+
+/// An event link's emission buffer and the number of records allocated in it.
+pub struct EventEmissionList<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    pub capacity: u32,
+}
+
 impl EventGatherPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1547,18 +1559,37 @@ impl EventGatherPipeline {
         }
     }
 
-    /// Bytes of a source emitter's event buffer, and of a link's emission list.
+    /// Bytes of a source emitter's bounded event buffer.
     pub fn buffer_bytes() -> u64 {
         aestra_gpu::particle_event_words(aestra_runtime::PARTICLE_EVENT_CAPACITY) as u64 * 4
     }
 
+    /// A link can produce `count` children for every event its source can capture in one tick.
+    /// The authoring limit of 64 children bounds this to 65,536 records (2 MiB) per link.
+    pub fn list_capacity(source_capacity: u32, count: u32) -> u32 {
+        source_capacity
+            .min(aestra_runtime::PARTICLE_EVENT_CAPACITY)
+            .saturating_mul(count)
+            .clamp(
+                1,
+                aestra_runtime::PARTICLE_EVENT_CAPACITY * aestra_core::MAX_EVENT_LINK_COUNT,
+            )
+    }
+
+    pub fn list_bytes(capacity: u32) -> u64 {
+        aestra_gpu::particle_event_words(capacity) as u64 * 4
+    }
+
     /// The Spawn From Domain a link's list is spawned with.
-    pub fn spawn(link: &aestra_runtime::CompiledEventLink) -> aestra_runtime::CompiledDomainSpawn {
+    pub fn spawn(
+        link: &aestra_runtime::CompiledEventLink,
+        list_capacity: u32,
+    ) -> aestra_runtime::CompiledDomainSpawn {
         aestra_runtime::CompiledDomainSpawn {
             stage: 0,
             emission: aestra_runtime::EmissionLayout {
                 resource: aestra_core::ResourceTypeId::new("aestra.resource.particle_events"),
-                capacity: aestra_runtime::PARTICLE_EVENT_CAPACITY,
+                capacity: list_capacity,
             },
             inherit: link.inherit,
         }
@@ -1571,18 +1602,47 @@ impl EventGatherPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         events: &wgpu::Buffer,
-        list: &wgpu::Buffer,
+        list: EventEmissionList<'_>,
         link: &aestra_runtime::CompiledEventLink,
     ) {
-        encoder.clear_buffer(list, 0, Some(4));
+        // Standalone callers need no telemetry; production passes the effect's persistent counter.
+        let unused = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra unused event overflow counter"),
+            contents: &0u32.to_le_bytes(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        self.encode_with_overflow(
+            device,
+            encoder,
+            events,
+            list,
+            link,
+            EventOverflowCounter {
+                buffer: &unused,
+                word: u32::MAX,
+            },
+        );
+    }
+
+    pub fn encode_with_overflow(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        events: &wgpu::Buffer,
+        list: EventEmissionList<'_>,
+        link: &aestra_runtime::CompiledEventLink,
+        overflow: EventOverflowCounter<'_>,
+    ) {
+        encoder.clear_buffer(list.buffer, 0, Some(4));
         let capacity = aestra_runtime::PARTICLE_EVENT_CAPACITY;
         let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("aestra event gather params"),
             contents: &words_to_bytes(&[
                 aestra_runtime::event_trigger_bit(link.trigger),
                 link.count,
+                list.capacity,
                 capacity,
-                capacity,
+                overflow.word,
             ]),
             usage: wgpu::BufferUsages::STORAGE,
         });
@@ -1596,11 +1656,15 @@ impl EventGatherPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: list.as_entire_binding(),
+                    resource: list.buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: overflow.buffer.as_entire_binding(),
                 },
             ],
         });

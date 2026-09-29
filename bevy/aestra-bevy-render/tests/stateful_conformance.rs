@@ -2929,6 +2929,89 @@ fn gpu_homing_counts_arrivals_like_the_cpu_reference_only_when_asked() {
 
 // ---- Particle event links (host bindings HB9b) ----
 
+#[test]
+fn event_link_list_capacity_follows_captured_sources_and_has_a_finite_ceiling() {
+    use aestra_bevy_render::execution::EventGatherPipeline;
+    assert_eq!(EventGatherPipeline::list_capacity(64, 64), 4096);
+    assert_eq!(EventGatherPipeline::list_capacity(16, 64), 1024);
+    assert_eq!(EventGatherPipeline::list_capacity(4096, 64), 65_536);
+    assert_eq!(EventGatherPipeline::list_bytes(65_536), 2_097_168);
+}
+
+#[test]
+fn gpu_event_gather_sizes_the_link_list_and_counts_only_actual_overflow() {
+    use aestra_bevy_render::execution::{
+        EventEmissionList, EventGatherPipeline, EventOverflowCounter,
+    };
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let device = &harness.device;
+    let gather = EventGatherPipeline::new(device);
+    let link = aestra_runtime::CompiledEventLink {
+        source: 0,
+        trigger: aestra_core::EventTrigger::OnDeath,
+        target: 1,
+        count: 64,
+        inherit: 0.0,
+    };
+    for (sources, list_capacity, expected_kept, expected_dropped) in [
+        (16, 1024, 1024, 0),
+        (64, 4096, 4096, 0),
+        (64, 1024, 1024, 3072),
+    ] {
+        let mut words = vec![0_u32; aestra_gpu::particle_event_words(1024)];
+        words[0] = sources;
+        for ordinal in 0..sources {
+            let offset = 4 + ordinal as usize * 8;
+            words[offset] = aestra_runtime::event_trigger_bit(link.trigger);
+            words[offset + 1] = ordinal;
+        }
+        let events = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("event overflow probe source"),
+            contents: &encode(&words).unwrap(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let list = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("event overflow probe list"),
+            contents: &vec![0_u8; EventGatherPipeline::list_bytes(list_capacity) as usize],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+        let counters = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("event overflow probe counters"),
+            contents: &[0_u8; 8],
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("event overflow probe readback"),
+            size: 12,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        gather.encode_with_overflow(
+            device,
+            &mut encoder,
+            &events,
+            EventEmissionList {
+                buffer: &list,
+                capacity: list_capacity,
+            },
+            &link,
+            EventOverflowCounter {
+                buffer: &counters,
+                word: 1,
+            },
+        );
+        encoder.copy_buffer_to_buffer(&counters, 0, &staging, 0, 8);
+        encoder.copy_buffer_to_buffer(&list, 0, &staging, 8, 4);
+        let result = harness.read_back_u32(encoder, &staging).unwrap();
+        assert_eq!(result, vec![0, expected_dropped, expected_kept]);
+    }
+}
+
 /// One emitter's live `(ordinal, position)` set.
 type LiveParticles = Vec<(u64, [f32; 3])>;
 
@@ -2943,7 +3026,9 @@ fn advance_production_linked(
     seed: u64,
     ticks: u32,
 ) -> Result<Vec<LiveParticles>, String> {
-    use aestra_bevy_render::execution::{DomainSpawnPipeline, EventGatherPipeline, SpawnState};
+    use aestra_bevy_render::execution::{
+        DomainSpawnPipeline, EventEmissionList, EventGatherPipeline, SpawnState,
+    };
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("linked"),
@@ -3036,10 +3121,12 @@ fn advance_production_linked(
         .collect::<Result<_, _>>()?;
     let lists: Vec<wgpu::Buffer> = links
         .iter()
-        .map(|_| {
+        .map(|link| {
+            let list_capacity =
+                EventGatherPipeline::list_capacity(configs[link.source].capacity, link.count);
             buffer(
                 "event list",
-                vec![0u8; event_bytes],
+                vec![0u8; EventGatherPipeline::list_bytes(list_capacity) as usize],
                 wgpu::BufferUsages::COPY_DST,
             )
         })
@@ -3094,11 +3181,16 @@ fn advance_production_linked(
             params.push(tick_params);
         }
         for (link, list) in links.iter().zip(&lists) {
+            let list_capacity =
+                EventGatherPipeline::list_capacity(configs[link.source].capacity, link.count);
             gather.encode(
                 device,
                 &mut encoder,
                 &emitters[link.source].events,
-                list,
+                EventEmissionList {
+                    buffer: list,
+                    capacity: list_capacity,
+                },
                 link,
             );
             let target = &emitters[link.target];
@@ -3113,7 +3205,7 @@ fn advance_production_linked(
                     params: &params[link.target],
                 },
                 list,
-                &EventGatherPipeline::spawn(link),
+                &EventGatherPipeline::spawn(link, list_capacity),
             );
         }
         // Submit tick by tick, so the per-tick buffers and bind groups are released as we go.

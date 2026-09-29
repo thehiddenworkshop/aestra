@@ -1470,7 +1470,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 ### Remaining F0 exit work
 
 - Exact-frame audience captures match across fresh launches through frame 120 but differ at frames 180 and 300 while the collision/glint chain is active. Do not approve those late frames as deterministic references; F1 must isolate and regress the event ordering/expansion path.
-- Add event requested/captured/expanded/spawned/dropped counters and overflow diagnostics before treating fan-out timing as valid produced-work performance. F1 owns the scalable event contract; F1B owns production-density trails and truncation policy.
+- Complete event requested/captured/expanded/spawned/dropped counters and overflow diagnostics before treating fan-out timing as valid produced-work performance. F1's first slice now counts and warns about dropped children at each link, but the other stages and profiler exposure remain open. F1 owns the scalable event contract; F1B owns production-density trails and truncation policy.
 - Measure isolated cold-seek latency and actual effect GPU allocation. Recalibrate the provisional budgets at 1920 × 1080 and on lower quality tiers. The current 960 × 540 baseline does not establish release performance.
 
 ---
@@ -1478,6 +1478,8 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 ## Milestone F1 — Scalable event pipeline and event-link authoring
 
 **Goal:** make one logical event link reliably produce a hero burst and keep heavy event chains deterministic.
+
+**Status: in progress.** The first runtime slice added a persistent per-link GPU dropped-child counter and readback warning; the F0 stress probe exposed exactly 3,072 children lost per 4,096-child cohort. The next slice sizes each link list for captured source capacity × authored fan-out, bounded by the existing 1,024 source-event and 64-child authoring limits (at most 65,536 list records / about 2 MiB per link). A fresh frame-60 GPU capture now reports all 4,096 stars live with no platform warning. Real-GPU conformance covers exact fit, the 4,096-child list, and an intentionally undersized list that still counts 3,072 omissions. This removes the fixed **child-list** ceiling, not the source-event cap or authored-count limit: source demand/capture, destination acceptance, aggregate memory budgeting, deterministic expansion at higher density, editor authoring and profiler counters remain for F1's exit gate.
 
 ### Core/editor tasks
 

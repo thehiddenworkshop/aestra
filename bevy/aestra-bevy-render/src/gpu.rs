@@ -1088,7 +1088,7 @@ pub(crate) fn prepare_gpu_effects(
             dispatch.arrival_word = Some(arrivals_base + arrival_words);
             arrival_words += 1;
         }
-        // Then each event-reporting emitter's overflow count (host bindings HB9b).
+        // Then each event-reporting emitter's source overflow count (host bindings HB9b).
         for dispatch in stateful_dispatch
             .iter_mut()
             .filter(|dispatch| dispatch.event_mask != 0)
@@ -1096,6 +1096,8 @@ pub(crate) fn prepare_gpu_effects(
             dispatch.overflow_word = Some(arrivals_base + arrival_words);
             arrival_words += 1;
         }
+        // One persistent dropped-child count per link, after the emitter counters.
+        arrival_words += player.effect().event_links.len() as u32;
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             (arrivals_base + arrival_words)
@@ -2017,16 +2019,24 @@ impl GpuTrailStatistics {
 #[derive(Component)]
 struct GpuTrailReadbackOwner(Entity);
 
-/// Reads an effect's cumulative homing-arrival counts back (host bindings HB9), remembering the last
-/// count of each `counters` word to raise `impact` on each increase.
+/// Reads homing arrivals and source/link event overflow counters back, remembering the last
+/// value of each `counters` word to report only new activity.
 #[derive(Component)]
 struct GpuArrivalReadback {
     effect: Entity,
     seen: BTreeMap<u32, u32>,
 }
 
-/// Raises `impact` for each homing emitter whose particles reached the target since the last read,
-/// its magnitude the number that did, its value where the target is (world space).
+fn event_link_overflow_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
+    dispatches
+        .iter()
+        .flat_map(|dispatch| [dispatch.arrival_word, dispatch.overflow_word])
+        .flatten()
+        .max()
+        .map(|word| word + 1)
+}
+
+/// Raises `impact` for homing arrivals and warns when source capture or link expansion drops work.
 fn receive_homing_arrivals(
     event: On<ReadbackComplete>,
     mut readbacks: Query<&mut GpuArrivalReadback>,
@@ -2080,6 +2090,37 @@ fn receive_homing_arrivals(
                     (count - seen) as f32,
                 ),
             });
+        }
+    }
+    if let Some(base) = event_link_overflow_base(&gpu.stateful_dispatch) {
+        for (index, link) in gpu.event_links.iter().enumerate() {
+            let word = base + index as u32;
+            let Some(&dropped) = words.get(word as usize) else {
+                continue;
+            };
+            let seen = readback.seen.insert(word, dropped).unwrap_or(0);
+            if dropped > seen {
+                let list_capacity = gpu
+                    .stateful_dispatch
+                    .iter()
+                    .find(|dispatch| dispatch.emitter_index as usize == link.source)
+                    .map(|dispatch| {
+                        crate::execution::EventGatherPipeline::list_capacity(
+                            dispatch.capacity,
+                            link.count,
+                        )
+                    })
+                    .unwrap_or(0);
+                warn!(
+                    "aestra: event link {index} (emitter {} -> {}) of {effect} dropped {} new \
+                     children because its per-tick list holds only {}; {} dropped so far",
+                    link.source,
+                    link.target,
+                    dropped - seen,
+                    list_capacity,
+                    dropped
+                );
+            }
         }
     }
 }
@@ -3149,10 +3190,19 @@ fn run_coupled_stateful(
             .iter()
             .position(|dispatch| dispatch.emitter_index as usize == emitter)
     };
-    let link_ends: Vec<(usize, usize, &aestra_runtime::CompiledEventLink)> = links
+    let link_ends: Vec<(usize, usize, usize, &aestra_runtime::CompiledEventLink)> = links
         .iter()
-        .filter_map(|link| Some((dispatch_of(link.source)?, dispatch_of(link.target)?, link)))
+        .enumerate()
+        .filter_map(|(index, link)| {
+            Some((
+                index,
+                dispatch_of(link.source)?,
+                dispatch_of(link.target)?,
+                link,
+            ))
+        })
         .collect();
+    let overflow_base = event_link_overflow_base(dispatches);
     let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
     let last = persistent_states.first().map_or(0, |state| state.last_tick);
     let in_step = persistent_states
@@ -3188,12 +3238,17 @@ fn run_coupled_stateful(
     let lists: Vec<Buffer> = if ticks > 0 {
         link_ends
             .iter()
-            .map(|_| {
+            .map(|(_, source, _, link)| {
+                let capacity = crate::execution::EventGatherPipeline::list_capacity(
+                    dispatches[*source].capacity,
+                    link.count,
+                );
                 device.create_buffer_with_data(&BufferInitDescriptor {
                     label: Some("aestra event list"),
                     contents: &vec![
                         0u8;
-                        crate::execution::EventGatherPipeline::buffer_bytes() as usize
+                        crate::execution::EventGatherPipeline::list_bytes(capacity)
+                            as usize
                     ],
                     usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                 })
@@ -3272,13 +3327,24 @@ fn run_coupled_stateful(
         }
         // Event links (host bindings HB9b): after every emitter's tick, each link's events of it
         // become its target's particles, in link order.
-        for ((source, target, link), list) in link_ends.iter().zip(&lists) {
-            coupling.gatherer.encode(
+        for ((index, source, target, link), list) in link_ends.iter().zip(&lists) {
+            let list_capacity = crate::execution::EventGatherPipeline::list_capacity(
+                dispatches[*source].capacity,
+                link.count,
+            );
+            coupling.gatherer.encode_with_overflow(
                 device.wgpu_device(),
                 encoder,
                 &persistent_states[*source].events,
-                list,
+                crate::execution::EventEmissionList {
+                    buffer: list,
+                    capacity: list_capacity,
+                },
                 link,
+                crate::execution::EventOverflowCounter {
+                    buffer: render.counters,
+                    word: overflow_base.map_or(u32::MAX, |base| base + *index as u32),
+                },
             );
             let persistent = &persistent_states[*target];
             coupling.spawner.encode(
@@ -3292,7 +3358,7 @@ fn run_coupled_stateful(
                     params: &tick_params[*target],
                 },
                 list,
-                &crate::execution::EventGatherPipeline::spawn(link),
+                &crate::execution::EventGatherPipeline::spawn(link, list_capacity),
             );
         }
         // Checkpoints capture each emitter after the tick's event spawns.
