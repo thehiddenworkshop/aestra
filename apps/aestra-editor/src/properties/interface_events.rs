@@ -16,6 +16,10 @@ pub(super) enum EventDeclarationAction {
     RemoveField(EventDefinitionId, EventFieldId),
     SetFieldType(EventDefinitionId, EventFieldId, EventFieldType),
     SetFieldRequired(EventDefinitionId, EventFieldId, bool),
+    /// Sends a declared input to the preview, with a neutral payload (event system E2).
+    Send(EventDefinitionId),
+    /// Forgets the inputs sent to the preview.
+    ClearSent,
 }
 
 /// The name input of a declared event, or of one of its fields.
@@ -77,6 +81,18 @@ pub(super) fn apply(
     session: &mut EditorSession,
     localizer: &Localizer,
 ) -> bool {
+    match action {
+        EventDeclarationAction::Send(id) => {
+            send(session, id, localizer);
+            return false;
+        }
+        EventDeclarationAction::ClearSent => {
+            session.preview_inputs.clear();
+            session.ui_revision += 1;
+            return false;
+        }
+        _ => {}
+    }
     let effect = &session.effect;
     let (label, command) = match action {
         EventDeclarationAction::Add(direction) => {
@@ -100,6 +116,9 @@ pub(super) fn apply(
                     index: existing.len(),
                 },
             )
+        }
+        EventDeclarationAction::Send(_) | EventDeclarationAction::ClearSent => {
+            unreachable!("handled above")
         }
         EventDeclarationAction::Remove(id) => (
             "interface-remove-event-command",
@@ -160,6 +179,35 @@ pub(super) fn apply(
         }
     };
     session.execute(localizer.text(label), command, true)
+}
+
+/// Sends a declared input to the session's preview, recording it for every later seek.
+pub(super) fn send(session: &mut EditorSession, id: EventDefinitionId, localizer: &Localizer) {
+    let Some((_, definition)) = find(&session.effect, id) else {
+        return;
+    };
+    let name = definition.name.clone();
+    let Some(preview) = session.preview_mut() else {
+        session.status = localizer.text("interface-status-send-unavailable");
+        return;
+    };
+    let payload = aestra_runtime::neutral_payload(preview.effect(), &name).unwrap_or_default();
+    let result = preview.send_event(&name, payload);
+    let recorded = preview.received_events().to_vec();
+    let mut args = FluentArgs::new();
+    args.set("input", name);
+    match result {
+        Ok(tick) => {
+            args.set("tick", tick);
+            session.preview_inputs = recorded;
+            session.status = localizer.text_with("interface-status-sent", &args);
+        }
+        Err(error) => {
+            args.set("reason", error.to_string());
+            session.status = localizer.text_with("interface-status-send-refused", &args);
+        }
+    }
+    session.ui_revision += 1;
 }
 
 fn activate(
@@ -271,6 +319,47 @@ pub(super) fn spawn_declared_events(
                 false,
             );
         });
+    if direction == EventDirection::Input && !session.preview_inputs.is_empty() {
+        spawn_sent_inputs(parent, session, localizer);
+    }
+}
+
+/// The inputs sent to the preview, in tick order, and the button forgetting them.
+fn spawn_sent_inputs(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(label_dim(localizer.text("interface-sent-inputs")));
+    for event in &session.preview_inputs {
+        let mut args = FluentArgs::new();
+        args.set("tick", event.tick);
+        args.set("input", event.input.clone());
+        parent.spawn((
+            Text::new(localizer.text_with("interface-sent-input", &args)),
+            ThemedText,
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+        ));
+    }
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            justify_content: JustifyContent::FlexEnd,
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_feathers_action_button(
+                row,
+                &localizer.text("interface-clear-sent-inputs"),
+                EventDeclarationAction::ClearSent,
+                false,
+            );
+        });
 }
 
 fn spawn_declared_event(
@@ -329,8 +418,22 @@ fn spawn_declared_event(
                     row.spawn_empty()
                         .apply_scene(label_dim(localizer.text("interface-event-output-unraised")));
                 } else {
-                    row.spawn_empty()
-                        .apply_scene(label_dim(localizer.text("interface-event-input-unhandled")));
+                    row.spawn(Node {
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(|send| {
+                        spawn_feathers_action_button(
+                            send,
+                            &localizer.text("interface-send-event"),
+                            EventDeclarationAction::Send(definition.id),
+                            true,
+                        );
+                        send.spawn_empty().apply_scene(label_dim(
+                            localizer.text("interface-event-input-unhandled"),
+                        ));
+                    });
                 }
                 spawn_feathers_action_button(
                     row,
@@ -488,5 +591,39 @@ mod tests {
             &localizer
         ));
         assert_eq!(session.effect.event_outputs.len(), 1);
+    }
+
+    #[test]
+    fn declared_inputs_are_sent_to_the_preview_and_recorded() {
+        let mut session = crate::test_support::session_with_timing_slack();
+        let localizer = Localizer::new("en-US").unwrap();
+        apply(
+            EventDeclarationAction::Add(EventDirection::Input),
+            &mut session,
+            &localizer,
+        );
+        let id = session.effect.event_inputs[0].id;
+        apply(
+            EventDeclarationAction::AddField(id),
+            &mut session,
+            &localizer,
+        );
+        let history = session.effect.clone();
+
+        apply(EventDeclarationAction::Send(id), &mut session, &localizer);
+        assert_eq!(session.preview_inputs.len(), 1);
+        assert_eq!(session.preview_inputs[0].input, "Trigger");
+        assert_eq!(
+            session.preview_inputs[0].payload,
+            vec![("value".to_string(), aestra_core::EventValue::Float(0.0))]
+        );
+        assert_eq!(
+            session.preview().unwrap().received_events(),
+            session.preview_inputs.as_slice()
+        );
+        assert_eq!(session.effect, history, "sending is not an edit");
+
+        apply(EventDeclarationAction::ClearSent, &mut session, &localizer);
+        assert!(session.preview_inputs.is_empty());
     }
 }

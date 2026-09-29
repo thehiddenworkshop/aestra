@@ -93,6 +93,9 @@ pub(crate) struct EditorSession {
     /// Children each event link could not spawn in the preview so far, from the GPU's readback
     /// (event system E0). Links that lost none are absent. Never saved.
     pub(crate) event_link_drops: std::collections::BTreeMap<EventId, u64>,
+    /// Input events sent to the preview from the Interface section (event system E2), replayed by
+    /// every seek. Never saved, never part of history.
+    pub(crate) preview_inputs: Vec<aestra_runtime::HostInputEvent>,
 }
 
 impl EditorSession {
@@ -138,6 +141,7 @@ impl EditorSession {
             last_seek: self.last_seek,
             preview_mocks: self.preview_mocks.clone(),
             event_link_drops: self.event_link_drops.clone(),
+            preview_inputs: self.preview_inputs.clone(),
         }
     }
 
@@ -211,6 +215,7 @@ impl EditorSession {
             last_seek: direct_seek_plan(0),
             preview_mocks: Default::default(),
             event_link_drops: Default::default(),
+            preview_inputs: Vec::new(),
         }
     }
 

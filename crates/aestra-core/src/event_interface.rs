@@ -61,6 +61,50 @@ impl EventFieldType {
     ];
 }
 
+/// One payload value, as a host sends it (event system E2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum EventValue {
+    Bool(bool),
+    Int(i32),
+    Float(f32),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+    Color([f32; 4]),
+    /// One of the effect's bindings (event system §12D).
+    Binding(crate::BindingId),
+}
+
+impl EventValue {
+    pub fn field_type(&self) -> EventFieldType {
+        match self {
+            Self::Bool(_) => EventFieldType::Bool,
+            Self::Int(_) => EventFieldType::Int,
+            Self::Float(_) => EventFieldType::Float,
+            Self::Vec2(_) => EventFieldType::Vec2,
+            Self::Vec3(_) => EventFieldType::Vec3,
+            Self::Vec4(_) => EventFieldType::Vec4,
+            Self::Color(_) => EventFieldType::Color,
+            Self::Binding(_) => EventFieldType::Binding,
+        }
+    }
+
+    /// The neutral value of a type: false, zero, opaque white. `None` for a binding, which has no
+    /// neutral object.
+    pub fn neutral(field_type: EventFieldType) -> Option<Self> {
+        Some(match field_type {
+            EventFieldType::Bool => Self::Bool(false),
+            EventFieldType::Int => Self::Int(0),
+            EventFieldType::Float => Self::Float(0.0),
+            EventFieldType::Vec2 => Self::Vec2([0.0; 2]),
+            EventFieldType::Vec3 => Self::Vec3([0.0; 3]),
+            EventFieldType::Vec4 => Self::Vec4([0.0; 4]),
+            EventFieldType::Color => Self::Color([1.0; 4]),
+            EventFieldType::Binding => return None,
+        })
+    }
+}
+
 /// One named, typed field of an event's payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventField {

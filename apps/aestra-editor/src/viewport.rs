@@ -2924,9 +2924,10 @@ fn sync_rendered_preview(
     }
 }
 
-/// Drives the edited effect's bindings from its preview stand-ins (host bindings HB11c): the root
-/// players and the session's own instance read the same recorded trace, so seeking and scrubbing
-/// replay the stand-ins exactly. Nested effects keep reading what their parents forward.
+/// Drives the edited effect's bindings from its preview stand-ins (host bindings HB11c), and its
+/// inputs from those sent in the Interface section (event system E2): the root players and the
+/// session's own instance read the same recorded input, so seeking and scrubbing replay it exactly.
+/// Nested effects keep reading what their parents forward.
 fn apply_preview_mocks(
     mut session: ResMut<EditorSession>,
     mut traces: Local<crate::preview_mocks::PreviewMockTraces>,
@@ -2944,6 +2945,12 @@ fn apply_preview_mocks(
         if crate::preview_mocks::needs_trace(&player.instance, trace.as_ref()) {
             player.instance.set_binding_trace(trace);
         }
+        // The inputs sent from the Interface section (event system E2), replayed by every seek.
+        if player.instance.received_events() != session.preview_inputs.as_slice() {
+            player
+                .instance
+                .set_received_events(session.preview_inputs.clone());
+        }
     }
     let Some(effect) = session.preview().map(|preview| preview.effect().clone()) else {
         return;
@@ -2955,6 +2962,14 @@ fn apply_preview_mocks(
         && let Some(preview) = session.bypass_change_detection().preview_mut()
     {
         preview.set_binding_trace(trace);
+    }
+    let inputs = session.preview_inputs.clone();
+    if session
+        .preview()
+        .is_some_and(|preview| preview.received_events() != inputs.as_slice())
+        && let Some(preview) = session.bypass_change_detection().preview_mut()
+    {
+        preview.set_received_events(inputs);
     }
 }
 

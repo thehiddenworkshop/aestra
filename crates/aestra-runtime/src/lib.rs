@@ -4,6 +4,7 @@ mod binding;
 mod checkpoint;
 mod compatibility;
 mod host_transform;
+mod input_events;
 mod interface;
 mod playback;
 pub use playback::PlaybackDriver;
@@ -32,6 +33,7 @@ pub use execution_ir::{
     ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
+pub use input_events::{EventInputError, HostInputEvent, neutral_payload};
 pub use interface::{
     CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, EffectInterface, EventChannel,
     INPUT_RESTART, InterfaceBinding, InterfaceEvent, InterfaceEventField, InterfaceField,
@@ -1729,6 +1731,8 @@ pub struct EffectInstance {
     binding_inputs: BindingInputs,
     /// The recorded host input driving the bindings instead of the host (host bindings HB8).
     binding_trace: Option<Arc<BindingTrace>>,
+    /// Input events received from the host, in tick order (event system E2).
+    input_events: Vec<HostInputEvent>,
 }
 
 impl EffectInstance {
@@ -1743,6 +1747,7 @@ impl EffectInstance {
             host_transform_track,
             inherited_host_transform: Arc::default(),
             time: 0.0,
+            input_events: Vec::new(),
             seed: 0,
             parameters,
             overridden: BTreeSet::new(),

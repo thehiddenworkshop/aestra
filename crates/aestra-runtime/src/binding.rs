@@ -735,10 +735,17 @@ impl crate::EffectInstance {
     /// Changes whenever a binding is acquired, lost or rebound. Part of checkpoint identity
     /// ([`crate::CheckpointContext::host_input`]).
     pub fn host_input_epoch(&self) -> u64 {
-        match &self.binding_trace {
+        let bindings = match &self.binding_trace {
             // A trace fixes the whole input history: its content is the identity.
             Some(trace) => trace.identity(),
             None => self.binding_inputs.epoch,
+        };
+        // Received input events are host input too (event system E2).
+        if self.input_events.is_empty() {
+            bindings
+        } else {
+            (bindings ^ crate::input_events::events_identity(&self.input_events))
+                .wrapping_mul(0x0000_0100_0000_01b3)
         }
     }
 

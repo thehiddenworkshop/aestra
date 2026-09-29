@@ -39,6 +39,7 @@
 mod bindings;
 #[cfg(test)]
 mod choreography_tests;
+mod input_events;
 mod project;
 mod project_profile;
 mod world;
@@ -46,6 +47,7 @@ pub use bindings::{
     AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity, binding_frame,
     spatial_snapshot,
 };
+pub use input_events::AestraEventInput;
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
 pub use world::sdf_from_meshes;
@@ -85,6 +87,7 @@ pub use aestra_runtime::{
     EVENT_FINISHED, EVENT_IMPACT, EVENT_TARGET_ACQUIRED, EVENT_TARGET_LOST, EffectOutputEvent,
     EventOrigin, QualityTier, SdfVolume, StageOutputValue,
 };
+pub use aestra_runtime::{EventInputError, HostInputEvent, INPUT_RESTART, neutral_payload};
 pub use aestra_runtime::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 
 use bevy::asset::LoadState;
@@ -131,6 +134,7 @@ pub struct AestraChoreographyEvent {
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(AestraRenderPlugin)
+            .add_message::<AestraEventInput>()
             .init_resource::<TextureAssetCache>()
             .configure_sets(Update, AestraRenderSet::Prepare.after(AestraSet::Playback))
             .configure_sets(
@@ -142,6 +146,7 @@ impl Plugin for AestraPlugin {
             (
                 bindings::apply_binding_traces,
                 bindings::resolve_host_bindings,
+                input_events::apply_event_inputs,
             )
                 .chain()
                 .in_set(AestraSet::ResolveHostInputs),
