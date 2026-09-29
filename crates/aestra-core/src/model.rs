@@ -3539,7 +3539,7 @@ fn default_event_count() -> u32 {
 }
 
 /// Particles a link spawns per event, at most.
-pub const MAX_EVENT_LINK_COUNT: u32 = 64;
+pub const MAX_EVENT_LINK_COUNT: u32 = 800;
 
 impl EventLink {
     /// A link spawning one particle per event, inheriting no velocity.

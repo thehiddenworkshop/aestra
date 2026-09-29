@@ -1096,8 +1096,8 @@ pub(crate) fn prepare_gpu_effects(
             dispatch.overflow_word = Some(arrivals_base + arrival_words);
             arrival_words += 1;
         }
-        // One persistent dropped-child count per link, after the emitter counters.
-        arrival_words += player.effect().event_links.len() as u32;
+        // Captured child demand, list drops and destination accepts per link.
+        arrival_words += 3 * player.effect().event_links.len() as u32;
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             (arrivals_base + arrival_words)
@@ -2038,7 +2038,7 @@ struct GpuArrivalReadback {
     seen: BTreeMap<u32, u32>,
 }
 
-fn event_link_overflow_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
+fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
     dispatches
         .iter()
         .flat_map(|dispatch| [dispatch.arrival_word, dispatch.overflow_word])
@@ -2104,19 +2104,33 @@ fn receive_homing_arrivals(
             });
         }
     }
-    if let Some(base) = event_link_overflow_base(&gpu.stateful_dispatch) {
+    if let Some(base) = event_link_counter_base(&gpu.stateful_dispatch) {
         for (index, link) in gpu.event_links.iter().enumerate() {
-            let word = base + index as u32;
-            let Some(&dropped) = words.get(word as usize) else {
+            let word = base + index as u32 * 3;
+            let Some((&requested, &list_dropped, &accepted)) = words
+                .get(word as usize)
+                .zip(words.get((word + 1) as usize))
+                .zip(words.get((word + 2) as usize))
+                .map(|((requested, dropped), accepted)| (requested, dropped, accepted))
+            else {
                 continue;
             };
-            let seen = readback.seen.insert(word, dropped).unwrap_or(0);
-            if dropped > seen {
-                if let Ok(mut statistics) = link_statistics.get_mut(effect)
-                    && let Some(total) = statistics.dropped.get_mut(index)
-                {
-                    *total += u64::from(dropped - seen);
-                }
+            let seen_requested = readback.seen.insert(word, requested).unwrap_or(0);
+            let seen_list_dropped = readback.seen.insert(word + 1, list_dropped).unwrap_or(0);
+            let seen_accepted = readback.seen.insert(word + 2, accepted).unwrap_or(0);
+            let new_requested = requested.saturating_sub(seen_requested);
+            let new_list_dropped = list_dropped.saturating_sub(seen_list_dropped);
+            let new_accepted = accepted.saturating_sub(seen_accepted);
+            let new_destination_dropped = new_requested
+                .saturating_sub(new_list_dropped)
+                .saturating_sub(new_accepted);
+            if let Ok(mut statistics) = link_statistics.get_mut(effect)
+                && let Some(dropped) = statistics.dropped.get_mut(index)
+                && (new_list_dropped > 0 || new_destination_dropped > 0)
+            {
+                *dropped += u64::from(new_list_dropped) + u64::from(new_destination_dropped);
+            }
+            if new_list_dropped > 0 || new_destination_dropped > 0 {
                 let list_capacity = gpu
                     .stateful_dispatch
                     .iter()
@@ -2129,13 +2143,16 @@ fn receive_homing_arrivals(
                     })
                     .unwrap_or(0);
                 warn!(
-                    "aestra: event link {index} (emitter {} -> {}) of {effect} dropped {} new \
-                     children because its per-tick list holds only {}; {} dropped so far",
+                    "aestra: event link {index} (emitter {} -> {}) of {effect} captured demand for {} new \
+                     children: {} omitted by the per-tick list (capacity {}), {} rejected by \
+                     destination slots, {} accepted",
                     link.source,
                     link.target,
-                    dropped - seen,
+                    new_requested,
+                    new_list_dropped,
                     list_capacity,
-                    dropped
+                    new_destination_dropped,
+                    new_accepted,
                 );
             }
         }
@@ -3219,7 +3236,7 @@ fn run_coupled_stateful(
             ))
         })
         .collect();
-    let overflow_base = event_link_overflow_base(dispatches);
+    let counter_base = event_link_counter_base(dispatches);
     let target = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
     let last = persistent_states.first().map_or(0, |state| state.last_tick);
     let in_step = persistent_states
@@ -3358,13 +3375,15 @@ fn run_coupled_stateful(
                     capacity: list_capacity,
                 },
                 link,
-                crate::execution::EventOverflowCounter {
+                crate::execution::EventLinkCounters {
                     buffer: render.counters,
-                    word: overflow_base.map_or(u32::MAX, |base| base + *index as u32),
+                    requested_word: counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3),
+                    dropped_word: counter_base
+                        .map_or(u32::MAX, |base| base + *index as u32 * 3 + 1),
                 },
             );
             let persistent = &persistent_states[*target];
-            coupling.spawner.encode(
+            coupling.spawner.encode_with_acceptance(
                 device.wgpu_device(),
                 encoder,
                 crate::execution::SpawnState {
@@ -3376,6 +3395,10 @@ fn run_coupled_stateful(
                 },
                 list,
                 &crate::execution::EventGatherPipeline::spawn(link, list_capacity),
+                crate::execution::SpawnAcceptanceCounter {
+                    buffer: render.counters,
+                    word: counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3 + 2),
+                },
             );
         }
         // Checkpoints capture each emitter after the tick's event spawns.

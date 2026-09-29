@@ -1461,7 +1461,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 ### Implemented and measured
 
 - Added a fixed-ID, fixed-seed, three-emitter radial sketch: rockets produce 48 stars on death; star collisions produce glints. The viewer supplies a dark 3D scene, ground and geometry markers, and fixed close, audience and wide cameras. Its exact-frame capture and GPU-timestamp benchmark can run the same fixture without an editor session.
-- Added isolated event fan-out and trail-owner probes, plus compiler-boundary tests. One link compiles at count 64 but rejects 65 and 800. One trail emitter compiles at 256 parents but rejects 257 and 800. Rejected cases have **no runtime timing claim**.
+- Added isolated event fan-out and trail-owner probes, plus compiler-boundary tests. At F0, one link compiled at count 64 but rejected 65 and 800; F1 now accepts 800 under the list-memory budget. One trail emitter still compiles at 256 parents but rejects 257 and 800. Rejected cases have **no runtime timing claim**.
 - The supported event probe requests 4,096 children from 64 coincident source deaths; the frame-60 GPU report shows 1,024 live children in a 4,096-slot destination and no warning. This is evidence of silent loss, but the missing stage counters prevent exact attribution.
 - The supported trail probe reaches 256 occupied trails. At frame 120 it reports 183 truncated trails; after parent deaths, frame 300 reports 82 retired trails, 175 truncated trails and zero evictions. The later tails are outside the close camera, so visual tail quality is not established.
 - Recorded three baseline runs on an RTX 4070 SUPER/Vulkan at 960 × 540, high tier, with 120 warm-up and 600 measured frames per run. Baseline simulation p95 spans 0.454–0.554 ms. The final 256-owner trail probe repeats at 8.557 and 8.589 ms simulation p95, before a production-density hero workload can even compile. Corrected the benchmark report so it retains the configured warm-up count.
@@ -1479,7 +1479,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 
 **Goal:** make one logical event link reliably produce a hero burst and keep heavy event chains deterministic.
 
-**Status: in progress.** The first runtime slice added a persistent per-link GPU dropped-child counter and readback warning; the F0 stress probe exposed exactly 3,072 children lost per 4,096-child cohort. The next slice sizes each link list for captured source capacity × authored fan-out, bounded by the existing 1,024 source-event and 64-child authoring limits (at most 65,536 list records / about 2 MiB per link). A fresh frame-60 GPU capture now reports all 4,096 stars live with no platform warning. Real-GPU conformance covers exact fit, the 4,096-child list, and an intentionally undersized list that still counts 3,072 omissions. This removes the fixed **child-list** ceiling, not the source-event cap or authored-count limit: source demand/capture, destination acceptance, aggregate memory budgeting, deterministic expansion at higher density, editor authoring and profiler counters remain for F1's exit gate.
+**Status: in progress.** The first runtime slice exposed the original 3,072-child loss in each 4,096-child probe cohort, then sized each link list for captured source capacity × fan-out; the frame-60 GPU capture produced all 4,096 stars. The next slice replaced the quadratic ordinal-rank scan with a deterministic workgroup sort and indirect parallel child expansion. The authored single-link fan-out limit is now 800, with checked per-effect list planning and a conservative 128 MiB aggregate list budget; a new one-rocket/800-child probe measures all 800 stars live on the GPU. GPU counters distinguish captured child demand, list omissions and destination accepts, with warnings for rejected destination work. Conformance covers reversed source order, 1,024 coincident source events, 800 children from one event, an undersized list, and destination slot exhaustion. The **source-event capture buffer remains capped at 1,024**, and the warning counters are not yet in the profiler or capture report. Device/tier-aware budgets, source overflow policy, concurrent shells, replay determinism, and editor feedback for the new budget remain F1 exit work.
 
 ### Core/editor tasks
 
@@ -1494,8 +1494,8 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 ### Runtime/core tasks
 
 - Implement the capacity planning, deterministic parallel event ordering/expansion, chunking and overflow contract in section 6.
-- Replace the fixed 1,024-entry source/list assumptions throughout the execution path; account for destination capacity and fan-out across links.
-- Only then revise `MAX_EVENT_LINK_COUNT = 64` and the inspector range. Keep authored count separate from device/tier budgets.
+- Replace the remaining fixed 1,024-entry **source** capture assumption; account for destination capacity and fan-out across links under adapter- and tier-aware budgets. The child-list assumption has been removed, and destination rejection is counted, but source overflow still loses event identities.
+- The authored `MAX_EVENT_LINK_COUNT` is now 800; keep that limit separate from device/tier budgets and expose the aggregate-list budget in editor feedback before treating large fan-outs as production-ready.
 - Surface requested, emitted and dropped counters prominently in profiling/diagnostics.
 
 ### Tests

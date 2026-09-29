@@ -2934,38 +2934,43 @@ fn event_link_list_capacity_follows_captured_sources_and_has_a_finite_ceiling() 
     use aestra_bevy_render::execution::EventGatherPipeline;
     assert_eq!(EventGatherPipeline::list_capacity(64, 64), 4096);
     assert_eq!(EventGatherPipeline::list_capacity(16, 64), 1024);
-    assert_eq!(EventGatherPipeline::list_capacity(4096, 64), 65_536);
-    assert_eq!(EventGatherPipeline::list_bytes(65_536), 2_097_168);
+    assert_eq!(EventGatherPipeline::list_capacity(4096, 800), 819_200);
+    assert_eq!(EventGatherPipeline::list_bytes(819_200), 26_214_416);
 }
 
 #[test]
 fn gpu_event_gather_sizes_the_link_list_and_counts_only_actual_overflow() {
     use aestra_bevy_render::execution::{
-        EventEmissionList, EventGatherPipeline, EventOverflowCounter,
+        EventEmissionList, EventGatherPipeline, EventLinkCounters,
     };
     let Some(harness) = require_harness() else {
         return;
     };
     let device = &harness.device;
     let gather = EventGatherPipeline::new(device);
-    let link = aestra_runtime::CompiledEventLink {
+    let mut link = aestra_runtime::CompiledEventLink {
         source: 0,
         trigger: aestra_core::EventTrigger::OnDeath,
         target: 1,
         count: 64,
         inherit: 0.0,
     };
-    for (sources, list_capacity, expected_kept, expected_dropped) in [
-        (16, 1024, 1024, 0),
-        (64, 4096, 4096, 0),
-        (64, 1024, 1024, 3072),
+    for (sources, fanout, list_capacity, expected_kept, expected_dropped) in [
+        (1, 800, 800, 800, 0),
+        (16, 64, 1024, 1024, 0),
+        (64, 64, 4096, 4096, 0),
+        (64, 64, 1024, 1024, 3072),
+        (1024, 64, 65_536, 65_536, 0),
     ] {
+        link.count = fanout;
         let mut words = vec![0_u32; aestra_gpu::particle_event_words(1024)];
         words[0] = sources;
         for ordinal in 0..sources {
             let offset = 4 + ordinal as usize * 8;
+            let reverse_ordinal = sources - 1 - ordinal;
             words[offset] = aestra_runtime::event_trigger_bit(link.trigger);
-            words[offset + 1] = ordinal;
+            words[offset + 1] = reverse_ordinal;
+            words[offset + 2] = (reverse_ordinal as f32).to_bits();
         }
         let events = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("event overflow probe source"),
@@ -2981,12 +2986,12 @@ fn gpu_event_gather_sizes_the_link_list_and_counts_only_actual_overflow() {
         });
         let counters = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("event overflow probe counters"),
-            contents: &[0_u8; 8],
+            contents: &[0_u8; 12],
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("event overflow probe readback"),
-            size: 12,
+            size: 24,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -3000,15 +3005,34 @@ fn gpu_event_gather_sizes_the_link_list_and_counts_only_actual_overflow() {
                 capacity: list_capacity,
             },
             &link,
-            EventOverflowCounter {
+            EventLinkCounters {
                 buffer: &counters,
-                word: 1,
+                requested_word: 1,
+                dropped_word: 2,
             },
         );
-        encoder.copy_buffer_to_buffer(&counters, 0, &staging, 0, 8);
-        encoder.copy_buffer_to_buffer(&list, 0, &staging, 8, 4);
+        encoder.copy_buffer_to_buffer(&counters, 0, &staging, 0, 12);
+        encoder.copy_buffer_to_buffer(&list, 0, &staging, 12, 4);
+        encoder.copy_buffer_to_buffer(&list, 16, &staging, 16, 4);
+        encoder.copy_buffer_to_buffer(
+            &list,
+            16 + u64::from(expected_kept - 1) * 32,
+            &staging,
+            20,
+            4,
+        );
         let result = harness.read_back_u32(encoder, &staging).unwrap();
-        assert_eq!(result, vec![0, expected_dropped, expected_kept]);
+        assert_eq!(
+            result,
+            vec![
+                0,
+                sources * fanout,
+                expected_dropped,
+                expected_kept,
+                0.0_f32.to_bits(),
+                (((expected_kept - 1) / fanout) as f32).to_bits(),
+            ]
+        );
     }
 }
 

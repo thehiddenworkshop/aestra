@@ -5,7 +5,7 @@
 //!
 //! Runs only where a compute adapter exists; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require one.
 
-use aestra_bevy_render::execution::{DomainSpawnPipeline, SpawnState};
+use aestra_bevy_render::execution::{DomainSpawnPipeline, SpawnAcceptanceCounter, SpawnState};
 use aestra_core::ResourceTypeId;
 use aestra_runtime::{CompiledDomainSpawn, EmissionLayout};
 use wgpu::util::DeviceExt;
@@ -218,4 +218,41 @@ fn records_become_particles_in_order_bounded_and_reproducibly() {
     assert_eq!(read(&gpu, &target.free_count), [CAPACITY]);
     assert_eq!(read(&gpu, &target.spawn_counter), [3]);
     assert!(read(&gpu, &target.state).iter().all(|word| *word == 0));
+}
+
+#[test]
+fn destination_acceptance_counter_reports_only_allocated_slots() {
+    let Some(gpu) = gpu() else { return };
+    let pipeline = DomainSpawnPipeline::new(&gpu.device);
+    let target = emitter(&gpu, 10, 0);
+    let list = emission(&gpu, 40, 64);
+    let counters = storage(&gpu, &[0, 0, 0]);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    pipeline.encode_with_acceptance(
+        &gpu.device,
+        &mut encoder,
+        SpawnState {
+            state: &target.state,
+            free_list: &target.free_list,
+            free_count: &target.free_count,
+            spawn_counter: &target.spawn_counter,
+            params: &target.params,
+        },
+        &list,
+        &CompiledDomainSpawn {
+            stage: 0,
+            emission: EmissionLayout {
+                resource: ResourceTypeId::new("org.example.test::resource/emission"),
+                capacity: 64,
+            },
+            inherit: 0.0,
+        },
+        SpawnAcceptanceCounter {
+            buffer: &counters,
+            word: 1,
+        },
+    );
+    gpu.queue.submit([encoder.finish()]);
+    assert_eq!(read(&gpu, &counters), [0, 10, 0]);
+    assert_eq!(read(&gpu, &target.spawn_counter), [10]);
 }

@@ -1140,61 +1140,106 @@ pub fn pack_stateful_events(mask: u32, capacity: u32, words: &mut [u32]) {
 }
 
 /// Words of the gather kernel's `gather_params`: `[trigger bit, count per event, list capacity,
-/// event capacity, persistent overflow-counter word]`.
-pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 5;
+/// event capacity, persistent requested-counter word, persistent list-drop word]`.
+pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 6;
 
-/// Gathers one link's events for a tick (host bindings HB9b): the events of one trigger in a source
-/// emitter's event buffer become an emission list in the layout Spawn From Domain reads (header
-/// `[count, 0, 0, 0]`, then 8-word records: position, a pad, velocity, a pad), each event repeated
-/// `count` times, **in source-ordinal order** — each event's rank is the number of same-trigger events
-/// with a smaller ordinal, so however the source's threads appended them, the list comes out the same
-/// and the spawns reproduce every bit. At most the list's capacity. The link's omitted children
-/// are added to a persistent counter at `gather_params[4]` when that word exists. The list's count
-/// word must be zero before; one thread per event slot.
+/// Orders one link's captured events by source ordinal using a workgroup bitonic sort, then expands
+/// the sorted events in a separate indirect dispatch. This avoids each event scanning every other
+/// event. The source cap is currently 1,024; the sort's 12 KiB of workgroup storage is within the
+/// portable 16 KiB minimum. `order[0..3]` is the indirect dispatch, `order[4]` the child count,
+/// and `order[6..]` the sorted source indices. An ordinal is unique for each trigger in a tick.
+/// The emission list has Spawn From Domain's `[count, 0, 0, 0]` header and 8-word records.
+/// Children beyond list capacity are counted once by the ordering pass.
 pub const PARTICLE_EVENT_GATHER_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read> events: array<u32>;
 @group(0) @binding(1) var<storage, read_write> emission: array<atomic<u32>>;
 @group(0) @binding(2) var<storage, read> gather_params: array<u32>;
 @group(0) @binding(3) var<storage, read_write> counters: array<atomic<u32>>;
+@group(0) @binding(4) var<storage, read_write> order: array<u32>;
+var<workgroup> event_keys: array<u32, 1024>;
+var<workgroup> event_indices: array<u32, 1024>;
+var<workgroup> event_invalid: array<u32, 1024>;
+var<workgroup> matching_count: atomic<u32>;
 
-@compute @workgroup_size(64)
-fn gather_events(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let n = min(events[0], gather_params[3]);
-    let i = gid.x;
-    if (i >= n) { return; }
+@compute @workgroup_size(256)
+fn order_events(@builtin(local_invocation_index) thread: u32) {
+    let n = min(events[0], min(gather_params[3], 1024u));
+    var size = 1u;
+    while (size < n) { size = size * 2u; }
+    if (thread == 0u) { atomicStore(&matching_count, 0u); }
+    workgroupBarrier();
     let kind = gather_params[0];
-    let r = 4u + i * 8u;
-    if (events[r] != kind) { return; }
-    let ordinal = events[r + 1u];
-    var rank = 0u;
-    for (var j = 0u; j < n; j = j + 1u) {
-        let other = 4u + j * 8u;
-        if (events[other] == kind && events[other + 1u] < ordinal) {
-            rank = rank + 1u;
+    for (var i = thread; i < size; i = i + 256u) {
+        let matches_kind = i < n && events[4u + i * 8u] == kind;
+        event_invalid[i] = select(1u, 0u, matches_kind);
+        event_keys[i] = select(0xffffffffu, events[5u + i * 8u], matches_kind);
+        event_indices[i] = i;
+        if (matches_kind) { atomicAdd(&matching_count, 1u); }
+    }
+    workgroupBarrier();
+    for (var width = 2u; width <= size; width = width * 2u) {
+        for (var gap = width / 2u; gap > 0u; gap = gap / 2u) {
+            for (var i = thread; i < size; i = i + 256u) {
+                let other = i ^ gap;
+                if (other > i) {
+                    let a_invalid = event_invalid[i];
+                    let b_invalid = event_invalid[other];
+                    let a_key = event_keys[i];
+                    let b_key = event_keys[other];
+                    let a_index = event_indices[i];
+                    let b_index = event_indices[other];
+                    let greater = a_invalid > b_invalid
+                        || (a_invalid == b_invalid && (a_key > b_key
+                        || (a_key == b_key && a_index > b_index)));
+                    let lesser = a_invalid < b_invalid
+                        || (a_invalid == b_invalid && (a_key < b_key
+                        || (a_key == b_key && a_index < b_index)));
+                    if (((i & width) == 0u && greater) || ((i & width) != 0u && lesser)) {
+                        event_invalid[i] = b_invalid;
+                        event_invalid[other] = a_invalid;
+                        event_keys[i] = b_key;
+                        event_keys[other] = a_key;
+                        event_indices[i] = b_index;
+                        event_indices[other] = a_index;
+                    }
+                }
+            }
+            workgroupBarrier();
         }
     }
+    for (var i = thread; i < size; i = i + 256u) { order[6u + i] = event_indices[i]; }
+    workgroupBarrier();
+    if (thread != 0u) { return; }
     let count = gather_params[1];
-    let first = rank * count;
+    let requested = atomicLoad(&matching_count) * count;
     let capacity = gather_params[2];
-    var dropped = 0u;
-    if (first >= capacity) {
-        dropped = count;
-    } else if (count > capacity - first) {
-        dropped = count - (capacity - first);
+    let kept = min(requested, capacity);
+    atomicStore(&emission[0], kept);
+    order[0] = (kept + 63u) / 64u;
+    order[1] = 1u;
+    order[2] = 1u;
+    order[4] = kept;
+    let requested_word = gather_params[4];
+    if (requested > 0u && requested_word < arrayLength(&counters)) {
+        atomicAdd(&counters[requested_word], requested);
     }
-    let overflow_word = gather_params[4];
+    let dropped = requested - kept;
+    let overflow_word = gather_params[5];
     if (dropped > 0u && overflow_word < arrayLength(&counters)) {
         atomicAdd(&counters[overflow_word], dropped);
     }
-    for (var k = 0u; k < count; k = k + 1u) {
-        let index = first + k;
-        if (index >= capacity) { return; }
-        let o = 4u + index * 8u;
-        for (var axis = 0u; axis < 3u; axis = axis + 1u) {
-            atomicStore(&emission[o + axis], events[r + 2u + axis]);
-            atomicStore(&emission[o + 4u + axis], events[r + 5u + axis]);
-        }
-        atomicAdd(&emission[0], 1u);
+}
+
+@compute @workgroup_size(64)
+fn expand_events(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let child = gid.x;
+    if (child >= order[4]) { return; }
+    let source = order[6u + child / gather_params[1]];
+    let r = 4u + source * 8u;
+    let o = 4u + child * 8u;
+    for (var axis = 0u; axis < 3u; axis = axis + 1u) {
+        atomicStore(&emission[o + axis], events[r + 2u + axis]);
+        atomicStore(&emission[o + 4u + axis], events[r + 5u + axis]);
     }
 }
 "#;
@@ -1764,6 +1809,7 @@ pub const DOMAIN_SPAWN_PLAN_WGSL: &str = r#"
 @group(0) @binding(2) var<storage, read> emission: array<u32>;
 @group(0) @binding(3) var<storage, read_write> plan: array<u32>;
 @group(0) @binding(4) var<storage, read> spawn_params: array<u32>;
+@group(0) @binding(5) var<storage, read_write> spawn_counters: array<atomic<u32>>;
 
 @compute @workgroup_size(1)
 fn domain_spawn_plan() {
@@ -1778,6 +1824,10 @@ fn domain_spawn_plan() {
     plan[3] = count;
     plan[4] = free;
     plan[5] = first;
+    let accepted_word = spawn_params[2];
+    if (count > 0u && accepted_word < arrayLength(&spawn_counters)) {
+        atomicAdd(&spawn_counters[accepted_word], count);
+    }
 }
 "#;
 

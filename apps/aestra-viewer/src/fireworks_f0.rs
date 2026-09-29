@@ -174,6 +174,24 @@ pub fn event_probe() -> EffectAsset {
     effect
 }
 
+/// One rocket launches an authored 800-child hero burst through a single event link.
+pub fn hero_event_probe() -> EffectAsset {
+    let mut effect = event_probe();
+    effect.name = "Fireworks F1 Hero Event Probe".into();
+    effect.emitters[0].max_particles = 1;
+    effect.emitters[1].max_particles = 800;
+    if let ModuleParameters::Emission {
+        spawn_rate,
+        burst_count,
+    } = &mut effect.emitters[0].modules[0].parameters
+    {
+        *spawn_rate = 60.0;
+        *burst_count = 0;
+    }
+    effect.events[0].count = 800;
+    effect
+}
+
 /// Supported-side trail probe: one emitter, 256 parents/owners, 32 records per
 /// owner. A 257-parent variant is deliberately tested as rejected.
 pub fn trail_probe() -> EffectAsset {
@@ -230,18 +248,20 @@ mod tests {
     }
 
     #[test]
-    fn current_event_count_boundary_is_recorded_without_splitting_links() {
+    fn hero_event_count_compiles_without_splitting_links() {
         let mut fixture = effect();
         fixture.events[0].count = 64;
         assert!(EffectCompiler::default().compile(&fixture).is_ok());
         fixture.events[0].count = 65;
-        assert!(EffectCompiler::default().compile(&fixture).is_err());
+        assert!(EffectCompiler::default().compile(&fixture).is_ok());
         fixture.events[0].count = 800;
+        assert!(EffectCompiler::default().compile(&fixture).is_ok());
+        fixture.events[0].count = 801;
         assert!(EffectCompiler::default().compile(&fixture).is_err());
     }
 
     #[test]
-    fn supported_side_fan_out_probe_requests_more_than_the_expansion_list() {
+    fn supported_side_fan_out_probe_fits_the_planned_expansion_list() {
         let fixture = event_probe();
         assert_eq!(fixture.events[0].count, 64);
         assert_eq!(fixture.emitters[0].max_particles, 64);
@@ -250,6 +270,40 @@ mod tests {
             4096
         );
         assert!(EffectCompiler::default().compile(&fixture).is_ok());
+    }
+
+    #[test]
+    fn single_link_hero_probe_compiles_at_800_children() {
+        let fixture = hero_event_probe();
+        assert_eq!(fixture.events.len(), 1);
+        assert_eq!(fixture.events[0].count, 800);
+        assert_eq!(fixture.emitters[1].max_particles, 800);
+        assert!(EffectCompiler::default().compile(&fixture).is_ok());
+    }
+
+    #[test]
+    fn aggregate_event_list_budget_rejects_an_overcommitted_effect() {
+        let mut fixture = effect();
+        fixture.emitters[0].max_particles = 1024;
+        fixture.events.clear();
+        for index in 0..6 {
+            let mut link = EventLink::new(
+                fixture.emitters[0].id,
+                EventTrigger::OnDeath,
+                fixture.emitters[1].id,
+            );
+            link.id = EventId::from_u128(400 + index);
+            link.count = 800;
+            fixture.events.push(link);
+        }
+        fixture.events.truncate(5);
+        assert!(EffectCompiler::default().compile(&fixture).is_ok());
+        fixture.events.push({
+            let mut link = fixture.events[0].clone();
+            link.id = EventId::from_u128(405);
+            link
+        });
+        assert!(EffectCompiler::default().compile(&fixture).is_err());
     }
 
     #[test]

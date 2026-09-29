@@ -59,7 +59,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|trail]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -106,6 +106,7 @@ fn main() {
     let gpu_bench_effect = if config.fireworks_f0 {
         match config.fireworks_probe {
             Some(FireworksProbe::Event) => "fireworks_f0_event",
+            Some(FireworksProbe::EventHero) => "fireworks_f1_event_hero",
             Some(FireworksProbe::Trail) => "fireworks_f0_trail",
             None => "fireworks_f0",
         }
@@ -236,6 +237,7 @@ enum FireworksCamera {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FireworksProbe {
     Event,
+    EventHero,
     Trail,
 }
 
@@ -243,6 +245,7 @@ impl FireworksProbe {
     fn parse(value: &str) -> Option<Self> {
         match value {
             "event" => Some(Self::Event),
+            "event-hero" => Some(Self::EventHero),
             "trail" => Some(Self::Trail),
             _ => None,
         }
@@ -338,10 +341,10 @@ impl ViewerConfig {
                 "--fireworks-f0-probe" => {
                     let value = args
                         .next()
-                        .ok_or("--fireworks-f0-probe requires event or trail")?;
+                        .ok_or("--fireworks-f0-probe requires event, event-hero or trail")?;
                     fireworks_probe = Some(
                         FireworksProbe::parse(&value)
-                            .ok_or("--fireworks-f0-probe requires event or trail")?,
+                            .ok_or("--fireworks-f0-probe requires event, event-hero or trail")?,
                     );
                 }
                 "--camera" => {
@@ -688,6 +691,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
     let effect = if config.fireworks_f0 {
         Ok(match config.fireworks_probe {
             Some(FireworksProbe::Event) => fireworks_f0::event_probe(),
+            Some(FireworksProbe::EventHero) => fireworks_f0::hero_event_probe(),
             Some(FireworksProbe::Trail) => fireworks_f0::trail_probe(),
             None => fireworks_f0::effect(),
         })

@@ -1416,6 +1416,11 @@ pub struct DomainSpawnPipeline {
     spawn: wgpu::ComputePipeline,
 }
 
+pub struct SpawnAcceptanceCounter<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    pub word: u32,
+}
+
 impl DomainSpawnPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let pipeline = |label: &str, source: String, entry: &str| {
@@ -1455,9 +1460,38 @@ impl DomainSpawnPipeline {
         emission: &wgpu::Buffer,
         spawn: &aestra_runtime::CompiledDomainSpawn,
     ) {
+        let unused = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra unused spawn acceptance counter"),
+            contents: &0u32.to_le_bytes(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        self.encode_with_acceptance(
+            device,
+            encoder,
+            target,
+            emission,
+            spawn,
+            SpawnAcceptanceCounter {
+                buffer: &unused,
+                word: u32::MAX,
+            },
+        );
+    }
+
+    pub fn encode_with_acceptance(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: SpawnState<'_>,
+        emission: &wgpu::Buffer,
+        spawn: &aestra_runtime::CompiledDomainSpawn,
+        acceptance: SpawnAcceptanceCounter<'_>,
+    ) {
+        let mut words = aestra_gpu::domain_spawn_params(spawn);
+        words[2] = acceptance.word;
         let spawn_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("aestra domain spawn params"),
-            contents: &words_to_bytes(&aestra_gpu::domain_spawn_params(spawn)),
+            contents: &words_to_bytes(&words),
             usage: wgpu::BufferUsages::STORAGE,
         });
         let plan = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1489,6 +1523,7 @@ impl DomainSpawnPipeline {
                 emission,
                 &plan,
                 &spawn_params,
+                acceptance.buffer,
             ],
         );
         let spawn_group = group(
@@ -1526,13 +1561,16 @@ impl DomainSpawnPipeline {
 /// [`DomainSpawnPipeline`] then turns into the target's particles ([`Self::spawn`]). Engine-neutral,
 /// like [`StageExecutor`].
 pub struct EventGatherPipeline {
-    pipeline: wgpu::ComputePipeline,
+    order: wgpu::ComputePipeline,
+    expand: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
 }
 
-/// A persistent counter word for children omitted by one event link's bounded list.
-pub struct EventOverflowCounter<'a> {
+/// Persistent counter words for a link's captured child demand and list overflow.
+pub struct EventLinkCounters<'a> {
     pub buffer: &'a wgpu::Buffer,
-    pub word: u32,
+    pub requested_word: u32,
+    pub dropped_word: u32,
 }
 
 /// An event link's emission buffer and the number of records allocated in it.
@@ -1543,19 +1581,52 @@ pub struct EventEmissionList<'a> {
 
 impl EventGatherPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
+        const _: () = assert!(aestra_runtime::PARTICLE_EVENT_CAPACITY == 1024);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("aestra event gather"),
             source: wgpu::ShaderSource::Wgsl(aestra_gpu::PARTICLE_EVENT_GATHER_WGSL.into()),
         });
+        let entries: [_; 5] = std::array::from_fn(|binding| wgpu::BindGroupLayoutEntry {
+            binding: binding as u32,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage {
+                    read_only: matches!(binding, 0 | 2),
+                },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("aestra event gather layout"),
+            entries: &entries,
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("aestra event gather pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let order = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("aestra event order"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("order_events"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        let expand = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("aestra event expansion"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("expand_events"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Self {
-            pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("aestra event gather"),
-                layout: None,
-                module: &module,
-                entry_point: Some("gather_events"),
-                compilation_options: Default::default(),
-                cache: None,
-            }),
+            order,
+            expand,
+            layout,
         }
     }
 
@@ -1565,7 +1636,7 @@ impl EventGatherPipeline {
     }
 
     /// A link can produce `count` children for every event its source can capture in one tick.
-    /// The authoring limit of 64 children bounds this to 65,536 records (2 MiB) per link.
+    /// The authoring limit of 800 children bounds this to 819,200 records (25 MiB) per link.
     pub fn list_capacity(source_capacity: u32, count: u32) -> u32 {
         source_capacity
             .min(aestra_runtime::PARTICLE_EVENT_CAPACITY)
@@ -1617,9 +1688,10 @@ impl EventGatherPipeline {
             events,
             list,
             link,
-            EventOverflowCounter {
+            EventLinkCounters {
                 buffer: &unused,
-                word: u32::MAX,
+                requested_word: u32::MAX,
+                dropped_word: u32::MAX,
             },
         );
     }
@@ -1631,7 +1703,7 @@ impl EventGatherPipeline {
         events: &wgpu::Buffer,
         list: EventEmissionList<'_>,
         link: &aestra_runtime::CompiledEventLink,
-        overflow: EventOverflowCounter<'_>,
+        counters: EventLinkCounters<'_>,
     ) {
         encoder.clear_buffer(list.buffer, 0, Some(4));
         let capacity = aestra_runtime::PARTICLE_EVENT_CAPACITY;
@@ -1642,13 +1714,26 @@ impl EventGatherPipeline {
                 link.count,
                 list.capacity,
                 capacity,
-                overflow.word,
+                counters.requested_word,
+                counters.dropped_word,
             ]),
             usage: wgpu::BufferUsages::STORAGE,
         });
+        let order = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aestra event order and dispatch plan"),
+            size: (6 + aestra_runtime::PARTICLE_EVENT_CAPACITY as u64) * 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let indirect = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aestra event expansion indirect dispatch"),
+            size: 12,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        });
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("aestra event gather"),
-            layout: &self.pipeline.get_bind_group_layout(0),
+            layout: &self.layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -1664,17 +1749,31 @@ impl EventGatherPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: overflow.buffer.as_entire_binding(),
+                    resource: counters.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: order.as_entire_binding(),
                 },
             ],
         });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("aestra event order"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.order);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&order, 0, &indirect, 0, 12);
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("aestra event gather"),
+            label: Some("aestra event expansion"),
             timestamp_writes: None,
         });
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(&self.expand);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(capacity.div_ceil(64), 1, 1);
+        pass.dispatch_workgroups_indirect(&indirect, 0);
     }
 }
 

@@ -3026,6 +3026,7 @@ fn compile_event_links(
 ) -> Result<Vec<aestra_runtime::CompiledEventLink>, CompileError> {
     let mut report = ValidationReport::default();
     let mut links = Vec::new();
+    let mut planned_list_bytes = 0_u64;
     for (index, link) in asset.events.iter().enumerate() {
         let find = |id: aestra_core::EmitterId, end: &str| {
             let regions: Vec<usize> = emitters
@@ -3044,13 +3045,39 @@ fn compile_event_links(
             }
         };
         match (find(link.source, "source"), find(link.target, "target")) {
-            (Ok(Some(source)), Ok(Some(target))) => links.push(aestra_runtime::CompiledEventLink {
-                source,
-                trigger: link.trigger,
-                target,
-                count: link.count,
-                inherit: link.inherit_velocity,
-            }),
+            (Ok(Some(source)), Ok(Some(target))) => {
+                let captured = u64::from(
+                    emitters[source]
+                        .max_particles
+                        .min(aestra_runtime::PARTICLE_EVENT_CAPACITY),
+                );
+                let list_bytes = captured
+                    .checked_mul(u64::from(link.count))
+                    .and_then(|records| records.checked_mul(32))
+                    .and_then(|data_bytes| data_bytes.checked_add(16));
+                planned_list_bytes = list_bytes
+                    .and_then(|bytes| planned_list_bytes.checked_add(bytes))
+                    .unwrap_or(u64::MAX);
+                if planned_list_bytes > aestra_runtime::PARTICLE_EVENT_LIST_BUDGET_BYTES {
+                    report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        format!("effect.events[{index}].count"),
+                        format!(
+                            "event-link lists would reserve more than {} MiB for this effect; \
+                             reduce source capacity or fan-out, or split the workload",
+                            aestra_runtime::PARTICLE_EVENT_LIST_BUDGET_BYTES / (1024 * 1024)
+                        ),
+                    ));
+                } else {
+                    links.push(aestra_runtime::CompiledEventLink {
+                        source,
+                        trigger: link.trigger,
+                        target,
+                        count: link.count,
+                        inherit: link.inherit_velocity,
+                    });
+                }
+            }
             (Ok(_), Ok(_)) => {}
             (source, target) => {
                 for diagnostic in [source.err(), target.err()].into_iter().flatten() {
