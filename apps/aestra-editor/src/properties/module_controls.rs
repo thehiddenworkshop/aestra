@@ -318,6 +318,21 @@ pub(super) fn set_module_input_source(
             value: detached_property_value(value),
         });
     }
+    // A host-bound input reads a binding field: keep the one it had, or give it one of its type.
+    if source == PropertySourceKind::HostBinding
+        && !module_instance.host_bindings.contains_key(parameter)
+    {
+        let Some(field) = super::interface::default_host_field(
+            &session.effect,
+            emitter,
+            module,
+            input,
+            localizer,
+        ) else {
+            return false;
+        };
+        commands.extend(field);
+    }
     commands.push(EffectCommand::SetModulePropertySource {
         emitter,
         module,
@@ -1335,6 +1350,17 @@ fn spawn_input_control(
     let public =
         public_module_input_control(session, module, input, input_index, &value, localizer);
     let source = property_source_for_input(module, input, &value);
+    // A host-bound input names its binding field; its value below is the fallback.
+    if source == PropertySourceKind::HostBinding {
+        super::interface::spawn_host_field_picker(
+            parent,
+            module,
+            input,
+            input_index,
+            session,
+            localizer,
+        );
+    }
     if input.sources.len() > 1
         && matches!(&input.control, InputControl::Vector { .. })
         && matches!(

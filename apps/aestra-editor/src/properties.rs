@@ -38,6 +38,7 @@ use fluent_bundle::FluentArgs;
 mod asset_drop;
 mod asset_picker;
 mod inspector;
+mod interface;
 mod material_document;
 mod mesh_drop;
 mod module_controls;
@@ -101,6 +102,7 @@ pub(crate) struct PropertiesPlugin;
 impl Plugin for PropertiesPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
+        interface::register(app);
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<ModuleDragState>()
@@ -8035,11 +8037,8 @@ fn spawn_property_source_menu(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    // Choosing a host binding needs a binding-field picker, which arrives with the Interface UX
-    // (host bindings HB11); until then the source is shown only when a file already uses it.
     let options = supported
         .iter()
-        .filter(|source| **source != PropertySourceKind::HostBinding || current == **source)
         .map(|source| ComboOption {
             label: property_source_label(*source, localizer),
             selected: *source == current,
@@ -8089,8 +8088,7 @@ fn property_source_icon(source: PropertySourceKind) -> &'static str {
         PropertySourceKind::RandomRange => "icons/source-random.svg",
         PropertySourceKind::Curve(_) => "icons/source-curve.svg",
         PropertySourceKind::Gradient(_) => "icons/source-gradient.svg",
-        // No dedicated icon yet; the host-binding picker arrives with the Interface UX (HB11).
-        PropertySourceKind::HostBinding => "icons/source-constant.svg",
+        PropertySourceKind::HostBinding => "icons/source-host-binding.svg",
     }
 }
 

@@ -114,8 +114,9 @@ pub(super) fn spawn_selection_inspector(
     }
 }
 
-/// The Effect-item inspector details (extensible-stages M9, §28.1): the effect's name. Shown in the
-/// Properties panel when the Effect item is selected in the Module Stack.
+/// The Effect-item inspector details (extensible-stages M9, §28.1): the effect's name, then its
+/// Interface (host bindings HB11). Shown in the Properties panel when the Effect item is selected in
+/// the Module Stack.
 pub(super) fn spawn_effect_details(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -151,6 +152,7 @@ pub(super) fn spawn_effect_details(
                 DocumentTextControl::Effect,
             );
         });
+    super::interface::spawn_interface(parent, session, localizer);
 }
 
 /// The Emitter-item inspector details (extensible-stages M9, §28.1): name, enabled, capacity, transform,
