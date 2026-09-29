@@ -1049,11 +1049,17 @@ fn aestra_physics_proxy(base: u32, p: vec3<f32>) -> AestraPhysicsProbe {
                 outside.y * aestra_physics_sign(local.y),
                 outside.z * aestra_physics_sign(local.z));
         } else {
-            // Inside: out through the nearest face, ties toward the earlier axis.
-            var axis = 0u;
-            if (q.y > q[axis]) { axis = 1u; }
-            if (q.z > q[axis]) { axis = 2u; }
-            local_normal[axis] = aestra_physics_sign(local[axis]);
+            // Inside: out through the nearest face, ties toward the earlier axis. Whole-vector writes
+            // only: D3D's FXC cannot write a local vector's component at a dynamic index.
+            var nearest = q.x;
+            local_normal = vec3<f32>(aestra_physics_sign(local.x), 0.0, 0.0);
+            if (q.y > nearest) {
+                nearest = q.y;
+                local_normal = vec3<f32>(0.0, aestra_physics_sign(local.y), 0.0);
+            }
+            if (q.z > nearest) {
+                local_normal = vec3<f32>(0.0, 0.0, aestra_physics_sign(local.z));
+            }
         }
         return AestraPhysicsProbe(
             outside_length + inside, aestra_physics_rotate(rotation, aestra_physics_unit(local_normal)));
@@ -1177,9 +1183,11 @@ fn order_events(@builtin(local_invocation_index) thread: u32) {
         if (matches_kind) { atomicAdd(&matching_count, 1u); }
     }
     workgroupBarrier();
-    for (var width = 2u; width <= size; width = width * 2u) {
+    // Constant stage bounds, the work skipped past `size`: every thread must reach every barrier in
+    // uniform control flow, and D3D's FXC cannot prove a count read from storage uniform.
+    for (var width = 2u; width <= 1024u; width = width * 2u) {
         for (var gap = width / 2u; gap > 0u; gap = gap / 2u) {
-            for (var i = thread; i < size; i = i + 256u) {
+            for (var i = thread; width <= size && i < size; i = i + 256u) {
                 let other = i ^ gap;
                 if (other > i) {
                     let a_invalid = event_invalid[i];

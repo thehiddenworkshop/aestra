@@ -6,7 +6,7 @@
 //! on the GPU, whatever the balls do.
 //!
 //! ```sh
-//! cargo run -p aestra-bevy-avian --example physics_sparks --release
+//! cargo run -p aestra-bevy-avian --example avian_sparks --release
 //! ```
 //!
 //! With `AESTRA_EXAMPLE_CAPTURE=<file.png>` it saves a screenshot after four seconds and exits.
