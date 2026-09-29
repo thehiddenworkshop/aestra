@@ -4,6 +4,7 @@
 //! inputs.
 
 use super::*;
+use crate::preview_mocks::PreviewMock;
 use aestra_compiler::BindingKindRegistry;
 use aestra_core::{
     BindingFieldId, BindingId, BindingUpdateMode, EffectBinding, HostFieldRef,
@@ -45,6 +46,8 @@ pub(super) enum InterfaceAction {
         binding: Option<BindingId>,
         field: u8,
     },
+    /// Gives a binding an editor-only preview stand-in, or none (host bindings HB11c).
+    SetPreviewMock(BindingId, Option<PreviewMock>),
 }
 
 /// The name input of a binding.
@@ -190,13 +193,22 @@ fn field_read(effect: &EffectAsset, id: BindingId, field: &BindingFieldId) -> bo
         })
 }
 
-/// Applies an Interface edit as one undoable transaction. Returns whether the effect changed.
+/// Applies an Interface edit as one undoable transaction. Returns whether the effect changed. A
+/// preview stand-in is session state only: it changes neither the effect nor its history.
 pub(super) fn apply(
     action: InterfaceAction,
     session: &mut EditorSession,
     registry: &ModuleRegistry,
     localizer: &Localizer,
 ) -> bool {
+    if let InterfaceAction::SetPreviewMock(id, mock) = action {
+        match mock {
+            Some(mock) => session.preview_mocks.insert(id, mock),
+            None => session.preview_mocks.remove(&id),
+        };
+        session.ui_revision += 1;
+        return false;
+    }
     let effect = &session.effect;
     let (label, commands) = match action {
         InterfaceAction::AddBinding => {
@@ -333,6 +345,7 @@ pub(super) fn apply(
                 }],
             )
         }
+        InterfaceAction::SetPreviewMock(..) => unreachable!("handled above"),
         InterfaceAction::BindInput {
             module,
             input,
@@ -638,7 +651,8 @@ pub(super) fn spawn_interface(
                     .bindings
                     .iter()
                     .any(|candidate| candidate.name == binding.name && candidate.read);
-                spawn_binding(card, binding, read, localizer);
+                let mock = session.preview_mocks.get(&binding.id).copied();
+                spawn_binding(card, binding, read, mock, localizer);
             }
             card.spawn(Node {
                 width: Val::Percent(100.0),
@@ -692,6 +706,7 @@ fn spawn_binding(
     parent: &mut ChildSpawnerCommands,
     binding: &EffectBinding,
     read: bool,
+    mock: Option<PreviewMock>,
     localizer: &Localizer,
 ) {
     let kind = BINDING_KINDS
@@ -790,6 +805,30 @@ fn spawn_binding(
                 );
             });
 
+            // A spatial binding can have a stand-in in the editor's preview.
+            if binding.kind.as_str() == aestra_core::AESTRA_BINDING_SPATIAL {
+                let mock_label = |mock: Option<PreviewMock>| {
+                    localizer.text(mock.map_or("interface-mock-none", PreviewMock::message_id))
+                };
+                let mocks = std::iter::once(None)
+                    .chain(PreviewMock::ALL.map(Some))
+                    .map(|choice| ComboOption {
+                        label: mock_label(choice),
+                        selected: choice == mock,
+                        action: InterfaceAction::SetPreviewMock(binding.id, choice),
+                    })
+                    .collect::<Vec<_>>();
+                let title = localizer.text("interface-mock");
+                crate::feathers::field_row::spawn_field_row(
+                    card,
+                    crate::feathers::field_row::FieldRowProps::new(&title)
+                        .with_control_min_width(130.0),
+                    EditorTooltip::description(localizer.text("interface-mock-description")),
+                    |controls| {
+                        spawn_combo_control(controls, &mock_label(mock), &title, &mocks, 130.0);
+                    },
+                );
+            }
             for (index, field) in binding.fields().enumerate() {
                 let required = binding.required_fields.contains(field);
                 let options = [
@@ -1048,5 +1087,29 @@ mod tests {
             session.effect.bindings[0].update_mode,
             BindingUpdateMode::SnapshotOnSpawn
         );
+
+        // A preview stand-in is session state: the effect and its history are untouched.
+        let before = session.effect.clone();
+        assert!(!apply(
+            InterfaceAction::SetPreviewMock(id, Some(PreviewMock::FlyBy)),
+            &mut session,
+            &registry,
+            &localizer,
+        ));
+        assert_eq!(session.preview_mocks.get(&id), Some(&PreviewMock::FlyBy));
+        assert_eq!(session.effect, before);
+        session.undo();
+        assert_eq!(
+            session.effect.bindings[0].update_mode,
+            BindingUpdateMode::Live,
+            "undo skips the stand-in and reverts the last edit"
+        );
+        apply(
+            InterfaceAction::SetPreviewMock(id, None),
+            &mut session,
+            &registry,
+            &localizer,
+        );
+        assert!(session.preview_mocks.is_empty());
     }
 }

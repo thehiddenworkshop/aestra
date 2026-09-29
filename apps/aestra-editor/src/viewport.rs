@@ -114,6 +114,7 @@ impl Plugin for ViewportPlugin {
                 (
                     sync_project_preview,
                     sync_rendered_preview,
+                    apply_preview_mocks,
                     update_preview.after(AestraRenderSet::Prepare),
                     navigate_preview_camera,
                     sync_preview_grid,
@@ -125,6 +126,7 @@ impl Plugin for ViewportPlugin {
                     interact_shape_gizmo,
                     sync_transform_gizmo_focus,
                     draw_preview_scene_gizmos,
+                    draw_preview_mocks,
                     update_viewport_status_label,
                 )
                     .chain()
@@ -146,10 +148,7 @@ impl Plugin for ViewportPlugin {
                     host_motion::draw_path.after(update_emitter_transform_gizmo),
                 ),
             )
-            .configure_sets(
-                Update,
-                AestraRenderSet::Prepare.after(sync_rendered_preview),
-            );
+            .configure_sets(Update, AestraRenderSet::Prepare.after(apply_preview_mocks));
     }
 }
 
@@ -2924,6 +2923,66 @@ fn sync_rendered_preview(
     }
 }
 
+/// Drives the edited effect's bindings from its preview stand-ins (host bindings HB11c): the root
+/// players and the session's own instance read the same recorded trace, so seeking and scrubbing
+/// replay the stand-ins exactly. Nested effects keep reading what their parents forward.
+fn apply_preview_mocks(
+    mut session: ResMut<EditorSession>,
+    mut traces: Local<crate::preview_mocks::PreviewMockTraces>,
+    mut players: Query<
+        (&PreviewEffectInstancePath, &mut PresentedEffect),
+        With<PreviewPresentedEffect>,
+    >,
+) {
+    let mocks = &session.preview_mocks;
+    for (path, mut player) in &mut players {
+        if !path.0.is_empty() {
+            continue;
+        }
+        let trace = traces.trace(player.effect(), mocks);
+        if crate::preview_mocks::needs_trace(&player.instance, trace.as_ref()) {
+            player.instance.set_binding_trace(trace);
+        }
+    }
+    let Some(effect) = session.preview().map(|preview| preview.effect().clone()) else {
+        return;
+    };
+    let trace = traces.trace(&effect, &session.preview_mocks);
+    if session
+        .preview()
+        .is_some_and(|preview| crate::preview_mocks::needs_trace(preview, trace.as_ref()))
+        && let Some(preview) = session.bypass_change_detection().preview_mut()
+    {
+        preview.set_binding_trace(trace);
+    }
+}
+
+/// Marks where each preview stand-in is at the playhead.
+fn draw_preview_mocks(
+    session: Res<EditorSession>,
+    camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
+    mut gizmos: Gizmos<PreviewSceneGizmos>,
+) {
+    let time = session.simulation_time();
+    for binding in &session.effect.bindings {
+        let Some(mock) = session.preview_mocks.get(&binding.id) else {
+            continue;
+        };
+        let (position, velocity) = mock.pose(time);
+        let position = Vec3::from_array(position);
+        let radius = screen_space_gizmo_radius(camera.0, camera.1, position, 7.0);
+        gizmos.sphere(position, radius, theme::PLAYHEAD);
+        let velocity = Vec3::from_array(velocity);
+        if velocity.length_squared() > 1e-6 {
+            gizmos.arrow(
+                position,
+                position + velocity.normalize() * radius * 4.0,
+                theme::PLAYHEAD,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 fn presented_playhead_time(player: &PresentedEffect) -> f32 {
     let effect = player.effect();
@@ -4206,6 +4265,87 @@ mod tests {
                 .unwrap()
                 .effect()
         ));
+    }
+
+    #[test]
+    fn preview_stand_ins_drive_the_edited_effect_and_are_never_saved() {
+        let mut session = test_support::session_with_timing_slack();
+        let target =
+            aestra_core::EffectBinding::spatial("Target", aestra_core::BindingUpdateMode::Live);
+        let id = target.id;
+        assert!(session.execute(
+            "Add binding",
+            EffectCommand::AddBinding {
+                binding: target,
+                index: 0,
+            },
+            false,
+        ));
+        session
+            .preview_mocks
+            .insert(id, crate::preview_mocks::PreviewMock::Orbit);
+        let player = configured_preview_player(&session).unwrap();
+
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<ProjectEffectCatalog>()
+            .init_resource::<EditorPreviewProject>()
+            .init_resource::<TimelineState>()
+            .add_systems(
+                Update,
+                (
+                    sync_project_preview,
+                    sync_rendered_preview,
+                    apply_preview_mocks,
+                )
+                    .chain(),
+            );
+        let player_entity = app
+            .world_mut()
+            .spawn((
+                PreviewPresentedEffect,
+                PreviewEffectInstancePath::default(),
+                player,
+            ))
+            .id();
+        app.update();
+
+        let traced = |app: &App| {
+            let world = app.world();
+            let player = world.get::<PresentedEffect>(player_entity).unwrap();
+            let session = world.resource::<EditorSession>();
+            (
+                player
+                    .instance
+                    .binding_trace()
+                    .map(|trace| trace.identity()),
+                session
+                    .preview()
+                    .unwrap()
+                    .binding_trace()
+                    .map(|trace| trace.identity()),
+            )
+        };
+        let (presented, edited) = traced(&app);
+        assert!(
+            presented.is_some(),
+            "the rendered preview reads the stand-in"
+        );
+        assert_eq!(presented, edited, "both previews read the same recording");
+        let saved = app
+            .world()
+            .resource::<EditorSession>()
+            .effect
+            .to_pretty_ron()
+            .unwrap();
+        assert!(!saved.contains("Orbit"), "a stand-in is never saved");
+
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .preview_mocks
+            .clear();
+        app.update();
+        assert_eq!(traced(&app), (None, None));
     }
 
     #[test]

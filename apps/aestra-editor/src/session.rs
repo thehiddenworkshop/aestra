@@ -86,6 +86,10 @@ pub(crate) struct EditorSession {
     saved_source_bytes: Option<Vec<u8>>,
     effect_revision: u64,
     last_seek: SeekPlan,
+    /// Editor-only stand-ins for the effect's host objects in the preview (host bindings HB11c).
+    /// Never saved, never part of history.
+    pub(crate) preview_mocks:
+        std::collections::BTreeMap<aestra_core::BindingId, crate::preview_mocks::PreviewMock>,
 }
 
 impl EditorSession {
@@ -129,6 +133,7 @@ impl EditorSession {
             saved_source_bytes: self.saved_source_bytes.clone(),
             effect_revision: self.effect_revision,
             last_seek: self.last_seek,
+            preview_mocks: self.preview_mocks.clone(),
         }
     }
 
@@ -200,6 +205,7 @@ impl EditorSession {
             saved_source_bytes: None,
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
+            preview_mocks: Default::default(),
         }
     }
 

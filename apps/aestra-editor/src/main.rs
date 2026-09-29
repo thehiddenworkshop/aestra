@@ -23,6 +23,7 @@ mod material_function_editor;
 mod material_graph;
 mod menus;
 mod persistence;
+mod preview_mocks;
 mod profiler;
 mod project;
 mod project_content;
