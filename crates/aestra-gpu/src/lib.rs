@@ -744,7 +744,7 @@ fn aestra_resolve_colliders(position: vec3<f32>, velocity: vec3<f32>) -> AestraC
 "#;
 
 /// The module-scope bindings the unified stateful simulation module ([`stateful_simulation_wgsl`])
-/// declares, shared across its `death_integrate` / `spawn` / `present` entry points. The persistent
+/// declares, shared across its `death_integrate` / `spawn` / `present` / `order_present` entry points. The persistent
 /// state, the free list and its atomic count, the atomic spawn counter, the constant per-dispatch
 /// params, the presentation output (the 48-byte `GpuParticle` buffer, written as raw words), and the
 /// three compaction outputs `present` shares with the analytic path so both feed one render pipeline:
@@ -762,14 +762,15 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 @group(0) @binding(9) var<storage, read_write> events: array<atomic<u32>>;
 "#;
 
-/// The three entry points of the unified stateful simulation module (hybrid roadmap M6), over the
+/// The four entry points of the unified stateful simulation module (hybrid roadmap M6), over the
 /// [`STATEFUL_SIMULATION_BINDINGS`] layout. `death_integrate` advances each live slot by one fixed
 /// tick (gravity, then linear drag) and frees the ones that died; `spawn` claims a free slot and a
 /// fresh ordinal for each of this tick's new particles, sampling a per-particle speed and lifetime in
 /// range and a launch direction on the authored spread cone; `present` extracts the live state into the
 /// presentation buffer *and* compacts the live slots into `alive_indices` while bumping the indirect
 /// draw count and live counter — the same compaction the analytic `simulate` performs, so the stateful
-/// output draws through the identical render path. All dynamics mirror
+/// output draws through the identical render path. `order_present` then stabilizes the transparent
+/// draw order for bounded live sets. All dynamics mirror
 /// `aestra_runtime::StatefulSimulation` bit-for-bit. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
 /// `u32`s: `[capacity, spawn_per_tick, seed_lo, seed_hi, speed_min, speed_max, lifetime_min,
 /// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset,
@@ -1619,12 +1620,113 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
         atomicAdd(&counters[0], 1u);
     }
 }
+
+// The atomic live-slot compaction above produces the right set but not a repeatable draw order.
+// Transparent blending depends on that order. Sort up to 4,096 live instances by their stable
+// spawn ordinal without moving persistent slots or changing the simulation's free-list policy.
+// Packing the ordinal distance and emitter-local slot keeps this within the portable 16 KiB
+// workgroup-storage limit. Unusually long-lived particles fall back to full-key comparisons.
+// Larger live sets need a staged radix sort; leave their existing draw order intact for now.
+var<workgroup> ordered_alive: array<u32, 4096>;
+
+@compute @workgroup_size(256)
+fn order_present(@builtin(local_invocation_index) thread: u32) {
+    let emitter = params[17];
+    let offset = params[18];
+    let count = atomicLoad(&indirect[emitter * 4u + 1u]);
+    if (count == 0u || count > 4096u) { return; }
+    var size = 1u;
+    while (size < count) { size *= 2u; }
+    for (var i = thread; i < size; i += 256u) {
+        if (i < count) {
+            let slot = alive_indices[offset + i];
+            ordered_alive[i] = bitcast<u32>(present_out[slot * AESTRA_PRESENT_STRIDE + 11u]);
+        } else {
+            ordered_alive[i] = 0xffffffffu;
+        }
+    }
+    workgroupBarrier();
+    for (var gap = size / 2u; gap > 0u; gap /= 2u) {
+        for (var i = thread; i < gap; i += 256u) {
+            ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]);
+        }
+        workgroupBarrier();
+    }
+    let minimum = ordered_alive[0];
+    workgroupBarrier();
+    for (var i = thread; i < size; i += 256u) {
+        if (i < count) {
+            let slot = alive_indices[offset + i];
+            let ordinal = bitcast<u32>(present_out[slot * AESTRA_PRESENT_STRIDE + 11u]);
+            ordered_alive[i] = 0xffffffffu - ordinal;
+        } else {
+            ordered_alive[i] = 0xffffffffu;
+        }
+    }
+    workgroupBarrier();
+    for (var gap = size / 2u; gap > 0u; gap /= 2u) {
+        for (var i = thread; i < gap; i += 256u) {
+            ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]);
+        }
+        workgroupBarrier();
+    }
+    let maximum = 0xffffffffu - ordered_alive[0];
+    let packed = params[0] <= 4096u && maximum - minimum < 1048575u;
+    workgroupBarrier();
+    for (var i = thread; i < size; i += 256u) {
+        if (i < count) {
+            let slot = alive_indices[offset + i];
+            if (packed) {
+                let ordinal = bitcast<u32>(present_out[slot * AESTRA_PRESENT_STRIDE + 11u]);
+                ordered_alive[i] = ((ordinal - minimum) << 12u) | (slot - offset);
+            } else {
+                ordered_alive[i] = slot;
+            }
+        } else {
+            ordered_alive[i] = 0xffffffffu;
+        }
+    }
+    workgroupBarrier();
+    for (var width = 2u; width <= size; width *= 2u) {
+        for (var gap = width / 2u; gap > 0u; gap /= 2u) {
+            for (var i = thread; i < size; i += 256u) {
+                let other = i ^ gap;
+                if (other > i) {
+                    let a = ordered_alive[i];
+                    let b = ordered_alive[other];
+                    var greater = a > b;
+                    var lesser = a < b;
+                    if (!packed) {
+                        var a_key = 0xffffffffu;
+                        var b_key = 0xffffffffu;
+                        if (a != 0xffffffffu) {
+                            a_key = bitcast<u32>(present_out[a * AESTRA_PRESENT_STRIDE + 11u]);
+                        }
+                        if (b != 0xffffffffu) {
+                            b_key = bitcast<u32>(present_out[b * AESTRA_PRESENT_STRIDE + 11u]);
+                        }
+                        greater = a_key > b_key || (a_key == b_key && a > b);
+                        lesser = a_key < b_key || (a_key == b_key && a < b);
+                    }
+                    if (((i & width) == 0u && greater) || ((i & width) != 0u && lesser)) {
+                        ordered_alive[i] = b;
+                        ordered_alive[other] = a;
+                    }
+                }
+            }
+            workgroupBarrier();
+        }
+    }
+    for (var i = thread; i < count; i += 256u) {
+        alive_indices[offset + i] = select(ordered_alive[i], offset + (ordered_alive[i] & 4095u), packed);
+    }
+}
 "#;
 
 /// The full stateful simulation shader module (hybrid roadmap M6): the shared bindings, the three
 /// proven primitives (the emulated-u64 spawn RNG, the atomic free-list allocator, and presentation
-/// extraction), and the three entry points, composed into one WGSL module the render backend builds
-/// its `death_integrate` / `spawn` / `present` compute pipelines from. Every fragment here is
+/// extraction), and the four entry points, composed into one WGSL module the render backend builds
+/// its `death_integrate` / `spawn` / `present` / `order_present` compute pipelines from. Every fragment here is
 /// conformance-checked on real GPU compute in `aestra-bevy-render`.
 pub fn stateful_simulation_wgsl() -> String {
     format!(

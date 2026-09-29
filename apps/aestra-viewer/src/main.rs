@@ -9,6 +9,7 @@ use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
     DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectCompiler, EffectPlayer, EffectProfiler,
     EffectRuntimeStatus, GpuCapabilities, PlaybackClock, PresentationMode, PresentedEffect,
+    TransparentOrderMode,
 };
 use bevy::{
     app::AppExit,
@@ -59,7 +60,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -125,6 +126,7 @@ fn main() {
         .insert_resource(AestraSettings {
             presentation: config.presentation,
             max_gpu_particles: config.max_gpu_particles,
+            transparent_order: config.transparent_order,
         })
         .insert_resource(prepared)
         .insert_resource(config)
@@ -216,6 +218,7 @@ struct ViewerConfig {
     capture_mode: Option<CaptureMode>,
     capture_sampling: CaptureSampling,
     presentation: PresentationMode,
+    transparent_order: TransparentOrderMode,
     max_gpu_particles: u32,
     preview_seed: Option<u64>,
     diagnostics: bool,
@@ -323,6 +326,7 @@ impl ViewerConfig {
         let mut capture_sampling = CaptureSampling::EvenlySpaced(8);
         let mut capture_sampling_was_set = false;
         let mut presentation = PresentationMode::Auto;
+        let mut transparent_order = TransparentOrderMode::Fast;
         let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
         let mut preview_seed = None;
         let mut diagnostics = false;
@@ -357,6 +361,7 @@ impl ViewerConfig {
                 }
                 "--semantic-materials" => semantic_materials = true,
                 "--wireframe" => wireframe = true,
+                "--stable-transparency" => transparent_order = TransparentOrderMode::StableCapture,
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
                 "--gpu-bench" => {
@@ -508,6 +513,7 @@ impl ViewerConfig {
             capture_mode,
             capture_sampling,
             presentation,
+            transparent_order,
             max_gpu_particles,
             preview_seed,
             diagnostics,
@@ -1560,6 +1566,17 @@ mod tests {
     }
 
     #[test]
+    fn transparent_order_defaults_to_fast_and_can_be_opted_into_for_capture() {
+        let fast = ViewerConfig::from_iter(std::iter::empty()).unwrap();
+        let stable = ViewerConfig::from_iter(["--stable-transparency".to_owned()]).unwrap();
+        assert_eq!(fast.transparent_order, TransparentOrderMode::Fast);
+        assert_eq!(
+            stable.transparent_order,
+            TransparentOrderMode::StableCapture
+        );
+    }
+
+    #[test]
     fn capture_sampling_selects_exact_evenly_spaced_frames() {
         let frames = (0..4)
             .map(|index| capture_frame(120, index, 4))
@@ -1651,6 +1668,7 @@ mod tests {
             capture_mode: None,
             capture_sampling: CaptureSampling::EvenlySpaced(8),
             presentation: PresentationMode::Auto,
+            transparent_order: TransparentOrderMode::Fast,
             max_gpu_particles: DEFAULT_GPU_PARTICLE_BUDGET,
             preview_seed: None,
             diagnostics: false,

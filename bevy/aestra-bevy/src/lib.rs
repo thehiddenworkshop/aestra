@@ -58,7 +58,7 @@ pub use aestra_bevy_render::{
     AestraRuntimeStatus, BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode,
     CompatibilityReport, CompatibilityTarget, DEFAULT_GPU_PARTICLE_BUDGET, EffectRenderMode,
     EffectRequirements, EffectRuntimeStatus, GpuCapabilities, PresentationMode, PresentedEffect,
-    RendererCapability, gpu,
+    RendererCapability, TransparentOrderMode, gpu,
 };
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
 pub use aestra_bevy_render::gpu::{

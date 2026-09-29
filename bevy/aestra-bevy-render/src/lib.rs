@@ -57,11 +57,24 @@ pub enum EffectRenderMode {
     Wireframe,
 }
 
+/// Controls the ordering of stateful particles before transparent blending.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TransparentOrderMode {
+    /// Skip sorting for the lowest-latency live path, without the capture sort's 4,096-live bound. The exact blend order
+    /// can vary when concurrent GPU allocations place particles in different slots.
+    #[default]
+    Fast,
+    /// Sort up to 4,096 live particles per emitter by spawn ordinal for exact visual captures.
+    /// This is intentionally opt-in because the bounded GPU sort has a substantial frame cost.
+    StableCapture,
+}
+
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct AestraRenderSettings {
     pub presentation: PresentationMode,
     /// Application budget applied in addition to physical device limits.
     pub max_gpu_particles: u32,
+    pub transparent_order: TransparentOrderMode,
 }
 
 impl Default for AestraRenderSettings {
@@ -69,7 +82,16 @@ impl Default for AestraRenderSettings {
         Self {
             presentation: PresentationMode::Auto,
             max_gpu_particles: DEFAULT_GPU_PARTICLE_BUDGET,
+            transparent_order: TransparentOrderMode::Fast,
         }
+    }
+}
+
+impl bevy::render::extract_resource::ExtractResource for AestraRenderSettings {
+    type Source = Self;
+
+    fn extract_resource(source: &Self) -> Self {
+        *source
     }
 }
 

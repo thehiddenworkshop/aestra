@@ -21,6 +21,7 @@ use crate::{
     ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, CompatibilityIssue,
     CompatibilityIssueCode, CompatibilityReport, EffectRenderMode, EffectRuntimeStatus,
     GpuCapabilities, GpuPresentationPrepared, PresentedEffect, ProjectAssetCache,
+    TransparentOrderMode,
     capabilities::select_backend,
     material::{MaterialBindingError, MaterialRuntimeBinding},
 };
@@ -587,6 +588,8 @@ struct StatefulSimulationPipeline {
     spawn: CachedComputePipelineId,
     /// Extracts live persistent state into the 48-byte presentation particle buffer.
     present: CachedComputePipelineId,
+    /// Canonicalizes transparent draw order by spawn ordinal for bounded live sets.
+    order_present: CachedComputePipelineId,
 }
 
 pub(crate) fn install(app: &mut App) {
@@ -605,6 +608,7 @@ pub(crate) fn install(app: &mut App) {
     app.add_plugins((
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
+        bevy::render::extract_resource::ExtractResourcePlugin::<AestraRenderSettings>::default(),
     ))
     .init_resource::<MaterialShaderCache>()
     .add_systems(Startup, init_fallback_textures)
@@ -2359,6 +2363,7 @@ fn init_stateful_pipeline(
         death_integrate: pipeline("aestra stateful death+integrate", "death_integrate"),
         spawn: pipeline("aestra stateful spawn", "spawn"),
         present: pipeline("aestra stateful present", "present"),
+        order_present: pipeline("aestra stateful presentation order", "order_present"),
     });
 }
 
@@ -3056,6 +3061,7 @@ fn present_stateful_emitter(
     device: &RenderDevice,
     encoder: &mut CommandEncoder,
     present: &ComputePipeline,
+    order_present: Option<&ComputePipeline>,
     layout: &BindGroupLayout,
     persistent: &StatefulPersistentState,
     dispatch: &StatefulDispatch,
@@ -3079,6 +3085,16 @@ fn present_stateful_emitter(
     pass.set_bind_group(0, &group, &[]);
     pass.set_pipeline(present);
     pass.dispatch_workgroups(dispatch.capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+    drop(pass);
+    if let Some(order_present) = order_present {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("aestra stateful presentation order"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_pipeline(order_present);
+        pass.dispatch_workgroups(1, 1, 1);
+    }
 }
 
 /// Encodes one stateful *emitter's* per-frame GPU work (hybrid roadmap M6/M7): advance its persistent
@@ -3095,6 +3111,7 @@ fn dispatch_stateful_effect(
     death_integrate: &ComputePipeline,
     spawn: &ComputePipeline,
     present: &ComputePipeline,
+    order_present: Option<&ComputePipeline>,
     layout: &BindGroupLayout,
     persistent: &mut StatefulPersistentState,
     dispatch: &StatefulDispatch,
@@ -3151,6 +3168,7 @@ fn dispatch_stateful_effect(
         device,
         encoder,
         present,
+        order_present,
         layout,
         persistent,
         dispatch,
@@ -3205,7 +3223,12 @@ fn joint_checkpoint_tick(
 fn run_coupled_stateful(
     device: &RenderDevice,
     encoder: &mut CommandEncoder,
-    pipelines: (&ComputePipeline, &ComputePipeline, &ComputePipeline),
+    pipelines: (
+        &ComputePipeline,
+        &ComputePipeline,
+        &ComputePipeline,
+        Option<&ComputePipeline>,
+    ),
     layout: &BindGroupLayout,
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
@@ -3215,7 +3238,7 @@ fn run_coupled_stateful(
     simulation_time: f32,
     budget: u32,
 ) -> u32 {
-    let (death_integrate, spawn, present) = pipelines;
+    let (death_integrate, spawn, present, order_present) = pipelines;
     let domains = coupling.domains;
     // Each link's events and emission list (host bindings HB9b): the dispatches at either end, and a
     // list buffer reused across this frame's ticks.
@@ -3417,6 +3440,7 @@ fn run_coupled_stateful(
             device,
             encoder,
             present,
+            order_present,
             layout,
             persistent,
             dispatch,
@@ -3466,7 +3490,12 @@ fn stamp_stateful_statistics(
 fn run_stateful_dispatches(
     device: &RenderDevice,
     encoder: &mut CommandEncoder,
-    pipelines: (&ComputePipeline, &ComputePipeline, &ComputePipeline),
+    pipelines: (
+        &ComputePipeline,
+        &ComputePipeline,
+        &ComputePipeline,
+        Option<&ComputePipeline>,
+    ),
     layout: &BindGroupLayout,
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
@@ -3522,6 +3551,7 @@ fn run_stateful_dispatches(
                     pipelines.0,
                     pipelines.1,
                     pipelines.2,
+                    pipelines.3,
                     layout,
                     persistent,
                     dispatch,
@@ -3570,6 +3600,14 @@ type SimulationState<'w, 's> = (
     Option<Res<'w, extension_stages::ParticleWorldBuffer>>,
 );
 
+type SimulationGpuResources<'w> = (
+    Res<'w, RenderAssets<GpuShaderBuffer>>,
+    Res<'w, RenderDevice>,
+    Res<'w, bevy::render::renderer::RenderQueue>,
+    Res<'w, simulation_timing::TimingMailbox>,
+    Res<'w, AestraRenderSettings>,
+);
+
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
@@ -3582,19 +3620,14 @@ fn run_simulation(
         Option<&extension_stages::ExtractedStages>,
     )>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
-    gpu_resources: (
-        Res<RenderAssets<GpuShaderBuffer>>,
-        Res<RenderDevice>,
-        Res<bevy::render::renderer::RenderQueue>,
-        Res<simulation_timing::TimingMailbox>,
-    ),
+    gpu_resources: SimulationGpuResources,
     state: SimulationState,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let Some(pipeline) = pipeline else {
         return;
     };
-    let (buffers, render_device, queue, timing_mailbox) = gpu_resources;
+    let (buffers, render_device, queue, timing_mailbox, render_settings) = gpu_resources;
     let (
         mut histories,
         mut timer,
@@ -3612,11 +3645,18 @@ fn run_simulation(
     // the pipelines have finished compiling). The stateful branch below drives one enabled stateful
     // emitter end-to-end; other effects take the analytic path unchanged.
     let stateful = stateful_pipeline.as_ref().and_then(|sp| {
+        let order_present = match render_settings.transparent_order {
+            TransparentOrderMode::Fast => None,
+            TransparentOrderMode::StableCapture => {
+                Some(pipeline_cache.get_compute_pipeline(sp.order_present)?)
+            }
+        };
         Some((
             sp,
             pipeline_cache.get_compute_pipeline(sp.death_integrate)?,
             pipeline_cache.get_compute_pipeline(sp.spawn)?,
             pipeline_cache.get_compute_pipeline(sp.present)?,
+            order_present,
         ))
     });
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
@@ -3646,8 +3686,10 @@ fn run_simulation(
         // A mixed effect falls through to the analytic path and runs its stateful emitters afterward
         // (at the end of this loop body), where the analytic reset has already prepared the buffers.
         if effect.stateful_only
-            && let (Some((sp, death_integrate, spawn, present)), Some(persistent_states)) =
-                (&stateful, stateful_states.0.get_mut(&entity))
+            && let (
+                Some((sp, death_integrate, spawn, present, order_present)),
+                Some(persistent_states),
+            ) = (&stateful, stateful_states.0.get_mut(&entity))
         {
             let render_buffers = [
                 &effect.particles,
@@ -3664,7 +3706,7 @@ fn run_simulation(
                 run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
-                    (death_integrate, spawn, present),
+                    (death_integrate, spawn, present, *order_present),
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
@@ -3906,8 +3948,10 @@ fn run_simulation(
         // took the branch at the top of the loop and never reach here; pure-analytic effects have an
         // empty dispatch list, so this is a no-op for them.
         if !effect.stateful_dispatch.is_empty()
-            && let (Some((sp, death_integrate, spawn, present)), Some(persistent_states)) =
-                (&stateful, stateful_states.0.get_mut(&entity))
+            && let (
+                Some((sp, death_integrate, spawn, present, order_present)),
+                Some(persistent_states),
+            ) = (&stateful, stateful_states.0.get_mut(&entity))
         {
             let render_buffers = [
                 &effect.particles,
@@ -3924,7 +3968,7 @@ fn run_simulation(
                 run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
-                    (death_integrate, spawn, present),
+                    (death_integrate, spawn, present, *order_present),
                     &layout,
                     persistent_states,
                     &effect.stateful_dispatch,
@@ -4851,7 +4895,7 @@ mod coupled_tests {
         device: RenderDevice,
         queue: wgpu::Queue,
         layout: BindGroupLayout,
-        pipelines: [ComputePipeline; 3],
+        pipelines: [ComputePipeline; 4],
         follower: FieldFollowPipeline,
         spawner: DomainSpawnPipeline,
         gatherer: crate::execution::EventGatherPipeline,
@@ -4961,6 +5005,7 @@ mod coupled_tests {
             pipeline("death_integrate"),
             pipeline("spawn"),
             pipeline("present"),
+            pipeline("order_present"),
         ];
 
         // Two emitters sharing the one domain: light smoke puffs and heavier embers.
@@ -5159,6 +5204,7 @@ mod coupled_tests {
                     &scene.pipelines[0],
                     &scene.pipelines[1],
                     &scene.pipelines[2],
+                    Some(&scene.pipelines[3]),
                 ),
                 &scene.layout,
                 &mut scene.states,
@@ -5236,6 +5282,7 @@ mod coupled_tests {
         particles: Vec<Vec<[u32; 9]>>,
         events: Vec<Vec<[u32; 8]>>,
         spawn_counts: Vec<u32>,
+        draw_ordinals: Vec<Vec<u32>>,
     }
 
     fn chained_event_snapshot(scene: &Scene) -> ChainedEventSnapshot {
@@ -5289,10 +5336,33 @@ mod coupled_tests {
             .iter()
             .map(|emitter| words(&emitter.spawn_counter)[0])
             .collect();
+        let presentation = words(&scene.render[0]);
+        let alive_indices = words(&scene.render[1]);
+        let indirect = words(&scene.render[2]);
+        let draw_ordinals = scene
+            .dispatches
+            .iter()
+            .map(|dispatch| {
+                let count = indirect[dispatch.emitter_index as usize * 4 + 1] as usize;
+                let offset = dispatch.slot_offset as usize;
+                let ordinals: Vec<_> = alive_indices[offset..offset + count]
+                    .iter()
+                    .map(|index| presentation[*index as usize * 12 + 11])
+                    .collect();
+                if count <= 4096 {
+                    assert!(
+                        ordinals.is_sorted(),
+                        "stateful transparent order is unstable"
+                    );
+                }
+                ordinals
+            })
+            .collect();
         ChainedEventSnapshot {
             particles,
             events,
             spawn_counts,
+            draw_ordinals,
         }
     }
 
@@ -5403,6 +5473,7 @@ mod coupled_tests {
                         &scene.pipelines[0],
                         &scene.pipelines[1],
                         &scene.pipelines[2],
+                        Some(&scene.pipelines[3]),
                     ),
                     &scene.layout,
                     &mut scene.states,
@@ -5504,7 +5575,12 @@ mod coupled_tests {
                 run_coupled_stateful(
                     &self.device,
                     &mut encoder,
-                    (&self.pipelines[0], &self.pipelines[1], &self.pipelines[2]),
+                    (
+                        &self.pipelines[0],
+                        &self.pipelines[1],
+                        &self.pipelines[2],
+                        Some(&self.pipelines[3]),
+                    ),
                     &self.layout,
                     &mut self.states,
                     &self.dispatches,

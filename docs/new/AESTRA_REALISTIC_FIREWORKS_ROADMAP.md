@@ -1469,7 +1469,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 
 ### Remaining F0 exit work
 
-- Exact-frame audience captures match across fresh launches through frame 120 but differ at frames 180 and 300 while the collision/glint chain is active. Do not approve those late frames as deterministic references; F1 must isolate and regress the event ordering/expansion path.
+- The original exact-frame audience captures matched through frame 120 but differed at frames 180 and 300. F1 isolated transparent presentation order, added a lockstep GPU replay regression and obtained matching fresh-launch PNG hashes at frames 120, 180 and 300 with opt-in stable capture. Normal game playback stays on the unsorted fast path; higher-density exact visual ordering is a capture-only concern, not a runtime-playback gate.
 - Complete event requested/captured/expanded/spawned/dropped counters and overflow diagnostics before treating fan-out timing as valid produced-work performance. F1's first slice now counts and warns about dropped children at each link, but the other stages and profiler exposure remain open. F1 owns the scalable event contract; F1B owns production-density trails and truncation policy.
 - Measure isolated cold-seek latency and actual effect GPU allocation. Recalibrate the provisional budgets at 1920 × 1080 and on lower quality tiers. The current 960 × 540 baseline does not establish release performance.
 
@@ -1479,7 +1479,9 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 
 **Goal:** make one logical event link reliably produce a hero burst and keep heavy event chains deterministic.
 
-**Status: in progress.** The first runtime slice exposed the original 3,072-child loss in each 4,096-child probe cohort, then sized each link list for captured source capacity × fan-out; the frame-60 GPU capture produced all 4,096 stars. The next slice replaced the quadratic ordinal-rank scan with a deterministic workgroup sort and indirect parallel child expansion. The authored single-link fan-out limit is now 800, with checked per-effect list planning and a conservative 128 MiB aggregate list budget; a new one-rocket/800-child probe measures all 800 stars live on the GPU. GPU counters distinguish captured child demand, list omissions and destination accepts, with warnings for rejected destination work. Conformance covers reversed source order, 1,024 coincident source events, 800 children from one event, an undersized list, and destination slot exhaustion. A production lockstep regression now proves bit-exact per-ordinal particle records, captured events and spawn counts for a chained firework across fresh GPU runs and a backward checkpoint seek. Exact PNGs still differ slightly after the collision/glint chain begins: slot assignment and atomic transparent draw compaction vary across runs, so stable presentation ordering remains a separate visual gate. The **source-event capture buffer remains capped at 1,024**, and the warning counters are not yet in the profiler or capture report. Device/tier-aware budgets, source overflow policy, concurrent shells, stable visual output, and editor feedback for the new budget remain F1 exit work.
+**Status: in progress.** The first runtime slice exposed the original 3,072-child loss in each 4,096-child probe cohort, then sized each link list for captured source capacity × fan-out; the frame-60 GPU capture produced all 4,096 stars. The next slice replaced the quadratic ordinal-rank scan with a deterministic workgroup sort and indirect parallel child expansion. The authored single-link fan-out limit is now 800, with checked per-effect list planning and a conservative 128 MiB aggregate list budget; a new one-rocket/800-child probe measures all 800 stars live on the GPU. GPU counters distinguish captured child demand, list omissions and destination accepts, with warnings for rejected destination work. Conformance covers reversed source order, 1,024 coincident source events, 800 children from one event, an undersized list, and destination slot exhaustion. A production lockstep regression proves bit-exact per-ordinal particle records, captured events, spawn counts and transparent draw ordinals for a chained firework across fresh GPU runs and a backward checkpoint seek. An **opt-in** GPU capture pass sorts up to 4,096 live particles per emitter; fresh audience PNG hashes match at frames 120, 180 and 300 with `--stable-transparency`. The portable sort raised the 4,096-child event probe's aggregate simulation p50/p95/p99 from 0.292/0.325/0.497 to 1.499/1.543/1.758 ms on the named RTX 4070 SUPER/Vulkan setup, so normal live playback skips it by default and measured 0.344/0.376/0.601 ms in a new run. Above 4,096 live particles per emitter, exact capture draw order remains uncanonicalized; **this does not cap live playback**. The **source-event capture buffer remains capped at 1,024**, and warning counters are not yet in the profiler or capture report. Device/tier-aware budgets, source overflow policy, concurrent shells, and editor feedback for the new budget remain F1 runtime exit work. Scalable exact-image capture is a separate optional target, not a prerequisite for real-time game playback.
+
+**Runtime priority:** certify the default fast path under sustained hero, volley and finale concurrency: produced-versus-requested counts, explicit overflow behavior, GPU simulation and rendering p95/p99, and memory on the target tiers. Checkpoint replay remains a useful editor/testing regression, but exact seeking and bit-identical transparent pixels are not prerequisites for game playback. Do not spend the live-frame budget on capture-only ordering.
 
 ### Core/editor tasks
 
@@ -1507,7 +1509,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 - deterministic event ordering test;
 - same-tick many-event and chained-fan-out tests;
 - source, expansion and destination overflow-policy tests;
-- checkpoint/replay and measured GPU-cost tests (chained-event exact-state replay is covered; concurrent-shell cost and exact visual ordering remain open).
+- checkpoint/replay and measured GPU-cost tests (chained-event exact-state replay and opt-in baseline-density visual ordering are covered; concurrent-shell live cost remains open; scalable exact-image capture is optional).
 
 ### Deliverable
 
@@ -1519,12 +1521,14 @@ Rocket can author and *execute* a 300–800-star burst through one logical event
 
 **Goal:** remove the trail implementation ceilings before building a production Chrysanthemum or Willow.
 
+The current default-fast 256-owner probe still measures 8.820/9.160/182.990 ms simulation p50/p95/p99. Inspection shows the trail-update shader handles each emitter on one invocation and linearly scans owner chunks for every live head. This is a likely scalability cause, not an isolated stage measurement. First isolate trail-update timing, then replace serial owner matching/allocation with a parallel design and benchmark the full live frame; do not prioritize checkpoint replay ahead of this playback bottleneck.
+
 ### Tasks
 
 - Implement stable owner mapping/allocation, parallel history update, bounds reduction and parallel compaction as specified in section 8.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
-- Retest checkpoint storage and seek latency at hero and volley densities; scale checkpoint cadence/storage policy from measured memory, without changing replay results.
+- After the live path meets its budget, retest checkpoint storage and seek latency for editor scrubbing; scale checkpoint cadence/storage policy from measured memory without charging unnecessary replay work to ordinary playback.
 
 ### Deliverable and exit gate
 

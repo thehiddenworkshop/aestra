@@ -94,10 +94,9 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 #[test]
-fn the_unified_stateful_module_composes_into_valid_wgsl_with_all_three_entry_points() {
-    // The render backend builds its death_integrate / spawn / present pipelines from one composed
-    // module over a shared six-binding layout. Validate that the assembled module parses, validates,
-    // and exposes exactly those three entry points — this is the shader the pipelines will use.
+fn the_unified_stateful_module_composes_into_valid_wgsl_with_all_four_entry_points() {
+    // The render backend builds its death_integrate / spawn / present / order_present pipelines
+    // from one composed module. Validate the assembled module and its entry points.
     let wgsl = stateful_simulation_wgsl();
     let module = naga::front::wgsl::parse_str(&wgsl).unwrap_or_else(|error| {
         panic!(
@@ -113,7 +112,7 @@ fn the_unified_stateful_module_composes_into_valid_wgsl_with_all_three_entry_poi
         .iter()
         .map(|e| e.name.as_str())
         .collect();
-    for expected in ["death_integrate", "spawn", "present"] {
+    for expected in ["death_integrate", "spawn", "present", "order_present"] {
         assert!(
             entry_points.contains(&expected),
             "the unified module exposes the {expected} entry point (found {entry_points:?})"
