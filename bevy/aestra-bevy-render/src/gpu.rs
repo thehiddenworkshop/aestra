@@ -5054,13 +5054,8 @@ mod coupled_tests {
         })
     }
 
-    /// Host bindings HB9b: the production lockstep loop turns a rocket's death into its burst's
-    /// particles — one rocket every few ticks, each death 48 sparks.
-    #[test]
-    fn event_links_spawn_sub_emitters_in_the_production_lockstep_loop() {
-        let Some(mut scene) = scene(false) else {
-            return;
-        };
+    fn chained_event_scene() -> Option<(Scene, [aestra_runtime::CompiledEventLink; 2])> {
+        let mut scene = scene(false)?;
         scene.domains.clear();
         let template = scene.dispatches[0].clone();
         let rockets = StatefulDispatch {
@@ -5081,7 +5076,10 @@ mod coupled_tests {
             slot_offset: 64,
             emitter_index: 1,
             spawn_rate: 0.0,
-            lifetime: (1.2, 1.8),
+            speed: (10.0, 18.0),
+            lifetime: (2.2, 2.8),
+            spread: std::f32::consts::PI,
+            gravity: [0.0, -20.0, 0.0],
             event_mask: 4,
             colliders: vec![aestra_core::Collider {
                 shape: aestra_core::ColliderShape::Plane {
@@ -5141,7 +5139,17 @@ mod coupled_tests {
                 inherit: 0.0,
             },
         ];
-        for tick in 1..=240 {
+        Some((scene, links))
+    }
+
+    fn advance_chained_event_scene(
+        scene: &mut Scene,
+        links: &[aestra_runtime::CompiledEventLink],
+        tick: u32,
+    ) {
+        // A backward seek may restore an earlier checkpoint and need several bounded catch-up
+        // submissions. Wait until all emitters reach the requested frame before observing state.
+        loop {
             let mut encoder = scene.device.create_command_encoder(&Default::default());
             let [particles, alive, indirect, counters] = &scene.render;
             run_coupled_stateful(
@@ -5162,7 +5170,7 @@ mod coupled_tests {
                     spawner: &scene.spawner,
                     gatherer: &scene.gatherer,
                 },
-                &links,
+                links,
                 &StatefulRenderBuffers {
                     particles,
                     alive,
@@ -5175,6 +5183,21 @@ mod coupled_tests {
                 4,
             );
             scene.queue.submit([encoder.finish()]);
+            if scene.states.iter().all(|state| state.last_tick == tick) {
+                break;
+            }
+        }
+    }
+
+    /// Host bindings HB9b: the production lockstep loop turns a rocket's death into its burst's
+    /// particles — one rocket every few ticks, each death 48 sparks.
+    #[test]
+    fn event_links_spawn_sub_emitters_in_the_production_lockstep_loop() {
+        let Some((mut scene, links)) = chained_event_scene() else {
+            return;
+        };
+        for tick in 1..=240 {
+            advance_chained_event_scene(&mut scene, &links, tick);
         }
         let staging = scene.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -5206,6 +5229,112 @@ mod coupled_tests {
         eprintln!("rockets spawned {}, sparks spawned {}", words[0], words[1]);
         assert!(words[0] >= 10, "{words:?}");
         assert!(words[1] >= 48 * 5, "every rocket death bursts: {words:?}");
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ChainedEventSnapshot {
+        particles: Vec<Vec<[u32; 9]>>,
+        events: Vec<Vec<[u32; 8]>>,
+        spawn_counts: Vec<u32>,
+    }
+
+    fn chained_event_snapshot(scene: &Scene) -> ChainedEventSnapshot {
+        let words = |buffer: &Buffer| {
+            read_back(&scene.device, &scene.queue, buffer)
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| u32::from_le_bytes(*bytes))
+                .collect::<Vec<_>>()
+        };
+        let particles = scene
+            .states
+            .iter()
+            .map(|emitter| {
+                let state = words(&emitter.state);
+                let mut live: Vec<_> = state
+                    .as_chunks::<9>()
+                    .0
+                    .iter()
+                    .filter(|record| {
+                        let age = f32::from_bits(record[6]);
+                        let lifetime = f32::from_bits(record[7]);
+                        lifetime > 0.0 && age < lifetime
+                    })
+                    .copied()
+                    .collect();
+                live.sort_unstable_by_key(|record| record[8]);
+                live
+            })
+            .collect();
+        let events = scene
+            .states
+            .iter()
+            .map(|emitter| {
+                let source = words(&emitter.events);
+                let count = source[0].min(aestra_runtime::PARTICLE_EVENT_CAPACITY) as usize;
+                let mut records: Vec<_> = source[4..]
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .take(count)
+                    .copied()
+                    .collect();
+                records.sort_unstable_by_key(|record| (record[1], record[0]));
+                records
+            })
+            .collect();
+        let spawn_counts = scene
+            .states
+            .iter()
+            .map(|emitter| words(&emitter.spawn_counter)[0])
+            .collect();
+        ChainedEventSnapshot {
+            particles,
+            events,
+            spawn_counts,
+        }
+    }
+
+    #[test]
+    fn chained_fireworks_match_across_fresh_runs_and_backward_seek() {
+        let Some((mut first, links)) = chained_event_scene() else {
+            assert!(
+                std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                "fireworks replay conformance requires a hardware GPU"
+            );
+            eprintln!("skipping fireworks replay conformance: no hardware GPU");
+            return;
+        };
+        let (mut second, _) = chained_event_scene().expect("a second GPU scene should initialize");
+        let mut reference = Vec::new();
+        for tick in 1..=300 {
+            advance_chained_event_scene(&mut first, &links, tick);
+            advance_chained_event_scene(&mut second, &links, tick);
+            if [120, 180, 240, 300].contains(&tick) {
+                let expected = chained_event_snapshot(&first);
+                assert_eq!(
+                    chained_event_snapshot(&second),
+                    expected,
+                    "fresh GPU runs diverged at frame {tick}"
+                );
+                reference.push((tick, expected));
+            }
+        }
+        assert!(reference[3].1.spawn_counts[1] >= 48 * 5);
+        assert!(reference[3].1.spawn_counts[2] > 0);
+
+        advance_chained_event_scene(&mut first, &links, 90);
+        for tick in 91..=300 {
+            advance_chained_event_scene(&mut first, &links, tick);
+            if let Some((_, expected)) = reference.iter().find(|(frame, _)| *frame == tick) {
+                assert_eq!(
+                    &chained_event_snapshot(&first),
+                    expected,
+                    "checkpoint restore and replay diverged at frame {tick}"
+                );
+            }
+        }
     }
 
     /// Host bindings HB8: with a binding trace, every tick steers toward its own recorded target, so

@@ -3368,6 +3368,22 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         assert!(!cpu.is_empty(), "emitter {index} has particles");
         assert_same_particles(&cpu, &gpu[index]);
     }
+    let replay = advance_production_linked(&harness, &configs, &links, seed, ticks).unwrap();
+    for (index, (first, second)) in gpu.iter().zip(&replay).enumerate() {
+        let canonical = |particles: &LiveParticles| {
+            let mut by_ordinal: Vec<_> = particles
+                .iter()
+                .map(|(ordinal, position)| (*ordinal, position.map(f32::to_bits)))
+                .collect();
+            by_ordinal.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+            by_ordinal
+        };
+        assert_eq!(
+            canonical(first),
+            canonical(second),
+            "emitter {index} diverged across fresh GPU replays"
+        );
+    }
     assert_eq!(
         sims[2].alive_particles().len(),
         64,

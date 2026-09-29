@@ -1479,7 +1479,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 
 **Goal:** make one logical event link reliably produce a hero burst and keep heavy event chains deterministic.
 
-**Status: in progress.** The first runtime slice exposed the original 3,072-child loss in each 4,096-child probe cohort, then sized each link list for captured source capacity × fan-out; the frame-60 GPU capture produced all 4,096 stars. The next slice replaced the quadratic ordinal-rank scan with a deterministic workgroup sort and indirect parallel child expansion. The authored single-link fan-out limit is now 800, with checked per-effect list planning and a conservative 128 MiB aggregate list budget; a new one-rocket/800-child probe measures all 800 stars live on the GPU. GPU counters distinguish captured child demand, list omissions and destination accepts, with warnings for rejected destination work. Conformance covers reversed source order, 1,024 coincident source events, 800 children from one event, an undersized list, and destination slot exhaustion. The **source-event capture buffer remains capped at 1,024**, and the warning counters are not yet in the profiler or capture report. Device/tier-aware budgets, source overflow policy, concurrent shells, replay determinism, and editor feedback for the new budget remain F1 exit work.
+**Status: in progress.** The first runtime slice exposed the original 3,072-child loss in each 4,096-child probe cohort, then sized each link list for captured source capacity × fan-out; the frame-60 GPU capture produced all 4,096 stars. The next slice replaced the quadratic ordinal-rank scan with a deterministic workgroup sort and indirect parallel child expansion. The authored single-link fan-out limit is now 800, with checked per-effect list planning and a conservative 128 MiB aggregate list budget; a new one-rocket/800-child probe measures all 800 stars live on the GPU. GPU counters distinguish captured child demand, list omissions and destination accepts, with warnings for rejected destination work. Conformance covers reversed source order, 1,024 coincident source events, 800 children from one event, an undersized list, and destination slot exhaustion. A production lockstep regression now proves bit-exact per-ordinal particle records, captured events and spawn counts for a chained firework across fresh GPU runs and a backward checkpoint seek. Exact PNGs still differ slightly after the collision/glint chain begins: slot assignment and atomic transparent draw compaction vary across runs, so stable presentation ordering remains a separate visual gate. The **source-event capture buffer remains capped at 1,024**, and the warning counters are not yet in the profiler or capture report. Device/tier-aware budgets, source overflow policy, concurrent shells, stable visual output, and editor feedback for the new budget remain F1 exit work.
 
 ### Core/editor tasks
 
@@ -1507,7 +1507,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 - deterministic event ordering test;
 - same-tick many-event and chained-fan-out tests;
 - source, expansion and destination overflow-policy tests;
-- checkpoint/replay and measured GPU-cost tests.
+- checkpoint/replay and measured GPU-cost tests (chained-event exact-state replay is covered; concurrent-shell cost and exact visual ordering remain open).
 
 ### Deliverable
 
