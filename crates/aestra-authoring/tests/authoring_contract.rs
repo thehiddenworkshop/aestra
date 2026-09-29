@@ -1532,3 +1532,97 @@ fn source_specific_values_switch_and_undo_without_destroying_the_constant() {
     history.undo(&mut effect).unwrap().unwrap();
     assert_eq!(effect, original);
 }
+
+#[test]
+fn host_bindings_and_module_field_references_are_transactional_and_reversible() {
+    use aestra_core::{
+        AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, BindingFieldId, BindingUpdateMode,
+        EffectBinding, HostFieldRef, MODULE_INITIALIZE, PropertySource,
+    };
+    let mut effect = test_effect();
+    let original = effect.clone();
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_INITIALIZE)
+        .unwrap()
+        .id;
+    let target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    let target_id = target.id;
+    let mut history = CommandHistory::default();
+    // Declare a binding, then aim the launch direction at its position.
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Aim at the target",
+                vec![
+                    EffectCommand::AddBinding {
+                        binding: target.clone(),
+                        index: 0,
+                    },
+                    EffectCommand::SetModulePropertySource {
+                        emitter,
+                        module,
+                        parameter: "direction".into(),
+                        source: PropertySource::HostBinding,
+                    },
+                    EffectCommand::SetModuleHostBinding {
+                        emitter,
+                        module,
+                        parameter: "direction".into(),
+                        field: Some(HostFieldRef::new(target_id, AESTRA_FIELD_POSITION)),
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.bindings, std::slice::from_ref(&target));
+    assert_eq!(
+        effect.emitters[0]
+            .module_by_id(module)
+            .unwrap()
+            .host_bindings["direction"],
+        HostFieldRef::new(target_id, AESTRA_FIELD_POSITION)
+    );
+    assert!(
+        effect.validate().is_ok(),
+        "{:?}",
+        effect.validation_report()
+    );
+
+    // Edit it: velocity becomes optional, the slot latches on spawn.
+    let mut edited = target.clone();
+    edited
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_LINEAR_VELOCITY));
+    edited.update_mode = BindingUpdateMode::SnapshotOnSpawn;
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Edit the target",
+                vec![EffectCommand::SetBinding {
+                    id: target_id,
+                    binding: edited.clone(),
+                }],
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.bindings, [edited]);
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.bindings, [target]);
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original, "undo restores everything");
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.bindings.len(), 1);
+    assert!(
+        effect.emitters[0]
+            .module_by_id(module)
+            .unwrap()
+            .host_bindings
+            .contains_key("direction")
+    );
+}

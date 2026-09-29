@@ -4,6 +4,7 @@ mod binding;
 mod checkpoint;
 mod compatibility;
 mod host_transform;
+mod interface;
 mod playback;
 pub use playback::PlaybackDriver;
 mod project;
@@ -31,6 +32,10 @@ pub use execution_ir::{
     ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
+pub use interface::{
+    EffectInterface, InterfaceBinding, InterfaceEvent, InterfaceField, InterfaceParameter,
+    InterfaceWorldRequirement, field_label, world_label,
+};
 pub use outputs::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 pub use sdf::*;

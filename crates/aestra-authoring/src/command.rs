@@ -123,6 +123,19 @@ pub enum EffectCommand {
         id: aestra_core::ParameterId,
         parameter: EffectParameter,
     },
+    /// Declares a host binding slot (host bindings HB11): an object the game fills.
+    AddBinding {
+        binding: aestra_core::EffectBinding,
+        index: usize,
+    },
+    RemoveBinding {
+        id: aestra_core::BindingId,
+    },
+    /// Replaces a binding's declaration (name, fields, update mode…), keeping its id.
+    SetBinding {
+        id: aestra_core::BindingId,
+        binding: aestra_core::EffectBinding,
+    },
     AddMaterial {
         material: MaterialDefinition,
         index: usize,
@@ -270,6 +283,14 @@ pub enum EffectCommand {
         emitter: EmitterId,
         module: ModuleId,
         parameter: String,
+    },
+    /// Points a module input at a host binding's field (host bindings HB11), or with `None` drops
+    /// the reference. The input reads it when its source is `HostBinding`.
+    SetModuleHostBinding {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        field: Option<aestra_core::HostFieldRef>,
     },
     AddCurveKey {
         emitter: EmitterId,

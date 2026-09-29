@@ -127,6 +127,15 @@ impl EffectDiff {
                 after.parameters.len(),
             );
         }
+        if before.bindings != after.bindings {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.bindings",
+                before.bindings.len(),
+                after.bindings.len(),
+            );
+        }
         if before.materials != after.materials {
             modified(
                 &mut changes,
@@ -427,18 +436,20 @@ fn diff_modules(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
                 target,
                 path: format!("module.{}", module.module_type.0),
                 before: Some(format!(
-                    "{:?} sources={:?} source_values={:?} bindings={:?}",
+                    "{:?} sources={:?} source_values={:?} bindings={:?} host={:?}",
                     module.parameters,
                     module.property_sources,
                     module.property_source_values,
-                    module.bindings
+                    module.bindings,
+                    module.host_bindings
                 )),
                 after: Some(format!(
-                    "{:?} sources={:?} source_values={:?} bindings={:?}",
+                    "{:?} sources={:?} source_values={:?} bindings={:?} host={:?}",
                     after_module.parameters,
                     after_module.property_sources,
                     after_module.property_source_values,
-                    after_module.bindings
+                    after_module.bindings,
+                    after_module.host_bindings
                 )),
             });
         }

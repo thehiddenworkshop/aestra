@@ -459,6 +459,38 @@ fn apply_command(
                 parameter: previous,
             }]
         }
+        EffectCommand::AddBinding { binding, index } => {
+            checked_insert(
+                &mut effect.bindings,
+                *index,
+                binding.clone(),
+                "effect bindings",
+            )?;
+            vec![EffectCommand::RemoveBinding { id: binding.id }]
+        }
+        EffectCommand::RemoveBinding { id } => {
+            let index = effect
+                .bindings
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("binding", id))?;
+            let binding = effect.bindings.remove(index);
+            vec![EffectCommand::AddBinding { binding, index }]
+        }
+        EffectCommand::SetBinding { id, binding } => {
+            let index = effect
+                .bindings
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("binding", id))?;
+            let mut replacement = binding.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.bindings[index], replacement);
+            vec![EffectCommand::SetBinding {
+                id: *id,
+                binding: previous,
+            }]
+        }
         EffectCommand::AddMaterial { material, index } => {
             checked_insert(
                 &mut effect.materials,
@@ -1000,6 +1032,26 @@ fn apply_command(
                 module: *module,
                 parameter: parameter.clone(),
                 source,
+            }]
+        }
+        EffectCommand::SetModuleHostBinding {
+            emitter,
+            module,
+            parameter,
+            field,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let previous = match field {
+                Some(field) => module_instance
+                    .host_bindings
+                    .insert(parameter.clone(), field.clone()),
+                None => module_instance.host_bindings.remove(parameter),
+            };
+            vec![EffectCommand::SetModuleHostBinding {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                field: previous,
             }]
         }
         EffectCommand::AddCurveKey {

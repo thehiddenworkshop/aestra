@@ -337,6 +337,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::RemoveAsset { .. }
         | EffectCommand::AddEmitter { .. }
         | EffectCommand::AddParameter { .. }
+        | EffectCommand::AddBinding { .. }
+        | EffectCommand::RemoveBinding { .. }
+        | EffectCommand::SetBinding { .. }
         | EffectCommand::AddMaterial { .. }
         | EffectCommand::RemoveMaterial { .. }
         | EffectCommand::SetMaterial { .. }
@@ -420,6 +423,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
             emitter, module, ..
         }
         | EffectCommand::UnbindModuleParameter {
+            emitter, module, ..
+        }
+        | EffectCommand::SetModuleHostBinding {
             emitter, module, ..
         }
         | EffectCommand::AddCurveKey {

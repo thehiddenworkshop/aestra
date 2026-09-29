@@ -2987,3 +2987,99 @@ fn a_physics_collider_requires_the_hosts_physics_scene_and_is_forward_only() {
         aestra_runtime::SimulationClass::Stateful
     );
 }
+
+#[test]
+fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
+    use aestra_core::{
+        AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, BindingFieldId, BindingUpdateMode,
+        Collider, ColliderShape, EffectBinding, HostFieldRef, HostInputAvailability,
+        ModuleInstance, PropertySource,
+    };
+    let mut effect = EffectAsset::new("Homing Bolt", 2.0);
+    effect.playback_mode = aestra_core::EffectPlaybackMode::Once;
+    // Parameters the effect reads: the compiled interface lists no unused one.
+    let power = EffectParameter {
+        id: ParameterId::new(),
+        name: "Power".into(),
+        default: Value::Scalar(1.0),
+        exposed: true,
+    };
+    let MaterialProperties::Sprite { softness, .. } = &mut effect.materials[0].properties;
+    *softness = MaterialInput::Parameter(power.id);
+    effect.parameters.push(power);
+    let mut target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    target
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_LINEAR_VELOCITY));
+    let source = EffectBinding::spatial("Source", BindingUpdateMode::SnapshotOnSpawn);
+    let mut emitter = Emitter::basic_sprite("Sparks", 2.0);
+    let mut homing = ModuleInstance::homing([0.0; 3], 30.0);
+    homing
+        .property_sources
+        .insert("target".into(), PropertySource::HostBinding);
+    homing.host_bindings.insert(
+        "target".into(),
+        HostFieldRef::new(target.id, AESTRA_FIELD_POSITION),
+    );
+    emitter.modules.push(homing);
+    emitter
+        .modules
+        .push(ModuleInstance::collision(vec![Collider {
+            shape: ColliderShape::Physics { radius: 0.2 },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        }]));
+    effect.emitters.push(emitter);
+    effect.bindings = vec![target, source];
+    let interface = EffectCompiler::default()
+        .compile(&effect)
+        .unwrap()
+        .interface();
+
+    assert_eq!(interface.parameters.len(), 1);
+    assert_eq!(interface.parameters[0].name, "Power");
+    assert_eq!(
+        interface.parameters[0].value_type,
+        aestra_core::ValueType::Scalar
+    );
+
+    let target = &interface.bindings[0];
+    assert_eq!(
+        (target.name.as_str(), target.kind_label.as_str()),
+        ("Target", "Spatial")
+    );
+    assert_eq!(target.update_mode, BindingUpdateMode::Live);
+    assert!(target.read, "the homing target reads it");
+    let fields: Vec<(&str, bool)> = target
+        .fields
+        .iter()
+        .map(|field| (field.label.as_str(), field.required))
+        .collect();
+    assert_eq!(fields, [("Position", true), ("Linear Velocity", false)]);
+    let source = &interface.bindings[1];
+    assert_eq!(source.update_mode, BindingUpdateMode::SnapshotOnSpawn);
+    assert!(!source.read, "declared but read by nothing");
+
+    let events: Vec<(&str, &str)> = interface
+        .output_events
+        .iter()
+        .map(|event| (event.kind.as_str(), event.raised_by.as_str()))
+        .collect();
+    assert_eq!(
+        events,
+        [
+            ("impact", "Sparks"),
+            ("target_lost", "Sparks"),
+            ("target_acquired", "Sparks"),
+            ("finished", "Homing Bolt"),
+        ]
+    );
+    assert!(interface.input_events.is_empty());
+    assert_eq!(interface.world.len(), 1);
+    assert_eq!(interface.world[0].label, "Physics Query");
+    assert_eq!(
+        interface.world[0].availability,
+        HostInputAvailability::ForwardOnly
+    );
+}
