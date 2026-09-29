@@ -96,6 +96,11 @@ impl EditorTooltip {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_cursor_anchored(&self) -> bool {
+        self.anchor == EditorTooltipAnchor::Cursor
+    }
+
     pub(crate) fn accessible_label(&self) -> String {
         [
             self.title.as_deref(),

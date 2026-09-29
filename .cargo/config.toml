@@ -1,0 +1,3 @@
+[alias]
+# Use `cargo editor-dev` for faster iterative editor links.
+editor-dev = "run -p aestra-editor --features dev-dynamic-linking"

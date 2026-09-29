@@ -36,3 +36,7 @@ winit = "0.30"
 
 [dev-dependencies]
 elkrs.workspace = true
+
+[features]
+# Opt-in for iterative editor runs; release packages stay statically linked.
+dev-dynamic-linking = ["bevy/dynamic_linking"]

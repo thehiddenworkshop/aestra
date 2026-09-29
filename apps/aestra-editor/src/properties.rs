@@ -1110,6 +1110,29 @@ mod tests {
     }
 
     #[test]
+    fn transform_number_hints_stay_outside_the_scrolling_inspector() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+            bevy::text::TextPlugin,
+        ));
+        app.world_mut()
+            .commands()
+            .spawn(Node::default())
+            .with_children(spawn_emitter_transform_controls);
+        app.world_mut().flush();
+        let hints = app
+            .world_mut()
+            .query::<&EditorTooltip>()
+            .iter(app.world())
+            .map(EditorTooltip::is_cursor_anchored)
+            .collect::<Vec<_>>();
+        assert_eq!(hints, [true; 3]);
+    }
+
+    #[test]
     fn empty_effect_module_stack_explains_next_step() {
         // The Module Stack panel is where an empty effect is guided to add an emitter.
         let mut app = App::new();
@@ -7141,7 +7164,9 @@ fn spawn_effect_clip_transform_row(
         crate::feathers::field_row::FieldRowProps::new(title)
             .indented(0)
             .with_control_min_width(150.0),
-        EditorTooltip::description(description),
+        // The inspector scrolls. Keep the tooltip outside its layout tree so hovering
+        // a narrow transform input cannot change the scroll extent or shift the row.
+        EditorTooltip::description(description).anchored_to_cursor(),
         |inputs| {
             for (axis, component, color) in [
                 ("X", 0, tokens::TEXT_INPUT_X_AXIS),
@@ -7183,7 +7208,9 @@ fn spawn_emitter_transform_row(
         crate::feathers::field_row::FieldRowProps::new(title)
             .indented(0)
             .with_control_min_width(150.0),
-        EditorTooltip::description(description),
+        // The inspector scrolls. Keep the tooltip outside its layout tree so hovering
+        // a narrow transform input cannot change the scroll extent or shift the row.
+        EditorTooltip::description(description).anchored_to_cursor(),
         |inputs| {
             for (axis, component, color) in [
                 ("X", 0, tokens::TEXT_INPUT_X_AXIS),

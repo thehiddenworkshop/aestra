@@ -64,8 +64,8 @@ fn decorate(
         let mut ordered: Vec<_> = children.iter().collect();
         let mut arrows = Vec::new();
         for (direction, path, label) in [
-            (-1, "icons/chevron-left.svg", "number-decrease-value"),
-            (1, "icons/chevron-right.svg", "number-increase-value"),
+            (-1, "icons/number-step-left.svg", "number-decrease-value"),
+            (1, "icons/number-step-right.svg", "number-increase-value"),
         ] {
             let arrow = commands
                 .spawn((
@@ -74,13 +74,15 @@ fn decorate(
                     AccessibleLabel(localizer.text(label)),
                     EntityCursor::System(SystemCursorIcon::Default),
                     Visibility::Hidden,
+                    BackgroundColor(crate::theme::MENU_ITEM_HOVER),
                     Node {
-                        width: Val::Px(10.0),
-                        min_width: Val::Px(10.0),
+                        width: Val::Px(12.0),
+                        min_width: Val::Px(12.0),
                         height: Val::Percent(100.0),
                         flex_shrink: 0.0,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
+                        border_radius: BorderRadius::all(Val::Px(2.0)),
                         ..default()
                     },
                 ))
@@ -88,8 +90,8 @@ fn decorate(
                     button.spawn((
                         UiSvg(crate::feathers::icon::load_svg_icon(&assets, path)),
                         Node {
-                            width: Val::Px(8.0),
-                            height: Val::Px(10.0),
+                            width: Val::Px(10.0),
+                            height: Val::Px(12.0),
                             ..default()
                         },
                         Pickable::IGNORE,
@@ -326,8 +328,15 @@ mod tests {
             assert_eq!(*app.world().get::<Visibility>(entity).unwrap(), expected);
             assert_eq!(
                 app.world().get::<Node>(entity).unwrap().width,
-                Val::Px(10.0)
+                Val::Px(12.0)
             );
+            assert_eq!(
+                app.world().get::<BackgroundColor>(entity).unwrap().0,
+                crate::theme::MENU_ITEM_HOVER
+            );
+            let icon = app.world().get::<Children>(entity).unwrap()[0];
+            assert_eq!(app.world().get::<Node>(icon).unwrap().width, Val::Px(10.0));
+            assert_eq!(app.world().get::<Node>(icon).unwrap().height, Val::Px(12.0));
         }
     }
 

@@ -5,7 +5,7 @@
       "label": "Aestra: Run Editor",
       "type": "shell",
       "command": "cargo",
-      "args": ["run", "-p", "aestra-editor"],
+      "args": ["editor-dev"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
