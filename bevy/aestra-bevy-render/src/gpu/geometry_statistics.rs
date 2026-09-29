@@ -357,6 +357,7 @@ mod tests {
                 stateful_dispatch: Vec::new(),
                 stateful_only: false,
                 event_links: Vec::new(),
+                physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },
         ));
         for _ in 0..MAX_IN_FLIGHT + 1 {

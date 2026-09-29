@@ -14,6 +14,7 @@ pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
 mod outputs;
+mod physics;
 mod profile;
 mod sdf;
 mod staged;
@@ -31,6 +32,7 @@ pub use execution_ir::{
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use outputs::*;
+pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 pub use sdf::*;
 pub use staged::{
     StagedDispatch, StagedPass, StagedPlan, StagedPlanError, StagedResource,
@@ -38,8 +40,8 @@ pub use staged::{
 };
 pub use stateful::{
     Collider, ColliderShape, HomingConfig, HomingLostPolicy, HomingRetire, HomingTarget,
-    HomingTracker, MAX_COLLIDERS, ParticleEvent, ParticleWorld, SpawnPlacement, SpawnShape,
-    StatefulConfig, StatefulSimulation, TargetChange, steer_homing,
+    HomingTracker, MAX_COLLIDERS, ParticleEvent, ParticlePhysics, ParticleWorld, SpawnPlacement,
+    SpawnShape, StatefulConfig, StatefulSimulation, TargetChange, steer_homing,
 };
 pub use tier::QualityTier;
 pub use trace::{BindingRecorder, BindingTrace, trace_tick};
@@ -1153,17 +1155,31 @@ impl CompiledEmitter {
     /// and the host's world geometry for `World` colliders (host bindings HB10) — static data within
     /// a world revision (a new world restarts the history), so time-addressable.
     pub fn collision_providers(&self) -> Vec<aestra_core::CollisionProvider> {
-        let world = |collider: &aestra_core::Collider| {
-            matches!(collider.shape, aestra_core::ColliderShape::World { .. })
+        use aestra_core::ColliderShape;
+        let has = |test: fn(&ColliderShape) -> bool| {
+            self.colliders.iter().any(|collider| test(&collider.shape))
         };
         let mut providers = Vec::new();
-        if self.colliders.iter().any(|collider| !world(collider)) {
+        if has(|shape| {
+            !matches!(
+                shape,
+                ColliderShape::World { .. } | ColliderShape::Physics { .. }
+            )
+        }) {
             providers.push(aestra_core::CollisionProvider::AUTHORED);
         }
-        if self.colliders.iter().any(world) {
+        if has(|shape| matches!(shape, ColliderShape::World { .. })) {
             providers.push(aestra_core::CollisionProvider {
                 source: aestra_core::CollisionInputSource::SignedDistanceField,
                 availability: aestra_core::HostInputAvailability::TimeAddressable,
+            });
+        }
+        // The host's physics bodies move under its own simulation, which nothing records: a
+        // backward seek replays past ticks against the present bodies.
+        if has(|shape| matches!(shape, ColliderShape::Physics { .. })) {
+            providers.push(aestra_core::CollisionProvider {
+                source: aestra_core::CollisionInputSource::EnginePhysicsQuery,
+                availability: aestra_core::HostInputAvailability::ForwardOnly,
             });
         }
         providers

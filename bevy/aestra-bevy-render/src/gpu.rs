@@ -5,6 +5,7 @@ mod extension_stages;
 mod geometry_statistics;
 mod mesh_inputs;
 mod particle_statistics;
+mod physics;
 mod preparation_timing;
 mod render;
 mod ribbon_bounds;
@@ -74,6 +75,7 @@ pub use extension_stages::{
     AestraDebugViews, AestraEffectOutputs, AestraFieldView, AestraOutputEvent, AestraWorldSdf,
     GpuStageProgress, GpuStageTiming,
 };
+pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery};
 // AestraCatchupPacing is defined below, beside the pacer it configures.
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
@@ -138,6 +140,8 @@ pub(crate) struct GpuEffectBuffers {
     stateful_dispatch: Vec<StatefulDispatch>,
     /// The effect's particle event links (host bindings HB9b).
     event_links: Vec<aestra_runtime::CompiledEventLink>,
+    /// The host's physics colliders around the effect this frame, packed (host bindings HB10).
+    physics: Arc<[u32]>,
     /// True when *every* enabled emitter is stateful, so the effect skips the analytic reset+simulate
     /// entirely. False for a mixed analytic+stateful effect, where the analytic path runs first (its
     /// `simulate` skips the stateful emitters' slots) and the stateful dispatches fill them after,
@@ -929,6 +933,7 @@ pub(crate) fn prepare_gpu_effects(
             &aestra_core::CollisionBackendCapabilities::new([
                 aestra_core::CollisionInputSource::AuthoredColliders,
                 aestra_core::CollisionInputSource::SignedDistanceField,
+                aestra_core::CollisionInputSource::EnginePhysicsQuery,
             ]),
         ) {
             Ok(()) => true,
@@ -1142,6 +1147,7 @@ pub(crate) fn prepare_gpu_effects(
                 stateful_dispatch,
                 stateful_only,
                 event_links: player.effect().event_links.clone(),
+                physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },
             GpuPresentationPrepared,
             particle_statistics,
@@ -1704,20 +1710,24 @@ fn sync_host_motion_draw_transforms(
     }
 }
 
+/// What [`sync_gpu_render_transforms`] reads and updates per effect.
+type RenderTransformSync = (
+    Entity,
+    &'static PresentedEffect,
+    &'static GlobalTransform,
+    &'static mut GpuEffectBuffers,
+    &'static mut GpuParticleStatistics,
+    Option<&'static AestraPhysicsColliders>,
+);
+
 // Rendering and culling must see the same frame's propagated effect transform.
 fn sync_gpu_render_transforms(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    mut players: Query<(
-        Entity,
-        &PresentedEffect,
-        &GlobalTransform,
-        &mut GpuEffectBuffers,
-        &mut GpuParticleStatistics,
-    )>,
+    mut players: Query<RenderTransformSync>,
     mut events: MessageWriter<AestraOutputEvent>,
     world_sdf: Option<Res<AestraWorldSdf>>,
 ) {
-    for (entity, player, transform, mut gpu, mut statistics) in &mut players {
+    for (entity, player, transform, mut gpu, mut statistics, physics) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
         gpu.statistics_token = statistics_token;
         let placement = Mat4::from(transform.affine());
@@ -1730,21 +1740,35 @@ fn sync_gpu_render_transforms(
             );
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
-        // `World` colliders (host bindings HB10): where the effect sits in the host's world, and
-        // which world — a new one restarts their history.
+        // `World` and `Physics` colliders (host bindings HB10): where the effect sits in the host's
+        // world, which world (a new one restarts their history), and this frame's physics colliders.
         let world_revision = world_sdf.as_deref().map_or(0, AestraWorldSdf::revision);
+        let mut reads_physics = false;
         for dispatch in &mut gpu.stateful_dispatch {
-            if dispatch
-                .colliders
-                .iter()
-                .any(|collider| matches!(collider.shape, aestra_core::ColliderShape::World { .. }))
-            {
+            let (mut world_colliders, mut physics_colliders) = (false, false);
+            for collider in &dispatch.colliders {
+                match collider.shape {
+                    aestra_core::ColliderShape::World { .. } => world_colliders = true,
+                    aestra_core::ColliderShape::Physics { .. } => physics_colliders = true,
+                    _ => {}
+                }
+            }
+            if world_colliders || physics_colliders {
                 dispatch.world_from_effect = std::array::from_fn(|row| {
                     let r = world.row(row);
                     [r.x, r.y, r.z, r.w]
                 });
+            }
+            if world_colliders {
                 dispatch.world_revision = world_revision;
             }
+            reads_physics |= physics_colliders;
+        }
+        if reads_physics {
+            gpu.physics = match physics {
+                Some(physics) => aestra_gpu::pack_physics_scene(&physics.0).into(),
+                None => aestra_gpu::pack_physics_scene(&Default::default()).into(),
+            };
         }
         // Homing targets (host bindings HB7) and attached emitters' placements (HB7b): this frame's,
         // from the bindings, into effect space. An attachment without a pose keeps its last placement.
@@ -2241,6 +2265,7 @@ fn init_stateful_pipeline(
                 storage_buffer::<Vec<u32>>(false),           // 8: live counters (atomic)
                 storage_buffer::<Vec<u32>>(false),           // 9: particle events (HB9b)
                 storage_buffer_read_only::<Vec<u32>>(false), // 10: the host's world SDF (HB10)
+                storage_buffer_read_only::<Vec<u32>>(false), // 11: the host's physics (HB10)
             ),
         ),
     );
@@ -2863,6 +2888,19 @@ fn is_live_advance(last: u32, target: u32) -> bool {
     target >= last && target - last <= LIVE_EVENT_TICKS
 }
 
+/// The host's physics colliders around an effect, on the device for this frame (host bindings HB10):
+/// a few kilobytes at most, so simply uploaded again every frame the bodies may have moved.
+fn physics_scene_buffer(device: &RenderDevice, words: &[u32]) -> Buffer {
+    device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("aestra particle physics"),
+        contents: &words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<u8>>(),
+        usage: BufferUsages::STORAGE,
+    })
+}
+
 /// The effect-wide render buffers a stateful emitter presents into.
 struct StatefulRenderBuffers<'a> {
     particles: &'a Buffer,
@@ -2871,6 +2909,8 @@ struct StatefulRenderBuffers<'a> {
     counters: &'a Buffer,
     /// The host's world SDF, for `World` colliders (host bindings HB10).
     world: &'a Buffer,
+    /// The host's physics colliders around the effect, for `Physics` colliders (HB10).
+    physics: &'a Buffer,
 }
 
 /// A bind group over one emitter's persistent buffers, `params`, and the effect's render buffers.
@@ -2896,6 +2936,7 @@ fn stateful_bind_group(
             render.counters.as_entire_buffer_binding(),
             persistent.events.as_entire_buffer_binding(),
             render.world.as_entire_buffer_binding(),
+            render.physics.as_entire_buffer_binding(),
         )),
     )
 }
@@ -3513,6 +3554,7 @@ fn run_simulation(
                 && persistent_states.len() == effect.stateful_dispatch.len()
             {
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
+                let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
                 run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
@@ -3527,6 +3569,7 @@ fn run_simulation(
                         indirect,
                         counters,
                         world: &particle_world.buffer,
+                        physics: &physics_buffer,
                     },
                     extension_stages::coupling(
                         &mut stage_runtimes,
@@ -3771,6 +3814,7 @@ fn run_simulation(
                 && persistent_states.len() == effect.stateful_dispatch.len()
             {
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
+                let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
                 run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
@@ -3785,6 +3829,7 @@ fn run_simulation(
                         indirect,
                         counters,
                         world: &particle_world.buffer,
+                        physics: &physics_buffer,
                     },
                     extension_stages::coupling(
                         &mut stage_runtimes,
@@ -4126,6 +4171,7 @@ mod tests {
                     stateful_dispatch: Vec::new(),
                     stateful_only: false,
                     event_links: Vec::new(),
+                    physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
                 },
             ))
             .id();
@@ -4780,6 +4826,7 @@ mod coupled_tests {
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer::<Vec<u32>>(false),
                     storage_buffer_read_only::<Vec<u32>>(false),
+                    storage_buffer_read_only::<Vec<u32>>(false),
                 ),
             ),
         );
@@ -5016,6 +5063,7 @@ mod coupled_tests {
                     indirect,
                     counters,
                     world: &scene.no_world,
+                    physics: &scene.no_world,
                 },
                 (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                 4,
@@ -5138,6 +5186,7 @@ mod coupled_tests {
                         indirect,
                         counters,
                         world: &scene.no_world,
+                        physics: &scene.no_world,
                     },
                     (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                     TICKS_PER_SUBMISSION,
@@ -5241,6 +5290,7 @@ mod coupled_tests {
                         indirect,
                         counters,
                         world: &self.no_world,
+                        physics: &self.no_world,
                     },
                     time,
                     TICKS_PER_SUBMISSION,

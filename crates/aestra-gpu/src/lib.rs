@@ -629,9 +629,11 @@ fn aestra_present_stateful(slot: u32, out_slot: u32, emitter_index: u32, subtick
 /// up to [`MAX_COLLIDERS`](aestra_runtime::MAX_COLLIDERS) records of 10 words each —
 /// `[kind, a.xyz, b.xyz, restitution, friction, kill]`. `kind` is `0` plane (`a` = unit normal,
 /// `b.x` = plane distance), `1` sphere (`a` = center, `b.x` = radius), `2` box (`a` = min, `b` = max),
-/// `3` the host's world (`a.x` = the particle radius, host bindings HB10). The including shader must
-/// declare the `params: array<u32>` binding and define `aestra_world_contact` — include
-/// [`STATEFUL_WORLD_WGSL`] (with its world binding), or [`STATEFUL_NO_WORLD_WGSL`].
+/// `3` the host's world (`a.x` = the particle radius, host bindings HB10), `4` the host's physics
+/// scene (`a.x` = the particle radius). The including shader must declare the `params: array<u32>`
+/// binding and define `aestra_world_contact` and `aestra_physics_contact` — include
+/// [`STATEFUL_WORLD_WGSL`] and [`STATEFUL_PHYSICS_WGSL`] (with their bindings), or
+/// [`STATEFUL_NO_WORLD_WGSL`] and [`STATEFUL_NO_PHYSICS_WGSL`].
 pub const STATEFUL_COLLISION_WGSL: &str = r#"
 const AESTRA_COLLIDER_COUNT_INDEX: u32 = 26u;
 const AESTRA_COLLIDER_BASE: u32 = 27u;
@@ -680,6 +682,12 @@ fn aestra_collider_at(base: u32, position: vec3<f32>, velocity: vec3<f32>) -> Ae
         contact = world.contact;
         normal = world.normal;
         penetration = world.penetration;
+    } else if (kind == 4u) {
+        // The host's physics scene (host bindings HB10).
+        let physics = aestra_physics_contact(a.x, position);
+        contact = physics.contact;
+        normal = physics.normal;
+        penetration = physics.penetration;
     } else {
         // AABB: inside the box; exit along the axis/face of least penetration (strict < breaks ties
         // toward the earlier axis and toward min, matching the CPU reference exactly).
@@ -793,6 +801,7 @@ pub fn pack_stateful_colliders(colliders: &[aestra_core::Collider], words: &mut 
             }
             aestra_core::ColliderShape::Aabb { min, max } => (2, min, max),
             aestra_core::ColliderShape::World { radius } => (3, [radius, 0.0, 0.0], [0.0; 3]),
+            aestra_core::ColliderShape::Physics { radius } => (4, [radius, 0.0, 0.0], [0.0; 3]),
         };
         words[base] = kind;
         for axis in 0..3 {
@@ -911,6 +920,190 @@ fn aestra_world_contact(radius: f32, position: vec3<f32>) -> AestraWorldContact 
         + sqrt(r0.z * r0.z + r1.z * r1.z + r2.z * r2.z)) / 3.0;
     let effect_distance = distance / scale;
     return AestraWorldContact(effect_distance < radius, unit, radius - effect_distance);
+}
+"#;
+
+/// Words of a packed physics scene (host bindings HB10) holding `proxies` proxies: a header
+/// `[count, 0, 0, 0]`, then 16-word records `[kind, p0.xyz, p1.xyz, radius, rotation.xyzw,
+/// half_extents.xyz, 0]` — kind 0 sphere (`p0` centre), 1 capsule (`p0`–`p1`), 2 box (`p0` centre),
+/// 3 half-space (`p0` the unit normal, `radius` the distance).
+pub fn physics_scene_words(proxies: usize) -> usize {
+    4 + 16 * proxies.min(aestra_runtime::MAX_PHYSICS_PROXIES)
+}
+
+/// Packs the host's physics scene for the stateful module's binding 11 (host bindings HB10); an empty
+/// scene is a header alone.
+pub fn pack_physics_scene(scene: &aestra_runtime::PhysicsScene) -> Vec<u32> {
+    use aestra_runtime::PhysicsProxy;
+    let proxies = &scene.proxies[..scene.proxies.len().min(aestra_runtime::MAX_PHYSICS_PROXIES)];
+    let mut words = vec![0u32; physics_scene_words(proxies.len())];
+    words[0] = proxies.len() as u32;
+    let identity = [0.0, 0.0, 0.0, 1.0];
+    for (index, proxy) in proxies.iter().enumerate() {
+        let record = &mut words[4 + 16 * index..4 + 16 * (index + 1)];
+        let (kind, p0, p1, radius, rotation, half) = match *proxy {
+            PhysicsProxy::Sphere { center, radius } => {
+                (0, center, [0.0; 3], radius, identity, [0.0; 3])
+            }
+            PhysicsProxy::Capsule { a, b, radius } => (1, a, b, radius, identity, [0.0; 3]),
+            PhysicsProxy::Box {
+                center,
+                rotation,
+                half_extents,
+            } => (2, center, [0.0; 3], 0.0, rotation, half_extents),
+            PhysicsProxy::HalfSpace { normal, distance } => {
+                (3, normal, [0.0; 3], distance, identity, [0.0; 3])
+            }
+        };
+        record[0] = kind;
+        for axis in 0..3 {
+            record[1 + axis] = p0[axis].to_bits();
+            record[4 + axis] = p1[axis].to_bits();
+            record[12 + axis] = half[axis].to_bits();
+        }
+        record[7] = radius.to_bits();
+        for (component, value) in rotation.iter().enumerate() {
+            record[8 + component] = value.to_bits();
+        }
+    }
+    words
+}
+
+/// The physics contact of `Physics` colliders (host bindings HB10) for the stateful module: the
+/// host's physics proxies ([`pack_physics_scene`]) bound as `aestra_particle_physics` at binding 11,
+/// the effect placed among them by the params' world block (so [`STATEFUL_WORLD_WGSL`] must precede
+/// it). The GPU counterpart of `aestra_runtime::ParticlePhysics::contact`, operation for operation.
+pub const STATEFUL_PHYSICS_WGSL: &str = r#"
+@group(0) @binding(11) var<storage, read> aestra_particle_physics: array<u32>;
+
+struct AestraPhysicsContact { contact: bool, normal: vec3<f32>, penetration: f32 };
+struct AestraPhysicsProbe { distance: f32, normal: vec3<f32> };
+
+fn aestra_physics_f32(word: u32) -> f32 {
+    return bitcast<f32>(aestra_particle_physics[word]);
+}
+
+fn aestra_physics_vec3(word: u32) -> vec3<f32> {
+    return vec3<f32>(aestra_physics_f32(word), aestra_physics_f32(word + 1u), aestra_physics_f32(word + 2u));
+}
+
+fn aestra_physics_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn aestra_physics_unit(v: vec3<f32>) -> vec3<f32> {
+    let length_squared = aestra_physics_dot(v, v);
+    if (length_squared > 1e-12) {
+        return v / sqrt(length_squared);
+    }
+    return vec3<f32>(0.0, 1.0, 0.0);
+}
+
+fn aestra_physics_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let tx = 2.0 * (q.y * v.z - q.z * v.y);
+    let ty = 2.0 * (q.z * v.x - q.x * v.z);
+    let tz = 2.0 * (q.x * v.y - q.y * v.x);
+    return vec3<f32>(
+        v.x + q.w * tx + (q.y * tz - q.z * ty),
+        v.y + q.w * ty + (q.z * tx - q.x * tz),
+        v.z + q.w * tz + (q.x * ty - q.y * tx));
+}
+
+fn aestra_physics_sign(value: f32) -> f32 {
+    return select(1.0, -1.0, value < 0.0);
+}
+
+// One proxy: its signed distance and outward normal at world point `p`.
+fn aestra_physics_proxy(base: u32, p: vec3<f32>) -> AestraPhysicsProbe {
+    let kind = aestra_particle_physics[base];
+    let p0 = aestra_physics_vec3(base + 1u);
+    let radius = aestra_physics_f32(base + 7u);
+    if (kind == 0u) {
+        let delta = p - p0;
+        return AestraPhysicsProbe(sqrt(aestra_physics_dot(delta, delta)) - radius, aestra_physics_unit(delta));
+    }
+    if (kind == 1u) {
+        let axis = aestra_physics_vec3(base + 4u) - p0;
+        let length_squared = aestra_physics_dot(axis, axis);
+        var t = 0.0;
+        if (length_squared > 1e-12) {
+            t = clamp(aestra_physics_dot(p - p0, axis) / length_squared, 0.0, 1.0);
+        }
+        let delta = p - (p0 + axis * t);
+        return AestraPhysicsProbe(sqrt(aestra_physics_dot(delta, delta)) - radius, aestra_physics_unit(delta));
+    }
+    if (kind == 2u) {
+        let rotation = vec4<f32>(
+            aestra_physics_f32(base + 8u), aestra_physics_f32(base + 9u),
+            aestra_physics_f32(base + 10u), aestra_physics_f32(base + 11u));
+        let half = aestra_physics_vec3(base + 12u);
+        let local = aestra_physics_rotate(vec4<f32>(-rotation.xyz, rotation.w), p - p0);
+        let q = abs(local) - half;
+        let outside = max(q, vec3<f32>(0.0));
+        let outside_length = sqrt(aestra_physics_dot(outside, outside));
+        let inside = min(max(q.x, max(q.y, q.z)), 0.0);
+        var local_normal = vec3<f32>(0.0);
+        if (outside_length > 0.0) {
+            local_normal = vec3<f32>(
+                outside.x * aestra_physics_sign(local.x),
+                outside.y * aestra_physics_sign(local.y),
+                outside.z * aestra_physics_sign(local.z));
+        } else {
+            // Inside: out through the nearest face, ties toward the earlier axis.
+            var axis = 0u;
+            if (q.y > q[axis]) { axis = 1u; }
+            if (q.z > q[axis]) { axis = 2u; }
+            local_normal[axis] = aestra_physics_sign(local[axis]);
+        }
+        return AestraPhysicsProbe(
+            outside_length + inside, aestra_physics_rotate(rotation, aestra_physics_unit(local_normal)));
+    }
+    return AestraPhysicsProbe(aestra_physics_dot(p0, p) - radius, p0);
+}
+
+fn aestra_physics_contact(radius: f32, position: vec3<f32>) -> AestraPhysicsContact {
+    let count = min(aestra_particle_physics[0], 64u);
+    if (count == 0u) {
+        return AestraPhysicsContact(false, vec3<f32>(0.0, 1.0, 0.0), 0.0);
+    }
+    let r0 = aestra_world_row(0u);
+    let r1 = aestra_world_row(1u);
+    let r2 = aestra_world_row(2u);
+    let world = vec3<f32>(
+        r0.x * position.x + r0.y * position.y + r0.z * position.z + r0.w,
+        r1.x * position.x + r1.y * position.y + r1.z * position.z + r1.w,
+        r2.x * position.x + r2.y * position.y + r2.z * position.z + r2.w);
+    var best = AestraPhysicsProbe(1.0e30, vec3<f32>(0.0, 1.0, 0.0));
+    for (var index = 0u; index < count; index = index + 1u) {
+        let candidate = aestra_physics_proxy(4u + 16u * index, world);
+        if (candidate.distance < best.distance) {
+            best = candidate;
+        }
+    }
+    let n = best.normal;
+    let normal = vec3<f32>(
+        r0.x * n.x + r1.x * n.y + r2.x * n.z,
+        r0.y * n.x + r1.y * n.y + r2.y * n.z,
+        r0.z * n.x + r1.z * n.y + r2.z * n.z);
+    let length_squared = normal.x * normal.x + normal.y * normal.y + normal.z * normal.z;
+    if (length_squared <= 1e-12) {
+        return AestraPhysicsContact(false, vec3<f32>(0.0, 1.0, 0.0), 0.0);
+    }
+    let unit = normal / sqrt(length_squared);
+    let scale = (sqrt(r0.x * r0.x + r1.x * r1.x + r2.x * r2.x)
+        + sqrt(r0.y * r0.y + r1.y * r1.y + r2.y * r2.y)
+        + sqrt(r0.z * r0.z + r1.z * r1.z + r2.z * r2.z)) / 3.0;
+    let effect_distance = best.distance / scale;
+    return AestraPhysicsContact(effect_distance < radius, unit, radius - effect_distance);
+}
+"#;
+
+/// [`STATEFUL_COLLISION_WGSL`]'s physics contact for a module with no physics scene.
+pub const STATEFUL_NO_PHYSICS_WGSL: &str = r#"
+struct AestraPhysicsContact { contact: bool, normal: vec3<f32>, penetration: f32 };
+
+fn aestra_physics_contact(radius: f32, position: vec3<f32>) -> AestraPhysicsContact {
+    return AestraPhysicsContact(false, vec3<f32>(0.0, 1.0, 0.0), 0.0);
 }
 "#;
 
@@ -1369,7 +1562,8 @@ fn present(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub fn stateful_simulation_wgsl() -> String {
     format!(
         "{STATEFUL_SIMULATION_BINDINGS}{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}\
-         {STATEFUL_PRESENT_WGSL}{STATEFUL_WORLD_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
+         {STATEFUL_PRESENT_WGSL}{STATEFUL_WORLD_WGSL}{STATEFUL_PHYSICS_WGSL}{STATEFUL_COLLISION_WGSL}\
+         {STATEFUL_PLACEMENT_WGSL}\
          {STATEFUL_HOMING_WGSL}{STATEFUL_SIMULATION_ENTRIES}"
     )
 }

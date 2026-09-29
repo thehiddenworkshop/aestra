@@ -240,25 +240,55 @@ impl ParticleWorld {
     /// distance scaled by the effect's mean axis scale. The GPU's world collider mirrors it operation
     /// for operation.
     pub fn contact(&self, radius: f32, position: [f32; 3]) -> (bool, [f32; 3], f32) {
-        let r = self.world_from_effect;
-        let world: [f32; 3] = std::array::from_fn(|i| {
-            r[i][0] * position[0] + r[i][1] * position[1] + r[i][2] * position[2] + r[i][3]
-        });
-        let distance = self.volume.sample(world);
-        let n = self.volume.normal(world);
-        let normal: [f32; 3] =
-            std::array::from_fn(|j| r[0][j] * n[0] + r[1][j] * n[1] + r[2][j] * n[2]);
-        let length_squared = dot(normal, normal);
-        if length_squared <= 1e-12 {
-            return (false, [0.0, 1.0, 0.0], 0.0);
-        }
-        let length = length_squared.sqrt();
-        let normal = normal.map(|component| component / length);
-        let column = |j: usize| (r[0][j] * r[0][j] + r[1][j] * r[1][j] + r[2][j] * r[2][j]).sqrt();
-        let scale = (column(0) + column(1) + column(2)) / 3.0;
-        let distance = distance / scale;
-        (distance < radius, normal, radius - distance)
+        placed_contact(self.world_from_effect, radius, position, |world| {
+            (self.volume.sample(world), self.volume.normal(world))
+        })
     }
+}
+
+/// The host's physics scene a stateful emitter's `Physics` colliders collide with (host bindings
+/// HB10), and where the effect sits in it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticlePhysics {
+    pub scene: std::sync::Arc<crate::PhysicsScene>,
+    /// The effect-to-world affine, 3×4 rows.
+    pub world_from_effect: [[f32; 4]; 3],
+}
+
+impl ParticlePhysics {
+    /// [`ParticleWorld::contact`] against the scene's nearest proxy.
+    pub fn contact(&self, radius: f32, position: [f32; 3]) -> (bool, [f32; 3], f32) {
+        placed_contact(self.world_from_effect, radius, position, |world| {
+            self.scene.distance_normal(world)
+        })
+    }
+}
+
+/// An effect-space contact against a world-space distance field: the position taken to world space,
+/// the field's distance and normal there, the normal brought back by the transposed linear part and
+/// the distance scaled by the mean axis scale.
+fn placed_contact(
+    r: [[f32; 4]; 3],
+    radius: f32,
+    position: [f32; 3],
+    field: impl Fn([f32; 3]) -> (f32, [f32; 3]),
+) -> (bool, [f32; 3], f32) {
+    let world: [f32; 3] = std::array::from_fn(|i| {
+        r[i][0] * position[0] + r[i][1] * position[1] + r[i][2] * position[2] + r[i][3]
+    });
+    let (distance, n) = field(world);
+    let normal: [f32; 3] =
+        std::array::from_fn(|j| r[0][j] * n[0] + r[1][j] * n[1] + r[2][j] * n[2]);
+    let length_squared = dot(normal, normal);
+    if length_squared <= 1e-12 {
+        return (false, [0.0, 1.0, 0.0], 0.0);
+    }
+    let length = length_squared.sqrt();
+    let normal = normal.map(|component| component / length);
+    let column = |j: usize| (r[0][j] * r[0][j] + r[1][j] * r[1][j] + r[2][j] * r[2][j]).sqrt();
+    let scale = (column(0) + column(1) + column(2)) / 3.0;
+    let distance = distance / scale;
+    (distance < radius, normal, radius - distance)
 }
 
 /// The slot of each trigger in the per-tick event lists.
@@ -300,6 +330,8 @@ pub struct StatefulSimulation {
     events: [Vec<ParticleEvent>; 3],
     /// The world `World` colliders collide with (host bindings HB10); none collides without one.
     world: Option<ParticleWorld>,
+    /// The physics scene `Physics` colliders collide with (host bindings HB10).
+    physics: Option<ParticlePhysics>,
 }
 
 impl StatefulSimulation {
@@ -318,6 +350,7 @@ impl StatefulSimulation {
             arrivals: 0,
             events: Default::default(),
             world: None,
+            physics: None,
         }
     }
 
@@ -330,6 +363,12 @@ impl StatefulSimulation {
     /// Sets the world `World` colliders collide with from the next tick (host bindings HB10).
     pub fn set_world(&mut self, world: Option<ParticleWorld>) {
         self.world = world;
+    }
+
+    /// Sets the physics scene `Physics` colliders collide with from the next tick (host bindings
+    /// HB10).
+    pub fn set_physics(&mut self, physics: Option<ParticlePhysics>) {
+        self.physics = physics;
     }
 
     /// Moves where the following ticks' spawns land (an attached emitter, host bindings HB7b).
@@ -454,7 +493,7 @@ impl StatefulSimulation {
         resolve_colliders(
             &config.colliders,
             config.collider_count,
-            None,
+            Surroundings::default(),
             position,
             velocity,
         )
@@ -517,7 +556,10 @@ impl StatefulSimulation {
             let killed = resolve_colliders(
                 &self.config.colliders,
                 self.config.collider_count,
-                self.world.as_ref(),
+                Surroundings {
+                    world: self.world.as_ref(),
+                    physics: self.physics.as_ref(),
+                },
                 &mut particle.position,
                 &mut particle.velocity,
             );
@@ -811,10 +853,17 @@ pub fn steer_homing(
 /// order, returning whether the particle was killed. Canonical for both this CPU reference and the GPU
 /// death-loop kernel: every operation is `+ - * /`, comparison, or `sqrt` (all IEEE-correctly-rounded),
 /// and it reads only the persistent position/velocity, so a checkpoint restore reproduces every bounce.
+/// The host's scene a tick's colliders may reach: its world SDF and its physics colliders.
+#[derive(Clone, Copy, Default)]
+struct Surroundings<'a> {
+    world: Option<&'a ParticleWorld>,
+    physics: Option<&'a ParticlePhysics>,
+}
+
 fn resolve_colliders(
     colliders: &[Collider; MAX_COLLIDERS],
     count: u32,
-    world: Option<&ParticleWorld>,
+    world: Surroundings<'_>,
     position: &mut [f32; 3],
     velocity: &mut [f32; 3],
 ) -> bool {
@@ -833,7 +882,7 @@ fn resolve_colliders(
 /// velocity by `friction` — a single uniform response shared by every shape.
 fn resolve_collider(
     collider: &Collider,
-    world: Option<&ParticleWorld>,
+    world: Surroundings<'_>,
     position: &mut [f32; 3],
     velocity: &mut [f32; 3],
 ) -> bool {
@@ -878,8 +927,12 @@ fn resolve_collider(
             }
             (inside, best_normal, best_penetration)
         }
-        ColliderShape::World { radius } => match world {
+        ColliderShape::World { radius } => match world.world {
             Some(world) => world.contact(radius, *position),
+            None => (false, [0.0, 1.0, 0.0], 0.0),
+        },
+        ColliderShape::Physics { radius } => match world.physics {
+            Some(physics) => physics.contact(radius, *position),
             None => (false, [0.0, 1.0, 0.0], 0.0),
         },
     };
@@ -1332,8 +1385,18 @@ mod tests {
         position[1] = -0.5;
         frictionless_pos[1] = -0.5;
 
-        resolve_collider(&plane_friction, None, &mut position, &mut velocity);
-        resolve_collider(&plane_free, None, &mut frictionless_pos, &mut frictionless);
+        resolve_collider(
+            &plane_friction,
+            Surroundings::default(),
+            &mut position,
+            &mut velocity,
+        );
+        resolve_collider(
+            &plane_free,
+            Surroundings::default(),
+            &mut frictionless_pos,
+            &mut frictionless,
+        );
 
         assert!(
             velocity[0] < frictionless[0],

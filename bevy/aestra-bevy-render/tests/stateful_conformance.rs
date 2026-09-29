@@ -24,9 +24,9 @@
 //! does not run on GPU-less CI; set `AESTRA_REQUIRE_GPU_CONFORMANCE=1` to require a GPU.
 
 use aestra_gpu::{
-    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_NO_WORLD_WGSL,
-    STATEFUL_PLACEMENT_WGSL, STATEFUL_PRESENT_WGSL, STATEFUL_SPAWN_RNG_WGSL,
-    stateful_simulation_wgsl,
+    STATEFUL_COLLISION_WGSL, STATEFUL_FREE_LIST_WGSL, STATEFUL_NO_PHYSICS_WGSL,
+    STATEFUL_NO_WORLD_WGSL, STATEFUL_PLACEMENT_WGSL, STATEFUL_PRESENT_WGSL,
+    STATEFUL_SPAWN_RNG_WGSL, stateful_simulation_wgsl,
 };
 use aestra_runtime::{
     Collider, ColliderShape, MAX_COLLIDERS, SpawnPlacement, SpawnShape, StatefulConfig,
@@ -411,6 +411,8 @@ struct Harness {
     unified_layout: wgpu::BindGroupLayout,
     /// A world SDF saying no world is supplied (host bindings HB10), for bindings that need one.
     no_world: wgpu::Buffer,
+    /// A physics scene of no proxies (host bindings HB10).
+    no_physics: wgpu::Buffer,
     unified_present_pipeline: wgpu::ComputePipeline,
 }
 
@@ -552,7 +554,8 @@ impl Harness {
             label: Some("Aestra death loop"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
                 "{STATEFUL_SPAWN_RNG_WGSL}{STATEFUL_FREE_LIST_WGSL}{STATEFUL_NO_WORLD_WGSL}\
-                 {STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}{DEATH_LOOP_WGSL}"
+                 {STATEFUL_NO_PHYSICS_WGSL}{STATEFUL_COLLISION_WGSL}{STATEFUL_PLACEMENT_WGSL}\
+                 {DEATH_LOOP_WGSL}"
             ))),
         });
         let death_integrate_pipeline =
@@ -620,6 +623,7 @@ impl Harness {
                 storage(8, false), // counters
                 storage(9, false), // particle events (host bindings HB9b)
                 storage(10, true), // the host's world SDF (host bindings HB10)
+                storage(11, true), // the host's physics scene (host bindings HB10)
             ],
         });
         let unified_pipeline_layout =
@@ -646,8 +650,14 @@ impl Harness {
             contents: &[0u8; 32],
             usage: wgpu::BufferUsages::STORAGE,
         });
+        let no_physics = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("no physics"),
+            contents: &[0u8; 16],
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         Ok(Some(Self {
             no_world,
+            no_physics,
             device,
             queue,
             bind_group_layout,
@@ -1482,6 +1492,10 @@ impl Harness {
                 wgpu::BindGroupEntry {
                     binding: 10,
                     resource: self.no_world.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: self.no_physics.as_entire_binding(),
                 },
             ],
         });
@@ -2528,6 +2542,18 @@ fn advance_production_in_world(
     ticks: &[Vec<u32>],
     world: &wgpu::Buffer,
 ) -> Result<CountedRun, String> {
+    advance_production_in_scene(harness, config, ticks, world, &harness.no_physics)
+}
+
+/// [`advance_production_in_world`] among the host's physics proxies `physics` too (a packed physics
+/// scene, host bindings HB10).
+fn advance_production_in_scene(
+    harness: &Harness,
+    config: &StatefulConfig,
+    ticks: &[Vec<u32>],
+    world: &wgpu::Buffer,
+    physics: &wgpu::Buffer,
+) -> Result<CountedRun, String> {
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("homing"),
@@ -2598,6 +2624,7 @@ fn advance_production_in_world(
             &counters,
             &events,
             world,
+            physics,
         ]
         .iter()
         .enumerate()
@@ -3042,6 +3069,7 @@ fn advance_production_linked(
                 &emitter.scratch[3],
                 &emitter.events,
                 &harness.no_world,
+                &harness.no_physics,
             ]
             .iter()
             .enumerate()
@@ -3343,4 +3371,110 @@ fn gpu_world_colliders_match_the_cpu_reference_in_a_placed_effect() {
         fallen.iter().any(|(_, p)| in_world(*p)[1] < -1.0),
         "without a world nothing stops them"
     );
+}
+
+#[test]
+fn gpu_physics_colliders_match_the_cpu_reference_against_every_proxy_kind() {
+    // The host's physics scene as proxies — a ground half-space, a ball, a slanted capsule and a
+    // rotated crate — with sparks raining on them from a placed effect: the kernel's physics
+    // collider resolves every contact as the CPU reference does, by ordinal.
+    use aestra_runtime::{PhysicsProxy, PhysicsScene};
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let (sin, cos) = (0.35f32.sin(), 0.35f32.cos());
+    let scene = std::sync::Arc::new(PhysicsScene {
+        proxies: vec![
+            PhysicsProxy::HalfSpace {
+                normal: [0.0, 1.0, 0.0],
+                distance: 0.0,
+            },
+            PhysicsProxy::Sphere {
+                center: [-4.0, 1.5, 0.0],
+                radius: 2.0,
+            },
+            PhysicsProxy::Capsule {
+                a: [3.0, 1.0, -3.0],
+                b: [5.0, 4.0, 2.0],
+                radius: 1.0,
+            },
+            PhysicsProxy::Box {
+                center: [0.5, 2.0, 3.5],
+                rotation: [0.0, (0.3f32).sin(), 0.0, (0.3f32).cos()],
+                half_extents: [2.0, 1.0, 1.5],
+            },
+        ],
+    });
+    let world_from_effect = [
+        [1.2, 0.0, 0.0, 0.5],
+        [0.0, 1.2 * cos, -1.2 * sin, 12.0],
+        [0.0, 1.2 * sin, 1.2 * cos, 0.0],
+    ];
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    colliders[0] = Collider {
+        shape: ColliderShape::Physics { radius: 0.15 },
+        restitution: 0.35,
+        friction: 0.25,
+        kill: false,
+    };
+    let config = StatefulConfig {
+        gravity: [0.0, -14.0, 0.0],
+        spawn_per_tick: 4,
+        speed: (1.0, 4.0),
+        lifetime: (1.4, 1.8),
+        direction: [0.0, -1.0, 0.0],
+        spread: 1.0,
+        drag: 0.1,
+        shape: SpawnShape::Box {
+            half_extents: [6.0, 0.5, 6.0],
+        },
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders,
+        collider_count: 1,
+        capacity: 1024,
+        homing: None,
+    };
+    let seed = 0x00AB_0010_0000_0002_u64;
+    let ticks: Vec<Vec<u32>> = (0..100)
+        .map(|_| {
+            let mut words = stateful_params(&config, seed, 0, 0);
+            aestra_gpu::pack_stateful_world(&world_from_effect, &mut words);
+            words
+        })
+        .collect();
+    let physics = harness
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physics"),
+            contents: &aestra_gpu::pack_physics_scene(&scene)
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<u8>>(),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+    let (gpu, _) =
+        advance_production_in_scene(&harness, &config, &ticks, &harness.no_world, &physics)
+            .unwrap();
+    let mut simulation = StatefulSimulation::new(config, seed);
+    simulation.set_physics(Some(aestra_runtime::ParticlePhysics {
+        scene: scene.clone(),
+        world_from_effect,
+    }));
+    simulation.advance_to_tick(100);
+    let cpu = simulation.alive_particles();
+    assert!(cpu.len() > 100);
+    assert_same_particles(&cpu, &gpu);
+    // Nothing sits inside a body.
+    let in_world = |p: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|i| {
+            let r = world_from_effect[i];
+            r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3]
+        })
+    };
+    let deepest = cpu
+        .iter()
+        .map(|(_, p)| scene.distance_normal(in_world(*p)).0)
+        .fold(f32::MAX, f32::min);
+    assert!(deepest > -0.05, "a particle sank {deepest} into a body");
 }

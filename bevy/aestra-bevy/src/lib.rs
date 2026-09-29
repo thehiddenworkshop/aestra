@@ -59,7 +59,10 @@ pub use aestra_bevy_render::{
     RendererCapability, gpu,
 };
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
-pub use aestra_bevy_render::gpu::{AestraEffectOutputs, AestraOutputEvent, AestraWorldSdf};
+pub use aestra_bevy_render::gpu::{
+    AestraEffectOutputs, AestraOutputEvent, AestraPhysicsColliders, AestraPhysicsQuery,
+    AestraWorldSdf,
+};
 pub use aestra_compiler::{
     AestraExtension, CompileError, EffectCompiler, ExtensionManifest, ExtensionRegistry,
     ModuleRegistry, ProjectCompileError, link_extension,
@@ -82,6 +85,7 @@ pub use aestra_runtime::{
     EVENT_FINISHED, EVENT_IMPACT, EVENT_TARGET_ACQUIRED, EVENT_TARGET_LOST, EffectOutputEvent,
     EventOrigin, QualityTier, SdfVolume, StageOutputValue,
 };
+pub use aestra_runtime::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 
 use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;

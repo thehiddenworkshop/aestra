@@ -2960,3 +2960,30 @@ fn a_world_collider_requires_the_hosts_world_sdf() {
     }
     assert!(EffectCompiler::default().compile(&bad).is_err());
 }
+
+#[test]
+fn a_physics_collider_requires_the_hosts_physics_scene_and_is_forward_only() {
+    use aestra_core::{Collider, ColliderShape, CollisionInputSource, ModuleInstance};
+    let mut effect = EffectAsset::new("Physics Bounce", 2.0);
+    let mut emitter = aestra_core::Emitter::basic_sprite("Sparks", 2.0);
+    emitter
+        .modules
+        .push(ModuleInstance::collision(vec![Collider {
+            shape: ColliderShape::Physics { radius: 0.2 },
+            restitution: 0.5,
+            friction: 0.2,
+            kill: false,
+        }]));
+    effect.emitters.push(emitter);
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let inputs = compiled.collision_inputs();
+    assert_eq!(inputs.sources(), [CollisionInputSource::EnginePhysicsQuery]);
+    assert!(
+        !inputs.supports_exact_backward_seek(),
+        "the host's bodies move under its own simulation: seeking back is not exact"
+    );
+    assert_eq!(
+        compiled.emitters[0].simulation_class,
+        aestra_runtime::SimulationClass::Stateful
+    );
+}

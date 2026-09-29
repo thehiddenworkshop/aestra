@@ -2565,7 +2565,9 @@ impl ModuleInstance {
                                 && max.iter().all(|value| value.is_finite())
                                 && (0..3).all(|axis| min[axis] <= max[axis])
                         }
-                        ColliderShape::World { radius } => radius.is_finite() && radius >= 0.0,
+                        ColliderShape::World { radius } | ColliderShape::Physics { radius } => {
+                            radius.is_finite() && radius >= 0.0
+                        }
                     };
                     if !shape_finite
                         || !collider.restitution.is_finite()
@@ -2645,6 +2647,10 @@ pub enum ColliderShape {
     /// (a Bevy `AestraWorldSdf`, say). A particle closer to it than `radius` has collided. Nothing
     /// collides while the host supplies no world.
     World { radius: f32 },
+    /// The host's physics scene (host bindings HB10): the colliders its physics engine has around
+    /// the effect (Rapier, Avian, or a game's own), which an adapter supplies each frame. A particle
+    /// closer to one than `radius` has collided. Nothing collides while no adapter supplies any.
+    Physics { radius: f32 },
 }
 
 impl Collider {
