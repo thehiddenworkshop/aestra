@@ -75,7 +75,7 @@ pub use extension_stages::{
     AestraDebugViews, AestraEffectOutputs, AestraFieldView, AestraOutputEvent, AestraWorldSdf,
     GpuStageProgress, GpuStageTiming,
 };
-pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery};
+pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
 // AestraCatchupPacing is defined below, beside the pacer it configures.
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;

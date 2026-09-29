@@ -1,0 +1,13 @@
+[package]
+name = "aestra-bevy-rapier"
+description = "Rapier physics for Aestra effects: particles collide with the Rapier colliders around them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-bevy = { path = "../aestra-bevy" }
+bevy.workspace = true
+bevy_rapier3d = { version = "0.36.0", default-features = false, features = ["dim3"] }

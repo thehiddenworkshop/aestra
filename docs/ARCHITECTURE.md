@@ -575,6 +575,32 @@ ordinal. The emitter declares the `SignedDistanceField` collision input, which t
 supplies. A new world revision restarts the history. Object bindings and world geometry stay
 separate APIs: a projectile can home on a bound entity and, independently, bounce off the scene.
 
+### Physics collision for particles
+
+A collider of shape `Physics { radius }` makes stateful particles collide with the host's physics
+engine (HB10, the `EnginePhysicsQuery` provider). Particles live on the GPU, so no per-particle query
+crosses to the physics engine and nothing is read back. Instead, each frame an adapter describes the
+colliders around the effect as analytic proxies in world space (`PhysicsProxy`: sphere, capsule,
+oriented box, half-space; at most 64, the nearest kept). The kernel tests particles against them,
+with the same restitution / friction / kill response as the authored shapes. Moving bodies push
+particles every frame. `ParticlePhysics::contact` is the CPU reference, and the GPU matches it by
+ordinal.
+
+Aestra depends on no physics crate. The effect entity's `AestraPhysicsColliders` component is the
+whole contract, and three ways fill it:
+
+- `aestra-bevy-rapier`: `AestraRapierPlugin` queries Rapier's pipeline around every effect carrying
+  an `AestraPhysicsQuery` (a radius and a count).
+- `aestra-bevy-avian`: `AestraAvianPlugin` does the same with Avian's spatial query.
+- A game's own system, for any other engine or none: `PhysicsPose` places the primitives
+  (`examples/custom_physics.rs`).
+
+Shapes map to proxies exactly for balls, cuboids, capsules, segments and half-spaces, and part by
+part for compounds. Everything else (meshes, height fields, cylinders, cones, convex hulls) becomes
+its local bounding box; a static level is better served by a world SDF. The provider is
+`ForwardOnly`: bodies move under the host's own simulation, so a backward seek replays against the
+present bodies and says so.
+
 ### Recorded host input
 
 Live bindings make a stateful history depend on input from outside the effect. `HostInputAvailability`

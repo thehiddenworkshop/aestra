@@ -6,6 +6,8 @@ members = [
     "apps/aestra-editor",
     "apps/aestra-viewer",
     "bevy/aestra-bevy",
+    "bevy/aestra-bevy-avian",
+    "bevy/aestra-bevy-rapier",
     "bevy/aestra-bevy-render",
     "crates/aestra-artifact",
     "crates/aestra-core",

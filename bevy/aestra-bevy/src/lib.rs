@@ -61,7 +61,7 @@ pub use aestra_bevy_render::{
 // The host's world and what effects report back to gameplay (fluid F11, host bindings HB9/HB10).
 pub use aestra_bevy_render::gpu::{
     AestraEffectOutputs, AestraOutputEvent, AestraPhysicsColliders, AestraPhysicsQuery,
-    AestraWorldSdf,
+    AestraWorldSdf, PhysicsPose,
 };
 pub use aestra_compiler::{
     AestraExtension, CompileError, EffectCompiler, ExtensionManifest, ExtensionRegistry,
