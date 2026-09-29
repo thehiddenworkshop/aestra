@@ -1178,6 +1178,9 @@ pub(crate) fn prepare_gpu_effects(
                 });
         }
         if arrival_words > 0 {
+            commands.entity(entity).insert(GpuEventLinkStatistics {
+                dropped: vec![0; player.effect().event_links.len()],
+            });
             commands.entity(entity).with_children(|parent| {
                 parent
                     .spawn((
@@ -2019,6 +2022,14 @@ impl GpuTrailStatistics {
 #[derive(Component)]
 struct GpuTrailReadbackOwner(Entity);
 
+/// The children each compiled event link (`CompiledEffect::event_links`, same order) could not spawn
+/// so far, read back asynchronously (event system E0): for editors and tools to show where a burst
+/// loses particles. Totals since the effect's GPU buffers were built; a rebuild starts from zero.
+#[derive(Component, Debug, Default, Clone, PartialEq, Eq)]
+pub struct GpuEventLinkStatistics {
+    pub dropped: Vec<u64>,
+}
+
 /// Reads homing arrivals and source/link event overflow counters back, remembering the last
 /// value of each `counters` word to report only new activity.
 #[derive(Component)]
@@ -2041,6 +2052,7 @@ fn receive_homing_arrivals(
     event: On<ReadbackComplete>,
     mut readbacks: Query<&mut GpuArrivalReadback>,
     effects: Query<&GpuEffectBuffers>,
+    mut link_statistics: Query<&mut GpuEventLinkStatistics>,
     mut events: MessageWriter<AestraOutputEvent>,
 ) {
     let Ok(mut readback) = readbacks.get_mut(event.event_target()) else {
@@ -2100,6 +2112,11 @@ fn receive_homing_arrivals(
             };
             let seen = readback.seen.insert(word, dropped).unwrap_or(0);
             if dropped > seen {
+                if let Ok(mut statistics) = link_statistics.get_mut(effect)
+                    && let Some(total) = statistics.dropped.get_mut(index)
+                {
+                    *total += u64::from(dropped - seen);
+                }
                 let list_capacity = gpu
                     .stateful_dispatch
                     .iter()

@@ -33,7 +33,8 @@ pub use execution_ir::{
 };
 pub use host_transform::CompiledHostTransformTrack;
 pub use interface::{
-    EffectInterface, InterfaceBinding, InterfaceEvent, InterfaceField, InterfaceParameter,
+    CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, EffectInterface, EventChannel,
+    INPUT_RESTART, InterfaceBinding, InterfaceEvent, InterfaceField, InterfaceParameter,
     InterfaceWorldRequirement, field_label, world_label,
 };
 pub use outputs::*;

@@ -173,7 +173,15 @@ impl EffectDiff {
                 format!("{:?}", after.simulation_stages),
             );
         }
-        if before.events != after.events {
+        // Links added, removed or reordered.
+        let ids = |effect: &EffectAsset| {
+            effect
+                .events
+                .iter()
+                .map(|event| event.id)
+                .collect::<Vec<_>>()
+        };
+        if ids(before) != ids(after) {
             modified(
                 &mut changes,
                 SemanticTarget::Effect(after.id),
@@ -181,6 +189,29 @@ impl EffectDiff {
                 before.events.len(),
                 after.events.len(),
             );
+        }
+        // A link edited in place (event system E0): its trigger, target, count or inheritance.
+        for (index, event) in after.events.iter().enumerate() {
+            if let Some(previous) = before
+                .events
+                .iter()
+                .find(|previous| previous.id == event.id)
+                && previous != event
+            {
+                let summary = |link: &aestra_core::EventLink| {
+                    format!(
+                        "{:?} -> {} x{} inherit {}",
+                        link.trigger, link.target, link.count, link.inherit_velocity
+                    )
+                };
+                modified(
+                    &mut changes,
+                    SemanticTarget::Event(event.id),
+                    format!("effect.events[{index}]"),
+                    summary(previous),
+                    summary(event),
+                );
+            }
         }
         Self { changes }
     }

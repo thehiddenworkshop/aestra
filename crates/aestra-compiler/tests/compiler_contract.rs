@@ -3032,6 +3032,21 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
         }]));
     effect.emitters.push(emitter);
     effect.bindings = vec![target, source];
+    // Timeline cues reach the host as well (event system E0.5).
+    effect.choreography_events = vec![
+        aestra_core::ChoreographyEvent::new(
+            "Launch",
+            0.5,
+            aestra_core::ChoreographyEventPayload::GameplayNotify {
+                topic: "whoosh".into(),
+            },
+        ),
+        aestra_core::ChoreographyEvent::new(
+            "Boom",
+            1.0,
+            aestra_core::ChoreographyEventPayload::PlaySound { cue: "boom".into() },
+        ),
+    ];
     let interface = EffectCompiler::default()
         .compile(&effect)
         .unwrap()
@@ -3061,21 +3076,24 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
     assert_eq!(source.update_mode, BindingUpdateMode::SnapshotOnSpawn);
     assert!(!source.read, "declared but read by nothing");
 
-    let events: Vec<(&str, &str)> = interface
+    use aestra_runtime::EventChannel::{Runtime, Timeline};
+    let events: Vec<(&str, &str, aestra_runtime::EventChannel)> = interface
         .output_events
         .iter()
-        .map(|event| (event.kind.as_str(), event.raised_by.as_str()))
+        .map(|event| (event.kind.as_str(), event.raised_by.as_str(), event.channel))
         .collect();
     assert_eq!(
         events,
         [
-            ("impact", "Sparks"),
-            ("target_lost", "Sparks"),
-            ("target_acquired", "Sparks"),
-            ("finished", "Homing Bolt"),
+            ("impact", "Sparks", Runtime),
+            ("target_lost", "Sparks", Runtime),
+            ("target_acquired", "Sparks", Runtime),
+            ("finished", "Homing Bolt", Runtime),
+            ("whoosh", "Launch", Timeline),
+            (aestra_runtime::CUE_PLAY_SOUND, "Boom", Timeline),
         ]
     );
-    assert!(interface.input_events.is_empty());
+    assert_eq!(interface.input_events, [aestra_runtime::INPUT_RESTART]);
     assert_eq!(interface.world.len(), 1);
     assert_eq!(interface.world[0].label, "Physics Query");
     assert_eq!(

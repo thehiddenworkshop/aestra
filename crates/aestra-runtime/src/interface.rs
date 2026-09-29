@@ -7,8 +7,18 @@ use crate::{
     CompiledEffect, EVENT_FINISHED, EVENT_IMPACT, EVENT_TARGET_ACQUIRED, EVENT_TARGET_LOST,
 };
 use aestra_core::{
-    BindingUpdateMode, CollisionInputSource, EffectPlaybackMode, HostInputAvailability, ValueType,
+    BindingUpdateMode, ChoreographyEventPayload, CollisionInputSource, EffectPlaybackMode,
+    HostInputAvailability, ValueType,
 };
+
+/// The input every effect accepts: play again from the start (event system E0.5).
+pub const INPUT_RESTART: &str = "restart";
+/// A timeline cue asking the host to play a sound (ChoreographyEventPayload::PlaySound).
+pub const CUE_PLAY_SOUND: &str = "play_sound";
+/// A timeline cue asking the host to shake the camera (ChoreographyEventPayload::CameraShake).
+pub const CUE_CAMERA_SHAKE: &str = "camera_shake";
+/// A timeline cue asking the host to spawn another effect (ChoreographyEventPayload::SpawnChildEffect).
+pub const CUE_SPAWN_CHILD_EFFECT: &str = "spawn_child_effect";
 
 /// An effect parameter a game may set.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,13 +54,23 @@ pub struct InterfaceBinding {
     pub read: bool,
 }
 
-/// A runtime event the effect raises for the game to hear.
+/// How the host hears an output event (event system E0.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EventChannel {
+    /// Raised by the simulation: an `EffectOutputEvent`.
+    Runtime,
+    /// A cue authored on the timeline, delivered as playback crosses it.
+    Timeline,
+}
+
+/// An event the effect raises for the game to hear.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceEvent {
-    /// The event's kind, e.g. `impact`.
+    /// The event's kind, e.g. `impact`, or a timeline cue's topic.
     pub kind: String,
-    /// What raises it: an emitter's or a stage's name, or the effect's.
+    /// What raises it: an emitter's or a stage's name, the effect's, or a timeline cue's.
     pub raised_by: String,
+    pub channel: EventChannel,
 }
 
 /// Something from the game's world the effect collides with.
@@ -68,7 +88,7 @@ pub struct InterfaceWorldRequirement {
 pub struct EffectInterface {
     pub parameters: Vec<InterfaceParameter>,
     pub bindings: Vec<InterfaceBinding>,
-    /// Events the game can send the effect. None exists yet beyond playback control (restart, seek).
+    /// Events the game can send the effect: [`INPUT_RESTART`] for now.
     pub input_events: Vec<String>,
     pub output_events: Vec<InterfaceEvent>,
     pub world: Vec<InterfaceWorldRequirement>,
@@ -139,10 +159,11 @@ impl CompiledEffect {
             .collect();
 
         let mut output_events = Vec::new();
-        let mut raise = |kind: &str, raised_by: &str| {
+        let mut raise = |kind: &str, raised_by: &str, channel: EventChannel| {
             let event = InterfaceEvent {
                 kind: kind.to_string(),
                 raised_by: raised_by.to_string(),
+                channel,
             };
             if !output_events.contains(&event) {
                 output_events.push(event);
@@ -150,26 +171,39 @@ impl CompiledEffect {
         };
         for emitter in self.emitters.iter().filter(|emitter| emitter.enabled) {
             if emitter.homing.is_some() {
-                raise(EVENT_IMPACT, &emitter.name);
+                raise(EVENT_IMPACT, &emitter.name, EventChannel::Runtime);
                 let bound = emitter
                     .homing
                     .as_ref()
                     .is_some_and(|homing| homing.target_source.is_some());
                 if bound {
-                    raise(EVENT_TARGET_LOST, &emitter.name);
-                    raise(EVENT_TARGET_ACQUIRED, &emitter.name);
+                    raise(EVENT_TARGET_LOST, &emitter.name, EventChannel::Runtime);
+                    raise(EVENT_TARGET_ACQUIRED, &emitter.name, EventChannel::Runtime);
                 }
             }
         }
         for stage in self.all_extension_stages() {
             for output in &stage.block.outputs {
                 if let Some(event) = &output.event {
-                    raise(&event.kind, &stage.name);
+                    raise(&event.kind, &stage.name, EventChannel::Runtime);
                 }
             }
         }
         if self.playback_mode == EffectPlaybackMode::Once {
-            raise(EVENT_FINISHED, &self.name);
+            raise(EVENT_FINISHED, &self.name, EventChannel::Runtime);
+        }
+        // Timeline cues reach the host too (event system E0.5): a notification by its topic.
+        for cue in &self.choreography_events {
+            let kind = match &cue.payload {
+                ChoreographyEventPayload::GameplayNotify { topic } if !topic.trim().is_empty() => {
+                    topic.as_str()
+                }
+                ChoreographyEventPayload::GameplayNotify { .. } => cue.name.as_str(),
+                ChoreographyEventPayload::PlaySound { .. } => CUE_PLAY_SOUND,
+                ChoreographyEventPayload::CameraShake { .. } => CUE_CAMERA_SHAKE,
+                ChoreographyEventPayload::SpawnChildEffect { .. } => CUE_SPAWN_CHILD_EFFECT,
+            };
+            raise(kind, &cue.name, EventChannel::Timeline);
         }
 
         let collision = self.collision_inputs();
@@ -210,7 +244,7 @@ impl CompiledEffect {
         EffectInterface {
             parameters,
             bindings,
-            input_events: Vec::new(),
+            input_events: vec![INPUT_RESTART.to_string()],
             output_events,
             world,
         }

@@ -90,6 +90,9 @@ pub(crate) struct EditorSession {
     /// Never saved, never part of history.
     pub(crate) preview_mocks:
         std::collections::BTreeMap<aestra_core::BindingId, crate::preview_mocks::PreviewMock>,
+    /// Children each event link could not spawn in the preview so far, from the GPU's readback
+    /// (event system E0). Links that lost none are absent. Never saved.
+    pub(crate) event_link_drops: std::collections::BTreeMap<EventId, u64>,
 }
 
 impl EditorSession {
@@ -134,6 +137,7 @@ impl EditorSession {
             effect_revision: self.effect_revision,
             last_seek: self.last_seek,
             preview_mocks: self.preview_mocks.clone(),
+            event_link_drops: self.event_link_drops.clone(),
         }
     }
 
@@ -206,6 +210,7 @@ impl EditorSession {
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
             preview_mocks: Default::default(),
+            event_link_drops: Default::default(),
         }
     }
 
@@ -1500,6 +1505,89 @@ impl EditorSession {
         } else {
             Err(EventLinkError::TargetMissing)
         }
+    }
+
+    /// Edits a particle event link in place as one undoable step (event system E0). The count is
+    /// kept within the authored range and a non-finite inheritance ignored; a self-link, a missing
+    /// target or a duplicate of another link is refused. `Ok(false)` when nothing changed.
+    pub fn set_event_link(
+        &mut self,
+        id: EventId,
+        edit: impl FnOnce(&mut EventLink),
+    ) -> Result<bool, EventLinkError> {
+        let Some(current) = self
+            .effect
+            .events
+            .iter()
+            .find(|event| event.id == id)
+            .cloned()
+        else {
+            return Err(EventLinkError::TargetMissing);
+        };
+        let mut edited = current.clone();
+        edit(&mut edited);
+        edited.id = id;
+        edited.count = edited.count.clamp(1, aestra_core::MAX_EVENT_LINK_COUNT);
+        if !edited.inherit_velocity.is_finite() {
+            edited.inherit_velocity = current.inherit_velocity;
+        }
+        if edited == current {
+            return Ok(false);
+        }
+        if edited.source == edited.target {
+            return Err(EventLinkError::SameEmitter);
+        }
+        if !self
+            .effect
+            .emitters
+            .iter()
+            .any(|emitter| emitter.id == edited.target)
+        {
+            return Err(EventLinkError::TargetMissing);
+        }
+        if self.effect.events.iter().any(|event| {
+            event.id != id
+                && event.source == edited.source
+                && event.target == edited.target
+                && event.trigger == edited.trigger
+        }) {
+            return Err(EventLinkError::Duplicate);
+        }
+        Ok(self.execute(
+            "Edited event link",
+            EffectCommand::SetEvent { id, event: edited },
+            true,
+        ))
+    }
+
+    /// Runtime warnings about the preview (event system E0): each event link whose children the
+    /// GPU could not all spawn, with the effect path Diagnostics navigates to.
+    pub(crate) fn preview_runtime_report(&self) -> ValidationReport {
+        let mut report = ValidationReport::default();
+        for (index, event) in self.effect.events.iter().enumerate() {
+            let Some(&dropped) = self.event_link_drops.get(&event.id) else {
+                continue;
+            };
+            let name = |id: EmitterId| {
+                self.effect
+                    .emitters
+                    .iter()
+                    .find(|emitter| emitter.id == id)
+                    .map_or_else(|| id.to_string(), |emitter| emitter.name.clone())
+            };
+            report.push(aestra_core::Diagnostic {
+                severity: aestra_core::DiagnosticSeverity::Warning,
+                code: aestra_core::DiagnosticCode::InvalidValue,
+                path: format!("effect.events[{index}].count"),
+                message: format!(
+                    "{} → {}: {dropped} children could not be spawned in the preview \
+                     (per-tick event list or free particle slots full)",
+                    name(event.source),
+                    name(event.target)
+                ),
+            });
+        }
+        report
     }
 
     pub fn remove_event_link(&mut self, id: EventId) -> bool {

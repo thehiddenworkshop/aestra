@@ -1264,6 +1264,20 @@ fn apply_command(
             let event = effect.events.remove(index);
             vec![EffectCommand::AddEvent { event, index }]
         }
+        EffectCommand::SetEvent { id, event } => {
+            let index = effect
+                .events
+                .iter()
+                .position(|event| event.id == *id)
+                .ok_or_else(|| not_found("event", id))?;
+            let mut replacement = event.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.events[index], replacement);
+            vec![EffectCommand::SetEvent {
+                id: *id,
+                event: previous,
+            }]
+        }
     };
     Ok(inverse)
 }

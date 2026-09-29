@@ -677,7 +677,11 @@ pub(super) fn spawn_interface(
                 let mut args = FluentArgs::new();
                 args.set("kind", event.kind.clone());
                 args.set("source", event.raised_by.clone());
-                line(card, localizer.text_with("interface-output-event", &args));
+                let message = match event.channel {
+                    aestra_runtime::EventChannel::Runtime => "interface-output-event",
+                    aestra_runtime::EventChannel::Timeline => "interface-output-cue",
+                };
+                line(card, localizer.text_with(message, &args));
             }
 
             heading(card, localizer.text("interface-world"));
@@ -697,6 +701,13 @@ pub(super) fn spawn_interface(
             }
 
             heading(card, localizer.text("interface-input-events"));
+            for input in &interface.input_events {
+                let description = match input.as_str() {
+                    aestra_runtime::INPUT_RESTART => localizer.text("interface-input-restart"),
+                    _ => String::new(),
+                };
+                line(card, format!("{input} — {description}"));
+            }
             card.spawn_empty()
                 .apply_scene(label_dim(localizer.text("interface-input-events-playback")));
         });

@@ -374,6 +374,12 @@ pub enum EffectCommand {
     RemoveEvent {
         id: EventId,
     },
+    /// Replaces a particle event link's trigger, target, count and inherited velocity in place,
+    /// keeping its id and its place in the apply order (event system E0).
+    SetEvent {
+        id: EventId,
+        event: EventLink,
+    },
 }
 
 impl EffectCommand {

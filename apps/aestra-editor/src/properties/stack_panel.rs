@@ -124,6 +124,7 @@ pub(crate) fn spawn_module_stack_panel(
                                         ),
                                         session,
                                         asset_server,
+                                        None,
                                     );
                                 }
                             }
@@ -139,6 +140,16 @@ pub(crate) fn spawn_module_stack_panel(
                                 SemanticTarget::Emitter(layer.id),
                                 session,
                             );
+                            // An emitter that event links target spawns only from them (event
+                            // system E0): say so, and dim what no longer runs.
+                            let sub_emitter =
+                                super::event_links::is_sub_emitter(&session.effect, layer.id);
+                            if sub_emitter {
+                                super::event_links::spawn_sub_emitter_note(
+                                    stack, session, layer.id, localizer,
+                                );
+                            }
+                            let unused_label = localizer.text("properties-sub-emitter-unused");
                             // Fixed lifecycle sections, including empty ones (§31.2).
                             let modules_path =
                                 format!("effect.emitters[{emitter_index}].modules");
@@ -159,6 +170,9 @@ pub(crate) fn spawn_module_stack_panel(
                                         ),
                                         session,
                                         asset_server,
+                                        (sub_emitter
+                                            && super::event_links::unused_on_sub_emitter(module))
+                                        .then_some(unused_label.as_str()),
                                     );
                                 }
                                 spawn_stage_diagnostics(
@@ -199,6 +213,7 @@ pub(crate) fn spawn_module_stack_panel(
                                         ),
                                         session,
                                         asset_server,
+                                        None,
                                     );
                                 }
                             }

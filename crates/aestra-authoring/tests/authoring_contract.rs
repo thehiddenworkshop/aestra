@@ -1626,3 +1626,62 @@ fn host_bindings_and_module_field_references_are_transactional_and_reversible() 
             .contains_key("direction")
     );
 }
+
+#[test]
+fn event_links_are_edited_in_place_with_undo_and_validation() {
+    let mut effect = test_effect();
+    effect.emitters.push(Emitter::basic_sprite("Stars", 2.0));
+    let (rocket, stars) = (effect.emitters[0].id, effect.emitters[1].id);
+    let link = EventLink::new(rocket, EventTrigger::OnDeath, stars);
+    let id = link.id;
+    effect.events.push(link.clone());
+    let original = effect.clone();
+
+    let mut edited = link.clone();
+    edited.count = 48;
+    edited.inherit_velocity = 0.2;
+    let mut history = CommandHistory::default();
+    let diff = history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Edit event link",
+                EffectCommand::SetEvent {
+                    id,
+                    event: edited.clone(),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.events, vec![edited.clone()]);
+    assert_eq!(diff.changes.len(), 1, "{diff:?}");
+    assert_eq!(diff.changes[0].target, SemanticTarget::Event(id));
+    assert_eq!(diff.changes[0].path, "effect.events[0]");
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.events[0], edited);
+
+    // The replacement keeps the link's id, and an out-of-range count is refused atomically.
+    let mut too_many = edited.clone();
+    too_many.id = EventId::new();
+    too_many.count = aestra_core::MAX_EVENT_LINK_COUNT + 1;
+    let before = effect.clone();
+    assert!(
+        history
+            .execute(
+                &mut effect,
+                &LockState::default(),
+                EffectTransaction::single(
+                    "Too many",
+                    EffectCommand::SetEvent {
+                        id,
+                        event: too_many,
+                    },
+                ),
+            )
+            .is_err()
+    );
+    assert_eq!(effect, before);
+}

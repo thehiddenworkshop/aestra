@@ -118,6 +118,8 @@ enum DiagnosticSource {
     Current,
     Project,
     Pending,
+    /// What the preview observed at runtime, e.g. event links dropping children (event system E0).
+    Runtime,
 }
 
 #[derive(Component)]
@@ -457,7 +459,13 @@ fn spawn_diagnostics_content(
         .as_ref()
         .map(|pending| pending.diagnostics.diagnostics.as_slice())
         .unwrap_or_default();
-    let all = current.iter().chain(project.iter()).chain(pending.iter());
+    let runtime_report = session.preview_runtime_report();
+    let runtime = &runtime_report.diagnostics;
+    let all = current
+        .iter()
+        .chain(project.iter())
+        .chain(pending.iter())
+        .chain(runtime.iter());
     // Open WESL buffers contribute compile errors (always error severity).
     let shader_errors = wesl_diagnostics.errors().count();
     let errors = all
@@ -476,6 +484,7 @@ fn spawn_diagnostics_content(
         .iter()
         .chain(project.iter())
         .chain(pending.iter())
+        .chain(runtime.iter())
         .filter(|diagnostic| state.filter.matches(diagnostic.severity))
         .count()
         + if state.filter.matches(DiagnosticSeverity::Error) {
@@ -636,6 +645,16 @@ fn spawn_diagnostics_content(
                                     &localizer.text("diagnostics-pending-transaction"),
                                     &pending.diagnostics,
                                     DiagnosticSource::Pending,
+                                    state.filter,
+                                    localizer,
+                                );
+                            }
+                            if !runtime_report.diagnostics.is_empty() {
+                                spawn_diagnostic_section(
+                                    list,
+                                    &localizer.text("diagnostics-preview-runtime"),
+                                    &runtime_report,
+                                    DiagnosticSource::Runtime,
                                     state.filter,
                                     localizer,
                                 );
@@ -1146,6 +1165,7 @@ fn navigate_to_diagnostic(
 ) -> bool {
     let project_report =
         catalog.map(|catalog| catalog.dependency_validation_report(&session.effect));
+    let runtime_report = session.preview_runtime_report();
     let diagnostic = match source {
         DiagnosticSource::Current => session.diagnostics.diagnostics.get(index),
         DiagnosticSource::Project => project_report
@@ -1155,6 +1175,7 @@ fn navigate_to_diagnostic(
             .pending_change
             .as_ref()
             .and_then(|pending| pending.diagnostics.diagnostics.get(index)),
+        DiagnosticSource::Runtime => runtime_report.diagnostics.get(index),
     };
     let Some(diagnostic) = diagnostic else {
         session.status = "Diagnostic no longer exists".into();

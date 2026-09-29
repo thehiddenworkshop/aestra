@@ -101,6 +101,12 @@ impl Selection {
                 .iter()
                 .find(|emitter| emitter.color_gradient().id == id)
                 .map(|emitter| emitter.id),
+            // A selected event link keeps its source emitter in view (event system E0).
+            SemanticTarget::Event(id) => effect
+                .events
+                .iter()
+                .find(|event| event.id == id)
+                .map(|event| event.source),
             _ => None,
         }
     }
@@ -464,7 +470,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetRendererProperties {
             emitter, renderer, ..
         } => (Some(*emitter), Some(SemanticTarget::Renderer(*renderer))),
-        EffectCommand::RemoveEvent { id } => (None, Some(SemanticTarget::Event(*id))),
+        EffectCommand::RemoveEvent { id } | EffectCommand::SetEvent { id, .. } => {
+            (None, Some(SemanticTarget::Event(*id)))
+        }
     }
 }
 

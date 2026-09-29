@@ -908,6 +908,8 @@ pub(super) fn end_module_drag(
 /// Selecting the row (via the global `select_properties_header` observer that finds the
 /// `PropertiesSelectionTarget`) shows the module's full controls in the inspector below the stack; the
 /// row is also a drag source/target for reordering (`reorder_modules_on_drop`).
+/// unused dims the row and says why when the module does not run, e.g. the spawn rate of an
+/// emitter that spawns only from event links (event system E0).
 pub(super) fn spawn_module_stack_row(
     parent: &mut ChildSpawnerCommands,
     module: &ModuleInstance,
@@ -915,6 +917,7 @@ pub(super) fn spawn_module_stack_row(
     diagnostic_path: &str,
     session: &EditorSession,
     asset_server: &AssetServer,
+    unused: Option<&str>,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
     let title = module_title(session, module, display_name);
@@ -922,9 +925,10 @@ pub(super) fn spawn_module_stack_row(
         "This module is not available in the current registry.",
         |item| item.description,
     );
-    let summary = aestra_compiler::module_summary(module);
+    let summary = unused.map_or_else(|| aestra_compiler::module_summary(module), str::to_owned);
     let base_border = module_row_border(module, diagnostic_path, session);
     let selected = session.selection.primary == SemanticTarget::Module(module.id);
+    let active = module.enabled && unused.is_none();
     parent
         .spawn((
             PropertiesSemanticTarget {
@@ -962,7 +966,7 @@ pub(super) fn spawn_module_stack_row(
             row.spawn((
                 Text::new(title.as_str()),
                 bevy::feathers::theme::ThemedText,
-                TextColor(if module.enabled {
+                TextColor(if active {
                     theme::TEXT
                 } else {
                     theme::TEXT_FAINT

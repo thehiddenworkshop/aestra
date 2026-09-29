@@ -104,6 +104,12 @@ pub(super) fn spawn_selection_inspector(
                 return;
             }
         }
+        SemanticTarget::Event(id) => {
+            if let Some(link) = session.effect.events.iter().find(|link| link.id == id) {
+                super::event_links::spawn_event_link_inspector(parent, session, link, localizer);
+                return;
+            }
+        }
         // Emitter selected, or a selection not tied to this emitter: show the emitter's settings.
         _ => {}
     }

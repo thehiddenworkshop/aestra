@@ -116,6 +116,7 @@ impl Plugin for ViewportPlugin {
                     sync_rendered_preview,
                     apply_preview_mocks,
                     update_preview.after(AestraRenderSet::Prepare),
+                    track_event_link_drops,
                     navigate_preview_camera,
                     sync_preview_grid,
                     sync_preview_display_mode,
@@ -2957,6 +2958,62 @@ fn apply_preview_mocks(
     }
 }
 
+/// Children each authored event link lost, from the GPU totals of the compiled links (event system
+/// E0). Compiled links are the authored ones between enabled emitters, in order, so each maps back by
+/// its two emitters and trigger.
+fn event_link_drops(
+    effect: &aestra_core::EffectAsset,
+    compiled: &CompiledEffect,
+    statistics: &aestra_bevy_render::gpu::GpuEventLinkStatistics,
+) -> std::collections::BTreeMap<aestra_core::EventId, u64> {
+    let mut drops = std::collections::BTreeMap::new();
+    for (link, &dropped) in compiled.event_links.iter().zip(&statistics.dropped) {
+        if dropped == 0 {
+            continue;
+        }
+        let emitter = |index: usize| compiled.emitters.get(index).map(|emitter| emitter.source);
+        let (Some(source), Some(target)) = (emitter(link.source), emitter(link.target)) else {
+            continue;
+        };
+        if let Some(event) = effect.events.iter().find(|event| {
+            event.source == source && event.target == target && event.trigger == link.trigger
+        }) {
+            drops.insert(event.id, dropped);
+        }
+    }
+    drops
+}
+
+/// Keeps the session's per-link drop totals current for the Properties and Diagnostics panels,
+/// rebuilding them only when a link starts or stops dropping.
+fn track_event_link_drops(
+    mut session: ResMut<EditorSession>,
+    players: Query<
+        (
+            &PresentedEffect,
+            &PreviewEffectInstancePath,
+            &aestra_bevy_render::gpu::GpuEventLinkStatistics,
+        ),
+        With<PreviewPresentedEffect>,
+    >,
+) {
+    let drops = players
+        .iter()
+        .find(|(_, path, _)| path.0.is_empty())
+        .map(|(player, _, statistics)| {
+            event_link_drops(&session.effect, player.effect(), statistics)
+        })
+        .unwrap_or_default();
+    if session.event_link_drops == drops {
+        return;
+    }
+    let rebuild = !session.event_link_drops.keys().eq(drops.keys());
+    session.event_link_drops = drops;
+    if rebuild {
+        session.ui_revision += 1;
+    }
+}
+
 /// Marks where each preview stand-in is at the playhead.
 fn draw_preview_mocks(
     session: Res<EditorSession>,
@@ -4265,6 +4322,26 @@ mod tests {
                 .unwrap()
                 .effect()
         ));
+    }
+
+    #[test]
+    fn gpu_link_drops_map_back_to_authored_links() {
+        let mut session = test_support::session_with_timing_slack();
+        session.duplicate_selected_layer();
+        let (rocket, stars) = (session.effect.emitters[0].id, session.effect.emitters[1].id);
+        session.selection.primary = SemanticTarget::Emitter(rocket);
+        let id = session
+            .add_event_link(aestra_core::EventTrigger::OnDeath, stars)
+            .unwrap();
+        let compiled = session.preview().unwrap().effect().clone();
+        let statistics = |dropped: u64| aestra_bevy_render::gpu::GpuEventLinkStatistics {
+            dropped: vec![dropped],
+        };
+        assert_eq!(
+            event_link_drops(&session.effect, &compiled, &statistics(3072)),
+            std::collections::BTreeMap::from([(id, 3072)])
+        );
+        assert!(event_link_drops(&session.effect, &compiled, &statistics(0)).is_empty());
     }
 
     #[test]

@@ -37,6 +37,7 @@ use fluent_bundle::FluentArgs;
 
 mod asset_drop;
 mod asset_picker;
+mod event_links;
 mod inspector;
 mod interface;
 mod material_document;
@@ -49,6 +50,7 @@ mod texture_drop;
 mod virtual_drop;
 pub(crate) mod wesl;
 
+use event_links::spawn_event_links;
 use inspector::*;
 pub(crate) use module_controls::PropertySourceKind;
 use module_controls::{
@@ -103,6 +105,7 @@ impl Plugin for PropertiesPlugin {
     fn build(&self, app: &mut App) {
         asset_drop::register(app);
         interface::register(app);
+        event_links::register(app);
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<ModuleDragState>()
@@ -519,10 +522,15 @@ fn handle_properties_actions(
                             .map(|emitter| emitter.name.clone());
                         let result = session.add_event_link(trigger, target);
                         let status = match result {
-                            Ok(_) => PropertiesStatus::EventAdded {
-                                trigger: localized_event_trigger(&localizer, trigger),
-                                target: target_name.unwrap_or_else(|| target.to_string()),
-                            },
+                            Ok(id) => {
+                                // Open the new link so its count can be set right away.
+                                session.selection.primary = SemanticTarget::Event(id);
+                                session.ui_revision += 1;
+                                PropertiesStatus::EventAdded {
+                                    trigger: localized_event_trigger(&localizer, trigger),
+                                    target: target_name.unwrap_or_else(|| target.to_string()),
+                                }
+                            }
                             Err(crate::session::EventLinkError::SameEmitter) => {
                                 PropertiesStatus::EventSelfTarget
                             }
@@ -6760,142 +6768,6 @@ fn spawn_document_toggle(
             }
         },
     );
-}
-
-fn spawn_event_links(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    localizer: &Localizer,
-) {
-    let Some(selected_layer) = session.selected_layer() else {
-        return;
-    };
-    parent
-        .spawn_empty()
-        .apply_scene(label_dim(localizer.text("properties-events-unsupported")));
-    let source = selected_layer.id;
-    parent.spawn((
-        Text::new(localizer.text("properties-events")),
-        TextFont {
-            font_size: FontSize::Px(9.0),
-            ..default()
-        },
-        TextColor(theme::ACCENT),
-        Node {
-            margin: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
-            ..default()
-        },
-    ));
-
-    let outgoing = session
-        .effect
-        .events
-        .iter()
-        .filter(|event| event.source == source)
-        .collect::<Vec<_>>();
-    if outgoing.is_empty() {
-        parent
-            .spawn_empty()
-            .apply_scene(label_dim(localizer.text("properties-events-empty")));
-    }
-    for event in outgoing {
-        let target = session
-            .effect
-            .emitters
-            .iter()
-            .find(|emitter| emitter.id == event.target)
-            .map_or_else(|| event.target.to_string(), |emitter| emitter.name.clone());
-        let mut args = FluentArgs::new();
-        args.set("trigger", localized_event_trigger(localizer, event.trigger));
-        args.set("target", target);
-        parent
-            .spawn((
-                PropertiesSemanticTarget {
-                    target: SemanticTarget::Event(event.id),
-                    base_border: theme::BORDER,
-                },
-                Node {
-                    width: Val::Percent(100.0),
-                    min_height: Val::Px(30.0),
-                    padding: UiRect::horizontal(Val::Px(8.0)),
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::PANEL_LIGHT),
-                BorderColor::all(theme::BORDER),
-            ))
-            .with_children(|row| {
-                row.spawn((
-                    Text::new(localizer.text_with("properties-event-link", &args)),
-                    ThemedText,
-                    TextFont {
-                        font_size: FontSize::Px(10.0),
-                        ..default()
-                    },
-                    Node {
-                        flex_grow: 1.0,
-                        min_width: Val::Px(0.0),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                ));
-                mini_button(row, "×", PropertiesAction::DeleteEventLink(event.id));
-            });
-    }
-
-    let mut options = Vec::new();
-    for target in session
-        .effect
-        .emitters
-        .iter()
-        .filter(|emitter| emitter.id != source)
-    {
-        for trigger in [
-            EventTrigger::OnSpawn,
-            EventTrigger::OnDeath,
-            EventTrigger::OnCollision,
-        ] {
-            if session.effect.events.iter().any(|event| {
-                event.source == source && event.target == target.id && event.trigger == trigger
-            }) {
-                continue;
-            }
-            let mut args = FluentArgs::new();
-            args.set("trigger", localized_event_trigger(localizer, trigger));
-            args.set("target", target.name.clone());
-            options.push(ComboOption {
-                label: localizer.text_with("properties-event-link", &args),
-                selected: false,
-                action: PropertiesAction::AddEventLink {
-                    trigger,
-                    target: target.id,
-                },
-            });
-        }
-    }
-    if options.is_empty() {
-        parent
-            .spawn_empty()
-            .apply_scene(label_dim(localizer.text("properties-events-no-targets")));
-    } else {
-        parent
-            .spawn(Node {
-                width: Val::Percent(100.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                justify_content: JustifyContent::FlexEnd,
-                ..default()
-            })
-            .with_children(|row| {
-                spawn_combo_control(
-                    row,
-                    &localizer.text("properties-events-add"),
-                    &localizer.text("properties-events-add-description"),
-                    &options,
-                    230.0,
-                );
-            });
-    }
 }
 
 fn localized_event_trigger(localizer: &Localizer, trigger: EventTrigger) -> String {
