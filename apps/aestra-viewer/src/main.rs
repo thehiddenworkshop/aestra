@@ -1,3 +1,4 @@
+mod fireworks_f0;
 mod gpu_bench;
 mod preview_report;
 mod visual_regression;
@@ -58,7 +59,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|trail]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -102,12 +103,21 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
-    let gpu_bench_effect = config
-        .effect_path
-        .as_ref()
-        .and_then(|path| path.file_stem())
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "prism_bloom".to_owned());
+    let gpu_bench_effect = if config.fireworks_f0 {
+        match config.fireworks_probe {
+            Some(FireworksProbe::Event) => "fireworks_f0_event",
+            Some(FireworksProbe::Trail) => "fireworks_f0_trail",
+            None => "fireworks_f0",
+        }
+        .to_owned()
+    } else {
+        config
+            .effect_path
+            .as_ref()
+            .and_then(|path| path.file_stem())
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "prism_bloom".to_owned())
+    };
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
@@ -197,6 +207,9 @@ struct PreparationFailure {
 #[derive(Resource)]
 struct ViewerConfig {
     effect_path: Option<PathBuf>,
+    fireworks_f0: bool,
+    fireworks_probe: Option<FireworksProbe>,
+    fireworks_camera: FireworksCamera,
     semantic_materials: bool,
     wireframe: bool,
     capture_mode: Option<CaptureMode>,
@@ -211,6 +224,49 @@ struct ViewerConfig {
     view_3d: bool,
     /// The quality tier the effect is compiled for (fluid F12); `high` is the authored effect.
     tier: aestra_bevy::QualityTier,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FireworksCamera {
+    Close,
+    Audience,
+    Wide,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FireworksProbe {
+    Event,
+    Trail,
+}
+
+impl FireworksProbe {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "event" => Some(Self::Event),
+            "trail" => Some(Self::Trail),
+            _ => None,
+        }
+    }
+}
+
+impl FireworksCamera {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "close" => Some(Self::Close),
+            "audience" => Some(Self::Audience),
+            "wide" => Some(Self::Wide),
+            _ => None,
+        }
+    }
+
+    fn transform(self) -> Transform {
+        let (eye, target) = match self {
+            Self::Close => (Vec3::new(0.0, 24.0, 48.0), Vec3::new(0.0, 24.0, 0.0)),
+            Self::Audience => (Vec3::new(0.0, 22.0, 85.0), Vec3::new(0.0, 22.0, 0.0)),
+            Self::Wide => (Vec3::new(0.0, 45.0, 165.0), Vec3::new(0.0, 25.0, 0.0)),
+        };
+        Transform::from_translation(eye).looking_at(target, Vec3::Y)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,7 +305,15 @@ impl CaptureMode {
 
 impl ViewerConfig {
     fn from_args() -> Result<Self, String> {
+        Self::from_iter(env::args().skip(1))
+    }
+
+    fn from_iter(arguments: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut effect_path = None;
+        let mut fireworks_f0 = false;
+        let mut fireworks_probe = None;
+        let mut fireworks_camera = FireworksCamera::Audience;
+        let mut camera_was_set = false;
         let mut semantic_materials = false;
         let mut wireframe = false;
         let mut capture_mode = None;
@@ -262,13 +326,31 @@ impl ViewerConfig {
         let mut gpu_bench = None;
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
-        let mut args = env::args().skip(1);
+        let mut args = arguments.into_iter();
         while let Some(argument) = args.next() {
             match argument.as_str() {
                 "--effect" => {
                     effect_path = Some(PathBuf::from(
                         args.next().ok_or("--effect requires a file path")?,
                     ));
+                }
+                "--fireworks-f0" => fireworks_f0 = true,
+                "--fireworks-f0-probe" => {
+                    let value = args
+                        .next()
+                        .ok_or("--fireworks-f0-probe requires event or trail")?;
+                    fireworks_probe = Some(
+                        FireworksProbe::parse(&value)
+                            .ok_or("--fireworks-f0-probe requires event or trail")?,
+                    );
+                }
+                "--camera" => {
+                    let value = args
+                        .next()
+                        .ok_or("--camera requires close, audience or wide")?;
+                    fireworks_camera = FireworksCamera::parse(&value)
+                        .ok_or("--camera requires close, audience or wide")?;
+                    camera_was_set = true;
                 }
                 "--semantic-materials" => semantic_materials = true,
                 "--wireframe" => wireframe = true,
@@ -401,8 +483,23 @@ impl ViewerConfig {
                 unknown => return Err(format!("unknown argument '{unknown}'")),
             }
         }
+        if fireworks_f0 && effect_path.is_some() {
+            return Err("--fireworks-f0 and --effect are mutually exclusive".into());
+        }
+        if fireworks_probe.is_some() && !fireworks_f0 {
+            return Err("--fireworks-f0-probe requires --fireworks-f0".into());
+        }
+        if camera_was_set && !fireworks_f0 {
+            return Err("--camera is only available with --fireworks-f0".into());
+        }
+        if fireworks_f0 {
+            view_3d = true;
+        }
         Ok(Self {
             effect_path,
+            fireworks_f0,
+            fireworks_probe,
+            fireworks_camera,
             semantic_materials,
             wireframe,
             capture_mode,
@@ -419,7 +516,9 @@ impl ViewerConfig {
 
     fn resolved_seed(&self) -> u64 {
         self.preview_seed.unwrap_or_else(|| {
-            if self
+            if self.fireworks_f0 {
+                fireworks_f0::SEED
+            } else if self
                 .capture_mode
                 .as_ref()
                 .is_some_and(CaptureMode::is_regression)
@@ -586,17 +685,22 @@ fn resolve_sample_frames(
 struct ViewerHud;
 
 fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFailure> {
-    let effect = config
-        .effect_path
-        .as_ref()
-        .map_or_else(
+    let effect = if config.fireworks_f0 {
+        Ok(match config.fireworks_probe {
+            Some(FireworksProbe::Event) => fireworks_f0::event_probe(),
+            Some(FireworksProbe::Trail) => fireworks_f0::trail_probe(),
+            None => fireworks_f0::effect(),
+        })
+    } else {
+        config.effect_path.as_ref().map_or_else(
             || EffectAsset::from_ron(SAMPLE_SOURCE),
             EffectAsset::load_ron,
         )
-        .map_err(|error| PreparationFailure {
-            message: format!("could not load viewer effect: {error}"),
-            diagnostics: Vec::new(),
-        })?;
+    }
+    .map_err(|error| PreparationFailure {
+        message: format!("could not load viewer effect: {error}"),
+        diagnostics: Vec::new(),
+    })?;
     let asset_root = viewer_asset_root(config.effect_path.as_deref())
         .canonicalize()
         .map_err(|error| PreparationFailure {
@@ -696,7 +800,13 @@ fn report_preparation_failure(config: &ViewerConfig, failure: &PreparationFailur
     }
 }
 
-fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<PreparedViewer>) {
+fn setup(
+    mut commands: Commands,
+    config: Res<ViewerConfig>,
+    prepared: Res<PreparedViewer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     let effect_name = prepared.compiled.name.clone();
     let regression_scene = config
         .capture_mode
@@ -720,18 +830,27 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
     }
 
     if config.view_3d {
+        let camera_transform = if config.fireworks_f0 {
+            config.fireworks_camera.transform()
+        } else {
+            framing_transform(&prepared.compiled)
+        };
         commands.spawn((
             Camera3d::default(),
             Camera {
                 clear_color: ClearColorConfig::Custom(Color::srgb(0.009, 0.012, 0.024)),
                 ..default()
             },
-            framing_transform(&prepared.compiled),
+            camera_transform,
         ));
     } else {
         commands.spawn(Camera2d);
     }
     commands.spawn((player, presentation));
+
+    if config.fireworks_f0 {
+        spawn_fireworks_validation_scene(&mut commands, &mut meshes, &mut materials);
+    }
 
     // The 2-D grid and HUD are sprites and UI for the 2-D view; regression scenes stay bare.
     if regression_scene || config.view_3d {
@@ -781,6 +900,33 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
             ..default()
         },
     ));
+}
+
+fn spawn_fireworks_validation_scene(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 120.0,
+            ..default()
+        },
+        Transform::from_xyz(-30.0, 80.0, 60.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(220.0, 220.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.025, 0.03, 0.045))),
+    ));
+    let marker_mesh = meshes.add(Cuboid::new(2.0, 8.0, 2.0));
+    let marker_material = materials.add(Color::srgb(0.10, 0.12, 0.16));
+    for x in [-24.0, 24.0] {
+        commands.spawn((
+            Mesh3d(marker_mesh.clone()),
+            MeshMaterial3d(marker_material.clone()),
+            Transform::from_xyz(x, 4.0, 0.0),
+        ));
+    }
 }
 
 fn viewer_asset_root(path: Option<&std::path::Path>) -> PathBuf {
@@ -1377,6 +1523,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fireworks_f0_selects_fixed_camera_and_seed() {
+        let config = ViewerConfig::from_iter(
+            [
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "trail",
+                "--camera",
+                "wide",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert!(config.view_3d);
+        assert_eq!(config.fireworks_probe, Some(FireworksProbe::Trail));
+        assert_eq!(config.fireworks_camera, FireworksCamera::Wide);
+        assert_eq!(config.resolved_seed(), fireworks_f0::SEED);
+    }
+
+    #[test]
+    fn fireworks_camera_requires_the_fixture_and_a_valid_preset() {
+        for arguments in [
+            vec!["--camera", "close"],
+            vec!["--fireworks-f0", "--camera", "side"],
+            vec!["--fireworks-f0", "--effect", "other.aestra.ron"],
+            vec!["--fireworks-f0-probe", "event"],
+            vec!["--fireworks-f0", "--fireworks-f0-probe", "other"],
+        ] {
+            assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
     fn capture_sampling_selects_exact_evenly_spaced_frames() {
         let frames = (0..4)
             .map(|index| capture_frame(120, index, 4))
@@ -1460,6 +1639,9 @@ mod tests {
     fn viewer_prepares_nested_projects_and_reports_missing_children() {
         let config = |path| ViewerConfig {
             effect_path: Some(path),
+            fireworks_f0: false,
+            fireworks_probe: None,
+            fireworks_camera: FireworksCamera::Audience,
             semantic_materials: true,
             wireframe: false,
             capture_mode: None,

@@ -30,6 +30,7 @@ pub struct GpuBenchPlan {
     output: PathBuf,
     effect: String,
     warmup: usize,
+    warmup_remaining: usize,
     frames: usize,
     remaining: usize,
     samples: BTreeMap<String, Vec<f64>>,
@@ -41,6 +42,7 @@ impl GpuBenchPlan {
             output,
             effect,
             warmup,
+            warmup_remaining: warmup,
             frames,
             remaining: frames,
             samples: BTreeMap::new(),
@@ -133,8 +135,8 @@ pub fn drive_gpu_bench(
     let Some(mut plan) = plan else {
         return;
     };
-    if plan.warmup > 0 {
-        plan.warmup -= 1;
+    if plan.warmup_remaining > 0 {
+        plan.warmup_remaining -= 1;
         return;
     }
     if plan.remaining == 0 {
@@ -171,5 +173,24 @@ pub fn drive_gpu_bench(
                 exit.write(AppExit::error());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_preserves_configured_warmup_after_it_is_consumed() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("report.json");
+        let mut plan = GpuBenchPlan::new(output.clone(), "fixture".into(), 120, 2);
+        plan.warmup_remaining = 0;
+        plan.samples.insert("gpu".into(), vec![0.2, 0.3]);
+        plan.write_report().unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        assert_eq!(report["warmup"], 120);
+        assert_eq!(report["frames"], 2);
     }
 }

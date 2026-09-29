@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "status": "partial_f0_exit",
+  "revision": "3fa3805+uncommitted-f0",
+  "effect": "fireworks_f0",
+  "backend": "Vulkan",
+  "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+  "driver_reported": "NVIDIA",
+  "resolution": [960, 540],
+  "quality_tier": "high",
+  "camera": "audience",
+  "seed": "0xf1e0000000000001",
+  "compiled_particle_capacity": 6208,
+  "configured_gpu_particle_budget": 262144,
+  "warmup_frames_per_run": 120,
+  "measured_frames_per_run": 600,
+  "timing_unit": "milliseconds",
+  "runs": [
+    {
+      "gpu_simulation": { "p50": 0.392192, "p95": 0.553984, "p99": 0.698368 },
+      "main_transparent_3d": { "p50": 0.033792, "p95": 0.04096 }
+    },
+    {
+      "gpu_simulation": { "p50": 0.403456, "p95": 0.457728, "p99": 0.555008 },
+      "main_transparent_3d": { "p50": 0.033792, "p95": 0.04096 }
+    },
+    {
+      "gpu_simulation": { "p50": 0.403456, "p95": 0.453632, "p99": 0.55808 },
+      "main_transparent_3d": { "p50": 0.033792, "p95": 0.041984 }
+    }
+  ],
+  "repeat_capture_frames": [0, 60, 90, 120, 180, 300],
+  "repeat_capture_exact_png_matches": [true, true, true, true, false, false],
+  "event_probe": {
+    "simulation_frame": 60,
+    "source_slots": 64,
+    "children_per_source": 64,
+    "requested_children_for_one_cohort": 4096,
+    "destination_capacity": 4096,
+    "measured_live_children": 1024,
+    "platform_warnings": 0,
+    "gpu_simulation_ms": { "p50": 0.25088, "p95": 0.277504, "p99": 0.528384 },
+    "main_transparent_3d_ms": { "p50": 0.116736, "p95": 0.156672 },
+    "interpretation": "Strong evidence of silent fixed-list truncation; stage-specific counters unavailable"
+  },
+  "trail_probe": {
+    "simulation_frame": 120,
+    "camera": "close",
+    "parent_capacity": 256,
+    "records_per_trail": 32,
+    "measured_live_parents": 256,
+    "measured_occupied_trails": 256,
+    "measured_submitted_vertices": 27588,
+    "measured_truncated_trails": 183,
+    "platform_warnings": 0,
+    "gpu_simulation_ms_runs": [
+      { "p50": 8.266752, "p95": 8.556544, "p99": 49.276928 },
+      { "p50": 8.37632, "p95": 8.589312, "p99": 53.025792 }
+    ],
+    "retained_tail_capture": {
+      "simulation_frame": 300,
+      "measured_live_parents": 127,
+      "measured_occupied_trails": 209,
+      "measured_retired_trails": 82,
+      "measured_truncated_trails": 175,
+      "measured_trail_evictions": 0,
+      "measured_submitted_vertices": 0,
+      "visibility_note": "Trails outside the close camera by this frame; visual tail quality unproven"
+    }
+  },
+  "candidate_high_tier_targets": {
+    "kind": "unvalidated_goals_not_measurements",
+    "device": "NVIDIA GeForce RTX 4070 SUPER / Vulkan",
+    "resolution": [960, 540],
+    "frame_rate_hz": 60,
+    "workloads": {
+      "A": { "vfx_gpu_p95_ms": 2, "effect_buffers_mib": 64, "cold_seek_p95_seconds": 0.5 },
+      "B": { "vfx_gpu_p95_ms": 3, "effect_buffers_mib": 128, "cold_seek_p95_seconds": 1 },
+      "C": { "vfx_gpu_p95_ms": 4, "effect_buffers_mib": 256, "cold_seek_p95_seconds": 2 }
+    }
+  },
+  "known_gaps": [
+    "No production-density trails in the baseline fixture",
+    "No independent event-gather or overflow counters; supported-side fan-out appears truncated",
+    "Trail record truncation observed at the 32-point probe budget",
+    "Late collision/glint frames are not bitwise repeatable",
+    "No GPU memory or seek-latency baseline yet"
+  ]
+}

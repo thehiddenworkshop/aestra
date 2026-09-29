@@ -1431,6 +1431,8 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 
 **Goal:** establish a repeatable visual/performance environment before changing architecture.
 
+**Implementation status (2026-09-29): validation fixture and baseline delivered; exit gate partial.** The runnable deliverable is currently the viewer's `--fireworks-f0` fixture, not a separate `fireworks_validation_show` asset. [F0 run instructions and measured results](../../benchmarks/fireworks/README.md) and the [machine-readable baseline](../../benchmarks/fireworks/baseline-2026-09-29.json) are checked in with the implementation.
+
 ### Tasks
 
 - Add a dark outdoor preview/reference scene.
@@ -1455,6 +1457,21 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 - stable screenshot positions;
 - baseline profiler numbers committed/documented.
 - target device/quality-tier budgets documented for Tests A–C, with an inventory of available and missing requested-versus-produced counters.
+
+### Implemented and measured
+
+- Added a fixed-ID, fixed-seed, three-emitter radial sketch: rockets produce 48 stars on death; star collisions produce glints. The viewer supplies a dark 3D scene, ground and geometry markers, and fixed close, audience and wide cameras. Its exact-frame capture and GPU-timestamp benchmark can run the same fixture without an editor session.
+- Added isolated event fan-out and trail-owner probes, plus compiler-boundary tests. One link compiles at count 64 but rejects 65 and 800. One trail emitter compiles at 256 parents but rejects 257 and 800. Rejected cases have **no runtime timing claim**.
+- The supported event probe requests 4,096 children from 64 coincident source deaths; the frame-60 GPU report shows 1,024 live children in a 4,096-slot destination and no warning. This is evidence of silent loss, but the missing stage counters prevent exact attribution.
+- The supported trail probe reaches 256 occupied trails. At frame 120 it reports 183 truncated trails; after parent deaths, frame 300 reports 82 retired trails, 175 truncated trails and zero evictions. The later tails are outside the close camera, so visual tail quality is not established.
+- Recorded three baseline runs on an RTX 4070 SUPER/Vulkan at 960 × 540, high tier, with 120 warm-up and 600 measured frames per run. Baseline simulation p95 spans 0.454–0.554 ms. The final 256-owner trail probe repeats at 8.557 and 8.589 ms simulation p95, before a production-density hero workload can even compile. Corrected the benchmark report so it retains the configured warm-up count.
+- Documented provisional high-tier Test A–C time, buffer and seek targets, and which requested-versus-produced measurements are available or missing. These are goals, **not** verified performance results or lower-tier budgets.
+
+### Remaining F0 exit work
+
+- Exact-frame audience captures match across fresh launches through frame 120 but differ at frames 180 and 300 while the collision/glint chain is active. Do not approve those late frames as deterministic references; F1 must isolate and regress the event ordering/expansion path.
+- Add event requested/captured/expanded/spawned/dropped counters and overflow diagnostics before treating fan-out timing as valid produced-work performance. F1 owns the scalable event contract; F1B owns production-density trails and truncation policy.
+- Measure isolated cold-seek latency and actual effect GPU allocation. Recalibrate the provisional budgets at 1920 × 1080 and on lower quality tiers. The current 960 × 540 baseline does not establish release performance.
 
 ---
 
