@@ -19,6 +19,7 @@ mod sdf;
 mod staged;
 mod stateful;
 mod tier;
+mod trace;
 pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
@@ -41,6 +42,7 @@ pub use stateful::{
     StatefulSimulation, TargetChange, steer_homing,
 };
 pub use tier::QualityTier;
+pub use trace::{BindingRecorder, BindingTrace, trace_tick};
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
@@ -746,9 +748,24 @@ impl CompiledHoming {
         instance: &EffectInstance,
         world_to_effect: [[f32; 4]; 3],
     ) -> Option<HomingTarget> {
+        self.resolve_with(
+            instance.effect(),
+            |slot| instance.binding(slot),
+            world_to_effect,
+        )
+    }
+
+    /// [`Self::resolve`] from any binding values — those a [`BindingTrace`] holds for a past tick
+    /// (host bindings HB8), say. `binding(slot)` is the value readers see in that slot.
+    pub fn resolve_with<'a>(
+        &self,
+        effect: &CompiledEffect,
+        binding: impl Fn(BindingSlot) -> Option<&'a BindingSnapshot>,
+        world_to_effect: [[f32; 4]; 3],
+    ) -> Option<HomingTarget> {
         let read = |source: &CompiledHostFieldRef| {
-            let snapshot = instance.binding(source.binding)?;
-            let layout = &instance.effect().bindings[source.binding.0].layout;
+            let snapshot = binding(source.binding)?;
+            let layout = &effect.bindings[source.binding.0].layout;
             match snapshot.field(layout, &source.field)? {
                 [x, y, z] => Some([*x, *y, *z]),
                 _ => None,
@@ -798,9 +815,26 @@ impl CompiledAttachment {
         world_to_effect: [[f32; 4]; 3],
         authored: EmitterTransform,
     ) -> Option<EmitterTransform> {
+        self.resolve_with(
+            instance.effect(),
+            |slot| instance.binding(slot),
+            world_to_effect,
+            authored,
+        )
+    }
+
+    /// [`Self::resolve`] from any binding values — a [`BindingTrace`]'s for a past tick (host
+    /// bindings HB8), say.
+    pub fn resolve_with<'a>(
+        &self,
+        effect: &CompiledEffect,
+        binding: impl Fn(BindingSlot) -> Option<&'a BindingSnapshot>,
+        world_to_effect: [[f32; 4]; 3],
+        authored: EmitterTransform,
+    ) -> Option<EmitterTransform> {
         let read = |source: &CompiledHostFieldRef| {
-            let snapshot = instance.binding(source.binding)?;
-            let layout = &instance.effect().bindings[source.binding.0].layout;
+            let snapshot = binding(source.binding)?;
+            let layout = &effect.bindings[source.binding.0].layout;
             snapshot.field(layout, &source.field).map(<[f32]>::to_vec)
         };
         let position = match read(&self.position)?.as_slice() {
@@ -1647,6 +1681,8 @@ pub struct EffectInstance {
     inherited_host_transform: Arc<InheritedHostTransform>,
     /// Host binding snapshots, by slot (host bindings HB3).
     binding_inputs: BindingInputs,
+    /// The recorded host input driving the bindings instead of the host (host bindings HB8).
+    binding_trace: Option<Arc<BindingTrace>>,
 }
 
 impl EffectInstance {
@@ -1656,6 +1692,7 @@ impl EffectInstance {
         let binding_inputs = BindingInputs::new(effect.bindings.len());
         Self {
             binding_inputs,
+            binding_trace: None,
             effect,
             host_transform_track,
             inherited_host_transform: Arc::default(),
@@ -1839,6 +1876,7 @@ impl EffectInstance {
             time.clamp(0.0, self.effect.duration)
         };
         self.choreography_started = true;
+        self.sync_binding_trace();
     }
 
     pub fn restart(&mut self) {
@@ -1847,6 +1885,7 @@ impl EffectInstance {
         self.choreography_started = false;
         // A restart is a new spawn: `SnapshotOnSpawn` bindings latch again (host bindings HB3).
         self.relatch_spawn_bindings();
+        self.sync_binding_trace();
     }
 
     pub fn advance(&mut self, delta_seconds: f32) {
@@ -1862,6 +1901,7 @@ impl EffectInstance {
             EffectPlaybackMode::LoopRestart => next.rem_euclid(self.effect.duration),
             EffectPlaybackMode::LoopContinuous => next.max(0.0),
         };
+        self.sync_binding_trace();
     }
 
     /// Advances playback and emits every deterministic choreography event crossed by the
@@ -1935,6 +1975,7 @@ impl EffectInstance {
             self.time = next;
         }
         self.choreography_started = true;
+        self.sync_binding_trace();
     }
 
     pub fn evaluate(&self, output: &mut Vec<ParticleSample>) {

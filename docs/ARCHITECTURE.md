@@ -559,8 +559,29 @@ the bound object — position, and rotation when `PositionAndRotation` — compo
 transform as an offset, while the effect itself stays where the host placed it. Attached emitters are
 promoted to stateful: each spawn lands where the object is at that frame and keeps its own motion, so
 a swinging blade or a running character leaves a wake (`examples/sword_trail.rs`). While the binding
-supplies no pose the emitter holds its last one. Placement is resolved once per frame, and history is
-forward-only: a seek replays under the current pose (binding history is HB8).
+supplies no pose the emitter holds its last one. Placement is resolved once per frame from live
+input. A seek then replays under the current pose unless the input is recorded (see "Recorded host
+input").
+
+### Recorded host input
+
+Live bindings make a stateful history depend on input from outside the effect. `HostInputAvailability`
+(which collision providers also use, as `CollisionInputAvailability`) classifies it per instance
+(HB8):
+
+- `TimeAddressable`: nothing reads a live binding.
+- `Recordable`: a `BindingTrace` drives the bindings.
+- `ForwardOnly`: live input nobody records. A backward seek replays the past with the present input,
+  and `EffectInstance::supports_exact_backward_seek` (and `EffectPlayer`'s) says so.
+
+A `BindingTrace` holds the binding frames tick by tick. A host records one while playing
+(`BindingRecorder`, or `AestraBindingRecorder` in Bevy); a tool authors one (`BindingTrace::circle`
+is the preview fixture). An instance driven by a trace (`set_binding_trace`, `AestraBindingTrace`)
+reads the tick's frame whenever it is put at a time, and ignores host pushes. Its host input
+identity is the trace's content hash, so checkpoints restore under the same trace. The stateful GPU
+path resolves homing targets and attached placements **per tick** from the trace (`schedule`), live
+or replayed, so scrubbing reproduces the uninterrupted run bit for bit. A trace is editor state and
+test input, never semantic game identity.
 
 ### Runtime events
 

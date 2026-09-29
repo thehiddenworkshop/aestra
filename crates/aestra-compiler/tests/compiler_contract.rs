@@ -2742,3 +2742,162 @@ fn event_links_compile_to_stateful_emitters_and_sub_emitters() {
         (1, 0.0)
     );
 }
+
+#[test]
+fn a_recorded_binding_trace_drives_the_instance_and_makes_live_input_replayable() {
+    use aestra_core::{
+        AESTRA_FIELD_LINEAR_VELOCITY, AESTRA_FIELD_POSITION, BindingFieldId, BindingUpdateMode,
+        EffectBinding, HostFieldRef, HostInputAvailability, ModuleInstance, PropertySource,
+    };
+    use aestra_runtime::{
+        BindingFrame, BindingRecorder, BindingSlot, BindingTrace, EffectInstance,
+        SpatialBindingSnapshot, StatefulSimulation,
+    };
+    let mut effect = EffectAsset::new("Homing", 4.0);
+    let mut target = EffectBinding::spatial("Target", BindingUpdateMode::Live);
+    target
+        .optional_fields
+        .insert(BindingFieldId::new(AESTRA_FIELD_LINEAR_VELOCITY));
+    let mut emitter = aestra_core::Emitter::basic_sprite("Sparks", 4.0);
+    let mut homing = ModuleInstance::homing([0.0; 3], 20.0);
+    homing
+        .property_sources
+        .insert("target".into(), PropertySource::HostBinding);
+    homing.host_bindings.insert(
+        "target".into(),
+        HostFieldRef::new(target.id, AESTRA_FIELD_POSITION),
+    );
+    emitter.modules.push(homing);
+    effect.emitters.push(emitter);
+    effect.bindings.push(target);
+    let compiled = std::sync::Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+    let mut instance = EffectInstance::new(compiled.clone());
+    assert_eq!(
+        instance.host_input_availability(),
+        HostInputAvailability::ForwardOnly,
+        "a live homing target nobody records cannot be replayed exactly"
+    );
+    assert!(!instance.supports_exact_backward_seek());
+
+    // A mock target circling the origin drives the instance.
+    let trace = std::sync::Arc::new(
+        BindingTrace::circle(&compiled, BindingSlot(0), [0.0, 2.0, 0.0], 5.0, 1.5, 240).unwrap(),
+    );
+    instance.set_binding_trace(Some(trace.clone()));
+    assert_eq!(
+        instance.host_input_availability(),
+        HostInputAvailability::Recordable
+    );
+    assert!(instance.supports_exact_backward_seek());
+    let epoch = instance.host_input_epoch();
+    assert_eq!(epoch, trace.identity());
+    let position = |instance: &EffectInstance| {
+        instance
+            .binding_field(BindingSlot(0), &BindingFieldId::new(AESTRA_FIELD_POSITION))
+            .map(<[f32]>::to_vec)
+    };
+    let at_tick = |tick: u64| {
+        let layout = &compiled.bindings[0].layout;
+        trace.frame(tick).unwrap().snapshots[0]
+            .as_ref()
+            .unwrap()
+            .field(layout, &BindingFieldId::new(AESTRA_FIELD_POSITION))
+            .map(<[f32]>::to_vec)
+    };
+    let tick = aestra_runtime::trace_tick;
+    instance.seek(2.0);
+    assert_eq!(position(&instance), at_tick(tick(2.0)));
+    instance.seek(0.5);
+    assert_eq!(
+        position(&instance),
+        at_tick(tick(0.5)),
+        "a backward seek reads the past input"
+    );
+    instance.advance(0.25);
+    assert_eq!(position(&instance), at_tick(tick(instance.time())));
+    assert!((40..=46).contains(&tick(instance.time())));
+    assert_eq!(
+        instance.host_input_epoch(),
+        epoch,
+        "seeking keeps the trace's identity"
+    );
+    // The host cannot override a trace.
+    instance
+        .set_spatial_binding("Target", SpatialBindingSnapshot::at([99.0, 0.0, 0.0]))
+        .unwrap();
+    assert_eq!(position(&instance), at_tick(tick(instance.time())));
+    // Past its end, the last frame holds.
+    instance.seek(3.99);
+    assert_eq!(position(&instance), at_tick(239));
+
+    // The schedule a stateful backend replays with: tick by tick, the trace's target.
+    let homing = compiled.emitters[0].homing.clone().unwrap();
+    let identity = aestra_runtime::IDENTITY_AFFINE;
+    let schedule = homing.schedule(&compiled, &trace, 240, identity);
+    assert_eq!(schedule.len(), 240);
+    for tick in [0, 17, 100, 239] {
+        assert_eq!(
+            schedule[tick as usize].map(|target| target.position.to_vec()),
+            at_tick(tick)
+        );
+    }
+    // Replaying from a checkpoint under the schedule reproduces the uninterrupted run exactly.
+    let config = aestra_runtime::StatefulConfig {
+        gravity: [0.0; 3],
+        spawn_per_tick: 2,
+        speed: (4.0, 6.0),
+        lifetime: (2.0, 3.0),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.8,
+        drag: 0.0,
+        shape: aestra_runtime::SpawnShape::Point,
+        turbulence: 0.0,
+        placement: aestra_runtime::SpawnPlacement::IDENTITY,
+        colliders: [aestra_core::Collider::NONE; aestra_runtime::MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 512,
+        homing: Some(homing.config),
+    };
+    let run = |from: StatefulSimulation, until: usize| {
+        let mut simulation = from;
+        while (simulation.tick() as usize) < until {
+            simulation.set_homing_target(schedule[simulation.tick() as usize]);
+            simulation.advance_tick();
+        }
+        simulation
+    };
+    let checkpoint = run(StatefulSimulation::new(config, 11), 90);
+    let straight = run(checkpoint.clone(), 200);
+    let replayed = run(run(checkpoint, 150).clone(), 200);
+    assert_eq!(straight.alive_particles(), replayed.alive_particles());
+
+    // Returning the bindings to the host: live again, nothing bound until it pushes.
+    instance.set_binding_trace(None);
+    assert_eq!(position(&instance), None);
+    assert_eq!(
+        instance.host_input_availability(),
+        HostInputAvailability::ForwardOnly
+    );
+
+    // Recording: a skipped tick repeats the previous frame; recording earlier truncates.
+    let frame = |x: f32| BindingFrame {
+        snapshots: vec![Some(
+            SpatialBindingSnapshot::at([x, 0.0, 0.0]).to_snapshot(&compiled.bindings[0].layout),
+        )],
+    };
+    let mut recorder = BindingRecorder::new();
+    recorder.record(0, &frame(0.0));
+    recorder.record(1, &frame(1.0));
+    recorder.record(3, &frame(3.0));
+    assert_eq!(recorder.len(), 4);
+    let recorded = recorder.trace();
+    assert_eq!(recorded.frame(2), Some(&frame(1.0)), "a skipped tick holds");
+    recorder.record(2, &frame(-2.0));
+    assert_eq!(recorder.len(), 3, "a seek back drops the later history");
+    assert_ne!(recorder.trace().identity(), recorded.identity());
+    assert_eq!(
+        BindingTrace::new(vec![frame(0.0), frame(1.0)]).identity(),
+        BindingTrace::new(vec![frame(0.0), frame(1.0)]).identity(),
+        "the same content, the same identity"
+    );
+}

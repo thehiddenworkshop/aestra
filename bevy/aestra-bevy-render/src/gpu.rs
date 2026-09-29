@@ -214,6 +214,10 @@ struct StatefulDispatch {
     /// The `counters` word this emitter's event overflow count is copied to each frame, when it
     /// reports events: the events beyond the buffer's capacity, dropped (host bindings HB9b).
     overflow_word: Option<u32>,
+    /// Under a binding trace (host bindings HB8): the homing target and the spawn placement of every
+    /// tick, so each tick — live or replayed after a seek — uses its own recorded input. `None`
+    /// without a trace: the frame's input then serves every tick of the frame.
+    schedule: Option<Arc<TickSchedule>>,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -258,6 +262,26 @@ impl StatefulAppearance {
             color: aestra_gpu::GpuGradient::default(),
             max_scale: 1.0,
         }
+    }
+}
+
+/// A stateful emitter's host input per tick under a binding trace (host bindings HB8).
+#[derive(Debug, Clone, PartialEq)]
+struct TickSchedule {
+    /// What it was computed from: the trace's identity and the effect's world placement.
+    key: u64,
+    /// The homing target each tick steers toward (empty without homing).
+    homing: Vec<Option<aestra_runtime::HomingTarget>>,
+    /// The spawn placement of each tick (empty for an emitter not attached to a binding).
+    placement: Vec<aestra_runtime::SpawnPlacement>,
+}
+
+impl TickSchedule {
+    /// The homing target and placement for `tick`, past the end the last ones.
+    fn at<T: Copy>(values: &[T], tick: u32) -> Option<T> {
+        values
+            .get((tick as usize).min(values.len().saturating_sub(1)))
+            .copied()
     }
 }
 
@@ -340,6 +364,10 @@ impl StatefulDispatch {
             ] {
                 hash = (hash ^ u64::from(bits)).wrapping_mul(0x0000_0100_0000_01b3);
             }
+        }
+        // So does the binding trace it replays (host bindings HB8).
+        if let Some(schedule) = &self.schedule {
+            hash = (hash ^ schedule.key).wrapping_mul(0x0000_0100_0000_01b3);
         }
         // So do its event links (host bindings HB9b).
         hash = (hash ^ u64::from(self.event_mask)).wrapping_mul(0x0000_0100_0000_01b3);
@@ -1006,6 +1034,7 @@ pub(crate) fn prepare_gpu_effects(
                                 event_mask: player.effect().event_mask(index),
                                 event_signature: event_signature(player.effect(), index),
                                 overflow_word: None,
+                                schedule: None,
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1743,8 +1772,50 @@ fn sync_gpu_render_transforms(
                 let r = effect_from_world.row(row);
                 [r.x, r.y, r.z, r.w]
             });
-            let emitters = &player.instance.effect().emitters;
+            let effect = player.instance.effect();
+            let emitters = &effect.emitters;
+            // Under a binding trace (host bindings HB8), each tick's own recorded input — computed
+            // once per trace and placement, so replays after a seek steer and place exactly as the
+            // uninterrupted run did.
+            let trace = player.instance.binding_trace();
+            let key = trace.map(|trace| {
+                rows.iter().flatten().fold(trace.identity(), |hash, value| {
+                    (hash ^ u64::from(value.to_bits())).wrapping_mul(0x0000_0100_0000_01b3)
+                })
+            });
             for dispatch in &mut gpu.stateful_dispatch {
+                match (trace, key) {
+                    (Some(trace), Some(key))
+                        if dispatch.schedule.as_ref().map(|schedule| schedule.key) != Some(key) =>
+                    {
+                        let ticks = trace.len() as u64;
+                        let authored = emitters
+                            .get(dispatch.emitter_index as usize)
+                            .map(|emitter| emitter.transform)
+                            .unwrap_or_default();
+                        dispatch.schedule = Some(Arc::new(TickSchedule {
+                            key,
+                            homing: dispatch
+                                .homing
+                                .as_ref()
+                                .map(|homing| homing.schedule(effect, trace, ticks, rows))
+                                .unwrap_or_default(),
+                            placement: dispatch
+                                .attachment
+                                .as_ref()
+                                .map(|attachment| {
+                                    attachment
+                                        .schedule(effect, trace, ticks, rows, authored)
+                                        .into_iter()
+                                        .map(spawn_placement)
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        }));
+                    }
+                    (None, _) => dispatch.schedule = None,
+                    _ => {}
+                }
                 if let Some(homing) = &dispatch.homing {
                     let input = homing.resolve(&player.instance, rows);
                     dispatch.homing_target =
@@ -1780,6 +1851,7 @@ fn sync_gpu_render_transforms(
                     }
                 }
                 if let Some(attachment) = &dispatch.attachment
+                    && dispatch.schedule.is_none()
                     && let Some(emitter) = emitters.get(dispatch.emitter_index as usize)
                     && let Some(transform) =
                         attachment.resolve(&player.instance, rows, emitter.transform)
@@ -2585,9 +2657,16 @@ fn prepare_stateful_states(
                 .collect();
             states.0.insert(entity, allocated);
         } else if let Some(states) = states.0.get_mut(&entity) {
-            // Only the emitter transform changed: keep simulating (see `set_placement`).
+            // Only the emitter transform changed: keep simulating (see `set_placement`). A placement
+            // scheduled from a binding trace (host bindings HB8) is part of the replayed history.
             for (state, dispatch) in states.iter_mut().zip(&effect.stateful_dispatch) {
-                state.set_placement(dispatch.placement);
+                if dispatch
+                    .schedule
+                    .as_ref()
+                    .is_none_or(|schedule| schedule.placement.is_empty())
+                {
+                    state.set_placement(dispatch.placement);
+                }
             }
         }
     }
@@ -2711,12 +2790,25 @@ fn stateful_catchup_budget(quality: SeekQuality) -> u32 {
 /// The stateful params words for one dispatch (`aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS`):
 /// `spawn_per_tick` varies across advance ticks and `subtick` is the presentation-interpolation time
 /// `present` uses. `live` ticks count homing arrivals for the `impact` event; replays do not.
+/// `tick` is the tick being advanced from, whose recorded input a binding trace supplies (host
+/// bindings HB8); `None` (presentation) uses the frame's.
 fn stateful_params_bytes(
     dispatch: &StatefulDispatch,
     spawn_per_tick: u32,
     subtick: f32,
     live: bool,
+    tick: Option<u32>,
 ) -> Vec<u8> {
+    let scheduled = tick.and_then(|tick| Some((dispatch.schedule.as_deref()?, tick)));
+    let homing_target = match scheduled {
+        Some((schedule, tick)) if !schedule.homing.is_empty() => {
+            TickSchedule::at(&schedule.homing, tick).flatten()
+        }
+        _ => dispatch.homing_target,
+    };
+    let placement = scheduled
+        .and_then(|(schedule, tick)| TickSchedule::at(&schedule.placement, tick))
+        .unwrap_or(dispatch.placement);
     let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
     words[..26].copy_from_slice(&[
         dispatch.capacity,
@@ -2749,10 +2841,10 @@ fn stateful_params_bytes(
     // Collider block (hybrid roadmap M10): a count word at 26, then up to MAX_COLLIDERS 10-word
     // records from 27 (see aestra_gpu::STATEFUL_COLLISION_WGSL).
     pack_colliders(&dispatch.colliders, &mut words);
-    aestra_gpu::pack_spawn_placement(&dispatch.placement, &mut words);
+    aestra_gpu::pack_spawn_placement(&placement, &mut words);
     aestra_gpu::pack_stateful_homing_counted(
         dispatch.homing.as_ref().map(|homing| &homing.config),
-        dispatch.homing_target.as_ref(),
+        homing_target.as_ref(),
         dispatch.arrival_word.filter(|_| live),
         &mut words,
     );
@@ -2833,7 +2925,13 @@ fn stateful_tick_group(
     let spawn_count = (spawn_count as u32).min(dispatch.capacity);
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful tick params"),
-        contents: &stateful_params_bytes(dispatch, spawn_count, 0.0, live),
+        contents: &stateful_params_bytes(
+            dispatch,
+            spawn_count,
+            0.0,
+            live,
+            Some(persistent.last_tick),
+        ),
         usage: BufferUsages::STORAGE,
     });
     let group = stateful_bind_group(device, layout, persistent, &params, render);
@@ -2863,7 +2961,7 @@ fn present_stateful_emitter(
         .clamp(0.0, STATEFUL_TICK_DT);
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful present params"),
-        contents: &stateful_params_bytes(dispatch, 0, subtick, false),
+        contents: &stateful_params_bytes(dispatch, 0, subtick, false, None),
         usage: BufferUsages::STORAGE,
     });
     let group = stateful_bind_group(device, layout, persistent, &params, render);
@@ -3891,6 +3989,7 @@ mod tests {
             event_mask: 0,
             event_signature: 0,
             overflow_word: None,
+            schedule: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4742,6 +4841,7 @@ mod coupled_tests {
             event_mask: 0,
             event_signature: 0,
             overflow_word: None,
+            schedule: None,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -4940,6 +5040,160 @@ mod coupled_tests {
         eprintln!("rockets spawned {}, sparks spawned {}", words[0], words[1]);
         assert!(words[0] >= 10, "{words:?}");
         assert!(words[1] >= 48 * 5, "every rocket death bursts: {words:?}");
+    }
+
+    /// Host bindings HB8: with a binding trace, every tick steers toward its own recorded target, so
+    /// scrubbing back and replaying reproduces the uninterrupted run bit for bit; with live input,
+    /// the replay uses the present target and the past changes.
+    #[test]
+    fn a_traced_homing_target_replays_exactly_after_a_backward_seek() {
+        let Some(mut scene) = scene(false) else {
+            return;
+        };
+        scene.domains.clear();
+        let circle = |tick: u32| {
+            let angle = tick as f32 * 0.03;
+            Some(aestra_runtime::HomingTarget {
+                position: [6.0 * angle.cos(), 4.0, 6.0 * angle.sin()],
+                velocity: [0.0; 3],
+            })
+        };
+        let homing = aestra_runtime::CompiledHoming {
+            config: aestra_runtime::HomingConfig {
+                speed: 20.0,
+                acceleration: 40.0,
+                turn_rate: 6.0,
+                arrival_radius: 0.3,
+                lost: aestra_runtime::HomingLostPolicy::KeepLastPosition,
+            },
+            target: [0.0; 3],
+            target_velocity: [0.0; 3],
+            target_source: None,
+            velocity_source: None,
+        };
+        let template = scene.dispatches[0].clone();
+        let traced = |schedule: bool| StatefulDispatch {
+            spawn_rate: 60.0,
+            lifetime: (2.0, 2.5),
+            homing: Some(homing.clone()),
+            homing_target: circle(0),
+            schedule: schedule.then(|| {
+                Arc::new(TickSchedule {
+                    key: 7,
+                    homing: (0..240).map(circle).collect(),
+                    placement: Vec::new(),
+                })
+            }),
+            ..template.clone()
+        };
+        // Live particles by spawn ordinal, bit for bit (slot assignment follows thread timing).
+        let mut run = |dispatch: StatefulDispatch, scrub: bool| -> Vec<[u32; 9]> {
+            scene.dispatches = vec![dispatch];
+            scene.states = vec![StatefulPersistentState::allocate(
+                &scene.device,
+                scene.dispatches[0].capacity,
+                STRIDE,
+                scene.dispatches[0].fingerprint(),
+                false,
+            )];
+            let frame = |scene: &mut Scene, tick: u32| loop {
+                // Live input: the frame's target is the host's present one.
+                scene.dispatches[0].homing_target = circle(tick);
+                let mut encoder = scene.device.create_command_encoder(&Default::default());
+                let [particles, alive, indirect, counters] = &scene.render;
+                run_coupled_stateful(
+                    &scene.device,
+                    &mut encoder,
+                    (
+                        &scene.pipelines[0],
+                        &scene.pipelines[1],
+                        &scene.pipelines[2],
+                    ),
+                    &scene.layout,
+                    &mut scene.states,
+                    &scene.dispatches,
+                    Coupling {
+                        domains: &mut [],
+                        inputs: StageInputs::default(),
+                        follower: &scene.follower,
+                        spawner: &scene.spawner,
+                        gatherer: &scene.gatherer,
+                    },
+                    &[],
+                    &StatefulRenderBuffers {
+                        particles,
+                        alive,
+                        indirect,
+                        counters,
+                    },
+                    (tick as f32 + 0.5) * STATEFUL_TICK_DT,
+                    TICKS_PER_SUBMISSION,
+                );
+                scene.queue.submit([encoder.finish()]);
+                if scene.states[0].last_tick == tick {
+                    break;
+                }
+            };
+            for tick in 1..=180 {
+                frame(&mut scene, tick);
+            }
+            if scrub {
+                frame(&mut scene, 60);
+                frame(&mut scene, 180);
+            }
+            let size = scene.states[0].state.size();
+            let staging = scene.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size,
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            let mut encoder = scene.device.create_command_encoder(&Default::default());
+            encoder.copy_buffer_to_buffer(&scene.states[0].state, 0, &staging, 0, size);
+            scene.queue.submit([encoder.finish()]);
+            staging.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            scene
+                .device
+                .wgpu_device()
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(std::time::Duration::from_secs(60)),
+                })
+                .unwrap();
+            let words: Vec<u32> = staging
+                .slice(..)
+                .get_mapped_range()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| u32::from_le_bytes(*bytes))
+                .collect();
+            let mut live: Vec<[u32; 9]> = words
+                .as_chunks::<9>()
+                .0
+                .iter()
+                .filter(|record| {
+                    let (age, lifetime) = (f32::from_bits(record[6]), f32::from_bits(record[7]));
+                    lifetime > 0.0 && age < lifetime
+                })
+                .copied()
+                .collect();
+            live.sort_by_key(|record| record[8]);
+            live
+        };
+        let straight = run(traced(true), false);
+        let scrubbed = run(traced(true), true);
+        assert!(straight.len() > 50, "{} live", straight.len());
+        assert!(
+            straight == scrubbed,
+            "a traced target replays the uninterrupted run exactly"
+        );
+        let live_straight = run(traced(false), false);
+        let live_scrubbed = run(traced(false), true);
+        assert!(
+            live_straight != live_scrubbed,
+            "live input replays the past with the present target: not exact, as reported"
+        );
     }
 
     impl Scene {

@@ -42,7 +42,10 @@ mod choreography_tests;
 mod project;
 mod project_profile;
 mod world;
-pub use bindings::{AestraBindings, AestraLinearVelocity, binding_frame, spatial_snapshot};
+pub use bindings::{
+    AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity, binding_frame,
+    spatial_snapshot,
+};
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
 pub use world::sdf_from_meshes;
@@ -66,6 +69,7 @@ pub use aestra_runtime::{
     BindingError, BindingFrame, BindingSlot, BindingSnapshot, BindingState, BindingStatus,
     HostRequirements, SpatialBindingSnapshot,
 };
+pub use aestra_runtime::{BindingRecorder, BindingTrace, trace_tick};
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
@@ -131,7 +135,12 @@ impl Plugin for AestraPlugin {
             );
         app.add_systems(
             Update,
-            bindings::resolve_host_bindings.in_set(AestraSet::ResolveHostInputs),
+            (
+                bindings::apply_binding_traces,
+                bindings::resolve_host_bindings,
+            )
+                .chain()
+                .in_set(AestraSet::ResolveHostInputs),
         );
         app.add_systems(
             Update,
@@ -317,6 +326,20 @@ impl EffectPlayer {
     /// The fidelity requested of stateful seeks this frame (hybrid roadmap M12).
     pub fn seek_quality(&self) -> SeekQuality {
         self.seek_quality
+    }
+
+    /// How the effect's host input can be recovered for a past tick (host bindings HB8):
+    /// `ForwardOnly` while the simulation reads live bindings nobody records.
+    pub fn host_input_availability(&self) -> aestra_core::HostInputAvailability {
+        self.driver.instance.host_input_availability()
+    }
+
+    /// Whether seeking backward reproduces the history exactly (host bindings HB8). False while a
+    /// stateful effect reads live host objects that are not recorded: the replay then uses the
+    /// present input for the past. Record them ([`AestraBindingRecorder`]) and replay the trace
+    /// ([`AestraBindingTrace`]) for exact scrubbing.
+    pub fn supports_exact_backward_seek(&self) -> bool {
+        self.driver.instance.supports_exact_backward_seek()
     }
 
     /// Requests a stateful-seek fidelity. A host sets [`SeekQuality::Preview`] while the user is

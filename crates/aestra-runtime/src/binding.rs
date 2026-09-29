@@ -526,6 +526,9 @@ pub(crate) struct BindingInputs {
     pub(crate) latched: Vec<Option<BindingSnapshot>>,
     /// Bumped whenever a slot is acquired, lost or rebound; part of checkpoint identity.
     pub(crate) epoch: u64,
+    /// Under a binding trace (host bindings HB8): each slot's first supplied value, which a
+    /// `SnapshotOnSpawn` slot reads whatever time the instance is put at.
+    pub(crate) trace_latched: Vec<Option<BindingSnapshot>>,
 }
 
 impl BindingInputs {
@@ -534,12 +537,16 @@ impl BindingInputs {
             current: vec![None; slots],
             latched: vec![None; slots],
             epoch: 0,
+            trace_latched: Vec::new(),
         }
     }
 }
 impl crate::EffectInstance {
     /// Pushes every slot's snapshot for this tick at once (host bindings HB3). The frame is validated
     /// completely before anything changes, so a rejected frame leaves the instance untouched.
+    ///
+    /// While a [`crate::BindingTrace`] drives the instance, host frames are checked but not applied:
+    /// the trace owns the bindings.
     pub fn apply_binding_frame(&mut self, frame: &BindingFrame) -> Result<(), BindingError> {
         let expected = self.effect.bindings.len();
         if frame.snapshots.len() != expected {
@@ -553,10 +560,91 @@ impl crate::EffectInstance {
                 snapshot.validate(BindingSlot(index), &self.effect.bindings[index])?;
             }
         }
+        if self.binding_trace.is_some() {
+            return Ok(());
+        }
         for (index, snapshot) in frame.snapshots.iter().enumerate() {
             self.store_binding(BindingSlot(index), snapshot.clone());
         }
         Ok(())
+    }
+
+    /// Drives the bindings from recorded host input (host bindings HB8), or returns them to the host
+    /// with `None`. Under a trace, every time the instance is put at — playing, seeking, restarting —
+    /// reads the trace's frame for that tick, so a backward seek replays exactly the input the history
+    /// saw; host pushes are ignored; and the host input identity is the trace's, so checkpoints taken
+    /// under it restore under it. Changing the trace invalidates history.
+    pub fn set_binding_trace(&mut self, trace: Option<std::sync::Arc<crate::BindingTrace>>) {
+        if self.binding_trace.as_ref().map(|trace| trace.identity())
+            == trace.as_ref().map(|trace| trace.identity())
+        {
+            return;
+        }
+        let slots = self.effect.bindings.len();
+        let mut trace_latched: Vec<Option<BindingSnapshot>> = vec![None; slots];
+        if let Some(trace) = &trace {
+            for tick in 0..trace.len() as u64 {
+                let Some(frame) = trace.frame(tick) else {
+                    break;
+                };
+                for (index, latched) in trace_latched.iter_mut().enumerate() {
+                    if latched.is_none() {
+                        *latched = self.valid_trace_value(frame, index);
+                    }
+                }
+            }
+        }
+        self.binding_inputs.trace_latched = trace_latched;
+        self.binding_trace = trace;
+        self.invalidate_history();
+        if self.binding_trace.is_none() {
+            // Back to the host: nothing is bound until it pushes again.
+            for index in 0..slots {
+                self.binding_inputs.current[index] = None;
+                self.binding_inputs.latched[index] = None;
+            }
+            self.bump_binding_epoch();
+            self.refresh_host_fields();
+        }
+        self.sync_binding_trace();
+    }
+
+    /// The trace driving the bindings, if any (host bindings HB8).
+    pub fn binding_trace(&self) -> Option<&std::sync::Arc<crate::BindingTrace>> {
+        self.binding_trace.as_ref()
+    }
+
+    /// A trace frame's value for slot `index`, when it is one the slot accepts.
+    fn valid_trace_value(&self, frame: &BindingFrame, index: usize) -> Option<BindingSnapshot> {
+        frame
+            .snapshots
+            .get(index)
+            .cloned()
+            .flatten()
+            .filter(|snapshot| {
+                snapshot
+                    .validate(BindingSlot(index), &self.effect.bindings[index])
+                    .is_ok()
+            })
+    }
+
+    /// Puts the bindings at the trace's frame for the current tick.
+    pub(crate) fn sync_binding_trace(&mut self) {
+        let Some(trace) = self.binding_trace.clone() else {
+            return;
+        };
+        let frame = trace.frame(crate::trace_tick(self.time));
+        for index in 0..self.effect.bindings.len() {
+            self.binding_inputs.current[index] =
+                frame.and_then(|frame| self.valid_trace_value(frame, index));
+            self.binding_inputs.latched[index] = self
+                .binding_inputs
+                .trace_latched
+                .get(index)
+                .cloned()
+                .flatten();
+        }
+        self.refresh_host_fields();
     }
 
     /// Sets one slot; `None` marks it unbound (the host lost or released the object).
@@ -573,7 +661,9 @@ impl crate::EffectInstance {
         if let Some(snapshot) = &snapshot {
             snapshot.validate(slot, binding)?;
         }
-        self.store_binding(slot, snapshot);
+        if self.binding_trace.is_none() {
+            self.store_binding(slot, snapshot);
+        }
         Ok(())
     }
 
@@ -645,12 +735,38 @@ impl crate::EffectInstance {
     /// Changes whenever a binding is acquired, lost or rebound. Part of checkpoint identity
     /// ([`crate::CheckpointContext::host_input`]).
     pub fn host_input_epoch(&self) -> u64 {
-        self.binding_inputs.epoch
+        match &self.binding_trace {
+            // A trace fixes the whole input history: its content is the identity.
+            Some(trace) => trace.identity(),
+            None => self.binding_inputs.epoch,
+        }
+    }
+
+    /// How this instance's host input can be recovered for a past tick (host bindings HB8):
+    /// `TimeAddressable` when nothing reads a live binding, `Recordable` when a trace drives the
+    /// bindings, `ForwardOnly` when the simulation reads live host objects nobody records — a backward
+    /// seek then replays the past with the present input, and is not exact.
+    pub fn host_input_availability(&self) -> aestra_core::HostInputAvailability {
+        if !self.has_forward_only_inputs() {
+            aestra_core::HostInputAvailability::TimeAddressable
+        } else if self.binding_trace.is_some() {
+            aestra_core::HostInputAvailability::Recordable
+        } else {
+            aestra_core::HostInputAvailability::ForwardOnly
+        }
+    }
+
+    /// Whether a backward seek reproduces the history exactly (host bindings HB8): false while the
+    /// simulation reads unrecorded live host input.
+    pub fn supports_exact_backward_seek(&self) -> bool {
+        self.host_input_availability()
+            .supports_exact_backward_seek()
     }
 
     /// Whether the simulation reads host input that cannot be reconstructed for a backward seek
-    /// (host bindings §7.1): a module input or plugin module reading a `Live` binding is forward-only
-    /// unless the host records its stream. `SnapshotOnSpawn` values are latched and reproducible, and
+    /// (host bindings §7.1): a module input, plugin module, homing target (HB7) or emitter attachment
+    /// (HB7b) reading a `Live` binding is forward-only unless the host records its stream (a
+    /// [`crate::BindingTrace`], HB8). `SnapshotOnSpawn` values are latched and reproducible, and
     /// declared-but-unread bindings do not affect the simulation.
     pub fn has_forward_only_inputs(&self) -> bool {
         let live = |slot: BindingSlot| {
@@ -664,13 +780,29 @@ impl crate::EffectInstance {
             .iter()
             .any(|field| live(field.source.binding))
             || self.effect.emitters.iter().any(|emitter| {
-                emitter.extension_stages.iter().any(|stage| {
-                    stage
-                        .modules
+                let homing = emitter.homing.as_ref().is_some_and(|homing| {
+                    homing
+                        .target_source
                         .iter()
-                        .flat_map(|module| module.host_fields.values())
-                        .any(|field| live(field.binding))
-                })
+                        .chain(&homing.velocity_source)
+                        .any(|source| live(source.binding))
+                });
+                let attached = emitter.attachment.as_ref().is_some_and(|attachment| {
+                    live(attachment.position.binding)
+                        || attachment
+                            .rotation
+                            .as_ref()
+                            .is_some_and(|rotation| live(rotation.binding))
+                });
+                homing
+                    || attached
+                    || emitter.extension_stages.iter().any(|stage| {
+                        stage
+                            .modules
+                            .iter()
+                            .flat_map(|module| module.host_fields.values())
+                            .any(|field| live(field.binding))
+                    })
             })
     }
 

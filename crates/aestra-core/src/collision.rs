@@ -35,14 +35,16 @@ pub enum CollisionInputSource {
     MeshAccelerationStructure,
 }
 
-/// How a collision provider's inputs can be recovered for a *past* tick — the historical-input rule
-/// that decides whether exact backward seeking can be advertised (hybrid roadmap M11). Ordered from
-/// least to most restrictive, so the aggregate over several providers is their `max`.
+/// How an input from outside the effect — a collision provider (hybrid roadmap M11), a host binding
+/// (host bindings HB8) — can be recovered for a *past* tick: the historical-input rule that decides
+/// whether exact backward seeking can be advertised. Ordered from least to most restrictive, so the
+/// aggregate over several inputs is their `max`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum CollisionInputAvailability {
-    /// Reproducible at any tick from static data (authored colliders) — exact backward seek is free.
+pub enum HostInputAvailability {
+    /// Reproducible at any tick from static data (authored colliders, latched or unread bindings) —
+    /// exact backward seek is free.
     TimeAddressable,
-    /// Not static, but the backend records the inputs per tick, so any past tick replays exactly.
+    /// Not static, but recorded per tick (a binding trace), so any past tick replays exactly.
     Recordable,
     /// Reconstructible only at checkpoints; between them, replay forward from the nearest checkpoint
     /// (the M7 seek model already does this for particle state).
@@ -52,8 +54,11 @@ pub enum CollisionInputAvailability {
     ForwardOnly,
 }
 
-impl CollisionInputAvailability {
-    /// Whether a provider with this availability can have its inputs reconstructed for a past tick, so
+/// The collision providers' name for [`HostInputAvailability`] (hybrid roadmap M11).
+pub type CollisionInputAvailability = HostInputAvailability;
+
+impl HostInputAvailability {
+    /// Whether an input with this availability can have its values reconstructed for a past tick, so
     /// exact backward seeking stays possible. Everything but [`ForwardOnly`](Self::ForwardOnly) can —
     /// directly, from a recording, or by replaying from a checkpoint.
     pub fn supports_exact_backward_seek(self) -> bool {

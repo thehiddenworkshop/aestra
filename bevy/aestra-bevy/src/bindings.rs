@@ -13,11 +13,18 @@
 //!
 //! Timing: Bevy propagates `GlobalTransform` in `PostUpdate`, so the resolve step in `Update` sees the
 //! previous frame's world transform — one frame of latency, as for any `Update` system.
+//!
+//! Recorded input (host bindings HB8): [`AestraBindingRecorder`] records what a player's bindings
+//! resolve to, tick by tick, into a [`BindingTrace`]; [`AestraBindingTrace`] drives a player from a
+//! trace instead of from entities, so scrubbing its timeline replays exactly — the editor preview
+//! and deterministic-test path. Live bindings nobody records make a stateful effect's backward
+//! seek inexact, which [`crate::EffectPlayer::supports_exact_backward_seek`] reports.
 
 use crate::{EffectClipInstance, EffectPlayer, PresentedEffect};
 use aestra_core::{AESTRA_BINDING_SPATIAL, BindingKindId};
 use aestra_runtime::{
-    BindingFrame, BindingSlot, BindingSnapshot, CompiledEffect, SpatialBindingSnapshot,
+    BindingFrame, BindingRecorder, BindingSlot, BindingSnapshot, BindingTrace, CompiledEffect,
+    SpatialBindingSnapshot,
 };
 use bevy::prelude::*;
 use std::collections::BTreeMap;
@@ -63,6 +70,65 @@ impl AestraBindings {
 /// integration. Aestra does not depend on any physics crate; hosts write this component.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
 pub struct AestraLinearVelocity(pub Vec3);
+
+/// Drives a player's bindings from recorded input instead of from entities (host bindings HB8):
+/// every time the player is put at — playing, seeking, restarting — reads the trace's frame for that
+/// tick, and its [`AestraBindings`] are ignored meanwhile. Remove the component to return the player
+/// to its entities.
+#[derive(Component, Debug, Clone)]
+pub struct AestraBindingTrace(pub Arc<BindingTrace>);
+
+/// Records what a player's [`AestraBindings`] resolve to, tick by tick (host bindings HB8). Seeking
+/// back and playing on records a new history from there. [`Self::trace`] is the recording so far,
+/// ready for [`AestraBindingTrace`].
+#[derive(Component, Debug, Clone, Default)]
+pub struct AestraBindingRecorder {
+    recorder: BindingRecorder,
+}
+
+impl AestraBindingRecorder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The trace recorded so far.
+    pub fn trace(&self) -> BindingTrace {
+        self.recorder.trace()
+    }
+
+    /// Ticks recorded.
+    pub fn len(&self) -> usize {
+        self.recorder.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.recorder.is_empty()
+    }
+}
+
+/// Installs and removes binding traces (host bindings HB8), before host input is resolved.
+pub(crate) fn apply_binding_traces(
+    mut traced: Query<(&mut EffectPlayer, &AestraBindingTrace)>,
+    mut removed: RemovedComponents<AestraBindingTrace>,
+    mut players: Query<&mut EffectPlayer, Without<AestraBindingTrace>>,
+) {
+    for (mut player, trace) in &mut traced {
+        let installed = player
+            .instance()
+            .binding_trace()
+            .map(|installed| installed.identity());
+        if installed != Some(trace.0.identity()) {
+            player
+                .instance_mut()
+                .set_binding_trace(Some(trace.0.clone()));
+        }
+    }
+    for entity in removed.read() {
+        if let Ok(mut player) = players.get_mut(entity) {
+            player.instance_mut().set_binding_trace(None);
+        }
+    }
+}
 
 /// The entity each slot resolved to last frame, to detect retargeting.
 #[derive(Component, Debug, Default)]
@@ -113,19 +179,23 @@ pub fn binding_frame(
     (BindingFrame { snapshots }, targets)
 }
 
+/// A player whose bindings its entities drive: what [`resolve_host_bindings`] reads and records.
+type LivePlayer = (
+    Entity,
+    &'static mut EffectPlayer,
+    &'static AestraBindings,
+    Option<&'static mut ResolvedBindingTargets>,
+    Option<&'static mut AestraBindingRecorder>,
+);
+
 /// Resolves every bound entity once and pushes one frame per effect player
 /// ([`AestraSet::ResolveHostInputs`](crate::AestraSet::ResolveHostInputs)).
 pub(crate) fn resolve_host_bindings(
     mut commands: Commands,
-    mut players: Query<(
-        Entity,
-        &mut EffectPlayer,
-        &AestraBindings,
-        Option<&mut ResolvedBindingTargets>,
-    )>,
+    mut players: Query<LivePlayer, Without<AestraBindingTrace>>,
     objects: Query<(&GlobalTransform, Option<&AestraLinearVelocity>)>,
 ) {
-    for (entity, mut player, bindings, previous) in &mut players {
+    for (entity, mut player, bindings, previous, recorder) in &mut players {
         let effect = player.effect().clone();
         if effect.bindings.is_empty() {
             continue;
@@ -149,6 +219,10 @@ pub(crate) fn resolve_host_bindings(
         }
         if let Err(error) = instance.apply_binding_frame(&frame) {
             warn!("aestra: could not apply host bindings to {entity}: {error}");
+        } else if let Some(mut recorder) = recorder {
+            // The frame serves the ticks this frame advances from the current time.
+            let tick = aestra_runtime::trace_tick(instance.time());
+            recorder.recorder.record(tick, &frame);
         }
         match previous {
             Some(mut previous) => previous.0 = targets,
@@ -471,6 +545,70 @@ mod tests {
                 .binding_field(BindingSlot(0), &position())
                 .map(<[f32]>::to_vec),
             Some(vec![7.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn a_recorded_trace_replaces_the_entities_and_scrubs_exactly() {
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            (apply_binding_traces, resolve_host_bindings).chain(),
+        );
+        let enemy = object(&mut app, Vec3::new(1.0, 0.0, 0.0));
+        let player = app
+            .world_mut()
+            .spawn((
+                EffectPlayer::new(&effect(false)),
+                AestraBindings::new().bind("Target", enemy),
+                AestraBindingRecorder::new(),
+            ))
+            .id();
+        // Play forward a tick per frame while the enemy moves; the recorder keeps each frame.
+        for tick in 0..30 {
+            move_to(&mut app, enemy, Vec3::new(tick as f32, 0.0, 0.0));
+            app.update();
+            let mut entity = app.world_mut().entity_mut(player);
+            let mut player = entity.get_mut::<EffectPlayer>().unwrap();
+            let time = (tick + 1) as f32 * aestra_runtime::StatefulSimulation::TICK_DT + 1e-4;
+            player.instance_mut().set_playback_time(time);
+        }
+        let recorder = app
+            .world()
+            .get::<AestraBindingRecorder>(player)
+            .unwrap()
+            .clone();
+        assert_eq!(recorder.len(), 30);
+        let trace = Arc::new(recorder.trace());
+
+        // Replay the trace: the entity no longer drives the player, and a seek reads the past.
+        app.world_mut()
+            .entity_mut(player)
+            .insert(AestraBindingTrace(trace.clone()));
+        move_to(&mut app, enemy, Vec3::new(500.0, 0.0, 0.0));
+        app.update();
+        let seek = |app: &mut App, time: f32| {
+            app.world_mut()
+                .get_mut::<EffectPlayer>(player)
+                .unwrap()
+                .instance_mut()
+                .seek(time);
+            field(app, player, TARGET, &position())
+        };
+        let tick = aestra_runtime::StatefulSimulation::TICK_DT;
+        assert_eq!(seek(&mut app, 10.5 * tick), Some(vec![10.0, 0.0, 0.0]));
+        assert_eq!(seek(&mut app, 3.5 * tick), Some(vec![3.0, 0.0, 0.0]));
+        let instance = app.world().get::<EffectPlayer>(player).unwrap().instance();
+        assert_eq!(instance.host_input_epoch(), trace.identity());
+
+        // Removing the trace returns the player to its entity.
+        app.world_mut()
+            .entity_mut(player)
+            .remove::<AestraBindingTrace>();
+        app.update();
+        assert_eq!(
+            field(&app, player, TARGET, &position()),
+            Some(vec![500.0, 0.0, 0.0])
         );
     }
 }
