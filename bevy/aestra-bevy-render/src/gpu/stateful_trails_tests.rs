@@ -246,7 +246,8 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
             count: 800,
             inherit: 0.0,
         }],
-        input_routes: false,
+        routed: false,
+        particle_outputs: Vec::new(),
         host_events: default(),
         physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
     };
@@ -307,7 +308,7 @@ impl EventTrailScene {
                 gatherer: &scene.gatherer,
             },
             &self.effect.event_links,
-            &[],
+            &RouteWiring::default(),
             &StatefulRenderBuffers {
                 particles,
                 alive,

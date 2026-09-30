@@ -261,6 +261,28 @@ impl EffectDiff {
                 summary(after),
             );
         }
+        if before.particle_outputs != after.particle_outputs {
+            let summary = |effect: &EffectAsset| {
+                effect
+                    .particle_outputs
+                    .iter()
+                    .map(|route| {
+                        format!(
+                            "{} {:?} -> {} {:?}",
+                            route.source, route.trigger, route.output, route.aggregation
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.particle_outputs",
+                summary(before),
+                summary(after),
+            );
+        }
         Self { changes }
     }
 

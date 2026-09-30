@@ -272,19 +272,28 @@ fn declared_events_round_trip_through_the_artifact() {
 
 #[test]
 fn input_routes_round_trip_through_the_artifact() {
-    use aestra_core::{EventDefinition, EventField, EventFieldType, InputSpawnRoute};
+    use aestra_core::{
+        EventAggregation, EventDefinition, EventField, EventFieldType, EventTrigger,
+        InputSpawnRoute, ParticleOutputRoute,
+    };
     let mut asset = effect("Mine", Vec::new());
     let detonate = EventDefinition::new("Detonate")
         .with_field(EventField::new("position", EventFieldType::Vec3));
+    let exploded = EventDefinition::new("Exploded");
     let mut route = InputSpawnRoute::new(detonate.id, asset.emitters[0].id);
     route.count = 32;
     route.position = Some(detonate.fields[0].id);
+    let mut output =
+        ParticleOutputRoute::new(asset.emitters[0].id, EventTrigger::OnDeath, exploded.id);
+    output.aggregation = EventAggregation::EachEvent { limit: 4 };
     asset.event_inputs = vec![detonate];
+    asset.event_outputs = vec![exploded];
     asset.input_spawns = vec![route];
+    asset.particle_outputs = vec![output];
     let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
         .compile(&asset)
         .unwrap();
-    assert_eq!(compiled.event_routes.len(), 1);
+    assert_eq!(compiled.event_routes.len(), 2);
     let bytes = encode_effect(&compiled).unwrap();
     let reloaded = decode_effect(&bytes).unwrap();
     assert_eq!(reloaded.event_routes, compiled.event_routes);

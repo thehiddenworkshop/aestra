@@ -184,7 +184,11 @@ impl EffectCompiler {
             || asset
                 .input_spawns
                 .iter()
-                .any(|route| route.target == emitter.id);
+                .any(|route| route.target == emitter.id)
+            || asset
+                .particle_outputs
+                .iter()
+                .any(|route| route.source == emitter.id);
         if (emitter.attachment.is_some() || linked)
             && requirements.derived_class() == SimulationClass::Analytic
         {
@@ -3098,28 +3102,39 @@ fn compile_event_links(
     Ok(links)
 }
 
-/// Resolves the effect's input spawn routes (event system E3) to input and field names and compiled
-/// emitter indices. The target must be an enabled emitter compiled to a single timeline region; a
-/// route to a disabled emitter is dropped (its input then spawns nothing).
+/// Resolves the effect's event routes (event system E3) to input, output and field names and compiled
+/// emitter indices: its input spawn routes, then its particle output routes. A route's emitter must
+/// be an enabled emitter compiled to a single timeline region; a route to or from a disabled emitter
+/// is dropped (its input spawns nothing, its output is not raised).
 fn compile_event_routes(
     asset: &EffectAsset,
     emitters: &[CompiledEmitter],
 ) -> Result<Vec<aestra_runtime::CompiledEventRoute>, CompileError> {
     let mut report = ValidationReport::default();
     let mut routes = Vec::new();
-    for (index, route) in asset.input_spawns.iter().enumerate() {
+    let mut single_region = |id: aestra_core::EmitterId, path: String| {
         let regions: Vec<usize> = emitters
             .iter()
             .enumerate()
-            .filter(|(_, emitter)| emitter.source == route.target)
+            .filter(|(_, emitter)| emitter.source == id)
             .map(|(index, _)| index)
             .collect();
-        let [target] = regions.as_slice() else {
-            report.push(Diagnostic::error(
-                DiagnosticCode::InvalidReference,
-                format!("effect.input_spawns[{index}].target"),
-                "an input route's emitter must play as a single timeline region",
-            ));
+        match regions.as_slice() {
+            [single] => Some(*single),
+            _ => {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidReference,
+                    path,
+                    "an event route's emitter must play as a single timeline region",
+                ));
+                None
+            }
+        }
+    };
+    for (index, route) in asset.input_spawns.iter().enumerate() {
+        let Some(target) =
+            single_region(route.target, format!("effect.input_spawns[{index}].target"))
+        else {
             continue;
         };
         // Validation guarantees the input, and the position field among its fields.
@@ -3130,13 +3145,13 @@ fn compile_event_routes(
         else {
             continue;
         };
-        if !emitters[*target].enabled {
+        if !emitters[target].enabled {
             continue;
         }
         routes.push(aestra_runtime::CompiledEventRoute::InputSpawn(
             aestra_runtime::CompiledInputSpawn {
                 input: input.name.clone(),
-                target: *target,
+                target,
                 count: route.count,
                 position: route.position.and_then(|position| {
                     input
@@ -3145,6 +3160,33 @@ fn compile_event_routes(
                         .find(|field| field.id == position)
                         .map(|field| field.name.clone())
                 }),
+            },
+        ));
+    }
+    for (index, route) in asset.particle_outputs.iter().enumerate() {
+        let Some(source) = single_region(
+            route.source,
+            format!("effect.particle_outputs[{index}].source"),
+        ) else {
+            continue;
+        };
+        // Validation guarantees the output.
+        let Some(output) = asset
+            .event_outputs
+            .iter()
+            .find(|definition| definition.id == route.output)
+        else {
+            continue;
+        };
+        if !emitters[source].enabled {
+            continue;
+        }
+        routes.push(aestra_runtime::CompiledEventRoute::ParticleOutput(
+            aestra_runtime::CompiledParticleOutput {
+                output: output.name.clone(),
+                source,
+                trigger: route.trigger,
+                aggregation: route.aggregation,
             },
         ));
     }

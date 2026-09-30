@@ -143,9 +143,11 @@ pub(crate) struct GpuEffectBuffers {
     stateful_dispatch: Vec<StatefulDispatch>,
     /// The effect's particle event links (host bindings HB9b).
     event_links: Vec<aestra_runtime::CompiledEventLink>,
-    /// Whether the effect has input spawn routes (event system E3): its stateful emitters then
-    /// advance in lockstep, the bursts spawning after each tick's links.
-    input_routes: bool,
+    /// Whether the effect has event routes (event system E3): its stateful emitters then advance in
+    /// lockstep, bursts spawning and particle outputs aggregating after each tick's links.
+    routed: bool,
+    /// Its particle output routes, each with the `counters` word its ring of tick records starts at.
+    particle_outputs: Vec<(aestra_runtime::CompiledParticleOutput, u32)>,
     /// The host's recorded input events, updated each frame (event system E2–E3).
     host_events: Arc<HostEventHistory>,
     /// The host's physics colliders around the effect this frame, packed (host bindings HB10).
@@ -322,6 +324,14 @@ impl HostEventHistory {
         let ticks = [before.get(common), after.get(common)];
         ticks.into_iter().flatten().map(|(tick, _)| *tick).min()
     }
+}
+
+/// An effect's event routes as the lockstep loop runs them (event system E3): the bursts its input
+/// routes spawn, and its particle output routes, each with the `counters` word its ring starts at.
+#[derive(Clone, Copy, Default)]
+pub(super) struct RouteWiring<'a> {
+    pub bursts: &'a [aestra_runtime::InputSpawnBurst],
+    pub outputs: &'a [(aestra_runtime::CompiledParticleOutput, u32)],
 }
 
 /// A stateful emitter's host input per tick under a binding trace (host bindings HB8).
@@ -1153,6 +1163,16 @@ pub(crate) fn prepare_gpu_effects(
         }
         // Captured child demand, list drops and destination accepts per link.
         arrival_words += 3 * player.effect().event_links.len() as u32;
+        // Then each particle output route's ring of tick records (event system E3).
+        let particle_outputs: Vec<(aestra_runtime::CompiledParticleOutput, u32)> = player
+            .effect()
+            .particle_outputs()
+            .map(|(_, route)| {
+                let ring = arrivals_base + arrival_words;
+                arrival_words += aestra_gpu::PARTICLE_OUTPUT_RING_WORDS;
+                (route.clone(), ring)
+            })
+            .collect();
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             (arrivals_base + arrival_words)
@@ -1208,7 +1228,8 @@ pub(crate) fn prepare_gpu_effects(
                 stateful_dispatch,
                 stateful_only,
                 event_links: player.effect().event_links.clone(),
-                input_routes: player.effect().input_spawns().next().is_some(),
+                routed: !player.effect().event_routes.is_empty(),
+                particle_outputs,
                 host_events: Arc::new(HostEventHistory::of(&player.instance)),
                 physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },
@@ -2234,6 +2255,30 @@ fn receive_homing_arrivals(
                 );
             }
         }
+    }
+    // Particle output routes (event system E3): each ring slot holding a tick not heard yet raises
+    // its outputs, in tick order.
+    let mut raised = Vec::new();
+    for (route, ring) in &gpu.particle_outputs {
+        for slot in 0..aestra_gpu::PARTICLE_OUTPUT_RING_TICKS {
+            let start = ring + slot * aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS;
+            let Some(record) = words
+                .get(start as usize..(start + aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS) as usize)
+            else {
+                continue;
+            };
+            let Some(read) = aestra_gpu::read_particle_output_slot(record) else {
+                continue;
+            };
+            if readback.seen.insert(start, record[0]) == Some(record[0]) {
+                continue;
+            }
+            raised.extend(route.raise(read.count, &read.first, read.tick));
+        }
+    }
+    raised.sort_by_key(|event| event.tick);
+    for event in raised {
+        events.write(AestraOutputEvent::root(effect, event));
     }
 }
 
@@ -3363,12 +3408,13 @@ fn run_coupled_stateful(
     dispatches: &[StatefulDispatch],
     coupling: Coupling<'_>,
     links: &[aestra_runtime::CompiledEventLink],
-    bursts: &[aestra_runtime::InputSpawnBurst],
+    routes: &RouteWiring<'_>,
     render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
     budget: u32,
     mut trails: Option<&mut stateful_trails::Observer<'_>>,
 ) -> u32 {
+    let bursts = routes.bursts;
     let (death_integrate, spawn, present, order_present) = pipelines;
     let domains = coupling.domains;
     // Each link's events and emission list (host bindings HB9b): the dispatches at either end, and a
@@ -3600,6 +3646,27 @@ fn run_coupled_stateful(
                 },
             );
         }
+        // Particle output routes (event system E3): a live tick's events of their trigger,
+        // aggregated into the tick's slot of the route's ring, which the host reads back. Replayed
+        // ticks raise nothing.
+        if live {
+            let reached = persistent_states[0].last_tick + 1;
+            for (route, ring) in routes.outputs {
+                if let Some(source) = dispatch_of(route.source) {
+                    coupling.gatherer.encode_output(
+                        device.wgpu_device(),
+                        encoder,
+                        &persistent_states[source].events,
+                        crate::execution::ParticleOutputSlot {
+                            counters: render.counters,
+                            ring: *ring,
+                            tick: reached,
+                        },
+                        route,
+                    );
+                }
+            }
+        }
         // Input routes (event system E3): after the links, the bursts the host's events of this
         // tick spawn, in route order.
         let tick = u64::from(persistent_states[0].last_tick);
@@ -3752,7 +3819,7 @@ fn run_stateful_dispatches(
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
     links: &[aestra_runtime::CompiledEventLink],
-    bursts: Option<&[aestra_runtime::InputSpawnBurst]>,
+    routes: Option<RouteWiring<'_>>,
     render: &StatefulRenderBuffers<'_>,
     coupling: Option<Coupling<'_>>,
     simulation_time: f32,
@@ -3769,11 +3836,11 @@ fn run_stateful_dispatches(
     }
     // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
     // with it; so do emitters joined by event links (host bindings HB9b), with one another, and
-    // those of an effect with input routes (event system E3, `bursts` is then given).
+    // those of an effect with event routes (event system E3, `routes` is then given).
     let has_trails = trails.is_some();
     let coupled = has_trails
         || !links.is_empty()
-        || bursts.is_some()
+        || routes.is_some()
         || dispatches
             .iter()
             .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
@@ -3793,7 +3860,7 @@ fn run_stateful_dispatches(
                 dispatches,
                 coupling,
                 links,
-                bursts.unwrap_or_default(),
+                &routes.unwrap_or_default(),
                 render,
                 simulation_time,
                 budget,
@@ -4067,9 +4134,10 @@ fn run_simulation(
                     persistent_states,
                     &effect.stateful_dispatch,
                     &effect.event_links,
-                    effect
-                        .input_routes
-                        .then_some(effect.host_events.bursts.as_slice()),
+                    effect.routed.then_some(RouteWiring {
+                        bursts: &effect.host_events.bursts,
+                        outputs: &effect.particle_outputs,
+                    }),
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -4085,7 +4153,7 @@ fn run_simulation(
                         follower.as_deref(),
                     )
                     .or_else(|| {
-                        (!effect.event_links.is_empty() || effect.input_routes || stateful_trails)
+                        (!effect.event_links.is_empty() || effect.routed || stateful_trails)
                             .then(|| extension_stages::link_coupling(follower.as_deref()))
                             .flatten()
                     }),
@@ -4378,9 +4446,10 @@ fn run_simulation(
                     persistent_states,
                     &effect.stateful_dispatch,
                     &effect.event_links,
-                    effect
-                        .input_routes
-                        .then_some(effect.host_events.bursts.as_slice()),
+                    effect.routed.then_some(RouteWiring {
+                        bursts: &effect.host_events.bursts,
+                        outputs: &effect.particle_outputs,
+                    }),
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -4396,7 +4465,7 @@ fn run_simulation(
                         follower.as_deref(),
                     )
                     .or_else(|| {
-                        (!effect.event_links.is_empty() || effect.input_routes)
+                        (!effect.event_links.is_empty() || effect.routed)
                             .then(|| extension_stages::link_coupling(follower.as_deref()))
                             .flatten()
                     }),
@@ -4732,7 +4801,8 @@ mod tests {
                     stateful_dispatch: Vec::new(),
                     stateful_only: false,
                     event_links: Vec::new(),
-                    input_routes: false,
+                    routed: false,
+                    particle_outputs: Vec::new(),
                     host_events: Default::default(),
                     physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
                 },
@@ -5608,7 +5678,7 @@ mod coupled_tests {
         links: &[aestra_runtime::CompiledEventLink],
         tick: u32,
     ) {
-        advance_event_scene(scene, links, &[], tick);
+        advance_event_scene(scene, links, &RouteWiring::default(), tick);
     }
 
     /// Advances the scene's emitters in the production lockstep loop, with its event links and the
@@ -5616,7 +5686,7 @@ mod coupled_tests {
     fn advance_event_scene(
         scene: &mut Scene,
         links: &[aestra_runtime::CompiledEventLink],
-        bursts: &[aestra_runtime::InputSpawnBurst],
+        routes: &RouteWiring<'_>,
         tick: u32,
     ) {
         // A backward seek may restore an earlier checkpoint and need several bounded catch-up
@@ -5644,7 +5714,7 @@ mod coupled_tests {
                     gatherer: &scene.gatherer,
                 },
                 links,
-                bursts,
+                routes,
                 &StatefulRenderBuffers {
                     particles,
                     alive,
@@ -5846,13 +5916,17 @@ mod coupled_tests {
             burst(30, &[[4.0, 12.0, -2.0]]),
             burst(70, &[[-6.0, 9.0, 1.0], [0.0, 20.0, 0.0]]),
         ];
+        let wired = RouteWiring {
+            bursts: &bursts,
+            outputs: &[],
+        };
         let history = [(30, 1), (70, 2)];
         for state in &mut fresh.states {
             state.set_host_events(&history);
         }
         // Just past the first detonation (the rockets' links fire later): its particles, born at the
         // detonation point once the tick advanced.
-        advance_event_scene(&mut fresh, &links, &bursts, 31);
+        advance_event_scene(&mut fresh, &links, &wired, 31);
         let first = chained_event_snapshot(&fresh);
         assert_eq!(first.spawn_counts[1], 24, "{:?}", first.spawn_counts);
         let point = [4.0_f32, 12.0, -2.0].map(f32::to_bits);
@@ -5863,7 +5937,7 @@ mod coupled_tests {
             "{:?}",
             first.particles[1]
         );
-        advance_event_scene(&mut fresh, &links, &bursts, 150);
+        advance_event_scene(&mut fresh, &links, &wired, 150);
         let expected = chained_event_snapshot(&fresh);
         assert!(
             expected.spawn_counts[1] > 24 * 3,
@@ -5871,7 +5945,7 @@ mod coupled_tests {
         );
 
         // The same run without the detonations, which the host then records back in time.
-        advance_event_scene(&mut late, &links, &[], 150);
+        advance_event_scene(&mut late, &links, &RouteWiring::default(), 150);
         assert_ne!(chained_event_snapshot(&late), expected);
         for state in &mut late.states {
             state.set_host_events(&history);
@@ -5883,11 +5957,11 @@ mod coupled_tests {
                     .all(|checkpoint| checkpoint.tick <= 30)
             );
         }
-        advance_event_scene(&mut late, &links, &bursts, 150);
+        advance_event_scene(&mut late, &links, &wired, 150);
         assert_eq!(chained_event_snapshot(&late), expected);
         // A backward seek replays the recorded detonations as well.
-        advance_event_scene(&mut late, &links, &bursts, 50);
-        advance_event_scene(&mut late, &links, &bursts, 150);
+        advance_event_scene(&mut late, &links, &wired, 50);
+        advance_event_scene(&mut late, &links, &wired, 150);
         assert_eq!(chained_event_snapshot(&late), expected);
     }
 
@@ -6011,7 +6085,7 @@ mod coupled_tests {
                         gatherer: &scene.gatherer,
                     },
                     &[],
-                    &[],
+                    &RouteWiring::default(),
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -6122,7 +6196,7 @@ mod coupled_tests {
                         gatherer: &self.gatherer,
                     },
                     &[],
-                    &[],
+                    &RouteWiring::default(),
                     &StatefulRenderBuffers {
                         particles,
                         alive,

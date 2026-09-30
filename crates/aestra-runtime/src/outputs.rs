@@ -136,6 +136,51 @@ impl EffectOutputEvent {
     }
 }
 
+/// The events a particle output route reads of a tick (event system E3): the `limit` lowest spawn
+/// ordinals among `events` (one emitter's events of one trigger, in any order), in ordinal order, as
+/// `(ordinal, position)`. The GPU selects the same ones.
+pub fn first_particle_events(events: &[crate::ParticleEvent], limit: u32) -> Vec<(u64, [f32; 3])> {
+    let mut ordered: Vec<(u64, [f32; 3])> = events
+        .iter()
+        .map(|event| (event.ordinal, event.position))
+        .collect();
+    ordered.sort_by_key(|(ordinal, _)| *ordinal);
+    ordered.truncate(limit as usize);
+    ordered
+}
+
+impl crate::CompiledParticleOutput {
+    /// The outputs one tick raises (event system E3): `count` is how many `trigger` events the
+    /// source's particles raised in the tick, `first` the lowest-ordinal ones
+    /// ([`first_particle_events`] with the aggregation's limit), and `tick` the tick reached. Each
+    /// output is named after the route's output, from the source emitter, with an event's position
+    /// as its value and `count` as its magnitude. A tick without events raises nothing.
+    pub fn raise(
+        &self,
+        count: u32,
+        first: &[(u64, [f32; 3])],
+        tick: u64,
+    ) -> Vec<EffectOutputEvent> {
+        if count == 0 {
+            return Vec::new();
+        }
+        first
+            .iter()
+            .take(self.aggregation.limit() as usize)
+            .map(|(_, position)| {
+                EffectOutputEvent::new(
+                    &self.output,
+                    EventOrigin::Emitter(self.source),
+                    "",
+                    position.to_vec(),
+                    count as f32,
+                    tick,
+                )
+            })
+            .collect()
+    }
+}
+
 /// The tick playback crossed a cue at `cue_time` (effect time), seen at instance time `now`: in
 /// continuous playback the cue repeats each `duration`, so the latest crossing at or before `now`.
 pub fn cue_crossing_tick(cue_time: f32, now: f32, duration: f32, continuous: bool) -> u64 {
@@ -336,6 +381,51 @@ mod tests {
         let mut negative = block();
         negative.outputs[0].event.as_mut().unwrap().threshold = -1.0;
         assert!(negative.validate().is_err());
+    }
+
+    #[test]
+    fn particle_events_aggregate_into_outputs() {
+        use aestra_core::{EventAggregation, EventTrigger};
+        let event = |ordinal, x| crate::ParticleEvent {
+            ordinal,
+            position: [x, 0.0, 0.0],
+            velocity: [0.0; 3],
+        };
+        let events = [event(9, 9.0), event(3, 3.0), event(7, 7.0)];
+        assert_eq!(
+            first_particle_events(&events, 2),
+            vec![(3, [3.0, 0.0, 0.0]), (7, [7.0, 0.0, 0.0])]
+        );
+        let mut route = crate::CompiledParticleOutput {
+            output: "Exploded".into(),
+            source: 1,
+            trigger: EventTrigger::OnDeath,
+            aggregation: EventAggregation::FirstPerTick,
+        };
+        let first = first_particle_events(&events, route.aggregation.limit());
+        let raised = route.raise(3, &first, 40);
+        assert_eq!(
+            raised,
+            vec![EffectOutputEvent::new(
+                "Exploded",
+                EventOrigin::Emitter(1),
+                "",
+                vec![3.0, 0.0, 0.0],
+                3.0,
+                40
+            )]
+        );
+        route.aggregation = EventAggregation::EachEvent { limit: 5 };
+        let every = route.raise(3, &first_particle_events(&events, 5), 40);
+        assert_eq!(
+            every.iter().map(|event| event.value[0]).collect::<Vec<_>>(),
+            [3.0, 7.0, 9.0]
+        );
+        assert!(every.iter().all(|event| event.magnitude == 3.0));
+        assert!(
+            route.raise(0, &[], 41).is_empty(),
+            "a quiet tick raises nothing"
+        );
     }
 
     #[test]

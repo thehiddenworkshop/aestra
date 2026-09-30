@@ -656,6 +656,14 @@ backward seek replays them exactly. What a declared input does comes from its ro
   `EffectInstance::input_spawn_bursts` lists the bursts by tick; after each tick's event links, the
   GPU uploads them as Spawn From Domain lists, and the CPU reference spawns them with
   `StatefulSimulation::spawn_from_events`.
+- a **particle output route** (`EffectAsset::particle_outputs`) raises a declared output from an
+  emitter's particle events (spawn, death, collision). Particle events never reach the host one by
+  one: a route aggregates each tick, **first per tick** (the lowest spawn ordinal) or **each event**
+  up to a limit (16 at most), and every output carries an event's position as its value and the
+  tick's event count as its magnitude (`CompiledParticleOutput::raise`). The source emitter becomes
+  stateful and reports that trigger. On the GPU, each live tick a one-thread kernel writes the tick's
+  record into the route's ring in the effect's `counters` buffer, which is read back every frame;
+  the host raises each record once, as `AestraOutputEvent`s, dated by their tick.
 
 Compiled routes share one type, `CompiledEventRoute`, which the Event Map (E4) reads. A GPU state
 remembers the input history it advanced under. When the history changes — an event recorded back in

@@ -1285,6 +1285,97 @@ fn expand_events(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Ticks of particle output records a route keeps for the host to read back (event system E3): a
+/// ring, slot `tick % PARTICLE_OUTPUT_RING_TICKS`, read back every frame, so a frame's live ticks
+/// (at most a few) are all still there when it arrives.
+pub const PARTICLE_OUTPUT_RING_TICKS: u32 = 32;
+/// Words of one tick's record: `[tick + 1 (0 while empty), event count, records written, 0]`, then
+/// up to `MAX_OUTPUTS_PER_TICK` 4-word records `[ordinal, position xyz]`, lowest ordinals first.
+pub const PARTICLE_OUTPUT_SLOT_WORDS: u32 = 4 + 4 * aestra_core::MAX_OUTPUTS_PER_TICK;
+/// Words of one route's ring.
+pub const PARTICLE_OUTPUT_RING_WORDS: u32 = PARTICLE_OUTPUT_RING_TICKS * PARTICLE_OUTPUT_SLOT_WORDS;
+
+/// One tick's particle output record read back from a route's ring (event system E3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticleOutputRecord {
+    /// The tick reached.
+    pub tick: u64,
+    /// The source's events of the route's trigger that tick.
+    pub count: u32,
+    /// The lowest-ordinal ones, `(ordinal, position)`, in ordinal order.
+    pub first: Vec<(u64, [f32; 3])>,
+}
+
+/// Reads one slot of a route's ring; `None` while it is empty.
+pub fn read_particle_output_slot(slot: &[u32]) -> Option<ParticleOutputRecord> {
+    let tick = u64::from(*slot.first()?).checked_sub(1)?;
+    let count = *slot.get(1)?;
+    let written = (*slot.get(2)?).min(aestra_core::MAX_OUTPUTS_PER_TICK) as usize;
+    let first = (0..written)
+        .map(|record| {
+            let at = 4 + record * 4;
+            let ordinal = u64::from(slot[at]);
+            (
+                ordinal,
+                std::array::from_fn(|axis| f32::from_bits(slot[at + 1 + axis])),
+            )
+        })
+        .collect();
+    Some(ParticleOutputRecord { tick, count, first })
+}
+
+/// A particle output route's per-tick aggregation (event system E3): counts the source's events of
+/// the route's trigger in the tick, and writes the lowest-ordinal ones — at most `limit` — into the
+/// tick's slot of the route's ring in `counters` ([`PARTICLE_OUTPUT_SLOT_WORDS`]), the tick word
+/// last. `route` is `[trigger bit, limit, slot word, tick + 1, event capacity]`. One thread: a
+/// tick's events are at most `PARTICLE_EVENT_CAPACITY`, and the selection is repeated minimums, so
+/// it needs no local array (which D3D's FXC could not index dynamically) and no sort.
+pub const PARTICLE_OUTPUT_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read> events: array<u32>;
+@group(0) @binding(1) var<storage, read_write> counters: array<u32>;
+@group(0) @binding(2) var<storage, read> route: array<u32>;
+
+@compute @workgroup_size(1)
+fn aggregate_particle_outputs() {
+    let n = min(events[0], route[4]);
+    let kind = route[0];
+    let limit = route[1];
+    let slot = route[2];
+    var count = 0u;
+    for (var i = 0u; i < n; i = i + 1u) {
+        if (events[4u + i * 8u] == kind) { count = count + 1u; }
+    }
+    var written = 0u;
+    var after = 0u;
+    for (var r = 0u; r < limit; r = r + 1u) {
+        var found = false;
+        var best = 0u;
+        var best_record = 0u;
+        for (var i = 0u; i < n; i = i + 1u) {
+            let record = 4u + i * 8u;
+            let ordinal = events[record + 1u];
+            let eligible = events[record] == kind && (r == 0u || ordinal > after);
+            if (eligible && (!found || ordinal < best)) {
+                found = true;
+                best = ordinal;
+                best_record = record;
+            }
+        }
+        if (!found) { break; }
+        let word = slot + 4u + r * 4u;
+        counters[word] = best;
+        counters[word + 1u] = events[best_record + 2u];
+        counters[word + 2u] = events[best_record + 3u];
+        counters[word + 3u] = events[best_record + 4u];
+        after = best;
+        written = written + 1u;
+    }
+    counters[slot + 1u] = count;
+    counters[slot + 2u] = written;
+    counters[slot] = route[3];
+}
+"#;
+
 /// Where the homing block starts in the stateful params (host bindings HB7), and its length: see
 /// [`pack_stateful_homing`].
 pub const STATEFUL_HOMING_BASE: usize = STATEFUL_APPEARANCE_BASE + STATEFUL_APPEARANCE_WORDS;

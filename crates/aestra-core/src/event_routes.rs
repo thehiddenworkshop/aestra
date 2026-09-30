@@ -1,15 +1,120 @@
-//! Effect-scale event routes (event system E3): what a declared event input does inside the effect.
-//! Two specialized routes come before any generic event model (roadmap §23, E3). The first is
-//! [`InputSpawnRoute`]: a host input spawns a burst of an emitter's particles.
+//! Effect-scale event routes (event system E3): what a declared input does inside the effect, and
+//! what raises a declared output. Two specialized routes come before any generic event model
+//! (roadmap §23, E3): [`InputSpawnRoute`], a host input spawning a burst of an emitter's particles,
+//! and [`ParticleOutputRoute`], an emitter's particle events raising an output, aggregated per tick.
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode, ValidationReport};
 use crate::model::register_id;
 use crate::{
     EffectAsset, EmitterId, EventDefinitionId, EventFieldId, EventFieldType, EventRouteId,
-    MAX_EVENT_LINK_COUNT,
+    EventTrigger, MAX_EVENT_LINK_COUNT,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// Outputs one particle output route raises per tick, at most.
+pub const MAX_OUTPUTS_PER_TICK: u32 = 16;
+
+/// How a particle output route turns a tick's particle events — up to thousands — into outputs for
+/// the host (event system §12A): particle events never reach it one by one. Each output carries an
+/// event's position and, as its magnitude, how many events the tick raised.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EventAggregation {
+    /// One output per tick with events: the first particle's (lowest spawn ordinal).
+    #[default]
+    FirstPerTick,
+    /// One output per event, lowest ordinals first, at most `limit` a tick
+    /// (1 to [`MAX_OUTPUTS_PER_TICK`]).
+    EachEvent { limit: u32 },
+}
+
+impl EventAggregation {
+    /// The outputs a tick raises at most.
+    pub fn limit(self) -> u32 {
+        match self {
+            Self::FirstPerTick => 1,
+            Self::EachEvent { limit } => limit,
+        }
+    }
+}
+
+/// An emitter's particle events raising a declared output (event system E3): each tick the particles
+/// of `source` raise `trigger` events, `output` is raised as `aggregation` says. The source emitter
+/// simulates persistent particles, as an event link's source does.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParticleOutputRoute {
+    pub id: EventRouteId,
+    pub source: EmitterId,
+    pub trigger: EventTrigger,
+    /// The declared output (in `EffectAsset::event_outputs`) raised.
+    pub output: EventDefinitionId,
+    #[serde(default)]
+    pub aggregation: EventAggregation,
+}
+
+impl ParticleOutputRoute {
+    /// A route raising `output` once per tick in which a particle of `source` raises `trigger`.
+    pub fn new(source: EmitterId, trigger: EventTrigger, output: EventDefinitionId) -> Self {
+        Self {
+            id: EventRouteId::new(),
+            source,
+            trigger,
+            output,
+            aggregation: EventAggregation::FirstPerTick,
+        }
+    }
+}
+
+/// Structural validation of an effect's particle output routes: stable ids, an emitter and a
+/// declared output the effect has, and an aggregation limit in range.
+pub(crate) fn validate_particle_outputs(
+    effect: &EffectAsset,
+    report: &mut ValidationReport,
+    semantic_ids: &mut BTreeMap<u128, String>,
+) {
+    for (index, route) in effect.particle_outputs.iter().enumerate() {
+        let path = format!("effect.particle_outputs[{index}]");
+        register_id(
+            report,
+            semantic_ids,
+            route.id.as_uuid().as_u128(),
+            format!("{path}.id"),
+        );
+        if !effect
+            .emitters
+            .iter()
+            .any(|emitter| emitter.id == route.source)
+        {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidReference,
+                format!("{path}.source"),
+                format!("output route references missing emitter {}", route.source),
+            ));
+        }
+        if !effect
+            .event_outputs
+            .iter()
+            .any(|definition| definition.id == route.output)
+        {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidReference,
+                format!("{path}.output"),
+                format!(
+                    "output route references missing event output {}",
+                    route.output
+                ),
+            ));
+        }
+        let limit = route.aggregation.limit();
+        if limit == 0 || limit > MAX_OUTPUTS_PER_TICK {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.aggregation"),
+                format!("an output route raises 1 to {MAX_OUTPUTS_PER_TICK} outputs per tick"),
+            ));
+        }
+    }
+}
 
 /// A declared input spawning a burst (event system E3): each time the host sends `input`, `target`
 /// spawns `count` particles at the input's `position` field, in effect space, or at the effect's
@@ -182,6 +287,53 @@ mod tests {
                 "effect.input_spawns[0].input".to_string(),
                 DiagnosticCode::InvalidReference
             )]
+        );
+    }
+
+    #[test]
+    fn particle_output_routes_validate_and_round_trip() {
+        let mut effect = EffectAsset::new("Fireworks", 2.0);
+        let rocket = Emitter::basic_sprite("Rocket", 2.0);
+        let exploded = EventDefinition::new("Exploded")
+            .with_field(EventField::new("position", EventFieldType::Vec3));
+        let first = ParticleOutputRoute::new(rocket.id, EventTrigger::OnDeath, exploded.id);
+        let mut each = first.clone();
+        each.id = EventRouteId::new();
+        each.aggregation = EventAggregation::EachEvent { limit: 4 };
+        effect.emitters.push(rocket);
+        effect.event_outputs.push(exploded);
+        effect.particle_outputs = vec![first, each];
+        let paths = |effect: &EffectAsset| {
+            effect
+                .validation_report()
+                .diagnostics
+                .into_iter()
+                .filter(|diagnostic| diagnostic.path.starts_with("effect.particle_outputs"))
+                .map(|diagnostic| diagnostic.path)
+                .collect::<Vec<_>>()
+        };
+        assert!(paths(&effect).is_empty(), "{:?}", paths(&effect));
+        let loaded = EffectAsset::from_ron(&effect.to_pretty_ron().unwrap()).unwrap();
+        assert_eq!(loaded.particle_outputs, effect.particle_outputs);
+        assert!(
+            !EffectAsset::new("Plain", 1.0)
+                .to_pretty_ron()
+                .unwrap()
+                .contains("particle_outputs")
+        );
+
+        let mut bad = effect.clone();
+        bad.particle_outputs[1].aggregation = EventAggregation::EachEvent { limit: 17 };
+        bad.particle_outputs[1].source = EmitterId::new();
+        bad.event_outputs.clear();
+        assert_eq!(
+            paths(&bad),
+            [
+                "effect.particle_outputs[0].output",
+                "effect.particle_outputs[1].source",
+                "effect.particle_outputs[1].output",
+                "effect.particle_outputs[1].aggregation",
+            ]
         );
     }
 }

@@ -92,6 +92,9 @@ pub struct EffectAsset {
     /// Declared inputs spawning bursts of an emitter (event system E3), in the order they apply.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_spawns: Vec<crate::InputSpawnRoute>,
+    /// Particle events raising declared outputs (event system E3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub particle_outputs: Vec<crate::ParticleOutputRoute>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EffectMarker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -134,6 +137,7 @@ impl EffectAsset {
             emitters: Vec::new(),
             events: Vec::new(),
             input_spawns: Vec::new(),
+            particle_outputs: Vec::new(),
             markers: Vec::new(),
             choreography_events: Vec::new(),
             effect_clips: Vec::new(),
@@ -496,6 +500,7 @@ impl EffectAsset {
             }
         }
         crate::event_routes::validate_input_spawns(self, &mut report, &mut semantic_ids);
+        crate::event_routes::validate_particle_outputs(self, &mut report, &mut semantic_ids);
         for (index, clip) in self.effect_clips.iter().enumerate() {
             let path = format!("effect.effect_clips[{index}]");
             register_id(

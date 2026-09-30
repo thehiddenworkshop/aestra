@@ -1564,6 +1564,16 @@ pub struct EventGatherPipeline {
     order: wgpu::ComputePipeline,
     expand: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    /// Particle output routes' per-tick aggregation (event system E3), beside the links' gather.
+    outputs: wgpu::ComputePipeline,
+}
+
+/// Where a particle output route's tick record goes (event system E3): the tick reached, into its
+/// slot of the route's ring, which starts at word `ring` of `counters`.
+pub struct ParticleOutputSlot<'a> {
+    pub counters: &'a wgpu::Buffer,
+    pub ring: u32,
+    pub tick: u32,
 }
 
 /// Persistent counter words for a link's captured child demand and list overflow.
@@ -1630,11 +1640,81 @@ impl EventGatherPipeline {
             compilation_options: Default::default(),
             cache: None,
         });
+        let outputs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("aestra particle outputs"),
+            source: wgpu::ShaderSource::Wgsl(aestra_gpu::PARTICLE_OUTPUT_WGSL.into()),
+        });
+        let outputs = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("aestra particle outputs"),
+            layout: None,
+            module: &outputs_module,
+            entry_point: Some("aggregate_particle_outputs"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Self {
             order,
             expand,
             layout,
+            outputs,
         }
+    }
+
+    /// Encodes one tick's aggregation of a particle output route (event system E3): the source's
+    /// `events` of the route's trigger, counted and the lowest-ordinal ones written into `slot`.
+    /// See [`aestra_gpu::PARTICLE_OUTPUT_WGSL`].
+    pub fn encode_output(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        events: &wgpu::Buffer,
+        slot: ParticleOutputSlot<'_>,
+        route: &aestra_runtime::CompiledParticleOutput,
+    ) {
+        let ParticleOutputSlot {
+            counters,
+            ring,
+            tick,
+        } = slot;
+        let slot = ring
+            + (tick % aestra_gpu::PARTICLE_OUTPUT_RING_TICKS)
+                * aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS;
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aestra particle output route"),
+            contents: &words_to_bytes(&[
+                aestra_runtime::event_trigger_bit(route.trigger),
+                route.aggregation.limit(),
+                slot,
+                tick + 1,
+                aestra_runtime::PARTICLE_EVENT_CAPACITY,
+            ]),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aestra particle outputs"),
+            layout: &self.outputs.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: events.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: counters.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("aestra particle outputs"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.outputs);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
     }
 
     /// Bytes of a source emitter's bounded event buffer.

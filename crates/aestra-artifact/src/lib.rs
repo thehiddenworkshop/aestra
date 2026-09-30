@@ -189,6 +189,12 @@ enum EventRouteV4 {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<String>,
     },
+    ParticleOutput {
+        output: String,
+        source: u32,
+        trigger: aestra_core::EventTrigger,
+        aggregation: aestra_core::EventAggregation,
+    },
 }
 
 impl EventRouteV4 {
@@ -200,6 +206,12 @@ impl EventRouteV4 {
                 count: spawn.count,
                 position: spawn.position.clone(),
             },
+            aestra_runtime::CompiledEventRoute::ParticleOutput(route) => Self::ParticleOutput {
+                output: route.output.clone(),
+                source: route.source as u32,
+                trigger: route.trigger,
+                aggregation: route.aggregation,
+            },
         }
     }
 
@@ -208,14 +220,48 @@ impl EventRouteV4 {
         index: usize,
         emitters: usize,
         inputs: &[aestra_core::EventDefinition],
+        outputs: &[aestra_core::EventDefinition],
     ) -> Result<aestra_runtime::CompiledEventRoute, ArtifactError> {
         let path = format!("effect.event_routes[{index}]");
-        let Self::InputSpawn {
-            input,
-            target,
-            count,
-            position,
-        } = self;
+        let (input, target, count, position) = match self {
+            Self::InputSpawn {
+                input,
+                target,
+                count,
+                position,
+            } => (input, target, count, position),
+            Self::ParticleOutput {
+                output,
+                source,
+                trigger,
+                aggregation,
+            } => {
+                if !outputs.iter().any(|definition| definition.name == output) {
+                    return invalid(
+                        path,
+                        "an output route names an output the effect does not declare",
+                    );
+                }
+                let limit = aggregation.limit();
+                if source as usize >= emitters
+                    || limit == 0
+                    || limit > aestra_core::MAX_OUTPUTS_PER_TICK
+                {
+                    return invalid(
+                        path,
+                        "an output route's emitter or aggregation is out of range",
+                    );
+                }
+                return Ok(aestra_runtime::CompiledEventRoute::ParticleOutput(
+                    aestra_runtime::CompiledParticleOutput {
+                        output,
+                        source: source as usize,
+                        trigger,
+                        aggregation,
+                    },
+                ));
+            }
+        };
         let Some(definition) = inputs.iter().find(|definition| definition.name == input) else {
             return invalid(
                 path,
@@ -1201,7 +1247,9 @@ impl TryFrom<EffectV1> for CompiledEffect {
                     .event_routes
                     .into_iter()
                     .enumerate()
-                    .map(|(index, route)| route.decode(index, count, &effect.event_inputs))
+                    .map(|(index, route)| {
+                        route.decode(index, count, &effect.event_inputs, &effect.event_outputs)
+                    })
                     .collect::<Result<Vec<_>, _>>()?
             },
             emitters,

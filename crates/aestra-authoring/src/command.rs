@@ -407,6 +407,19 @@ pub enum EffectCommand {
         id: aestra_core::EventRouteId,
         route: aestra_core::InputSpawnRoute,
     },
+    /// Routes an emitter's particle events to a declared output (event system E3).
+    AddParticleOutput {
+        route: aestra_core::ParticleOutputRoute,
+        index: usize,
+    },
+    RemoveParticleOutput {
+        id: aestra_core::EventRouteId,
+    },
+    /// Replaces an output route's source, trigger, output and aggregation, keeping its id and place.
+    SetParticleOutput {
+        id: aestra_core::EventRouteId,
+        route: aestra_core::ParticleOutputRoute,
+    },
 }
 
 impl EffectCommand {

@@ -2661,6 +2661,57 @@ fn an_attached_emitter_follows_its_bound_object_into_effect_space() {
 }
 
 #[test]
+fn particle_output_routes_compile_to_event_reporting_sources() {
+    use aestra_core::{EventAggregation, EventDefinition, EventTrigger, ParticleOutputRoute};
+    let mut effect = EffectAsset::new("Fireworks", 4.0);
+    let rockets = aestra_core::Emitter::basic_sprite("Rockets", 4.0);
+    let smoke = aestra_core::Emitter::basic_sprite("Smoke", 4.0);
+    let exploded = EventDefinition::new("Exploded");
+    let mut route = ParticleOutputRoute::new(rockets.id, EventTrigger::OnDeath, exploded.id);
+    route.aggregation = EventAggregation::EachEvent { limit: 4 };
+    effect.emitters = vec![rockets, smoke];
+    effect.event_outputs = vec![exploded];
+    effect.particle_outputs = vec![route];
+
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    assert_eq!(
+        compiled.event_routes,
+        [aestra_runtime::CompiledEventRoute::ParticleOutput(
+            aestra_runtime::CompiledParticleOutput {
+                output: "Exploded".into(),
+                source: 0,
+                trigger: EventTrigger::OnDeath,
+                aggregation: EventAggregation::EachEvent { limit: 4 },
+            }
+        )]
+    );
+    // The source reports its deaths from persistent particles, and still emits on its own.
+    assert_eq!(
+        compiled.emitters[0].simulation_class,
+        aestra_runtime::SimulationClass::Stateful
+    );
+    assert_eq!(
+        compiled.event_mask(0),
+        aestra_runtime::event_trigger_bit(EventTrigger::OnDeath)
+    );
+    assert!(!compiled.is_event_target(0));
+    assert_eq!(
+        compiled.emitters[1].simulation_class,
+        aestra_runtime::SimulationClass::Analytic
+    );
+    // A route from a disabled emitter is dropped: its output is never raised.
+    let mut disabled = effect.clone();
+    disabled.emitters[0].enabled = false;
+    assert!(
+        EffectCompiler::default()
+            .compile(&disabled)
+            .unwrap()
+            .event_routes
+            .is_empty()
+    );
+}
+
+#[test]
 fn event_links_compile_to_stateful_emitters_and_sub_emitters() {
     use aestra_core::{EventLink, EventTrigger};
     let mut effect = EffectAsset::new("Fireworks", 4.0);

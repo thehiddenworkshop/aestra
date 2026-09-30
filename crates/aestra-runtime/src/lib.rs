@@ -1301,6 +1301,20 @@ pub struct CompiledEventLink {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompiledEventRoute {
     InputSpawn(CompiledInputSpawn),
+    ParticleOutput(CompiledParticleOutput),
+}
+
+/// An emitter's particle events raising a declared output (event system E3): each tick the particles
+/// of emitter `source` raise `trigger` events, the output named `output` is raised as `aggregation`
+/// says — see [`CompiledParticleOutput::raise`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledParticleOutput {
+    /// The output's name, as hosts hear it.
+    pub output: String,
+    /// The source emitter's index in [`CompiledEffect::emitters`].
+    pub source: usize,
+    pub trigger: aestra_core::EventTrigger,
+    pub aggregation: aestra_core::EventAggregation,
 }
 
 /// A declared input spawning a burst (event system E3): each `input` event an instance receives
@@ -1337,18 +1351,38 @@ impl CompiledEffect {
         self.event_routes
             .iter()
             .enumerate()
-            .map(|(index, route)| match route {
-                CompiledEventRoute::InputSpawn(spawn) => (index, spawn),
+            .filter_map(|(index, route)| match route {
+                CompiledEventRoute::InputSpawn(spawn) => Some((index, spawn)),
+                CompiledEventRoute::ParticleOutput(_) => None,
             })
     }
 
-    /// The triggers emitter `index`'s particles must report (host bindings HB9b), as a
-    /// bit set of [`event_trigger_bit`]s.
+    /// The particle output routes (event system E3), with their index in [`Self::event_routes`].
+    pub fn particle_outputs(&self) -> impl Iterator<Item = (usize, &CompiledParticleOutput)> {
+        self.event_routes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, route)| match route {
+                CompiledEventRoute::ParticleOutput(output) => Some((index, output)),
+                CompiledEventRoute::InputSpawn(_) => None,
+            })
+    }
+
+    /// The triggers emitter `index`'s particles must report, for event links (host bindings HB9b)
+    /// and particle output routes (event system E3), as a bit set of [`event_trigger_bit`]s.
     pub fn event_mask(&self, index: usize) -> u32 {
-        self.event_links
+        let links = self
+            .event_links
             .iter()
             .filter(|link| link.source == index)
-            .fold(0, |mask, link| mask | event_trigger_bit(link.trigger))
+            .map(|link| link.trigger);
+        let outputs = self
+            .particle_outputs()
+            .filter(|(_, route)| route.source == index)
+            .map(|(_, route)| route.trigger);
+        links
+            .chain(outputs)
+            .fold(0, |mask, trigger| mask | event_trigger_bit(trigger))
     }
 }
 

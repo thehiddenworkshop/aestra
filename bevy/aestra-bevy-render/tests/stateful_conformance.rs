@@ -3042,17 +3042,20 @@ type LiveParticles = Vec<(u64, [f32; 3])>;
 /// Runs several emitters in lockstep through the *production* kernels, as the Bevy backend does for an
 /// effect with event links: each tick every emitter's `death_integrate` + `spawn` (its event buffer
 /// cleared first, its params asking for the triggers its links read), then each link's gather and
-/// event spawn into its target. Returns each emitter's live `(ordinal, position)` set.
+/// event spawn into its target, then the tick's input bursts and particle output aggregations (event
+/// system E3), each output route's record read back every tick. Returns each emitter's live
+/// `(ordinal, position)` set, and the outputs raised in tick order.
 fn advance_production_linked(
     harness: &Harness,
     configs: &[StatefulConfig],
     links: &[aestra_runtime::CompiledEventLink],
     bursts: &[aestra_runtime::InputSpawnBurst],
+    outputs: &[aestra_runtime::CompiledParticleOutput],
     seed: u64,
     ticks: u32,
-) -> Result<Vec<LiveParticles>, String> {
+) -> Result<(Vec<LiveParticles>, Vec<aestra_runtime::EffectOutputEvent>), String> {
     use aestra_bevy_render::execution::{
-        DomainSpawnPipeline, EventEmissionList, EventGatherPipeline, SpawnState,
+        DomainSpawnPipeline, EventEmissionList, EventGatherPipeline, ParticleOutputSlot, SpawnState,
     };
     let device = &harness.device;
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -3089,8 +3092,15 @@ fn advance_production_linked(
             links
                 .iter()
                 .filter(|link| link.source == index)
-                .fold(0, |mask, link| {
-                    mask | aestra_runtime::event_trigger_bit(link.trigger)
+                .map(|link| link.trigger)
+                .chain(
+                    outputs
+                        .iter()
+                        .filter(|route| route.source == index)
+                        .map(|route| route.trigger),
+                )
+                .fold(0, |mask, trigger| {
+                    mask | aestra_runtime::event_trigger_bit(trigger)
                 })
         })
         .collect();
@@ -3157,6 +3167,19 @@ fn advance_production_linked(
         })
         .collect();
     let emitter_seed = |index: usize| seed ^ (index as u64).wrapping_mul(0x9E37_79B9);
+    let ring_bytes = u64::from(aestra_gpu::PARTICLE_OUTPUT_RING_WORDS) * 4;
+    let rings = buffer(
+        "output rings",
+        vec![0u8; (ring_bytes as usize) * outputs.len().max(1)],
+        wgpu::BufferUsages::COPY_SRC,
+    );
+    let rings_staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("output rings readback"),
+        size: ring_bytes * outputs.len().max(1) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut raised = Vec::new();
     let mut encoder = device.create_command_encoder(&Default::default());
     for tick in 0..ticks {
         let mut params = Vec::new();
@@ -3252,8 +3275,36 @@ fn advance_production_linked(
                 &spawn,
             );
         }
+        // Particle output routes, reading the tick's events, into each route's ring.
+        for (index, route) in outputs.iter().enumerate() {
+            gather.encode_output(
+                device,
+                &mut encoder,
+                &emitters[route.source].events,
+                ParticleOutputSlot {
+                    counters: &rings,
+                    ring: index as u32 * aestra_gpu::PARTICLE_OUTPUT_RING_WORDS,
+                    tick: tick + 1,
+                },
+                route,
+            );
+        }
         // Submit tick by tick, so the per-tick buffers and bind groups are released as we go.
-        harness.queue.submit(Some(encoder.finish()));
+        if outputs.is_empty() {
+            harness.queue.submit(Some(encoder.finish()));
+        } else {
+            encoder.copy_buffer_to_buffer(&rings, 0, &rings_staging, 0, rings_staging.size());
+            let words = harness.read_back_u32(encoder, &rings_staging)?;
+            for (index, route) in outputs.iter().enumerate() {
+                let slot = index * aestra_gpu::PARTICLE_OUTPUT_RING_WORDS as usize
+                    + ((tick + 1) % aestra_gpu::PARTICLE_OUTPUT_RING_TICKS) as usize
+                        * aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS as usize;
+                let record = &words[slot..slot + aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS as usize];
+                let read = aestra_gpu::read_particle_output_slot(record)
+                    .ok_or("every tick writes its record")?;
+                raised.extend(route.raise(read.count, &read.first, read.tick));
+            }
+        }
         encoder = device.create_command_encoder(&Default::default());
     }
     let sizes: Vec<u64> = configs
@@ -3293,7 +3344,7 @@ fn advance_production_linked(
         at += config.capacity as usize * 9;
         live.push(particles);
     }
-    Ok(live)
+    Ok((live, raised))
 }
 
 #[test]
@@ -3361,7 +3412,9 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
     ];
     let seed = 0x00AB_009B_0000_0001_u64;
     let ticks = 150;
-    let gpu = advance_production_linked(&harness, &configs, &links, &[], seed, ticks).unwrap();
+    let gpu = advance_production_linked(&harness, &configs, &links, &[], &[], seed, ticks)
+        .unwrap()
+        .0;
 
     let mut sims: Vec<StatefulSimulation> = configs
         .iter()
@@ -3388,7 +3441,9 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         assert!(!cpu.is_empty(), "emitter {index} has particles");
         assert_same_particles(&cpu, &gpu[index]);
     }
-    let replay = advance_production_linked(&harness, &configs, &links, &[], seed, ticks).unwrap();
+    let replay = advance_production_linked(&harness, &configs, &links, &[], &[], seed, ticks)
+        .unwrap()
+        .0;
     for (index, (first, second)) in gpu.iter().zip(&replay).enumerate() {
         let canonical = |particles: &LiveParticles| {
             let mut by_ordinal: Vec<_> = particles
@@ -3476,7 +3531,9 @@ fn gpu_input_bursts_spawn_like_the_cpu_reference() {
     ];
     let seed = 0x00E3_0000_0000_0003_u64;
     let ticks = 70;
-    let gpu = advance_production_linked(&harness, &configs, &links, &bursts, seed, ticks).unwrap();
+    let gpu = advance_production_linked(&harness, &configs, &links, &bursts, &[], seed, ticks)
+        .unwrap()
+        .0;
 
     let mut sims: Vec<StatefulSimulation> = configs
         .iter()
@@ -3505,6 +3562,140 @@ fn gpu_input_bursts_spawn_like_the_cpu_reference() {
         let cpu = sim.alive_particles();
         assert!(!cpu.is_empty(), "emitter {index} has particles");
         assert_same_particles(&cpu, &gpu[index]);
+    }
+}
+
+#[test]
+fn gpu_particle_outputs_raise_the_cpu_reference_stream() {
+    // Event system E3 (Rocket.OnDeath → Exploded, first per tick): rockets die and bounce while a
+    // link bursts sparks from each death. Each tick's deaths raise one `Exploded` at the first dead
+    // rocket, and each bounce up to three `Bounced`, lowest ordinals first; the kernels raise
+    // exactly the CPU reference's stream, tick by tick.
+    use aestra_core::{EventAggregation, EventTrigger};
+    use aestra_runtime::{CompiledEventLink, CompiledParticleOutput, first_particle_events};
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let mut colliders = [Collider::NONE; MAX_COLLIDERS];
+    colliders[0] = Collider {
+        shape: ColliderShape::Plane {
+            normal: [0.0, 1.0, 0.0],
+            distance: 0.0,
+        },
+        restitution: 0.4,
+        friction: 0.2,
+        kill: false,
+    };
+    let rockets = StatefulConfig {
+        gravity: [0.0, -20.0, 0.0],
+        spawn_per_tick: 2,
+        speed: (8.0, 14.0),
+        lifetime: (0.6, 1.1),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.5,
+        drag: 0.05,
+        shape: SpawnShape::Sphere { radius: 0.5 },
+        turbulence: 1.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders,
+        collider_count: 1,
+        capacity: 256,
+        homing: None,
+    };
+    let sparks = StatefulConfig {
+        spawn_per_tick: 0,
+        lifetime: (0.2, 0.4),
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 512,
+        ..rockets
+    };
+    let configs = [rockets, sparks];
+    let links = [CompiledEventLink {
+        source: 0,
+        trigger: EventTrigger::OnDeath,
+        target: 1,
+        count: 6,
+        inherit: 0.3,
+    }];
+    let outputs = [
+        CompiledParticleOutput {
+            output: "Exploded".into(),
+            source: 0,
+            trigger: EventTrigger::OnDeath,
+            aggregation: EventAggregation::FirstPerTick,
+        },
+        CompiledParticleOutput {
+            output: "Bounced".into(),
+            source: 0,
+            trigger: EventTrigger::OnCollision,
+            aggregation: EventAggregation::EachEvent { limit: 3 },
+        },
+    ];
+    let seed = 0x00E3_B000_0000_0001_u64;
+    let ticks = 110;
+    let (gpu_particles, gpu) =
+        advance_production_linked(&harness, &configs, &links, &[], &outputs, seed, ticks).unwrap();
+
+    let mut sims: Vec<StatefulSimulation> = configs
+        .iter()
+        .enumerate()
+        .map(|(index, config)| {
+            StatefulSimulation::new(*config, seed ^ (index as u64).wrapping_mul(0x9E37_79B9))
+        })
+        .collect();
+    let mut cpu = Vec::new();
+    for _ in 0..ticks {
+        for sim in &mut sims {
+            sim.advance_tick();
+        }
+        for link in &links {
+            let events = sims[link.source].events(link.trigger).to_vec();
+            sims[link.target].spawn_from_events(&events, link.count, link.inherit);
+        }
+        for route in &outputs {
+            let source = &sims[route.source];
+            let events = source.events(route.trigger);
+            let first = first_particle_events(events, route.aggregation.limit());
+            cpu.extend(route.raise(events.len() as u32, &first, source.tick()));
+        }
+    }
+    let kinds = |stream: &[aestra_runtime::EffectOutputEvent], kind: &str| {
+        stream.iter().filter(|event| event.kind == kind).count()
+    };
+    assert!(kinds(&cpu, "Exploded") > 10, "{}", kinds(&cpu, "Exploded"));
+    assert!(kinds(&cpu, "Bounced") > 10, "{}", kinds(&cpu, "Bounced"));
+    assert!(
+        cpu.iter()
+            .any(|event| event.kind == "Bounced" && event.magnitude > 3.0),
+        "some tick bounces more rockets than the route raises"
+    );
+    // The same outputs, in the same order; positions agree to float rounding, as particles do.
+    let exact = |stream: &[aestra_runtime::EffectOutputEvent]| {
+        stream
+            .iter()
+            .map(|event| {
+                (
+                    event.kind.clone(),
+                    event.tick,
+                    event.magnitude,
+                    event.origin,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(exact(&gpu), exact(&cpu));
+    for (gpu, cpu) in gpu.iter().zip(&cpu) {
+        assert!(
+            gpu.value
+                .iter()
+                .zip(&cpu.value)
+                .all(|(a, b)| (a - b).abs() <= 1e-4 * (1.0 + b.abs())),
+            "{gpu:?} vs {cpu:?}"
+        );
+    }
+    for (index, sim) in sims.iter().enumerate() {
+        assert_same_particles(&sim.alive_particles(), &gpu_particles[index]);
     }
 }
 

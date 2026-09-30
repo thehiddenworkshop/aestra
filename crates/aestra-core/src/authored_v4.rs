@@ -304,6 +304,9 @@ pub struct AuthoredV4Document {
     /// Inputs spawning bursts (event system E3); omitted when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_spawns: Vec<crate::InputSpawnRoute>,
+    /// Particle events raising outputs (event system E3); omitted when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub particle_outputs: Vec<crate::ParticleOutputRoute>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EffectMarker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -477,6 +480,7 @@ impl AuthoredV4Document {
             emitters,
             events: effect.events.clone(),
             input_spawns: effect.input_spawns.clone(),
+            particle_outputs: effect.particle_outputs.clone(),
             markers: effect.markers.clone(),
             choreography_events: effect.choreography_events.clone(),
             effect_clips: effect.effect_clips.clone(),
@@ -513,6 +517,7 @@ impl AuthoredV4Document {
             emitters: self.emitters.into_iter().map(emitter_from_v4).collect(),
             events: self.events,
             input_spawns: self.input_spawns,
+            particle_outputs: self.particle_outputs,
             markers: self.markers,
             choreography_events: self.choreography_events,
             effect_clips: self.effect_clips,

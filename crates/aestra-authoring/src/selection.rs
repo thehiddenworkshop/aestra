@@ -361,7 +361,10 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::AddEvent { .. }
         | EffectCommand::AddInputSpawn { .. }
         | EffectCommand::RemoveInputSpawn { .. }
-        | EffectCommand::SetInputSpawn { .. } => (None, None),
+        | EffectCommand::SetInputSpawn { .. }
+        | EffectCommand::AddParticleOutput { .. }
+        | EffectCommand::RemoveParticleOutput { .. }
+        | EffectCommand::SetParticleOutput { .. } => (None, None),
         EffectCommand::RemoveEffectClip { id }
         | EffectCommand::MoveEffectClip { id, .. }
         | EffectCommand::SetEffectClipTiming { id, .. }

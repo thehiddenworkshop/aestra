@@ -1003,6 +1003,69 @@ fn input_routes_follow_their_emitter_and_input_and_undo_in_place() {
 }
 
 #[test]
+fn output_routes_follow_their_emitter_and_output_and_undo_in_place() {
+    use aestra_core::{EventAggregation, EventDefinition, ParticleOutputRoute};
+    let mut effect = test_effect();
+    let rocket = effect.emitters[0].id;
+    let exploded = EventDefinition::new("Exploded");
+    let bounced = EventDefinition::new("Bounced");
+    effect.event_outputs = vec![exploded.clone(), bounced.clone()];
+    let first = ParticleOutputRoute::new(rocket, EventTrigger::OnDeath, exploded.id);
+    let each = ParticleOutputRoute {
+        aggregation: EventAggregation::EachEvent { limit: 3 },
+        ..ParticleOutputRoute::new(rocket, EventTrigger::OnCollision, bounced.id)
+    };
+    let mut routed = effect.clone();
+    for (index, route) in [first.clone(), each.clone()].into_iter().enumerate() {
+        CommandExecutor::execute(
+            &mut routed,
+            &LockState::default(),
+            &EffectTransaction::single("Route", EffectCommand::AddParticleOutput { route, index }),
+        )
+        .unwrap();
+    }
+    assert!(routed.validation_report().diagnostics.is_empty());
+    type Check = fn(&EffectAsset) -> bool;
+    let expected: [(EffectCommand, Check); 4] = [
+        (EffectCommand::RemoveEmitter { id: rocket }, |effect| {
+            effect.particle_outputs.is_empty()
+        }),
+        (
+            EffectCommand::RemoveEventDefinition { id: exploded.id },
+            |effect| effect.particle_outputs.len() == 1,
+        ),
+        (
+            EffectCommand::SetParticleOutput {
+                id: first.id,
+                route: ParticleOutputRoute {
+                    trigger: EventTrigger::OnSpawn,
+                    ..first.clone()
+                },
+            },
+            |effect| effect.particle_outputs[0].trigger == EventTrigger::OnSpawn,
+        ),
+        (
+            EffectCommand::RemoveParticleOutput { id: each.id },
+            |effect| effect.particle_outputs.len() == 1,
+        ),
+    ];
+    for (command, check) in expected {
+        let mut history = CommandHistory::default();
+        let mut edited = routed.clone();
+        history
+            .execute(
+                &mut edited,
+                &LockState::default(),
+                EffectTransaction::single("Edit", command.clone()),
+            )
+            .unwrap();
+        assert!(check(&edited), "{command:?}");
+        history.undo(&mut edited).unwrap().unwrap();
+        assert_eq!(edited, routed, "{command:?} undoes in place");
+    }
+}
+
+#[test]
 fn deleting_an_emitter_removes_and_restores_connected_events() {
     let mut effect = test_effect();
     let second = Emitter::basic_sprite("Second", 2.0);

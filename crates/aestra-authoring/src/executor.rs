@@ -493,14 +493,21 @@ fn apply_command(
         EffectCommand::RemoveEventDefinition { id } => {
             let (direction, index) = find_event_definition(effect, *id)?;
             let definition = event_definitions_mut(effect, direction).remove(index);
-            // An input's routes (event system E3) go with it.
+            // Its routes (event system E3) go with it.
             let removed_routes =
                 extract_where(&mut effect.input_spawns, |route| route.input == *id);
+            let removed_outputs =
+                extract_where(&mut effect.particle_outputs, |route| route.output == *id);
             let mut commands = vec![EffectCommand::AddEventDefinition {
                 direction,
                 definition,
                 index,
             }];
+            commands.extend(
+                removed_outputs
+                    .into_iter()
+                    .map(|(index, route)| EffectCommand::AddParticleOutput { route, index }),
+            );
             commands.extend(
                 removed_routes
                     .into_iter()
@@ -661,7 +668,14 @@ fn apply_command(
             });
             let removed_routes =
                 extract_where(&mut effect.input_spawns, |route| route.target == *id);
+            let removed_outputs =
+                extract_where(&mut effect.particle_outputs, |route| route.source == *id);
             let mut commands = vec![EffectCommand::AddEmitter { emitter, index }];
+            commands.extend(
+                removed_outputs
+                    .into_iter()
+                    .map(|(index, route)| EffectCommand::AddParticleOutput { route, index }),
+            );
             commands.extend(
                 removed_events
                     .into_iter()
@@ -1366,6 +1380,30 @@ fn apply_command(
                 route: previous,
             }]
         }
+        EffectCommand::AddParticleOutput { route, index } => {
+            checked_insert(
+                &mut effect.particle_outputs,
+                *index,
+                route.clone(),
+                "effect particle outputs",
+            )?;
+            vec![EffectCommand::RemoveParticleOutput { id: route.id }]
+        }
+        EffectCommand::RemoveParticleOutput { id } => {
+            let index = particle_output_index(effect, *id)?;
+            let route = effect.particle_outputs.remove(index);
+            vec![EffectCommand::AddParticleOutput { route, index }]
+        }
+        EffectCommand::SetParticleOutput { id, route } => {
+            let index = particle_output_index(effect, *id)?;
+            let mut replacement = route.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.particle_outputs[index], replacement);
+            vec![EffectCommand::SetParticleOutput {
+                id: *id,
+                route: previous,
+            }]
+        }
     };
     Ok(inverse)
 }
@@ -1872,6 +1910,17 @@ fn extract_where<T>(items: &mut Vec<T>, remove: impl Fn(&T) -> bool) -> Vec<(usi
     }
     *items = kept;
     removed
+}
+
+fn particle_output_index(
+    effect: &EffectAsset,
+    id: aestra_core::EventRouteId,
+) -> Result<usize, CommandError> {
+    effect
+        .particle_outputs
+        .iter()
+        .position(|route| route.id == id)
+        .ok_or_else(|| not_found("output route", &id))
 }
 
 fn input_spawn_index(
