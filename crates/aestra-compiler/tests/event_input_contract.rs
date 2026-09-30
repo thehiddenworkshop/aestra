@@ -47,6 +47,14 @@ fn inputs_are_checked_stamped_and_recorded() {
     assert_eq!(later, trace_tick(1.0) + 1);
     assert_eq!(instance.received_events().len(), 2);
     assert_eq!(instance.events_in_ticks(0..10).count(), 1);
+    // A host on a clock of its own names the tick; it is checked the same way.
+    let mut elsewhere = instance.clone();
+    assert_eq!(
+        elsewhere.send_event_at("Detonate", vec![position()], 500),
+        Ok(500)
+    );
+    assert_eq!(elsewhere.received_events().last().unwrap().tick, 500);
+    assert!(elsewhere.send_event_at("Detonate", vec![], 600).is_err());
 
     // Refused events leave the record unchanged.
     let detonate = |field: &str| ("Detonate".to_string(), field.to_string());

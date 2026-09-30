@@ -41,9 +41,58 @@ pub(super) fn unused_on_sub_emitter(module: &ModuleInstance) -> bool {
     )
 }
 
-/// Whether some link targets `emitter`, which then spawns only from its links.
+/// Whether some link or input route (event system E3) targets `emitter`, which then spawns only
+/// from them.
 pub(super) fn is_sub_emitter(effect: &EffectAsset, emitter: EmitterId) -> bool {
     effect.events.iter().any(|event| event.target == emitter)
+        || effect
+            .input_spawns
+            .iter()
+            .any(|route| route.target == emitter)
+}
+
+/// `Input Detonate ×48`: the input routes spawning `emitter`.
+fn incoming_route_labels(
+    effect: &EffectAsset,
+    emitter: EmitterId,
+    localizer: &Localizer,
+) -> Vec<String> {
+    effect
+        .input_spawns
+        .iter()
+        .filter(|route| route.target == emitter)
+        .map(|route| {
+            let mut args = FluentArgs::new();
+            args.set(
+                "input",
+                effect
+                    .event_inputs
+                    .iter()
+                    .find(|input| input.id == route.input)
+                    .map_or_else(|| route.input.to_string(), |input| input.name.clone()),
+            );
+            format!(
+                "{} ×{}",
+                localizer.text_with("properties-input-route-incoming", &args),
+                route.count
+            )
+        })
+        .collect()
+}
+
+fn spawn_route_label(parent: &mut ChildSpawnerCommands, label: String) {
+    parent.spawn((
+        Text::new(label),
+        ThemedText,
+        TextFont {
+            font_size: FontSize::Px(10.0),
+            ..default()
+        },
+        Node {
+            margin: UiRect::horizontal(Val::Px(8.0)),
+            ..default()
+        },
+    ));
 }
 
 fn emitter_name(session: &EditorSession, id: EmitterId) -> String {
@@ -253,7 +302,8 @@ pub(super) fn spawn_event_links(
         .iter()
         .filter(|event| event.target == source)
         .collect::<Vec<_>>();
-    if !incoming.is_empty() {
+    let routes = incoming_route_labels(&session.effect, source, localizer);
+    if !incoming.is_empty() || !routes.is_empty() {
         section_heading(parent, localizer.text("properties-events-incoming"));
         parent.spawn_empty().apply_scene(label_dim(
             localizer.text("properties-sub-emitter-description"),
@@ -261,6 +311,9 @@ pub(super) fn spawn_event_links(
         for link in incoming {
             let label = incoming_label(session, link, localizer);
             spawn_link_row(parent, session, link, label, false, localizer);
+        }
+        for label in routes {
+            spawn_route_label(parent, label);
         }
     }
 }
@@ -278,7 +331,8 @@ pub(super) fn spawn_sub_emitter_note(
         .iter()
         .filter(|event| event.target == emitter)
         .collect::<Vec<_>>();
-    if incoming.is_empty() {
+    let routes = incoming_route_labels(&session.effect, emitter, localizer);
+    if incoming.is_empty() && routes.is_empty() {
         return;
     }
     parent
@@ -309,6 +363,9 @@ pub(super) fn spawn_sub_emitter_note(
             for link in incoming {
                 let label = incoming_label(session, link, localizer);
                 spawn_link_row(note, session, link, label, false, localizer);
+            }
+            for label in routes {
+                spawn_route_label(note, label);
             }
         });
 }

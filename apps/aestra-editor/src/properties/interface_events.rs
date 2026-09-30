@@ -1,10 +1,11 @@
 //! Declared event inputs and outputs in the Interface section (event system E1): add, rename and
-//! remove the events an effect promises to accept and raise, and edit their typed payloads.
+//! remove the events an effect promises to accept and raise, and edit their typed payloads. A
+//! declared input's routes (E3) say what it does: each spawns a burst of an emitter's particles.
 
 use super::*;
 use aestra_core::{
     EventDefinition, EventDefinitionId, EventDirection, EventField, EventFieldId, EventFieldType,
-    RESERVED_EVENT_NAMES,
+    EventRouteId, InputSpawnRoute, MAX_EVENT_LINK_COUNT, RESERVED_EVENT_NAMES,
 };
 
 /// A declared-event edit a button or menu carries.
@@ -22,7 +23,20 @@ pub(super) enum EventDeclarationAction {
     SendBuiltIn(BuiltInInput),
     /// Forgets the inputs sent to the preview.
     ClearSent,
+    /// Routes a declared input to a burst of the first emitter's particles (event system E3).
+    AddRoute(EventDefinitionId),
+    RemoveRoute(EventRouteId),
+    SetRouteTarget(EventRouteId, EmitterId),
+    /// Centers a route's burst on one of its input's `vec3` fields, or on the effect origin.
+    SetRoutePosition(EventRouteId, Option<EventFieldId>),
 }
+
+/// The particles-per-event input of an input route.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct RouteCountControl(EventRouteId);
+
+/// Particles a new input route spawns per event.
+const DEFAULT_ROUTE_COUNT: u32 = 32;
 
 /// A built-in input the preview can be sent (event system E2b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +70,24 @@ enum EventNameControl {
 }
 
 pub(super) fn register(app: &mut App) {
-    app.add_observer(activate).add_observer(rename);
+    app.add_observer(activate)
+        .add_observer(rename)
+        .add_observer(change_route_count)
+        .add_systems(Update, sync_route_counts.in_set(PropertiesSet::Sync));
+}
+
+/// The command editing input route `id` as `edit` says, the count kept in range; `None` when the
+/// route is gone or the edit changes nothing.
+fn route_edit(
+    effect: &EffectAsset,
+    id: EventRouteId,
+    edit: impl FnOnce(&mut InputSpawnRoute),
+) -> Option<EffectCommand> {
+    let route = effect.input_spawns.iter().find(|route| route.id == id)?;
+    let mut changed = route.clone();
+    edit(&mut changed);
+    changed.count = changed.count.clamp(1, MAX_EVENT_LINK_COUNT);
+    (&changed != route).then_some(EffectCommand::SetInputSpawn { id, route: changed })
 }
 
 fn definitions(effect: &EffectAsset, direction: EventDirection) -> &[EventDefinition] {
@@ -155,6 +186,46 @@ pub(super) fn apply(
         | EventDeclarationAction::ClearSent => {
             unreachable!("handled above")
         }
+        EventDeclarationAction::AddRoute(input) => {
+            let Some((_, definition)) = find(effect, input) else {
+                return false;
+            };
+            let Some(emitter) = effect.emitters.first() else {
+                session.status = localizer.text("interface-status-route-needs-emitter");
+                session.ui_revision += 1;
+                return false;
+            };
+            let mut route = InputSpawnRoute::new(input, emitter.id);
+            route.count = DEFAULT_ROUTE_COUNT;
+            route.position = definition
+                .fields
+                .iter()
+                .find(|field| field.field_type == EventFieldType::Vec3)
+                .map(|field| field.id);
+            (
+                "interface-add-route-command",
+                EffectCommand::AddInputSpawn {
+                    route,
+                    index: effect.input_spawns.len(),
+                },
+            )
+        }
+        EventDeclarationAction::RemoveRoute(id) => (
+            "interface-remove-route-command",
+            EffectCommand::RemoveInputSpawn { id },
+        ),
+        EventDeclarationAction::SetRouteTarget(id, target) => {
+            let Some(command) = route_edit(effect, id, |route| route.target = target) else {
+                return false;
+            };
+            ("interface-edit-route-command", command)
+        }
+        EventDeclarationAction::SetRoutePosition(id, position) => {
+            let Some(command) = route_edit(effect, id, |route| route.position = position) else {
+                return false;
+            };
+            ("interface-edit-route-command", command)
+        }
         EventDeclarationAction::Remove(id) => (
             "interface-remove-event-command",
             EffectCommand::RemoveEventDefinition { id },
@@ -217,15 +288,18 @@ pub(super) fn apply(
 }
 
 /// Sends an input — declared, with a neutral payload, or built in — to the session's preview,
-/// recording it for every later seek.
+/// recording it for every later seek. It takes effect at the tick after the playhead's: the
+/// session's instance can run on a clock of its own (it restarts when the effect recompiles), while
+/// the viewport's players follow the playhead.
 pub(super) fn send(session: &mut EditorSession, name: &str, localizer: &Localizer) {
     let name = name.to_owned();
+    let tick = aestra_runtime::trace_tick(session.simulation_time()) + 1;
     let Some(preview) = session.preview_mut() else {
         session.status = localizer.text("interface-status-send-unavailable");
         return;
     };
     let payload = aestra_runtime::neutral_payload(preview.effect(), &name).unwrap_or_default();
-    let result = preview.send_event(&name, payload);
+    let result = preview.send_event_at(&name, payload, tick);
     let recorded = preview.received_events().to_vec();
     let mut args = FluentArgs::new();
     args.set("input", name);
@@ -251,6 +325,62 @@ fn activate(
 ) {
     if let Ok(action) = actions.get(event.entity) {
         apply(*action, &mut session, &localizer);
+    }
+}
+
+/// Sets an input route's particles per event. Returns whether the effect changed; a value out of
+/// range is clamped, and one that changes nothing shows the route's count again.
+pub(super) fn set_route_count(
+    session: &mut EditorSession,
+    id: EventRouteId,
+    count: i32,
+    localizer: &Localizer,
+) -> bool {
+    let count = count.max(1) as u32;
+    match route_edit(&session.effect, id, |route| route.count = count) {
+        Some(command) => session.execute(
+            localizer.text("interface-edit-route-command"),
+            command,
+            true,
+        ),
+        None => {
+            session.ui_revision += 1;
+            false
+        }
+    }
+}
+
+fn change_route_count(
+    change: On<ValueChange<i32>>,
+    controls: Query<&RouteCountControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    if let Ok(RouteCountControl(id)) = controls.get(change.source) {
+        set_route_count(&mut session, *id, change.value, &localizer);
+    }
+}
+
+fn sync_route_counts(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &RouteCountControl), Added<RouteCountControl>>,
+) {
+    for (entity, RouteCountControl(id)) in &controls {
+        if let Some(route) = session
+            .effect
+            .input_spawns
+            .iter()
+            .find(|route| route.id == *id)
+        {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::I32(route.count as i32),
+            });
+        }
     }
 }
 
@@ -333,7 +463,7 @@ pub(super) fn spawn_declared_events(
     localizer: &Localizer,
 ) {
     for definition in definitions(&session.effect, direction) {
-        spawn_declared_event(parent, definition, direction, localizer);
+        spawn_declared_event(parent, session, definition, direction, localizer);
     }
     parent
         .spawn(Node {
@@ -397,10 +527,17 @@ fn spawn_sent_inputs(
 
 fn spawn_declared_event(
     parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
     definition: &EventDefinition,
     direction: EventDirection,
     localizer: &Localizer,
 ) {
+    let routes: Vec<&InputSpawnRoute> = session
+        .effect
+        .input_spawns
+        .iter()
+        .filter(|route| route.input == definition.id)
+        .collect();
     parent
         .spawn((
             Node {
@@ -440,6 +577,13 @@ fn spawn_declared_event(
             for field in &definition.fields {
                 spawn_field(card, definition.id, field, localizer);
             }
+            for route in &routes {
+                spawn_route(card, session, definition, route, localizer);
+            }
+            if direction == EventDirection::Input && routes.is_empty() {
+                card.spawn_empty()
+                    .apply_scene(label_dim(localizer.text("interface-event-input-unhandled")));
+            }
             card.spawn(Node {
                 width: Val::Percent(100.0),
                 justify_content: JustifyContent::SpaceBetween,
@@ -463,9 +607,20 @@ fn spawn_declared_event(
                             EventDeclarationAction::Send(definition.id),
                             true,
                         );
-                        send.spawn_empty().apply_scene(label_dim(
-                            localizer.text("interface-event-input-unhandled"),
-                        ));
+                        send.spawn((
+                            Node::default(),
+                            EditorTooltip::description(
+                                localizer.text("interface-add-route-description"),
+                            ),
+                        ))
+                        .with_children(|add| {
+                            spawn_feathers_action_button(
+                                add,
+                                &localizer.text("interface-add-route"),
+                                EventDeclarationAction::AddRoute(definition.id),
+                                false,
+                            );
+                        });
                     });
                 }
                 spawn_feathers_action_button(
@@ -475,6 +630,100 @@ fn spawn_declared_event(
                     false,
                 );
             });
+        });
+}
+
+/// One input route: `Spawns [emitter] × [count] at [position] ×`.
+fn spawn_route(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    input: &EventDefinition,
+    route: &InputSpawnRoute,
+    localizer: &Localizer,
+) {
+    let emitter_name = |id: EmitterId| {
+        session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .map_or_else(|| id.to_string(), |emitter| emitter.name.clone())
+    };
+    let emitters = session
+        .effect
+        .emitters
+        .iter()
+        .map(|emitter| ComboOption {
+            label: emitter.name.clone(),
+            selected: emitter.id == route.target,
+            action: EventDeclarationAction::SetRouteTarget(route.id, emitter.id),
+        })
+        .collect::<Vec<_>>();
+    let origin = localizer.text("interface-route-origin");
+    let positions = std::iter::once((None, origin.clone()))
+        .chain(
+            input
+                .fields
+                .iter()
+                .filter(|field| field.field_type == EventFieldType::Vec3)
+                .map(|field| (Some(field.id), field.name.clone())),
+        )
+        .map(|(position, label)| ComboOption {
+            label,
+            selected: position == route.position,
+            action: EventDeclarationAction::SetRoutePosition(route.id, position),
+        })
+        .collect::<Vec<_>>();
+    let position_label = positions
+        .iter()
+        .find(|option| option.selected)
+        .map_or(origin, |option| option.label.clone());
+    let mut args = FluentArgs::new();
+    args.set("input", input.name.clone());
+    let description = localizer.text_with("interface-route-description", &args);
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(5.0),
+                row_gap: Val::Px(3.0),
+                ..default()
+            },
+            EditorTooltip::description(description),
+        ))
+        .with_children(|row| {
+            row.spawn_empty()
+                .apply_scene(label_dim(localizer.text("interface-route-spawns")));
+            spawn_combo_control(
+                row,
+                &emitter_name(route.target),
+                &localizer.text("interface-route-emitter"),
+                &emitters,
+                110.0,
+            );
+            let count_title = localizer.text("interface-route-count");
+            row.spawn(Node {
+                width: Val::Px(58.0),
+                ..default()
+            })
+            .with_children(|count| {
+                count
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_integer_input())
+                    .insert((RouteCountControl(route.id), AccessibleLabel(count_title)));
+            });
+            row.spawn_empty()
+                .apply_scene(label_dim(localizer.text("interface-route-at")));
+            spawn_combo_control(
+                row,
+                &position_label,
+                &localizer.text("interface-route-position"),
+                &positions,
+                100.0,
+            );
+            mini_button(row, "×", EventDeclarationAction::RemoveRoute(route.id));
         });
 }
 
@@ -646,6 +895,11 @@ mod tests {
         apply(EventDeclarationAction::Send(id), &mut session, &localizer);
         assert_eq!(session.preview_inputs.len(), 1);
         assert_eq!(session.preview_inputs[0].input, "Trigger");
+        // On the playhead's clock, which the viewport's players follow.
+        assert_eq!(
+            session.preview_inputs[0].tick,
+            aestra_runtime::trace_tick(session.simulation_time()) + 1
+        );
         assert_eq!(
             session.preview_inputs[0].payload,
             vec![("value".to_string(), aestra_core::EventValue::Float(0.0))]
@@ -658,6 +912,86 @@ mod tests {
 
         apply(EventDeclarationAction::ClearSent, &mut session, &localizer);
         assert!(session.preview_inputs.is_empty());
+    }
+
+    #[test]
+    fn an_input_routes_to_a_burst_the_preview_spawns() {
+        let mut session = crate::test_support::session_with_timing_slack();
+        let localizer = Localizer::new("en-US").unwrap();
+        session.duplicate_selected_layer();
+        let (first, second) = (session.effect.emitters[0].id, session.effect.emitters[1].id);
+        apply(
+            EventDeclarationAction::Add(EventDirection::Input),
+            &mut session,
+            &localizer,
+        );
+        let input = session.effect.event_inputs[0].id;
+        apply(
+            EventDeclarationAction::AddField(input),
+            &mut session,
+            &localizer,
+        );
+        let field = session.effect.event_inputs[0].fields[0].id;
+        apply(
+            EventDeclarationAction::SetFieldType(input, field, EventFieldType::Vec3),
+            &mut session,
+            &localizer,
+        );
+
+        // A new route bursts the first emitter at the input's first vec3 field.
+        assert!(apply(
+            EventDeclarationAction::AddRoute(input),
+            &mut session,
+            &localizer
+        ));
+        let route = session.effect.input_spawns[0].clone();
+        assert_eq!(
+            (route.input, route.target, route.count, route.position),
+            (input, first, DEFAULT_ROUTE_COUNT, Some(field))
+        );
+        assert!(apply(
+            EventDeclarationAction::SetRouteTarget(route.id, second),
+            &mut session,
+            &localizer
+        ));
+        assert!(apply(
+            EventDeclarationAction::SetRoutePosition(route.id, None),
+            &mut session,
+            &localizer
+        ));
+        assert!(set_route_count(&mut session, route.id, 5_000, &localizer));
+        let edited = &session.effect.input_spawns[0];
+        assert_eq!(
+            (edited.target, edited.position, edited.count),
+            (second, None, MAX_EVENT_LINK_COUNT)
+        );
+        assert!(!set_route_count(&mut session, route.id, 5_000, &localizer));
+
+        // The preview compiles the route: the burst's emitter spawns only from it, and a sent
+        // input makes a burst of its particles.
+        let preview = session.preview().unwrap();
+        assert!(preview.effect().is_event_target(1));
+        assert!(crate::properties::event_links::is_sub_emitter(
+            &session.effect,
+            second
+        ));
+        apply(
+            EventDeclarationAction::Send(input),
+            &mut session,
+            &localizer,
+        );
+        let bursts = session.preview().unwrap().input_spawn_bursts();
+        assert_eq!(bursts.len(), 1);
+        assert_eq!(bursts[0].records().count(), MAX_EVENT_LINK_COUNT as usize);
+
+        session.undo();
+        assert_eq!(session.effect.input_spawns[0].count, DEFAULT_ROUTE_COUNT);
+        assert!(apply(
+            EventDeclarationAction::RemoveRoute(route.id),
+            &mut session,
+            &localizer
+        ));
+        assert!(session.effect.input_spawns.is_empty());
     }
 
     #[test]

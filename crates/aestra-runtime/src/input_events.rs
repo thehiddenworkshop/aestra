@@ -222,6 +222,19 @@ impl EffectInstance {
         input: &str,
         payload: Vec<(String, EventValue)>,
     ) -> Result<u64, EventInputError> {
+        let tick = trace_tick(self.time) + 1;
+        self.send_event_at(input, payload, tick)
+    }
+
+    /// [`Self::send_event`], taking effect at `tick` rather than at this instance's next one: for a
+    /// host whose clock runs apart from the instance, such as an editor whose viewport player
+    /// simulates the inputs this instance records.
+    pub fn send_event_at(
+        &mut self,
+        input: &str,
+        payload: Vec<(String, EventValue)>,
+        tick: u64,
+    ) -> Result<u64, EventInputError> {
         if input == INPUT_RESTART {
             self.restart();
             return Ok(0);
@@ -233,7 +246,7 @@ impl EffectInstance {
                     field: field.clone(),
                 });
             }
-            return Ok(self.record_event(input, payload));
+            return Ok(self.record_event(input, payload, tick));
         }
         let definition = self
             .effect
@@ -277,12 +290,11 @@ impl EffectInstance {
                 &missing.name,
             ));
         }
-        Ok(self.record_event(input, payload))
+        Ok(self.record_event(input, payload, tick))
     }
 
-    /// Records an accepted input at the next tick, replacing any recorded future.
-    fn record_event(&mut self, input: &str, payload: Vec<(String, EventValue)>) -> u64 {
-        let tick = trace_tick(self.time) + 1;
+    /// Records an accepted input at `tick`, replacing any recorded future.
+    fn record_event(&mut self, input: &str, payload: Vec<(String, EventValue)>, tick: u64) -> u64 {
         self.input_events.retain(|event| event.tick <= tick);
         self.input_events.push(HostInputEvent {
             input: input.to_string(),
