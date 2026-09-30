@@ -6,8 +6,11 @@
 //! visual outcomes for gameplay to *hear*, never state it must obey (see `docs/ARCHITECTURE.md`,
 //! "Gameplay authority").
 
-use crate::{ExecutionBlock, OutputEvent, StageOutput};
-use aestra_core::{ModuleId, ResourceTypeId};
+use crate::{
+    CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, DispatchedChoreographyEvent,
+    ExecutionBlock, OutputEvent, StageOutput, trace_tick,
+};
+use aestra_core::{ChoreographyEventId, ChoreographyEventPayload, ModuleId, ResourceTypeId};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One output's value as the host read it.
@@ -49,11 +52,14 @@ pub enum EventOrigin {
     Emitter(usize),
     /// The effect as a whole.
     Effect,
+    /// A cue on the effect's timeline (event system E2b).
+    Timeline(ChoreographyEventId),
 }
 
-/// A runtime event an effect raised (host bindings HB9): an output rose past its threshold, a homing
-/// target was lost or acquired, particles reached it, the playback finished. `kind` is one of the
-/// `EVENT_*` names, or a plugin's own.
+/// An event an effect raised for its host — the one output stream (event system §12B): an output rose
+/// past its threshold, a homing target was lost or acquired, particles reached it, the playback
+/// finished (host bindings HB9), or playback crossed a timeline cue (`EventOrigin::Timeline`).
+/// `kind` is one of the `EVENT_*` / `CUE_*` names, a cue's topic, or a plugin's own.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectOutputEvent {
     /// The event's kind, e.g. [`EVENT_IMPACT`].
@@ -65,16 +71,22 @@ pub struct EffectOutputEvent {
     pub origin: EventOrigin,
     pub value: Vec<f32>,
     pub magnitude: f32,
+    /// The fixed tick it happened at, in the instance's time. A host hearing it frames later (a GPU
+    /// read-back) still knows when.
+    pub tick: u64,
+    /// Text the event carries: a cue's sound or child effect.
+    pub text: Option<String>,
 }
 
 impl EffectOutputEvent {
-    /// An event with no output behind it: `kind` from `origin`, carrying `value`.
+    /// An event with no output behind it: `kind` from `origin` at `tick`, carrying `value`.
     pub fn new(
         kind: &str,
         origin: EventOrigin,
         output: &str,
         value: Vec<f32>,
         magnitude: f32,
+        tick: u64,
     ) -> Self {
         Self {
             kind: kind.into(),
@@ -83,8 +95,56 @@ impl EffectOutputEvent {
             origin,
             value,
             magnitude,
+            tick,
+            text: None,
         }
     }
+
+    /// A timeline cue as an output (event system E2b): a notification by its topic (its name when
+    /// the topic is empty), a sound with its cue, a camera shake with its intensity as the value, a
+    /// child effect with its path. `tick` is when playback crossed it.
+    pub fn from_cue(cue: &DispatchedChoreographyEvent, tick: u64) -> Self {
+        let (kind, value, text) = match &cue.payload {
+            ChoreographyEventPayload::GameplayNotify { topic } if !topic.trim().is_empty() => {
+                (topic.as_str(), Vec::new(), None)
+            }
+            ChoreographyEventPayload::GameplayNotify { .. } => {
+                (cue.name.as_str(), Vec::new(), None)
+            }
+            ChoreographyEventPayload::PlaySound { cue: sound } => {
+                (CUE_PLAY_SOUND, Vec::new(), Some(sound.clone()))
+            }
+            ChoreographyEventPayload::CameraShake { intensity } => {
+                (CUE_CAMERA_SHAKE, vec![*intensity], None)
+            }
+            ChoreographyEventPayload::SpawnChildEffect { effect } => {
+                (CUE_SPAWN_CHILD_EFFECT, Vec::new(), Some(effect.clone()))
+            }
+        };
+        let magnitude = value.iter().map(|v| v * v).sum::<f32>().sqrt();
+        Self {
+            text,
+            ..Self::new(
+                kind,
+                EventOrigin::Timeline(cue.source),
+                &cue.name,
+                value,
+                magnitude,
+                tick,
+            )
+        }
+    }
+}
+
+/// The tick playback crossed a cue at `cue_time` (effect time), seen at instance time `now`: in
+/// continuous playback the cue repeats each `duration`, so the latest crossing at or before `now`.
+pub fn cue_crossing_tick(cue_time: f32, now: f32, duration: f32, continuous: bool) -> u64 {
+    let crossing = if continuous && duration > 0.0 {
+        cue_time + ((now - cue_time) / duration).floor().max(0.0) * duration
+    } else {
+        cue_time
+    };
+    trace_tick(crossing)
 }
 
 /// Raises `finished` once when a play-once effect's playback reaches its end, and again after each
@@ -103,7 +163,14 @@ impl FinishedTracker {
         let raised = done && !self.finished;
         self.finished = done;
         raised.then(|| {
-            EffectOutputEvent::new(EVENT_FINISHED, EventOrigin::Effect, "", Vec::new(), 0.0)
+            EffectOutputEvent::new(
+                EVENT_FINISHED,
+                EventOrigin::Effect,
+                "",
+                Vec::new(),
+                0.0,
+                trace_tick(effect.duration),
+            )
         })
     }
 }
@@ -148,8 +215,8 @@ pub struct OutputEventTracker {
 }
 
 impl OutputEventTracker {
-    /// Observes one read of outputs; returns the events it raises.
-    pub fn observe(&mut self, values: &[StageOutputValue]) -> Vec<EffectOutputEvent> {
+    /// Observes one read of outputs, taken at `tick`; returns the events it raises.
+    pub fn observe(&mut self, values: &[StageOutputValue], tick: u64) -> Vec<EffectOutputEvent> {
         let mut events = Vec::new();
         for value in values {
             let Some(event) = &value.event else {
@@ -166,6 +233,8 @@ impl OutputEventTracker {
                         origin: EventOrigin::Stage(value.stage),
                         value: value.value.clone(),
                         magnitude,
+                        tick,
+                        text: None,
                     });
                 }
             } else {
@@ -228,10 +297,11 @@ mod tests {
         assert_eq!(values[0].magnitude(), 10.0);
         let mut tracker = OutputEventTracker::default();
         assert!(
-            tracker.observe(&values).is_empty(),
+            tracker.observe(&values, 7).is_empty(),
             "at the threshold: none"
         );
-        let events = tracker.observe(&read([0.0, 12.0, 5.0]));
+        let events = tracker.observe(&read([0.0, 12.0, 5.0]), 7);
+        assert!(events.iter().all(|event| event.tick == 7));
         assert_eq!(events.len(), 1);
         assert_eq!(
             (
@@ -242,17 +312,17 @@ mod tests {
             ("impact", EventOrigin::Stage(2), 13.0)
         );
         assert!(
-            tracker.observe(&read([0.0, 20.0, 0.0])).is_empty(),
+            tracker.observe(&read([0.0, 20.0, 0.0]), 7).is_empty(),
             "still pushing"
         );
-        assert!(tracker.observe(&read([0.0; 3])).is_empty());
+        assert!(tracker.observe(&read([0.0; 3]), 7).is_empty());
         assert_eq!(
-            tracker.observe(&read([30.0, 0.0, 0.0])).len(),
+            tracker.observe(&read([30.0, 0.0, 0.0]), 7).len(),
             1,
             "a new impact"
         );
         tracker.reset();
-        assert_eq!(tracker.observe(&read([30.0, 0.0, 0.0])).len(), 1);
+        assert_eq!(tracker.observe(&read([30.0, 0.0, 0.0]), 7).len(), 1);
     }
 
     #[test]
@@ -266,5 +336,39 @@ mod tests {
         let mut negative = block();
         negative.outputs[0].event.as_mut().unwrap().threshold = -1.0;
         assert!(negative.validate().is_err());
+    }
+
+    #[test]
+    fn timeline_cues_become_outputs_at_their_crossing() {
+        let cue = |payload| DispatchedChoreographyEvent {
+            source: ChoreographyEventId::new(),
+            name: "Launch".into(),
+            time: 0.5,
+            payload,
+        };
+        let notify = EffectOutputEvent::from_cue(
+            &cue(ChoreographyEventPayload::GameplayNotify {
+                topic: "whoosh".into(),
+            }),
+            30,
+        );
+        assert_eq!((notify.kind.as_str(), notify.tick), ("whoosh", 30));
+        assert!(matches!(notify.origin, EventOrigin::Timeline(_)));
+        let sound = EffectOutputEvent::from_cue(
+            &cue(ChoreographyEventPayload::PlaySound { cue: "boom".into() }),
+            30,
+        );
+        assert_eq!(sound.kind, CUE_PLAY_SOUND);
+        assert_eq!(sound.text.as_deref(), Some("boom"));
+        let shake = EffectOutputEvent::from_cue(
+            &cue(ChoreographyEventPayload::CameraShake { intensity: 2.0 }),
+            30,
+        );
+        assert_eq!((shake.value.as_slice(), shake.magnitude), (&[2.0][..], 2.0));
+
+        // Continuous playback crosses a cue once per cycle: the latest crossing.
+        assert_eq!(cue_crossing_tick(0.5, 0.52, 2.0, false), trace_tick(0.5));
+        assert_eq!(cue_crossing_tick(0.5, 4.52, 2.0, true), trace_tick(4.5));
+        assert_eq!(cue_crossing_tick(0.5, 0.52, 2.0, true), trace_tick(0.5));
     }
 }

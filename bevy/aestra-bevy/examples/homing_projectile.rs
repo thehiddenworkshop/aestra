@@ -274,17 +274,26 @@ fn listen(
             EVENT_IMPACT => {
                 heard.impacts += 1;
                 heard.sparks += message.event.magnitude;
+                if heard.impacts == 1 {
+                    info!("first impact at tick {}", message.event.tick);
+                }
                 for mut flash in &mut enemies {
                     flash.0 = 0.1;
                 }
             }
             EVENT_TARGET_LOST => {
                 heard.lost += 1;
-                info!("target lost at {:?}", message.event.value);
+                info!(
+                    "target lost at {:?}, tick {}",
+                    message.event.value, message.event.tick
+                );
             }
             EVENT_TARGET_ACQUIRED => {
                 heard.acquired += 1;
-                info!("target acquired at {:?}", message.event.value);
+                info!(
+                    "target acquired at {:?}, tick {}",
+                    message.event.value, message.event.tick
+                );
             }
             _ => {}
         }

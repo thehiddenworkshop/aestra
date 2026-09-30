@@ -55,7 +55,51 @@ pub(super) enum InterfaceAction {
 struct BindingNameControl(BindingId);
 
 pub(super) fn register(app: &mut App) {
-    app.add_observer(activate).add_observer(rename);
+    app.add_observer(activate)
+        .add_observer(rename)
+        .add_systems(Update, sync_preview_outputs);
+}
+
+/// The list of outputs the preview raised lately (event system E2b), refreshed in place.
+#[derive(Component)]
+struct PreviewOutputsLog;
+
+/// The preview's latest outputs, newest first: `tick 86 · impact 3` or `· play_sound boom`.
+fn preview_outputs_text(session: &EditorSession, localizer: &Localizer) -> String {
+    if session.preview_outputs.is_empty() {
+        return localizer.text("interface-heard-none");
+    }
+    session
+        .preview_outputs
+        .iter()
+        .rev()
+        .map(|event| {
+            let mut line = format!("tick {} · {}", event.tick, event.kind);
+            if event.magnitude != 0.0 {
+                line.push_str(&format!(" {}", (event.magnitude * 100.0).round() / 100.0));
+            }
+            if let Some(text) = &event.text {
+                line.push_str(&format!(" {text}"));
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn sync_preview_outputs(
+    session: Res<EditorSession>,
+    localizer: Res<Localizer>,
+    mut logs: Query<(&mut Text, Ref<PreviewOutputsLog>)>,
+    mut heard: Local<u64>,
+) {
+    let changed = *heard != session.preview_outputs_heard;
+    *heard = session.preview_outputs_heard;
+    for (mut text, log) in &mut logs {
+        if changed || log.is_added() {
+            text.0 = preview_outputs_text(&session, &localizer);
+        }
+    }
 }
 
 fn activate(
@@ -696,6 +740,17 @@ pub(super) fn spawn_interface(
                 aestra_core::EventDirection::Output,
                 localizer,
             );
+            card.spawn_empty()
+                .apply_scene(label_dim(localizer.text("interface-heard-outputs")));
+            card.spawn((
+                Text::new(preview_outputs_text(session, localizer)),
+                ThemedText,
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                PreviewOutputsLog,
+            ));
 
             heading(card, localizer.text("interface-world"));
             if interface.world.is_empty() {

@@ -120,7 +120,8 @@ pub enum AestraSet {
 
 /// Fired after an [`EffectPlayer`] crosses a compiled choreography event during normal playback.
 /// Applications can consume it with a Bevy observer without coupling game logic to particle
-/// lifecycle links or polling the player timeline.
+/// lifecycle links or polling the player timeline. The same cue also arrives in the one output
+/// stream, [`AestraOutputEvent`] (event system E2b), which new code should prefer.
 #[derive(Event, Debug, Clone)]
 pub struct AestraChoreographyEvent {
     /// Root player, including when the source is a nested clip.
@@ -718,6 +719,7 @@ fn play_effects(
         &EffectRuntimeStatus,
         Option<&aestra_bevy_render::gpu::GpuTrailStatistics>,
     )>,
+    mut outputs: bevy::prelude::MessageWriter<AestraOutputEvent>,
 ) {
     let _span = tracing::info_span!("aestra::runtime::advance").entered();
     for (player_entity, mut player, presented, mut profiler, runtime, trails) in &mut players {
@@ -730,7 +732,7 @@ fn play_effects(
                 player.playing = false;
             }
         }
-        dispatch_choreography_events(&mut commands, player_entity, &mut player);
+        dispatch_choreography_events(&mut commands, &mut outputs, player_entity, &mut player);
         record_presented_profile(
             &mut profiler.0,
             player.effect(),
@@ -744,10 +746,25 @@ fn play_effects(
     }
 }
 
-fn dispatch_choreography_events(commands: &mut Commands, root: Entity, player: &mut EffectPlayer) {
+/// Delivers the cues playback crossed: as `AestraChoreographyEvent`s, and in the one output stream
+/// as `AestraOutputEvent`s dated by their crossing tick (event system E2b).
+fn dispatch_choreography_events(
+    commands: &mut Commands,
+    outputs: &mut bevy::prelude::MessageWriter<AestraOutputEvent>,
+    root: Entity,
+    player: &mut EffectPlayer,
+) {
     if player.project().is_some() {
         player.choreography_events.clear();
         for event in player.drain_project_choreography_events() {
+            outputs.write(AestraOutputEvent {
+                effect: root,
+                clip_path: event.path.clone(),
+                event: EffectOutputEvent::from_cue(
+                    &event.event,
+                    trace_tick(event.root_time as f32),
+                ),
+            });
             commands.trigger(AestraChoreographyEvent {
                 player: root,
                 clip_path: event.path,
@@ -757,7 +774,14 @@ fn dispatch_choreography_events(commands: &mut Commands, root: Entity, player: &
         }
     } else {
         let effect = player.effect().source;
+        let (now, duration) = (player.instance().time(), player.effect().duration);
+        let continuous = player.effect().playback_mode.is_continuous();
         for event in player.drain_choreography_events() {
+            let tick = aestra_runtime::cue_crossing_tick(event.time, now, duration, continuous);
+            outputs.write(AestraOutputEvent::root(
+                root,
+                EffectOutputEvent::from_cue(&event, tick),
+            ));
             commands.trigger(AestraChoreographyEvent {
                 player: root,
                 clip_path: Vec::new(),

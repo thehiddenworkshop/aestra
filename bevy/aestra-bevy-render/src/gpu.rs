@@ -207,7 +207,8 @@ struct StatefulDispatch {
     /// it each frame, and kept while the binding supplies no pose.
     attachment: Option<aestra_runtime::CompiledAttachment>,
     /// The `counters` word this emitter's homing arrivals are counted into (the `impact` event, host
-    /// bindings HB9), when it homes.
+    /// bindings HB9), when it homes. The next word holds the tick they were counted up to (event system
+    /// E2b), so a late read-back still dates the `impact`.
     arrival_word: Option<u32>,
     /// Where the homing target is this frame, in world space, for the events it raises.
     homing_world_target: Option<[f32; 3]>,
@@ -1093,7 +1094,8 @@ pub(crate) fn prepare_gpu_effects(
             .filter(|dispatch| dispatch.homing.is_some())
         {
             dispatch.arrival_word = Some(arrivals_base + arrival_words);
-            arrival_words += 1;
+            // The count, then the tick it was counted up to.
+            arrival_words += 2;
         }
         // Then each event-reporting emitter's source overflow count (host bindings HB9b).
         for dispatch in stateful_dispatch
@@ -1863,9 +1865,9 @@ fn sync_gpu_render_transforms(
                                 (aestra_runtime::EVENT_TARGET_ACQUIRED, target)
                             }
                         };
-                        events.write(AestraOutputEvent {
-                            effect: entity,
-                            event: aestra_runtime::EffectOutputEvent::new(
+                        events.write(AestraOutputEvent::root(
+                            entity,
+                            aestra_runtime::EffectOutputEvent::new(
                                 kind,
                                 aestra_runtime::EventOrigin::Emitter(
                                     dispatch.emitter_index as usize,
@@ -1873,8 +1875,9 @@ fn sync_gpu_render_transforms(
                                 "homing",
                                 in_world(target).to_vec(),
                                 0.0,
+                                aestra_runtime::trace_tick(player.instance.time()),
                             ),
-                        });
+                        ));
                     }
                 }
                 if let Some(attachment) = &dispatch.attachment
@@ -2056,7 +2059,12 @@ struct GpuArrivalReadback {
 fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
     dispatches
         .iter()
-        .flat_map(|dispatch| [dispatch.arrival_word, dispatch.overflow_word])
+        .flat_map(|dispatch| {
+            [
+                dispatch.arrival_word.map(|word| word + 1),
+                dispatch.overflow_word,
+            ]
+        })
         .flatten()
         .max()
         .map(|word| word + 1)
@@ -2104,9 +2112,12 @@ fn receive_homing_arrivals(
         let seen = readback.seen.insert(word, count).unwrap_or(0);
         // A smaller count is a rebuilt buffer, not arrivals.
         if count > seen {
-            events.write(AestraOutputEvent {
+            let tick = words
+                .get(word as usize + 1)
+                .map_or(0, |&tick| u64::from(tick));
+            events.write(AestraOutputEvent::root(
                 effect,
-                event: aestra_runtime::EffectOutputEvent::new(
+                aestra_runtime::EffectOutputEvent::new(
                     aestra_runtime::EVENT_IMPACT,
                     aestra_runtime::EventOrigin::Emitter(dispatch.emitter_index as usize),
                     "homing",
@@ -2115,8 +2126,9 @@ fn receive_homing_arrivals(
                         .map(|target| target.to_vec())
                         .unwrap_or_default(),
                     (count - seen) as f32,
+                    tick,
                 ),
-            });
+            ));
         }
     }
     if let Some(base) = event_link_counter_base(&gpu.stateful_dispatch) {
@@ -3588,8 +3600,17 @@ fn run_stateful_dispatches(
             }
         }
     }
-    // Event overflow counts (host bindings HB9b), for the host to read back and report.
+    // Event overflow counts (host bindings HB9b), for the host to read back and report; after each
+    // homing emitter's arrival count, the tick it was counted up to (event system E2b).
     for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+        if let Some(word) = dispatch.arrival_word {
+            let tick = device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra homing arrival tick"),
+                contents: &persistent.last_tick.to_le_bytes(),
+                usage: BufferUsages::COPY_SRC,
+            });
+            encoder.copy_buffer_to_buffer(&tick, 0, render.counters, u64::from(word + 1) * 4, 4);
+        }
         if let Some(word) = dispatch.overflow_word {
             encoder.copy_buffer_to_buffer(
                 &persistent.events,

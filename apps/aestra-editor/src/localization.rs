@@ -336,6 +336,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "interface-output-events-empty",
     "interface-output-event",
     "interface-output-cue",
+    "interface-heard-outputs",
+    "interface-heard-none",
     "interface-world",
     "interface-world-empty",
     "interface-availability-time-addressable",

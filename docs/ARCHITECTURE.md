@@ -624,17 +624,22 @@ test input, never semantic game identity.
 ### Runtime events
 
 An effect reports back to the game through one portable event type, `EffectOutputEvent` (a kind, an
-origin — stage, emitter or effect — a value and a magnitude), which the Bevy adapter writes as
-`AestraOutputEvent` messages (HB9). The built-in kinds are:
+origin — stage, emitter, effect or timeline cue — a value, a magnitude, optional text, and the fixed
+tick it happened at), which the Bevy adapter writes as `AestraOutputEvent` messages (HB9) — the one
+stream a game listens to (event system E2b). The built-in kinds are:
 
 - `impact`: a stage output rising past its threshold (a fluid pushing a collider), or homing
   particles reaching their target. The magnitude is the force, or the number of arrivals.
 - `target_lost` / `target_acquired`: the homing target's binding stops or starts supplying it,
   where it was (world space).
 - `finished`: a play-once effect's playback reached its end.
+- a timeline cue crossed by playback: a notification by its topic, `play_sound` (the cue as text),
+  `camera_shake` (the intensity as value) or `spawn_child_effect`. Cues of nested clips carry their
+  `clip_path`. (They are also triggered as `AestraChoreographyEvent`, kept for existing hosts.)
 
 Homing arrivals are counted on the GPU into the effect's counters buffer and read back
-asynchronously, so events arrive a frame or two after the ticks that caused them. Only live playback
+asynchronously, so events arrive a frame or two after the ticks that caused them; the tick they were
+counted up to is copied beside the count, so `event.tick` still says when. Only live playback
 raises events: ticks replayed after a seek or rebuild count nothing. Events are visual outcomes to
 hear, never gameplay state to obey (see below).
 

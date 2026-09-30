@@ -3282,7 +3282,7 @@ fn a_rising_plume_pushes_the_plate_above_it_up_and_tells_gameplay_once() {
     let mut events = Vec::new();
     for span in 0..6 {
         hit.run(&gpu, span * 20..(span + 1) * 20);
-        events.extend(tracker.observe(&forces(&hit, &gpu)));
+        events.extend(tracker.observe(&forces(&hit, &gpu), (span as u64 + 1) * 20));
     }
     assert_eq!(events.len(), 1, "{events:?}");
     assert_eq!(events[0].kind, aestra_fluid::EVENT_IMPACT);

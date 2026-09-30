@@ -1,5 +1,6 @@
 use super::*;
-use bevy::prelude::{On, ResMut};
+use bevy::ecs::message::Messages;
+use bevy::prelude::{MessageWriter, On, ResMut};
 
 fn notified(name: &str, duration: f32, times: &[f32]) -> EffectAsset {
     let mut effect = EffectAsset::new(name, duration);
@@ -379,6 +380,7 @@ fn single_effect_notifications_keep_empty_paths_and_silent_replay_seeks() {
     }
     let mut app = App::new();
     app.init_resource::<Received>()
+        .add_message::<AestraOutputEvent>()
         .add_observer(
             |event: On<AestraChoreographyEvent>, mut received: ResMut<Received>| {
                 received.0.push(event.event().clone());
@@ -429,12 +431,16 @@ fn player_events_match_across_tick_sizes_speed_and_seek_modes() {
     }
 }
 
-fn tick_and_dispatch(mut commands: Commands, mut players: Query<(Entity, &mut EffectPlayer)>) {
+fn tick_and_dispatch(
+    mut commands: Commands,
+    mut outputs: MessageWriter<AestraOutputEvent>,
+    mut players: Query<(Entity, &mut EffectPlayer)>,
+) {
     for (entity, mut player) in &mut players {
         if player.playing {
             player.advance_clock(0.25);
         }
-        dispatch_choreography_events(&mut commands, entity, &mut player);
+        dispatch_choreography_events(&mut commands, &mut outputs, entity, &mut player);
     }
 }
 
@@ -448,6 +454,7 @@ fn observers_identify_roots_and_repeated_sources_without_presentation_entities()
     let project = Arc::new(project);
     let mut app = App::new();
     app.init_resource::<Received>()
+        .add_message::<AestraOutputEvent>()
         .add_observer(
             |event: On<AestraChoreographyEvent>, mut received: ResMut<Received>| {
                 received.0.push(event.event().clone());
@@ -485,6 +492,29 @@ fn observers_identify_roots_and_repeated_sources_without_presentation_entities()
             assert_eq!(child.len(), 2);
             assert!(child.iter().all(|event| event.effect == clip.source.id));
         }
+    }
+    // The same cues arrive in the one output stream (event system E2b), dated and placed.
+    let outputs: Vec<AestraOutputEvent> = app
+        .world_mut()
+        .resource_mut::<Messages<AestraOutputEvent>>()
+        .drain()
+        .collect();
+    for entity in [first, second] {
+        let cues: Vec<_> = outputs
+            .iter()
+            .filter(|output| output.effect == entity)
+            .collect();
+        assert_eq!(cues.len(), 5);
+        assert_eq!(
+            cues.iter()
+                .filter(|output| output.clip_path.is_empty())
+                .count(),
+            1
+        );
+        assert!(cues.iter().all(|output| matches!(
+            output.event.origin,
+            aestra_runtime::EventOrigin::Timeline(_)
+        ) && output.event.tick <= trace_tick(0.25)));
     }
     app.world_mut().resource_mut::<Received>().0.clear();
     app.world_mut()

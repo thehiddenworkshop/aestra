@@ -96,6 +96,10 @@ pub(crate) struct EditorSession {
     /// Input events sent to the preview from the Interface section (event system E2), replayed by
     /// every seek. Never saved, never part of history.
     pub(crate) preview_inputs: Vec<aestra_runtime::HostInputEvent>,
+    /// The latest outputs the preview raised (event system E2b), newest last, and a count of all
+    /// heard so far so views refresh in place. Never saved.
+    pub(crate) preview_outputs: std::collections::VecDeque<aestra_runtime::EffectOutputEvent>,
+    pub(crate) preview_outputs_heard: u64,
 }
 
 impl EditorSession {
@@ -142,6 +146,8 @@ impl EditorSession {
             preview_mocks: self.preview_mocks.clone(),
             event_link_drops: self.event_link_drops.clone(),
             preview_inputs: self.preview_inputs.clone(),
+            preview_outputs: self.preview_outputs.clone(),
+            preview_outputs_heard: self.preview_outputs_heard,
         }
     }
 
@@ -216,6 +222,8 @@ impl EditorSession {
             preview_mocks: Default::default(),
             event_link_drops: Default::default(),
             preview_inputs: Vec::new(),
+            preview_outputs: Default::default(),
+            preview_outputs_heard: 0,
         }
     }
 

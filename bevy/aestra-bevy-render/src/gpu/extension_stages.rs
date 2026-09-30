@@ -105,15 +105,30 @@ impl AestraEffectOutputs {
     }
 }
 
-/// A runtime event an effect raised for gameplay (host bindings HB9): an output rose past its
-/// threshold (a fluid pushing a collider hard enough for an `impact`), homing particles reached their
-/// target (`impact`), the target was lost or acquired, a play-once effect finished. Visual outcomes
-/// to hear, never gameplay state to obey: see `aestra_runtime::EVENT_IMPACT` and its siblings.
+/// An event an effect raised for gameplay — the one stream to listen to (event system §12B): an output
+/// rose past its threshold (a fluid pushing a collider hard enough for an `impact`), homing particles
+/// reached their target (`impact`), the target was lost or acquired, a play-once effect finished
+/// (host bindings HB9), or playback crossed a timeline cue. `event.tick` says when, even for events
+/// read back from the GPU frames later. Visual outcomes to hear, never gameplay state to obey: see
+/// `aestra_runtime::EVENT_IMPACT` and its siblings.
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct AestraOutputEvent {
-    /// The effect that raised it.
+    /// The effect that raised it: the root player for a cue of a nested clip.
     pub effect: Entity,
+    /// Empty for the root; otherwise the clips from the root to the effect that raised it.
+    pub clip_path: Vec<aestra_core::EffectClipId>,
     pub event: aestra_runtime::EffectOutputEvent,
+}
+
+impl AestraOutputEvent {
+    /// An event of the root effect on `effect`.
+    pub fn root(effect: Entity, event: aestra_runtime::EffectOutputEvent) -> Self {
+        Self {
+            effect,
+            clip_path: Vec::new(),
+            event,
+        }
+    }
 }
 
 /// Where the render world leaves output readbacks for the main world: the effect, the stage, and the
@@ -121,8 +136,9 @@ pub struct AestraOutputEvent {
 #[derive(Resource, Default, Clone)]
 struct StageOutputMailbox(Arc<Mutex<Vec<OutputRead>>>);
 
-/// One stage's output read: the effect, the stage, the words of each output resource.
-type OutputRead = (Entity, usize, BTreeMap<ResourceTypeId, Vec<u32>>);
+/// One stage's output read: the effect, the stage, the tick it was read at, the words of each output
+/// resource.
+type OutputRead = (Entity, usize, u64, BTreeMap<ResourceTypeId, Vec<u32>>);
 
 /// The events an effect's outputs have raised so far, to raise each one once.
 #[derive(Component, Default)]
@@ -142,7 +158,7 @@ fn receive_stage_outputs(
         Ok(mut reads) => std::mem::take(&mut *reads),
         Err(_) => return,
     };
-    for (entity, stage, words) in reads {
+    for (entity, stage, tick, words) in reads {
         let Ok((presented, outputs, tracker)) = effects.get_mut(entity) else {
             continue;
         };
@@ -155,13 +171,14 @@ fn receive_stage_outputs(
         let values = aestra_runtime::read_stage_outputs(stage, block, &words);
         let mut fresh = OutputEvents::default();
         let raised = match tracker {
-            Some(mut tracker) => tracker.0.observe(&values),
-            None => fresh.0.observe(&values),
+            Some(mut tracker) => tracker.0.observe(&values, tick),
+            None => fresh.0.observe(&values, tick),
         };
-        events.write_batch(raised.into_iter().map(|event| AestraOutputEvent {
-            effect: entity,
-            event,
-        }));
+        events.write_batch(
+            raised
+                .into_iter()
+                .map(|event| AestraOutputEvent::root(entity, event)),
+        );
         match outputs {
             Some(mut outputs) => {
                 outputs.values.retain(|value| value.stage != stage);
@@ -196,10 +213,7 @@ fn raise_finished_events(
             }
         };
         if let Some(event) = raised {
-            events.write(AestraOutputEvent {
-                effect: entity,
-                event,
-            });
+            events.write(AestraOutputEvent::root(entity, event));
         }
     }
 }
@@ -1043,12 +1057,13 @@ fn run_extension_stages(
             }
             let mailbox = outputs.0.clone();
             let owner = main_entity.id();
+            let tick = u64::from(timeline.last_tick());
             if timeline.executor().encode_output_readback(
                 wgpu_device,
                 render_context.command_encoder(),
                 move |words| {
                     if let Ok(mut reads) = mailbox.lock() {
-                        reads.push((owner, index, words));
+                        reads.push((owner, index, tick, words));
                     }
                 },
             ) {
@@ -1319,6 +1334,7 @@ mod tests {
             mailbox.0.lock().unwrap().push((
                 entity,
                 0,
+                42,
                 BTreeMap::from([(ResourceTypeId::new(aestra_fluid::RESOURCE_OUTPUTS), words)]),
             ));
         };
@@ -1350,6 +1366,7 @@ mod tests {
         run(&mut world);
         assert_eq!(raised.len(), 2, "one impact per rise: {raised:?}");
         assert!(raised.iter().all(|message| message.effect == entity
+            && message.event.tick == 42
             && message.event.kind == aestra_fluid::EVENT_IMPACT
             && message.event.source == Some(shield_id)));
         assert_eq!(raised[1].event.value, [30.0, 0.0, 0.0]);

@@ -117,6 +117,7 @@ impl Plugin for ViewportPlugin {
                     apply_preview_mocks,
                     update_preview.after(AestraRenderSet::Prepare),
                     track_event_link_drops,
+                    record_preview_outputs,
                     navigate_preview_camera,
                     sync_preview_grid,
                     sync_preview_display_mode,
@@ -2999,6 +3000,31 @@ fn event_link_drops(
     drops
 }
 
+/// How many recent preview outputs the Interface section lists.
+const PREVIEW_OUTPUTS_KEPT: usize = 8;
+
+/// Keeps the latest outputs the edited effect's preview raised (event system E2b) for the Interface
+/// section. Nested clips are left out: they are not the effect being edited.
+fn record_preview_outputs(
+    mut session: ResMut<EditorSession>,
+    mut outputs: MessageReader<aestra_bevy_render::gpu::AestraOutputEvent>,
+    players: Query<&PreviewEffectInstancePath, With<PreviewPresentedEffect>>,
+) {
+    for output in outputs.read() {
+        let root = players
+            .get(output.effect)
+            .is_ok_and(|path| path.0.is_empty() && output.clip_path.is_empty());
+        if !root {
+            continue;
+        }
+        session.preview_outputs.push_back(output.event.clone());
+        while session.preview_outputs.len() > PREVIEW_OUTPUTS_KEPT {
+            session.preview_outputs.pop_front();
+        }
+        session.preview_outputs_heard += 1;
+    }
+}
+
 /// Keeps the session's per-link drop totals current for the Properties and Diagnostics panels,
 /// rebuilding them only when a link starts or stops dropping.
 fn track_event_link_drops(
@@ -4337,6 +4363,55 @@ mod tests {
                 .unwrap()
                 .effect()
         ));
+    }
+
+    #[test]
+    fn the_preview_keeps_its_latest_root_outputs() {
+        use aestra_bevy_render::gpu::AestraOutputEvent;
+        let mut app = App::new();
+        app.insert_resource(test_support::session_with_timing_slack())
+            .add_message::<AestraOutputEvent>()
+            .add_systems(Update, record_preview_outputs);
+        let root = app
+            .world_mut()
+            .spawn((PreviewPresentedEffect, PreviewEffectInstancePath::default()))
+            .id();
+        let nested = app
+            .world_mut()
+            .spawn((
+                PreviewPresentedEffect,
+                PreviewEffectInstancePath(vec![aestra_core::EffectClipId::new()]),
+            ))
+            .id();
+        let event = |tick| {
+            aestra_runtime::EffectOutputEvent::new(
+                aestra_runtime::EVENT_IMPACT,
+                aestra_runtime::EventOrigin::Effect,
+                "",
+                Vec::new(),
+                1.0,
+                tick,
+            )
+        };
+        for tick in 0..10 {
+            app.world_mut()
+                .write_message(AestraOutputEvent::root(root, event(tick)));
+        }
+        app.world_mut()
+            .write_message(AestraOutputEvent::root(nested, event(99)));
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        let ticks: Vec<u64> = session
+            .preview_outputs
+            .iter()
+            .map(|event| event.tick)
+            .collect();
+        assert_eq!(
+            ticks,
+            (2..10).collect::<Vec<_>>(),
+            "the latest eight, root only"
+        );
+        assert_eq!(session.preview_outputs_heard, 10);
     }
 
     #[test]
