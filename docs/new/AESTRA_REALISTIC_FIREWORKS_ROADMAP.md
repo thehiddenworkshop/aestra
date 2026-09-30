@@ -1658,7 +1658,7 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 ### Implemented — finer parallel bounds reduction for live histories
 
 - Bounds pages shrink from **1,024 to 64 owners**: each of the 64 lanes scans one owner's ring rather than serializing sixteen owners per lane. A 16,384-owner pool now dispatches **256 page workgroups instead of 16**, followed by the existing GPU summary reduction. Owner expiry, sample order, survivor-flag consumption, occupied/retired/truncated counts, and finite/empty/unsafe bounds semantics are unchanged. No new pass, storage binding, CPU readback or live replay work is introduced.
-- Current scratch is **`3H + 2O + ceil(H/1024) + 12ceil(O/64)` words** per paged emitter. Allocation, dispatch and static memory estimates change together. The volley estimate increases from **38,438,072 to 38,449,592 bytes**: only **11,520 extra bytes (11.25 KiB)** of disposable summaries. Tests guard shader/planner page-size agreement, disjoint ranges, binding/buffer/dispatch rejection and exact numeric offset limits. Persistent particle/history/aux ownership ABI, sorting and the small-pool path are unchanged; portable 16 KiB workgroup/eight-binding conformance still passes.
+- At this stage, scratch is **`3H + 2O + ceil(H/1024) + 12ceil(O/64)` words** per paged emitter; the compact-key cache below subsequently appends another `2max(H,O)` words. Allocation, dispatch and static memory estimates change together. The volley estimate increases from **38,438,072 to 38,449,592 bytes**: only **11,520 extra bytes (11.25 KiB)** of disposable summaries. Tests guard shader/planner page-size agreement, disjoint ranges, binding/buffer/dispatch rejection and exact numeric offset limits. Persistent particle/history/aux ownership ABI, sorting and the small-pool path are unchanged; portable 16 KiB workgroup/eight-binding conformance still passes.
 - Native tests check full and partially filled 1,025/2,053/8,192-owner pools against an all-samples world-bounds oracle, plus paged Distance/Adaptive sampling with stationary-anchor expiry, truncation warnings, empty pages, invalid bounds disabling culling, and the 64-point maximum. The real event-born volley still accepts **12,800/12,800** children, reaches **7,200 live / 3,200 retired / 10,400 occupied** histories, and drains completely without eviction or truncation.
 - Two optimized benchmarks and a fresh 1,024-owner-page control use the same RTX 4070 SUPER/Vulkan, 960×540, close camera, default-fast transparency and 120 warm-up/600 measured frames. Every run observes **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, and zero source overflow, expansion omission, destination rejection, eviction or truncation. Frame 240 is again a **byte-identical PNG** to the pre-optimization capture, with 9,600 occupied/3,200 retired histories; this checks that frame, not every possible asset/time.
 
@@ -1685,9 +1685,41 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/parallel-bounds-volley-overlap
 ```
 
+### Implemented — compact keys for global merge and owner lookup
+
+- Each ordering phase now writes **two immutable key words per physical index** into a contiguous aux cache while forming the initial pages. Global merges retain each lane's key once and load compact candidate keys instead of repeatedly fetching strided particle/history records. Survivor lookup also searches cached stable IDs. Each binary-search step uses one directional comparator, retaining left-before-right sentinel stability. The cache is rebuilt for heads, occupied owners, and empty/retired allocation candidates in order; it is neither a persistent identity map nor authoritative history state.
+- Current scratch is **`3H + 2O + ceil(H/1024) + 12ceil(O/64) + 2max(H,O)` words** per paged emitter. The cache follows the padded bounds-summary range and cannot alias sort lists, birth ranks, page prefixes, or another emitter. Allocation/preflight and static memory estimates include it. The volley estimate is **38,580,664 bytes**, an increase of **131,072 bytes (128 KiB)** from the finer-bounds version. There is no new pass, binding, workgroup-memory allocation, live readback or replay work; the small-pool path and persistent ownership/sample ABI remain unchanged.
+- Native conformance now keeps both stable identities **`0` and `u32::MAX`** alive through ordinary reservation, and independently predicts each birth's physical owner using empty-first/oldest-retired/physical-index order and the mixed Ribbon emitter's strand-first birth order. This oracle passes both the committed control and the optimized implementation, including partial/dense pools and offset emitter ranges. Existing bounds, spatial expiry/truncation, pause/reset, maximum-ring, eight-binding/16 KiB, portable WGSL/SPIR-V/HLSL, and every-tick volley/drain tests pass.
+- Same RTX 4070 SUPER/Vulkan, 960×540, close camera, high tier, default-fast transparency, 120 warm-up/600 measured frames. Both optimized runs and a fresh committed-code control observe **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, and zero source overflow, expansion omission, destination rejection, eviction or truncation. Frame 240 remains a **byte-identical PNG** with 9,600 occupied/3,200 retired histories; this checks that frame, not all possible playback times.
+
+GPU medians in milliseconds (committed control rerun after both optimized samples):
+
+| Phase | Committed control | Compact keys, run 1 | Compact keys, run 2 |
+| --- | ---: | ---: | ---: |
+| Head ordering/presentation | 0.513 | 0.457 | 0.466 |
+| Owner ordering/reservation | 0.678 | 0.584 | 0.593 |
+| Allocation/sampling | 0.819 | 0.699 | 0.710 |
+| Bounds | 0.257 | 0.262 | 0.270 |
+| History observation | 2.311 | 2.036 | 2.072 |
+| Full simulation frame | 2.713 | 2.436 | 2.477 |
+| Trail compaction | 0.449 | 0.459 | 0.472 |
+| Transparent drawing | 1.569 | 1.663 | 1.675 |
+
+- History median is **10–12% lower**, and aggregate simulation median **9–10% lower**, than the fresh control. History p95/p99 changes from **2.564/2.672 ms** to **2.272/2.340** and **2.295/2.359 ms**. Aggregate simulation p95/p99 changes from **3.042/5.315 ms** to **2.725/4.923** and **2.802/4.976 ms**. Bounds/compaction/drawing are slightly slower in the optimized runs; their cause is not established. Last-observation phase paths still do not describe all ticks of a catch-up frame. Do not sum percentile timings or call the named full-frame/finale budget certified.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test trail_contract --test shader_contract
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --nocapture
+cargo test --locked -p aestra-bevy-render --lib trail -- --nocapture
+cargo clippy --locked -p aestra-gpu -p aestra-runtime -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/compact-keys-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/compact-keys-volley-overlap
+```
+
 ### Tasks
 
-- Next: reduce remaining storage-backed ordering/merge and allocation/lookup traffic under the loss-free volley, preserving stable identities, survivor ownership and deterministic allocation. Keep accepted demand/populations unchanged and investigate aggregate p95/p99/catch-up variation before certifying the whole live frame; do not optimize editor replay ahead of playback.
+- Next: attribute live-frame p95/p99 spikes to executed fixed-tick counts and cumulative per-frame work, rather than relying on the last phase observation. Extend the loss-free volley benchmark with that evidence, then target remaining ordering/allocation cost or catch-up overhead as measured. Keep accepted demand/populations unchanged; do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

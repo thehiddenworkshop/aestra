@@ -69,6 +69,7 @@ impl TrailScratchPlan {
                         .and_then(|n| n.checked_add(owners.checked_mul(2)?))
                         .and_then(|n| n.checked_add(heads.div_ceil(1024)))
                         .and_then(|n| n.checked_add(owners.div_ceil(BOUNDS_PAGE).checked_mul(12)?))
+                        .and_then(|n| n.checked_add(heads.max(owners).checked_mul(2)?))
                         .ok_or(GpuArtifactError::TrailLimit)?,
                 )
                 .ok_or(GpuArtifactError::TrailLimit)?;
@@ -206,8 +207,11 @@ mod tests {
                 e._spawn_inverse_padding,
                 Vec3::new(end as f32, heads as f32, owners as f32)
             );
-            end +=
-                3 * heads + 2 * owners + heads.div_ceil(1024) + 12 * owners.div_ceil(BOUNDS_PAGE);
+            end += 3 * heads
+                + 2 * owners
+                + heads.div_ceil(1024)
+                + 12 * owners.div_ceil(BOUNDS_PAGE)
+                + 2 * heads.max(owners);
         }
         assert_eq!(plan.aux_words, end);
         let passes = plan.passes();

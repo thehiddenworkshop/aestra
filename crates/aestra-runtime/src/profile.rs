@@ -365,7 +365,9 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
                             + 2 * owners
                             + heads.div_ceil(1024)
                             // One 12-word bounds summary per 64-owner page.
-                            + 12 * owners.div_ceil(64))
+                            + 12 * owners.div_ceil(64)
+                            // Compact immutable sort keys, reused by each phase.
+                            + 2 * heads.max(owners))
                     } else {
                         0
                     };

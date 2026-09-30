@@ -30,29 +30,27 @@ fn paged_mapping(e: Emitter) -> u32 { return paged_base(e) + 2u * paged_heads(e)
 fn paged_pages(e: Emitter) -> u32 { return paged_mapping(e) + paged_heads(e); }
 fn paged_bounds(e: Emitter) -> u32 { return paged_pages(e) + (paged_heads(e) + 1023u) / 1024u; }
 
-fn paged_less(e: Emitter, a: u32, b: u32) -> bool {
-    if a == 0xffffffffu { return false; }
-    if b == 0xffffffffu { return true; }
-    if paged_kind() == 0u { return ribbon_less(a, b, max(e._turbulence_padding, 1u)); }
-    let x = particles[e.trail_offset + 1u + a * e.trail_points];
-    let y = particles[e.trail_offset + 1u + b * e.trail_points];
-    if paged_kind() == 1u {
-        return x.particle_index < y.particle_index || (x.particle_index == y.particle_index && a < b);
-    }
-    // Empty chunks precede retired tails, then oldest observation and physical index.
-    let empty_x = particle_alive(x) == 0u;
-    let empty_y = particle_alive(y) == 0u;
-    if empty_x != empty_y { return empty_x; }
-    return (!empty_x && x.rotation < y.rotation)
-        || ((empty_x || x.rotation == y.rotation) && a < b);
-}
-
 var<workgroup> paged_values: array<u32, 1024>;
 const TRAIL_SORT_PAGE: u32 = 256u;
 // One owner per lane: long sample rings no longer serialize sixteen owners on
 // each lane of only a handful of workgroups. Page summaries stay GPU-resident.
 const TRAIL_BOUNDS_PAGE: u32 = 64u;
 var<workgroup> paged_keys: array<vec4<u32>, TRAIL_SORT_PAGE>;
+
+// Two words per physical index, reused for each ordered phase. Keep this cache
+// outside all list/rank/page outputs: later scans overwrite the head sort list.
+fn paged_key_address(e: Emitter, value: u32) -> u32 {
+    let cache = paged_bounds(e) + 12u * ((paged_owners(e) + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE);
+    var index = value;
+    if paged_kind() == 0u { index -= e.slot_offset; }
+    return cache + 2u * index;
+}
+
+fn paged_cached_key(e: Emitter, value: u32) -> vec4<u32> {
+    if value == 0xffffffffu { return vec4<u32>(0xffffffffu); }
+    let key = paged_key_address(e, value);
+    return vec4<u32>(aux[key], aux[key + 1u], value, 0u);
+}
 
 // Cache immutable keys once per page instead of fetching strided particle
 // records at every sorting-network comparison. The index remains separate:
@@ -110,7 +108,14 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     // Owner keys are immutable after this page's expiry stores.
     storageBarrier();
     for (var local = thread; local < size; local += 64u) {
-        paged_keys[local] = paged_key(e, paged_values[local]);
+        let value = paged_values[local];
+        let key = paged_key(e, value);
+        paged_keys[local] = key;
+        if value != 0xffffffffu {
+            let address = paged_key_address(e, value);
+            aux[address] = key.x;
+            aux[address + 1u] = key.y;
+        }
     }
     workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
@@ -146,6 +151,7 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     let destination = paged_list(e, 1u - paged_source());
     let value = aux[source + n];
     if width >= count { aux[destination + n] = value; return; }
+    let key = paged_cached_key(e, value);
     let block = n / (2u * width) * (2u * width);
     let right = (n & width) != 0u;
     let other = select(block + width, block, right);
@@ -154,8 +160,13 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     while low < high {
         let middle = (low + high) / 2u;
         let candidate = aux[source + other + middle];
-        // Stable merge: equal sentinel entries from the left precede the right.
-        if paged_less(e, candidate, value) || (right && !paged_less(e, value, candidate)) { low = middle + 1u; }
+        let candidate_key = paged_cached_key(e, candidate);
+        // One comparison per search step; equal sentinels from the left precede
+        // the right. Immutable compact keys avoid strided history-record reads.
+        var less = false;
+        if right { less = !paged_key_less(key, candidate_key); }
+        else { less = paged_key_less(candidate_key, key); }
+        if less { low = middle + 1u; }
         else { high = middle; }
     }
     let rank = block + n % width + low;
@@ -186,7 +197,7 @@ fn reserve_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
             let candidate = aux[source + middle];
             var less = false;
             if candidate != 0xffffffffu {
-                less = particles[e.trail_offset + 1u + candidate * e.trail_points].particle_index < stable_id;
+                less = paged_cached_key(e, candidate).y < stable_id;
             }
             if less { low = middle + 1u; } else { high = middle; }
         }
@@ -194,7 +205,7 @@ fn reserve_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
             let candidate = aux[source + low];
             if candidate != 0xffffffffu {
                 let base = e.trail_offset + 1u + candidate * e.trail_points;
-                if particles[base].particle_index == stable_id {
+                if paged_cached_key(e, candidate).y == stable_id {
                     owner = base;
                     particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u);
                 }

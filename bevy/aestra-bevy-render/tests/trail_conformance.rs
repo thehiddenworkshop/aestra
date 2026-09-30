@@ -701,7 +701,9 @@ fn check_cooperative(owners: u32) {
     let initial_count = owners * 25 / 32;
     let initial = run(0.0, &(0..initial_count).collect::<Vec<_>>());
     let ids = (0..initial_count / 2)
-        .map(|n| n * 2 + 1)
+        // Keep both identity extrema (MAX and zero) alive through reservation,
+        // not just initial sorting. The rest still collide in hash buckets.
+        .map(|n| if n == 0 { 0 } else { n * 2 - 1 })
         .chain(initial_count..initial_count + initial_count / 2)
         .collect::<Vec<_>>();
     let next = run(0.25, &ids);
@@ -744,7 +746,7 @@ fn check_cooperative(owners: u32) {
         for &n in &ids {
             owner_slot(n);
         }
-        for n in (1..initial_count).step_by(2) {
+        for &n in &ids[..(initial_count / 2) as usize] {
             let slot = owner_slot(n);
             assert_eq!(
                 word(&initial, slot, 48),
@@ -755,6 +757,52 @@ fn check_cooperative(owners: u32) {
                 word(&next, slot, 56),
                 3,
                 "surviving history was overwritten"
+            );
+        }
+        // Independent allocation oracle: empty first, then oldest retired, with
+        // physical-owner tie break. Assign births in the presented head order,
+        // including the mixed Ribbon emitter's strand-first order.
+        let surviving = ids[..(initial_count / 2) as usize]
+            .iter()
+            .map(|&n| identity(n))
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut candidates = (0..owners)
+            .filter(|&owner| {
+                let slot = (root + 1 + owner * POINTS) as usize;
+                word(&initial, slot, 44) == 0 || !surviving.contains(&word(&initial, slot, 48))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|&a, &b| {
+            let a_slot = (root + 1 + a * POINTS) as usize;
+            let b_slot = (root + 1 + b * POINTS) as usize;
+            let occupied_a = word(&initial, a_slot, 44) != 0;
+            let occupied_b = word(&initial, b_slot, 44) != 0;
+            occupied_a
+                .cmp(&occupied_b)
+                .then_with(|| {
+                    if occupied_a {
+                        f32::from_bits(word(&initial, a_slot, 32))
+                            .total_cmp(&f32::from_bits(word(&initial, b_slot, 32)))
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .then_with(|| a.cmp(&b))
+        });
+        let mut births = ids[(initial_count / 2) as usize..].to_vec();
+        let strands = if emitter == 0 { 1 } else { 3 };
+        births.sort_by_key(|&n| (identity(n) % strands, identity(n)));
+        for (&n, &owner) in births.iter().zip(&candidates) {
+            let slot = (root + 1 + owner * POINTS) as usize;
+            assert_eq!(
+                word(&next, slot, 48),
+                identity(n),
+                "deterministic allocation order changed"
+            );
+            assert_eq!(
+                word(&next, slot, 56),
+                1,
+                "birth inherited a retired sample ring"
             );
         }
     }
