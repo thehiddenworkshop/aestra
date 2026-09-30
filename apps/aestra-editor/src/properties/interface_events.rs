@@ -323,6 +323,19 @@ pub(super) fn send(session: &mut EditorSession, name: &str, localizer: &Localize
     let payload = aestra_runtime::neutral_payload(preview.effect(), &name).unwrap_or_default();
     let result = preview.send_event_at(&name, payload, tick);
     let recorded = preview.received_events().to_vec();
+    // A declared input no route reacts to is recorded, and does nothing.
+    let unhandled = session
+        .effect
+        .event_inputs
+        .iter()
+        .find(|definition| definition.name == name)
+        .is_some_and(|definition| {
+            !session
+                .effect
+                .input_spawns
+                .iter()
+                .any(|route| route.input == definition.id)
+        });
     let mut args = FluentArgs::new();
     args.set("input", name);
     match result {
@@ -331,7 +344,9 @@ pub(super) fn send(session: &mut EditorSession, name: &str, localizer: &Localize
             session.preview_inputs = recorded;
             // Inputs take effect as playback advances: paused, nothing happens yet.
             session.status = localizer.text_with(
-                if session.playing {
+                if unhandled {
+                    "interface-status-sent-unhandled"
+                } else if session.playing {
                     "interface-status-sent"
                 } else {
                     "interface-status-sent-paused"
@@ -925,6 +940,12 @@ mod tests {
         apply(EventDeclarationAction::Send(id), &mut session, &localizer);
         assert_eq!(session.preview_inputs.len(), 1);
         assert_eq!(session.preview_inputs[0].input, "Trigger");
+        // No route reacts to it: recorded, and the status says so.
+        assert!(
+            session.status.contains("nothing reacts"),
+            "{}",
+            session.status
+        );
         // On the playhead's clock, which the viewport's players follow.
         assert_eq!(
             session.preview_inputs[0].tick,

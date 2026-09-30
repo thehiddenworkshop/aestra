@@ -387,6 +387,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "interface-status-route-needs-emitter",
     "interface-status-route-added",
     "interface-status-sent-paused",
+    "interface-status-sent-unhandled",
     "interface-add-event-command",
     "interface-remove-event-command",
     "interface-edit-event-command",
