@@ -504,7 +504,7 @@ Logical owner pages do not yet split a physical buffer across bindings. The tota
 - Fixed-seed trail geometry, bounds, compaction and eviction are repeatable after checkpoint restore and reverse seek.
 - GPU time, memory, visible/culled primitive counts and overflow/eviction counters are recorded on named hardware. The scene remains interactive under an explicit quality-tier budget; budget reductions are visible rather than silent.
 
-**Current assessment:** analytic and event-born/stateful 800-parent single-emitter bursts now compile and render matching histories. Native GPU tests cover retention and synchronized restoration. Paged larger pools, full-frame percentile budgets and overlapping-shell/finale stress remain unproven. The complete hero/finale gate is still **open**.
+**Current assessment:** analytic and event-born/stateful 800-parent single-emitter bursts compile and render matching histories. Native GPU tests cover paged 8,192-parent pools, retention and synchronized restoration. A budgeted repeated-cohort volley now proves complete admission and retention through overlap and drain; full-frame percentile budgets and a complete finale remain unproven. The complete hero/finale gate is still **open**.
 
 ---
 
@@ -1607,9 +1607,27 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-large --camera close --backend gpu --gpu-bench target/fireworks-f1/paged-history-large-bench.json
 ```
 
+### Implemented — budgeted live volley and phase-level cost attribution
+
+- Added `--fireworks-f0-probe event-trail-volley`: four genuine source deaths per second, each requesting 800 stars through one link into **one 8,192-slot destination and one 16,384-owner trail pool**. Stars live for two seconds; trails retain one second of history at 30 Hz with 32 points. Budgets include retired tails and fixed-tick boundary overlap, rather than accepting a faster run caused by destination loss. This is a technical repeated-cohort baseline, not eight distinct authored shell assets, a smoke workload, or a finished Test B show.
+- Native production-lockstep regression runs 16 cohorts and then drains. Every tick checks captured child demand versus destination acceptance, actual source capture overflow, expansion omissions, live particles versus live owners, evictions and truncation. **All 12,800 requested children are accepted**; peaks are **7,200 live stars, 3,200 retired owners and 10,400 occupied owners**. No source overflow, list omissions, destination rejection, eviction or truncation occurs, and all histories expire after emission stops.
+- `GpuEventLinkStatistics` now exposes observed captured demand, expansion omissions, accepted children and destination rejections per compiled link, plus source-event overflow. These are asynchronous buffer-lifetime activity totals, including warm-up; replay/reset activity can be counted again. They are not current-epoch authoritative counts. No particle readback or new GPU counter buffer is required. The benchmark JSON records these totals alongside measured live/history peaks and estimated buffer memory; absent observations remain `null`, not a claimed zero.
+- Stateful history recording now has an isolated GPU timestamp, with paged sub-phases for head ordering/presentation, owner ordering/reservation, birth allocation/sampling, and bounds. Each phase includes its complete sort/merge sequence; a repeated merge label does not hide earlier merges. Diagnostics still publish the last observation for a path in a multi-tick frame, not the sum of reconstruction work. Do not sum phase percentile values into a whole-frame result.
+- RTX 4070 SUPER/Vulkan, **960×540, high tier, close camera, default-fast transparency, 120 warm-up/600 measured frames**: the phase-instrumented run observes **37,600 captured children and 37,600 accepted**, zero loss at every exposed boundary, **7,201 live particles** (including the rocket), **10,400 occupied/3,200 retired histories**, and **38,438,072 bytes estimated buffer memory** (not total VRAM or checkpoint memory). Async snapshots can lag; the every-tick native regression independently verifies admission and drain.
+- The deterministic frame-240 (4.0 s) capture renders the overlapping trails and reports **9,600 occupied/3,200 retired owners**, zero evictions and zero truncation. It is an overlap inspection, not the peak-count or realistic-image-quality gate.
+- GPU p50/p95/p99 in milliseconds: full simulation **5.273/5.642/6.423**, trail history **5.042/5.361/5.431**, trail compaction **0.251/0.274/0.402**, transparent draw **0.873/0.962/0.987**. Simulation CPU encoding is **0.096/0.155/0.244 ms**. History-phase medians are heads **1.032 ms**, reservation **1.541 ms**, allocation/sampling **1.612 ms**, bounds **0.828 ms**. History remains the dominant live cost; complete frame/post-process/smoke budgets and finale certification are not inferred from these pass timings. The pre-phase-instrumentation run measured simulation **5.118/5.464/6.196 ms**, so these figures also include diagnostic overhead and run variation.
+
+```powershell
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --lib budgeted_trail_volley -- --nocapture
+cargo test --locked -p aestra-viewer overlapping_volley -- --nocapture
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/budgeted-volley-phases-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/budgeted-volley-overlap
+```
+
 ### Tasks
 
-- Next: establish a correctly budgeted overlapping-shell/volley workload with accepted event demand, live parents and retained tails measured together. Diagnose per-pass costs and p95/p99 spikes before declaring the named full-frame budget met; do not optimize editor replay ahead of live playback.
+- Next: reduce the measured paged-history ordering/reservation/allocation cost under the loss-free volley, preserving stable identities and deterministic empty-first/oldest-retired allocation. Compare the same accepted demand, peak populations and phase distributions; do not optimize editor replay ahead of live playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
@@ -2149,7 +2167,7 @@ Core particle engine          █████████░   very strong
 Stateful simulation           █████████░   very strong
 Seeking/checkpoints           ████████░░   strong
 Trail feature/quality         █████████░   strong foundation
-Trail hero/finale scale       ██░░░░░░░░   blocked by serial update and caps
+Trail hero/finale scale       █████░░░░░   paged volley proven; budget/finale gate open
 Multiple renderers            █████████░   ready
 Particle event semantics      ████████░░   bounded workloads
 Event hero/finale scale       ██░░░░░░░░   blocked by fixed queues/gather
@@ -2187,7 +2205,7 @@ If only one focused implementation cycle is available, do this:
 ### 3. Deliver F1B's trail scale gate
 
 - Ownership/history/bounds/compaction are parallelized; paged pools and checked adapter-resource preflight are implemented. Native tests cover one 8,192-star emitter with 16,384 owners without splitting its trail graph.
-- Next, certify correctly budgeted overlapping cohorts and retained tails against the named live/full-frame budget, with accepted event demand and per-pass costs observable. Physical-buffer chunking and the 1,048,576-record ceiling remain open.
+- Correctly budgeted overlapping cohorts and retained tails now have loss-free native regressions and measured phase costs. Next, optimize the dominant paged-history work and certify the named live/full-frame budget. Physical-buffer chunking and the 1,048,576-record ceiling remain open.
 
 ### 4. Continue visual authoring in parallel
 

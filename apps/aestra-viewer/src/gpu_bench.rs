@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use aestra_bevy::{EffectProfiler, ProfileValue, gpu::GpuEventLinkStatistics};
 use bevy::app::AppExit;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::prelude::*;
@@ -34,6 +35,7 @@ pub struct GpuBenchPlan {
     frames: usize,
     remaining: usize,
     samples: BTreeMap<String, Vec<f64>>,
+    work: BTreeMap<String, WorkStats>,
 }
 
 impl GpuBenchPlan {
@@ -46,6 +48,7 @@ impl GpuBenchPlan {
             frames,
             remaining: frames,
             samples: BTreeMap::new(),
+            work: BTreeMap::new(),
         }
     }
 
@@ -60,6 +63,8 @@ impl GpuBenchPlan {
             warmup: self.warmup,
             frames: self.frames,
             metrics,
+            work: &self.work,
+            work_scope: "Asynchronous host observations. Peaks cover measured frames; event totals cover buffer lifetime including warm-up and can count replay/reset activity again. Missing measurements are null. Timing paths can publish only the last fixed-tick observation in a catch-up frame; do not sum stage percentiles into whole-frame costs.",
         };
         let json = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
         std::fs::write(&self.output, json).map_err(|error| error.to_string())
@@ -118,11 +123,70 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 }
 
 #[derive(Serialize)]
-struct GpuBenchReport {
+struct GpuBenchReport<'a> {
     effect: String,
     warmup: usize,
     frames: usize,
     metrics: BTreeMap<String, Stats>,
+    /// Host-observed asynchronous root/child metrics during the measured window.
+    /// Counts can lag. Event totals cover buffer lifetime, including warm-up;
+    /// they are not deltas for this window or authoritative replay accounting.
+    work: &'a BTreeMap<String, WorkStats>,
+    work_scope: &'static str,
+}
+
+#[derive(Default, Serialize)]
+struct WorkStats {
+    peak_live_particles: Option<u32>,
+    peak_occupied_trails: Option<u32>,
+    peak_retired_trails: Option<u32>,
+    max_trail_evictions: Option<u32>,
+    max_truncated_trails: Option<u32>,
+    estimated_buffer_memory_bytes: Option<u64>,
+    event_readback_samples: Option<u64>,
+    source_event_overflow: Option<u64>,
+    links: Option<Vec<LinkStats>>,
+}
+
+#[derive(Serialize)]
+struct LinkStats {
+    captured_demand: u64,
+    expansion_omitted: u64,
+    accepted: u64,
+    destination_rejected: u64,
+}
+
+impl WorkStats {
+    fn record(&mut self, profiler: &EffectProfiler, events: Option<&GpuEventLinkStatistics>) {
+        let profile = &profiler.0;
+        fn peak(target: &mut Option<u32>, value: ProfileValue<u32>) {
+            if let ProfileValue::Measured(value) = value {
+                *target = Some(target.unwrap_or(0).max(value));
+            }
+        }
+        peak(&mut self.peak_live_particles, profile.alive_particles);
+        peak(&mut self.peak_occupied_trails, profile.occupied_trails);
+        peak(&mut self.peak_retired_trails, profile.retired_trails);
+        peak(&mut self.max_trail_evictions, profile.trail_evictions);
+        peak(&mut self.max_truncated_trails, profile.truncated_trails);
+        self.estimated_buffer_memory_bytes = profile.buffer_memory_bytes.value();
+        if let Some(events) = events.filter(|events| events.readback_samples > 0) {
+            self.event_readback_samples = Some(events.readback_samples);
+            self.source_event_overflow = Some(events.source_overflow);
+            self.links = Some(
+                events
+                    .links
+                    .iter()
+                    .map(|link| LinkStats {
+                        captured_demand: link.captured_demand,
+                        expansion_omitted: link.expansion_omitted,
+                        accepted: link.accepted,
+                        destination_rejected: link.destination_rejected,
+                    })
+                    .collect(),
+            );
+        }
+    }
 }
 
 /// Samples Aestra's GPU diagnostics each frame and exits once the capture is done.
@@ -130,6 +194,7 @@ struct GpuBenchReport {
 pub fn drive_gpu_bench(
     plan: Option<ResMut<GpuBenchPlan>>,
     diagnostics: Res<DiagnosticsStore>,
+    effects: Query<(Entity, &EffectProfiler, Option<&GpuEventLinkStatistics>)>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Some(mut plan) = plan else {
@@ -161,6 +226,12 @@ pub fn drive_gpu_bench(
             plan.samples.entry(path.to_owned()).or_default().push(value);
         }
     }
+    for (entity, profiler, events) in &effects {
+        plan.work
+            .entry(entity.to_string())
+            .or_default()
+            .record(profiler, events);
+    }
     plan.remaining -= 1;
     if plan.remaining == 0 {
         match plan.write_report() {
@@ -182,6 +253,41 @@ pub fn drive_gpu_bench(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_report_keeps_missing_measurements_distinct_from_zero_and_counts_admitted_work() {
+        let compiled = aestra_bevy::EffectCompiler::default()
+            .compile(&aestra_bevy::EffectAsset::new("report", 6.0))
+            .unwrap();
+        let mut profile = EffectProfiler(aestra_bevy::EffectProfile::from_compiled(&compiled));
+        profile.0.alive_particles = ProfileValue::Estimated(9000);
+        let mut work = WorkStats::default();
+        work.record(&profile, Some(&GpuEventLinkStatistics::default()));
+        assert_eq!(work.peak_live_particles, None);
+        assert!(work.links.is_none());
+        profile.0.alive_particles = ProfileValue::Measured(7200);
+        profile.0.occupied_trails = ProfileValue::Measured(10400);
+        profile.0.retired_trails = ProfileValue::Measured(3200);
+        let events = GpuEventLinkStatistics {
+            links: vec![aestra_bevy::gpu::GpuEventLinkCounts {
+                captured_demand: 12800,
+                accepted: 12800,
+                ..default()
+            }],
+            readback_samples: 100,
+            ..default()
+        };
+        work.record(&profile, Some(&events));
+        profile.0.alive_particles = ProfileValue::Measured(0);
+        work.record(&profile, Some(&events));
+        let json = serde_json::to_value(&work).unwrap();
+        assert_eq!(json["peak_live_particles"], 7200);
+        assert_eq!(json["peak_occupied_trails"], 10400);
+        assert_eq!(json["peak_retired_trails"], 3200);
+        assert_eq!(json["links"][0]["accepted"], 12800);
+        assert_eq!(json["source_event_overflow"], 0);
+        assert!(json["max_trail_evictions"].is_null());
+    }
 
     #[test]
     fn report_preserves_configured_warmup_after_it_is_consumed() {

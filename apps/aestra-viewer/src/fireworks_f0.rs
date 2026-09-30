@@ -338,6 +338,52 @@ pub fn large_event_trail_probe() -> EffectAsset {
     effect
 }
 
+/// Four 800-star cohorts per second share one destination and one history pool.
+/// Eight live cohorts plus four retired cohorts fit without destination pressure
+/// or owner eviction; extra capacity covers fixed-tick boundary overlap.
+pub fn event_trail_volley_probe() -> EffectAsset {
+    let mut effect = event_trail_probe();
+    effect.id = EffectId::from_u128(15);
+    effect.name = "Fireworks F1B Budgeted Trail Volley".into();
+    effect.emitters[1].max_particles = 8192;
+    for (index, emitter) in effect.emitters.iter_mut().enumerate() {
+        for module in &mut emitter.modules {
+            match &mut module.parameters {
+                ModuleParameters::Emission {
+                    spawn_rate,
+                    burst_count,
+                } => {
+                    *spawn_rate = if index == 0 { 4.0 } else { 0.0 };
+                    *burst_count = 0;
+                }
+                ModuleParameters::Initialize { lifetime, .. } => {
+                    let seconds = if index == 0 { 0.25 } else { 2.0 };
+                    *lifetime = ScalarRange::new(seconds, seconds);
+                }
+                _ => {}
+            }
+        }
+        for renderer in &mut emitter.renderers {
+            if let RendererProperties::Trail {
+                max_points,
+                max_trails,
+                sample_interval,
+                sampling,
+                lifetime,
+                ..
+            } = &mut renderer.properties
+            {
+                *max_points = 32;
+                *max_trails = 16384;
+                *sample_interval = 1.0 / 30.0;
+                *sampling = aestra_bevy::TrailSamplingMode::Time;
+                *lifetime = 1.0;
+            }
+        }
+    }
+    effect
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +472,40 @@ mod tests {
             8192
         );
         assert_eq!(compiled.root.emitters[1].max_particles, 8192);
+    }
+
+    #[test]
+    fn overlapping_volley_budgets_live_stars_and_retired_histories_in_one_pool() {
+        let source = event_trail_volley_probe();
+        let index = aestra_project::ProjectAssetIndex::scan(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
+        );
+        let resolved = index.resolve_effect_project(&source).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_resolved_project(&resolved)
+            .unwrap();
+        assert_eq!(compiled.root.emitters.len(), 2);
+        assert_eq!(compiled.root.event_links.len(), 1);
+        assert_eq!(compiled.root.event_links[0].count, 800);
+        assert_eq!(compiled.root.emitters[1].max_particles, 8192);
+        let trails = source.emitters[1]
+            .renderers
+            .iter()
+            .filter_map(|renderer| {
+                if let RendererProperties::Trail {
+                    max_trails,
+                    max_points,
+                    lifetime,
+                    ..
+                } = renderer.properties
+                {
+                    Some((max_trails, max_points, lifetime))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(trails, [(16384, 32, 1.0)]);
     }
 
     #[test]

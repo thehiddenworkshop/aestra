@@ -46,6 +46,7 @@ pub(super) struct Observer<'a> {
     pub render_globals: &'a Buffer,
     pub buffers: [&'a Buffer; 6],
     pub memory_budget: u64,
+    pub diagnostics: Option<&'a bevy::render::diagnostic::DiagnosticsRecorder>,
 }
 
 impl Observer<'_> {
@@ -120,6 +121,9 @@ impl Observer<'_> {
     }
 
     pub fn record(&mut self, encoder: &mut CommandEncoder, tick: u32) {
+        let span = self
+            .diagnostics
+            .time_span(encoder, "aestra::gpu::trail_history");
         let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("aestra stateful trail history"),
             timestamp_writes: None,
@@ -136,8 +140,9 @@ impl Observer<'_> {
         }
         drop(pass);
         if let Some(paged) = self.paged {
-            paged.record(encoder, self.group, self.globals);
+            paged.record(encoder, self.group, self.globals, self.diagnostics);
         }
+        span.end(encoder);
         if self.paged.is_some()
             && self.effect.has_ribbons
             && let Some(ribbons) = self.ribbons

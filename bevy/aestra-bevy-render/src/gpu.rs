@@ -1281,6 +1281,9 @@ pub(crate) fn prepare_gpu_effects(
         if arrival_words > 0 {
             commands.entity(entity).insert(GpuEventLinkStatistics {
                 dropped: vec![0; player.effect().event_links.len()],
+                links: vec![GpuEventLinkCounts::default(); player.effect().event_links.len()],
+                source_overflow: 0,
+                readback_samples: 0,
             });
             commands.entity(entity).with_children(|parent| {
                 parent
@@ -2137,6 +2140,39 @@ struct GpuTrailReadbackOwner(Entity);
 #[derive(Component, Debug, Default, Clone, PartialEq, Eq)]
 pub struct GpuEventLinkStatistics {
     pub dropped: Vec<u64>,
+    /// Observed activity per compiled link. These asynchronous totals have the
+    /// same buffer-lifetime scope as `dropped`, not the current playback epoch.
+    /// Replay/reset activity can be counted again; use uninterrupted live runs
+    /// when comparing admission against authored work.
+    pub links: Vec<GpuEventLinkCounts>,
+    /// Events omitted by source capture before any link could expand them.
+    /// This is in source events, whereas link counts are in child particles.
+    pub source_overflow: u64,
+    /// Completed asynchronous counter readbacks (not simulation ticks).
+    pub readback_samples: u64,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct GpuEventLinkCounts {
+    pub captured_demand: u64,
+    pub expansion_omitted: u64,
+    pub accepted: u64,
+    pub destination_rejected: u64,
+}
+
+impl GpuEventLinkStatistics {
+    fn record_link(&mut self, index: usize, requested: u32, omitted: u32, accepted: u32) {
+        let rejected = requested.saturating_sub(omitted).saturating_sub(accepted);
+        if let Some(counts) = self.links.get_mut(index) {
+            counts.captured_demand += u64::from(requested);
+            counts.expansion_omitted += u64::from(omitted);
+            counts.accepted += u64::from(accepted);
+            counts.destination_rejected += u64::from(rejected);
+        }
+        if let Some(dropped) = self.dropped.get_mut(index) {
+            *dropped += u64::from(omitted) + u64::from(rejected);
+        }
+    }
 }
 
 /// Reads homing arrivals and source/link event overflow counters back, remembering the last
@@ -2177,6 +2213,9 @@ fn receive_homing_arrivals(
     };
     let words: Vec<u32> = event.to_shader_type();
     let effect = readback.effect;
+    if let Ok(mut statistics) = link_statistics.get_mut(effect) {
+        statistics.readback_samples += 1;
+    }
     for dispatch in &gpu.stateful_dispatch {
         // Particle events dropped past the per-tick capacity (host bindings HB9b): the sub-emitters
         // missed them, and that tick no longer reproduces exactly.
@@ -2184,6 +2223,9 @@ fn receive_homing_arrivals(
             && let Some(&dropped) = words.get(word as usize)
         {
             let seen = readback.seen.insert(word, dropped).unwrap_or(0);
+            if let Ok(mut statistics) = link_statistics.get_mut(effect) {
+                statistics.source_overflow += u64::from(dropped.saturating_sub(seen));
+            }
             if dropped > seen {
                 warn!(
                     "aestra: emitter {} of {effect} raised more than {} particle events in a tick; \
@@ -2242,11 +2284,8 @@ fn receive_homing_arrivals(
             let new_destination_dropped = new_requested
                 .saturating_sub(new_list_dropped)
                 .saturating_sub(new_accepted);
-            if let Ok(mut statistics) = link_statistics.get_mut(effect)
-                && let Some(dropped) = statistics.dropped.get_mut(index)
-                && (new_list_dropped > 0 || new_destination_dropped > 0)
-            {
-                *dropped += u64::from(new_list_dropped) + u64::from(new_destination_dropped);
+            if let Ok(mut statistics) = link_statistics.get_mut(effect) {
+                statistics.record_link(index, new_requested, new_list_dropped, new_accepted);
             }
             if new_list_dropped > 0 || new_destination_dropped > 0 {
                 let list_capacity = gpu
@@ -4154,6 +4193,7 @@ fn run_simulation(
                             &aux.buffer,
                         ],
                         memory_budget: trail_checkpoints::MEMORY_LIMIT.saturating_sub(allocated),
+                        diagnostics,
                     })
                 } else {
                     None
@@ -4458,6 +4498,7 @@ fn run_simulation(
                         render_context.command_encoder(),
                         &bind_group.0,
                         &globals.buffer,
+                        diagnostics,
                     );
                 }
                 if paged.is_some()
@@ -4608,6 +4649,29 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn event_link_statistics_record_admission_and_separate_both_drop_causes() {
+        let mut statistics = GpuEventLinkStatistics {
+            dropped: vec![0],
+            links: vec![GpuEventLinkCounts::default()],
+            ..default()
+        };
+        statistics.record_link(0, 800, 0, 800);
+        statistics.record_link(0, 800, 100, 600);
+        assert_eq!(
+            statistics.links[0],
+            GpuEventLinkCounts {
+                captured_demand: 1600,
+                expansion_omitted: 100,
+                accepted: 1400,
+                destination_rejected: 100,
+            }
+        );
+        assert_eq!(statistics.dropped, [200]);
+        statistics.record_link(0, 0, 0, 0);
+        assert_eq!(statistics.dropped, [200]);
+    }
 
     /// A replay's catch-up is paced by frame time: it grows while frames stay fast, halves after a
     /// slow frame that spent its budget, does not grow when nothing is catching up, keeps real-time

@@ -4426,6 +4426,7 @@ mod tests {
         let compiled = session.preview().unwrap().effect().clone();
         let statistics = |dropped: u64| aestra_bevy_render::gpu::GpuEventLinkStatistics {
             dropped: vec![dropped],
+            ..default()
         };
         assert_eq!(
             event_link_drops(&session.effect, &compiled, &statistics(3072)),

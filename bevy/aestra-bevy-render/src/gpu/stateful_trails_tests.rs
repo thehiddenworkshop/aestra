@@ -15,6 +15,10 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
 }
 
 fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
+    configured_event_trail_scene(mixed, stars, false)
+}
+
+fn configured_event_trail_scene(mixed: bool, stars: u32, volley: bool) -> Option<EventTrailScene> {
     use encase::{ShaderType, StorageBuffer, internal::WriteInto};
     fn encode<T: ShaderType + WriteInto>(value: &T) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -26,7 +30,11 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
     let template = scene.dispatches[0].clone();
     let emitter_count = if mixed { 3 } else { 2 };
     // Large cohorts use coincident real source deaths, not an unsupported fan-out.
-    let sources = if stars == 800 { 1 } else { stars / 512 };
+    let sources = if volley || stars == 800 {
+        1
+    } else {
+        stars / 512
+    };
     scene.dispatches = vec![
         StatefulDispatch {
             capacity: sources,
@@ -40,6 +48,7 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
             shape_kind: 0,
             field_follow: None,
             event_mask: 2,
+            overflow_word: Some(2 + 6 * emitter_count),
             cutoffs: aestra_runtime::EmissionCutoffs {
                 stop_tick: Some(1),
                 kill_tick: None,
@@ -61,6 +70,12 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
             ..template
         },
     ];
+    if volley {
+        scene.dispatches[0].spawn_rate = 4.0;
+        scene.dispatches[0].lifetime = (0.25, 0.25);
+        scene.dispatches[0].cutoffs.stop_tick = Some(240);
+        scene.dispatches[1].lifetime = (2.0, 2.0);
+    }
     scene.states = scene
         .dispatches
         .iter()
@@ -91,8 +106,8 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
             trail_offset: slots,
             trail_points: points,
             trail_capacity: owners,
-            trail_interval: STATEFUL_TICK_DT,
-            trail_lifetime: 0.25,
+            trail_interval: if volley { 1.0 / 30.0 } else { STATEFUL_TICK_DT },
+            trail_lifetime: if volley { 1.0 } else { 0.25 },
             ..Default::default()
         },
     ];
@@ -266,7 +281,7 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
             source: 0,
             target: 1,
             trigger: aestra_core::EventTrigger::OnDeath,
-            count: stars / sources,
+            count: if volley { 800 } else { stars / sources },
             inherit: 0.0,
         }],
         routed: false,
@@ -318,6 +333,7 @@ impl EventTrailScene {
                 &self.buffers[7],
             ],
             memory_budget: trail_checkpoints::MEMORY_LIMIT,
+            diagnostics: None,
         };
         let mut encoder = scene.device.create_command_encoder(&Default::default());
         let [particles, alive, indirect, counters] = &scene.render;
@@ -383,6 +399,76 @@ impl EventTrailScene {
             u32::from_le_bytes(bytes[(8 + index) * 4..(9 + index) * 4].try_into().unwrap())
         })
     }
+}
+
+#[test]
+fn budgeted_trail_volley_accepts_every_cohort_and_drains_retired_tails() {
+    let Some(mut test) = configured_event_trail_scene(false, 8192, true) else {
+        assert!(
+            std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+            "native GPU required"
+        );
+        return;
+    };
+    let base = event_link_counter_base(&test.scene.dispatches).unwrap() as usize;
+    let overflow = test.scene.dispatches[0].overflow_word.unwrap() as usize;
+    let mut peaks = [0; 3];
+    let mut previous_demand = 0;
+    for tick in 0..=435 {
+        test.frame(tick, 4);
+        let bytes = read_back(&test.scene.device, &test.scene.queue, &test.buffers[4]);
+        let word = |index: usize| {
+            u32::from_le_bytes(bytes[index * 4..(index + 1) * 4].try_into().unwrap())
+        };
+        let demand = word(base);
+        assert_eq!(word(base + 1), 0, "expansion omissions at tick {tick}");
+        assert_eq!(
+            word(base + 2),
+            demand,
+            "destination rejected children at tick {tick}"
+        );
+        // Read the actual source capture overflow, not the presentation copy,
+        // because this fixture calls the lockstep encoder directly.
+        let source = read_back(
+            &test.scene.device,
+            &test.scene.queue,
+            &test.scene.states[0].events,
+        );
+        assert_eq!(u32::from_le_bytes(source[4..8].try_into().unwrap()), 0);
+        assert_eq!(word(overflow), 0);
+        assert!(demand >= previous_demand);
+        assert!(demand == previous_demand || demand == previous_demand + 800);
+        previous_demand = demand;
+        let [occupied, retired, evicted, truncated] = test.usage();
+        assert_eq!(
+            [evicted, truncated],
+            [0, 0],
+            "lost histories at tick {tick}"
+        );
+        let indirect = read_back(&test.scene.device, &test.scene.queue, &test.buffers[5]);
+        let live = u32::from_le_bytes(indirect[20..24].try_into().unwrap());
+        assert_eq!(
+            occupied - retired,
+            live,
+            "missing live histories at tick {tick}"
+        );
+        assert!(occupied <= 16384 && live <= 8192);
+        peaks[0] = peaks[0].max(live);
+        peaks[1] = peaks[1].max(retired);
+        peaks[2] = peaks[2].max(occupied);
+    }
+    assert_eq!(
+        previous_demand,
+        16 * 800,
+        "the complete authored volley must run"
+    );
+    assert!(peaks[0] >= 8 * 800 && peaks[1] >= 4 * 800 && peaks[2] >= 12 * 800);
+    assert_eq!(
+        test.usage(),
+        [0; 4],
+        "all live and retired histories must drain"
+    );
+    eprintln!("budgeted volley: accepted={previous_demand}, peaks live/retired/occupied={peaks:?}");
 }
 
 #[test]
