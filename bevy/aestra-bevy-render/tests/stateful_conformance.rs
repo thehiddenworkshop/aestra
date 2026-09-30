@@ -3610,3 +3610,48 @@ fn gpu_physics_colliders_match_the_cpu_reference_against_every_proxy_kind() {
         .fold(f32::MAX, f32::min);
     assert!(deepest > -0.05, "a particle sank {deepest} into a body");
 }
+
+// ---- A host's stop_emitting / kill (event system E2b) ----
+
+/// The production module stops spawning from a host's `stop_emitting` and retires every particle
+/// silently from its `kill`, tick for tick like the CPU reference.
+#[test]
+fn gpu_emission_cutoffs_match_the_cpu_reference() {
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let config = collision_config([Collider::NONE; MAX_COLLIDERS], 0);
+    let seed = 0x00E2_B000_0000_0001_u64;
+    let cutoffs = aestra_runtime::EmissionCutoffs {
+        stop_tick: Some(30),
+        kill_tick: Some(70),
+    };
+    // As the Bevy backend packs each tick: no spawns from the stop, the kill flag from the kill.
+    let params = |tick: u64| {
+        let mut words = stateful_params(&config, seed, 0, 0);
+        if cutoffs.stop_tick.is_some_and(|stop| tick >= stop) {
+            words[1] = 0;
+        }
+        aestra_gpu::pack_stateful_kill(
+            cutoffs.kill_tick.is_some_and(|kill| tick >= kill),
+            &mut words,
+        );
+        words
+    };
+    let cpu = |ticks: u64| {
+        let mut simulation = StatefulSimulation::new(config, seed);
+        simulation.set_cutoffs(cutoffs);
+        simulation.advance_to_tick(ticks);
+        simulation.alive_particles()
+    };
+    for ticks in [29_u64, 50, 70, 71, 90] {
+        let words: Vec<Vec<u32>> = (0..ticks).map(params).collect();
+        let gpu = advance_production_ticks(&harness, &config, &words).unwrap();
+        assert_same_particles(&cpu(ticks), &gpu);
+    }
+    // Nothing born from the stop; everything gone once the kill tick has run.
+    let stopped = cpu(50);
+    assert!(!stopped.is_empty());
+    assert!(stopped.iter().all(|(id, _)| *id < 30 * 4), "{stopped:?}");
+    assert!(!cpu(70).is_empty() && cpu(71).is_empty());
+}

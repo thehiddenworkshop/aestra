@@ -33,11 +33,12 @@ pub use execution_ir::{
     ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
-pub use input_events::{EventInputError, HostInputEvent, neutral_payload};
+pub use input_events::{EmissionCutoffs, EventInputError, HostInputEvent, neutral_payload};
 pub use interface::{
     CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, EffectInterface, EventChannel,
-    INPUT_RESTART, InterfaceBinding, InterfaceEvent, InterfaceEventField, InterfaceField,
-    InterfaceInput, InterfaceParameter, InterfaceWorldRequirement, field_label, world_label,
+    INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING, InterfaceBinding, InterfaceEvent,
+    InterfaceEventField, InterfaceField, InterfaceInput, InterfaceParameter,
+    InterfaceWorldRequirement, field_label, world_label,
 };
 pub use outputs::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
@@ -1455,6 +1456,7 @@ impl CompiledEffectProject {
                 scheduled.time,
                 scheduled.seed,
                 &parameters,
+                EmissionCutoffs::NONE,
                 &mut samples,
             );
             let world_from_effect = HostTransformContext {
@@ -2034,7 +2036,14 @@ impl EffectInstance {
     }
 
     pub fn evaluate(&self, output: &mut Vec<ParticleSample>) {
-        evaluate_with_parameters(&self.effect, self.time, self.seed, &self.parameters, output);
+        evaluate_with_parameters(
+            &self.effect,
+            self.time,
+            self.seed,
+            &self.parameters,
+            self.emission_cutoffs(),
+            output,
+        );
     }
 }
 
@@ -2058,7 +2067,14 @@ fn append_choreography_window(
 /// Executes a compiled effect with its default parameter values.
 pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<ParticleSample>) {
     let parameters = default_parameter_values(effect);
-    evaluate_with_parameters(effect, time, seed, &parameters, output);
+    evaluate_with_parameters(
+        effect,
+        time,
+        seed,
+        &parameters,
+        EmissionCutoffs::NONE,
+        output,
+    );
 }
 
 /// The packed input table: parameter defaults, then each host field's fallback (host bindings HB4).
@@ -2092,9 +2108,14 @@ fn evaluate_with_parameters(
     time: f32,
     seed: u64,
     parameters: &[RuntimeValue],
+    cutoffs: EmissionCutoffs,
     output: &mut Vec<ParticleSample>,
 ) {
     output.clear();
+    // A host's `kill` (event system E2b): from its time, nothing at all.
+    if time >= cutoffs.kill_time() {
+        return;
+    }
     let mut emitted_per_emitter = vec![0_u32; effect.emitters.len()];
     if effect.playback_mode.is_continuous() && effect.duration > 0.0 {
         let absolute_time = time.max(0.0);
@@ -2120,6 +2141,7 @@ fn evaluate_with_parameters(
                 cycle,
                 seed,
                 parameters,
+                cutoffs,
                 &mut emitted_per_emitter,
                 output,
             );
@@ -2136,6 +2158,7 @@ fn evaluate_with_parameters(
             0,
             seed,
             parameters,
+            cutoffs,
             &mut emitted_per_emitter,
             output,
         );
@@ -2149,6 +2172,7 @@ fn evaluate_cycle(
     cycle: u64,
     seed: u64,
     parameters: &[RuntimeValue],
+    cutoffs: EmissionCutoffs,
     emitted_per_emitter: &mut [u32],
     output: &mut Vec<ParticleSample>,
 ) {
@@ -2208,6 +2232,13 @@ fn evaluate_cycle(
                 continue;
             };
             if spawn_time < emitter.source_offset || spawn_time >= source_end {
+                continue;
+            }
+            // A host's `stop_emitting` (event system E2b): nothing born from its time, in instance
+            // time — the GPU evaluates the same expression.
+            let cycle_start = cycle as f32 * effect.duration;
+            let birth = cycle_start + emitter.start_time + spawn_time - emitter.source_offset;
+            if birth >= cutoffs.emission_end() {
                 continue;
             }
             let age = local_time - spawn_time;

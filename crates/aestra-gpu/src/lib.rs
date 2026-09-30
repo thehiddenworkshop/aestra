@@ -218,7 +218,7 @@ pub struct GpuRenderParams {
     pub mesh_from_local: Mat4,
 }
 
-#[derive(Debug, Clone, Copy, Default, ShaderType)]
+#[derive(Debug, Clone, Copy, ShaderType)]
 pub struct GpuGlobals {
     pub time: f32,
     pub total_slots: u32,
@@ -227,8 +227,34 @@ pub struct GpuGlobals {
     pub duration: f32,
     pub continuous: u32,
     pub _padding: UVec2,
-    /// World-space trail recording. `_padding.x` is the discontinuity epoch.
+    /// World-space trail recording. `_padding.x` is the discontinuity epoch. Byte offsets up to here
+    /// (time 0, epoch 24, this matrix 32) are written directly by trail replay: add fields after it.
     pub world_from_effect: Mat4,
+    /// Where a host's `stop_emitting` / `kill` cut emission, in instance time (event system E2b):
+    /// no particle born at or after `emission_end` is shown, and none at all from `kill_time`.
+    /// `f32::MAX` when there is no cutoff; see `aestra_runtime::EmissionCutoffs`.
+    pub emission_end: f32,
+    pub kill_time: f32,
+    pub _cutoff_padding: Vec2,
+}
+
+impl Default for GpuGlobals {
+    /// Zeros, except no emission cutoff (`f32::MAX`, event system E2b).
+    fn default() -> Self {
+        Self {
+            time: 0.0,
+            total_slots: 0,
+            seed: 0,
+            emitter_count: 0,
+            duration: 0.0,
+            continuous: 0,
+            _padding: UVec2::ZERO,
+            emission_end: f32::MAX,
+            kill_time: f32::MAX,
+            _cutoff_padding: Vec2::ZERO,
+            world_from_effect: Mat4::IDENTITY,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -1146,6 +1172,12 @@ pub fn pack_stateful_events(mask: u32, capacity: u32, words: &mut [u32]) {
     words[STATEFUL_EVENTS_BASE + 1] = capacity;
 }
 
+/// Marks a tick as killed by the host (event system E2b): `death_integrate` retires every live
+/// particle without raising a death event, as `aestra_runtime::StatefulSimulation` does.
+pub fn pack_stateful_kill(killed: bool, words: &mut [u32]) {
+    words[STATEFUL_EVENTS_BASE + 2] = u32::from(killed);
+}
+
 /// Words of the gather kernel's `gather_params`: `[trigger bit, count per event, list capacity,
 /// event capacity, persistent requested-counter word, persistent list-drop word]`.
 pub const PARTICLE_EVENT_GATHER_PARAM_WORDS: usize = 6;
@@ -1494,6 +1526,13 @@ fn death_integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lifetime = state[base + 7u];
     let age = state[base + 6u];
     if (lifetime > 0.0 && age < lifetime) {
+        // A host's kill (event system E2b): retire silently.
+        if (params[AESTRA_EVENTS_BASE + 2u] != 0u) {
+            state[base + 6u] = lifetime;
+            state[base + 7u] = 0.0;
+            aestra_free_push(slot);
+            return;
+        }
         let dt = bitcast<f32>(params[8]);
         let drag = bitcast<f32>(params[16]);
         let seed = vec2<u32>(params[2], params[3]);

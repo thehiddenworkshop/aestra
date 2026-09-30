@@ -149,6 +149,34 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopRestart);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopContinuous);
     assert_ribbon_strands_match_across_seeks_and_loops(&harness);
+    assert_emission_cutoffs_match(&harness);
+}
+
+/// A host's stop_emitting then kill (event system E2b): the GPU hides exactly the particles the CPU
+/// does — none born after the stop, none at all from the kill — in every playback mode.
+fn assert_emission_cutoffs_match(harness: &GpuHarness) {
+    for (mode, regions) in [
+        (EffectPlaybackMode::Once, false),
+        (EffectPlaybackMode::LoopRestart, false),
+        (EffectPlaybackMode::LoopContinuous, true),
+    ] {
+        let mut instance = EffectInstance::with_seed(conformance_effect(mode, regions), TEST_SEED);
+        let event = |input: &str, tick: u64| aestra_runtime::HostInputEvent {
+            input: input.into(),
+            tick,
+            payload: Vec::new(),
+        };
+        instance.set_received_events(vec![
+            event(aestra_runtime::INPUT_STOP_EMITTING, 45),
+            event(aestra_runtime::INPUT_KILL, 105),
+        ]);
+        assert_instance_matches_at_times(harness, &instance, &[0.5, 0.74, 0.76, 1.2, 1.74, 1.76]);
+        let mut killed = instance.clone();
+        killed.advance(1.9);
+        let mut samples = Vec::new();
+        killed.evaluate(&mut samples);
+        assert!(samples.is_empty(), "{mode:?}: a kill leaves nothing");
+    }
 }
 
 /// The representative showcase fixtures, compiled for GPU/CPU comparison (S0-A1 set).
@@ -556,6 +584,8 @@ fn assert_instance_matches_at_times(
                     emitter_count: artifact.emitters.len() as u32,
                     duration: effect.duration,
                     continuous: u32::from(effect.playback_mode.is_continuous()),
+                    emission_end: instance.emission_cutoffs().emission_end(),
+                    kill_time: instance.emission_cutoffs().kill_time(),
                     ..Default::default()
                 },
             )

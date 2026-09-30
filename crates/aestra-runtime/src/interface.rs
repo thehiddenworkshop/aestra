@@ -13,6 +13,10 @@ use aestra_core::{
 
 /// The input every effect accepts: play again from the start (event system E0.5).
 pub const INPUT_RESTART: &str = "restart";
+/// The input stopping an effect's emission; live particles finish their lives (event system E2b).
+pub const INPUT_STOP_EMITTING: &str = "stop_emitting";
+/// The input retiring every particle at once, without death events; emission stops too (E2b).
+pub const INPUT_KILL: &str = "kill";
 /// A timeline cue asking the host to play a sound (`ChoreographyEventPayload::PlaySound`).
 pub const CUE_PLAY_SOUND: &str = "play_sound";
 /// A timeline cue asking the host to shake the camera (`ChoreographyEventPayload::CameraShake`).
@@ -250,11 +254,15 @@ impl CompiledEffect {
                 fields: payload(definition),
             });
         }
-        let mut input_events = vec![InterfaceInput {
-            name: INPUT_RESTART.to_string(),
-            fields: Vec::new(),
-            built_in: true,
-        }];
+        let mut input_events: Vec<InterfaceInput> =
+            [INPUT_RESTART, INPUT_STOP_EMITTING, INPUT_KILL]
+                .into_iter()
+                .map(|name| InterfaceInput {
+                    name: name.to_string(),
+                    fields: Vec::new(),
+                    built_in: true,
+                })
+                .collect();
         input_events.extend(self.event_inputs.iter().map(|definition| InterfaceInput {
             name: definition.name.clone(),
             fields: payload(definition),

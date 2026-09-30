@@ -4,7 +4,10 @@
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
 use aestra_core::{EffectAsset, Emitter, EventDefinition, EventField, EventFieldType, EventValue};
-use aestra_runtime::{EffectInstance, EventInputError, INPUT_RESTART, neutral_payload, trace_tick};
+use aestra_runtime::{
+    EffectInstance, EmissionCutoffs, EventInputError, INPUT_KILL, INPUT_RESTART,
+    INPUT_STOP_EMITTING, neutral_payload, trace_tick,
+};
 use std::sync::Arc;
 
 fn instance() -> EffectInstance {
@@ -113,4 +116,65 @@ fn a_neutral_payload_fills_every_field() {
         ]
     );
     assert!(neutral_payload(instance.effect(), "Launch").is_none());
+}
+
+fn live(instance: &EffectInstance) -> Vec<aestra_runtime::ParticleSample> {
+    let mut samples = Vec::new();
+    instance.evaluate(&mut samples);
+    samples
+}
+
+#[test]
+fn stop_emitting_and_kill_cut_the_emission_exactly() {
+    let mut instance = instance();
+    let mut uncut = instance.clone();
+    instance.set_playback_time(1.0);
+    // Built-in inputs take no payload.
+    assert_eq!(
+        instance.send_event(
+            INPUT_STOP_EMITTING,
+            vec![("power".into(), EventValue::Float(1.0))]
+        ),
+        Err(EventInputError::UnknownField {
+            input: INPUT_STOP_EMITTING.into(),
+            field: "power".into(),
+        })
+    );
+    let stop = instance.send_event(INPUT_STOP_EMITTING, vec![]).unwrap();
+    assert_eq!(
+        instance.emission_cutoffs(),
+        EmissionCutoffs {
+            stop_tick: Some(stop),
+            kill_tick: None,
+        }
+    );
+
+    // Before the stop nothing changes, so a backward seek is exact; after it, only what was born
+    // before remains, ageing out.
+    for time in [0.5, 0.9] {
+        instance.seek(time);
+        uncut.seek(time);
+        assert_eq!(live(&instance), live(&uncut));
+    }
+    instance.seek(1.5);
+    uncut.seek(1.5);
+    assert!(live(&instance).len() < live(&uncut).len());
+    assert!(!live(&instance).is_empty());
+
+    let kill = instance.send_event(INPUT_KILL, vec![]).unwrap();
+    assert_eq!(instance.emission_cutoffs().stop_tick, Some(stop));
+    assert_eq!(instance.emission_cutoffs().kill_tick, Some(kill));
+    instance.seek(kill as f32 / 60.0 + 0.05);
+    assert!(live(&instance).is_empty(), "nothing survives a kill");
+    instance.seek(1.4);
+    assert!(
+        !live(&instance).is_empty(),
+        "the past before the kill is intact"
+    );
+
+    // Forgetting the inputs restores the authored emission.
+    instance.clear_received_events();
+    assert_eq!(instance.emission_cutoffs(), EmissionCutoffs::NONE);
+    uncut.seek(1.4);
+    assert_eq!(live(&instance), live(&uncut));
 }

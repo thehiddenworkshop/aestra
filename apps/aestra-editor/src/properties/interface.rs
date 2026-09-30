@@ -715,11 +715,35 @@ pub(super) fn spawn_interface(
 
             heading(card, localizer.text("interface-input-events"));
             for input in interface.input_events.iter().filter(|input| input.built_in) {
-                let description = match input.name.as_str() {
-                    aestra_runtime::INPUT_RESTART => localizer.text("interface-input-restart"),
-                    _ => String::new(),
-                };
-                line(card, format!("{} — {description}", input.name));
+                let description = localizer.text(match input.name.as_str() {
+                    aestra_runtime::INPUT_STOP_EMITTING => "interface-input-stop-emitting",
+                    aestra_runtime::INPUT_KILL => "interface-input-kill",
+                    _ => "interface-input-restart",
+                });
+                let text = format!("{} — {description}", input.name);
+                // stop_emitting and kill can be tried on the preview (event system E2b).
+                match super::interface_events::BuiltInInput::from_name(&input.name) {
+                    Some(built_in) => {
+                        card.spawn(Node {
+                            width: Val::Percent(100.0),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(6.0),
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            spawn_feathers_action_button(
+                                row,
+                                &localizer.text("interface-send-event"),
+                                super::interface_events::EventDeclarationAction::SendBuiltIn(
+                                    built_in,
+                                ),
+                                false,
+                            );
+                            line(row, text);
+                        });
+                    }
+                    None => line(card, text),
+                }
             }
             card.spawn_empty()
                 .apply_scene(label_dim(localizer.text("interface-input-events-playback")));

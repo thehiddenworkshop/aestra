@@ -344,6 +344,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "interface-availability-forward-only",
     "interface-input-events",
     "interface-input-restart",
+    "interface-input-stop-emitting",
+    "interface-input-kill",
     "interface-input-events-playback",
     "interface-bound-to",
     "interface-bound-to-description",

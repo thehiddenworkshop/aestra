@@ -265,6 +265,9 @@ impl Harness {
                 duration: 10.0,
                 continuous: 1,
                 _padding: glam::UVec2::ZERO,
+                emission_end: f32::MAX,
+                kill_time: f32::MAX,
+                _cutoff_padding: Default::default(),
                 world_from_effect: glam::Mat4::IDENTITY,
             }),
         );

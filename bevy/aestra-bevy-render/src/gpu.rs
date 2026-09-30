@@ -229,6 +229,8 @@ struct StatefulDispatch {
     /// The host world's revision, for an emitter with `World` colliders (0 otherwise): a new world
     /// is a different simulation.
     world_revision: u64,
+    /// Where a host's `stop_emitting` / `kill` cut emission (event system E2b), updated each frame.
+    cutoffs: aestra_runtime::EmissionCutoffs,
     /// The emitter transform placing new spawns in effect space. Kept out of the fingerprint: moving
     /// an emitter changes only future spawns, so the live state survives (see
     /// [`prepare_stateful_states`]) and a gizmo drag never restarts the simulation.
@@ -1013,6 +1015,7 @@ pub(crate) fn prepare_gpu_effects(
                                 schedule: None,
                                 world_from_effect: aestra_runtime::IDENTITY_AFFINE,
                                 world_revision: 0,
+                                cutoffs: aestra_runtime::EmissionCutoffs::NONE,
                                 placement: spawn_placement(compiled.transform),
                                 appearance: StatefulAppearance::of(emitter),
                             })
@@ -1118,6 +1121,9 @@ pub(crate) fn prepare_gpu_effects(
             duration: player.effect().duration,
             continuous: u32::from(player.effect().playback_mode.is_continuous()),
             _padding: UVec2::ZERO,
+            emission_end: player.instance.emission_cutoffs().emission_end(),
+            kill_time: player.instance.emission_cutoffs().kill_time(),
+            _cutoff_padding: Vec2::ZERO,
             world_from_effect: Mat4::IDENTITY,
         }));
         let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
@@ -1753,7 +1759,9 @@ fn sync_gpu_render_transforms(
         // world, which world (a new one restarts their history), and this frame's physics colliders.
         let world_revision = world_sdf.as_deref().map_or(0, AestraWorldSdf::revision);
         let mut reads_physics = false;
+        let cutoffs = player.instance.emission_cutoffs();
         for dispatch in &mut gpu.stateful_dispatch {
+            dispatch.cutoffs = cutoffs;
             let (mut world_colliders, mut physics_colliders) = (false, false);
             for collider in &dispatch.colliders {
                 match collider.shape {
@@ -1920,6 +1928,9 @@ fn sync_gpu_render_transforms(
                 duration: player.effect().duration,
                 continuous: u32::from(player.effect().playback_mode.is_continuous()),
                 _padding: UVec2::new(player.instance.history_epoch(), statistics_token),
+                emission_end: player.instance.emission_cutoffs().emission_end(),
+                kill_time: player.instance.emission_cutoffs().kill_time(),
+                _cutoff_padding: Vec2::ZERO,
                 world_from_effect: world,
             });
         }
@@ -2946,6 +2957,12 @@ fn stateful_params_bytes(
         aestra_runtime::PARTICLE_EVENT_CAPACITY,
         &mut words,
     );
+    // A host's kill (event system E2b) retires everything from its tick on.
+    aestra_gpu::pack_stateful_kill(
+        tick.zip(dispatch.cutoffs.kill_tick)
+            .is_some_and(|(tick, kill)| u64::from(tick) >= kill),
+        &mut words,
+    );
     let look = &dispatch.appearance;
     aestra_gpu::pack_stateful_appearance(
         &look.size,
@@ -3031,10 +3048,19 @@ fn stateful_tick_group(
     render: &StatefulRenderBuffers<'_>,
     live: bool,
 ) -> (BindGroup, Buffer) {
-    persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
-    let spawn_count = persistent.spawn_accumulator.floor();
-    persistent.spawn_accumulator -= spawn_count;
-    let spawn_count = (spawn_count as u32).min(dispatch.capacity);
+    // A host's stop_emitting / kill (event system E2b): nothing spawns from its tick on.
+    let stopped = dispatch
+        .cutoffs
+        .stop_tick
+        .is_some_and(|stop| u64::from(persistent.last_tick) >= stop);
+    let spawn_count = if stopped {
+        0
+    } else {
+        persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
+        let spawn_count = persistent.spawn_accumulator.floor();
+        persistent.spawn_accumulator -= spawn_count;
+        (spawn_count as u32).min(dispatch.capacity)
+    };
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful tick params"),
         contents: &stateful_params_bytes(
@@ -4185,6 +4211,7 @@ mod tests {
             schedule: None,
             world_from_effect: aestra_runtime::IDENTITY_AFFINE,
             world_revision: 0,
+            cutoffs: aestra_runtime::EmissionCutoffs::NONE,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };
@@ -5045,6 +5072,7 @@ mod coupled_tests {
             schedule: None,
             world_from_effect: aestra_runtime::IDENTITY_AFFINE,
             world_revision: 0,
+            cutoffs: aestra_runtime::EmissionCutoffs::NONE,
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             appearance: StatefulAppearance::plain(),
         };

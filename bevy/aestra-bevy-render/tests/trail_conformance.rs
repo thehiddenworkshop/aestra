@@ -734,6 +734,9 @@ fn check_pool(max_trails: u32, sampling: u32) {
                     duration: 0.25,
                     continuous: 1,
                     _padding: UVec2::new(epoch, 0),
+                    emission_end: f32::MAX,
+                    kill_time: f32::MAX,
+                    _cutoff_padding: Default::default(),
                     world_from_effect: Mat4::from_translation(translation),
                 }),
             );

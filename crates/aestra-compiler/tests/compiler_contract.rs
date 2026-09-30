@@ -3108,11 +3108,13 @@ fn the_public_interface_lists_what_a_game_sets_binds_hears_and_supplies() {
         inputs,
         [
             (aestra_runtime::INPUT_RESTART, true, 0),
-            ("Detonate", false, 1)
+            (aestra_runtime::INPUT_STOP_EMITTING, true, 0),
+            (aestra_runtime::INPUT_KILL, true, 0),
+            ("Detonate", false, 1),
         ]
     );
     assert_eq!(
-        interface.input_events[1].fields[0].field_type,
+        interface.input_events[3].fields[0].field_type,
         aestra_core::EventFieldType::Vec3
     );
     assert_eq!(interface.world.len(), 1);

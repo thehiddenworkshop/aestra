@@ -324,6 +324,8 @@ pub struct StatefulSimulation {
     /// The homing target the next ticks steer toward (host bindings HB7), as the host last set it.
     homing_input: Option<HomingTarget>,
     homing_tracker: HomingTracker,
+    /// A host's `stop_emitting` / `kill` (event system E2b).
+    cutoffs: crate::EmissionCutoffs,
     /// Particles that reached their homing target so far (the `impact` event, host bindings HB9).
     arrivals: u64,
     /// The spawn, death and collision events of the last tick (host bindings HB9b).
@@ -347,6 +349,7 @@ impl StatefulSimulation {
             particles: Vec::new(),
             homing_input: None,
             homing_tracker: HomingTracker::default(),
+            cutoffs: crate::EmissionCutoffs::NONE,
             arrivals: 0,
             events: Default::default(),
             world: None,
@@ -369,6 +372,12 @@ impl StatefulSimulation {
     /// HB10).
     pub fn set_physics(&mut self, physics: Option<ParticlePhysics>) {
         self.physics = physics;
+    }
+
+    /// Where a host's `stop_emitting` and `kill` inputs cut emission (event system E2b): from
+    /// `stop_tick` nothing spawns; at `kill_tick` every particle retires without a death event.
+    pub fn set_cutoffs(&mut self, cutoffs: crate::EmissionCutoffs) {
+        self.cutoffs = cutoffs;
     }
 
     /// Moves where the following ticks' spawns land (an attached emitter, host bindings HB7b).
@@ -506,6 +515,13 @@ impl StatefulSimulation {
         for events in &mut self.events {
             events.clear();
         }
+        // A host `kill` (event system E2b): from its tick every particle retires, raising nothing,
+        // and nothing spawns.
+        if self.cutoffs.kill_tick.is_some_and(|kill| self.tick >= kill) {
+            self.particles.clear();
+            self.tick += 1;
+            return;
+        }
         let [spawned_events, deaths, collisions] = &mut self.events;
         let homing = self.config.homing.map(|homing| {
             let target = self.homing_tracker.resolve(homing.lost, self.homing_input);
@@ -585,7 +601,12 @@ impl StatefulSimulation {
             .retain(|particle| particle.age < particle.lifetime);
 
         let room = (self.config.capacity as usize).saturating_sub(self.particles.len());
-        let spawn = (self.config.spawn_per_tick as usize).min(room);
+        let stopped = self.cutoffs.stop_tick.is_some_and(|stop| self.tick >= stop);
+        let spawn = if stopped {
+            0
+        } else {
+            (self.config.spawn_per_tick as usize).min(room)
+        };
         for _ in 0..spawn {
             let ordinal = self.spawned;
             let mut velocity = launch_velocity(&self.config, self.seed, ordinal);

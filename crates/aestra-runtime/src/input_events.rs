@@ -1,5 +1,5 @@
 //! Host input events (event system E2): the events a host sends an effect — a declared input such as
-//! `Detonate(position)`, or the built-in `restart`. Each is checked against the effect's interface,
+//! `Detonate(position)`, or a built-in one: `restart`, `stop_emitting`, `kill`. Each is checked against the effect's interface,
 //! stamped with the fixed tick it takes effect at (the next one), and recorded, so a backward seek
 //! replays exactly what the host sent (event system §12C): the received events are host input, like
 //! a binding trace.
@@ -7,7 +7,7 @@
 //! What a declared input *does* — spawn a burst, raise an output — comes with event routes (E3);
 //! until then an instance records its inputs and reports which ones each tick crosses.
 
-use crate::{EffectInstance, INPUT_RESTART, trace_tick};
+use crate::{EffectInstance, INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING, trace_tick};
 use aestra_core::{EventFieldType, EventValue};
 use std::ops::Range;
 
@@ -59,6 +59,39 @@ impl std::fmt::Display for EventInputError {
 
 impl std::error::Error for EventInputError {}
 
+/// Where a host's `stop_emitting` and `kill` inputs cut an instance's emission (event system E2b):
+/// from `stop_tick` no particle spawns; from `kill_tick` every particle is gone, retired without a
+/// death event. A `kill` also stops emission. Ticks are the instance's fixed ticks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EmissionCutoffs {
+    pub stop_tick: Option<u64>,
+    pub kill_tick: Option<u64>,
+}
+
+impl EmissionCutoffs {
+    /// No cutoff: the effect emits as authored.
+    pub const NONE: Self = Self {
+        stop_tick: None,
+        kill_tick: None,
+    };
+
+    fn time(tick: Option<u64>) -> f32 {
+        tick.map_or(f32::MAX, |tick| {
+            tick as f32 * crate::StatefulSimulation::TICK_DT
+        })
+    }
+
+    /// The instance time emission stops at; `f32::MAX` when it never does.
+    pub fn emission_end(&self) -> f32 {
+        Self::time(self.stop_tick)
+    }
+
+    /// The instance time every particle is gone from; `f32::MAX` when never.
+    pub fn kill_time(&self) -> f32 {
+        Self::time(self.kill_tick)
+    }
+}
+
 /// A content hash of received events, part of the instance's host input identity.
 pub(crate) fn events_identity(events: &[HostInputEvent]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
@@ -92,8 +125,9 @@ impl EffectInstance {
     /// Receives an input event (event system E2). A declared input is checked against its payload
     /// schema, stamped with the next fixed tick and recorded; sending at an earlier tick than events
     /// already recorded (after a backward seek) replaces that future, so the record is always one
-    /// history. `restart` restarts playback at once and is not recorded. Returns the tick the event
-    /// takes effect at.
+    /// history. `restart` restarts playback at once and is not recorded; `stop_emitting` and `kill`
+    /// take no payload and are recorded like declared inputs (see [`Self::emission_cutoffs`]). Returns
+    /// the tick the event takes effect at.
     pub fn send_event(
         &mut self,
         input: &str,
@@ -102,6 +136,15 @@ impl EffectInstance {
         if input == INPUT_RESTART {
             self.restart();
             return Ok(0);
+        }
+        if input == INPUT_STOP_EMITTING || input == INPUT_KILL {
+            if let Some((field, _)) = payload.first() {
+                return Err(EventInputError::UnknownField {
+                    input: input.to_string(),
+                    field: field.clone(),
+                });
+            }
+            return Ok(self.record_event(input, payload));
         }
         let definition = self
             .effect
@@ -145,6 +188,11 @@ impl EffectInstance {
                 &missing.name,
             ));
         }
+        Ok(self.record_event(input, payload))
+    }
+
+    /// Records an accepted input at the next tick, replacing any recorded future.
+    fn record_event(&mut self, input: &str, payload: Vec<(String, EventValue)>) -> u64 {
         let tick = trace_tick(self.time) + 1;
         self.input_events.retain(|event| event.tick <= tick);
         self.input_events.push(HostInputEvent {
@@ -152,7 +200,26 @@ impl EffectInstance {
             tick,
             payload,
         });
-        Ok(tick)
+        // The event takes effect at the next tick: the past this instance simulated is unchanged, and
+        // the host input identity (part of checkpoint contexts) now differs from any other history.
+        tick
+    }
+
+    /// When the received `stop_emitting` and `kill` inputs cut this instance's emission (event
+    /// system E2b): a property of the whole recorded history, so every backend and every seek
+    /// agrees on it.
+    pub fn emission_cutoffs(&self) -> EmissionCutoffs {
+        let first = |inputs: &[&str]| {
+            self.input_events
+                .iter()
+                .filter(|event| inputs.contains(&event.input.as_str()))
+                .map(|event| event.tick)
+                .min()
+        };
+        EmissionCutoffs {
+            stop_tick: first(&[INPUT_STOP_EMITTING, INPUT_KILL]),
+            kill_tick: first(&[INPUT_KILL]),
+        }
     }
 
     /// Every input event received, in tick order.

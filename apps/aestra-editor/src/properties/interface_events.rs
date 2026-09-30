@@ -18,8 +18,34 @@ pub(super) enum EventDeclarationAction {
     SetFieldRequired(EventDefinitionId, EventFieldId, bool),
     /// Sends a declared input to the preview, with a neutral payload (event system E2).
     Send(EventDefinitionId),
+    /// Sends a built-in input to the preview: `stop_emitting` or `kill` (event system E2b).
+    SendBuiltIn(BuiltInInput),
     /// Forgets the inputs sent to the preview.
     ClearSent,
+}
+
+/// A built-in input the preview can be sent (event system E2b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BuiltInInput {
+    StopEmitting,
+    Kill,
+}
+
+impl BuiltInInput {
+    pub(super) fn from_name(name: &str) -> Option<Self> {
+        match name {
+            aestra_runtime::INPUT_STOP_EMITTING => Some(Self::StopEmitting),
+            aestra_runtime::INPUT_KILL => Some(Self::Kill),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::StopEmitting => aestra_runtime::INPUT_STOP_EMITTING,
+            Self::Kill => aestra_runtime::INPUT_KILL,
+        }
+    }
 }
 
 /// The name input of a declared event, or of one of its fields.
@@ -83,7 +109,14 @@ pub(super) fn apply(
 ) -> bool {
     match action {
         EventDeclarationAction::Send(id) => {
-            send(session, id, localizer);
+            if let Some((_, definition)) = find(&session.effect, id) {
+                let name = definition.name.clone();
+                send(session, &name, localizer);
+            }
+            return false;
+        }
+        EventDeclarationAction::SendBuiltIn(input) => {
+            send(session, input.name(), localizer);
             return false;
         }
         EventDeclarationAction::ClearSent => {
@@ -117,7 +150,9 @@ pub(super) fn apply(
                 },
             )
         }
-        EventDeclarationAction::Send(_) | EventDeclarationAction::ClearSent => {
+        EventDeclarationAction::Send(_)
+        | EventDeclarationAction::SendBuiltIn(_)
+        | EventDeclarationAction::ClearSent => {
             unreachable!("handled above")
         }
         EventDeclarationAction::Remove(id) => (
@@ -181,12 +216,10 @@ pub(super) fn apply(
     session.execute(localizer.text(label), command, true)
 }
 
-/// Sends a declared input to the session's preview, recording it for every later seek.
-pub(super) fn send(session: &mut EditorSession, id: EventDefinitionId, localizer: &Localizer) {
-    let Some((_, definition)) = find(&session.effect, id) else {
-        return;
-    };
-    let name = definition.name.clone();
+/// Sends an input — declared, with a neutral payload, or built in — to the session's preview,
+/// recording it for every later seek.
+pub(super) fn send(session: &mut EditorSession, name: &str, localizer: &Localizer) {
+    let name = name.to_owned();
     let Some(preview) = session.preview_mut() else {
         session.status = localizer.text("interface-status-send-unavailable");
         return;
@@ -625,5 +658,35 @@ mod tests {
 
         apply(EventDeclarationAction::ClearSent, &mut session, &localizer);
         assert!(session.preview_inputs.is_empty());
+    }
+
+    #[test]
+    fn built_in_inputs_are_sent_to_the_preview() {
+        let mut session = crate::test_support::session_with_timing_slack();
+        let localizer = Localizer::new("en-US").unwrap();
+        apply(
+            EventDeclarationAction::SendBuiltIn(BuiltInInput::StopEmitting),
+            &mut session,
+            &localizer,
+        );
+        apply(
+            EventDeclarationAction::SendBuiltIn(BuiltInInput::Kill),
+            &mut session,
+            &localizer,
+        );
+        let sent: Vec<&str> = session
+            .preview_inputs
+            .iter()
+            .map(|event| event.input.as_str())
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                aestra_runtime::INPUT_STOP_EMITTING,
+                aestra_runtime::INPUT_KILL
+            ]
+        );
+        let cutoffs = session.preview().unwrap().emission_cutoffs();
+        assert!(cutoffs.stop_tick.is_some() && cutoffs.kill_tick.is_some());
     }
 }

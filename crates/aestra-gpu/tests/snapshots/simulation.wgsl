@@ -109,7 +109,10 @@ struct Globals {
     duration: f32,
     continuous: u32,
     _padding: vec2<u32>,
-    world_from_effect: mat4x4<f32>
+    world_from_effect: mat4x4<f32>,
+    emission_end: f32,
+    kill_time: f32,
+    _cutoff_padding: vec2<f32>
 }
 
 @group(0) @binding(0)
@@ -519,6 +522,12 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
     }
     if spawn_time < emitter.source_offset || spawn_time >= source_end {
+        particles[slot] = dead_particle(emitter_index);
+        append_dead(slot);
+        return;
+    }
+    let birth = cycle_start + emitter.start_time + spawn_time - emitter.source_offset;
+    if birth >= globals.emission_end || globals.time >= globals.kill_time {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
         return;
