@@ -284,7 +284,29 @@ pub(super) fn apply(
             )
         }
     };
-    session.execute(localizer.text(label), command, true)
+    let added = match &command {
+        EffectCommand::AddInputSpawn { route, .. } => Some(route.clone()),
+        _ => None,
+    };
+    let changed = session.execute(localizer.text(label), command, true);
+    // A route is a rule, not a spawn: say what it does, and how to try it.
+    if changed && let Some(route) = added {
+        let mut args = FluentArgs::new();
+        if let Some((_, input)) = find(&session.effect, route.input) {
+            args.set("input", input.name.clone());
+        }
+        if let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == route.target)
+        {
+            args.set("emitter", emitter.name.clone());
+        }
+        args.set("count", route.count);
+        session.status = localizer.text_with("interface-status-route-added", &args);
+    }
+    changed
 }
 
 /// Sends an input — declared, with a neutral payload, or built in — to the session's preview,
@@ -307,7 +329,15 @@ pub(super) fn send(session: &mut EditorSession, name: &str, localizer: &Localize
         Ok(tick) => {
             args.set("tick", tick);
             session.preview_inputs = recorded;
-            session.status = localizer.text_with("interface-status-sent", &args);
+            // Inputs take effect as playback advances: paused, nothing happens yet.
+            session.status = localizer.text_with(
+                if session.playing {
+                    "interface-status-sent"
+                } else {
+                    "interface-status-sent-paused"
+                },
+                &args,
+            );
         }
         Err(error) => {
             args.set("reason", error.to_string());
@@ -949,6 +979,8 @@ mod tests {
             (route.input, route.target, route.count, route.position),
             (input, first, DEFAULT_ROUTE_COUNT, Some(field))
         );
+        // Adding a route spawns nothing yet: the status says how to try it.
+        assert!(session.status.contains("Press Send"), "{}", session.status);
         assert!(apply(
             EventDeclarationAction::SetRouteTarget(route.id, second),
             &mut session,
@@ -975,11 +1007,13 @@ mod tests {
             &session.effect,
             second
         ));
+        session.playing = false;
         apply(
             EventDeclarationAction::Send(input),
             &mut session,
             &localizer,
         );
+        assert!(session.status.contains("paused"), "{}", session.status);
         let bursts = session.preview().unwrap().input_spawn_bursts();
         assert_eq!(bursts.len(), 1);
         assert_eq!(bursts[0].records().count(), MAX_EVENT_LINK_COUNT as usize);
