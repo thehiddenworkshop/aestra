@@ -147,6 +147,9 @@ pub fn drive_gpu_bench(
         // Aestra's passes, and the transparent passes its particles and volumes draw in.
         if [
             "aestra::gpu::simulate",
+            "aestra::gpu::trail_history",
+            "aestra::gpu::trail_particles",
+            "aestra::gpu::trail_compaction",
             "aestra::gpu::extension_stages",
             "main_transparent_pass_2d",
             "main_transparent_pass_3d",

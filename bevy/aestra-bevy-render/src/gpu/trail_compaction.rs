@@ -1,5 +1,6 @@
 //! Stable per-renderer compaction, shared by every view and rebuilt after simulation/replay.
 use super::*;
+use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::render_resource::{Buffer, encase::UniformBuffer};
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -226,6 +227,9 @@ fn compact(
         return;
     };
     let mut batch = timing.begin(&mut timer);
+    let diagnostics = context.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
+    let span = diagnostics.time_span(context.command_encoder(), "aestra::gpu::trail_compaction");
     let mut by_owner: BTreeMap<Entity, Vec<&Entry>> = BTreeMap::new();
     for entry in state.entries.values() {
         by_owner.entry(entry.owner).or_default().push(entry);
@@ -256,6 +260,7 @@ fn compact(
             }
         }
     }
+    span.end(context.command_encoder());
     if let Some(batch) = batch {
         batch.finish(&mut context, timing.mailboxes.compaction.clone());
     }

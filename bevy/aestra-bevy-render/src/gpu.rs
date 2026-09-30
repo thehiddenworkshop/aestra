@@ -10,6 +10,7 @@ mod preparation_timing;
 mod render;
 mod ribbon_bounds;
 mod simulation_timing;
+mod stateful_trails;
 mod trail_checkpoints;
 mod trail_compaction;
 mod trail_culling;
@@ -122,6 +123,7 @@ pub(crate) struct GpuEffectBuffers {
     has_ribbons: bool,
     has_trails: bool,
     ribbon_workgroups: u32,
+    trail_workgroups: u32,
     total_slots: u32,
     simulation_time: f32,
     /// The requested fidelity of stateful seeking this frame (hybrid roadmap M12): `Preview` bounds the
@@ -1094,12 +1096,13 @@ pub(crate) fn prepare_gpu_effects(
             .map(|(index, r)| (index as u32, aestra_gpu::trail_draw_instances(r)))
             .collect();
         let has_trails = !trail_renderers.is_empty();
-        let has_ribbons = !ribbon_renderers.is_empty() || has_trails;
+        let has_ribbons = !ribbon_renderers.is_empty();
         let ribbon_workgroups = player
             .effect()
             .emitters
             .len()
             .div_ceil(WORKGROUP_SIZE as usize) as u32;
+        let trail_workgroups = player.effect().emitters.len() as u32;
         let renderer_owners: Vec<_> = artifact.renderers.iter().map(|r| r.playback_mode).collect();
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         // Full record count, including the trail-history storage region past
@@ -1118,7 +1121,7 @@ pub(crate) fn prepare_gpu_effects(
         // state; a 1-word dummy when the effect draws no ribbons/trails.
         let aux = buffers.add(ShaderBuffer::from(vec![
             0_u32;
-            if has_ribbons {
+            if has_ribbons || has_trails {
                 record_count * 3
             } else {
                 1
@@ -1199,6 +1202,7 @@ pub(crate) fn prepare_gpu_effects(
                 checkpoint_context: default(),
                 trail_roots,
                 ribbon_workgroups,
+                trail_workgroups,
                 total_slots: artifact.total_slots,
                 simulation_state: artifact.simulation_state,
                 stateful_dispatch,
@@ -1577,14 +1581,12 @@ fn update_gpu_inputs(
         // Use the binding that actually prepared successfully, including retained bindings
         // on preparation failure. Never prune CPU-presentation/readback data.
         if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
+            gpu.trail_workgroups = dynamics.emitters.len() as u32;
             let ribbon_workgroups = (dynamics.emitters.len() as u32).div_ceil(WORKGROUP_SIZE);
             if gpu.ribbon_workgroups != ribbon_workgroups {
                 gpu.ribbon_workgroups = ribbon_workgroups;
             }
-            let has_ribbons = dynamics
-                .renderers
-                .iter()
-                .any(|r| matches!(r.renderer_kind, 3 | 4));
+            let has_ribbons = dynamics.renderers.iter().any(|r| r.renderer_kind == 3);
             if gpu.has_ribbons != has_ribbons {
                 gpu.has_ribbons = has_ribbons;
             }
@@ -3315,6 +3317,7 @@ fn joint_checkpoint_tick(
     persistent_states: &[StatefulPersistentState],
     domains: &[Option<crate::execution::StageTimeline>],
     target: u32,
+    trails: Option<&stateful_trails::Observer<'_>>,
 ) -> Option<u32> {
     let first = persistent_states.first()?;
     first
@@ -3324,7 +3327,12 @@ fn joint_checkpoint_tick(
         .map(|checkpoint| checkpoint.tick)
         .filter(|tick| *tick <= target)
         .find(|tick| {
-            persistent_states
+            trails.is_none_or(|trails| {
+                trails
+                    .history
+                    .checkpoints
+                    .contains(*tick as f32 * STATEFUL_TICK_DT)
+            }) && persistent_states
                 .iter()
                 .all(|state| state.checkpoints.iter().any(|c| c.tick == *tick))
                 && domains
@@ -3359,6 +3367,7 @@ fn run_coupled_stateful(
     render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
     budget: u32,
+    mut trails: Option<&mut stateful_trails::Observer<'_>>,
 ) -> u32 {
     let (death_integrate, spawn, present, order_present) = pipelines;
     let domains = coupling.domains;
@@ -3396,15 +3405,30 @@ fn run_coupled_stateful(
         .iter_mut()
         .filter_map(|state| state.rewind.take())
         .min();
-    if !in_step || target < last || rewind.is_some() {
+    let history_discontinuity = trails.as_ref().is_some_and(|trails| {
+        trails.history.tick != Some(last)
+            || trails.history.epoch != Some(trails.effect.history_epoch)
+    });
+    if let Some(rewind) = rewind
+        && let Some(trails) = trails.as_mut()
+    {
+        trails
+            .history
+            .checkpoints
+            .retain_through(rewind as f32 * STATEFUL_TICK_DT);
+    }
+    if !in_step || target < last || rewind.is_some() || history_discontinuity {
         let back_to = rewind.map_or(target.min(last), |tick| tick.min(target).min(last));
-        match joint_checkpoint_tick(persistent_states, domains, back_to) {
+        match joint_checkpoint_tick(persistent_states, domains, back_to, trails.as_deref()) {
             Some(tick) => {
                 for state in persistent_states.iter_mut() {
                     state.restore_at(encoder, tick);
                 }
                 for domain in domains.iter_mut().flatten() {
                     domain.restore_to(encoder, tick);
+                }
+                if let Some(trails) = trails.as_mut() {
+                    trails.restore(encoder, tick);
                 }
             }
             None => {
@@ -3414,12 +3438,36 @@ fn run_coupled_stateful(
                 for domain in domains.iter_mut().flatten() {
                     domain.restore_to(encoder, 0);
                 }
+                if let Some(trails) = trails.as_mut() {
+                    trails.reset_history(encoder);
+                }
             }
         }
     }
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
-    let live = in_step && rewind.is_none() && is_live_advance(last, target);
+    let live =
+        in_step && rewind.is_none() && !history_discontinuity && is_live_advance(last, target);
     let ticks = target.saturating_sub(now).min(budget);
+    // Observe tick zero too, so a paused empty effect has valid history/telemetry.
+    if let Some(trails) = trails.as_mut()
+        && trails.history.tick.is_none()
+    {
+        trails.prepare(device, encoder, now);
+        for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+            present_stateful_emitter(
+                device,
+                encoder,
+                present,
+                order_present,
+                layout,
+                persistent,
+                dispatch,
+                render,
+                now as f32 * STATEFUL_TICK_DT,
+            );
+        }
+        trails.record(encoder, now);
+    }
     let lists: Vec<Buffer> = if ticks > 0 {
         link_ends
             .iter()
@@ -3593,19 +3641,64 @@ fn run_coupled_stateful(
                 persistent.capture(device, encoder, persistent.last_tick);
             }
         }
+        if let Some(trails) = trails.as_mut() {
+            trails.prepare(device, encoder, next);
+            for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+                present_stateful_emitter(
+                    device,
+                    encoder,
+                    present,
+                    order_present,
+                    layout,
+                    persistent,
+                    dispatch,
+                    render,
+                    next as f32 * STATEFUL_TICK_DT,
+                );
+            }
+            trails.record(encoder, next);
+            if next.is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
+                && persistent_states.iter().all(|state| !state.mixed_placement)
+            {
+                trails.capture(device, encoder, next);
+            }
+        }
     }
-    for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
-        present_stateful_emitter(
-            device,
-            encoder,
-            present,
-            order_present,
-            layout,
-            persistent,
-            dispatch,
-            render,
-            simulation_time,
-        );
+    // With histories, the canonical final tick is already presented and stamped;
+    // never replace it with a sub-frame head or expire tails at an unprocessed seek target.
+    if ticks == 0
+        && let Some(trails) = trails.as_mut()
+    {
+        trails.prepare(device, encoder, now);
+        for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+            present_stateful_emitter(
+                device,
+                encoder,
+                present,
+                order_present,
+                layout,
+                persistent,
+                dispatch,
+                render,
+                now as f32 * STATEFUL_TICK_DT,
+            );
+        }
+        trails.record(encoder, now);
+    }
+    if trails.is_none() {
+        for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
+            present_stateful_emitter(
+                device,
+                encoder,
+                present,
+                order_present,
+                layout,
+                persistent,
+                dispatch,
+                render,
+                simulation_time,
+            );
+        }
     }
     ticks
 }
@@ -3668,6 +3761,7 @@ fn run_stateful_dispatches(
     history_epoch: u32,
     owns_shared_reset: bool,
     pacer: Option<&mut CatchupPacer>,
+    trails: Option<&mut stateful_trails::Observer<'_>>,
 ) {
     if owns_shared_reset {
         // Clear the shared live counter once, before any emitter's present bumps it.
@@ -3676,7 +3770,9 @@ fn run_stateful_dispatches(
     // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
     // with it; so do emitters joined by event links (host bindings HB9b), with one another, and
     // those of an effect with input routes (event system E3, `bursts` is then given).
-    let coupled = !links.is_empty()
+    let has_trails = trails.is_some();
+    let coupled = has_trails
+        || !links.is_empty()
         || bursts.is_some()
         || dispatches
             .iter()
@@ -3701,10 +3797,17 @@ fn run_stateful_dispatches(
                 render,
                 simulation_time,
                 budget,
+                trails,
             );
             if let Some(pacer) = pacer {
                 pacer.spent(ticks, budget);
             }
+        }
+        None if has_trails => {
+            // Never silently use the independent path: it cannot observe every
+            // emitter at a shared tick or restore histories with particles.
+            warn!("stateful trail simulation is waiting for lockstep pipelines");
+            return;
         }
         None => {
             for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
@@ -3746,7 +3849,10 @@ fn run_stateful_dispatches(
             );
         }
     }
-    if owns_shared_reset && let Some(first) = dispatches.first() {
+    if owns_shared_reset
+        && !has_trails
+        && let Some(first) = dispatches.first()
+    {
         stamp_stateful_statistics(
             device,
             encoder,
@@ -3763,6 +3869,7 @@ fn run_stateful_dispatches(
 /// pipelines and states, and the domains coupled emitters follow (fluid F2b), with their pipeline.
 type SimulationState<'w, 's> = (
     Local<'s, TrailHistories>,
+    Local<'s, stateful_trails::Histories>,
     Local<'s, simulation_timing::SimulationTimer>,
     Option<Res<'w, StatefulSimulationPipeline>>,
     ResMut<'w, StatefulStates>,
@@ -3802,6 +3909,7 @@ fn run_simulation(
     let (buffers, render_device, queue, timing_mailbox, render_settings) = gpu_resources;
     let (
         mut histories,
+        mut stateful_histories,
         mut timer,
         stateful_pipeline,
         mut stateful_states,
@@ -3849,15 +3957,27 @@ fn run_simulation(
     histories.retain(|entity, _| {
         effects
             .get(*entity)
-            .is_ok_and(|(_, _, e, _, _)| e.has_trails)
+            .is_ok_and(|(_, _, e, _, _)| e.has_trails && e.stateful_dispatch.is_empty())
     });
-    let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
+    stateful_histories.retain(|entity, _| {
+        effects
+            .get(*entity)
+            .is_ok_and(|(_, _, e, _, _)| e.has_trails && !e.stateful_dispatch.is_empty())
+    });
+    let mut allocated: u64 = histories
+        .values()
+        .map(|h| h.2.checkpoints.bytes())
+        .sum::<u64>()
+        + stateful_histories
+            .values()
+            .map(|h| h.1.checkpoints.bytes())
+            .sum::<u64>();
     for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
-        // A fully stateful effect (hybrid roadmap M6) skips the analytic reset+simulate entirely and
-        // runs only its persistent path, which owns the shared counter reset and statistics telemetry.
-        // A mixed effect falls through to the analytic path and runs its stateful emitters afterward
-        // (at the end of this loop body), where the analytic reset has already prepared the buffers.
-        if effect.stateful_only
+        // Histories shared with stateful emitters advance in the lockstep path:
+        // reset/present analytic heads, present stateful heads, then record trails
+        // after each tick's event births. Other mixed effects retain the old path.
+        let stateful_trails = effect.has_trails && !effect.stateful_dispatch.is_empty();
+        if (effect.stateful_only || stateful_trails)
             && let (
                 Some((sp, death_integrate, spawn, present, order_present)),
                 Some(persistent_states),
@@ -3873,8 +3993,72 @@ fn run_simulation(
             if let [Some(particles), Some(alive), Some(indirect), Some(counters)] = render_buffers
                 && persistent_states.len() == effect.stateful_dispatch.len()
             {
+                let mut observer = if stateful_trails {
+                    let Some(update) = update_trails else {
+                        continue;
+                    };
+                    if effect.has_ribbons && link_ribbons.is_none() {
+                        continue;
+                    }
+                    let (Some(globals), Some(render_globals)) = (
+                        buffers.get(&effect.globals),
+                        buffers.get(&effect.render_globals),
+                    ) else {
+                        continue;
+                    };
+                    let (Some(dead), Some(aux)) =
+                        (buffers.get(&effect.dead), buffers.get(&effect.aux))
+                    else {
+                        continue;
+                    };
+                    let history = stateful_histories
+                        .entry(entity)
+                        .or_insert_with(|| (effect.particles.id(), default()));
+                    allocated -= history.1.checkpoints.bytes();
+                    if history.0 != effect.particles.id() {
+                        *history = (effect.particles.id(), default());
+                    }
+                    history.1.sync(effect, persistent_states);
+                    Some(stateful_trails::Observer {
+                        history: &mut history.1,
+                        effect,
+                        group: &bind_group.0,
+                        reset,
+                        simulate,
+                        update,
+                        ribbons: link_ribbons,
+                        globals: &globals.buffer,
+                        render_globals: &render_globals.buffer,
+                        buffers: [
+                            particles,
+                            alive,
+                            &dead.buffer,
+                            counters,
+                            indirect,
+                            &aux.buffer,
+                        ],
+                        memory_budget: trail_checkpoints::MEMORY_LIMIT.saturating_sub(allocated),
+                    })
+                } else {
+                    None
+                };
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
                 let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
+                let timing_index = timing_batch.as_mut().and_then(|batch| {
+                    batch.instance(
+                        main_entity.id(),
+                        effect.statistics_token,
+                        effect.simulation_time,
+                    )
+                });
+                if let Some((batch, index)) = timing_batch.as_ref().zip(timing_index) {
+                    drop(render_context.command_encoder().begin_compute_pass(
+                        &ComputePassDescriptor {
+                            label: Some("aestra stateful timing begin"),
+                            timestamp_writes: batch.writes(index, true, false),
+                        },
+                    ));
+                }
                 run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
@@ -3901,7 +4085,7 @@ fn run_simulation(
                         follower.as_deref(),
                     )
                     .or_else(|| {
-                        (!effect.event_links.is_empty() || effect.input_routes)
+                        (!effect.event_links.is_empty() || effect.input_routes || stateful_trails)
                             .then(|| extension_stages::link_coupling(follower.as_deref()))
                             .flatten()
                     }),
@@ -3911,10 +4095,22 @@ fn run_simulation(
                     effect.history_epoch,
                     true,
                     pacer.as_deref_mut(),
+                    observer.as_mut(),
                 );
+                if let Some(observer) = observer {
+                    allocated += observer.history.checkpoints.bytes();
+                }
+                if let Some((batch, index)) = timing_batch.as_ref().zip(timing_index) {
+                    drop(render_context.command_encoder().begin_compute_pass(
+                        &ComputePassDescriptor {
+                            label: Some("aestra stateful timing end"),
+                            timestamp_writes: batch.writes(index, false, true),
+                        },
+                    ));
+                }
             }
         }
-        if effect.stateful_only {
+        if effect.stateful_only || stateful_trails {
             continue;
         }
         if (effect.has_ribbons && link_ribbons.is_none())
@@ -4067,6 +4263,12 @@ fn run_simulation(
                     64,
                 );
             }
+            let particle_span = effect.has_trails.then(|| {
+                diagnostics.time_span(
+                    render_context.command_encoder(),
+                    "aestra::gpu::trail_particles",
+                )
+            });
             let mut pass =
                 render_context
                     .command_encoder()
@@ -4077,7 +4279,7 @@ fn run_simulation(
                                 batch.writes(
                                     index,
                                     observation == 0,
-                                    observation + 1 == observation_count,
+                                    observation + 1 == observation_count && !effect.has_trails,
                                 )
                             },
                         ),
@@ -4088,18 +4290,46 @@ fn run_simulation(
             pass.set_pipeline(simulate);
             pass.dispatch_workgroups(effect.workgroups, 1, 1);
             if effect.has_ribbons
+                && !effect.has_trails
                 && let Some(link_ribbons) = link_ribbons
             {
                 pass.set_pipeline(link_ribbons);
                 pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
             }
+            drop(pass);
+            if let Some(span) = particle_span {
+                span.end(render_context.command_encoder());
+            }
             if effect.has_trails
                 && let Some(update_trails) = update_trails
             {
+                let trail_span = diagnostics.time_span(
+                    render_context.command_encoder(),
+                    "aestra::gpu::trail_history",
+                );
+                let mut pass =
+                    render_context
+                        .command_encoder()
+                        .begin_compute_pass(&ComputePassDescriptor {
+                            label: Some("aestra trail history"),
+                            timestamp_writes: timing_batch.as_ref().zip(timing_index).and_then(
+                                |(batch, index)| {
+                                    batch.writes(index, false, observation + 1 == observation_count)
+                                },
+                            ),
+                        });
+                pass.set_bind_group(0, &bind_group.0, &[]);
                 pass.set_pipeline(update_trails);
-                pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+                pass.dispatch_workgroups(effect.trail_workgroups, 1, 1);
+                if effect.has_ribbons
+                    && let Some(link_ribbons) = link_ribbons
+                {
+                    pass.set_pipeline(link_ribbons);
+                    pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+                }
+                drop(pass);
+                trail_span.end(render_context.command_encoder());
             }
-            drop(pass);
             if let Some((_, times, _, state)) = &replay {
                 let history = &mut histories.get_mut(&entity).unwrap().2;
                 let time = times[observation];
@@ -4176,6 +4406,7 @@ fn run_simulation(
                     effect.history_epoch,
                     false,
                     pacer.as_deref_mut(),
+                    None,
                 );
             }
         }
@@ -4489,6 +4720,7 @@ mod tests {
                     has_ribbons: true,
                     has_trails: false,
                     ribbon_workgroups: 1,
+                    trail_workgroups: 1,
                     total_slots: 1,
                     simulation_time: 0.0,
                     seek_quality: SeekQuality::Exact,
@@ -5072,6 +5304,8 @@ mod coupled_tests {
     const STRIDE: u32 = 9;
     const TICKS_PER_SUBMISSION: u32 = 8;
 
+    include!("gpu/stateful_trails_tests.rs");
+
     struct Scene {
         device: RenderDevice,
         queue: wgpu::Queue,
@@ -5421,6 +5655,7 @@ mod coupled_tests {
                 },
                 (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                 4,
+                None,
             );
             scene.queue.submit([encoder.finish()]);
             if scene.states.iter().all(|state| state.last_tick == tick) {
@@ -5787,6 +6022,7 @@ mod coupled_tests {
                     },
                     (tick as f32 + 0.5) * STATEFUL_TICK_DT,
                     TICKS_PER_SUBMISSION,
+                    None,
                 );
                 scene.queue.submit([encoder.finish()]);
                 if scene.states[0].last_tick == tick {
@@ -5897,6 +6133,7 @@ mod coupled_tests {
                     },
                     time,
                     TICKS_PER_SUBMISSION,
+                    None,
                 );
                 self.queue.submit([encoder.finish()]);
                 // Bound each native command buffer and drain it before encoding more replay work.

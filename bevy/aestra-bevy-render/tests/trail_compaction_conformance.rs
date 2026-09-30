@@ -12,6 +12,12 @@ fn encode<T: ShaderType + encase::internal::WriteInto>(value: &T) -> Vec<u8> {
 
 #[test]
 fn compacted_trails_preserve_order_caps_expired_anchors_and_rebuild_after_seek() {
+    for owners in [70, 800, 1024] {
+        check_compaction(owners);
+    }
+}
+
+fn check_compaction(owners: u32) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let gpu = wgpu::Instance::new(descriptor);
@@ -87,12 +93,11 @@ fn compacted_trails_preserve_order_caps_expired_anchors_and_rebuild_after_seek()
     renderer.frame_count = 5;
     renderer.frame_rate = 1.0;
     // Cross workgroup boundaries, with most owners empty; capped stride is 20.
-    let owners = 70u32;
     renderer.playback_mode = owners;
     let mut particles = vec![GpuParticle::default(); 1 + owners as usize * 5];
     let mut aux = vec![0u32; particles.len() * 3];
-    for owner in [0, 32, 69] {
-        let base = 1 + owner * 5;
+    for owner in [0, 32, owners - 1] {
+        let base = (1 + owner * 5) as usize;
         // Retired owners also retain an alive history header, even without a live parent.
         particles[base] = GpuParticle {
             packed_emitter_alive: 1,
@@ -218,7 +223,7 @@ fn compacted_trails_preserve_order_caps_expired_anchors_and_rebuild_after_seek()
     for flags in [0, 1, 2, 3] {
         // Stretch/tiled UVs and flat/round caps.
         let stride = if flags & 2 != 0 { 20 } else { 4 };
-        let expected: Vec<_> = [0, 32, 69]
+        let expected: Vec<_> = [0, 32, owners - 1]
             .into_iter()
             .flat_map(|owner| {
                 [0, 1]
@@ -231,11 +236,11 @@ fn compacted_trails_preserve_order_caps_expired_anchors_and_rebuild_after_seek()
         assert_eq!(run(&particles, &aux, flags, 1.5, 4), expected);
     }
     // Coincident head: reject only the zero-length body, keep round cap using the preceding anchor.
-    for owner in [0, 32, 69] {
-        particles[1 + owner * 5].position = Vec3::X;
+    for owner in [0, 32, owners - 1] {
+        particles[(1 + owner * 5) as usize].position = Vec3::X;
     }
     let capped = run(&particles, &aux, 2, 1.5, 2);
-    for owner in [0, 32, 69] {
+    for owner in [0, 32, owners - 1] {
         assert!(!capped.contains(&(owner * 20 + 1)));
         assert!(capped.contains(&(owner * 20 + 12)));
     }

@@ -483,7 +483,9 @@ A stretched sprite is insufficient for those looks. A history-based trail is the
 
 ## Current hard limits and cost
 
-The compiler rejects a trail-rendered emitter above **256 parent particles**. Model/GPU validation bounds trail owners to **1,024**, samples to **2–64 points per owner**, and the GPU artifact to **1,048,576 total particle/history records**. These are not merely conservative UI defaults: the current history shader runs one invocation per emitter and scans owners for each live parent (twice), then scans histories for bounds. Trail compaction uses a single-invocation prefix across owners. Raising the validation numbers without replacing those algorithms would make the stalls worse or exceed device buffer/dispatch limits.
+F1B's first implementation slice supports **1,024 parent particles and 1,024 owners per emitter**, replacing the former 256-parent ceiling. Samples remain bounded to **2–64 points per owner**, and the GPU artifact to **1,048,576 total particle/history records**. History now uses one cooperative 64-lane workgroup per emitter: stable-ID hash lookup, parallel deterministic allocation, parallel updates/expiry, and a bounds/statistics reduction. Trail compaction uses a parallel exclusive scan, preserving draw order. Shared history scratch occupies exactly 16 KiB, with no new storage binding or persistent/checkpoint ABI change.
+
+The 1,024-owner ceiling is still a real implementation bound, not a quality-tier policy. Larger logical pools need multi-workgroup/paged storage planning; simply raising the number would overrun shared scratch or device resource limits.
 
 `max_trails` must also account for retired tails. A parent dying does not immediately free its visible history; active parents plus unexpired tails can exceed the parent-particle count.
 
@@ -493,7 +495,7 @@ The compiler rejects a trail-rendered emitter above **256 parent particles**. Mo
 - Update and expire owner histories in parallel, then reduce per-owner bounds into emitter/effect bounds. Preserve time- and distance-sampling semantics, tail lifetime, eviction telemetry and replay behavior.
 - Replace single-invocation owner prefixing with a parallel deterministic scan/compaction path. Preserve the ordering contract needed by alpha drawing, or define and test an explicit alternative for blended trails.
 - Plan history, scratch, draw and checkpoint storage from trail-owner and point budgets with checked arithmetic. Use chunked/paged resources where one binding would exceed the device's limits. Budget active and retired tails separately; expose allocated, occupied, retired, evicted and truncated counts.
-- Retain finite device/quality-tier budgets, but remove the 256-parent/1,024-owner implementation ceilings before calling hero and finale trail workloads supported. Revisit the 64-point cap through measured long-trail quality and memory tests, not by assuming every trail needs more points.
+- Retain finite device/quality-tier budgets. The 256-parent ceiling is removed; remove the remaining 1,024-owner implementation ceiling before calling finale workloads supported. Revisit the 64-point cap through measured long-trail quality and memory tests, not by assuming every trail needs more points.
 
 ## Acceptance gate
 
@@ -502,7 +504,7 @@ The compiler rejects a trail-rendered emitter above **256 parent particles**. Mo
 - Fixed-seed trail geometry, bounds, compaction and eviction are repeatable after checkpoint restore and reverse seek.
 - GPU time, memory, visible/culled primitive counts and overflow/eviction counters are recorded on named hardware. The scene remains interactive under an explicit quality-tier budget; budget reductions are visible rather than silent.
 
-**Current assessment:** trail quality/features are a strong foundation, but hero/finale scale is **blocked** until this gate passes.
+**Current assessment:** analytic and event-born/stateful 800-parent single-emitter bursts now compile and render matching histories. Native GPU tests cover retention and synchronized restoration. Paged larger pools, full-frame percentile budgets and overlapping-shell/finale stress remain unproven. The complete hero/finale gate is still **open**.
 
 ---
 
@@ -1461,7 +1463,7 @@ Record the chosen effective capacities/counts with the compiled plan so a tier s
 ### Implemented and measured
 
 - Added a fixed-ID, fixed-seed, three-emitter radial sketch: rockets produce 48 stars on death; star collisions produce glints. The viewer supplies a dark 3D scene, ground and geometry markers, and fixed close, audience and wide cameras. Its exact-frame capture and GPU-timestamp benchmark can run the same fixture without an editor session.
-- Added isolated event fan-out and trail-owner probes, plus compiler-boundary tests. At F0, one link compiled at count 64 but rejected 65 and 800; F1 now accepts 800 under the list-memory budget. One trail emitter still compiles at 256 parents but rejects 257 and 800. Rejected cases have **no runtime timing claim**.
+- Added isolated event fan-out and trail-owner probes, plus compiler-boundary tests. At F0, one link compiled at count 64 but rejected 65 and 800; F1 now accepts 800 under the list-memory budget. F0 rejected trail emitters at 257 and 800 parents; F1B's first slice now accepts both, through 1,024 parents. Historically rejected cases have **no F0 runtime timing claim**.
 - The supported event probe requests 4,096 children from 64 coincident source deaths; the frame-60 GPU report shows 1,024 live children in a 4,096-slot destination and no warning. This is evidence of silent loss, but the missing stage counters prevent exact attribution.
 - The supported trail probe reaches 256 occupied trails. At frame 120 it reports 183 truncated trails; after parent deaths, frame 300 reports 82 retired trails, 175 truncated trails and zero evictions. The later tails are outside the close camera, so visual tail quality is not established.
 - Recorded three baseline runs on an RTX 4070 SUPER/Vulkan at 960 × 540, high tier, with 120 warm-up and 600 measured frames per run. Baseline simulation p95 spans 0.454–0.554 ms. The final 256-owner trail probe repeats at 8.557 and 8.589 ms simulation p95, before a production-density hero workload can even compile. Corrected the benchmark report so it retains the configured warm-up count.
@@ -1521,11 +1523,64 @@ Rocket can author and *execute* a 300–800-star burst through one logical event
 
 **Goal:** remove the trail implementation ceilings before building a production Chrysanthemum or Willow.
 
-The current default-fast 256-owner probe still measures 8.820/9.160/182.990 ms simulation p50/p95/p99. Inspection shows the trail-update shader handles each emitter on one invocation and linearly scans owner chunks for every live head. This is a likely scalability cause, not an isolated stage measurement. First isolate trail-update timing, then replace serial owner matching/allocation with a parallel design and benchmark the full live frame; do not prioritize checkpoint replay ahead of this playback bottleneck.
+The pre-F1B default-fast 256-owner probe measured 8.820/9.160/182.990 ms simulation p50/p95/p99. Its history shader handled each emitter on one invocation with repeated parent × owner scans and serial bounds; trails also paid for serial ribbon sorting. The first slice replaces those paths and adds isolated particle/history/compaction timestamps. Live playback remains the priority, not checkpoint optimization.
+
+### Implemented — cooperative trail runtime
+
+- One 64-lane workgroup per emitter builds a stable-ID-to-owner hash from retained history. Surviving parents reserve their owners before any births allocate; empty owners precede oldest retired tails, with deterministic chunk-index tie breaks. A parallel birth scan assigns disjoint owners without serial searches.
+- Parent ordering, history sampling/expiry, world-space bounds and occupied/retired/truncated statistics are parallel. Time, distance and adaptive sampling retain their existing semantics. Trail-only emitters no longer run ribbon linking; mixed Trail/Ribbon emitters link after cooperative ordering.
+- Owner-prefix compaction is a parallel exclusive scan. Candidate/draw ordering and alpha semantics remain unchanged.
+- Compiler/GPU validation now accepts up to 1,024 parents in one trail emitter. The shared algorithm uses the portable 16 KiB workgroup budget and the existing eight storage bindings. Particle, aux and checkpoint layouts are unchanged; the lookup is rebuilt on restore.
+- Real GPU tests cover 800 heads in two independent emitter workgroups, colliding/high stable IDs, shuffled live-slot order, survivor history retention, deterministic oldest-tail eviction, full 1,024-parent pools, pause, expiry and mixed Ribbon linking. Existing sampling, reset/seek/checkpoint, UV, bounds and culling tests pass; compaction covers 70, 800 and 1,024 owners. Portable WGSL/SPIR-V/HLSL validation passes.
+- The viewer retains the original `trail` probe for before/after comparison and adds `--fireworks-f0-probe trail-hero`: one analytic 800-parent burst, 1,024 owners, 32 records/owner. Its settings keep trails within the close camera; it is a workload probe, not a finished fireworks shell.
+- A frame-120 native-GPU capture of that hero probe measures **800 occupied histories, zero evictions and zero truncated histories**, with all 800 parents supported in one emitter. The separate two-emitter conformance test covers retired-tail retention and pool exhaustion.
+
+Measured on RTX 4070 SUPER/Vulkan, 960 × 540, high tier, default-fast transparency, 120 warm-up and 600 measured frames:
+
+| 256-parent probe GPU metric | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| Full simulation window | 0.350 ms | 6.641 ms | 11.409 ms |
+| Isolated particle observation | 0.030 ms | 0.052 ms | 0.091 ms |
+| Isolated trail-history observation | 0.271 ms | 0.514 ms | 0.941 ms |
+| Trail compaction | 0.094 ms | 0.173 ms | 0.276 ms |
+
+The full simulation median is approximately 25× lower than the pre-F1B default-fast probe. **This is not full-frame budget certification:** aggregate high-percentile spikes remain. Individual observation diagnostics are the last observation published under that path, not the sum of every observation in a reconstruction frame. Do not attribute the difference to one stage without a trace or sum per-instance/per-observation timings as though they were the whole frame.
+
+The 800-parent/1,024-owner hero probe records full simulation **0.368/9.342/12.971 ms**, isolated history observation **0.307/1.042/1.532 ms**, compaction **0.045/0.092/0.111 ms**, and transparent drawing **0.015/0.048/0.061 ms** (p50/p95/p99). These whole-run distributions include birth/retirement/empty phases, not a sustained maximum-occupancy finale, and are subject to the same aggregate-spike caveat.
+
+Raw reports and captures are reproducible with:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail --camera close --backend gpu --gpu-bench target/fireworks-f1/trail-parallel-256.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail-hero --camera close --backend gpu --gpu-bench target/fireworks-f1/trail-parallel-800.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail-hero --camera close --backend gpu --sample-frames 0,30,120,239,250,270,300 --capture target/fireworks-f1/trail-parallel-800-capture
+```
+
+### Implemented — event-born stateful trail integration
+
+- Fully stateful effects previously skipped trail recording entirely; mixed effects recorded before their stateful presentation. Effects combining histories and stateful simulation now use the production lockstep encoder. Each fixed tick integrates particles, expands event births, presents analytic and stateful heads at the same canonical time, then records histories. Ordinary playback advances only new ticks; there is no analytic reconstruction of event-born heads or CPU particle readback.
+- Catch-up observes every processed tick, including short-lived particles born between rendered frames. Presentation and trail expiry use the processed tick, not an eventual seek target. Pausing does not append samples. Histories intentionally retain canonical 60 Hz observations rather than contaminating them with render-frame-dependent sub-tick samples.
+- Backward seeking restores only a checkpoint common to particles, coupled domains and histories. Without a joint checkpoint, all stores restart together under the existing bounded catch-up budget. Changed input histories discard invalid future history snapshots. History snapshots share the existing global 64 MiB trail-checkpoint budget; larger/faster checkpoint storage is not this slice's objective.
+- A native GPU regression drives the production event gather/spawn and lockstep encoder: one rocket death births 800 stars, each with a non-degenerate history; all tails retire and expire. It checks pure-stateful and mixed analytic/stateful effects, pause, bounded catch-up, restart, checkpoint restore with a changed discontinuity epoch, and bit-identical ordered histories compared with uninterrupted playback.
+- The viewer adds `--fireworks-f0-probe event-trail`, a single-link 800-star stateful target with sprite heads and 1,024 trail owners. Its first-cohort frame-50 capture on RTX 4070 SUPER/Vulkan measures **800 occupied histories, zero evictions and zero truncation**. It is a technical workload, not a production shell. The recurring capacity-one rocket intentionally requests later cohorts: destination-slot rejections and eventual retired-tail eviction are reported, not hidden or interpreted as successful full-demand playback.
+- Per-instance GPU simulation timestamps now include the fully stateful/history lockstep path. A paused capture is not a sustained live-performance benchmark; the previous analytic timings above do not certify this new event-to-trail workload.
+
+Reproduce the first-cohort capture with:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail --camera close --backend gpu --sample-frames 50 --capture target/fireworks-f1/event-born-trails-first-cohort
+```
+
+The live event-to-trail benchmark (RTX 4070 SUPER/Vulkan, 960×540, 120 warm-up and 600 measured frames) records GPU simulation **3.237/3.908/3.959 ms p50/p95/p99**, trail compaction **0.212/0.252/0.258 ms**, and transparent drawing **0.128/0.218/0.250 ms**. CPU simulation encoding is **0.094/0.121/0.147 ms**. These are separate measured stages, not a sum of frame percentiles. The recurring workload runs under the finite destination/history pressure described above, so these measurements do **not** certify that every authored later-cohort request was produced, or that the hero/finale budget is met. They are not directly comparable to the analytic-only probe.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail --camera close --backend gpu --gpu-bench target/fireworks-f1/event-born-trails-bench.json
+```
 
 ### Tasks
 
-- Implement stable owner mapping/allocation, parallel history update, bounds reduction and parallel compaction as specified in section 8.
+- Extend the cooperative implementation to multi-workgroup/paged logical pools beyond 1,024 owners, preserving section 8's ownership, tail and ordering contracts.
+- Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
 - After the live path meets its budget, retest checkpoint storage and seek latency for editor scrubbing; scale checkpoint cadence/storage policy from measured memory without charging unnecessary replay work to ordinary playback.

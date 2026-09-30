@@ -192,8 +192,7 @@ pub fn hero_event_probe() -> EffectAsset {
     effect
 }
 
-/// Supported-side trail probe: one emitter, 256 parents/owners, 32 records per
-/// owner. A 257-parent variant is deliberately tested as rejected.
+/// Original 256-parent trail benchmark, retained for before/after comparisons.
 pub fn trail_probe() -> EffectAsset {
     let mut effect = EffectAsset::from_ron(include_str!(
         "../../../assets/test/effects/trail_lab.aestra.ron"
@@ -225,6 +224,94 @@ pub fn trail_probe() -> EffectAsset {
     {
         *max_points = 32;
         *max_trails = 256;
+    }
+    effect
+}
+
+/// Hero-sized single-emitter burst: no splitting into several small trail pools.
+pub fn hero_trail_probe() -> EffectAsset {
+    let mut effect = trail_probe();
+    effect.id = EffectId::from_u128(12);
+    effect.name = "Fireworks F1B Hero Trail Probe".into();
+    let emitter = &mut effect.emitters[0];
+    emitter.max_particles = 800;
+    // Keep the burst inside the close camera for draw/overdraw measurements.
+    for module in &mut emitter.modules {
+        match &mut module.parameters {
+            ModuleParameters::Initialize {
+                speed,
+                spread_degrees,
+                ..
+            } => {
+                *speed = ScalarRange::new(4.0, 5.0);
+                *spread_degrees = 180.0;
+            }
+            ModuleParameters::Motion {
+                gravity,
+                turbulence,
+                ..
+            } => {
+                *gravity = [0.0; 3];
+                *turbulence = 0.05;
+            }
+            ModuleParameters::Appearance { size, .. } => {
+                for key in &mut size.keys {
+                    key.value = 0.3;
+                }
+            }
+            _ => {}
+        }
+    }
+    if let ModuleParameters::Emission {
+        spawn_rate,
+        burst_count,
+    } = &mut emitter.modules[0].parameters
+    {
+        *spawn_rate = 0.0;
+        *burst_count = 800;
+    }
+    if let RendererProperties::Trail {
+        max_trails,
+        sample_distance,
+        ..
+    } = &mut emitter.renderers[0].properties
+    {
+        *max_trails = 1024;
+        *sample_distance = 0.15;
+    }
+    effect
+}
+
+/// One actual death event produces 800 stateful stars, each with its own history.
+/// There is no analytic star emission and no CPU upload of manufactured heads.
+pub fn event_trail_probe() -> EffectAsset {
+    let mut effect = hero_event_probe();
+    effect.id = EffectId::from_u128(13);
+    effect.name = "Fireworks F1B Event-Born Trail Probe".into();
+    effect.emitters[0].transform.translation = [0.0, 24.0, 0.0];
+    let trail = hero_trail_probe();
+    effect.assets = trail.assets;
+    effect.material_instances = trail.material_instances;
+    effect.emitters[1]
+        .renderers
+        .extend(trail.emitters[0].renderers.clone());
+    // The capacity-one rocket emitter periodically requests another cohort.
+    // Inspect the first cohort separately from later destination/pool pressure.
+    for emitter in &mut effect.emitters {
+        for module in &mut emitter.modules {
+            if let ModuleParameters::Motion {
+                gravity,
+                turbulence,
+                ..
+            } = &mut module.parameters
+            {
+                *gravity = [0.0, -2.0, 0.0];
+                *turbulence = 0.05;
+            }
+            if let ModuleParameters::Initialize { speed, .. } = &mut module.parameters {
+                *speed = ScalarRange::new(4.0, 5.0);
+            }
+        }
     }
     effect
 }
@@ -282,6 +369,26 @@ mod tests {
     }
 
     #[test]
+    fn event_born_trail_probe_compiles_one_800_star_stateful_target() {
+        let source = event_trail_probe();
+        let index = aestra_project::ProjectAssetIndex::scan(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
+        );
+        let resolved = index.resolve_effect_project(&source).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_resolved_project(&resolved)
+            .unwrap();
+        assert_eq!(compiled.root.event_links.len(), 1);
+        assert_eq!(compiled.root.event_links[0].count, 800);
+        assert_eq!(compiled.root.emitters[1].max_particles, 800);
+        assert!(
+            compiled.root.emitters[1]
+                .simulation_state_layout()
+                .requires_state_buffer()
+        );
+    }
+
+    #[test]
     fn aggregate_event_list_budget_rejects_an_overcommitted_effect() {
         let mut fixture = effect();
         fixture.emitters[0].max_particles = 1024;
@@ -319,9 +426,20 @@ mod tests {
         };
         let mut fixture = trail_probe();
         assert!(compiles(&fixture));
+        if let RendererProperties::Trail { max_trails, .. } =
+            &mut fixture.emitters[0].renderers[0].properties
+        {
+            *max_trails = 0;
+        }
         fixture.emitters[0].max_particles = 257;
-        assert!(!compiles(&fixture));
+        assert!(compiles(&fixture));
         fixture.emitters[0].max_particles = 800;
+        assert!(compiles(&fixture));
+        fixture.emitters[0].max_particles = 1025;
         assert!(!compiles(&fixture));
+        let hero = hero_trail_probe();
+        assert!(compiles(&hero));
+        assert_eq!(hero.emitters.len(), 1);
+        assert_eq!(hero.emitters[0].max_particles, 800);
     }
 }

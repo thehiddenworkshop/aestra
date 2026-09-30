@@ -28,6 +28,14 @@ pub(super) struct TrailCheckpoints {
 }
 
 impl TrailCheckpoints {
+    pub(super) fn contains(&self, time: f32) -> bool {
+        self.snapshots.iter().any(|snapshot| snapshot.time == time)
+    }
+
+    pub(super) fn retain_through(&mut self, time: f32) {
+        self.snapshots.retain(|snapshot| snapshot.time <= time);
+    }
+
     pub fn bytes(&self) -> u64 {
         self.snapshots.iter().map(|s| s.buffer.size()).sum()
     }

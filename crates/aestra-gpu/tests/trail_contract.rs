@@ -42,6 +42,10 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
     let gpu = GpuEffectArtifact::from_instance(&instance).unwrap();
     assert_eq!(gpu.particles.len(), 8 + 1 + 8 * 32);
     assert_eq!(gpu.total_slots, 8);
+    assert_eq!(
+        gpu.emitters[0]._turbulence_padding, 0,
+        "trail-only emitters must not pay for ribbon linking"
+    );
     for invalid in [
         RendererProperties::Trail {
             width: f32::NAN,
@@ -100,8 +104,17 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
         effect.emitters[0].renderers[0].properties = invalid;
         assert!(EffectCompiler::default().compile(&effect).is_err());
     }
+    for parents in [257, 800, 1024] {
+        let mut supported = effect.clone();
+        supported.emitters[0].max_particles = parents;
+        let compiled = EffectCompiler::default().compile(&supported).unwrap();
+        let gpu =
+            GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).unwrap();
+        assert_eq!(gpu.emitters[0].trail_capacity, parents);
+        assert_eq!(gpu.particles.len(), (parents + 1 + parents * 32) as usize);
+    }
     let mut oversized = effect.clone();
-    oversized.emitters[0].max_particles = 257;
+    oversized.emitters[0].max_particles = 1025;
     assert!(EffectCompiler::default().compile(&oversized).is_err());
     let mut duplicate = effect;
     let mut renderer = duplicate.emitters[0].renderers[0].clone();

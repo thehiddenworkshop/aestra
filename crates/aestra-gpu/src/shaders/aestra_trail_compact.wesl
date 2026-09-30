@@ -22,19 +22,44 @@ fn classify_trail(@builtin(global_invocation_id) id: vec3<u32>) {
     scratch[compact.y + owner] = count;
 }
 
-@compute @workgroup_size(1)
-fn prefix_trail() {
-    // At most 1024 owners; prefixing owner totals preserves alpha draw order.
-    var total = 0u;
-    for (var owner = 0u; owner < compact.z; owner += 1u) {
-        let count = scratch[compact.y + owner];
-        scratch[compact.y + owner] = total;
-        total += count;
+var<workgroup> trail_owner_scan: array<u32, 1024>;
+
+@compute @workgroup_size(64)
+fn prefix_trail(@builtin(local_invocation_index) thread: u32) {
+    // Parallel exclusive scan preserves the existing alpha draw order exactly.
+    var size = 1u;
+    while size < compact.z { size *= 2u; }
+    for (var owner = thread; owner < size; owner += 64u) {
+        var count = 0u;
+        if owner < compact.z { count = scratch[compact.y + owner]; }
+        trail_owner_scan[owner] = count;
     }
-    compacted[0] = 4u;
-    compacted[1] = total;
-    compacted[2] = 0u;
-    compacted[3] = 0u;
+    workgroupBarrier();
+    for (var width = 2u; width <= size; width *= 2u) {
+        for (var n = (thread + 1u) * width - 1u; n < size; n += 64u * width) {
+            trail_owner_scan[n] += trail_owner_scan[n - width / 2u];
+        }
+        workgroupBarrier();
+    }
+    if thread == 0u {
+        compacted[0] = 4u;
+        compacted[1] = trail_owner_scan[size - 1u];
+        compacted[2] = 0u;
+        compacted[3] = 0u;
+        trail_owner_scan[size - 1u] = 0u;
+    }
+    workgroupBarrier();
+    for (var width = size; width >= 2u; width /= 2u) {
+        for (var n = (thread + 1u) * width - 1u; n < size; n += 64u * width) {
+            let left = trail_owner_scan[n - width / 2u];
+            trail_owner_scan[n - width / 2u] = trail_owner_scan[n];
+            trail_owner_scan[n] += left;
+        }
+        workgroupBarrier();
+    }
+    for (var owner = thread; owner < compact.z; owner += 64u) {
+        scratch[compact.y + owner] = trail_owner_scan[owner];
+    }
 }
 
 @compute @workgroup_size(64)

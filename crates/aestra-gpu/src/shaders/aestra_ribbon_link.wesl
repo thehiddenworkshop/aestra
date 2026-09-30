@@ -31,20 +31,23 @@ fn link_ribbon(emitter_index: u32) {
     let strands = emitter._turbulence_padding;
     let offset = emitter.slot_offset;
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), emitter.max_particles);
-    var parent = count / 2u;
-    loop {
-        if parent == 0u { break; }
-        parent -= 1u;
-        ribbon_sift(offset, count, parent, strands);
-    }
-    var end = count;
-    loop {
-        if end <= 1u { break; }
-        end -= 1u;
-        let value = alive_indices[offset];
-        alive_indices[offset] = alive_indices[offset + end];
-        alive_indices[offset + end] = value;
-        ribbon_sift(offset, end, 0u, strands);
+    // Trail emitters already sorted their parents cooperatively in update_trails.
+    if emitter.trail_points == 0u {
+        var parent = count / 2u;
+        loop {
+            if parent == 0u { break; }
+            parent -= 1u;
+            ribbon_sift(offset, count, parent, strands);
+        }
+        var end = count;
+        loop {
+            if end <= 1u { break; }
+            end -= 1u;
+            let value = alive_indices[offset];
+            alive_indices[offset] = alive_indices[offset + end];
+            alive_indices[offset + end] = value;
+            ribbon_sift(offset, end, 0u, strands);
+        }
     }
     // The sorted list is contiguous by strand, then stable birth identity. Find each
     // run once: linear linking after sorting, even with sparse/empty strand IDs.

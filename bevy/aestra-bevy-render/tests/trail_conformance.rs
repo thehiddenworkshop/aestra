@@ -443,6 +443,304 @@ fn separate_trail_budget_retains_burst_tails_until_expiry_or_oldest_retired_evic
 }
 
 #[test]
+fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_groups() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::PRIMARY;
+    let instance = wgpu::Instance::new(descriptor);
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
+        assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none());
+        return;
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        // The algorithm uses exactly the portable 16 KiB workgroup budget.
+        required_limits: wgpu::Limits {
+            max_storage_buffers_per_shader_stage: 8,
+            max_compute_workgroup_storage_size: 16 * 1024,
+            ..Default::default()
+        },
+        ..Default::default()
+    }))
+    .unwrap();
+    let entries = ["update_trails", "link_ribbons"];
+    let shader = compile_wesl("package::hero_trails", SIMULATION_WESL, &entries).unwrap();
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(shader.wgsl.into()),
+    });
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &(0..8)
+            .map(|binding| wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: matches!(binding, 0 | 6),
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            })
+            .collect::<Vec<_>>(),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let pipelines = entries.map(|entry| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    });
+    const OWNERS: u32 = 1024;
+    const POINTS: u32 = 4;
+    const PARENTS: u32 = 2048;
+    const RECORDS: usize = (PARENTS + 2 * (1 + OWNERS * POINTS)) as usize;
+    let roots = [PARENTS, PARENTS + 1 + OWNERS * POINTS];
+    let data = [
+        encode(
+            &roots
+                .iter()
+                .enumerate()
+                .map(|(index, &root)| GpuEmitter {
+                    slot_offset: index as u32 * OWNERS,
+                    max_particles: OWNERS,
+                    // Second emitter draws a three-strand Ribbon alongside its Trail.
+                    _turbulence_padding: index as u32 * 3,
+                    trail_offset: root,
+                    trail_points: POINTS,
+                    trail_capacity: OWNERS,
+                    trail_interval: 0.125,
+                    trail_lifetime: 1.0,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        ),
+        encode(&vec![GpuParticle::default(); RECORDS]),
+        encode(&vec![0u32; PARENTS as usize]),
+        encode(&vec![0u32; PARENTS as usize]),
+        encode(&vec![0u32; 14]),
+        encode(&vec![0u32; 8]),
+        encode(&GpuGlobals::default()),
+        encode(&vec![0u32; RECORDS * 3]),
+    ];
+    let buffers = data
+        .iter()
+        .map(|bytes| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytes,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            })
+        })
+        .collect::<Vec<_>>();
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &layout,
+        entries: &buffers
+            .iter()
+            .enumerate()
+            .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect::<Vec<_>>(),
+    });
+    // Intentionally colliding hash buckets, shuffled compacted order and high IDs.
+    let identity = |n: u32| 0xff00_0000 + n * 2048;
+    let run = |time: f32, ids: &[u32]| {
+        for emitter in 0..2u32 {
+            let particles = ids
+                .iter()
+                .enumerate()
+                .map(|(slot, &n)| GpuParticle {
+                    particle_index: identity(n),
+                    packed_emitter_alive: (emitter << 16) | 1,
+                    position: Vec3::new(slot as f32 + time, emitter as f32, 0.0),
+                    color: Vec4::ONE,
+                    size: 2.0,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            if !ids.is_empty() {
+                queue.write_buffer(
+                    &buffers[1],
+                    u64::from(emitter * OWNERS) * 48,
+                    &encode(&particles),
+                );
+                let shuffled = (0..ids.len() as u32)
+                    .rev()
+                    .map(|n| emitter * OWNERS + n)
+                    .collect::<Vec<_>>();
+                queue.write_buffer(
+                    &buffers[2],
+                    u64::from(emitter * OWNERS) * 4,
+                    &encode(&shuffled),
+                );
+            }
+            queue.write_buffer(
+                &buffers[5],
+                u64::from(emitter) * 16,
+                &encode(&vec![4u32, ids.len() as u32, 0, 0]),
+            );
+        }
+        queue.write_buffer(
+            &buffers[6],
+            0,
+            &encode(&GpuGlobals {
+                time,
+                total_slots: PARENTS,
+                emitter_count: 2,
+                ..Default::default()
+            }),
+        );
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_pipeline(&pipelines[0]);
+            pass.dispatch_workgroups(2, 1, 1);
+            pass.set_pipeline(&pipelines[1]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        let size = buffers[1].size() + buffers[7].size() + buffers[4].size();
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            mapped_at_creation: false,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        });
+        let mut offset = 0;
+        for index in [1, 7, 4] {
+            encoder.copy_buffer_to_buffer(
+                &buffers[index],
+                0,
+                &readback,
+                offset,
+                buffers[index].size(),
+            );
+            offset += buffers[index].size();
+        }
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                sender.send(result).unwrap();
+            });
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(std::time::Duration::from_secs(60)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        let bytes = readback.slice(..).get_mapped_range().to_vec();
+        readback.unmap();
+        let p = buffers[1].size() as usize;
+        let a = buffers[7].size() as usize;
+        let result = expand_legacy(&bytes[..p], &bytes[p..p + a], &bytes[p + a..], RECORDS);
+        for &root in &roots {
+            assert_world_bounds(&result, root as usize, POINTS as usize, OWNERS as usize);
+        }
+        result
+    };
+    let initial = run(0.0, &(0..800).collect::<Vec<_>>());
+    let ids = (0..400)
+        .map(|n| n * 2 + 1)
+        .chain(800..1200)
+        .collect::<Vec<_>>();
+    let next = run(0.25, &ids);
+    let mut strand_order = ids
+        .iter()
+        .enumerate()
+        .map(|(slot, &n)| (slot as u32 + OWNERS, identity(n)))
+        .collect::<Vec<_>>();
+    strand_order.sort_by_key(|&(slot, id)| (id % 3, id, slot));
+    for (index, &(slot, id)) in strand_order.iter().enumerate() {
+        let expected = strand_order
+            .get(index + 1)
+            .filter(|&&(_, next_id)| next_id % 3 == id % 3)
+            .map_or(u32::MAX, |&(next_slot, _)| next_slot);
+        assert_eq!(
+            word(&next, slot as usize, 52),
+            expected,
+            "mixed trail/ribbon links are out of order"
+        );
+    }
+    for (emitter, &root) in roots.iter().enumerate() {
+        let stats = |bytes: &[u8], lane: usize| {
+            // expand_legacy appends counter words after the particle records.
+            u32::from_le_bytes(
+                bytes[(RECORDS * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
+        assert_eq!(stats(&initial, 0), 800);
+        assert_eq!(stats(&next, 0), 1024);
+        assert_eq!(stats(&next, 1), 224);
+        assert_eq!(stats(&next, 2), 176);
+        let owner_slot = |n| {
+            (0..OWNERS)
+                .map(|owner| (root + 1 + owner * POINTS) as usize)
+                .find(|&slot| word(&next, slot, 44) != 0 && word(&next, slot, 48) == identity(n))
+                .unwrap()
+        };
+        for &n in &ids {
+            owner_slot(n);
+        }
+        for n in (1..800).step_by(2) {
+            let slot = owner_slot(n);
+            assert_eq!(
+                word(&initial, slot, 48),
+                identity(n),
+                "surviving owner moved"
+            );
+            assert_eq!(
+                word(&next, slot, 56),
+                3,
+                "surviving history was overwritten"
+            );
+        }
+    }
+    assert_eq!(
+        next,
+        run(0.25, &ids),
+        "paused observations must not change history"
+    );
+    let retired = run(0.5, &[]);
+    let expired = run(1.5, &[]);
+    let full = run(1.625, &(0..1024).collect::<Vec<_>>());
+    for emitter in 0..2usize {
+        let count = |bytes: &[u8], lane: usize| {
+            u32::from_le_bytes(
+                bytes[(RECORDS * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
+        assert_eq!(count(&retired, 0), 1024);
+        assert_eq!(count(&retired, 1), 1024);
+        assert_eq!(count(&expired, 0), 0);
+        assert_eq!(count(&full, 0), 1024);
+        assert_eq!(count(&full, 1), 0);
+    }
+}
+
+#[test]
 fn distance_sampling_handles_stationary_speed_changes_overflow_loops_and_resets() {
     check_pool(4, 1);
 }

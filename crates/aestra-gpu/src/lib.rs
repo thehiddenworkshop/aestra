@@ -73,7 +73,7 @@ pub const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpuArtifactError {
     #[error(
-        "trail history supports one renderer per emitter, at most 256 parents, parent capacity–1024 trail owners, 2–64 points, and 1,048,576 total particle/history records"
+        "trail history supports one renderer per emitter, at most 1024 parents, parent capacity–1024 trail owners, 2–64 points, and 1,048,576 total particle/history records"
     )]
     TrailLimit,
     #[error("emitter '{0}' has no {1} instruction")]
@@ -2158,7 +2158,7 @@ impl GpuEffectArtifact {
             ) = trails.first().copied().unwrap_or_default();
             if !trails.is_empty() {
                 if trails.len() > 1
-                    || emitter.max_particles > 256
+                    || emitter.max_particles > 1024
                     || !(2..=64).contains(&trail_points)
                     || trail_capacity < emitter.max_particles
                     || trail_capacity > 1024
@@ -2465,7 +2465,6 @@ impl GpuEffectArtifact {
                     .iter()
                     .filter_map(|r| match r.kind {
                         RendererPlanKind::Ribbon { strand_count, .. } => Some(strand_count.max(1)),
-                        RendererPlanKind::Trail { .. } => Some(1),
                         _ => None,
                     })
                     .max()

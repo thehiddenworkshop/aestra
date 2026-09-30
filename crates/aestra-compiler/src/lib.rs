@@ -1934,7 +1934,7 @@ impl EffectCompiler {
                 }
                 if renderer.enabled
                     && matches!(renderer.properties, RendererProperties::Trail { .. })
-                    && (emitter.max_particles > 256
+                    && (emitter.max_particles > 1024
                         || emitter
                             .renderers
                             .iter()
@@ -1950,7 +1950,7 @@ impl EffectCompiler {
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedRenderer,
                             format!("{emitter_path}.renderers[{renderer_index}]"),
-                            "trail history currently supports one Trail renderer per emitter and at most 256 parent particles",
+                            "trail history currently supports one Trail renderer per emitter and at most 1024 parent particles",
                         ),
                     );
                 }
