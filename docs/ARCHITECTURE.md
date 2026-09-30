@@ -643,6 +643,25 @@ counted up to is copied beside the count, so `event.tick` still says when. Only 
 raises events: ticks replayed after a seek or rebuild count nothing. Events are visual outcomes to
 hear, never gameplay state to obey (see below).
 
+### Input events and routes
+
+A host sends an effect its declared inputs (`EffectInstance::send_event`, `EffectPlayer::send_event`
+in Bevy), and the built-in `restart`, `stop_emitting` and `kill` (event system E2). Each takes effect
+at the next fixed tick and is recorded: the received events are part of the simulated history, so a
+backward seek replays them exactly. What a declared input does comes from its routes (E3):
+
+- an **input spawn route** (`EffectAsset::input_spawns`) bursts `count` particles of an emitter at a
+  `vec3` field of the input, in effect space, or at the effect origin. Its emitter becomes a
+  sub-emitter, like an event link's target: stateful, spawning only from its routes and links.
+  `EffectInstance::input_spawn_bursts` lists the bursts by tick; after each tick's event links, the
+  GPU uploads them as Spawn From Domain lists, and the CPU reference spawns them with
+  `StatefulSimulation::spawn_from_events`.
+
+Compiled routes share one type, `CompiledEventRoute`, which the Event Map (E4) reads. A GPU state
+remembers the input history it advanced under. When the history changes — an event recorded back in
+time after a seek — its checkpoints past the first differing tick are dropped and it replays from
+there.
+
 ### Gameplay authority
 
 Who owns a projectile decides how its effect is wired. There are two patterns, and a game should pick

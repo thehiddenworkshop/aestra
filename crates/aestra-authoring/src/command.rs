@@ -394,6 +394,19 @@ pub enum EffectCommand {
         id: EventId,
         event: EventLink,
     },
+    /// Routes a declared input to a burst of an emitter's particles (event system E3).
+    AddInputSpawn {
+        route: aestra_core::InputSpawnRoute,
+        index: usize,
+    },
+    RemoveInputSpawn {
+        id: aestra_core::EventRouteId,
+    },
+    /// Replaces an input route's input, target, count and position field, keeping its id and place.
+    SetInputSpawn {
+        id: aestra_core::EventRouteId,
+        route: aestra_core::InputSpawnRoute,
+    },
 }
 
 impl EffectCommand {

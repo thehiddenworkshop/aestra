@@ -1784,6 +1784,31 @@ impl EventGatherPipeline {
     }
 }
 
+/// An input route's burst on the device (event system E3), the host counterpart of the link gather:
+/// its records ([`aestra_runtime::InputSpawnBurst::records`]) as a Spawn From Domain emission list —
+/// the `[count, 0, 0, 0]` header, then 8-word records `[position xyz, 0, velocity xyz, 0]`, velocity
+/// zero — and the spawn that turns them into the target's particles with its launch velocity.
+pub fn input_burst_list(
+    burst: &aestra_runtime::InputSpawnBurst,
+) -> (Vec<u32>, aestra_runtime::CompiledDomainSpawn) {
+    let records: Vec<[f32; 3]> = burst.records().collect();
+    let count = records.len() as u32;
+    let mut words = vec![count, 0, 0, 0];
+    for position in records {
+        words.extend(position.map(f32::to_bits));
+        words.extend([0; 5]);
+    }
+    let spawn = aestra_runtime::CompiledDomainSpawn {
+        stage: 0,
+        emission: aestra_runtime::EmissionLayout {
+            resource: aestra_core::ResourceTypeId::new("aestra.resource.input_burst"),
+            capacity: count,
+        },
+        inherit: 0.0,
+    };
+    (words, spawn)
+}
+
 /// Copies a grid field into an `rgba16float` 3-D storage texture of the grid's size (fluid F3), so
 /// volume presentations sample it with hardware trilinear filtering (see
 /// [`aestra_gpu::volume::FIELD_TO_VOLUME_WGSL`]); a bricked field (fluid F7) into a brick atlas and

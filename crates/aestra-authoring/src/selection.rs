@@ -358,7 +358,10 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::AddFlipbook { .. }
         | EffectCommand::RemoveFlipbook { .. }
         | EffectCommand::SetFlipbook { .. }
-        | EffectCommand::AddEvent { .. } => (None, None),
+        | EffectCommand::AddEvent { .. }
+        | EffectCommand::AddInputSpawn { .. }
+        | EffectCommand::RemoveInputSpawn { .. }
+        | EffectCommand::SetInputSpawn { .. } => (None, None),
         EffectCommand::RemoveEffectClip { id }
         | EffectCommand::MoveEffectClip { id, .. }
         | EffectCommand::SetEffectClipTiming { id, .. }

@@ -141,6 +141,11 @@ pub(crate) struct GpuEffectBuffers {
     stateful_dispatch: Vec<StatefulDispatch>,
     /// The effect's particle event links (host bindings HB9b).
     event_links: Vec<aestra_runtime::CompiledEventLink>,
+    /// Whether the effect has input spawn routes (event system E3): its stateful emitters then
+    /// advance in lockstep, the bursts spawning after each tick's links.
+    input_routes: bool,
+    /// The host's recorded input events, updated each frame (event system E2–E3).
+    host_events: Arc<HostEventHistory>,
     /// The host's physics colliders around the effect this frame, packed (host bindings HB10).
     physics: Arc<[u32]>,
     /// True when *every* enabled emitter is stateful, so the effect skips the analytic reset+simulate
@@ -276,6 +281,44 @@ impl StatefulAppearance {
             color: aestra_gpu::GpuGradient::default(),
             max_scale: 1.0,
         }
+    }
+}
+
+/// The input events a host sent an effect (event system E2–E3), as the stateful path needs them: the
+/// bursts its input routes spawn, and each event's tick and identity. The events are part of the
+/// simulated history: when they change, every checkpoint past the first tick they differ at is stale.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct HostEventHistory {
+    bursts: Vec<aestra_runtime::InputSpawnBurst>,
+    events: Vec<(u64, u64)>,
+}
+
+impl HostEventHistory {
+    fn of(instance: &aestra_runtime::EffectInstance) -> Self {
+        Self {
+            bursts: instance.input_spawn_bursts(),
+            events: Self::keys(instance),
+        }
+    }
+
+    fn keys(instance: &aestra_runtime::EffectInstance) -> Vec<(u64, u64)> {
+        instance
+            .received_events()
+            .iter()
+            .map(|event| (event.tick, event.identity()))
+            .collect()
+    }
+
+    /// The first tick two histories (tick-ordered `(tick, identity)` lists) differ at — the first
+    /// tick whose advance is not the same — or `None` when they are the same.
+    fn divergence(before: &[(u64, u64)], after: &[(u64, u64)]) -> Option<u64> {
+        let common = before
+            .iter()
+            .zip(after)
+            .take_while(|(before, after)| before == after)
+            .count();
+        let ticks = [before.get(common), after.get(common)];
+        ticks.into_iter().flatten().map(|(tick, _)| *tick).min()
     }
 }
 
@@ -1161,6 +1204,8 @@ pub(crate) fn prepare_gpu_effects(
                 stateful_dispatch,
                 stateful_only,
                 event_links: player.effect().event_links.clone(),
+                input_routes: player.effect().input_spawns().next().is_some(),
+                host_events: Arc::new(HostEventHistory::of(&player.instance)),
                 physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },
             GpuPresentationPrepared,
@@ -1761,6 +1806,10 @@ fn sync_gpu_render_transforms(
         // world, which world (a new one restarts their history), and this frame's physics colliders.
         let world_revision = world_sdf.as_deref().map_or(0, AestraWorldSdf::revision);
         let mut reads_physics = false;
+        // The host's input events (event system E2–E3), rebuilt only when they change.
+        if gpu.host_events.events != HostEventHistory::keys(&player.instance) {
+            gpu.host_events = Arc::new(HostEventHistory::of(&player.instance));
+        }
         let cutoffs = player.instance.emission_cutoffs();
         for dispatch in &mut gpu.stateful_dispatch {
             dispatch.cutoffs = cutoffs;
@@ -2502,6 +2551,12 @@ struct StatefulPersistentState {
     /// The live state mixes spawns from more than one placement (the emitter moved mid-run), so it is
     /// no longer what a replay reproduces: no checkpoint is captured from it until the next reset.
     mixed_placement: bool,
+    /// The host input events the state and its checkpoints were advanced under (event system E2–E3):
+    /// see [`HostEventHistory`].
+    host_events: Vec<(u64, u64)>,
+    /// A changed input history differs from this tick on, which the state already advanced past:
+    /// the next advance first goes back to a checkpoint at or before it.
+    rewind: Option<u32>,
 }
 
 /// Fixed tick cadence between checkpoints (~1/3 s at 60 Hz).
@@ -2547,6 +2602,26 @@ impl StatefulPersistentState {
             checkpoints: Vec::new(),
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             mixed_placement: false,
+            host_events: Vec::new(),
+            rewind: None,
+        }
+    }
+
+    /// Adopts a changed host input history (event system E2–E3): checkpoints past the first tick it
+    /// differs at are dropped, and a state already past that tick rewinds on its next advance.
+    fn set_host_events(&mut self, events: &[(u64, u64)]) {
+        let Some(divergence) = HostEventHistory::divergence(&self.host_events, events) else {
+            return;
+        };
+        self.host_events = events.to_vec();
+        let divergence = u32::try_from(divergence).unwrap_or(u32::MAX);
+        self.checkpoints
+            .retain(|checkpoint| checkpoint.tick <= divergence);
+        if self.last_tick > divergence {
+            self.rewind = Some(
+                self.rewind
+                    .map_or(divergence, |rewind| rewind.min(divergence)),
+            );
         }
     }
 
@@ -2767,11 +2842,15 @@ fn prepare_stateful_states(
                         dispatch.event_mask != 0,
                     );
                     state.placement = dispatch.placement;
+                    state.host_events = effect.host_events.events.clone();
                     state
                 })
                 .collect();
             states.0.insert(entity, allocated);
         } else if let Some(states) = states.0.get_mut(&entity) {
+            for state in states.iter_mut() {
+                state.set_host_events(&effect.host_events.events);
+            }
             // Only the emitter transform changed: keep simulating (see `set_placement`). A placement
             // scheduled from a binding trace (host bindings HB8) is part of the replayed history.
             for (state, dispatch) in states.iter_mut().zip(&effect.stateful_dispatch) {
@@ -3158,9 +3237,13 @@ fn dispatch_stateful_effect(
     seek_quality: SeekQuality,
 ) {
     let target_tick = (simulation_time.max(0.0) / STATEFUL_TICK_DT) as u32;
-    let live = is_live_advance(persistent.last_tick, target_tick);
-    if target_tick < persistent.last_tick {
-        match persistent.restore_nearest(encoder, target_tick) {
+    // A changed host input history (event system E2–E3) replays from where it differs; a replay is
+    // not live.
+    let rewind = persistent.rewind.take();
+    let live = rewind.is_none() && is_live_advance(persistent.last_tick, target_tick);
+    let back_to = rewind.map_or(target_tick, |tick| tick.min(target_tick));
+    if back_to < persistent.last_tick {
+        match persistent.restore_nearest(encoder, back_to) {
             Some((tick, accumulator)) => {
                 persistent.last_tick = tick;
                 persistent.spawn_accumulator = accumulator;
@@ -3272,6 +3355,7 @@ fn run_coupled_stateful(
     dispatches: &[StatefulDispatch],
     coupling: Coupling<'_>,
     links: &[aestra_runtime::CompiledEventLink],
+    bursts: &[aestra_runtime::InputSpawnBurst],
     render: &StatefulRenderBuffers<'_>,
     simulation_time: f32,
     budget: u32,
@@ -3307,8 +3391,14 @@ fn run_coupled_stateful(
             .iter()
             .flatten()
             .all(|domain| domain.last_tick() == last);
-    if !in_step || target < last {
-        match joint_checkpoint_tick(persistent_states, domains, target.min(last)) {
+    // A changed host input history (event system E2–E3) replays every store from where it differs.
+    let rewind = persistent_states
+        .iter_mut()
+        .filter_map(|state| state.rewind.take())
+        .min();
+    if !in_step || target < last || rewind.is_some() {
+        let back_to = rewind.map_or(target.min(last), |tick| tick.min(target).min(last));
+        match joint_checkpoint_tick(persistent_states, domains, back_to) {
             Some(tick) => {
                 for state in persistent_states.iter_mut() {
                     state.restore_at(encoder, tick);
@@ -3328,7 +3418,7 @@ fn run_coupled_stateful(
         }
     }
     let now = persistent_states.first().map_or(0, |state| state.last_tick);
-    let live = in_step && is_live_advance(last, target);
+    let live = in_step && rewind.is_none() && is_live_advance(last, target);
     let ticks = target.saturating_sub(now).min(budget);
     let lists: Vec<Buffer> = if ticks > 0 {
         link_ends
@@ -3462,6 +3552,37 @@ fn run_coupled_stateful(
                 },
             );
         }
+        // Input routes (event system E3): after the links, the bursts the host's events of this
+        // tick spawn, in route order.
+        let tick = u64::from(persistent_states[0].last_tick);
+        for burst in bursts.iter().filter(|burst| burst.tick == tick) {
+            let Some(target) = dispatch_of(burst.target) else {
+                continue;
+            };
+            let (list, spawn) = crate::execution::input_burst_list(burst);
+            let list = device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra input burst"),
+                contents: &list
+                    .into_iter()
+                    .flat_map(u32::to_le_bytes)
+                    .collect::<Vec<u8>>(),
+                usage: BufferUsages::STORAGE,
+            });
+            let persistent = &persistent_states[target];
+            coupling.spawner.encode(
+                device.wgpu_device(),
+                encoder,
+                crate::execution::SpawnState {
+                    state: &persistent.state,
+                    free_list: &persistent.free_list,
+                    free_count: &persistent.free_count,
+                    spawn_counter: &persistent.spawn_counter,
+                    params: &tick_params[target],
+                },
+                &list,
+                &spawn,
+            );
+        }
         // Checkpoints capture each emitter after the tick's event spawns.
         for persistent in persistent_states.iter_mut() {
             persistent.last_tick += 1;
@@ -3538,6 +3659,7 @@ fn run_stateful_dispatches(
     persistent_states: &mut [StatefulPersistentState],
     dispatches: &[StatefulDispatch],
     links: &[aestra_runtime::CompiledEventLink],
+    bursts: Option<&[aestra_runtime::InputSpawnBurst]>,
     render: &StatefulRenderBuffers<'_>,
     coupling: Option<Coupling<'_>>,
     simulation_time: f32,
@@ -3552,8 +3674,10 @@ fn run_stateful_dispatches(
         encoder.clear_buffer(render.counters, 0, Some(4));
     }
     // Emitters following a domain's field (fluid F2b) or born from it (fluid F10) advance in lockstep
-    // with it; so do emitters joined by event links (host bindings HB9b), with one another.
+    // with it; so do emitters joined by event links (host bindings HB9b), with one another, and
+    // those of an effect with input routes (event system E3, `bursts` is then given).
     let coupled = !links.is_empty()
+        || bursts.is_some()
         || dispatches
             .iter()
             .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
@@ -3573,6 +3697,7 @@ fn run_stateful_dispatches(
                 dispatches,
                 coupling,
                 links,
+                bursts.unwrap_or_default(),
                 render,
                 simulation_time,
                 budget,
@@ -3758,6 +3883,9 @@ fn run_simulation(
                     persistent_states,
                     &effect.stateful_dispatch,
                     &effect.event_links,
+                    effect
+                        .input_routes
+                        .then_some(effect.host_events.bursts.as_slice()),
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -3773,7 +3901,7 @@ fn run_simulation(
                         follower.as_deref(),
                     )
                     .or_else(|| {
-                        (!effect.event_links.is_empty())
+                        (!effect.event_links.is_empty() || effect.input_routes)
                             .then(|| extension_stages::link_coupling(follower.as_deref()))
                             .flatten()
                     }),
@@ -4020,6 +4148,9 @@ fn run_simulation(
                     persistent_states,
                     &effect.stateful_dispatch,
                     &effect.event_links,
+                    effect
+                        .input_routes
+                        .then_some(effect.host_events.bursts.as_slice()),
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -4035,7 +4166,7 @@ fn run_simulation(
                         follower.as_deref(),
                     )
                     .or_else(|| {
-                        (!effect.event_links.is_empty())
+                        (!effect.event_links.is_empty() || effect.input_routes)
                             .then(|| extension_stages::link_coupling(follower.as_deref()))
                             .flatten()
                     }),
@@ -4369,6 +4500,8 @@ mod tests {
                     stateful_dispatch: Vec::new(),
                     stateful_only: false,
                     event_links: Vec::new(),
+                    input_routes: false,
+                    host_events: Default::default(),
                     physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
                 },
             ))
@@ -5241,6 +5374,17 @@ mod coupled_tests {
         links: &[aestra_runtime::CompiledEventLink],
         tick: u32,
     ) {
+        advance_event_scene(scene, links, &[], tick);
+    }
+
+    /// Advances the scene's emitters in the production lockstep loop, with its event links and the
+    /// bursts of input routes (event system E3), until every emitter reaches `tick`.
+    fn advance_event_scene(
+        scene: &mut Scene,
+        links: &[aestra_runtime::CompiledEventLink],
+        bursts: &[aestra_runtime::InputSpawnBurst],
+        tick: u32,
+    ) {
         // A backward seek may restore an earlier checkpoint and need several bounded catch-up
         // submissions. Wait until all emitters reach the requested frame before observing state.
         loop {
@@ -5266,6 +5410,7 @@ mod coupled_tests {
                     gatherer: &scene.gatherer,
                 },
                 links,
+                bursts,
                 &StatefulRenderBuffers {
                     particles,
                     alive,
@@ -5416,6 +5561,102 @@ mod coupled_tests {
     }
 
     #[test]
+    fn a_changed_host_input_history_differs_from_its_first_changed_tick() {
+        let history = [(30, 1), (70, 2)];
+        assert_eq!(HostEventHistory::divergence(&history, &history), None);
+        assert_eq!(
+            HostEventHistory::divergence(&history, &[(30, 1), (70, 2), (90, 3)]),
+            Some(90),
+            "an event appended"
+        );
+        assert_eq!(
+            HostEventHistory::divergence(&history, &[(30, 1), (70, 5)]),
+            Some(70),
+            "a payload changed"
+        );
+        assert_eq!(
+            HostEventHistory::divergence(&history, &[(30, 1), (50, 4)]),
+            Some(50),
+            "an event recorded earlier, after a backward seek"
+        );
+        assert_eq!(HostEventHistory::divergence(&history, &[]), Some(30));
+    }
+
+    /// Event system E3: a host's detonations spawn their bursts in the production lockstep loop,
+    /// after the tick's event links; a history changed after the fact — detonations recorded once the
+    /// run was past them — replays from where it differs, to exactly the state of a run that had them
+    /// all along, and so does a backward seek.
+    #[test]
+    fn input_bursts_spawn_in_the_lockstep_loop_and_a_changed_history_replays_exactly() {
+        let Some((mut fresh, links)) = chained_event_scene() else {
+            return;
+        };
+        let (mut late, _) = chained_event_scene().expect("a second GPU scene should initialize");
+        let burst = |tick, positions: &[[f32; 3]]| aestra_runtime::InputSpawnBurst {
+            tick,
+            route: 0,
+            target: 1,
+            count: 24,
+            events: positions
+                .iter()
+                .enumerate()
+                .map(|(ordinal, position)| aestra_runtime::ParticleEvent {
+                    ordinal: ordinal as u64,
+                    position: *position,
+                    velocity: [0.0; 3],
+                })
+                .collect(),
+        };
+        let bursts = [
+            burst(30, &[[4.0, 12.0, -2.0]]),
+            burst(70, &[[-6.0, 9.0, 1.0], [0.0, 20.0, 0.0]]),
+        ];
+        let history = [(30, 1), (70, 2)];
+        for state in &mut fresh.states {
+            state.set_host_events(&history);
+        }
+        // Just past the first detonation (the rockets' links fire later): its particles, born at the
+        // detonation point once the tick advanced.
+        advance_event_scene(&mut fresh, &links, &bursts, 31);
+        let first = chained_event_snapshot(&fresh);
+        assert_eq!(first.spawn_counts[1], 24, "{:?}", first.spawn_counts);
+        let point = [4.0_f32, 12.0, -2.0].map(f32::to_bits);
+        assert!(
+            first.particles[1]
+                .iter()
+                .all(|record| record[..3] == point && f32::from_bits(record[6]) == 0.0),
+            "{:?}",
+            first.particles[1]
+        );
+        advance_event_scene(&mut fresh, &links, &bursts, 150);
+        let expected = chained_event_snapshot(&fresh);
+        assert!(
+            expected.spawn_counts[1] > 24 * 3,
+            "the rockets' links fired too"
+        );
+
+        // The same run without the detonations, which the host then records back in time.
+        advance_event_scene(&mut late, &links, &[], 150);
+        assert_ne!(chained_event_snapshot(&late), expected);
+        for state in &mut late.states {
+            state.set_host_events(&history);
+            assert_eq!(state.rewind, Some(30));
+            assert!(
+                state
+                    .checkpoints
+                    .iter()
+                    .all(|checkpoint| checkpoint.tick <= 30)
+            );
+        }
+        advance_event_scene(&mut late, &links, &bursts, 150);
+        assert_eq!(chained_event_snapshot(&late), expected);
+        // A backward seek replays the recorded detonations as well.
+        advance_event_scene(&mut late, &links, &bursts, 50);
+        advance_event_scene(&mut late, &links, &bursts, 150);
+        assert_eq!(chained_event_snapshot(&late), expected);
+    }
+
+    #[test]
     fn chained_fireworks_match_across_fresh_runs_and_backward_seek() {
         let Some((mut first, links)) = chained_event_scene() else {
             assert!(
@@ -5535,6 +5776,7 @@ mod coupled_tests {
                         gatherer: &scene.gatherer,
                     },
                     &[],
+                    &[],
                     &StatefulRenderBuffers {
                         particles,
                         alive,
@@ -5643,6 +5885,7 @@ mod coupled_tests {
                         spawner: &self.spawner,
                         gatherer: &self.gatherer,
                     },
+                    &[],
                     &[],
                     &StatefulRenderBuffers {
                         particles,

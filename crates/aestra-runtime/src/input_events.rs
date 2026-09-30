@@ -4,10 +4,13 @@
 //! replays exactly what the host sent (event system §12C): the received events are host input, like
 //! a binding trace.
 //!
-//! What a declared input *does* — spawn a burst, raise an output — comes with event routes (E3);
-//! until then an instance records its inputs and reports which ones each tick crosses.
+//! What a declared input *does* comes from its event routes (E3): an input spawn route turns each of
+//! its events into a burst of an emitter's particles ([`InputSpawnBurst`]).
 
-use crate::{EffectInstance, INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING, trace_tick};
+use crate::{
+    CompiledEffect, EffectInstance, INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING,
+    PARTICLE_EVENT_CAPACITY, ParticleEvent, trace_tick,
+};
 use aestra_core::{EventFieldType, EventValue};
 use std::ops::Range;
 
@@ -18,6 +21,14 @@ pub struct HostInputEvent {
     pub input: String,
     pub tick: u64,
     pub payload: Vec<(String, EventValue)>,
+}
+
+impl HostInputEvent {
+    /// A content hash of the event, its tick included: a backend keeping state across ticks compares
+    /// them to find the first tick a changed history differs at.
+    pub fn identity(&self) -> u64 {
+        events_identity(std::slice::from_ref(self))
+    }
 }
 
 /// Why an input event was refused. The instance is left unchanged.
@@ -90,6 +101,84 @@ impl EmissionCutoffs {
     pub fn kill_time(&self) -> f32 {
         Self::time(self.kill_tick)
     }
+}
+
+/// One tick's burst of an input spawn route (event system E3): the route's events taking effect at
+/// `tick`, as particle events — ordinals in the order received, at the route's position field, with
+/// no velocity — each to become `count` particles of emitter `target`. The tick advances first,
+/// then its event links apply, then its bursts in route order, exactly as
+/// [`crate::StatefulSimulation::spawn_from_events`] spawns them; the GPU uploads [`Self::records`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputSpawnBurst {
+    pub tick: u64,
+    /// The route's index in [`CompiledEffect::event_routes`].
+    pub route: usize,
+    pub target: usize,
+    pub count: u32,
+    pub events: Vec<ParticleEvent>,
+}
+
+impl InputSpawnBurst {
+    /// The positions of the particles the burst spawns, in order: each event's, `count` times, at
+    /// most [`PARTICLE_EVENT_CAPACITY`] — before the target's free room, which also bounds them.
+    pub fn records(&self) -> impl Iterator<Item = [f32; 3]> + '_ {
+        self.events
+            .iter()
+            .flat_map(|event| std::iter::repeat_n(event.position, self.count as usize))
+            .take(PARTICLE_EVENT_CAPACITY as usize)
+    }
+}
+
+/// The bursts `events` (a host's inputs, in tick order) make through `effect`'s input spawn routes,
+/// by tick and then route order.
+pub fn input_spawn_bursts(
+    effect: &CompiledEffect,
+    events: &[HostInputEvent],
+) -> Vec<InputSpawnBurst> {
+    let mut bursts = Vec::new();
+    let mut remaining = events;
+    while let Some(first) = remaining.first() {
+        let same_tick = remaining
+            .iter()
+            .take_while(|event| event.tick == first.tick)
+            .count();
+        let (tick_events, rest) = remaining.split_at(same_tick);
+        remaining = rest;
+        for (route, spawn) in effect.input_spawns() {
+            let events: Vec<ParticleEvent> = tick_events
+                .iter()
+                .filter(|event| event.input == spawn.input)
+                .enumerate()
+                .map(|(ordinal, event)| {
+                    let position = spawn
+                        .position
+                        .as_ref()
+                        .and_then(|field| {
+                            event.payload.iter().find_map(|(name, value)| match value {
+                                EventValue::Vec3(position) if name == field => Some(*position),
+                                _ => None,
+                            })
+                        })
+                        .unwrap_or([0.0; 3]);
+                    ParticleEvent {
+                        ordinal: ordinal as u64,
+                        position,
+                        velocity: [0.0; 3],
+                    }
+                })
+                .collect();
+            if !events.is_empty() {
+                bursts.push(InputSpawnBurst {
+                    tick: first.tick,
+                    route,
+                    target: spawn.target,
+                    count: spawn.count,
+                    events,
+                });
+            }
+        }
+    }
+    bursts
 }
 
 /// A content hash of received events, part of the instance's host input identity.
@@ -225,6 +314,12 @@ impl EffectInstance {
     /// Every input event received, in tick order.
     pub fn received_events(&self) -> &[HostInputEvent] {
         &self.input_events
+    }
+
+    /// The bursts the received inputs make through the effect's input spawn routes (event system
+    /// E3), by tick and then route order.
+    pub fn input_spawn_bursts(&self) -> Vec<InputSpawnBurst> {
+        input_spawn_bursts(&self.effect, &self.input_events)
     }
 
     /// The received events taking effect in `ticks`.

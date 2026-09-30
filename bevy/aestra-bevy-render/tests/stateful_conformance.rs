@@ -3047,6 +3047,7 @@ fn advance_production_linked(
     harness: &Harness,
     configs: &[StatefulConfig],
     links: &[aestra_runtime::CompiledEventLink],
+    bursts: &[aestra_runtime::InputSpawnBurst],
     seed: u64,
     ticks: u32,
 ) -> Result<Vec<LiveParticles>, String> {
@@ -3157,7 +3158,7 @@ fn advance_production_linked(
         .collect();
     let emitter_seed = |index: usize| seed ^ (index as u64).wrapping_mul(0x9E37_79B9);
     let mut encoder = device.create_command_encoder(&Default::default());
-    for _ in 0..ticks {
+    for tick in 0..ticks {
         let mut params = Vec::new();
         for (index, (config, emitter)) in configs.iter().zip(&emitters).enumerate() {
             let mut words = stateful_params(config, emitter_seed(index), index as u32, 0);
@@ -3230,6 +3231,25 @@ fn advance_production_linked(
                 },
                 list,
                 &EventGatherPipeline::spawn(link, list_capacity),
+            );
+        }
+        // Then the tick's input route bursts (event system E3), as production uploads them.
+        for burst in bursts.iter().filter(|burst| burst.tick == u64::from(tick)) {
+            let (words, spawn) = aestra_bevy_render::execution::input_burst_list(burst);
+            let list = buffer("input burst", encode(&words)?, wgpu::BufferUsages::empty());
+            let target = &emitters[burst.target];
+            spawner.encode(
+                device,
+                &mut encoder,
+                SpawnState {
+                    state: &target.state,
+                    free_list: &target.free_list,
+                    free_count: &target.free_count,
+                    spawn_counter: &target.spawn_counter,
+                    params: &params[burst.target],
+                },
+                &list,
+                &spawn,
             );
         }
         // Submit tick by tick, so the per-tick buffers and bind groups are released as we go.
@@ -3341,7 +3361,7 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
     ];
     let seed = 0x00AB_009B_0000_0001_u64;
     let ticks = 150;
-    let gpu = advance_production_linked(&harness, &configs, &links, seed, ticks).unwrap();
+    let gpu = advance_production_linked(&harness, &configs, &links, &[], seed, ticks).unwrap();
 
     let mut sims: Vec<StatefulSimulation> = configs
         .iter()
@@ -3368,7 +3388,7 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         assert!(!cpu.is_empty(), "emitter {index} has particles");
         assert_same_particles(&cpu, &gpu[index]);
     }
-    let replay = advance_production_linked(&harness, &configs, &links, seed, ticks).unwrap();
+    let replay = advance_production_linked(&harness, &configs, &links, &[], seed, ticks).unwrap();
     for (index, (first, second)) in gpu.iter().zip(&replay).enumerate() {
         let canonical = |particles: &LiveParticles| {
             let mut by_ordinal: Vec<_> = particles
@@ -3389,6 +3409,103 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         64,
         "the puffs fill their small capacity and the rest are dropped alike"
     );
+}
+
+#[test]
+fn gpu_input_bursts_spawn_like_the_cpu_reference() {
+    // Event system E3 (Scenario C): a host detonates a mine — once, then twice in one tick, beyond
+    // the shrapnel's free room — while the fountain's deaths keep feeding a link into the same
+    // emitter. Every burst spawns after its tick's links, at the payload positions, exactly as in
+    // the CPU reference, by ordinal.
+    use aestra_runtime::{CompiledEventLink, InputSpawnBurst, ParticleEvent};
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let fountain = StatefulConfig {
+        gravity: [0.0, -18.0, 0.0],
+        spawn_per_tick: 3,
+        speed: (6.0, 10.0),
+        lifetime: (0.8, 1.0),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.4,
+        drag: 0.1,
+        shape: SpawnShape::Sphere { radius: 0.5 },
+        turbulence: 1.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 256,
+        homing: None,
+    };
+    let shrapnel = StatefulConfig {
+        gravity: [0.0, -9.0, 0.0],
+        spawn_per_tick: 0,
+        speed: (4.0, 8.0),
+        lifetime: (0.3, 0.5),
+        spread: 1.0,
+        turbulence: 0.0,
+        capacity: 96,
+        ..fountain
+    };
+    let configs = [fountain, shrapnel];
+    let links = [CompiledEventLink {
+        source: 0,
+        trigger: aestra_core::EventTrigger::OnDeath,
+        target: 1,
+        count: 1,
+        inherit: 0.5,
+    }];
+    let burst = |tick, positions: &[[f32; 3]]| InputSpawnBurst {
+        tick,
+        route: 0,
+        target: 1,
+        count: 40,
+        events: positions
+            .iter()
+            .enumerate()
+            .map(|(ordinal, position)| ParticleEvent {
+                ordinal: ordinal as u64,
+                position: *position,
+                velocity: [0.0; 3],
+            })
+            .collect(),
+    };
+    let bursts = [
+        burst(20, &[[2.0, 6.0, 0.0]]),
+        burst(40, &[[-3.0, 4.0, 1.0], [0.0, 8.0, -2.0]]),
+    ];
+    let seed = 0x00E3_0000_0000_0003_u64;
+    let ticks = 70;
+    let gpu = advance_production_linked(&harness, &configs, &links, &bursts, seed, ticks).unwrap();
+
+    let mut sims: Vec<StatefulSimulation> = configs
+        .iter()
+        .enumerate()
+        .map(|(index, config)| {
+            StatefulSimulation::new(*config, seed ^ (index as u64).wrapping_mul(0x9E37_79B9))
+        })
+        .collect();
+    let mut capped = false;
+    for tick in 0..u64::from(ticks) {
+        for sim in &mut sims {
+            sim.advance_tick();
+        }
+        for link in &links {
+            let events = sims[link.source].events(link.trigger).to_vec();
+            sims[link.target].spawn_from_events(&events, link.count, link.inherit);
+        }
+        for burst in bursts.iter().filter(|burst| burst.tick == tick) {
+            let before = sims[burst.target].live_count();
+            sims[burst.target].spawn_from_events(&burst.events, burst.count, 0.0);
+            capped |= sims[burst.target].live_count() - before < burst.records().count();
+        }
+    }
+    assert!(capped, "the double detonation exceeds the shrapnel's room");
+    for (index, sim) in sims.iter().enumerate() {
+        let cpu = sim.alive_particles();
+        assert!(!cpu.is_empty(), "emitter {index} has particles");
+        assert_same_particles(&cpu, &gpu[index]);
+    }
 }
 
 // ---- World collision (host bindings HB10) ----

@@ -33,7 +33,10 @@ pub use execution_ir::{
     ResourceLifetime, StageOutput, execute_reference, lower_stage_fused,
 };
 pub use host_transform::CompiledHostTransformTrack;
-pub use input_events::{EmissionCutoffs, EventInputError, HostInputEvent, neutral_payload};
+pub use input_events::{
+    EmissionCutoffs, EventInputError, HostInputEvent, InputSpawnBurst, input_spawn_bursts,
+    neutral_payload,
+};
 pub use interface::{
     CUE_CAMERA_SHAKE, CUE_PLAY_SOUND, CUE_SPAWN_CHILD_EFFECT, EffectInterface, EventChannel,
     INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING, InterfaceBinding, InterfaceEvent,
@@ -1261,6 +1264,8 @@ pub struct CompiledEffect {
     pub choreography_events: Vec<CompiledChoreographyEvent>,
     /// Particle event links (host bindings HB9b), in authored order — the order they apply each tick.
     pub event_links: Vec<CompiledEventLink>,
+    /// Effect-scale event routes (event system E3), in authored order.
+    pub event_routes: Vec<CompiledEventRoute>,
     /// Declared event inputs (event system E1), as authored: part of the public interface.
     pub event_inputs: Vec<aestra_core::EventDefinition>,
     /// Declared event outputs (event system E1), as authored.
@@ -1292,6 +1297,26 @@ pub struct CompiledEventLink {
     pub inherit: f32,
 }
 
+/// A compiled effect-scale event route (event system E3): the shared form the Event Map (E4) reads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompiledEventRoute {
+    InputSpawn(CompiledInputSpawn),
+}
+
+/// A declared input spawning a burst (event system E3): each `input` event an instance receives
+/// becomes `count` particles of emitter `target` (an index in [`CompiledEffect::emitters`]) at its
+/// `position` field, in effect space — at the origin without one — once the event's tick has
+/// advanced and applied its event links. See [`EffectInstance::input_spawn_bursts`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledInputSpawn {
+    /// The input's name, as hosts send it.
+    pub input: String,
+    pub target: usize,
+    pub count: u32,
+    /// The name of the input's `vec3` field the burst is centered on.
+    pub position: Option<String>,
+}
+
 /// Particle events kept per source emitter and tick (host bindings HB9b).
 pub const PARTICLE_EVENT_CAPACITY: u32 = 1024;
 
@@ -1300,10 +1325,21 @@ pub const PARTICLE_EVENT_CAPACITY: u32 = 1024;
 pub const PARTICLE_EVENT_LIST_BUDGET_BYTES: u64 = 128 * 1024 * 1024;
 
 impl CompiledEffect {
-    /// Whether emitter `index` is a sub-emitter: some event link targets it, so it spawns only from
-    /// its links (host bindings HB9b).
+    /// Whether emitter `index` is a sub-emitter: some event link (host bindings HB9b) or input route
+    /// (event system E3) targets it, so it spawns only from them.
     pub fn is_event_target(&self, index: usize) -> bool {
         self.event_links.iter().any(|link| link.target == index)
+            || self.input_spawns().any(|(_, route)| route.target == index)
+    }
+
+    /// The input spawn routes (event system E3), with their index in [`Self::event_routes`].
+    pub fn input_spawns(&self) -> impl Iterator<Item = (usize, &CompiledInputSpawn)> {
+        self.event_routes
+            .iter()
+            .enumerate()
+            .map(|(index, route)| match route {
+                CompiledEventRoute::InputSpawn(spawn) => (index, spawn),
+            })
     }
 
     /// The triggers emitter `index`'s particles must report (host bindings HB9b), as a

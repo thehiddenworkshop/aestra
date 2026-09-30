@@ -901,6 +901,108 @@ fn locked_curve_rejects_replacement_through_its_module() {
 }
 
 #[test]
+fn input_routes_follow_their_emitter_and_input_and_undo_in_place() {
+    use aestra_core::{EventDefinition, EventField, EventFieldType, InputSpawnRoute};
+    let mut effect = test_effect();
+    let source = effect.emitters[0].id;
+    let shrapnel = Emitter::basic_sprite("Shrapnel", 2.0).id;
+    let smoke = Emitter::basic_sprite("Smoke", 2.0).id;
+    for (id, name) in [(shrapnel, "Shrapnel"), (smoke, "Smoke")] {
+        let mut emitter = Emitter::basic_sprite(name, 2.0);
+        emitter.id = id;
+        effect.emitters.push(emitter);
+    }
+    let detonate = EventDefinition::new("Detonate")
+        .with_field(EventField::new("position", EventFieldType::Vec3));
+    effect.event_inputs.push(detonate.clone());
+    // Links around one that stays: deleting the shrapnel must put them back in their order.
+    effect.events = vec![
+        EventLink::new(source, EventTrigger::OnDeath, shrapnel),
+        EventLink::new(source, EventTrigger::OnDeath, smoke),
+        EventLink::new(source, EventTrigger::OnSpawn, shrapnel),
+    ];
+    let mut burst = InputSpawnRoute::new(detonate.id, shrapnel);
+    burst.count = 48;
+    burst.position = Some(detonate.fields[0].id);
+    let puff = InputSpawnRoute::new(detonate.id, smoke);
+    let mut history = CommandHistory::default();
+    let mut run = |effect: &mut EffectAsset, command| {
+        history
+            .execute(
+                effect,
+                &LockState::default(),
+                EffectTransaction::single("Edit", command),
+            )
+            .unwrap();
+    };
+    run(
+        &mut effect,
+        EffectCommand::AddInputSpawn {
+            route: burst.clone(),
+            index: 0,
+        },
+    );
+    run(
+        &mut effect,
+        EffectCommand::AddInputSpawn {
+            route: puff.clone(),
+            index: 1,
+        },
+    );
+    assert!(effect.validation_report().diagnostics.is_empty());
+    let routed = effect.clone();
+    let mut commands = vec![
+        // Deleting the shrapnel takes its links and its route along.
+        EffectCommand::RemoveEmitter { id: shrapnel },
+        // Retyping the position field leaves the burst at the effect origin.
+        EffectCommand::SetEventDefinition {
+            id: detonate.id,
+            definition: {
+                let mut retyped = detonate.clone();
+                retyped.fields[0].field_type = EventFieldType::Float;
+                retyped
+            },
+        },
+        // Removing the input removes its routes.
+        EffectCommand::RemoveEventDefinition { id: detonate.id },
+        // An edit in place keeps the route's id and place.
+        EffectCommand::SetInputSpawn {
+            id: puff.id,
+            route: InputSpawnRoute {
+                count: 12,
+                ..puff.clone()
+            },
+        },
+        EffectCommand::RemoveInputSpawn { id: burst.id },
+    ];
+    let expected: [fn(&EffectAsset) -> bool; 5] = [
+        |effect| effect.events.len() == 1 && effect.input_spawns.len() == 1,
+        |effect| effect.input_spawns[0].position.is_none(),
+        |effect| effect.input_spawns.is_empty(),
+        |effect| effect.input_spawns[1].count == 12,
+        |effect| effect.input_spawns.len() == 1,
+    ];
+    for (command, check) in commands.drain(..).zip(expected) {
+        let mut history = CommandHistory::default();
+        let mut edited = routed.clone();
+        history
+            .execute(
+                &mut edited,
+                &LockState::default(),
+                EffectTransaction::single("Edit", command.clone()),
+            )
+            .unwrap();
+        assert!(check(&edited), "{command:?}");
+        assert!(
+            edited.validation_report().diagnostics.is_empty(),
+            "{command:?}"
+        );
+        history.undo(&mut edited).unwrap().unwrap();
+        assert_eq!(edited, routed, "{command:?} undoes in place");
+    }
+}
+
+#[test]
 fn deleting_an_emitter_removes_and_restores_connected_events() {
     let mut effect = test_effect();
     let second = Emitter::basic_sprite("Second", 2.0);

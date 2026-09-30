@@ -243,6 +243,24 @@ impl EffectDiff {
                 );
             }
         }
+        // Input routes (event system E3) added, removed, reordered or edited.
+        if before.input_spawns != after.input_spawns {
+            let summary = |effect: &EffectAsset| {
+                effect
+                    .input_spawns
+                    .iter()
+                    .map(|route| format!("{} -> {} x{}", route.input, route.target, route.count))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.input_spawns",
+                summary(before),
+                summary(after),
+            );
+        }
         Self { changes }
     }
 

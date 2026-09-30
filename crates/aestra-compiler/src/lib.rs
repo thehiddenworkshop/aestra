@@ -175,12 +175,16 @@ impl EffectCompiler {
         }
         // An attached emitter (host bindings HB7b) is at least stateful: its spawns must stay where
         // the object was, which a time-only evaluation cannot remember. So is either end of a particle
-        // event link (HB9b): events come from, and spawn into, persistent particles. No module
-        // promoted it.
+        // event link (HB9b): events come from, and spawn into, persistent particles; and so is the
+        // target of an input route (event system E3). No module promoted it.
         let linked = asset
             .events
             .iter()
-            .any(|link| link.source == emitter.id || link.target == emitter.id);
+            .any(|link| link.source == emitter.id || link.target == emitter.id)
+            || asset
+                .input_spawns
+                .iter()
+                .any(|route| route.target == emitter.id);
         if (emitter.attachment.is_some() || linked)
             && requirements.derived_class() == SimulationClass::Analytic
         {
@@ -1109,9 +1113,11 @@ impl EffectCompiler {
             discovered_attributes.difference(&stored_attributes).count();
         let requirements = derive_effect_requirements(&emitters);
         let event_links = compile_event_links(asset, &emitters)?;
+        let event_routes = compile_event_routes(asset, &emitters)?;
 
         Ok(CompiledEffect {
             event_links,
+            event_routes,
             event_inputs: asset.event_inputs.clone(),
             event_outputs: asset.event_outputs.clone(),
             source: asset.id,
@@ -3090,4 +3096,60 @@ fn compile_event_links(
         return Err(CompileError::Validation(report));
     }
     Ok(links)
+}
+
+/// Resolves the effect's input spawn routes (event system E3) to input and field names and compiled
+/// emitter indices. The target must be an enabled emitter compiled to a single timeline region; a
+/// route to a disabled emitter is dropped (its input then spawns nothing).
+fn compile_event_routes(
+    asset: &EffectAsset,
+    emitters: &[CompiledEmitter],
+) -> Result<Vec<aestra_runtime::CompiledEventRoute>, CompileError> {
+    let mut report = ValidationReport::default();
+    let mut routes = Vec::new();
+    for (index, route) in asset.input_spawns.iter().enumerate() {
+        let regions: Vec<usize> = emitters
+            .iter()
+            .enumerate()
+            .filter(|(_, emitter)| emitter.source == route.target)
+            .map(|(index, _)| index)
+            .collect();
+        let [target] = regions.as_slice() else {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidReference,
+                format!("effect.input_spawns[{index}].target"),
+                "an input route's emitter must play as a single timeline region",
+            ));
+            continue;
+        };
+        // Validation guarantees the input, and the position field among its fields.
+        let Some(input) = asset
+            .event_inputs
+            .iter()
+            .find(|definition| definition.id == route.input)
+        else {
+            continue;
+        };
+        if !emitters[*target].enabled {
+            continue;
+        }
+        routes.push(aestra_runtime::CompiledEventRoute::InputSpawn(
+            aestra_runtime::CompiledInputSpawn {
+                input: input.name.clone(),
+                target: *target,
+                count: route.count,
+                position: route.position.and_then(|position| {
+                    input
+                        .fields
+                        .iter()
+                        .find(|field| field.id == position)
+                        .map(|field| field.name.clone())
+                }),
+            },
+        ));
+    }
+    if !report.diagnostics.is_empty() {
+        return Err(CompileError::Validation(report));
+    }
+    Ok(routes)
 }

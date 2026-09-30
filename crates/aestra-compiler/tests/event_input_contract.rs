@@ -1,12 +1,14 @@
 //! Host input events (event system E2): a host sends an effect its declared inputs; each is checked
 //! against the declared payload, stamped with the tick it takes effect at, and recorded so a backward
-//! seek replays exactly what was sent.
+//! seek replays exactly what was sent. Input routes (E3) turn them into bursts of particles.
 
 use aestra_compiler::{EffectCompiler, ExtensionRegistry};
-use aestra_core::{EffectAsset, Emitter, EventDefinition, EventField, EventFieldType, EventValue};
+use aestra_core::{
+    EffectAsset, Emitter, EventDefinition, EventField, EventFieldType, EventValue, InputSpawnRoute,
+};
 use aestra_runtime::{
-    EffectInstance, EmissionCutoffs, EventInputError, INPUT_KILL, INPUT_RESTART,
-    INPUT_STOP_EMITTING, neutral_payload, trace_tick,
+    CompiledEventRoute, CompiledInputSpawn, EffectInstance, EmissionCutoffs, EventInputError,
+    INPUT_KILL, INPUT_RESTART, INPUT_STOP_EMITTING, neutral_payload, trace_tick,
 };
 use std::sync::Arc;
 
@@ -177,4 +179,122 @@ fn stop_emitting_and_kill_cut_the_emission_exactly() {
     assert_eq!(instance.emission_cutoffs(), EmissionCutoffs::NONE);
     uncut.seek(1.4);
     assert_eq!(live(&instance), live(&uncut));
+}
+
+/// A mine whose `Detonate` input bursts its shrapnel (event system E3), and a second route of the
+/// same input into its smoke, at the origin.
+fn mine() -> (EffectAsset, EffectInstance) {
+    let mut effect = EffectAsset::new("Mine", 4.0);
+    let shrapnel = Emitter::basic_sprite("Shrapnel", 4.0);
+    let smoke = Emitter::basic_sprite("Smoke", 4.0);
+    let mut detonate = EventDefinition::new("Detonate")
+        .with_field(EventField::new("position", EventFieldType::Vec3))
+        .with_field(EventField::new("power", EventFieldType::Float));
+    detonate.fields[1].required = false;
+    let mut burst = InputSpawnRoute::new(detonate.id, shrapnel.id);
+    burst.count = 48;
+    burst.position = Some(detonate.fields[0].id);
+    let puff = InputSpawnRoute::new(detonate.id, smoke.id);
+    effect.emitters = vec![Emitter::basic_sprite("Sparks", 4.0), shrapnel, smoke];
+    effect.event_inputs = vec![detonate];
+    effect.input_spawns = vec![burst, puff];
+    let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&effect)
+        .unwrap();
+    (effect, EffectInstance::new(Arc::new(compiled)))
+}
+
+#[test]
+fn input_routes_compile_to_sub_emitters_and_bursts() {
+    let (effect, mut instance) = mine();
+    let compiled = instance.effect().clone();
+    assert_eq!(
+        compiled.event_routes,
+        [
+            CompiledEventRoute::InputSpawn(CompiledInputSpawn {
+                input: "Detonate".into(),
+                target: 1,
+                count: 48,
+                position: Some("position".into()),
+            }),
+            CompiledEventRoute::InputSpawn(CompiledInputSpawn {
+                input: "Detonate".into(),
+                target: 2,
+                count: 1,
+                position: None,
+            }),
+        ]
+    );
+    // A route's target spawns only from its routes, and simulates persistent particles.
+    assert!(!compiled.is_event_target(0));
+    assert!(compiled.is_event_target(1) && compiled.is_event_target(2));
+    assert_eq!(
+        compiled.emitters[1].simulation_class,
+        aestra_runtime::SimulationClass::Stateful
+    );
+    assert_eq!(
+        compiled.emitters[0].simulation_class,
+        aestra_runtime::SimulationClass::Analytic
+    );
+
+    // Two detonations in one tick, one more later: a burst per route and tick, events in the order
+    // received, at the position field — the smoke at the origin.
+    let at = |position| vec![("position".to_string(), EventValue::Vec3(position))];
+    let first = instance
+        .send_event("Detonate", at([1.0, 2.0, 3.0]))
+        .unwrap();
+    instance
+        .send_event("Detonate", at([4.0, 5.0, 6.0]))
+        .unwrap();
+    instance.set_playback_time(1.0);
+    let second = instance
+        .send_event("Detonate", at([7.0, 8.0, 9.0]))
+        .unwrap();
+    let bursts = instance.input_spawn_bursts();
+    let summary: Vec<_> = bursts
+        .iter()
+        .map(|burst| {
+            (
+                burst.tick,
+                burst.route,
+                burst.target,
+                burst.count,
+                burst
+                    .events
+                    .iter()
+                    .map(|event| (event.ordinal, event.position))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (
+                first,
+                0,
+                1,
+                48,
+                vec![(0, [1.0, 2.0, 3.0]), (1, [4.0, 5.0, 6.0])]
+            ),
+            (first, 1, 2, 1, vec![(0, [0.0; 3]), (1, [0.0; 3])]),
+            (second, 0, 1, 48, vec![(0, [7.0, 8.0, 9.0])]),
+            (second, 1, 2, 1, vec![(0, [0.0; 3])]),
+        ]
+    );
+    assert_eq!(bursts[0].records().count(), 96);
+    assert!(
+        bursts[0]
+            .events
+            .iter()
+            .all(|event| event.velocity == [0.0; 3])
+    );
+
+    // A route to a disabled emitter is dropped: its input spawns nothing there.
+    let mut disabled = effect.clone();
+    disabled.emitters[2].enabled = false;
+    let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&disabled)
+        .unwrap();
+    assert_eq!(compiled.event_routes.len(), 1);
 }

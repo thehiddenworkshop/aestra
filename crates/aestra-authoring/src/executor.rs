@@ -493,11 +493,20 @@ fn apply_command(
         EffectCommand::RemoveEventDefinition { id } => {
             let (direction, index) = find_event_definition(effect, *id)?;
             let definition = event_definitions_mut(effect, direction).remove(index);
-            vec![EffectCommand::AddEventDefinition {
+            // An input's routes (event system E3) go with it.
+            let removed_routes =
+                extract_where(&mut effect.input_spawns, |route| route.input == *id);
+            let mut commands = vec![EffectCommand::AddEventDefinition {
                 direction,
                 definition,
                 index,
-            }]
+            }];
+            commands.extend(
+                removed_routes
+                    .into_iter()
+                    .map(|(index, route)| EffectCommand::AddInputSpawn { route, index }),
+            );
+            commands
         }
         EffectCommand::SetEventDefinition { id, definition } => {
             let (direction, index) = find_event_definition(effect, *id)?;
@@ -507,10 +516,30 @@ fn apply_command(
                 &mut event_definitions_mut(effect, direction)[index],
                 replacement,
             );
-            vec![EffectCommand::SetEventDefinition {
+            let mut commands = vec![EffectCommand::SetEventDefinition {
                 id: *id,
                 definition: previous,
-            }]
+            }];
+            // A route centered on a field that is gone, or no longer a vec3, spawns at the origin.
+            let fields = &event_definitions_mut(effect, direction)[index].fields;
+            let positions: Vec<aestra_core::EventFieldId> = fields
+                .iter()
+                .filter(|field| field.field_type == aestra_core::EventFieldType::Vec3)
+                .map(|field| field.id)
+                .collect();
+            for route in effect.input_spawns.iter_mut().filter(|route| {
+                route.input == *id
+                    && route
+                        .position
+                        .is_some_and(|position| !positions.contains(&position))
+            }) {
+                commands.push(EffectCommand::SetInputSpawn {
+                    id: route.id,
+                    route: route.clone(),
+                });
+                route.position = None;
+            }
+            commands
         }
         EffectCommand::SetBinding { id, binding } => {
             let index = effect
@@ -626,22 +655,22 @@ fn apply_command(
         EffectCommand::RemoveEmitter { id } => {
             let index = emitter_index(effect, *id)?;
             let emitter = effect.emitters.remove(index);
-            let mut removed_events = Vec::new();
-            let mut event_index = 0;
-            while event_index < effect.events.len() {
-                if effect.events[event_index].source == *id
-                    || effect.events[event_index].target == *id
-                {
-                    removed_events.push((event_index, effect.events.remove(event_index)));
-                } else {
-                    event_index += 1;
-                }
-            }
+            // Its links and input routes go with it, and come back in place on undo.
+            let removed_events = extract_where(&mut effect.events, |event| {
+                event.source == *id || event.target == *id
+            });
+            let removed_routes =
+                extract_where(&mut effect.input_spawns, |route| route.target == *id);
             let mut commands = vec![EffectCommand::AddEmitter { emitter, index }];
             commands.extend(
                 removed_events
                     .into_iter()
                     .map(|(index, event)| EffectCommand::AddEvent { event, index }),
+            );
+            commands.extend(
+                removed_routes
+                    .into_iter()
+                    .map(|(index, route)| EffectCommand::AddInputSpawn { route, index }),
             );
             commands
         }
@@ -1313,6 +1342,30 @@ fn apply_command(
                 event: previous,
             }]
         }
+        EffectCommand::AddInputSpawn { route, index } => {
+            checked_insert(
+                &mut effect.input_spawns,
+                *index,
+                route.clone(),
+                "effect input spawns",
+            )?;
+            vec![EffectCommand::RemoveInputSpawn { id: route.id }]
+        }
+        EffectCommand::RemoveInputSpawn { id } => {
+            let index = input_spawn_index(effect, *id)?;
+            let route = effect.input_spawns.remove(index);
+            vec![EffectCommand::AddInputSpawn { route, index }]
+        }
+        EffectCommand::SetInputSpawn { id, route } => {
+            let index = input_spawn_index(effect, *id)?;
+            let mut replacement = route.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.input_spawns[index], replacement);
+            vec![EffectCommand::SetInputSpawn {
+                id: *id,
+                route: previous,
+            }]
+        }
     };
     Ok(inverse)
 }
@@ -1803,6 +1856,33 @@ fn checked_insert<T>(
     }
     items.insert(index, value);
     Ok(())
+}
+
+/// Removes the items `remove` selects, each with its index in the original list: inserted back in
+/// that order, they restore the list exactly.
+fn extract_where<T>(items: &mut Vec<T>, remove: impl Fn(&T) -> bool) -> Vec<(usize, T)> {
+    let mut removed = Vec::new();
+    let mut kept = Vec::with_capacity(items.len());
+    for (index, item) in std::mem::take(items).into_iter().enumerate() {
+        if remove(&item) {
+            removed.push((index, item));
+        } else {
+            kept.push(item);
+        }
+    }
+    *items = kept;
+    removed
+}
+
+fn input_spawn_index(
+    effect: &EffectAsset,
+    id: aestra_core::EventRouteId,
+) -> Result<usize, CommandError> {
+    effect
+        .input_spawns
+        .iter()
+        .position(|route| route.id == id)
+        .ok_or_else(|| not_found("input route", &id))
 }
 
 fn checked_remove<T>(

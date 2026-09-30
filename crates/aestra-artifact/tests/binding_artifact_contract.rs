@@ -269,3 +269,23 @@ fn declared_events_round_trip_through_the_artifact() {
     assert_eq!(reloaded.event_inputs, asset.event_inputs);
     assert_eq!(reloaded.event_outputs, asset.event_outputs);
 }
+
+#[test]
+fn input_routes_round_trip_through_the_artifact() {
+    use aestra_core::{EventDefinition, EventField, EventFieldType, InputSpawnRoute};
+    let mut asset = effect("Mine", Vec::new());
+    let detonate = EventDefinition::new("Detonate")
+        .with_field(EventField::new("position", EventFieldType::Vec3));
+    let mut route = InputSpawnRoute::new(detonate.id, asset.emitters[0].id);
+    route.count = 32;
+    route.position = Some(detonate.fields[0].id);
+    asset.event_inputs = vec![detonate];
+    asset.input_spawns = vec![route];
+    let compiled = EffectCompiler::with_extensions(ExtensionRegistry::builtin())
+        .compile(&asset)
+        .unwrap();
+    assert_eq!(compiled.event_routes.len(), 1);
+    let bytes = encode_effect(&compiled).unwrap();
+    let reloaded = decode_effect(&bytes).unwrap();
+    assert_eq!(reloaded.event_routes, compiled.event_routes);
+}

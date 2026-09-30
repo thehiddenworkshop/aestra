@@ -119,6 +119,9 @@ struct EffectV1 {
     /// Particle event links (host bindings HB9b, v4 additive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     event_links: Vec<EventLinkV4>,
+    /// Effect-scale event routes (event system E3, v4 additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    event_routes: Vec<EventRouteV4>,
     /// Declared event inputs and outputs (event system E1, v4 additive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     event_inputs: Vec<aestra_core::EventDefinition>,
@@ -172,6 +175,75 @@ impl EventLinkV4 {
             count: self.count,
             inherit: self.inherit,
         })
+    }
+}
+
+/// A compiled effect-scale event route (event system E3): names and an emitter index, checked on
+/// reload against the effect's declared inputs.
+#[derive(Debug, Serialize, Deserialize)]
+enum EventRouteV4 {
+    InputSpawn {
+        input: String,
+        target: u32,
+        count: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<String>,
+    },
+}
+
+impl EventRouteV4 {
+    fn encode(route: &aestra_runtime::CompiledEventRoute) -> Self {
+        match route {
+            aestra_runtime::CompiledEventRoute::InputSpawn(spawn) => Self::InputSpawn {
+                input: spawn.input.clone(),
+                target: spawn.target as u32,
+                count: spawn.count,
+                position: spawn.position.clone(),
+            },
+        }
+    }
+
+    fn decode(
+        self,
+        index: usize,
+        emitters: usize,
+        inputs: &[aestra_core::EventDefinition],
+    ) -> Result<aestra_runtime::CompiledEventRoute, ArtifactError> {
+        let path = format!("effect.event_routes[{index}]");
+        let Self::InputSpawn {
+            input,
+            target,
+            count,
+            position,
+        } = self;
+        let Some(definition) = inputs.iter().find(|definition| definition.name == input) else {
+            return invalid(
+                path,
+                "an input route names an input the effect does not declare",
+            );
+        };
+        if target as usize >= emitters || count == 0 || count > aestra_core::MAX_EVENT_LINK_COUNT {
+            return invalid(path, "an input route's emitter or count is out of range");
+        }
+        if let Some(field) = &position
+            && !definition.fields.iter().any(|candidate| {
+                &candidate.name == field
+                    && candidate.field_type == aestra_core::EventFieldType::Vec3
+            })
+        {
+            return invalid(
+                path,
+                "an input route's position is not a vec3 field of its input",
+            );
+        }
+        Ok(aestra_runtime::CompiledEventRoute::InputSpawn(
+            aestra_runtime::CompiledInputSpawn {
+                input,
+                target: target as usize,
+                count,
+                position,
+            },
+        ))
     }
 }
 
@@ -870,6 +942,11 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                     inherit: link.inherit,
                 })
                 .collect(),
+            event_routes: effect
+                .event_routes
+                .iter()
+                .map(EventRouteV4::encode)
+                .collect(),
             event_inputs: effect.event_inputs.clone(),
             event_outputs: effect.event_outputs.clone(),
             requirements: RequirementsV1::encode(&effect.requirements)?,
@@ -1116,6 +1193,15 @@ impl TryFrom<EffectV1> for CompiledEffect {
                     .into_iter()
                     .enumerate()
                     .map(|(index, link)| link.decode(index, count))
+                    .collect::<Result<Vec<_>, _>>()?
+            },
+            event_routes: {
+                let count = emitters.len();
+                effect
+                    .event_routes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, route)| route.decode(index, count, &effect.event_inputs))
                     .collect::<Result<Vec<_>, _>>()?
             },
             emitters,
