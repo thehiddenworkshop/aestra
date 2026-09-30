@@ -1612,7 +1612,14 @@ impl EventGatherPipeline {
             layout: Some(&pipeline_layout),
             module: &module,
             entry_point: Some("order_events"),
-            compilation_options: Default::default(),
+            // The kernel writes every workgroup word it reads. wgpu's default zero-fill of its
+            // 12 KiB made the software D3D12 adapter (WARP) spend a minute compiling the shader on
+            // its first dispatch, and is wasted work on every other backend. Bevy's own pipeline
+            // descriptors leave it off by default.
+            compilation_options: wgpu::PipelineCompilationOptions {
+                zero_initialize_workgroup_memory: false,
+                ..Default::default()
+            },
             cache: None,
         });
         let expand = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
