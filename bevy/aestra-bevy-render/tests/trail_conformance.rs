@@ -580,7 +580,13 @@ fn check_cooperative(owners: u32) {
             .collect::<Vec<_>>(),
     });
     // Intentionally colliding hash buckets, shuffled compacted order and high IDs.
-    let identity = |n: u32| 0xe000_0000 + n * 2048;
+    let identity = |n: u32| match n {
+        // Missing list indices use MAX, but the same value is a valid stable
+        // identity. Exercise both ends of the key range through page merges.
+        0 => u32::MAX,
+        1 => 0,
+        _ => 0xe000_0000 + n * 2048,
+    };
     let run = |time: f32, ids: &[u32]| {
         for emitter in 0..2u32 {
             let particles = ids

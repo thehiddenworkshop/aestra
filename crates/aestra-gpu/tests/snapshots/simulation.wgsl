@@ -1244,6 +1244,43 @@ fn paged_less(e: Emitter, a: u32, b: u32) -> bool {
 
 var<workgroup> paged_values: array<u32, 1024>;
 
+const TRAIL_SORT_PAGE: u32 = 256u;
+
+var<workgroup> paged_keys: array<vec4<u32>, TRAIL_SORT_PAGE>;
+
+fn paged_key(e: Emitter, value: u32) -> vec4<u32> {
+    if value == 4294967295u {
+        return vec4<u32>(4294967295u);
+    }
+    if paged_kind() == 0u {
+        let identity = particles[value].particle_index;
+        return vec4<u32>(identity % max(e._turbulence_padding, 1u), identity, value, 0u);
+    }
+    let p = particles[e.trail_offset + 1u + value * e.trail_points];
+    if paged_kind() == 1u {
+        return vec4<u32>(0u, p.particle_index, value, 0u);
+    }
+    return vec4<u32>(u32(particle_alive(p) != 0u), bitcast<u32>(p.rotation), value, 0u);
+}
+
+fn paged_key_less(a: vec4<u32>, b: vec4<u32>) -> bool {
+    if a.x != b.x {
+        return a.x < b.x;
+    }
+    if a.x == 4294967295u {
+        return false;
+    }
+    if paged_kind() == 2u {
+        if a.x == 0u {
+            return a.z < b.z;
+        }
+        let x = bitcast<f32>(a.y);
+        let y = bitcast<f32>(b.y);
+        return x < y || (x == y && a.z < b.z);
+    }
+    return a.y < b.y || (a.y == b.y && a.z < b.z);
+}
+
 @compute @workgroup_size(64)
 fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
@@ -1252,11 +1289,11 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     }
     let kind = paged_kind();
     let count = select(paged_owners(e), paged_heads(e), kind == 0u);
-    let start = group.x * 1024u;
+    let start = group.x * TRAIL_SORT_PAGE;
     if start >= count {
         return;
     }
-    let size = min(1024u, count - start);
+    let size = min(TRAIL_SORT_PAGE, count - start);
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
     for (var local = thread; local < size; local += 64u) {
         let n = start + local;
@@ -1284,16 +1321,23 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     }
     workgroupBarrier();
     storageBarrier();
+    for (var local = thread; local < size; local += 64u) {
+        paged_keys[local] = paged_key(e, paged_values[local]);
+    }
+    workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
             for (var pair = thread; pair < size / 2u; pair += 64u) {
                 let a = (pair / gap) * (2u * gap) + pair % gap;
                 let b = a + gap;
                 let ascending = (a & width) == 0u;
-                if select(paged_less(e, paged_values[a], paged_values[b]), paged_less(e, paged_values[b], paged_values[a]), ascending) {
+                if paged_key_less(paged_keys[select(a, b, ascending)], paged_keys[select(b, a, ascending)]) {
                     let temporary = paged_values[a];
                     paged_values[a] = paged_values[b];
                     paged_values[b] = temporary;
+                    let key = paged_keys[a];
+                    paged_keys[a] = paged_keys[b];
+                    paged_keys[b] = key;
                 }
             }
             workgroupBarrier();

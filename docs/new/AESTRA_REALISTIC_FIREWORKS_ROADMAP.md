@@ -1625,9 +1625,39 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/budgeted-volley-overlap
 ```
 
+### Implemented — cached-key page sorting for live histories
+
+- Sorting pages shrink from 1,024 to **256 entries** to expose more workgroups. Each page caches immutable sort keys in shared memory once, instead of repeatedly loading strided particle records during sorting-network comparisons. Head keys retain strand/stable-ID/physical-index order; occupied owners retain stable-ID/physical-index order; allocation candidates retain empty-first, then oldest-retired, then physical-index order. Survivor reservation and deterministic allocation are unchanged.
+- Sorting now uses **8 KiB shared storage** (the existing 1,024-word scan array plus 256 four-word keys). The small-pool path still fits the portable 16 KiB limit, and eight storage bindings are retained. Prefix and bounds pages remain 1,024 entries; persistent records, aux/scratch ranges, physical capacities and estimated buffer memory are unchanged. Smaller sorting pages add merge passes; the dispatch plan and parity change together, guarded by tests including a 16-head/2,048-owner pool.
+- Native tests include stable IDs `0` and `u32::MAX`, shuffled presentation, partial/dense pools, mixed Ribbon ordering, survivor retention, deterministic retired eviction, pause/restart, retirement/expiry, and the every-tick loss-free volley/drain regression. The maximum stable identity is not confused with the missing **list index** sentinel. Portable WGSL/SPIR-V/HLSL contracts and refreshed generated snapshots pass.
+- The fixed frame-240 overlap capture produces a **byte-identical PNG** to the committed baseline (same SHA-256), with matching 9,600 occupied/3,200 retired owners and zero evictions/truncation. This checks that frame's output, not complete visual equivalence for every asset or playback time.
+- Same RTX 4070 SUPER/Vulkan, 960×540, high tier, close camera, default-fast transparency, 120 warm-up/600 measured frames. Both optimized runs and a fresh committed-sort control observe **37,600 captured children and 37,600 accepted**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, zero source overflow, expansion omissions, destination rejection, eviction or truncation, and **38,438,072 estimated buffer bytes**. Timing improvements therefore do not come from smaller populations or silently dropped work.
+
+GPU phase medians in milliseconds (control was rerun after the optimized samples to check current run variation):
+
+| Phase | Committed-sort control | Cached sort, run 1 | Cached sort, run 2 |
+| --- | ---: | ---: | ---: |
+| Head ordering/presentation | 0.905 | 0.422 | 0.436 |
+| Owner ordering/reservation | 1.208 | 0.555 | 0.561 |
+| Allocation/sampling | 1.316 | 0.652 | 0.666 |
+| Bounds | 0.755 | 1.243 | 1.115 |
+| History observation | 4.095 | 2.937 | 2.849 |
+| Full simulation frame | 4.390 | 3.290 | 3.315 |
+
+- History median is **28–30% lower than the fresh control** (42–44% below the earlier 5.042 ms phase-instrumented baseline). However, bounds and transparent drawing were slower in the optimized samples; a history speedup is not the same as a full-frame speedup. Whole-simulation p95/p99 vary: optimized run 1 **3.840/5.800 ms**, run 2 **6.027/6.972 ms**, control **6.406/9.858 ms**. History p95/p99 are optimized **3.384/3.540** and **3.412/3.512 ms**, control **5.182/5.626 ms**. These last-observation diagnostic paths and aggregate simulation frames must not be conflated, particularly when live frames process multiple fixed ticks. No full-frame/finale percentile certification is inferred.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test trail_contract --test shader_contract
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --nocapture
+cargo test --locked -p aestra-bevy-render --lib trail -- --nocapture
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/cached-sort-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/cached-sort-volley-overlap
+```
+
 ### Tasks
 
-- Next: reduce the measured paged-history ordering/reservation/allocation cost under the loss-free volley, preserving stable identities and deterministic empty-first/oldest-retired allocation. Compare the same accepted demand, peak populations and phase distributions; do not optimize editor replay ahead of live playback.
+- Next: parallelize the now-dominant history bounds/sample reduction, preserving expiry, truncation counts and conservative world-space bounds. Keep loss-free populations unchanged and investigate aggregate p95/p99/catch-up variation before certifying the whole live frame; do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

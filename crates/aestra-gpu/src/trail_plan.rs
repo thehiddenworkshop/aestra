@@ -3,6 +3,10 @@ use crate::Vec3;
 use crate::{GpuArtifactError, GpuEmitter};
 use encase::ShaderType;
 
+// Keep in sync with TRAIL_SORT_PAGE in the portable history shader. Prefix and
+// bounds pages remain 1024; sorting uses smaller pages for GPU occupancy.
+const SORT_PAGE: u32 = 256;
+
 pub const PAGED_TRAIL_ENTRY_POINTS: [&str; 9] = [
     "sort_trail_page",
     "merge_trail_pages",
@@ -90,10 +94,10 @@ impl TrailScratchPlan {
             passes.push(TrailPass {
                 entry: 0,
                 parameter: kind,
-                workgroups: size.div_ceil(1024),
+                workgroups: size.div_ceil(SORT_PAGE),
             });
             let mut parity = 0;
-            let mut width = 1024;
+            let mut width = SORT_PAGE;
             while width < size {
                 passes.push(TrailPass {
                     entry: 1,
@@ -167,6 +171,44 @@ impl TrailScratchPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sorting_pages_match_shader_and_merge_parity_for_mixed_pool_sizes() {
+        assert!(
+            crate::shader::SIMULATION_WESL
+                .contains(&format!("const TRAIL_SORT_PAGE: u32 = {SORT_PAGE}u;"))
+        );
+        for (heads, owners) in [(16, 2048), (2048, 4096), (8192, 16384)] {
+            let passes = TrailScratchPlan {
+                max_heads: heads,
+                max_owners: owners,
+                ..Default::default()
+            }
+            .passes();
+            for kind in 0..3 {
+                let size = if kind == 0 { heads } else { owners };
+                let start = passes
+                    .iter()
+                    .position(|pass| pass.entry == 0 && pass.parameter == kind)
+                    .unwrap();
+                assert_eq!(passes[start].workgroups, size.div_ceil(SORT_PAGE));
+                let mut width = SORT_PAGE;
+                let mut parity = 0;
+                let mut index = start + 1;
+                while width < size {
+                    assert_eq!(passes[index].entry, 1);
+                    assert_eq!(
+                        passes[index].parameter,
+                        kind | (width.ilog2() << 8) | (parity << 16)
+                    );
+                    width *= 2;
+                    parity = 1 - parity;
+                    index += 1;
+                }
+                assert_eq!(passes[index].parameter, kind | (parity << 16));
+            }
+        }
+    }
 
     #[test]
     fn plans_disjoint_exact_ranges_and_rejects_overflow_and_device_pressure() {

@@ -19,6 +19,16 @@ fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
 }
 
 fn configured_event_trail_scene(mixed: bool, stars: u32, volley: bool) -> Option<EventTrailScene> {
+    let owners = if stars == 800 { 1024 } else { stars * 2 };
+    event_trail_scene_with_pool(mixed, stars, volley, owners)
+}
+
+fn event_trail_scene_with_pool(
+    mixed: bool,
+    stars: u32,
+    volley: bool,
+    owners: u32,
+) -> Option<EventTrailScene> {
     use encase::{ShaderType, StorageBuffer, internal::WriteInto};
     fn encode<T: ShaderType + WriteInto>(value: &T) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -30,7 +40,7 @@ fn configured_event_trail_scene(mixed: bool, stars: u32, volley: bool) -> Option
     let template = scene.dispatches[0].clone();
     let emitter_count = if mixed { 3 } else { 2 };
     // Large cohorts use coincident real source deaths, not an unsupported fan-out.
-    let sources = if volley || stars == 800 {
+    let sources = if volley || stars <= 800 {
         1
     } else {
         stars / 512
@@ -91,7 +101,6 @@ fn configured_event_trail_scene(mixed: bool, stars: u32, volley: bool) -> Option
         .collect();
     let slots = sources + stars + u32::from(mixed);
     let points = 32;
-    let owners = if stars == 800 { 1024 } else { stars * 2 };
     let records = slots + 1 + points * owners;
     let mut emitters = vec![
         GpuEmitter {
@@ -399,6 +408,34 @@ impl EventTrailScene {
             u32::from_le_bytes(bytes[(8 + index) * 4..(9 + index) * 4].try_into().unwrap())
         })
     }
+}
+
+#[test]
+fn paged_trails_sort_small_head_pages_in_a_large_owner_pool() {
+    let Some(mut test) = event_trail_scene_with_pool(false, 16, false, 2048) else {
+        assert!(
+            std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+            "native GPU required"
+        );
+        return;
+    };
+    assert_eq!(test.effect.trail_plan.max_heads, 16);
+    assert_eq!(test.effect.trail_plan.max_owners, 2048);
+    for tick in 0..=30 {
+        test.frame(tick, 4);
+    }
+    assert_eq!(test.usage(), [16, 0, 0, 0]);
+    let forward = test.trail_state();
+    test.frame(30, 4);
+    assert_eq!(test.trail_state(), forward);
+    while test.history.tick != Some(40) {
+        test.frame(40, 4);
+    }
+    assert_eq!(test.usage(), [16, 16, 0, 0]);
+    while test.history.tick != Some(60) {
+        test.frame(60, 4);
+    }
+    assert_eq!(test.usage(), [0; 4]);
 }
 
 #[test]
