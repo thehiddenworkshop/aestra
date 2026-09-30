@@ -854,6 +854,10 @@ var<workgroup> trail_priority: array<f32, 1024>;
 
 var<workgroup> trail_head_owner: array<u32, 1024>;
 
+fn trail_pow2_ceil(value: u32) -> u32 {
+    return select(1u, 1u << (32u - countLeadingZeros(value - 1u)), value > 1u);
+}
+
 fn trail_hash(id: u32) -> u32 {
     return ((id ^ (id >> 16u)) * 73244475u) & 2047u;
 }
@@ -890,10 +894,8 @@ fn record_trails(emitter_index: u32, thread: u32) {
     let capacity = e.trail_points - 1u;
     let stats = 2u + emitter_index * 6u;
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
-    var head_count = 1u;
-    while (head_count < count) {
-        head_count *= 2u;
-    }
+    let head_count = trail_pow2_ceil(count);
+    let head_bound = trail_pow2_ceil(e.max_particles);
     for (var n = thread; n < head_count; n += 64u) {
         var slot = 4294967295u;
         if n < count {
@@ -902,18 +904,21 @@ fn record_trails(emitter_index: u32, thread: u32) {
         trail_head_owner[n] = slot;
     }
     workgroupBarrier();
-    for (var width = 2u; width <= head_count; width *= 2u) {
+    for (var width = 2u; width <= head_bound; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
-            for (var pair = thread; pair < head_count / 2u; pair += 64u) {
-                let a_index = (pair / gap) * (2u * gap) + pair % gap;
-                let b_index = a_index + gap;
-                let a = trail_head_owner[a_index];
-                let b = trail_head_owner[b_index];
-                let ascending = (a_index & width) == 0u;
-                let strands = max(e._turbulence_padding, 1u);
-                if select(trail_parent_before(a, b, strands), trail_parent_before(b, a, strands), ascending) {
-                    trail_head_owner[a_index] = b;
-                    trail_head_owner[b_index] = a;
+            for (var k = 0u; k < (head_bound / 2u + 63u) / 64u; k += 1u) {
+                let pair = thread + k * 64u;
+                if width <= head_count && pair < head_count / 2u {
+                    let a_index = (pair / gap) * (2u * gap) + pair % gap;
+                    let b_index = a_index + gap;
+                    let a = trail_head_owner[a_index];
+                    let b = trail_head_owner[b_index];
+                    let ascending = (a_index & width) == 0u;
+                    let strands = max(e._turbulence_padding, 1u);
+                    if select(trail_parent_before(a, b, strands), trail_parent_before(b, a, strands), ascending) {
+                        trail_head_owner[a_index] = b;
+                        trail_head_owner[b_index] = a;
+                    }
                 }
             }
             workgroupBarrier();
@@ -924,16 +929,14 @@ fn record_trails(emitter_index: u32, thread: u32) {
     }
     workgroupBarrier();
     storageBarrier();
-    if !reset && now == last.rotation {
-        return;
-    }
-    if thread == 0u {
+    let skip = !reset && now == last.rotation;
+    if thread == 0u && !skip {
         atomicStore(&counters[stats + 2u], select(aux[root * 3u + 1u], 0u, reset));
     }
-    for (var i = thread; i < 2048u; i += 64u) {
+    for (var i = thread; !skip && i < 2048u; i += 64u) {
         atomicStore(&trail_scratch[i], 0u);
     }
-    for (var i = thread; i < e.trail_capacity; i += 64u) {
+    for (var i = thread; !skip && i < e.trail_capacity; i += 64u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
             particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
@@ -941,7 +944,7 @@ fn record_trails(emitter_index: u32, thread: u32) {
     }
     workgroupBarrier();
     storageBarrier();
-    for (var i = thread; i < e.trail_capacity; i += 64u) {
+    for (var i = thread; !skip && i < e.trail_capacity; i += 64u) {
         let base = root + 1u + i * e.trail_points;
         if particle_alive(particles[base]) == 0u {
             continue;
@@ -959,7 +962,7 @@ fn record_trails(emitter_index: u32, thread: u32) {
         }
     }
     workgroupBarrier();
-    for (var n = thread; n < count; n += 64u) {
+    for (var n = thread; !skip && n < count; n += 64u) {
         let id = particles[alive_indices[e.slot_offset + n]].particle_index;
         trail_head_owner[n] = 4294967295u;
         var bucket = trail_hash(id);
@@ -979,11 +982,8 @@ fn record_trails(emitter_index: u32, thread: u32) {
     }
     workgroupBarrier();
     storageBarrier();
-    var sort_count = 1u;
-    while (sort_count < e.trail_capacity) {
-        sort_count *= 2u;
-    }
-    for (var i = thread; i < sort_count; i += 64u) {
+    let sort_count = trail_pow2_ceil(e.trail_capacity);
+    for (var i = thread; !skip && i < sort_count; i += 64u) {
         var candidate = 4294967295u;
         if i < e.trail_capacity {
             let previous = particles[root + 1u + i * e.trail_points];
@@ -998,21 +998,24 @@ fn record_trails(emitter_index: u32, thread: u32) {
     workgroupBarrier();
     for (var width = 2u; width <= sort_count; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
-            for (var pair = thread; pair < sort_count / 2u; pair += 64u) {
-                let a_index = (pair / gap) * (2u * gap) + pair % gap;
-                let b_index = a_index + gap;
-                let a = atomicLoad(&trail_scratch[a_index]);
-                let b = atomicLoad(&trail_scratch[b_index]);
-                let ascending = (a_index & width) == 0u;
-                if select(trail_candidate_before(a, b), trail_candidate_before(b, a), ascending) {
-                    atomicStore(&trail_scratch[a_index], b);
-                    atomicStore(&trail_scratch[b_index], a);
+            for (var k = 0u; k < (sort_count / 2u + 63u) / 64u; k += 1u) {
+                let pair = thread + k * 64u;
+                if !skip && pair < sort_count / 2u {
+                    let a_index = (pair / gap) * (2u * gap) + pair % gap;
+                    let b_index = a_index + gap;
+                    let a = atomicLoad(&trail_scratch[a_index]);
+                    let b = atomicLoad(&trail_scratch[b_index]);
+                    let ascending = (a_index & width) == 0u;
+                    if select(trail_candidate_before(a, b), trail_candidate_before(b, a), ascending) {
+                        atomicStore(&trail_scratch[a_index], b);
+                        atomicStore(&trail_scratch[b_index], a);
+                    }
                 }
             }
             workgroupBarrier();
         }
     }
-    for (var n = thread; n < head_count; n += 64u) {
+    for (var n = thread; !skip && n < head_count; n += 64u) {
         var born = 0u;
         if n < count {
             born = u32(trail_head_owner[n] == 4294967295u);
@@ -1020,26 +1023,32 @@ fn record_trails(emitter_index: u32, thread: u32) {
         atomicStore(&trail_scratch[1024u + n], born);
     }
     workgroupBarrier();
-    for (var width = 2u; width <= head_count; width *= 2u) {
-        for (var n = (thread + 1u) * width - 1u; n < head_count; n += 64u * width) {
-            atomicAdd(&trail_scratch[1024u + n], atomicLoad(&trail_scratch[1024u + n - width / 2u]));
+    for (var width = 2u; width <= head_bound; width *= 2u) {
+        for (var k = 0u; k < (head_bound / width + 63u) / 64u; k += 1u) {
+            let n = (thread + 1u + k * 64u) * width - 1u;
+            if !skip && width <= head_count && n < head_count {
+                atomicAdd(&trail_scratch[1024u + n], atomicLoad(&trail_scratch[1024u + n - width / 2u]));
+            }
         }
         workgroupBarrier();
     }
-    if thread == 0u {
+    if thread == 0u && !skip {
         atomicStore(&trail_scratch[1024u + head_count - 1u], 0u);
     }
     workgroupBarrier();
-    for (var width = head_count; width >= 2u; width /= 2u) {
-        for (var n = (thread + 1u) * width - 1u; n < head_count; n += 64u * width) {
-            let left = atomicLoad(&trail_scratch[1024u + n - width / 2u]);
-            let parent = atomicLoad(&trail_scratch[1024u + n]);
-            atomicStore(&trail_scratch[1024u + n - width / 2u], parent);
-            atomicStore(&trail_scratch[1024u + n], parent + left);
+    for (var width = head_bound; width >= 2u; width /= 2u) {
+        for (var k = 0u; k < (head_bound / width + 63u) / 64u; k += 1u) {
+            let n = (thread + 1u + k * 64u) * width - 1u;
+            if !skip && width <= head_count && n < head_count {
+                let left = atomicLoad(&trail_scratch[1024u + n - width / 2u]);
+                let parent = atomicLoad(&trail_scratch[1024u + n]);
+                atomicStore(&trail_scratch[1024u + n - width / 2u], parent);
+                atomicStore(&trail_scratch[1024u + n], parent + left);
+            }
         }
         workgroupBarrier();
     }
-    for (var n = thread; n < count; n += 64u) {
+    for (var n = thread; !skip && n < count; n += 64u) {
         var owner = trail_head_owner[n];
         let new_owner = owner == 4294967295u;
         if new_owner {
@@ -1065,7 +1074,7 @@ fn record_trails(emitter_index: u32, thread: u32) {
     var size = 0.0;
     var found = false;
     var valid = true;
-    for (var i = thread; i < e.trail_capacity; i += 64u) {
+    for (var i = thread; !skip && i < e.trail_capacity; i += 64u) {
         let base = root + 1u + i * e.trail_points;
         if e.trail_sampling != 0u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
@@ -1135,7 +1144,7 @@ fn record_trails(emitter_index: u32, thread: u32) {
         }
         workgroupBarrier();
     }
-    if thread != 0u {
+    if thread != 0u || skip {
         return;
     }
     occupied = atomicLoad(&trail_scratch[0]);
@@ -1280,7 +1289,7 @@ fn paged_key_less(a: vec4<u32>, b: vec4<u32>) -> bool {
 @compute @workgroup_size(64)
 fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) {
+    if !paged_trail(e) {
         return;
     }
     let kind = paged_kind();
@@ -1290,8 +1299,9 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
         return;
     }
     let size = min(TRAIL_SORT_PAGE, count - start);
+    let recording = kind == 0u || paged_record(e);
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
-    for (var local = thread; local < size; local += 64u) {
+    for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
         var value = 4294967295u;
         if kind == 0u {
@@ -1317,7 +1327,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     }
     workgroupBarrier();
     storageBarrier();
-    for (var local = thread; local < size; local += 64u) {
+    for (var local = thread; recording && local < size; local += 64u) {
         let value = paged_values[local];
         let key = paged_key(e, value);
         paged_keys[local] = key;
@@ -1330,7 +1340,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
-            for (var pair = thread; pair < size / 2u; pair += 64u) {
+            for (var pair = thread; recording && pair < size / 2u; pair += 64u) {
                 let a = (pair / gap) * (2u * gap) + pair % gap;
                 let b = a + gap;
                 let ascending = (a & width) == 0u;
@@ -1346,7 +1356,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
             workgroupBarrier();
         }
     }
-    for (var local = thread; local < size; local += 64u) {
+    for (var local = thread; recording && local < size; local += 64u) {
         aux[paged_list(e, 0u) + start + local] = paged_values[local];
     }
 }
@@ -1480,7 +1490,7 @@ fn paged_scan(thread: u32, size: u32) {
 @compute @workgroup_size(64)
 fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) {
+    if !paged_trail(e) {
         return;
     }
     let start = group.x * 1024u;
@@ -1488,14 +1498,15 @@ fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_inv
         return;
     }
     let size = min(1024u, paged_heads(e) - start);
+    let recording = paged_record(e);
     for (var n = thread; n < size; n += 64u) {
-        paged_values[n] = aux[paged_base(e) + start + n];
+        paged_values[n] = select(0u, aux[paged_base(e) + start + n], recording);
     }
     paged_scan(thread, size);
-    for (var n = thread; n < size; n += 64u) {
+    for (var n = thread; recording && n < size; n += 64u) {
         aux[paged_base(e) + start + n] = paged_values[n];
     }
-    if thread == 0u {
+    if thread == 0u && recording {
         aux[paged_pages(e) + group.x] = paged_total;
     }
 }
@@ -1503,32 +1514,30 @@ fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_inv
 @compute @workgroup_size(64)
 fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) {
+    if !paged_trail(e) {
         return;
     }
+    let recording = paged_record(e);
     let pages = (paged_heads(e) + 1023u) / 1024u;
     var carry = 0u;
     for (var start = 0u; start < pages; start += 1024u) {
         let remaining = min(1024u, pages - start);
-        var size = 1u;
-        while (size < remaining) {
-            size *= 2u;
-        }
+        let size = trail_pow2_ceil(remaining);
         for (var n = thread; n < size; n += 64u) {
             var value = 0u;
-            if n < remaining {
+            if recording && n < remaining {
                 value = aux[paged_pages(e) + start + n];
             }
             paged_values[n] = value;
         }
         paged_scan(thread, size);
-        for (var n = thread; n < remaining; n += 64u) {
+        for (var n = thread; recording && n < remaining; n += 64u) {
             aux[paged_pages(e) + start + n] = carry + paged_values[n];
         }
         carry += paged_total;
         workgroupBarrier();
     }
-    if thread == 0u {
+    if thread == 0u && recording {
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
 }
@@ -1559,7 +1568,7 @@ fn update_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
     trail_update_owner(e, alive_indices[e.slot_offset + id.x], owner, born);
 }
 
-fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
+fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32, recording: bool) {
     let root = e.trail_offset;
     let capacity = e.trail_points - 1u;
     let now = globals.time;
@@ -1571,7 +1580,7 @@ fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
     var size = 0.0;
     var found = false;
     var valid = true;
-    for (var i = start + thread; i < end; i += 64u) {
+    for (var i = start + thread; recording && i < end; i += 64u) {
         let base = root + 1u + i * e.trail_points;
         if e.trail_sampling != 0u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
@@ -1646,15 +1655,16 @@ fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
 @compute @workgroup_size(64)
 fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) {
+    if !paged_trail(e) {
         return;
     }
     let start = group.x * TRAIL_BOUNDS_PAGE;
     if start >= e.trail_capacity {
         return;
     }
-    paged_bound_range(e, thread, start, min(start + TRAIL_BOUNDS_PAGE, e.trail_capacity));
-    if thread == 0u {
+    let recording = paged_record(e);
+    paged_bound_range(e, thread, start, min(start + TRAIL_BOUNDS_PAGE, e.trail_capacity), recording);
+    if thread == 0u && recording {
         let output = paged_bounds(e) + group.x * 12u;
         for (var n = 0u; n < 3u; n += 1u) {
             aux[output + n] = atomicLoad(&trail_scratch[n]);
@@ -1669,9 +1679,10 @@ fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invo
 fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let emitter_index = group.y;
     let e = emitters[emitter_index];
-    if !paged_record(e) {
+    if !paged_trail(e) {
         return;
     }
+    let recording = paged_record(e);
     let root = e.trail_offset;
     let stats = 2u + emitter_index * 6u;
     let now = globals.time;
@@ -1685,7 +1696,7 @@ fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_in
     var found = false;
     var valid = true;
     let pages = (e.trail_capacity + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE;
-    for (var page = thread; page < pages; page += 64u) {
+    for (var page = thread; recording && page < pages; page += 64u) {
         let input = paged_bounds(e) + page * 12u;
         occupied += aux[input];
         retired += aux[input + 1u];
@@ -1723,7 +1734,7 @@ fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_in
         }
         workgroupBarrier();
     }
-    if thread != 0u {
+    if thread != 0u || !recording {
         return;
     }
     occupied = atomicLoad(&trail_scratch[0]);

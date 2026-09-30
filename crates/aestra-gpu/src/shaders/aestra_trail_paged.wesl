@@ -13,6 +13,9 @@ fn paged_reset(e: Emitter) -> bool {
         || globals.time - last.rotation > e.trail_lifetime;
 }
 
+// Reads the particle buffer, which D3D's FXC cannot prove uniform: a kernel with barriers must not
+// return early on it (every thread must reach each barrier in uniform control flow), but skip its
+// work and its writes instead. Conditions on `emitters` and `globals` may still return early.
 fn paged_record(e: Emitter) -> bool {
     return paged_trail(e) && (paged_reset(e) || globals.time != particles[e.trail_offset].rotation);
 }
@@ -81,14 +84,16 @@ fn paged_key_less(a: vec4<u32>, b: vec4<u32>) -> bool {
 @compute @workgroup_size(64)
 fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) { return; }
+    if !paged_trail(e) { return; }
     let kind = paged_kind();
     let count = select(paged_owners(e), paged_heads(e), kind == 0u);
     let start = group.x * TRAIL_SORT_PAGE;
     if start >= count { return; }
     let size = min(TRAIL_SORT_PAGE, count - start);
+    // Owner pages sort only when the history records (see `paged_record`).
+    let recording = kind == 0u || paged_record(e);
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
-    for (var local = thread; local < size; local += 64u) {
+    for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
         var value = 0xffffffffu;
         if kind == 0u {
@@ -107,7 +112,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     workgroupBarrier();
     // Owner keys are immutable after this page's expiry stores.
     storageBarrier();
-    for (var local = thread; local < size; local += 64u) {
+    for (var local = thread; recording && local < size; local += 64u) {
         let value = paged_values[local];
         let key = paged_key(e, value);
         paged_keys[local] = key;
@@ -120,7 +125,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
-            for (var pair = thread; pair < size / 2u; pair += 64u) {
+            for (var pair = thread; recording && pair < size / 2u; pair += 64u) {
                 let a = (pair / gap) * (2u * gap) + pair % gap;
                 let b = a + gap;
                 let ascending = (a & width) == 0u;
@@ -136,7 +141,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
             workgroupBarrier();
         }
     }
-    for (var local = thread; local < size; local += 64u) { aux[paged_list(e, 0u) + start + local] = paged_values[local]; }
+    for (var local = thread; recording && local < size; local += 64u) { aux[paged_list(e, 0u) + start + local] = paged_values[local]; }
 }
 
 @compute @workgroup_size(64)
@@ -217,6 +222,8 @@ fn reserve_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 var<workgroup> paged_total: u32;
+// `size` must be uniform to D3D's FXC: computed from `emitters` and the workgroup id alone, with no
+// loop (FXC loses track of a loop-computed size and rejects the barriers below).
 fn paged_scan(thread: u32, size: u32) {
     workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
@@ -238,37 +245,41 @@ fn paged_scan(thread: u32, size: u32) {
 @compute @workgroup_size(64)
 fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) { return; }
+    if !paged_trail(e) { return; }
     let start = group.x * 1024u;
     if start >= paged_heads(e) { return; }
     let size = min(1024u, paged_heads(e) - start);
-    for (var n = thread; n < size; n += 64u) { paged_values[n] = aux[paged_base(e) + start + n]; }
+    let recording = paged_record(e);
+    for (var n = thread; n < size; n += 64u) {
+        paged_values[n] = select(0u, aux[paged_base(e) + start + n], recording);
+    }
     paged_scan(thread, size);
-    for (var n = thread; n < size; n += 64u) { aux[paged_base(e) + start + n] = paged_values[n]; }
-    if thread == 0u { aux[paged_pages(e) + group.x] = paged_total; }
+    for (var n = thread; recording && n < size; n += 64u) { aux[paged_base(e) + start + n] = paged_values[n]; }
+    if thread == 0u && recording { aux[paged_pages(e) + group.x] = paged_total; }
 }
 
 @compute @workgroup_size(64)
 fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) { return; }
+    if !paged_trail(e) { return; }
+    let recording = paged_record(e);
     let pages = (paged_heads(e) + 1023u) / 1024u;
     var carry = 0u;
     for (var start = 0u; start < pages; start += 1024u) {
         let remaining = min(1024u, pages - start);
-        var size = 1u;
-        while size < remaining { size *= 2u; }
+        // The next power of two, without a loop (see `paged_scan`).
+        let size = trail_pow2_ceil(remaining);
         for (var n = thread; n < size; n += 64u) {
             var value = 0u;
-            if n < remaining { value = aux[paged_pages(e) + start + n]; }
+            if recording && n < remaining { value = aux[paged_pages(e) + start + n]; }
             paged_values[n] = value;
         }
         paged_scan(thread, size);
-        for (var n = thread; n < remaining; n += 64u) { aux[paged_pages(e) + start + n] = carry + paged_values[n]; }
+        for (var n = thread; recording && n < remaining; n += 64u) { aux[paged_pages(e) + start + n] = carry + paged_values[n]; }
         carry += paged_total;
         workgroupBarrier();
     }
-    if thread == 0u {
+    if thread == 0u && recording {
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
 }
@@ -292,7 +303,7 @@ fn update_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
     trail_update_owner(e, alive_indices[e.slot_offset + id.x], owner, born);
 }
 
-fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
+fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32, recording: bool) {
     let root = e.trail_offset;
     let capacity = e.trail_points - 1u;
     let now = globals.time;
@@ -304,7 +315,7 @@ fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
     var size = 0.0;
     var found = false;
     var valid = true;
-    for (var i = start + thread; i < end; i += 64u) {
+    for (var i = start + thread; recording && i < end; i += 64u) {
         let base = root + 1u + i * e.trail_points;
         // Spatial sampling may leave its ring untouched for many frames. Remove
         // expired anchors, otherwise a stationary live head could keep an old
@@ -370,11 +381,12 @@ fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
 @compute @workgroup_size(64)
 fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
-    if !paged_record(e) { return; }
+    if !paged_trail(e) { return; }
     let start = group.x * TRAIL_BOUNDS_PAGE;
     if start >= e.trail_capacity { return; }
-    paged_bound_range(e, thread, start, min(start + TRAIL_BOUNDS_PAGE, e.trail_capacity));
-    if thread == 0u {
+    let recording = paged_record(e);
+    paged_bound_range(e, thread, start, min(start + TRAIL_BOUNDS_PAGE, e.trail_capacity), recording);
+    if thread == 0u && recording {
         let output = paged_bounds(e) + group.x * 12u;
         for (var n = 0u; n < 3u; n += 1u) { aux[output + n] = atomicLoad(&trail_scratch[n]); }
         for (var n = 0u; n < 8u; n += 1u) { aux[output + 3u + n] = bitcast<u32>(trail_priority[n]); }
@@ -385,7 +397,8 @@ fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invo
 fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let emitter_index = group.y;
     let e = emitters[emitter_index];
-    if !paged_record(e) { return; }
+    if !paged_trail(e) { return; }
+    let recording = paged_record(e);
     let root = e.trail_offset;
     let stats = 2u + emitter_index * 6u;
     let now = globals.time;
@@ -400,7 +413,7 @@ fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_in
     var valid = true;
 
     let pages = (e.trail_capacity + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE;
-    for (var page = thread; page < pages; page += 64u) {
+    for (var page = thread; recording && page < pages; page += 64u) {
         let input = paged_bounds(e) + page * 12u;
         occupied += aux[input];
         retired += aux[input + 1u];
@@ -439,7 +452,7 @@ fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_in
         workgroupBarrier();
     }
 
-    if thread != 0u { return; }
+    if thread != 0u || !recording { return; }
     occupied = atomicLoad(&trail_scratch[0]);
     retired = atomicLoad(&trail_scratch[1]);
     truncated = atomicLoad(&trail_scratch[2]);

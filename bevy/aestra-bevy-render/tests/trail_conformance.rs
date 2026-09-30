@@ -215,7 +215,12 @@ fn check_seek_replay(
             layout: Some(&pipeline_layout),
             module: &module,
             entry_point: Some(entry),
-            compilation_options: Default::default(),
+            // The shaders production runs: Bevy's pipelines skip wgpu's zero-fill of workgroup
+            // memory, and the trail kernels write every workgroup word before they read it.
+            compilation_options: wgpu::PipelineCompilationOptions {
+                zero_initialize_workgroup_memory: false,
+                ..Default::default()
+            },
             cache: None,
         })
     });
@@ -454,6 +459,17 @@ fn paged_trails_keep_large_partial_pools_and_deterministic_retired_eviction() {
     }
 }
 
+/// Pools past 1,024 owners run the paged trail kernels, which crash the software D3D12 adapter
+/// (WARP) that hosted Windows runners expose (an access violation inside the driver; hardware D3D12
+/// and Vulkan pass). The native GPU job runs them.
+fn skip_paged_on_software_adapter(adapter: &wgpu::Adapter, owners: u32) -> bool {
+    let skip = owners > 1024 && adapter.get_info().device_type == wgpu::DeviceType::Cpu;
+    if skip {
+        eprintln!("Skipping paged trail conformance ({owners} owners): software adapter");
+    }
+    skip
+}
+
 fn check_cooperative(owners: u32) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
@@ -462,6 +478,9 @@ fn check_cooperative(owners: u32) {
         assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none());
         return;
     };
+    if skip_paged_on_software_adapter(&adapter, owners) {
+        return;
+    }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         // The algorithm uses exactly the portable 16 KiB workgroup budget.
         required_limits: wgpu::Limits {
@@ -511,7 +530,12 @@ fn check_cooperative(owners: u32) {
                 layout: Some(&pipeline_layout),
                 module: &module,
                 entry_point: Some(entry),
-                compilation_options: Default::default(),
+                // The shaders production runs: Bevy's pipelines skip wgpu's zero-fill of workgroup
+                // memory, and the trail kernels write every workgroup word before they read it.
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    zero_initialize_workgroup_memory: false,
+                    ..Default::default()
+                },
                 cache: None,
             })
         })
@@ -1008,6 +1032,9 @@ fn check_pool(max_trails: u32, sampling: u32) {
         eprintln!("Skipping trail conformance: no adapter");
         return;
     };
+    if skip_paged_on_software_adapter(&adapter, max_trails) {
+        return;
+    }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_limits: adapter.limits(),
         ..Default::default()
@@ -1062,7 +1089,12 @@ fn check_pool(max_trails: u32, sampling: u32) {
                 layout: Some(&pipeline_layout),
                 module: &module,
                 entry_point: Some(entry),
-                compilation_options: Default::default(),
+                // The shaders production runs: Bevy's pipelines skip wgpu's zero-fill of workgroup
+                // memory, and the trail kernels write every workgroup word before they read it.
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    zero_initialize_workgroup_memory: false,
+                    ..Default::default()
+                },
                 cache: None,
             })
         })

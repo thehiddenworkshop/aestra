@@ -1769,9 +1769,17 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
     let emitter = params[17];
     let offset = params[18];
     let count = atomicLoad(&indirect[emitter * 4u + 1u]);
-    if (count == 0u || count > 4096u) { return; }
-    var size = 1u;
-    while (size < count) { size *= 2u; }
+    // Nothing to order, or too much for one workgroup. Not an early return: every thread must reach
+    // each barrier below in uniform control flow, which D3D's FXC cannot prove of an atomically
+    // loaded count. The barrier loops run to the power of two covering the emitter's capacity (read
+    // only, so uniform to FXC; computed without a loop, which FXC would lose track of). The loops
+    // inside them take a uniform number of steps, the thread's index computed in the body, and test
+    // `size` there: a loop whose trip count depends on the thread makes FXC treat the enclosing
+    // barrier loop as varying. Constant bounds would unroll into a shader too large for WARP.
+    let capacity = min(params[0], 4096u);
+    let bound = select(1u, 1u << (32u - countLeadingZeros(capacity - 1u)), capacity > 1u);
+    let skip = count == 0u || count > 4096u;
+    let size = select(select(1u, 1u << (32u - countLeadingZeros(count - 1u)), count > 1u), 0u, skip);
     for (var i = thread; i < size; i += 256u) {
         if (i < count) {
             let slot = alive_indices[offset + i];
@@ -1781,9 +1789,10 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
         }
     }
     workgroupBarrier();
-    for (var gap = size / 2u; gap > 0u; gap /= 2u) {
-        for (var i = thread; i < gap; i += 256u) {
-            ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]);
+    for (var gap = bound / 2u; gap > 0u; gap /= 2u) {
+        for (var k = 0u; k < (bound / 2u + 255u) / 256u; k += 1u) {
+            let i = thread + k * 256u;
+            if (i < gap && gap < size) { ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]); }
         }
         workgroupBarrier();
     }
@@ -1799,9 +1808,10 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
         }
     }
     workgroupBarrier();
-    for (var gap = size / 2u; gap > 0u; gap /= 2u) {
-        for (var i = thread; i < gap; i += 256u) {
-            ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]);
+    for (var gap = bound / 2u; gap > 0u; gap /= 2u) {
+        for (var k = 0u; k < (bound / 2u + 255u) / 256u; k += 1u) {
+            let i = thread + k * 256u;
+            if (i < gap && gap < size) { ordered_alive[i] = min(ordered_alive[i], ordered_alive[i + gap]); }
         }
         workgroupBarrier();
     }
@@ -1822,11 +1832,12 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
         }
     }
     workgroupBarrier();
-    for (var width = 2u; width <= size; width *= 2u) {
+    for (var width = 2u; width <= bound; width *= 2u) {
         for (var gap = width / 2u; gap > 0u; gap /= 2u) {
-            for (var i = thread; i < size; i += 256u) {
+            for (var k = 0u; k < (bound + 255u) / 256u; k += 1u) {
+                let i = thread + k * 256u;
                 let other = i ^ gap;
-                if (other > i) {
+                if (width <= size && i < size && other > i) {
                     let a = ordered_alive[i];
                     let b = ordered_alive[other];
                     var greater = a > b;
@@ -1852,7 +1863,7 @@ fn order_present(@builtin(local_invocation_index) thread: u32) {
             workgroupBarrier();
         }
     }
-    for (var i = thread; i < count; i += 256u) {
+    for (var i = thread; !skip && i < count; i += 256u) {
         alive_indices[offset + i] = select(ordered_alive[i], offset + (ordered_alive[i] & 4095u), packed);
     }
 }
