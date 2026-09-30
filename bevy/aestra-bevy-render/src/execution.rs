@@ -1158,6 +1158,7 @@ pub struct StageTimeline {
     /// The live state was simulated under more than one set of constants (a live edit), so a replay
     /// would not reproduce it: no checkpoint is captured from it until the next reset.
     mixed_history: bool,
+    history_policy: aestra_runtime::PlaybackHistoryPolicy,
 }
 
 impl StageTimeline {
@@ -1169,6 +1170,22 @@ impl StageTimeline {
             last_tick: 0,
             checkpoints: Vec::new(),
             mixed_history: false,
+            history_policy: aestra_runtime::PlaybackHistoryPolicy::default(),
+        }
+    }
+
+    /// Current host-owned snapshot-retention policy.
+    pub fn history_policy(&self) -> aestra_runtime::PlaybackHistoryPolicy {
+        self.history_policy
+    }
+
+    /// Change snapshot retention without resetting the running domain or its tick.
+    /// Playback-only releases cached GPU snapshots; explicit backward seeks then
+    /// reset/reconstruct from zero, using the supplied host inputs.
+    pub fn set_history_policy(&mut self, policy: aestra_runtime::PlaybackHistoryPolicy) {
+        self.history_policy = policy;
+        if !policy.captures_checkpoints() {
+            self.checkpoints.clear();
         }
     }
 
@@ -1302,7 +1319,8 @@ impl StageTimeline {
 
     fn capture(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         let tick = self.last_tick;
-        if self.mixed_history
+        if !self.history_policy.captures_checkpoints()
+            || self.mixed_history
             || self.policy.max_checkpoints == 0
             || self.executor.persistent_bytes() > self.policy.max_bytes
             || self

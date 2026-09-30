@@ -126,6 +126,52 @@ fn replace_effect_clears_the_scrub_cache() {
 }
 
 #[test]
+fn playback_history_policy_releases_cache_without_resetting_the_player() {
+    let effect = checkpoint_effect("History policy", 4.0);
+    let mut player = EffectPlayer::from_compiled(effect.clone());
+    assert_eq!(
+        player.history_policy(),
+        PlaybackHistoryPolicy::ReplayEnabled
+    );
+    player.enable_scrub_cache(CheckpointPolicy::default());
+    player.seek_frame(90);
+    assert!(!player.scrub_cache().unwrap().is_empty());
+    let before = (
+        player.frame(),
+        player.simulation_time(),
+        player.instance().seed(),
+        player.instance().history_epoch(),
+        player.instance().history_revision(),
+    );
+    player.set_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    assert!(player.scrub_cache().is_none());
+    assert_eq!(
+        before,
+        (
+            player.frame(),
+            player.simulation_time(),
+            player.instance().seed(),
+            player.instance().history_epoch(),
+            player.instance().history_revision(),
+        )
+    );
+    player.seek_frame(45);
+    assert_eq!(player.frame(), 45);
+    assert_eq!(player.history_policy(), PlaybackHistoryPolicy::PlaybackOnly);
+    assert!(player.scrub_cache().is_none());
+    player.replace_effect(effect, true);
+    assert_eq!(player.history_policy(), PlaybackHistoryPolicy::PlaybackOnly);
+    assert_eq!(player.frame(), 45);
+    player.enable_scrub_cache(CheckpointPolicy::default());
+    assert_eq!(
+        player.history_policy(),
+        PlaybackHistoryPolicy::ReplayEnabled
+    );
+    player.seek_frame(90);
+    assert!(!player.scrub_cache().unwrap().is_empty());
+}
+
+#[test]
 fn replace_effect_preserves_or_resets_the_frame() {
     let compiler = EffectCompiler::default();
     let first = Arc::new(compiler.compile(&EffectAsset::new("First", 4.0)).unwrap());

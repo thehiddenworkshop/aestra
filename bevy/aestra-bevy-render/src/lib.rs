@@ -13,7 +13,7 @@ pub mod material;
 
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
-    CompatibilityTarget, EffectRequirements, RendererCapability,
+    CompatibilityTarget, EffectRequirements, PlaybackHistoryPolicy, RendererCapability,
 };
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
@@ -116,6 +116,20 @@ pub struct PresentedEffect {
 }
 
 impl PresentedEffect {
+    pub fn with_history_policy(mut self, policy: PlaybackHistoryPolicy) -> Self {
+        self.set_history_policy(policy);
+        self
+    }
+
+    pub fn history_policy(&self) -> PlaybackHistoryPolicy {
+        self.instance.history_policy()
+    }
+
+    /// Drop cached snapshots on the next render preparation, keeping live state.
+    /// Explicit seeks without snapshots reconstruct from zero when necessary.
+    pub fn set_history_policy(&mut self, policy: PlaybackHistoryPolicy) {
+        self.instance.set_history_policy(policy);
+    }
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
         let mut presented = Self {
             instance: EffectInstance::new(effect),

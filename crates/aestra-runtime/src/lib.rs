@@ -7,7 +7,7 @@ mod host_transform;
 mod input_events;
 mod interface;
 mod playback;
-pub use playback::PlaybackDriver;
+pub use playback::{PlaybackDriver, PlaybackHistoryPolicy};
 mod project;
 mod project_profile;
 pub use project_profile::{ProjectInstanceProfile, ProjectProfile};
@@ -1801,6 +1801,7 @@ pub struct EffectInstance {
     choreography_started: bool,
     history_epoch: u32,
     history_revision: u64,
+    history_policy: PlaybackHistoryPolicy,
     host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
     inherited_host_transform: Arc<InheritedHostTransform>,
     /// Host binding snapshots, by slot (host bindings HB3).
@@ -1830,6 +1831,7 @@ impl EffectInstance {
             choreography_started: false,
             history_epoch: 0,
             history_revision: 0,
+            history_policy: PlaybackHistoryPolicy::default(),
         }
     }
 
@@ -1842,6 +1844,21 @@ impl EffectInstance {
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
         &self.effect
+    }
+
+    pub fn history_policy(&self) -> PlaybackHistoryPolicy {
+        self.history_policy
+    }
+
+    /// Select checkpoint retention without resetting time, seed, inputs, particles
+    /// or trails. Backends release cached snapshots when they consume this change.
+    pub fn set_history_policy(&mut self, policy: PlaybackHistoryPolicy) {
+        self.history_policy = policy;
+    }
+
+    pub fn with_history_policy(mut self, policy: PlaybackHistoryPolicy) -> Self {
+        self.set_history_policy(policy);
+        self
     }
 
     pub fn time(&self) -> f32 {

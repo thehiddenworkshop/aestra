@@ -351,6 +351,7 @@ mod tests {
                 total_slots: 8,
                 simulation_time: 1.5,
                 seek_quality: aestra_runtime::SeekQuality::Exact,
+                history_policy: default(),
                 history_epoch: 0,
                 statistics_token: 42,
                 checkpoint_context: default(),

@@ -43,7 +43,7 @@ use aestra_gpu::{
     GpuBlend, GpuSimulationState, WORKGROUP_SIZE, fold_seed,
     indirect_draw_commands_with_statistics, indirect_draw_offset,
 };
-use aestra_runtime::{RendererPlanKind, SeekQuality, SimulationClass};
+use aestra_runtime::{PlaybackHistoryPolicy, RendererPlanKind, SeekQuality, SimulationClass};
 use bevy::{
     asset::{RenderAssetUsages, io::embedded::EmbeddedAssetRegistry},
     camera::{
@@ -132,6 +132,7 @@ pub(crate) struct GpuEffectBuffers {
     /// per-frame reconstruction while the user scrubs; `Exact` (the default) reconstructs the
     /// authoritative state. Sourced from the player each frame.
     seek_quality: SeekQuality,
+    history_policy: PlaybackHistoryPolicy,
     history_epoch: u32,
     statistics_token: u32,
     checkpoint_context: Arc<trail_checkpoints::TrailContext>,
@@ -1235,6 +1236,7 @@ pub(crate) fn prepare_gpu_effects(
                 has_trails,
                 simulation_time: player.simulation_time(),
                 seek_quality: player.seek_quality(),
+                history_policy: player.history_policy(),
                 history_epoch: player.instance.history_epoch(),
                 statistics_token: 0,
                 checkpoint_context: default(),
@@ -1847,6 +1849,7 @@ fn sync_gpu_render_transforms(
             );
         gpu.simulation_time = player.simulation_time();
         gpu.seek_quality = player.seek_quality();
+        gpu.history_policy = player.history_policy();
         // `World` and `Physics` colliders (host bindings HB10): where the effect sits in the host's
         // world, which world (a new one restarts their history), and this frame's physics colliders.
         let world_revision = world_sdf.as_deref().map_or(0, AestraWorldSdf::revision);
@@ -2661,6 +2664,7 @@ struct StatefulPersistentState {
     spawn_accumulator: f32,
     /// GPU-resident checkpoints, ascending by tick (hybrid roadmap M7).
     checkpoints: Vec<StatefulCheckpoint>,
+    history_policy: PlaybackHistoryPolicy,
     /// The spawn placement the live state is advancing under.
     placement: aestra_runtime::SpawnPlacement,
     /// The live state mixes spawns from more than one placement (the emitter moved mid-run), so it is
@@ -2681,6 +2685,13 @@ const STATEFUL_CHECKPOINT_CADENCE: u32 = 20;
 const MAX_STATEFUL_CHECKPOINTS: usize = 64;
 
 impl StatefulPersistentState {
+    fn set_history_policy(&mut self, policy: PlaybackHistoryPolicy) {
+        self.history_policy = policy;
+        if !policy.captures_checkpoints() {
+            self.checkpoints.clear();
+        }
+    }
+
     /// Allocates and initialises one emitter's persistent buffers for `records` slots: zeroed state, a
     /// full free list (`0..records`), a free count of `records`, and a spawn counter of 0. All four
     /// buffers are copy source+dest so they can be snapshot to / restored from a checkpoint.
@@ -2715,6 +2726,7 @@ impl StatefulPersistentState {
             last_tick: 0,
             spawn_accumulator: 0.0,
             checkpoints: Vec::new(),
+            history_policy: PlaybackHistoryPolicy::default(),
             placement: aestra_runtime::SpawnPlacement::IDENTITY,
             mixed_placement: false,
             host_events: Vec::new(),
@@ -2809,7 +2821,8 @@ impl StatefulPersistentState {
         encoder: &mut CommandEncoder,
         tick: u32,
     ) -> u64 {
-        if self.mixed_placement
+        if !self.history_policy.captures_checkpoints()
+            || self.mixed_placement
             || self
                 .checkpoints
                 .iter()
@@ -2967,12 +2980,14 @@ fn prepare_stateful_states(
                     );
                     state.placement = dispatch.placement;
                     state.host_events = effect.host_events.events.clone();
+                    state.set_history_policy(effect.history_policy);
                     state
                 })
                 .collect();
             states.0.insert(entity, allocated);
         } else if let Some(states) = states.0.get_mut(&entity) {
             for state in states.iter_mut() {
+                state.set_history_policy(effect.history_policy);
                 state.set_host_events(&effect.host_events.events);
             }
             // Only the emitter transform changed: keep simulating (see `set_placement`). A placement
@@ -4333,6 +4348,10 @@ fn run_simulation(
                     default(),
                 )
             });
+            if !effect.history_policy.captures_checkpoints() {
+                allocated -= history.2.checkpoints.bytes();
+                history.2.checkpoints = default();
+            }
             if history.0 != effect.particles.id() {
                 allocated -= history.2.checkpoints.bytes();
                 *history = (
@@ -4583,7 +4602,9 @@ fn run_simulation(
             if let Some((_, times, _, state)) = &replay {
                 let history = &mut histories.get_mut(&entity).unwrap().2;
                 let time = times[observation];
-                if history.replay.should_capture(time) {
+                if effect.history_policy.captures_checkpoints()
+                    && history.replay.should_capture(time)
+                {
                     let previous = history.checkpoints.bytes();
                     history.checkpoints.capture(
                         &render_device,
@@ -4999,6 +5020,7 @@ mod tests {
                     total_slots: 1,
                     simulation_time: 0.0,
                     seek_quality: SeekQuality::Exact,
+                    history_policy: PlaybackHistoryPolicy::default(),
                     history_epoch: 0,
                     statistics_token: 0,
                     checkpoint_context: default(),
@@ -6479,6 +6501,56 @@ mod coupled_tests {
         let bytes = slice.get_mapped_range().to_vec();
         readback.unmap();
         bytes
+    }
+
+    #[test]
+    fn playback_history_policy_preserves_a_domain_and_resumes_future_captures() {
+        let Some(mut scene) = require(scene(false)) else {
+            return;
+        };
+        let domain = scene.domains[0].as_mut().unwrap();
+        let advance = |domain: &mut StageTimeline, target| {
+            let mut encoder = scene.device.create_command_encoder(&Default::default());
+            let report = domain
+                .advance_to(
+                    scene.device.wgpu_device(),
+                    &mut encoder,
+                    target,
+                    60,
+                    StageInputs::default(),
+                    None,
+                )
+                .unwrap();
+            scene.queue.submit([encoder.finish()]);
+            report
+        };
+        let velocity = |domain: &StageTimeline| {
+            read_back(
+                &scene.device,
+                &scene.queue,
+                domain
+                    .executor()
+                    .buffer(aestra_fluid::RESOURCE_VELOCITY)
+                    .unwrap(),
+            )
+        };
+        advance(domain, 20);
+        let before = velocity(domain);
+        assert!(domain.checkpoint_bytes() > 0);
+        domain.set_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+        assert_eq!(domain.last_tick(), 20);
+        assert_eq!(domain.checkpoint_bytes(), 0);
+        assert_eq!(advance(domain, 20).ticks, 0);
+        assert_eq!(velocity(domain), before);
+        advance(domain, 40);
+        assert_eq!(domain.checkpoint_bytes(), 0);
+        assert_eq!(advance(domain, 20).restored_from, Some(0));
+        assert_eq!(velocity(domain), before);
+        domain.set_history_policy(PlaybackHistoryPolicy::ReplayEnabled);
+        assert_eq!(domain.last_tick(), 20);
+        advance(domain, 40);
+        assert_eq!(domain.checkpoint_ticks(), vec![40]);
+        assert!(domain.checkpoint_bytes() > 0);
     }
 
     fn require(scene: Option<Scene>) -> Option<Scene> {

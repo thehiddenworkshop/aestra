@@ -368,6 +368,7 @@ pub(crate) struct ExtractedStages {
     effect: Arc<CompiledEffect>,
     time: f32,
     quality: SeekQuality,
+    history_policy: PlaybackHistoryPolicy,
     host: GpuHostBindings,
     seed: u32,
     history_epoch: u32,
@@ -606,6 +607,7 @@ pub(super) fn sync_stage_inputs(
             effect: Arc::clone(effect),
             time: instance.time(),
             quality: presented.seek_quality(),
+            history_policy: presented.history_policy(),
             host: GpuHostBindings::from_instance(instance),
             seed: instance.seed() as u32,
             history_epoch: instance.history_epoch(),
@@ -870,6 +872,11 @@ fn prepare_stage_runtimes(
     pacer.frame(std::time::Instant::now());
     runtimes.0.retain(|entity, _| effects.contains(*entity));
     for (entity, extracted) in &effects {
+        if let Some(existing) = runtimes.0.get_mut(&entity) {
+            for timeline in existing.timelines.iter_mut().flatten() {
+                timeline.set_history_policy(extracted.history_policy);
+            }
+        }
         if let Some(existing) = runtimes.0.get_mut(&entity)
             && existing.key.matches(extracted)
         {
@@ -915,7 +922,10 @@ fn prepare_stage_runtimes(
                     &mut programs_cache,
                 )
                 .map(|executor| {
-                    StageTimeline::new(executor, TimelinePolicy::default(), extracted.seed)
+                    let mut timeline =
+                        StageTimeline::new(executor, TimelinePolicy::default(), extracted.seed);
+                    timeline.set_history_policy(extracted.history_policy);
+                    timeline
                 })
                 .map_err(|error| {
                     warn!(
@@ -1284,6 +1294,7 @@ mod tests {
             effect: Arc::clone(instance.effect()),
             time: 0.0,
             quality: SeekQuality::Exact,
+            history_policy: PlaybackHistoryPolicy::default(),
             seed: 7,
             history_epoch: 0,
             history_revision: 0,

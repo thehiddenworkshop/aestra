@@ -60,7 +60,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -104,6 +104,7 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
+    let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
         match config.fireworks_probe {
             Some(FireworksProbe::Event) => "fireworks_f0_event",
@@ -181,12 +182,15 @@ fn main() {
         }
     }
     if let Some(output) = gpu_bench_output {
-        app.insert_resource(gpu_bench::GpuBenchPlan::new(
-            output,
-            gpu_bench_effect,
-            gpu_bench::DEFAULT_GPU_BENCH_WARMUP,
-            gpu_bench::DEFAULT_GPU_BENCH_FRAMES,
-        ));
+        app.insert_resource(
+            gpu_bench::GpuBenchPlan::new(
+                output,
+                gpu_bench_effect,
+                gpu_bench::DEFAULT_GPU_BENCH_WARMUP,
+                gpu_bench::DEFAULT_GPU_BENCH_FRAMES,
+            )
+            .with_history_policy(history_policy),
+        );
     }
     if log_diagnostics {
         // Prints the diagnostics store (whole-frame CPU time and, on Vulkan/DX12,
@@ -227,6 +231,7 @@ struct ViewerConfig {
     preview_seed: Option<u64>,
     diagnostics: bool,
     gpu_bench: Option<PathBuf>,
+    history_policy: aestra_bevy::PlaybackHistoryPolicy,
     /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
     /// one. Otherwise the viewer is 2-D.
     view_3d: bool,
@@ -343,6 +348,7 @@ impl ViewerConfig {
         let mut preview_seed = None;
         let mut diagnostics = false;
         let mut gpu_bench = None;
+        let mut history_policy = aestra_bevy::PlaybackHistoryPolicy::default();
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
         let mut args = arguments.into_iter();
@@ -380,6 +386,15 @@ impl ViewerConfig {
                         args.next()
                             .ok_or("--gpu-bench requires an output JSON path")?,
                     ));
+                }
+                "--history" => {
+                    history_policy = match args.next().as_deref() {
+                        Some("playback-only") => aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly,
+                        Some("replay-enabled") => aestra_bevy::PlaybackHistoryPolicy::ReplayEnabled,
+                        _ => {
+                            return Err("--history requires playback-only or replay-enabled".into());
+                        }
+                    };
                 }
                 "--capture" => {
                     set_capture_mode(
@@ -529,6 +544,7 @@ impl ViewerConfig {
             preview_seed,
             diagnostics,
             gpu_bench,
+            history_policy,
             view_3d,
             tier,
         })
@@ -842,7 +858,8 @@ fn setup(
         .as_ref()
         .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
-    let mut player = EffectPlayer::from_project(Arc::clone(&prepared.project));
+    let mut player = EffectPlayer::from_project(Arc::clone(&prepared.project))
+        .with_history_policy(config.history_policy);
     if config.wireframe {
         player.set_render_mode(aestra_bevy::EffectRenderMode::Wireframe);
     }
@@ -1548,6 +1565,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn viewer_history_policy_is_explicit_and_defaults_to_replay() {
+        use aestra_bevy::PlaybackHistoryPolicy;
+        assert_eq!(
+            ViewerConfig::from_iter(std::iter::empty())
+                .unwrap()
+                .history_policy,
+            PlaybackHistoryPolicy::ReplayEnabled
+        );
+        for (value, expected) in [
+            ("playback-only", PlaybackHistoryPolicy::PlaybackOnly),
+            ("replay-enabled", PlaybackHistoryPolicy::ReplayEnabled),
+        ] {
+            assert_eq!(
+                ViewerConfig::from_iter(["--history", value].into_iter().map(str::to_owned))
+                    .unwrap()
+                    .history_policy,
+                expected
+            );
+        }
+        for arguments in [vec!["--history"], vec!["--history", "other"]] {
+            assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
     fn fireworks_f0_selects_fixed_camera_and_seed() {
         let config = ViewerConfig::from_iter(
             [
@@ -1688,6 +1730,7 @@ mod tests {
             preview_seed: None,
             diagnostics: false,
             gpu_bench: None,
+            history_policy: aestra_bevy::PlaybackHistoryPolicy::default(),
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),
         };

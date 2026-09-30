@@ -20,7 +20,9 @@ fn configure(
     presented: &mut PresentedEffect,
     scheduled: &ScheduledEffectInstance,
     mode: EffectRenderMode,
+    history_policy: crate::PlaybackHistoryPolicy,
 ) {
+    presented.set_history_policy(history_policy);
     if presented.instance.seed() != scheduled.seed {
         presented.instance.set_seed(scheduled.seed);
     }
@@ -93,7 +95,12 @@ pub(super) fn sync_project_instances(
                 .apply_compiled_parameter_overrides(&scheduled.parameter_overrides);
             child.overrides = scheduled.parameter_overrides.clone();
         }
-        configure(&mut presented, scheduled, player.render_mode());
+        configure(
+            &mut presented,
+            scheduled,
+            player.render_mode(),
+            player.history_policy(),
+        );
         if layers != desired_layers.as_ref() {
             if let Some(layers) = desired_layers {
                 commands.entity(entity).insert(layers.clone());
@@ -108,7 +115,12 @@ pub(super) fn sync_project_instances(
         presented
             .instance
             .apply_compiled_parameter_overrides(&scheduled.parameter_overrides);
-        configure(&mut presented, &scheduled, player.render_mode());
+        configure(
+            &mut presented,
+            &scheduled,
+            player.render_mode(),
+            player.history_policy(),
+        );
         let mut entity = commands.spawn((
             ChildOf(root),
             Transform::IDENTITY,
@@ -304,6 +316,43 @@ mod tests {
         app.world_mut().entity_mut(root).remove::<EffectPlayer>();
         app.update();
         assert!(snapshots(&mut app, root).is_empty());
+    }
+
+    #[test]
+    fn nested_presentations_inherit_live_history_policy_without_a_restart() {
+        let mut app = App::new();
+        app.add_plugins(bevy::transform::TransformPlugin)
+            .add_systems(Update, sync_project_instances);
+        let mut player = EffectPlayer::from_project(fixture())
+            .with_history_policy(crate::PlaybackHistoryPolicy::PlaybackOnly);
+        player.playing = false;
+        player.seek_simulation_time(1.0);
+        let root = app.world_mut().spawn(player).id();
+        app.update();
+        for policy in [
+            crate::PlaybackHistoryPolicy::ReplayEnabled,
+            crate::PlaybackHistoryPolicy::PlaybackOnly,
+        ] {
+            let before = snapshots(&mut app, root);
+            assert_eq!(before.len(), 2);
+            app.world_mut()
+                .get_mut::<EffectPlayer>(root)
+                .unwrap()
+                .set_history_policy(policy);
+            app.update();
+            for (entity, _, instance) in before {
+                let now = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+                assert_eq!(now.history_policy(), policy);
+                assert_eq!(
+                    (now.time(), now.history_epoch(), now.history_revision()),
+                    (
+                        instance.time(),
+                        instance.history_epoch(),
+                        instance.history_revision()
+                    )
+                );
+            }
+        }
     }
 
     #[test]

@@ -42,6 +42,7 @@ pub struct GpuBenchPlan {
     diagnostic_times: BTreeMap<String, bevy::platform::time::Instant>,
     simulation_sequences: BTreeMap<Entity, u64>,
     simulation_frames: BTreeMap<String, Vec<SimulationFrame>>,
+    history_policy: aestra_bevy::PlaybackHistoryPolicy,
 }
 
 impl GpuBenchPlan {
@@ -58,7 +59,13 @@ impl GpuBenchPlan {
             diagnostic_times: BTreeMap::new(),
             simulation_sequences: BTreeMap::new(),
             simulation_frames: BTreeMap::new(),
+            history_policy: default(),
         }
+    }
+
+    pub fn with_history_policy(mut self, policy: aestra_bevy::PlaybackHistoryPolicy) -> Self {
+        self.history_policy = policy;
+        self
     }
 
     fn write_report(&self) -> Result<(), String> {
@@ -69,6 +76,10 @@ impl GpuBenchPlan {
             .collect();
         let report = GpuBenchReport {
             effect: self.effect.clone(),
+            history_policy: match self.history_policy {
+                aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly => "playback-only",
+                aestra_bevy::PlaybackHistoryPolicy::ReplayEnabled => "replay-enabled",
+            },
             warmup: self.warmup,
             frames: self.frames,
             metrics,
@@ -229,6 +240,7 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 #[derive(Serialize)]
 struct GpuBenchReport<'a> {
     effect: String,
+    history_policy: &'static str,
     warmup: usize,
     frames: usize,
     metrics: BTreeMap<String, Stats>,
@@ -489,7 +501,8 @@ mod tests {
     fn report_preserves_configured_warmup_after_it_is_consumed() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("report.json");
-        let mut plan = GpuBenchPlan::new(output.clone(), "fixture".into(), 120, 2);
+        let mut plan = GpuBenchPlan::new(output.clone(), "fixture".into(), 120, 2)
+            .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
         plan.warmup_remaining = 0;
         plan.samples.insert("gpu".into(), vec![0.2, 0.3]);
         plan.write_report().unwrap();
@@ -497,5 +510,6 @@ mod tests {
             serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
         assert_eq!(report["warmup"], 120);
         assert_eq!(report["frames"], 2);
+        assert_eq!(report["history_policy"], "playback-only");
     }
 }

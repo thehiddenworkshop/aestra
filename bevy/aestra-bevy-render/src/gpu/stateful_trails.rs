@@ -14,6 +14,9 @@ pub(super) struct History {
 
 impl History {
     pub fn sync(&mut self, effect: &GpuEffectBuffers, states: &[StatefulPersistentState]) {
+        if !effect.history_policy.captures_checkpoints() {
+            self.checkpoints = default();
+        }
         let key = states
             .iter()
             .map(|state| state.fingerprint)
@@ -167,6 +170,9 @@ impl Observer<'_> {
         encoder: &mut CommandEncoder,
         tick: u32,
     ) -> u64 {
+        if !self.effect.history_policy.captures_checkpoints() {
+            return 0;
+        }
         self.history.checkpoints.capture(
             device,
             encoder,

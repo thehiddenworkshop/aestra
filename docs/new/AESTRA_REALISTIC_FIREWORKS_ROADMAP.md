@@ -1748,9 +1748,42 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/frame-work-volley-overlap
 ```
 
+### Implemented — host-selectable playback-only checkpoint retention
+
+- `PlaybackHistoryPolicy::{PlaybackOnly, ReplayEnabled}` is a transient, per-instance host API, independent of authored looping, seek quality and input-event history. Use `EffectPlayer::from_compiled(compiled).with_history_policy(PlaybackHistoryPolicy::PlaybackOnly)` for game playback; inspect/change it with `history_policy` / `set_history_policy`. `PresentedEffect` exposes the same API for direct renderer hosts, and the engine-neutral `EffectInstance` and generic GPU `StageTimeline` carry it too. Nested effects inherit the root policy, including live changes, and hot replacement preserves it. `ReplayEnabled` remains the compatibility default; CPU scrub caching still requires `enable_scrub_cache`, which explicitly opts into replay retention.
+- Playback-only skips automatic CPU scrub snapshots and GPU particle, analytic/stateful trail and extension/domain checkpoint allocation/copies. It does **not** disable live trail samples, authored events, or input retention. Switching off releases CPU caches immediately and GPU caches when the render preparation consumes the change, without resetting the clock, seed, epoch, revision, particles, domains or trails. Switching back allows future GPU captures rather than reconstructing missing snapshots. Explicit backward seeks still reset/reconstruct from zero when necessary; neither policy records historical live inputs, so exact reconstruction of those inputs requires a host-supplied trace. Playback-only is not a promise of cheap seeking or a smaller authored trail pool.
+- Native regressions prove no snapshots/capture bytes throughout the budgeted 16-cohort volley (12,800 accepted children), unchanged trails/particles on a paused policy change, paged mixed analytic/stateful backward reconstruction without snapshots, resumed future captures, and domain state retained across a policy switch. CPU tests cover cache release, unchanged playhead/history identity, backward seeks and effect replacement; nested tests cover propagation without presentation recreation. Existing replay-enabled trail/seek regressions remain passing.
+- Viewer `--history playback-only|replay-enabled` drives the actual root and children; benchmark JSON records the policy. Three sequential, isolated runs retain the prior RTX 4070 SUPER/Vulkan, 960×540, close camera, high tier, default-fast transparency, 120 warm-up/600 measured host-frame configuration. All report **600 unique complete-window samples**, **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, zero source overflow, omission, rejection, eviction or truncation, and the unchanged **38,580,664-byte configured-buffer estimate** (not total resident memory). Both playback-only runs report **zero checkpoint capture bytes in every sample**; the replay control has 30 capture-bearing samples, each copying **32,715,088 bytes**.
+
+Frame-aligned simulation GPU timing in milliseconds; sample counts in parentheses:
+
+| Work | Playback-only run 1 p50 / p95 / p99 | Replay-enabled control p50 / p95 / p99 | Playback-only run 2 p50 / p95 / p99 |
+| --- | ---: | ---: | ---: |
+| 1 tick, 1 observation, no checkpoint copies | 2.190 / 2.801 / 2.922 (547) | 2.523 / 2.799 / 2.848 (547) | 2.531 / 2.811 / 2.828 (598) |
+| 1 tick, 1 observation, 32,715,088 checkpoint bytes | Not captured | 4.806 / 5.108 / 5.158 (28) | Not captured |
+| All sampled simulation windows | 2.183 / 2.824 / 3.777 (600) | 2.515 / 2.822 / 5.024 (600) | 2.531 / 2.811 / 2.827 (600) |
+
+- Removing snapshot work eliminates its periodic copy/allocation path while preserving produced work. Tick mixes vary: playback run 1 has 26 zero-/27 two-tick samples, control 12/13, playback run 2 1/1. Timing groups do not match exact populations/time, and the small multi-tick groups do not certify stable percentiles. These remain host-received timestamp windows, not a GPU-frame barrier or isolated copy-only timer. The live allocation/reservation/bounds kernels and catch-up cost remain; this does **not** close the named full-frame/finale budget gate.
+- Playback-only frame 240 is byte-identical to the prior volley reference (SHA256 `4B45502997252D44EE17DB4C64FB0950691A987CF82981DE0FE21199B6E2F051`). Separate analytic 800-parent `trail-hero` captures at frames 30, 120 and 250 match the same-build replay-enabled control byte-for-byte, covering live/retired-tail output at those frames, not all assets/times.
+
+```powershell
+cargo test --locked -p aestra-runtime -p aestra-bevy --lib
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --lib playback_history_policy -- --test-threads=1
+cargo test --locked -p aestra-bevy-render --lib trail -- --test-threads=1
+cargo test --locked -p aestra-viewer --bin aestra-viewer
+cargo clippy --locked -p aestra-runtime -p aestra-bevy-render -p aestra-bevy -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/playback-only-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history replay-enabled --gpu-bench target/fireworks-f1/history-replay-control-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/playback-only-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/playback-only-volley-overlap
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail-hero --camera close --backend gpu --history playback-only --sample-frames 30,120,250 --capture target/fireworks-f1/playback-only-analytic-trails
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail-hero --camera close --backend gpu --history replay-enabled --sample-frames 30,120,250 --capture target/fireworks-f1/history-replay-analytic-trails
+```
+
 ### Tasks
 
-- Next: introduce an explicit **playback-only checkpoint policy** so game hosts do not pay periodic particle/trail snapshot allocation and copy costs when seeking/replay is not requested. Preserve opt-in editor seeking/checkpoint behavior and validate the policy with the frame-aligned loss-free volley benchmark and unchanged accepted demand/populations/output. Separate checkpoint costs from multi-tick catch-up; investigate the variable tick mix and remaining live ordering/allocation work using the matched frame samples. Do not optimize editor replay ahead of playback.
+- Next: investigate the remaining **live** paged-history reservation/allocation/bounds work and variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

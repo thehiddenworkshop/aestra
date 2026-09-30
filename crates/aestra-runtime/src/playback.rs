@@ -11,6 +11,26 @@ use crate::{
     PlaybackClock, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 
+/// Host-owned history retention, independent of authored looping and seek fidelity.
+/// This does not record live host inputs or disable authored events/trail samples.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PlaybackHistoryPolicy {
+    /// Incremental live playback without automatic CPU/GPU checkpoint snapshots.
+    /// Explicit backward seeks can still restart/reconstruct from zero; they are
+    /// not cheap and historical live inputs require a host-supplied trace.
+    PlaybackOnly,
+    /// Allow backend checkpoint caches for seeking/replay. CPU scrub caching
+    /// still requires an explicit checkpoint budget. Compatibility default.
+    #[default]
+    ReplayEnabled,
+}
+
+impl PlaybackHistoryPolicy {
+    pub fn captures_checkpoints(self) -> bool {
+        self == Self::ReplayEnabled
+    }
+}
+
 /// Owns the playhead clock, the simulated instance, and an optional backward-scrub
 /// checkpoint cache. Choreography-event dispatch and status/UI concerns stay with
 /// the caller; this type only advances, seeks, and (optionally) checkpoints.
@@ -48,7 +68,18 @@ impl PlaybackDriver {
 
     /// Enables the backward-scrub checkpoint cache with the given policy.
     pub fn enable_checkpoints(&mut self, policy: CheckpointPolicy) {
+        self.instance
+            .set_history_policy(PlaybackHistoryPolicy::ReplayEnabled);
         self.checkpoints = Some(CheckpointStore::new(policy));
+    }
+
+    /// Applies a host policy without changing the clock or running simulation.
+    /// Playback-only immediately releases the CPU scrub cache.
+    pub fn set_history_policy(&mut self, policy: PlaybackHistoryPolicy) {
+        self.instance.set_history_policy(policy);
+        if !policy.captures_checkpoints() {
+            self.disable_checkpoints();
+        }
     }
 
     pub fn disable_checkpoints(&mut self) {
@@ -56,7 +87,9 @@ impl PlaybackDriver {
     }
 
     pub fn checkpoints(&self) -> Option<&CheckpointStore<EffectInstance>> {
-        self.checkpoints.as_ref()
+        self.checkpoints
+            .as_ref()
+            .filter(|_| self.instance.history_policy().captures_checkpoints())
     }
 
     pub fn clear_checkpoints(&mut self) {
@@ -83,6 +116,9 @@ impl PlaybackDriver {
         seek_mode: SimulationSeekMode,
         context: &CheckpointContext,
     ) -> ClockAdvance {
+        if !self.instance.history_policy().captures_checkpoints() {
+            self.disable_checkpoints();
+        }
         let previous_frame = self.clock.frame();
         let result = self.clock.advance(delta_seconds, speed, duration, looping);
         if result.ticks == 0 {
@@ -114,6 +150,9 @@ impl PlaybackDriver {
         seek_mode: SimulationSeekMode,
         context: &CheckpointContext,
     ) -> SeekPlan {
+        if !self.instance.history_policy().captures_checkpoints() {
+            self.disable_checkpoints();
+        }
         self.instance.mark_history_discontinuity();
         let target = target_frame.min(self.clock.maximum_frame(duration));
         if seek_mode == SimulationSeekMode::StatelessDirect {
@@ -189,6 +228,10 @@ impl PlaybackDriver {
         context: &CheckpointContext,
         frame: u64,
     ) {
+        if !self.instance.history_policy().captures_checkpoints() {
+            self.disable_checkpoints();
+            return;
+        }
         if seek_mode != SimulationSeekMode::CheckpointRestore {
             return;
         }

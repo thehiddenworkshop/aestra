@@ -79,9 +79,9 @@ pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
-    PlaybackCheckpoint, PlaybackClock, PlaybackDriver, ProfileValue, ProfileValueSource,
-    ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile, RendererPlanKind,
-    RuntimeValue, SeekOrigin, SeekPlan, SeekQuality, SimulationSeekMode,
+    PlaybackCheckpoint, PlaybackClock, PlaybackDriver, PlaybackHistoryPolicy, ProfileValue,
+    ProfileValueSource, ProjectChoreographyEvent, ProjectInstanceProfile, ProjectProfile,
+    RendererPlanKind, RuntimeValue, SeekOrigin, SeekPlan, SeekQuality, SimulationSeekMode,
 };
 pub use aestra_runtime::{
     EVENT_FINISHED, EVENT_IMPACT, EVENT_TARGET_ACQUIRED, EVENT_TARGET_LOST, EffectOutputEvent,
@@ -235,6 +235,23 @@ pub struct EffectPlayer {
 }
 
 impl EffectPlayer {
+    /// Select host-owned checkpoint retention for this root and its nested effects.
+    pub fn with_history_policy(mut self, policy: PlaybackHistoryPolicy) -> Self {
+        self.set_history_policy(policy);
+        self
+    }
+
+    pub fn history_policy(&self) -> PlaybackHistoryPolicy {
+        self.instance().history_policy()
+    }
+
+    /// Switching to playback-only releases CPU caches now and GPU caches on the
+    /// next render preparation, without resetting the live state. Replay-enabled
+    /// resumes future GPU captures; CPU caching needs `enable_scrub_cache`.
+    pub fn set_history_policy(&mut self, policy: PlaybackHistoryPolicy) {
+        self.driver.set_history_policy(policy);
+    }
+
     pub fn try_new(effect: &EffectAsset) -> Result<Self, CompileError> {
         let compiled = EffectCompiler::default().compile(effect)?;
         Ok(Self::from_compiled(Arc::new(compiled)))
@@ -374,6 +391,7 @@ impl EffectPlayer {
     /// otherwise playback restarts at zero. The running/paused state is untouched.
     pub fn replace_effect(&mut self, effect: Arc<CompiledEffect>, preserve_position: bool) {
         let seed = self.driver.instance.seed();
+        let history_policy = self.history_policy();
         let target = if preserve_position {
             self.driver.clock.frame()
         } else {
@@ -381,7 +399,8 @@ impl EffectPlayer {
         };
         self.silence_choreography_events();
         self.choreography_started = false;
-        self.driver.instance = EffectInstance::with_seed(effect, seed);
+        self.driver.instance =
+            EffectInstance::with_seed(effect, seed).with_history_policy(history_policy);
         // Old checkpoints describe the previous effect; drop them and bump the
         // revision so any that linger are never restored.
         self.revision += 1;

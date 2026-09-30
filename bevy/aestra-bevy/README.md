@@ -21,6 +21,39 @@ host, but the pipeline is the same everywhere.
 Runtime control — play/pause, `seek`, `set_parameter`, choreography events —
 all goes through the `EffectPlayer` handle.
 
+## Live playback or replay history
+
+Game hosts that only advance effects can opt out of automatic checkpoint work:
+
+```rust
+use aestra_bevy::{EffectPlayer, PlaybackHistoryPolicy};
+
+let player = EffectPlayer::from_compiled(compiled)
+    .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+```
+
+`ReplayEnabled` is the compatibility default. Change a running player with
+`player.set_history_policy(...)` and inspect it with `player.history_policy()`.
+The policy follows nested effects and survives hot replacement. It is independent
+of the asset's looping mode, seek quality, and authored particle events.
+
+`PlaybackOnly` skips automatic CPU/GPU checkpoint snapshots, not live particles,
+trail history, or extension simulation. Switching to it releases CPU scrub caches
+immediately and GPU caches at the next render preparation, without resetting live
+state. Switching back resumes future GPU captures; CPU scrub caching still needs
+`enable_scrub_cache(budget)`, which also opts into `ReplayEnabled`.
+
+Explicit backward seeks remain available, but reconstruct from zero without a
+cache. Neither policy records historical live host inputs: exact reconstruction
+of moving targets, bindings, or external events needs a host-supplied trace.
+For hosts orchestrating the renderer directly, `PresentedEffect` has the same
+builder/getter/setter; engine-neutral `EffectInstance` and `StageTimeline` also
+expose the policy. No setting is written into the authored effect.
+
+Compare the viewer's live GPU work using `--history playback-only` or
+`--history replay-enabled` with `--gpu-bench output.json`. The report records the
+policy and the checkpoint bytes copied in each matched simulation frame.
+
 ## Where to look
 
 | I want… | Read |

@@ -279,6 +279,7 @@ fn event_trail_scene_with_pool(
         total_slots: slots,
         simulation_time: 0.0,
         seek_quality: SeekQuality::Exact,
+        history_policy: PlaybackHistoryPolicy::default(),
         history_epoch: 0,
         statistics_token: 0,
         checkpoint_context: Arc::new(context),
@@ -313,6 +314,9 @@ fn event_trail_scene_with_pool(
 impl EventTrailScene {
     fn frame(&mut self, target: u32, budget: u32) -> GpuSimulationWork {
         let scene = &mut self.scene;
+        for state in &mut scene.states {
+            state.set_history_policy(self.effect.history_policy);
+        }
         self.history.sync(&self.effect, &scene.states);
         let paged = self.effect.trail_plan.paged().then(|| {
             paged_trails::Dispatch::new(
@@ -467,12 +471,16 @@ fn budgeted_trail_volley_accepts_every_cohort_and_drains_retired_tails() {
         );
         return;
     };
+    test.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
     let base = event_link_counter_base(&test.scene.dispatches).unwrap() as usize;
     let overflow = test.scene.dispatches[0].overflow_word.unwrap() as usize;
     let mut peaks = [0; 3];
     let mut previous_demand = 0;
     for tick in 0..=435 {
-        test.frame(tick, 4);
+        let work = test.frame(tick, 4);
+        assert_eq!(work.checkpoint_capture_bytes, Some(0));
+        assert_eq!(test.history.checkpoints.bytes(), 0);
+        assert!(test.scene.states.iter().all(|s| s.checkpoints.is_empty()));
         let bytes = read_back(&test.scene.device, &test.scene.queue, &test.buffers[4]);
         let word = |index: usize| {
             u32::from_le_bytes(bytes[index * 4..(index + 1) * 4].try_into().unwrap())
@@ -526,6 +534,52 @@ fn budgeted_trail_volley_accepts_every_cohort_and_drains_retired_tails() {
         "all live and retired histories must drain"
     );
     eprintln!("budgeted volley: accepted={previous_demand}, peaks live/retired/occupied={peaks:?}");
+}
+
+#[test]
+fn playback_history_policy_preserves_trails_and_releases_only_snapshots() {
+    for mixed in [false, true] {
+        // A large owner pool exercises the paged path with cheap live work.
+        let Some(mut test) = event_trail_scene_with_pool(mixed, 16, false, 2048) else {
+            assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(), "native GPU required");
+            return;
+        };
+        for tick in 0..=30 { test.frame(tick, 4); }
+        assert!(test.history.checkpoints.bytes() > 0);
+        assert!(test.scene.states.iter().any(|s| !s.checkpoints.is_empty()));
+        let before = test.trail_state();
+        let particles = chained_event_snapshot(&test.scene);
+        test.effect.history_policy = PlaybackHistoryPolicy::PlaybackOnly;
+        assert_eq!(test.frame(30, 4).checkpoint_capture_bytes, Some(0));
+        assert_eq!(test.history.checkpoints.bytes(), 0);
+        assert!(test.scene.states.iter().all(|s| s.checkpoints.is_empty()));
+        assert_eq!(test.history.tick, Some(30));
+        assert_eq!(test.trail_state(), before);
+        assert_eq!(chained_event_snapshot(&test.scene), particles);
+        while test.history.tick != Some(40) {
+            assert_eq!(test.frame(40, 4).checkpoint_capture_bytes, Some(0));
+        }
+        assert_eq!(test.usage(), [16, 16, 0, 0]);
+        // An explicit backward seek still reconstructs, with no retained snapshots.
+        test.effect.history_epoch = 1;
+        test.scene.queue.write_buffer(&test.buffers[6], 24, &1u32.to_le_bytes());
+        while test.history.tick != Some(30) { test.frame(30, 4); }
+        let mut reconstructed = test.trail_state();
+        reconstructed.1[..4].copy_from_slice(&before.1[..4]);
+        assert_eq!(reconstructed, before);
+        assert_eq!(chained_event_snapshot(&test.scene), particles);
+        assert_eq!(test.history.checkpoints.bytes(), 0);
+        test.effect.history_policy = PlaybackHistoryPolicy::ReplayEnabled;
+        assert_eq!(test.frame(30, 4).fixed_ticks, Some(0));
+        let mut copied = 0;
+        while test.history.tick != Some(40) {
+            copied += test.frame(40, 4).checkpoint_capture_bytes.unwrap();
+        }
+        assert!(copied > 0);
+        assert!(test.history.checkpoints.bytes() > 0);
+        assert!(test.scene.states.iter().any(|s| !s.checkpoints.is_empty()));
+        assert_eq!(test.usage(), [16, 16, 0, 0]);
+    }
 }
 
 #[test]
