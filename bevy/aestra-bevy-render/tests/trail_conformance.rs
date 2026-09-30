@@ -807,6 +807,15 @@ fn adaptive_sampling_bounds_observed_curve_error_and_preserves_corners_with_fewe
     check_pool(4, 2);
 }
 
+#[test]
+fn paged_bounds_preserve_spatial_expiry_truncation_and_maximum_sample_rings() {
+    for sampling in [1, 2] {
+        // A partially filled final bounds page and many empty pages must not
+        // poison min/max, flags or counters. Adaptive uses all 64 point slots.
+        check_pool(1025, sampling);
+    }
+}
+
 fn check_adaptive(
     step: &impl Fn(f32, [u32; 2], u32, Vec3, u32, u32) -> Vec<u8>,
     points: u32,
@@ -966,12 +975,11 @@ fn check_pool(max_trails: u32, sampling: u32) {
             }
         }
     }
-    let shader = compile_wesl(
-        "package::trail_test",
-        SIMULATION_WESL,
-        &["link_ribbons", "update_trails"],
-    )
-    .unwrap();
+    let entries = ["link_ribbons", "update_trails"]
+        .into_iter()
+        .chain(aestra_gpu::PAGED_TRAIL_ENTRY_POINTS)
+        .collect::<Vec<_>>();
+    let shader = compile_wesl("package::trail_test", SIMULATION_WESL, &entries).unwrap();
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
         source: wgpu::ShaderSource::Wgsl(shader.wgsl.into()),
@@ -998,40 +1006,54 @@ fn check_pool(max_trails: u32, sampling: u32) {
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
-    let pipelines = ["link_ribbons", "update_trails"].map(|entry| {
-        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let pipelines = entries
+        .iter()
+        .map(|entry| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        })
+        .collect::<Vec<_>>();
+    let records = 3 + max_trails * points;
+    let mut emitters = vec![GpuEmitter {
+        max_particles: 2,
+        _turbulence_padding: 1,
+        trail_offset: 2,
+        trail_points: points,
+        trail_capacity: max_trails,
+        trail_sampling: sampling,
+        trail_tolerance: 0.02,
+        trail_distance: 1.0,
+        trail_interval: 0.125,
+        trail_lifetime: 1.0,
+        ..Default::default()
+    }];
+    let plan = aestra_gpu::TrailScratchPlan::configure(&mut emitters, records).unwrap();
+    let stages = plan.passes();
+    let parameters = (!stages.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            layout: Some(&pipeline_layout),
-            module: &module,
-            entry_point: Some(entry),
-            compilation_options: Default::default(),
-            cache: None,
+            contents: &stages
+                .iter()
+                .flat_map(|stage| stage.parameter.to_le_bytes())
+                .collect::<Vec<_>>(),
+            usage: wgpu::BufferUsages::COPY_SRC,
         })
     });
     let data = [
-        encode(&vec![GpuEmitter {
-            max_particles: 2,
-            _turbulence_padding: 1,
-            trail_offset: 2,
-            trail_points: points,
-            trail_capacity: max_trails,
-            trail_sampling: sampling,
-            trail_tolerance: 0.02,
-            trail_distance: 1.0,
-            trail_interval: 0.125,
-            trail_lifetime: 1.0,
-            ..Default::default()
-        }]),
-        encode(&vec![
-            GpuParticle::default();
-            3 + (max_trails * points) as usize
-        ]),
+        encode(&emitters),
+        encode(&vec![GpuParticle::default(); records as usize]),
         encode(&vec![0u32, 1]),
         encode(&vec![0u32; 2]),
         encode(&vec![0u32; 8]),
         encode(&vec![6u32, 2, 0, 0]),
         encode(&GpuGlobals::default()),
-        encode(&vec![0u32; (3 + (max_trails * points) as usize) * 3]),
+        encode(&vec![0u32; plan.aux_words as usize]),
     ];
     let buffers = data
         .iter()
@@ -1105,10 +1127,23 @@ fn check_pool(max_trails: u32, sampling: u32) {
             {
                 let mut pass = encoder.begin_compute_pass(&Default::default());
                 pass.set_bind_group(0, &group, &[]);
-                for pipeline in &pipelines {
+                for pipeline in &pipelines[..2] {
                     pass.set_pipeline(pipeline);
                     pass.dispatch_workgroups(1, 1, 1);
                 }
+            }
+            for (index, stage) in stages.iter().enumerate() {
+                encoder.copy_buffer_to_buffer(
+                    parameters.as_ref().unwrap(),
+                    index as u64 * 4,
+                    &buffers[6],
+                    28,
+                    4,
+                );
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_bind_group(0, &group, &[]);
+                pass.set_pipeline(&pipelines[2 + stage.entry]);
+                pass.dispatch_workgroups(stage.workgroups, 1, 1);
             }
             encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
             encoder.copy_buffer_to_buffer(
@@ -1158,6 +1193,16 @@ fn check_pool(max_trails: u32, sampling: u32) {
             seed,
         )
     };
+    if plan.paged() {
+        let unsafe_bounds = step_at(0.0, [0, 1], 2, Vec3::splat(f32::NAN), 99, 0);
+        assert_eq!(
+            word(&unsafe_bounds, 2, 28),
+            0,
+            "invalid page disables culling even with empty pages"
+        );
+        // The following epoch-zero observation resets this intentionally invalid
+        // history before the normal spatial-sampling assertions.
+    }
     if sampling == 2 {
         check_adaptive(&step_at, points, max_trails);
         return;

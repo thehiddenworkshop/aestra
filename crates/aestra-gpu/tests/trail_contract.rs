@@ -222,8 +222,13 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
     let large_profile = aestra_runtime::EffectProfile::from_compiled(&compiled);
     assert_eq!(
         large_profile.buffer_memory_bytes.value().unwrap() - old_memory,
-        1017 * (32 * 64 + 8 * 31 + 4) + 4 + 4 * (3 * 8 + 2 * 2048 + 1 + 12 * 2)
+        1017 * (32 * 64 + 8 * 31 + 4) + 4 + 4 * (3 * 8 + 2 * 2048 + 1 + 12 * 32)
     );
+    let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).unwrap();
+    let records = gpu.particles.len() as u32;
+    let plan = aestra_gpu::TrailScratchPlan::configure(&mut gpu.emitters.clone(), records).unwrap();
+    let scratch_words = plan.aux_words - records * 3;
+    assert_eq!(scratch_words, 3 * 8 + 2 * 2048 + 1 + 12 * 32);
 }
 
 #[test]

@@ -1593,7 +1593,7 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 ### Implemented — paged history allocation and resource preflight
 
 - Large pools sort live identities and occupied owners using 1,024-element workgroup pages plus storage-backed parallel stable merges. Binary lookup reserves surviving owners before birth allocation; page-prefix birth ranks select empty owners first, then oldest retired tails with physical-owner tie breaks. Sampling is shared with the small-pool kernel, and page/global reductions produce bounds and usage counters. No CPU history readback or per-tick clear occurs during live playback.
-- Temporary aux ranges are disjoint and checked. For power-of-two padded head/owner counts `H`/`O`, scratch adds `3H + 2O + ceil(H/1024) + 12ceil(O/1024)` words per large emitter. Spare emitter/globals lanes carry exact numeric offsets and transient stage parameters, so particle records, owner headers, sampling and persistent aux layouts are unchanged. Existing checkpoints also copy the appended scratch; scratch is reconstructed on the next observation rather than treated as authoritative ownership state. Excluding disposable scratch from checkpoint copies is deferred editor optimization.
+- Temporary aux ranges are disjoint and checked. Initially, for power-of-two padded head/owner counts `H`/`O`, scratch added `3H + 2O + ceil(H/1024) + 12ceil(O/1024)` words per large emitter; the finer bounds pages implemented below update the last term to `12ceil(O/64)`. Spare emitter/globals lanes carry exact numeric offsets and transient stage parameters, so particle records, owner headers, sampling and persistent aux layouts are unchanged. Existing checkpoints also copy the appended scratch; scratch is reconstructed on the next observation rather than treated as authoritative ownership state. Excluding disposable scratch from checkpoint copies is deferred editor optimization.
 - GPU preparation checks record count, arithmetic overflow, scratch representation, adapter storage-binding/buffer size and dispatch dimensions before capacity-sized artifact allocation. Unsupported resources report the backend rejection instead of overflowing. The one-Trail-renderer and 2–64-point rules remain; compiler, model and editor no longer clamp parent/owner counts to 1,024. Static memory estimates include the new scratch and compaction page totals.
 - Native GPU conformance covers 1,025/2,053 partial pools and 8,192 dense owners, high/colliding identities, shuffled head order, independent emitters, survivor retention, deterministic eviction, pause, backwards-clock reset, retirement/expiry and mixed Ribbon linking. Production fixed-tick encoding covers 2,048/8,192 event-born stars with doubled owner budgets, mixed analytic presentation, pause and batched restart. Existing 800-star checkpoint/playback tests and portable WGSL/SPIR-V/HLSL validation still pass under eight storage bindings and a 16 KiB workgroup limit.
 - The viewer adds `--fireworks-f0-probe event-trail-large`: sixteen coincident source deaths × 512 children into **one 8,192-star emitter**, 16,384 history owners and 32 records/owner. This uses one supported event link, not duplicate links or trail emitters to bypass a limit. Its frame-50 RTX 4070 SUPER/Vulkan capture measures **8,192 occupied histories, zero retired tails, zero evictions and zero truncation**. The image is a technical density probe, not a finished realistic shell.
@@ -1655,9 +1655,39 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/cached-sort-volley-overlap
 ```
 
+### Implemented — finer parallel bounds reduction for live histories
+
+- Bounds pages shrink from **1,024 to 64 owners**: each of the 64 lanes scans one owner's ring rather than serializing sixteen owners per lane. A 16,384-owner pool now dispatches **256 page workgroups instead of 16**, followed by the existing GPU summary reduction. Owner expiry, sample order, survivor-flag consumption, occupied/retired/truncated counts, and finite/empty/unsafe bounds semantics are unchanged. No new pass, storage binding, CPU readback or live replay work is introduced.
+- Current scratch is **`3H + 2O + ceil(H/1024) + 12ceil(O/64)` words** per paged emitter. Allocation, dispatch and static memory estimates change together. The volley estimate increases from **38,438,072 to 38,449,592 bytes**: only **11,520 extra bytes (11.25 KiB)** of disposable summaries. Tests guard shader/planner page-size agreement, disjoint ranges, binding/buffer/dispatch rejection and exact numeric offset limits. Persistent particle/history/aux ownership ABI, sorting and the small-pool path are unchanged; portable 16 KiB workgroup/eight-binding conformance still passes.
+- Native tests check full and partially filled 1,025/2,053/8,192-owner pools against an all-samples world-bounds oracle, plus paged Distance/Adaptive sampling with stationary-anchor expiry, truncation warnings, empty pages, invalid bounds disabling culling, and the 64-point maximum. The real event-born volley still accepts **12,800/12,800** children, reaches **7,200 live / 3,200 retired / 10,400 occupied** histories, and drains completely without eviction or truncation.
+- Two optimized benchmarks and a fresh 1,024-owner-page control use the same RTX 4070 SUPER/Vulkan, 960×540, close camera, default-fast transparency and 120 warm-up/600 measured frames. Every run observes **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, and zero source overflow, expansion omission, destination rejection, eviction or truncation. Frame 240 is again a **byte-identical PNG** to the pre-optimization capture, with 9,600 occupied/3,200 retired histories; this checks that frame, not every possible asset/time.
+
+GPU medians in milliseconds (fresh control rerun after both optimized samples):
+
+| Phase | 1,024-owner-page control | 64-owner pages, run 1 | 64-owner pages, run 2 |
+| --- | ---: | ---: | ---: |
+| Bounds | 1.214 | 0.264 | 0.261 |
+| History observation | 2.903 | 2.343 | 2.320 |
+| Full simulation frame | 3.255 | 2.737 | 2.703 |
+| Trail compaction | 0.361 | 0.460 | 0.443 |
+| Transparent drawing | 1.269 | 1.637 | 1.572 |
+
+- Bounds median is **78% lower**, history median **19–20% lower**, and aggregate simulation median **16–17% lower** than this control. History p95/p99 changes from **3.398/3.511 ms** to **2.627/2.672** and **2.561/2.647 ms**. Aggregate simulation p95/p99 changes from **3.854/5.947 ms** to **3.087/5.213** and **3.065/5.297 ms**. The unchanged ordering/allocation and draw phases are slower in these optimized runs; the reason is not established. Do not sum phase percentiles or infer a certified full-frame/finale budget from the history speedup. Remaining ordering/reservation/allocation traffic and multi-tick frame variation still require investigation.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test trail_contract --test shader_contract
+cargo test --locked -p aestra-runtime --lib profile
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --nocapture
+cargo test --locked -p aestra-bevy-render --lib trail -- --nocapture
+cargo clippy --locked -p aestra-gpu -p aestra-runtime -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/parallel-bounds-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/parallel-bounds-volley-overlap
+```
+
 ### Tasks
 
-- Next: parallelize the now-dominant history bounds/sample reduction, preserving expiry, truncation counts and conservative world-space bounds. Keep loss-free populations unchanged and investigate aggregate p95/p99/catch-up variation before certifying the whole live frame; do not optimize editor replay ahead of playback.
+- Next: reduce remaining storage-backed ordering/merge and allocation/lookup traffic under the loss-free volley, preserving stable identities, survivor ownership and deterministic allocation. Keep accepted demand/populations unchanged and investigate aggregate p95/p99/catch-up variation before certifying the whole live frame; do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

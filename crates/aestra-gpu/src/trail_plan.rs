@@ -3,9 +3,10 @@ use crate::Vec3;
 use crate::{GpuArtifactError, GpuEmitter};
 use encase::ShaderType;
 
-// Keep in sync with TRAIL_SORT_PAGE in the portable history shader. Prefix and
-// bounds pages remain 1024; sorting uses smaller pages for GPU occupancy.
+// Keep in sync with the portable history shader. Prefix pages remain 1024;
+// sorting and bounds use smaller pages to expose more independent workgroups.
 const SORT_PAGE: u32 = 256;
+const BOUNDS_PAGE: u32 = 64;
 
 pub const PAGED_TRAIL_ENTRY_POINTS: [&str; 9] = [
     "sort_trail_page",
@@ -67,7 +68,7 @@ impl TrailScratchPlan {
                         .checked_mul(3)
                         .and_then(|n| n.checked_add(owners.checked_mul(2)?))
                         .and_then(|n| n.checked_add(heads.div_ceil(1024)))
-                        .and_then(|n| n.checked_add(owners.div_ceil(1024).checked_mul(12)?))
+                        .and_then(|n| n.checked_add(owners.div_ceil(BOUNDS_PAGE).checked_mul(12)?))
                         .ok_or(GpuArtifactError::TrailLimit)?,
                 )
                 .ok_or(GpuArtifactError::TrailLimit)?;
@@ -140,7 +141,7 @@ impl TrailScratchPlan {
         passes.push(TrailPass {
             entry: 7,
             parameter: 0,
-            workgroups: self.max_owners.div_ceil(1024),
+            workgroups: self.max_owners.div_ceil(BOUNDS_PAGE),
         });
         passes.push(TrailPass {
             entry: 8,
@@ -171,6 +172,70 @@ impl TrailScratchPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounds_pages_match_shader_dispatch_and_exact_scratch_ranges() {
+        assert!(
+            crate::shader::SIMULATION_WESL
+                .contains(&format!("const TRAIL_BOUNDS_PAGE: u32 = {BOUNDS_PAGE}u;"))
+        );
+        let mut emitters = [
+            GpuEmitter {
+                max_particles: 16,
+                trail_capacity: 1025,
+                trail_points: 64,
+                ..Default::default()
+            },
+            GpuEmitter {
+                max_particles: 2053,
+                trail_capacity: 2053,
+                trail_points: 4,
+                ..Default::default()
+            },
+        ];
+        let records = emitters
+            .iter()
+            .map(|e| e.max_particles + 1 + e.trail_capacity * e.trail_points)
+            .sum();
+        let plan = TrailScratchPlan::configure(&mut emitters, records).unwrap();
+        let mut end = records * 3;
+        for e in &emitters {
+            let heads = e.max_particles.next_power_of_two();
+            let owners = e.trail_capacity.next_power_of_two();
+            assert_eq!(
+                e._spawn_inverse_padding,
+                Vec3::new(end as f32, heads as f32, owners as f32)
+            );
+            end +=
+                3 * heads + 2 * owners + heads.div_ceil(1024) + 12 * owners.div_ceil(BOUNDS_PAGE);
+        }
+        assert_eq!(plan.aux_words, end);
+        let passes = plan.passes();
+        assert_eq!(
+            passes
+                .iter()
+                .find(|pass| pass.entry == 7)
+                .unwrap()
+                .workgroups,
+            64
+        );
+        assert!(plan.fits(records, 2, 128 << 20, 256 << 20, 64));
+        assert!(!plan.fits(records, 2, 128 << 20, 256 << 20, 63));
+        // Isolate the aux-byte boundary from the record-byte boundary. Include
+        // the enlarged page outputs when checking both binding and buffer limits.
+        let mut tiny = [GpuEmitter {
+            max_particles: 2048,
+            trail_capacity: 2048,
+            trail_points: 2,
+            ..Default::default()
+        }];
+        let plan = TrailScratchPlan::configure(&mut tiny, 0).unwrap();
+        let bytes = u64::from(plan.aux_words) * 4;
+        assert!(plan.fits(0, 1, bytes, bytes, 65535));
+        assert!(!plan.fits(0, 1, bytes - 1, bytes, 65535));
+        assert!(!plan.fits(0, 1, bytes, bytes - 1, 65535));
+        assert!(TrailScratchPlan::configure(&mut tiny, (1 << 24) / 3).is_err());
+    }
 
     #[test]
     fn sorting_pages_match_shader_and_merge_parity_for_mixed_pool_sizes() {

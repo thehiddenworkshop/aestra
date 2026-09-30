@@ -49,6 +49,9 @@ fn paged_less(e: Emitter, a: u32, b: u32) -> bool {
 
 var<workgroup> paged_values: array<u32, 1024>;
 const TRAIL_SORT_PAGE: u32 = 256u;
+// One owner per lane: long sample rings no longer serialize sixteen owners on
+// each lane of only a handful of workgroups. Page summaries stay GPU-resident.
+const TRAIL_BOUNDS_PAGE: u32 = 64u;
 var<workgroup> paged_keys: array<vec4<u32>, TRAIL_SORT_PAGE>;
 
 // Cache immutable keys once per page instead of fetching strided particle
@@ -357,9 +360,9 @@ fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
 fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
     let e = emitters[group.y];
     if !paged_record(e) { return; }
-    let start = group.x * 1024u;
+    let start = group.x * TRAIL_BOUNDS_PAGE;
     if start >= e.trail_capacity { return; }
-    paged_bound_range(e, thread, start, min(start + 1024u, e.trail_capacity));
+    paged_bound_range(e, thread, start, min(start + TRAIL_BOUNDS_PAGE, e.trail_capacity));
     if thread == 0u {
         let output = paged_bounds(e) + group.x * 12u;
         for (var n = 0u; n < 3u; n += 1u) { aux[output + n] = atomicLoad(&trail_scratch[n]); }
@@ -385,7 +388,7 @@ fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_in
     var found = false;
     var valid = true;
 
-    let pages = (e.trail_capacity + 1023u) / 1024u;
+    let pages = (e.trail_capacity + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE;
     for (var page = thread; page < pages; page += 64u) {
         let input = paged_bounds(e) + page * 12u;
         occupied += aux[input];
