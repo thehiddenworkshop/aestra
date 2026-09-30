@@ -1717,13 +1717,44 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/compact-keys-volley-overlap
 ```
 
+### Implemented — frame-aligned live simulation work attribution
+
+- `GpuSimulationTiming::frame_sample` exposes a context-valid **timestamp-batch sequence, requested playback time, whole per-effect GPU simulation window, executed shared fixed ticks, cumulative history observations/workgroups, and actual coupled particle/trail checkpoint capture bytes**. Work metadata travels with its own timestamp result through the existing bounded asynchronous mailbox, not with an independently arriving live-count readback. No new GPU query pair, particle readback, synchronous wait, shader pass or replay work is added. Unsupported/skipped/failed timestamps remain unavailable; independent/analytic tick and checkpoint counts remain unknown. Legacy mixed analytic/stateful partial timing windows are excluded from this complete-window API. Requested time does not certify that paced catch-up reached it; checkpoint bytes exclude domain snapshots and restores.
+- The viewer JSON now contains raw `simulation_frames`, `simulation_total`, and `simulation_by_work` distributions per presented effect. Retained timestamp samples are counted once by sequence; diagnostic-store measurements are likewise counted once by measurement time, with warm-up cursors consumed and non-finite values omitted. The capture remains a **host-received window**, not a GPU-frame barrier: late warm-up results can arrive within it and final submitted frames can arrive after it ends. Population peaks and lifetime event totals remain explicitly asynchronous and are not joined to these frame samples.
+- History workgroups count the actual padded update/page/merge dispatch plan across **every** observation, including its emitter dimension; they are not live-head or live-owner counts and exclude ribbons. Tick zero initialization can observe histories twice; a subsequent zero-tick/paused frame still performs one history observation. Native regressions check these cases, budget-limited multi-tick accumulation, checkpoint bytes only when captures really occur, unchanged paused history, and every-tick volley acceptance/retirement/drain. Timestamp tests preserve work metadata through native GPU map/recycling, distinguish missing/partial results, isolate repeated owners, reject stale contexts, and keep the latest-frame mailbox bounded. Viewer tests guard warm-up/stale/duplicate observations and JSON grouping.
+- Two completed benchmarks use the same RTX 4070 SUPER/Vulkan, 960×540, close camera, high tier, default-fast transparency and 120 warm-up/600 measured host frames. Both obtain **600 unique complete-window samples**, observe **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, zero source overflow, expansion omission, destination rejection, eviction or truncation, and the unchanged **38,580,664-byte configured-buffer estimate**. That estimate is not total resident memory including checkpoint snapshots. The frame-240 PNG is again byte-identical to the compact-key reference, with 9,600 occupied/3,200 retired histories; this checks that frame, not every asset/time.
+
+Frame-aligned per-effect simulation timing, milliseconds; parentheses give sample counts, not a fixed per-run tick mix:
+
+| Encoded frame work | Run 1 p50 / p95 / p99 | Run 2 p50 / p95 / p99 |
+| --- | ---: | ---: |
+| 0 ticks, 1 history observation, no checkpoint copies | 0.313 / 1.320 / 1.320 (6) | 1.258 / 1.367 / 1.380 (23) |
+| 1 tick, 1 observation, no checkpoint copies | 2.487 / 2.732 / 2.828 (557) | 2.186 / 2.672 / 2.700 (527) |
+| 1 tick, 1 observation, 32,715,088 checkpoint bytes | 4.743 / 5.050 / 5.086 (30) | 4.448 / 5.063 / 5.115 (26) |
+| 2 ticks, 2 observations, no checkpoint copies | 0.964 / 2.627 / 2.627 (7) | 4.639 / 5.323 / 5.329 (20) |
+| 2 ticks, 2 observations, 32,715,088 checkpoint bytes | Not observed | 7.126 / 7.400 / 7.400 (4) |
+| All sampled simulation windows | 2.487 / 2.799 / 4.888 (600) | 2.312 / 4.622 / 5.257 (600) |
+
+- One observation dispatches **9,046 history workgroups**; two dispatch **18,092**. Captures copy **32,715,088 bytes (~31.2 MiB)** of particle/trail state during ordinary playback. In run 1, all twelve slowest frames advance **one tick** and capture that state, disproving a blanket attribution of those spikes to multi-tick catch-up. In run 2, the four slowest frames both advance two ticks and capture checkpoints. These matched observations identify separate checkpoint and repeated-observation workloads that last-phase percentiles cannot explain. They are **correlation, not an isolated copy-only timer or a causal A/B test**; grouping does not control live population or time within the volley. Small groups and changing tick mixes must not be treated as stable percentile certification. No performance optimization or named full-frame/finale budget completion is claimed by this instrumentation step.
+
+```powershell
+cargo test --locked -p aestra-bevy-render --lib simulation_timing -- --test-threads=1
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --lib trail -- --test-threads=1
+cargo test --locked -p aestra-viewer --bin aestra-viewer gpu_bench
+cargo clippy --locked -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/frame-work-checkpoints-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --gpu-bench target/fireworks-f1/frame-work-checkpoints-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --sample-frames 240 --capture target/fireworks-f1/frame-work-volley-overlap
+```
+
 ### Tasks
 
-- Next: attribute live-frame p95/p99 spikes to executed fixed-tick counts and cumulative per-frame work, rather than relying on the last phase observation. Extend the loss-free volley benchmark with that evidence, then target remaining ordering/allocation cost or catch-up overhead as measured. Keep accepted demand/populations unchanged; do not optimize editor replay ahead of playback.
+- Next: introduce an explicit **playback-only checkpoint policy** so game hosts do not pay periodic particle/trail snapshot allocation and copy costs when seeking/replay is not requested. Preserve opt-in editor seeking/checkpoint behavior and validate the policy with the frame-aligned loss-free volley benchmark and unchanged accepted demand/populations/output. Separate checkpoint costs from multi-tick catch-up; investigate the variable tick mix and remaining live ordering/allocation work using the matched frame samples. Do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
-- After the live path meets its budget, retest checkpoint storage and seek latency for editor scrubbing; scale checkpoint cadence/storage policy from measured memory without charging unnecessary replay work to ordinary playback.
+- After the live path meets its budget, retest opt-in checkpoint storage and seek latency for editor scrubbing; scale cadence/storage policy from measured memory without charging unnecessary replay work to playback-only hosts.
 
 ### Deliverable and exit gate
 

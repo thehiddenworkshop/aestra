@@ -9,6 +9,13 @@ pub(super) struct Dispatch<'a> {
 }
 
 impl<'a> Dispatch<'a> {
+    pub fn workgroups(&self) -> u64 {
+        self.passes
+            .iter()
+            .map(|pass| u64::from(pass.workgroups) * u64::from(self.emitters))
+            .sum()
+    }
+
     pub fn new(
         device: &RenderDevice,
         plan: aestra_gpu::TrailScratchPlan,

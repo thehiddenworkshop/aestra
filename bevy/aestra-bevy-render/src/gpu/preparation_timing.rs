@@ -130,6 +130,8 @@ mod tests {
                 token,
                 time: 1.5,
                 nanoseconds: ns,
+                sequence: 1,
+                work: None,
             });
         }
         let read = |app: &App, owner| {

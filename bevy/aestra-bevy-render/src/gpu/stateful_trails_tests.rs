@@ -311,7 +311,7 @@ fn event_trail_scene_with_pool(
 }
 
 impl EventTrailScene {
-    fn frame(&mut self, target: u32, budget: u32) {
+    fn frame(&mut self, target: u32, budget: u32) -> GpuSimulationWork {
         let scene = &mut self.scene;
         self.history.sync(&self.effect, &scene.states);
         let paged = self.effect.trail_plan.paged().then(|| {
@@ -343,10 +343,11 @@ impl EventTrailScene {
             ],
             memory_budget: trail_checkpoints::MEMORY_LIMIT,
             diagnostics: None,
+            observations: 0,
         };
         let mut encoder = scene.device.create_command_encoder(&Default::default());
         let [particles, alive, indirect, counters] = &scene.render;
-        run_coupled_stateful(
+        let (ticks, checkpoint_capture_bytes) = run_coupled_stateful(
             &scene.device,
             &mut encoder,
             (
@@ -379,6 +380,14 @@ impl EventTrailScene {
             budget,
             Some(&mut observer),
         );
+        let work = GpuSimulationWork {
+            fixed_ticks: Some(ticks),
+            checkpoint_capture_bytes: Some(checkpoint_capture_bytes),
+            trail_observations: observer.observations,
+            trail_workgroups: u64::from(observer.observations)
+                * (u64::from(self.effect.trail_workgroups)
+                    + paged.as_ref().map_or(0, |p| p.workgroups())),
+        };
         scene.queue.submit([encoder.finish()]);
         scene
             .device
@@ -388,6 +397,7 @@ impl EventTrailScene {
                 timeout: Some(std::time::Duration::from_secs(60)),
             })
             .unwrap();
+        work
     }
 
     fn trail_state(&self) -> (Vec<u8>, Vec<u8>) {
@@ -422,14 +432,24 @@ fn paged_trails_sort_small_head_pages_in_a_large_owner_pool() {
     assert_eq!(test.effect.trail_plan.max_heads, 16);
     assert_eq!(test.effect.trail_plan.max_owners, 2048);
     for tick in 0..=30 {
-        test.frame(tick, 4);
+        let work = test.frame(tick, 4);
+        assert_eq!(work.fixed_ticks, Some(u32::from(tick != 0)));
+        assert_eq!(work.trail_observations, if tick == 0 { 2 } else { 1 });
+        assert!(work.trail_workgroups > 0);
+        assert_eq!(work.checkpoint_capture_bytes.unwrap() > 0, tick != 0 && tick.is_multiple_of(STATEFUL_CHECKPOINT_CADENCE));
     }
     assert_eq!(test.usage(), [16, 0, 0, 0]);
     let forward = test.trail_state();
-    test.frame(30, 4);
+    let paused = test.frame(30, 4);
+    assert_eq!(paused.fixed_ticks, Some(0));
+    assert_eq!(paused.trail_observations, 1);
+    assert_eq!(paused.checkpoint_capture_bytes, Some(0));
     assert_eq!(test.trail_state(), forward);
     while test.history.tick != Some(40) {
-        test.frame(40, 4);
+        let work = test.frame(40, 4);
+        assert!(work.fixed_ticks.unwrap() <= 4);
+        assert_eq!(work.trail_observations, work.fixed_ticks.unwrap());
+        assert_eq!(work.trail_workgroups, paused.trail_workgroups * u64::from(work.trail_observations));
     }
     assert_eq!(test.usage(), [16, 16, 0, 0]);
     while test.history.tick != Some(60) {

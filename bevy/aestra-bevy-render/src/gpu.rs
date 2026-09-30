@@ -82,7 +82,7 @@ pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
 // AestraCatchupPacing is defined below, beside the pacer it configures.
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
-pub use simulation_timing::GpuSimulationTiming;
+pub use simulation_timing::{GpuSimulationFrame, GpuSimulationTiming, GpuSimulationWork};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -2803,14 +2803,19 @@ impl StatefulPersistentState {
 
     /// Captures a GPU-resident checkpoint of the current state at `tick` (copying all four buffers
     /// GPU→GPU), unless one already exists at that tick. Coarsens the store when it exceeds the budget.
-    fn capture(&mut self, render_device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
+    fn capture(
+        &mut self,
+        render_device: &RenderDevice,
+        encoder: &mut CommandEncoder,
+        tick: u32,
+    ) -> u64 {
         if self.mixed_placement
             || self
                 .checkpoints
                 .iter()
                 .any(|checkpoint| checkpoint.tick == tick)
         {
-            return;
+            return 0;
         }
         let (state, free_list, free_count, spawn_counter) =
             Self::fresh_buffers(render_device, self.records, self.stride);
@@ -2840,6 +2845,10 @@ impl StatefulPersistentState {
         if self.checkpoints.len() > MAX_STATEFUL_CHECKPOINTS {
             retain_every_other(&mut self.checkpoints);
         }
+        self.state.size()
+            + self.free_list.size()
+            + self.free_count.size()
+            + self.spawn_counter.size()
     }
 
     /// Restores the checkpoint captured exactly at `tick` (fluid F2b's joint seek), setting the last
@@ -3481,7 +3490,7 @@ fn run_coupled_stateful(
     simulation_time: f32,
     budget: u32,
     mut trails: Option<&mut stateful_trails::Observer<'_>>,
-) -> u32 {
+) -> (u32, u64) {
     let bursts = routes.bursts;
     let (death_integrate, spawn, present, order_present) = pipelines;
     let domains = coupling.domains;
@@ -3604,6 +3613,7 @@ fn run_coupled_stateful(
     } else {
         Vec::new()
     };
+    let mut checkpoint_capture_bytes = 0;
     for _ in 0..ticks {
         let mut tick_params = Vec::with_capacity(dispatches.len());
         let next = persistent_states[0].last_tick + 1;
@@ -3773,7 +3783,8 @@ fn run_coupled_stateful(
                 .last_tick
                 .is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
             {
-                persistent.capture(device, encoder, persistent.last_tick);
+                checkpoint_capture_bytes +=
+                    persistent.capture(device, encoder, persistent.last_tick);
             }
         }
         if let Some(trails) = trails.as_mut() {
@@ -3795,7 +3806,7 @@ fn run_coupled_stateful(
             if next.is_multiple_of(STATEFUL_CHECKPOINT_CADENCE)
                 && persistent_states.iter().all(|state| !state.mixed_placement)
             {
-                trails.capture(device, encoder, next);
+                checkpoint_capture_bytes += trails.capture(device, encoder, next);
             }
         }
     }
@@ -3835,7 +3846,7 @@ fn run_coupled_stateful(
             );
         }
     }
-    ticks
+    (ticks, checkpoint_capture_bytes)
 }
 /// Stamps the particle-statistics telemetry trailer the analytic reset writes, so the live-count
 /// readback accepts a stateful frame: `[MAGIC, context token, history epoch, time]` at the indirect
@@ -3897,7 +3908,7 @@ fn run_stateful_dispatches(
     owns_shared_reset: bool,
     pacer: Option<&mut CatchupPacer>,
     trails: Option<&mut stateful_trails::Observer<'_>>,
-) {
+) -> Option<(u32, u64)> {
     if owns_shared_reset {
         // Clear the shared live counter once, before any emitter's present bumps it.
         encoder.clear_buffer(render.counters, 0, Some(4));
@@ -3912,14 +3923,14 @@ fn run_stateful_dispatches(
         || dispatches
             .iter()
             .any(|dispatch| dispatch.field_follow.is_some() || dispatch.domain_spawn.is_some());
-    match coupling.filter(|_| coupled) {
+    let ticks = match coupling.filter(|_| coupled) {
         Some(coupling) => {
             // A coupled domain's ticks are fluid ticks: paced by frame time, not a fixed count.
             let budget = pacer.as_ref().map_or_else(
                 || stateful_catchup_budget(seek_quality),
                 |pacer| pacer.budget(seek_quality),
             );
-            let ticks = run_coupled_stateful(
+            let (ticks, checkpoint_capture_bytes) = run_coupled_stateful(
                 device,
                 encoder,
                 pipelines,
@@ -3937,12 +3948,13 @@ fn run_stateful_dispatches(
             if let Some(pacer) = pacer {
                 pacer.spent(ticks, budget);
             }
+            Some((ticks, checkpoint_capture_bytes))
         }
         None if has_trails => {
             // Never silently use the independent path: it cannot observe every
             // emitter at a shared tick or restore histories with particles.
             warn!("stateful trail simulation is waiting for lockstep pipelines");
-            return;
+            return None;
         }
         None => {
             for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
@@ -3961,8 +3973,9 @@ fn run_stateful_dispatches(
                     seek_quality,
                 );
             }
+            None
         }
-    }
+    };
     // Event overflow counts (host bindings HB9b), for the host to read back and report; after each
     // homing emitter's arrival count, the tick it was counted up to (event system E2b).
     for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter()) {
@@ -3998,6 +4011,7 @@ fn run_stateful_dispatches(
             simulation_time,
         );
     }
+    ticks
 }
 
 /// What the simulation system keeps across frames: trail histories, the timestamp timer, stateful
@@ -4194,6 +4208,7 @@ fn run_simulation(
                         ],
                         memory_budget: trail_checkpoints::MEMORY_LIMIT.saturating_sub(allocated),
                         diagnostics,
+                        observations: 0,
                     })
                 } else {
                     None
@@ -4215,7 +4230,7 @@ fn run_simulation(
                         },
                     ));
                 }
-                run_stateful_dispatches(
+                let stateful_work = run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
                     (death_integrate, spawn, present, *order_present),
@@ -4254,6 +4269,20 @@ fn run_simulation(
                     pacer.as_deref_mut(),
                     observer.as_mut(),
                 );
+                if let Some((batch, index)) = timing_batch.as_mut().zip(timing_index) {
+                    let trail_observations = observer.as_ref().map_or(0, |o| o.observations);
+                    batch.work(
+                        index,
+                        GpuSimulationWork {
+                            fixed_ticks: stateful_work.map(|work| work.0),
+                            checkpoint_capture_bytes: stateful_work.map(|work| work.1),
+                            trail_observations,
+                            trail_workgroups: u64::from(trail_observations)
+                                * (u64::from(effect.trail_workgroups)
+                                    + paged.as_ref().map_or(0, |p| p.workgroups())),
+                        },
+                    );
+                }
                 if let Some(observer) = observer {
                     allocated += observer.history.checkpoints.bytes();
                 }
@@ -4403,6 +4432,28 @@ fn run_simulation(
         let timing_index = timing_batch.as_mut().and_then(|batch| {
             batch.instance(main_entity.id(), effect.statistics_token, observed_time)
         });
+        // The legacy mixed analytic/stateful timer excludes the later stateful
+        // dispatches. Do not advertise its partial window as a complete frame.
+        if effect.stateful_dispatch.is_empty()
+            && let Some((batch, index)) = timing_batch.as_mut().zip(timing_index)
+        {
+            let trail_observations = if effect.has_trails {
+                observation_count as u32
+            } else {
+                0
+            };
+            batch.work(
+                index,
+                GpuSimulationWork {
+                    fixed_ticks: None,
+                    checkpoint_capture_bytes: None,
+                    trail_observations,
+                    trail_workgroups: u64::from(trail_observations)
+                        * (u64::from(effect.trail_workgroups)
+                            + paged.as_ref().map_or(0, |p| p.workgroups())),
+                },
+            );
+        }
         for observation in 0..observation_count {
             if let Some((times, _, globals, _)) = &replay {
                 render_context.command_encoder().copy_buffer_to_buffer(
@@ -4569,7 +4620,7 @@ fn run_simulation(
             {
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
                 let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
-                run_stateful_dispatches(
+                let _ = run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
                     (death_integrate, spawn, present, *order_present),

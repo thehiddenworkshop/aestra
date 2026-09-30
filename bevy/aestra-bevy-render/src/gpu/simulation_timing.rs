@@ -17,7 +17,51 @@ pub struct GpuSimulationTiming {
     pub(super) sample: Option<Sample>,
 }
 
+/// Work encoded in the same simulation window as a GPU timestamp pair.
+/// Counts describe submitted work, not asynchronously read-back live populations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuSimulationWork {
+    /// Shared fixed ticks actually advanced. Unknown for independent/analytic paths.
+    pub fixed_ticks: Option<u32>,
+    /// All history observations, including initialization or a dirty paused frame.
+    pub trail_observations: u32,
+    /// Total dispatched history workgroups across every observation (not ribbons).
+    pub trail_workgroups: u64,
+    /// GPU bytes actually copied to particle/trail checkpoints in a coupled
+    /// window. Unknown for other paths; excludes domain checkpoints and restores.
+    pub checkpoint_capture_bytes: Option<u64>,
+}
+
+/// One context-valid asynchronous frame result; sequence identifies a timestamp
+/// batch and lets consumers avoid counting a retained result more than once.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GpuSimulationFrame {
+    pub sequence: u64,
+    pub nanoseconds: u64,
+    /// Requested playback time in seconds, not proof that paced catch-up reached it.
+    pub requested_time: f32,
+    pub work: GpuSimulationWork,
+}
+
 impl GpuSimulationTiming {
+    /// Returns no frame when timestamps or complete-window work metadata are
+    /// unavailable. Legacy mixed analytic/stateful partial windows are excluded.
+    pub fn frame_sample(
+        &self,
+        instance: &EffectInstance,
+        context: &GpuParticleStatistics,
+    ) -> Option<GpuSimulationFrame> {
+        let sample = self.sample.as_ref().filter(|sample| {
+            context.context_token(instance) == Some(sample.token) && sample.time <= instance.time()
+        })?;
+        Some(GpuSimulationFrame {
+            sequence: sample.sequence,
+            nanoseconds: sample.nanoseconds,
+            requested_time: sample.time,
+            work: sample.work?,
+        })
+    }
+
     pub fn time_ns(
         &self,
         instance: &EffectInstance,
@@ -41,6 +85,8 @@ pub(super) struct Sample {
     pub token: u32,
     pub time: f32,
     pub nanoseconds: u64,
+    pub sequence: u64,
+    pub work: Option<GpuSimulationWork>,
 }
 
 #[derive(Default)]
@@ -193,8 +239,14 @@ impl TimingBatch {
             token,
             time,
             nanoseconds: 0,
+            sequence: self.sequence,
+            work: None,
         });
         Some(index)
+    }
+
+    pub(super) fn work(&mut self, index: u32, work: GpuSimulationWork) {
+        self.samples[index as usize / 2].work = Some(work);
     }
 
     /// Pass-boundary timestamps need only TIMESTAMP_QUERY (not the optional
@@ -336,6 +388,13 @@ mod tests {
         );
         let mut batch = batches.remove(0);
         let index = batch.instance(Entity::PLACEHOLDER, 42, 1.0).unwrap();
+        let work = GpuSimulationWork {
+            fixed_ticks: Some(3),
+            trail_observations: 4,
+            trail_workgroups: 120,
+            checkpoint_capture_bytes: Some(1024),
+        };
+        batch.work(index, work);
         let mut encoder = device.create_command_encoder(&Default::default());
         for (first, last) in [(true, false), (false, true)] {
             let pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -358,6 +417,8 @@ mod tests {
         let samples = mailbox.0.lock().unwrap().pending.take().unwrap();
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].token, 42);
+        assert_eq!(samples[0].sequence, 1);
+        assert_eq!(samples[0].work, Some(work));
         let mut recycled = timer
             .begin(&device, period)
             .expect("completed slot must recycle");
@@ -417,6 +478,27 @@ mod tests {
     }
 
     #[test]
+    fn missing_or_partial_work_metadata_does_not_invent_complete_frame_results() {
+        let instance = instance();
+        let context = GpuParticleStatistics::new(&instance);
+        let mut timing = GpuSimulationTiming::default();
+        assert!(timing.frame_sample(&instance, &context).is_none());
+        timing.sample = Some(Sample {
+            owner: Entity::PLACEHOLDER,
+            token: context.context_token(&instance).unwrap(),
+            time: 1.0,
+            nanoseconds: 123,
+            sequence: 1,
+            work: None,
+        });
+        assert_eq!(
+            timing.time_ns(&instance, &context),
+            ProfileValue::Measured(123)
+        );
+        assert!(timing.frame_sample(&instance, &context).is_none());
+    }
+
+    #[test]
     fn timing_is_invalidated_before_render_upload_after_all_context_changes() {
         let mut instance = instance();
         let mut context = GpuParticleStatistics::new(&instance);
@@ -428,11 +510,17 @@ mod tests {
                     token: old_token,
                     time: 0.0,
                     nanoseconds: 123,
+                    sequence: 1,
+                    work: Some(GpuSimulationWork::default()),
                 }),
             };
             assert_eq!(
                 timing.time_ns(&instance, &context),
                 ProfileValue::Measured(123)
+            );
+            assert_eq!(
+                timing.frame_sample(&instance, &context).unwrap().sequence,
+                1
             );
             match change {
                 0 => instance.seek(2.0),
@@ -441,6 +529,7 @@ mod tests {
                 3 => instance.invalidate_history(),
                 _ => instance = EffectInstance::new(Arc::new((**instance.effect()).clone())),
             }
+            assert!(timing.frame_sample(&instance, &context).is_none());
             assert_eq!(
                 timing.time_ns(&instance, &context),
                 ProfileValue::Unavailable
@@ -478,10 +567,25 @@ mod tests {
                 token,
                 time: 1.5,
                 nanoseconds: ns,
+                sequence: 1,
+                work: Some(GpuSimulationWork {
+                    fixed_ticks: Some(1),
+                    trail_observations: 1,
+                    trail_workgroups: ns,
+                    checkpoint_capture_bytes: Some(0),
+                }),
             });
         }
         mailbox.publish(1, samples.clone());
         app.update();
+        for (owner, groups) in owners.iter().zip([10, 20, 90]) {
+            let context = app.world().get::<GpuParticleStatistics>(*owner).unwrap();
+            let timing = app.world().get::<GpuSimulationTiming>(*owner).unwrap();
+            let frame = timing.frame_sample(&instance, context).unwrap();
+            assert_eq!(frame.sequence, 1);
+            assert_eq!(frame.requested_time, 1.5);
+            assert_eq!(frame.work.trail_workgroups, groups);
+        }
         let entries = || {
             owners
                 .iter()

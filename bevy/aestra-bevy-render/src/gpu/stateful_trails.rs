@@ -47,6 +47,7 @@ pub(super) struct Observer<'a> {
     pub buffers: [&'a Buffer; 6],
     pub memory_budget: u64,
     pub diagnostics: Option<&'a bevy::render::diagnostic::DiagnosticsRecorder>,
+    pub observations: u32,
 }
 
 impl Observer<'_> {
@@ -121,6 +122,7 @@ impl Observer<'_> {
     }
 
     pub fn record(&mut self, encoder: &mut CommandEncoder, tick: u32) {
+        self.observations += 1;
         let span = self
             .diagnostics
             .time_span(encoder, "aestra::gpu::trail_history");
@@ -159,7 +161,12 @@ impl Observer<'_> {
         self.history.epoch = Some(self.effect.history_epoch);
     }
 
-    pub fn capture(&mut self, device: &RenderDevice, encoder: &mut CommandEncoder, tick: u32) {
+    pub fn capture(
+        &mut self,
+        device: &RenderDevice,
+        encoder: &mut CommandEncoder,
+        tick: u32,
+    ) -> u64 {
         self.history.checkpoints.capture(
             device,
             encoder,
@@ -167,6 +174,6 @@ impl Observer<'_> {
             tick as f32 * STATEFUL_TICK_DT,
             self.memory_budget
                 .saturating_sub(self.history.checkpoints.bytes()),
-        );
+        )
     }
 }

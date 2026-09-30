@@ -3,7 +3,7 @@
 //! Runs the viewer for a fixed number of frames, samples the render diagnostics
 //! store each frame, and writes percentile statistics for Aestra's GPU passes to
 //! JSON. Unlike the eyeballed 1-second averages of `LogDiagnosticsPlugin`, this
-//! records a per-frame distribution (p50/p95/p99) so the numbers are meaningful
+//! records a fresh-observation distribution (p50/p95/p99) so the numbers are meaningful
 //! above the timestamp noise floor.
 //!
 //! Requires `RenderDiagnosticsPlugin` and a GPU with timestamp-query support
@@ -13,9 +13,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use aestra_bevy::{EffectProfiler, ProfileValue, gpu::GpuEventLinkStatistics};
+use aestra_bevy::{
+    EffectProfiler, PresentedEffect, ProfileValue,
+    gpu::{GpuEventLinkStatistics, GpuParticleStatistics, GpuSimulationFrame, GpuSimulationTiming},
+};
 use bevy::app::AppExit;
-use bevy::diagnostic::DiagnosticsStore;
+use bevy::diagnostic::{DiagnosticMeasurement, DiagnosticsStore};
 use bevy::prelude::*;
 use serde::Serialize;
 
@@ -36,6 +39,9 @@ pub struct GpuBenchPlan {
     remaining: usize,
     samples: BTreeMap<String, Vec<f64>>,
     work: BTreeMap<String, WorkStats>,
+    diagnostic_times: BTreeMap<String, bevy::platform::time::Instant>,
+    simulation_sequences: BTreeMap<Entity, u64>,
+    simulation_frames: BTreeMap<String, Vec<SimulationFrame>>,
 }
 
 impl GpuBenchPlan {
@@ -49,6 +55,9 @@ impl GpuBenchPlan {
             remaining: frames,
             samples: BTreeMap::new(),
             work: BTreeMap::new(),
+            diagnostic_times: BTreeMap::new(),
+            simulation_sequences: BTreeMap::new(),
+            simulation_frames: BTreeMap::new(),
         }
     }
 
@@ -64,11 +73,106 @@ impl GpuBenchPlan {
             frames: self.frames,
             metrics,
             work: &self.work,
-            work_scope: "Asynchronous host observations. Peaks cover measured frames; event totals cover buffer lifetime including warm-up and can count replay/reset activity again. Missing measurements are null. Timing paths can publish only the last fixed-tick observation in a catch-up frame; do not sum stage percentiles into whole-frame costs.",
+            simulation_frames: &self.simulation_frames,
+            simulation_total: self
+                .simulation_frames
+                .iter()
+                .map(|(owner, frames)| {
+                    (
+                        owner.clone(),
+                        Stats::from_samples(
+                            &frames.iter().map(|frame| frame.gpu_ms).collect::<Vec<_>>(),
+                        ),
+                    )
+                })
+                .collect(),
+            simulation_by_work: self
+                .simulation_frames
+                .iter()
+                .map(|(owner, frames)| {
+                    let mut groups = BTreeMap::<String, Vec<f64>>::new();
+                    for frame in frames {
+                        groups
+                            .entry(format!(
+                                "ticks={:?},observations={},workgroups={},checkpoint_bytes={:?}",
+                                frame.fixed_ticks,
+                                frame.trail_observations,
+                                frame.trail_workgroups,
+                                frame.checkpoint_capture_bytes
+                            ))
+                            .or_default()
+                            .push(frame.gpu_ms);
+                    }
+                    (
+                        owner.clone(),
+                        groups
+                            .into_iter()
+                            .map(|(key, times)| (key, Stats::from_samples(&times)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            work_scope: "Asynchronous host observations received during the measured window; late warm-up results can arrive in this window and its final GPU frames can arrive after capture ends. Peaks and event readbacks are not frame-aligned; event totals include warm-up/replay. Missing measurements are null. Simulation frames pair one effect's timestamp window with executed ticks, total history observations/workgroups, and coupled particle/trail checkpoint capture bytes; sequence deduplicates retained results. Workgroups count padded history dispatches, not live particles, and exclude ribbons. Checkpoint bytes exclude domain snapshots/restores; other paths report null rather than zero. Requested time is playback seconds, not proof catch-up reached it. Other diagnostic paths can publish only the last fixed-tick observation; do not sum stage percentiles into whole-frame costs. GPU/CPU durations use milliseconds.",
         };
         let json = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
         std::fs::write(&self.output, json).map_err(|error| error.to_string())
     }
+
+    fn record_simulation(&mut self, owner: Entity, frame: GpuSimulationFrame, measured: bool) {
+        let sequence = self.simulation_sequences.entry(owner).or_default();
+        if frame.sequence <= *sequence {
+            return;
+        }
+        *sequence = frame.sequence;
+        if measured {
+            self.simulation_frames
+                .entry(owner.to_string())
+                .or_default()
+                .push(SimulationFrame {
+                    sequence: frame.sequence,
+                    gpu_ms: frame.nanoseconds as f64 / 1_000_000.0,
+                    requested_time: frame.requested_time,
+                    fixed_ticks: frame.work.fixed_ticks,
+                    trail_observations: frame.work.trail_observations,
+                    trail_workgroups: frame.work.trail_workgroups,
+                    checkpoint_capture_bytes: frame.work.checkpoint_capture_bytes,
+                });
+        }
+    }
+
+    fn record_diagnostic(
+        &mut self,
+        path: &str,
+        measurement: &DiagnosticMeasurement,
+        measured: bool,
+    ) {
+        if self
+            .diagnostic_times
+            .get(path)
+            .is_some_and(|time| *time >= measurement.time)
+        {
+            return;
+        }
+        self.diagnostic_times
+            .insert(path.to_owned(), measurement.time);
+        if measured && measurement.value.is_finite() {
+            self.samples
+                .entry(path.to_owned())
+                .or_default()
+                .push(measurement.value);
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SimulationFrame {
+    sequence: u64,
+    gpu_ms: f64,
+    requested_time: f32,
+    fixed_ticks: Option<u32>,
+    trail_observations: u32,
+    trail_workgroups: u64,
+    checkpoint_capture_bytes: Option<u64>,
 }
 
 /// Distribution of one diagnostic across the capture, in the diagnostic's native
@@ -133,6 +237,9 @@ struct GpuBenchReport<'a> {
     /// they are not deltas for this window or authoritative replay accounting.
     work: &'a BTreeMap<String, WorkStats>,
     work_scope: &'static str,
+    simulation_frames: &'a BTreeMap<String, Vec<SimulationFrame>>,
+    simulation_by_work: BTreeMap<String, BTreeMap<String, Stats>>,
+    simulation_total: BTreeMap<String, Stats>,
 }
 
 #[derive(Default, Serialize)]
@@ -195,16 +302,35 @@ pub fn drive_gpu_bench(
     plan: Option<ResMut<GpuBenchPlan>>,
     diagnostics: Res<DiagnosticsStore>,
     effects: Query<(Entity, &EffectProfiler, Option<&GpuEventLinkStatistics>)>,
+    timings: Query<(
+        Entity,
+        &PresentedEffect,
+        &GpuParticleStatistics,
+        &GpuSimulationTiming,
+    )>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Some(mut plan) = plan else {
         return;
     };
-    if plan.warmup_remaining > 0 {
-        plan.warmup_remaining -= 1;
+    if plan.remaining == 0 {
         return;
     }
-    if plan.remaining == 0 {
+    let measured = plan.warmup_remaining == 0;
+    for (owner, effect, context, timing) in &timings {
+        if let Some(frame) = timing.frame_sample(&effect.instance, context) {
+            plan.record_simulation(owner, frame, measured);
+        }
+    }
+    if !measured {
+        // Consume old diagnostic observations too, so warm-up values retained
+        // across the boundary are not repeatedly counted as measured frames.
+        for diagnostic in diagnostics.iter() {
+            if let Some(measurement) = diagnostic.measurement() {
+                plan.record_diagnostic(diagnostic.path().as_str(), measurement, false);
+            }
+        }
+        plan.warmup_remaining -= 1;
         return;
     }
     for diagnostic in diagnostics.iter() {
@@ -221,9 +347,9 @@ pub fn drive_gpu_bench(
         ]
         .iter()
         .any(|pass| path.contains(pass))
-            && let Some(value) = diagnostic.value()
+            && let Some(measurement) = diagnostic.measurement()
         {
-            plan.samples.entry(path.to_owned()).or_default().push(value);
+            plan.record_diagnostic(path, measurement, true);
         }
     }
     for (entity, profiler, events) in &effects {
@@ -253,6 +379,76 @@ pub fn drive_gpu_bench(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostics_only_count_fresh_finite_measurements_after_warmup() {
+        let mut plan = GpuBenchPlan::new(PathBuf::new(), "fixture".into(), 1, 3);
+        let mut measurement = DiagnosticMeasurement {
+            time: bevy::platform::time::Instant::now(),
+            value: 2.0,
+        };
+        plan.record_diagnostic("gpu", &measurement, false);
+        plan.record_diagnostic("gpu", &measurement, true);
+        measurement.time += std::time::Duration::from_millis(1);
+        plan.record_diagnostic("gpu", &measurement, true);
+        plan.record_diagnostic("gpu", &measurement, true);
+        measurement.time += std::time::Duration::from_millis(1);
+        measurement.value = f64::NAN;
+        plan.record_diagnostic("gpu", &measurement, true);
+        assert_eq!(plan.samples["gpu"], [2.0]);
+    }
+
+    #[test]
+    fn simulation_frames_pair_work_and_time_without_recounting_old_results() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("report.json");
+        let mut plan = GpuBenchPlan::new(output.clone(), "fixture".into(), 1, 3);
+        let owner = Entity::PLACEHOLDER;
+        let mut frame = GpuSimulationFrame {
+            sequence: 1,
+            nanoseconds: 2_000_000,
+            requested_time: 1.0,
+            work: aestra_bevy::gpu::GpuSimulationWork {
+                fixed_ticks: Some(1),
+                trail_observations: 1,
+                trail_workgroups: 128,
+                checkpoint_capture_bytes: Some(0),
+            },
+        };
+        plan.record_simulation(owner, frame, false);
+        plan.record_simulation(owner, frame, true); // retained warm-up result
+        frame.sequence = 2;
+        plan.record_simulation(owner, frame, true);
+        plan.record_simulation(owner, frame, true); // retained measured result
+        frame.sequence = 4; // asynchronous maps may skip a frame
+        frame.nanoseconds = 4_000_000;
+        frame.work.fixed_ticks = Some(2);
+        frame.work.trail_observations = 2;
+        frame.work.trail_workgroups = 256;
+        frame.work.checkpoint_capture_bytes = Some(1024);
+        plan.record_simulation(owner, frame, true);
+        frame.sequence = 3; // late result must not overwrite/recount
+        plan.record_simulation(owner, frame, true);
+        plan.write_report().unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        let frames = report["simulation_frames"][owner.to_string()]
+            .as_array()
+            .unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[1]["sequence"], 4);
+        assert_eq!(frames[1]["gpu_ms"], 4.0);
+        assert_eq!(frames[1]["requested_time"], 1.0);
+        assert_eq!(frames[1]["fixed_ticks"], 2);
+        assert_eq!(frames[1]["trail_workgroups"], 256);
+        assert_eq!(frames[1]["checkpoint_capture_bytes"], 1024);
+        let groups = report["simulation_by_work"][owner.to_string()]
+            .as_object()
+            .unwrap();
+        assert_eq!(groups.len(), 2);
+        assert!(groups.values().all(|group| group["samples"] == 1));
+        assert_eq!(report["simulation_total"][owner.to_string()]["samples"], 2);
+    }
 
     #[test]
     fn work_report_keeps_missing_measurements_distinct_from_zero_and_counts_admitted_work() {

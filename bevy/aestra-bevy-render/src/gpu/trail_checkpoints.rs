@@ -67,7 +67,7 @@ impl TrailCheckpoints {
         buffers: &[&Buffer],
         time: f32,
         available: u64,
-    ) {
+    ) -> u64 {
         let sizes = buffers.iter().map(|b| b.size()).collect::<Vec<_>>();
         let size: u64 = sizes.iter().sum();
         if self.sizes != sizes {
@@ -78,13 +78,13 @@ impl TrailCheckpoints {
             || size > device.limits().max_buffer_size
             || self.snapshots.iter().any(|s| s.time == time)
         {
-            return;
+            return 0;
         }
         // Recycle the oldest allocation at capacity instead of allocating on
         // every replay second. Global available memory excludes our existing slots.
         let buffer = if self.snapshots.len() == MAX_CHECKPOINTS || size > available {
             if self.snapshots.is_empty() {
-                return;
+                return 0;
             }
             self.snapshots.remove(0).buffer
         } else {
@@ -102,6 +102,7 @@ impl TrailCheckpoints {
         }
         self.snapshots.push(Checkpoint { time, buffer });
         self.snapshots.sort_by(|a, b| a.time.total_cmp(&b.time));
+        size
     }
 }
 
