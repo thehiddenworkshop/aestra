@@ -316,6 +316,28 @@ pub fn event_trail_probe() -> EffectAsset {
     effect
 }
 
+/// Sixteen simultaneous source deaths fan out into one 8,192-star trail pool.
+/// No per-event count or source capture ceiling is bypassed by this scale probe.
+pub fn large_event_trail_probe() -> EffectAsset {
+    let mut effect = event_trail_probe();
+    effect.id = EffectId::from_u128(14);
+    effect.name = "Fireworks F1B Paged Event Trail Probe".into();
+    effect.emitters[0].max_particles = 16;
+    effect.emitters[1].max_particles = 8192;
+    effect.events[0].count = 512;
+    if let ModuleParameters::Emission { spawn_rate, .. } =
+        &mut effect.emitters[0].modules[0].parameters
+    {
+        *spawn_rate = 960.0;
+    }
+    for renderer in &mut effect.emitters[1].renderers {
+        if let RendererProperties::Trail { max_trails, .. } = &mut renderer.properties {
+            *max_trails = 16384;
+        }
+    }
+    effect
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,6 +411,24 @@ mod tests {
     }
 
     #[test]
+    fn paged_event_probe_compiles_one_large_pool_without_bypassing_event_limits() {
+        let source = large_event_trail_probe();
+        let index = aestra_project::ProjectAssetIndex::scan(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
+        );
+        let resolved = index.resolve_effect_project(&source).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_resolved_project(&resolved)
+            .unwrap();
+        assert_eq!(compiled.root.event_links.len(), 1);
+        assert_eq!(
+            compiled.root.event_links[0].count * compiled.root.emitters[0].max_particles,
+            8192
+        );
+        assert_eq!(compiled.root.emitters[1].max_particles, 8192);
+    }
+
+    #[test]
     fn aggregate_event_list_budget_rejects_an_overcommitted_effect() {
         let mut fixture = effect();
         fixture.emitters[0].max_particles = 1024;
@@ -436,7 +476,9 @@ mod tests {
         fixture.emitters[0].max_particles = 800;
         assert!(compiles(&fixture));
         fixture.emitters[0].max_particles = 1025;
-        assert!(!compiles(&fixture));
+        assert!(compiles(&fixture));
+        fixture.emitters[0].max_particles = 8192;
+        assert!(compiles(&fixture));
         let hero = hero_trail_probe();
         assert!(compiles(&hero));
         assert_eq!(hero.emitters.len(), 1);

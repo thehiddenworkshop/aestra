@@ -104,7 +104,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
         effect.emitters[0].renderers[0].properties = invalid;
         assert!(EffectCompiler::default().compile(&effect).is_err());
     }
-    for parents in [257, 800, 1024] {
+    for parents in [257, 800, 1024, 1025, 2053, 8192] {
         let mut supported = effect.clone();
         supported.emitters[0].max_particles = parents;
         let compiled = EffectCompiler::default().compile(&supported).unwrap();
@@ -114,8 +114,22 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
         assert_eq!(gpu.particles.len(), (parents + 1 + parents * 32) as usize);
     }
     let mut oversized = effect.clone();
-    oversized.emitters[0].max_particles = 1025;
-    assert!(EffectCompiler::default().compile(&oversized).is_err());
+    oversized.emitters[0].max_particles = 32768;
+    let compiled = EffectCompiler::default().compile(&oversized).unwrap();
+    assert_eq!(
+        GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).err(),
+        Some(aestra_gpu::GpuArtifactError::TrailLimit),
+    );
+    if let RendererProperties::Trail { max_trails, .. } =
+        &mut oversized.emitters[0].renderers[0].properties
+    {
+        *max_trails = u32::MAX;
+    }
+    let compiled = EffectCompiler::default().compile(&oversized).unwrap();
+    assert_eq!(
+        GpuEffectArtifact::dynamics_from_instance(&EffectInstance::new(Arc::new(compiled))).err(),
+        Some(aestra_gpu::GpuArtifactError::TrailLimit)
+    );
     let mut duplicate = effect;
     let mut renderer = duplicate.emitters[0].renderers[0].clone();
     renderer.id = aestra_core::RendererId::new();
@@ -193,14 +207,23 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
     assert_eq!(gpu.particles.len(), 8 + 1 + 24 * 32);
     assert_eq!(gpu.emitters[0].trail_capacity, 24);
     assert_eq!(gpu.renderers[0].playback_mode, 24);
-    for capacity in [7, 1025] {
-        if let RendererProperties::Trail { max_trails, .. } =
-            &mut effect.emitters[0].renderers[0].properties
-        {
-            *max_trails = capacity;
-        }
-        assert!(EffectCompiler::default().compile(&effect).is_err());
+    if let RendererProperties::Trail { max_trails, .. } =
+        &mut effect.emitters[0].renderers[0].properties
+    {
+        *max_trails = 7;
     }
+    assert!(EffectCompiler::default().compile(&effect).is_err());
+    if let RendererProperties::Trail { max_trails, .. } =
+        &mut effect.emitters[0].renderers[0].properties
+    {
+        *max_trails = 1025;
+    }
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let large_profile = aestra_runtime::EffectProfile::from_compiled(&compiled);
+    assert_eq!(
+        large_profile.buffer_memory_bytes.value().unwrap() - old_memory,
+        1017 * (32 * 64 + 8 * 31 + 4) + 4 + 4 * (3 * 8 + 2 * 2048 + 1 + 12 * 2)
+    );
 }
 
 #[test]

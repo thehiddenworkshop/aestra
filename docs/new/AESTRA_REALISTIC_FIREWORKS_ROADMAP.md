@@ -483,9 +483,9 @@ A stretched sprite is insufficient for those looks. A history-based trail is the
 
 ## Current hard limits and cost
 
-F1B's first implementation slice supports **1,024 parent particles and 1,024 owners per emitter**, replacing the former 256-parent ceiling. Samples remain bounded to **2–64 points per owner**, and the GPU artifact to **1,048,576 total particle/history records**. History now uses one cooperative 64-lane workgroup per emitter: stable-ID hash lookup, parallel deterministic allocation, parallel updates/expiry, and a bounds/statistics reduction. Trail compaction uses a parallel exclusive scan, preserving draw order. Shared history scratch occupies exactly 16 KiB, with no new storage binding or persistent/checkpoint ABI change.
+F1B has removed the **1,024-parent/owner implementation ceiling**. Small pools retain the cooperative 64-lane path; larger pools use storage-backed page sorts/merges, stable-ID lookup, survivor reservation, deterministic birth allocation, and parallel history/bounds updates. Native conformance exercises 8,192 parents with 16,384 owners, including real event-born trajectories. Samples remain bounded to **2–64 points per owner**, and the GPU artifact to **1,048,576 total particle/history records**, with additional checked scratch, buffer-binding and dispatch limits from the adapter. Workgroup memory remains within the portable 16 KiB budget and the simulation still uses eight storage bindings.
 
-The 1,024-owner ceiling is still a real implementation bound, not a quality-tier policy. Larger logical pools need multi-workgroup/paged storage planning; simply raising the number would overrun shared scratch or device resource limits.
+Logical owner pages do not yet split a physical buffer across bindings. The total-record ceiling and oversized-binding rejection remain genuine limits, not quality-tier policies. Full overlapping-shell/finale performance certification is still open; an 8,192-parent workload passing correctness is not an unlimited-scale claim.
 
 `max_trails` must also account for retired tails. A parent dying does not immediately free its visible history; active parents plus unexpired tails can exceed the parent-particle count.
 
@@ -495,7 +495,7 @@ The 1,024-owner ceiling is still a real implementation bound, not a quality-tier
 - Update and expire owner histories in parallel, then reduce per-owner bounds into emitter/effect bounds. Preserve time- and distance-sampling semantics, tail lifetime, eviction telemetry and replay behavior.
 - Replace single-invocation owner prefixing with a parallel deterministic scan/compaction path. Preserve the ordering contract needed by alpha drawing, or define and test an explicit alternative for blended trails.
 - Plan history, scratch, draw and checkpoint storage from trail-owner and point budgets with checked arithmetic. Use chunked/paged resources where one binding would exceed the device's limits. Budget active and retired tails separately; expose allocated, occupied, retired, evicted and truncated counts.
-- Retain finite device/quality-tier budgets. The 256-parent ceiling is removed; remove the remaining 1,024-owner implementation ceiling before calling finale workloads supported. Revisit the 64-point cap through measured long-trail quality and memory tests, not by assuming every trail needs more points.
+- Retain finite device/quality-tier budgets. The 256/1,024-parent and owner implementation ceilings are removed; certify large-pool performance and physical resource chunking before calling finale workloads supported. Revisit the 64-point cap through measured long-trail quality and memory tests, not by assuming every trail needs more points.
 
 ## Acceptance gate
 
@@ -1583,16 +1583,33 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 - Workgroup scratch remains bounded to 4 KiB plus one word. Temporary storage adds one word per page, with no new binding, persistent history layout change, checkpoint work or CPU readback in the live path. Pools through 1,024 owners retain the three-dispatch path and skip page-offset loads; larger pools use four dispatches.
 - Native GPU tests exercise sparse page boundaries, partial last pages, dense 8,192-owner histories, all UV/cap combinations, retirement/expiry, repeated frames and cleared restart state. A separate prefix-only test checks exact offsets for 1,048,583 synthetic owner counts across 1,025 pages, plus empty/singleton cases. It does not allocate those histories or certify million-owner runtime support.
 - The existing event-to-trail live fixture (same RTX 4070 SUPER/Vulkan, 960×540, 120 warm-up/600 measured frames) measures compaction **0.215/0.257/0.259 ms p50/p95/p99**, compared with the previous **0.212/0.252/0.258 ms**; simulation is **3.234/3.914/3.959 ms**. This checks the small-pool production path, not large-pool performance. Later-cohort destination/history pressure still applies; no full-demand/finale budget certification is inferred.
-- **This is drawing infrastructure, not completion of the pool scale gate.** Compiler/artifact limits remain 1,024 parents/owners because history identity lookup and deterministic allocation still use one fixed-size workgroup. Production multi-page allocation, device-aware resource planning and overlapping-shell/finale certification remain open.
+- This slice supplied drawing infrastructure only; history allocation still had the 1,024-parent/owner limit at that point. The following slice removes that limit. Overlapping-shell/finale certification remains open.
 
 ```powershell
 cargo test --locked -p aestra-bevy-render --test trail_compaction_conformance -- --nocapture
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail --camera close --backend gpu --gpu-bench target/fireworks-f1/paged-compaction-final-bench.json
 ```
 
+### Implemented — paged history allocation and resource preflight
+
+- Large pools sort live identities and occupied owners using 1,024-element workgroup pages plus storage-backed parallel stable merges. Binary lookup reserves surviving owners before birth allocation; page-prefix birth ranks select empty owners first, then oldest retired tails with physical-owner tie breaks. Sampling is shared with the small-pool kernel, and page/global reductions produce bounds and usage counters. No CPU history readback or per-tick clear occurs during live playback.
+- Temporary aux ranges are disjoint and checked. For power-of-two padded head/owner counts `H`/`O`, scratch adds `3H + 2O + ceil(H/1024) + 12ceil(O/1024)` words per large emitter. Spare emitter/globals lanes carry exact numeric offsets and transient stage parameters, so particle records, owner headers, sampling and persistent aux layouts are unchanged. Existing checkpoints also copy the appended scratch; scratch is reconstructed on the next observation rather than treated as authoritative ownership state. Excluding disposable scratch from checkpoint copies is deferred editor optimization.
+- GPU preparation checks record count, arithmetic overflow, scratch representation, adapter storage-binding/buffer size and dispatch dimensions before capacity-sized artifact allocation. Unsupported resources report the backend rejection instead of overflowing. The one-Trail-renderer and 2–64-point rules remain; compiler, model and editor no longer clamp parent/owner counts to 1,024. Static memory estimates include the new scratch and compaction page totals.
+- Native GPU conformance covers 1,025/2,053 partial pools and 8,192 dense owners, high/colliding identities, shuffled head order, independent emitters, survivor retention, deterministic eviction, pause, backwards-clock reset, retirement/expiry and mixed Ribbon linking. Production fixed-tick encoding covers 2,048/8,192 event-born stars with doubled owner budgets, mixed analytic presentation, pause and batched restart. Existing 800-star checkpoint/playback tests and portable WGSL/SPIR-V/HLSL validation still pass under eight storage bindings and a 16 KiB workgroup limit.
+- The viewer adds `--fireworks-f0-probe event-trail-large`: sixteen coincident source deaths × 512 children into **one 8,192-star emitter**, 16,384 history owners and 32 records/owner. This uses one supported event link, not duplicate links or trail emitters to bypass a limit. Its frame-50 RTX 4070 SUPER/Vulkan capture measures **8,192 occupied histories, zero retired tails, zero evictions and zero truncation**. The image is a technical density probe, not a finished realistic shell.
+- Same adapter, 960×540, high tier, default-fast transparency, 120 warm-up/600 measured frames: full GPU simulation **5.263/6.431/7.261 ms**, trail compaction **0.224/0.250/0.307 ms**, transparent draw **0.496/0.874/0.920 ms** (p50/p95/p99). Simulation CPU encoding is **0.182/0.248/0.337 ms**. These are aggregate recurring-capacity-pressure distributions, not isolated allocation costs or named full-frame budget certification. Later cohorts intentionally request more than the 8,192 live destination slots; destination rejections are warned/counted and must not be mistaken for successful full-demand playback.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test trail_contract --test shader_contract
+cargo test --locked -p aestra-bevy-render --test trail_conformance --test trail_compaction_conformance -- --nocapture
+cargo test --locked -p aestra-bevy-render --lib event_born -- --nocapture
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-large --camera close --backend gpu --sample-frames 50 --capture target/fireworks-f1/paged-history-first-cohort
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-large --camera close --backend gpu --gpu-bench target/fireworks-f1/paged-history-large-bench.json
+```
+
 ### Tasks
 
-- Next: page the history identity lookup, survivor reservation and deterministic birth/retired-tail allocation, preserving section 8's ownership contracts; then raise the compiler/artifact owner limits with matching runtime conformance tests. Draw compaction's paged infrastructure is now in place.
+- Next: establish a correctly budgeted overlapping-shell/volley workload with accepted event demand, live parents and retained tails measured together. Diagnose per-pass costs and p95/p99 spikes before declaring the named full-frame budget met; do not optimize editor replay ahead of live playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
@@ -2169,8 +2186,8 @@ If only one focused implementation cycle is available, do this:
 
 ### 3. Deliver F1B's trail scale gate
 
-- Parallelize ownership/history/bounds/compaction and make history storage device-budgeted.
-- Prove one 300–800-star emitter can retain and replay all intended primary trails without splitting the graph.
+- Ownership/history/bounds/compaction are parallelized; paged pools and checked adapter-resource preflight are implemented. Native tests cover one 8,192-star emitter with 16,384 owners without splitting its trail graph.
+- Next, certify correctly budgeted overlapping cohorts and retained tails against the named live/full-frame budget, with accepted event demand and per-pass costs observable. Physical-buffer chunking and the 1,048,576-record ceiling remain open.
 
 ### 4. Continue visual authoring in parallel
 

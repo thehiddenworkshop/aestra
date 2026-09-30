@@ -1,0 +1,415 @@
+// Large pools use storage-backed lists and page-local sorting. _spawn_inverse_padding
+// carries exact integer-valued [scratch base, padded heads, padded owners].
+// Globals._padding.y is transient [sort kind:8, merge exponent:8, source parity:1].
+// No persistent history state depends on this scratch or on atomic append order.
+fn paged_trail(e: Emitter) -> bool {
+    return e.trail_points >= 2u && (e.max_particles > 1024u || e.trail_capacity > 1024u);
+}
+
+fn paged_reset(e: Emitter) -> bool {
+    let last = particles[e.trail_offset];
+    return particle_alive(last) == 0u || aux[e.trail_offset * 3u] != globals._padding.x
+        || last.particle_index != globals.seed || globals.time < last.rotation
+        || globals.time - last.rotation > e.trail_lifetime;
+}
+
+fn paged_record(e: Emitter) -> bool {
+    return paged_trail(e) && (paged_reset(e) || globals.time != particles[e.trail_offset].rotation);
+}
+
+fn paged_heads(e: Emitter) -> u32 { return u32(e._spawn_inverse_padding.y); }
+fn paged_owners(e: Emitter) -> u32 { return u32(e._spawn_inverse_padding.z); }
+fn paged_base(e: Emitter) -> u32 { return u32(e._spawn_inverse_padding.x); }
+fn paged_kind() -> u32 { return globals._padding.y & 255u; }
+fn paged_source() -> u32 { return (globals._padding.y >> 16u) & 1u; }
+fn paged_list(e: Emitter, source: u32) -> u32 {
+    if paged_kind() == 0u { return paged_base(e) + source * paged_heads(e); }
+    return paged_base(e) + 2u * paged_heads(e) + source * paged_owners(e);
+}
+fn paged_mapping(e: Emitter) -> u32 { return paged_base(e) + 2u * paged_heads(e) + 2u * paged_owners(e); }
+fn paged_pages(e: Emitter) -> u32 { return paged_mapping(e) + paged_heads(e); }
+fn paged_bounds(e: Emitter) -> u32 { return paged_pages(e) + (paged_heads(e) + 1023u) / 1024u; }
+
+fn paged_less(e: Emitter, a: u32, b: u32) -> bool {
+    if a == 0xffffffffu { return false; }
+    if b == 0xffffffffu { return true; }
+    if paged_kind() == 0u { return ribbon_less(a, b, max(e._turbulence_padding, 1u)); }
+    let x = particles[e.trail_offset + 1u + a * e.trail_points];
+    let y = particles[e.trail_offset + 1u + b * e.trail_points];
+    if paged_kind() == 1u {
+        return x.particle_index < y.particle_index || (x.particle_index == y.particle_index && a < b);
+    }
+    // Empty chunks precede retired tails, then oldest observation and physical index.
+    let empty_x = particle_alive(x) == 0u;
+    let empty_y = particle_alive(y) == 0u;
+    if empty_x != empty_y { return empty_x; }
+    return (!empty_x && x.rotation < y.rotation)
+        || ((empty_x || x.rotation == y.rotation) && a < b);
+}
+
+var<workgroup> paged_values: array<u32, 1024>;
+
+@compute @workgroup_size(64)
+fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let e = emitters[group.y];
+    if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) { return; }
+    let kind = paged_kind();
+    let count = select(paged_owners(e), paged_heads(e), kind == 0u);
+    let start = group.x * 1024u;
+    if start >= count { return; }
+    let size = min(1024u, count - start);
+    let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
+    for (var local = thread; local < size; local += 64u) {
+        let n = start + local;
+        var value = 0xffffffffu;
+        if kind == 0u {
+            if n < live { value = alive_indices[e.slot_offset + n]; }
+        } else if n < e.trail_capacity {
+            let base = e.trail_offset + 1u + n * e.trail_points;
+            if kind == 1u {
+                if paged_reset(e) || globals.time - particles[base].rotation >= e.trail_lifetime {
+                    particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
+                }
+                if particle_alive(particles[base]) != 0u { value = n; }
+            } else if particle_alive(particles[base]) != 2u { value = n; }
+        }
+        paged_values[local] = value;
+    }
+    workgroupBarrier();
+    // Owner keys read below are immutable after this page's expiry stores.
+    storageBarrier();
+    for (var width = 2u; width <= size; width *= 2u) {
+        for (var gap = width / 2u; gap > 0u; gap /= 2u) {
+            for (var pair = thread; pair < size / 2u; pair += 64u) {
+                let a = (pair / gap) * (2u * gap) + pair % gap;
+                let b = a + gap;
+                let ascending = (a & width) == 0u;
+                if select(paged_less(e, paged_values[a], paged_values[b]), paged_less(e, paged_values[b], paged_values[a]), ascending) {
+                    let temporary = paged_values[a];
+                    paged_values[a] = paged_values[b];
+                    paged_values[b] = temporary;
+                }
+            }
+            workgroupBarrier();
+        }
+    }
+    for (var local = thread; local < size; local += 64u) { aux[paged_list(e, 0u) + start + local] = paged_values[local]; }
+}
+
+@compute @workgroup_size(64)
+fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
+    let e = emitters[id.y];
+    if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) { return; }
+    let count = select(paged_owners(e), paged_heads(e), paged_kind() == 0u);
+    let n = id.x;
+    if n >= count { return; }
+    let width = 1u << ((globals._padding.y >> 8u) & 255u);
+    let source = paged_list(e, paged_source());
+    let destination = paged_list(e, 1u - paged_source());
+    let value = aux[source + n];
+    if width >= count { aux[destination + n] = value; return; }
+    let block = n / (2u * width) * (2u * width);
+    let right = (n & width) != 0u;
+    let other = select(block + width, block, right);
+    var low = 0u;
+    var high = width;
+    while low < high {
+        let middle = (low + high) / 2u;
+        let candidate = aux[source + other + middle];
+        // Stable merge: equal sentinel entries from the left precede the right.
+        if paged_less(e, candidate, value) || (right && !paged_less(e, value, candidate)) { low = middle + 1u; }
+        else { high = middle; }
+    }
+    let rank = block + n % width + low;
+    aux[destination + rank] = value;
+}
+
+@compute @workgroup_size(64)
+fn present_trail_heads(@builtin(global_invocation_id) id: vec3<u32>) {
+    let e = emitters[id.y];
+    if !paged_trail(e) { return; }
+    let count = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
+    if id.x < count { alive_indices[e.slot_offset + id.x] = aux[paged_list(e, paged_source()) + id.x]; }
+}
+
+@compute @workgroup_size(64)
+fn reserve_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
+    let e = emitters[id.y];
+    if !paged_record(e) || id.x >= paged_heads(e) { return; }
+    let count = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
+    var owner = 0xffffffffu;
+    if id.x < count {
+        let stable_id = particles[alive_indices[e.slot_offset + id.x]].particle_index;
+        let source = paged_list(e, paged_source());
+        var low = 0u;
+        var high = paged_owners(e);
+        while low < high {
+            let middle = (low + high) / 2u;
+            let candidate = aux[source + middle];
+            var less = false;
+            if candidate != 0xffffffffu {
+                less = particles[e.trail_offset + 1u + candidate * e.trail_points].particle_index < stable_id;
+            }
+            if less { low = middle + 1u; } else { high = middle; }
+        }
+        if low < paged_owners(e) {
+            let candidate = aux[source + low];
+            if candidate != 0xffffffffu {
+                let base = e.trail_offset + 1u + candidate * e.trail_points;
+                if particles[base].particle_index == stable_id {
+                    owner = base;
+                    particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u);
+                }
+            }
+        }
+    }
+    aux[paged_mapping(e) + id.x] = owner;
+    aux[paged_base(e) + id.x] = u32(id.x < count && owner == 0xffffffffu);
+}
+
+var<workgroup> paged_total: u32;
+fn paged_scan(thread: u32, size: u32) {
+    workgroupBarrier();
+    for (var width = 2u; width <= size; width *= 2u) {
+        for (var n = (thread + 1u) * width - 1u; n < size; n += 64u * width) { paged_values[n] += paged_values[n - width / 2u]; }
+        workgroupBarrier();
+    }
+    if thread == 0u { paged_total = paged_values[size - 1u]; paged_values[size - 1u] = 0u; }
+    workgroupBarrier();
+    for (var width = size; width >= 2u; width /= 2u) {
+        for (var n = (thread + 1u) * width - 1u; n < size; n += 64u * width) {
+            let left = paged_values[n - width / 2u];
+            paged_values[n - width / 2u] = paged_values[n];
+            paged_values[n] += left;
+        }
+        workgroupBarrier();
+    }
+}
+
+@compute @workgroup_size(64)
+fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let e = emitters[group.y];
+    if !paged_record(e) { return; }
+    let start = group.x * 1024u;
+    if start >= paged_heads(e) { return; }
+    let size = min(1024u, paged_heads(e) - start);
+    for (var n = thread; n < size; n += 64u) { paged_values[n] = aux[paged_base(e) + start + n]; }
+    paged_scan(thread, size);
+    for (var n = thread; n < size; n += 64u) { aux[paged_base(e) + start + n] = paged_values[n]; }
+    if thread == 0u { aux[paged_pages(e) + group.x] = paged_total; }
+}
+
+@compute @workgroup_size(64)
+fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let e = emitters[group.y];
+    if !paged_record(e) { return; }
+    let pages = (paged_heads(e) + 1023u) / 1024u;
+    var carry = 0u;
+    for (var start = 0u; start < pages; start += 1024u) {
+        let remaining = min(1024u, pages - start);
+        var size = 1u;
+        while size < remaining { size *= 2u; }
+        for (var n = thread; n < size; n += 64u) {
+            var value = 0u;
+            if n < remaining { value = aux[paged_pages(e) + start + n]; }
+            paged_values[n] = value;
+        }
+        paged_scan(thread, size);
+        for (var n = thread; n < remaining; n += 64u) { aux[paged_pages(e) + start + n] = carry + paged_values[n]; }
+        carry += paged_total;
+        workgroupBarrier();
+    }
+    if thread == 0u {
+        atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
+    }
+}
+
+@compute @workgroup_size(64)
+fn update_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
+    let e = emitters[id.y];
+    if !paged_record(e) { return; }
+    let count = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
+    if id.x >= count { return; }
+    var owner = aux[paged_mapping(e) + id.x];
+    let born = owner == 0xffffffffu;
+    if born {
+        let rank = aux[paged_base(e) + id.x] + aux[paged_pages(e) + id.x / 1024u];
+        let candidate = aux[paged_list(e, paged_source()) + rank];
+        // Live count <= parent capacity <= owner capacity guarantees a free candidate.
+        if candidate == 0xffffffffu { return; }
+        owner = e.trail_offset + 1u + candidate * e.trail_points;
+        if particle_alive(particles[owner]) != 0u { atomicAdd(&counters[2u + id.y * 6u + 2u], 1u); }
+    }
+    trail_update_owner(e, alive_indices[e.slot_offset + id.x], owner, born);
+}
+
+fn paged_bound_range(e: Emitter, thread: u32, start: u32, end: u32) {
+    let root = e.trail_offset;
+    let capacity = e.trail_points - 1u;
+    let now = globals.time;
+    var occupied = 0u;
+    var retired = 0u;
+    var truncated = 0u;
+    var minimum = vec3<f32>(3.402823e38);
+    var maximum = vec3<f32>(-3.402823e38);
+    var size = 0.0;
+    var found = false;
+    var valid = true;
+    for (var i = start + thread; i < end; i += 64u) {
+        let base = root + 1u + i * e.trail_points;
+        // Spatial sampling may leave its ring untouched for many frames. Remove
+        // expired anchors, otherwise a stationary live head could keep an old
+        // partial segment visible forever. The moving head itself is not a sample.
+        if e.trail_sampling != 0u && particle_alive(particles[base]) != 0u {
+            for (var s = 0u; s < capacity; s += 1u) {
+                let points = aux[base * 3u + 1u];
+                if points == 0u { break; }
+                let oldest_slot = base + 1u + (aux[base * 3u] + capacity - points) % capacity;
+                if now - particles[oldest_slot].rotation < e.trail_lifetime { break; }
+                aux[base * 3u + 1u] = points - 1u;
+            }
+        }
+        if particle_alive(particles[base]) != 0u { occupied += 1u; }
+        if particle_alive(particles[base]) != 0u && now - bitcast<f32>(aux[(base + 1u) * 3u + 2u]) < e.trail_lifetime {
+            truncated += 1u;
+        }
+        if particle_alive(particles[base]) == 1u { retired += 1u; }
+        if particle_alive(particles[base]) == 2u { particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 1u); }
+        let points = aux[base * 3u + 1u];
+        if particle_alive(particles[base]) == 0u || points == 0u { continue; }
+        for (var s = 0u; s <= points; s += 1u) {
+            var slot = base;
+            if s < points { slot = base + 1u + (aux[base * 3u] + capacity - points + s) % capacity; }
+            let p = particles[slot];
+            valid = valid && trail_finite(p.position.x) && trail_finite(p.position.y)
+                && trail_finite(p.position.z) && trail_finite(p.size);
+            minimum = min(minimum, p.position);
+            maximum = max(maximum, p.position);
+            size = max(size, abs(p.size));
+            found = true;
+        }
+    }
+    atomicStore(&trail_scratch[thread * 3u], occupied);
+    atomicStore(&trail_scratch[thread * 3u + 1u], retired);
+    atomicStore(&trail_scratch[thread * 3u + 2u], truncated);
+    for (var axis = 0u; axis < 3u; axis += 1u) {
+        trail_priority[thread * 8u + axis] = minimum[axis];
+        trail_priority[thread * 8u + 3u + axis] = maximum[axis];
+    }
+    trail_priority[thread * 8u + 6u] = size;
+    trail_priority[thread * 8u + 7u] = select(0.0, select(1.0, 2.0, found), valid);
+    workgroupBarrier();
+    for (var gap = 32u; gap > 0u; gap /= 2u) {
+        if thread < gap {
+            for (var stat = 0u; stat < 3u; stat += 1u) {
+                atomicAdd(&trail_scratch[thread * 3u + stat], atomicLoad(&trail_scratch[(thread + gap) * 3u + stat]));
+            }
+            for (var axis = 0u; axis < 3u; axis += 1u) {
+                trail_priority[thread * 8u + axis] = min(trail_priority[thread * 8u + axis], trail_priority[(thread + gap) * 8u + axis]);
+                trail_priority[thread * 8u + 3u + axis] = max(trail_priority[thread * 8u + 3u + axis], trail_priority[(thread + gap) * 8u + 3u + axis]);
+            }
+            trail_priority[thread * 8u + 6u] = max(trail_priority[thread * 8u + 6u], trail_priority[(thread + gap) * 8u + 6u]);
+            let a = trail_priority[thread * 8u + 7u];
+            let b = trail_priority[(thread + gap) * 8u + 7u];
+            trail_priority[thread * 8u + 7u] = select(max(a, b), 0.0, a == 0.0 || b == 0.0);
+        }
+        workgroupBarrier();
+    }
+
+}
+
+@compute @workgroup_size(64)
+fn bound_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let e = emitters[group.y];
+    if !paged_record(e) { return; }
+    let start = group.x * 1024u;
+    if start >= e.trail_capacity { return; }
+    paged_bound_range(e, thread, start, min(start + 1024u, e.trail_capacity));
+    if thread == 0u {
+        let output = paged_bounds(e) + group.x * 12u;
+        for (var n = 0u; n < 3u; n += 1u) { aux[output + n] = atomicLoad(&trail_scratch[n]); }
+        for (var n = 0u; n < 8u; n += 1u) { aux[output + 3u + n] = bitcast<u32>(trail_priority[n]); }
+    }
+}
+
+@compute @workgroup_size(64)
+fn finish_trail_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let emitter_index = group.y;
+    let e = emitters[emitter_index];
+    if !paged_record(e) { return; }
+    let root = e.trail_offset;
+    let stats = 2u + emitter_index * 6u;
+    let now = globals.time;
+    let reset = paged_reset(e);
+    var occupied = 0u;
+    var retired = 0u;
+    var truncated = 0u;
+    var minimum = vec3<f32>(3.402823e38);
+    var maximum = vec3<f32>(-3.402823e38);
+    var size = 0.0;
+    var found = false;
+    var valid = true;
+
+    let pages = (e.trail_capacity + 1023u) / 1024u;
+    for (var page = thread; page < pages; page += 64u) {
+        let input = paged_bounds(e) + page * 12u;
+        occupied += aux[input];
+        retired += aux[input + 1u];
+        truncated += aux[input + 2u];
+        minimum = min(minimum, vec3<f32>(bitcast<f32>(aux[input + 3u]), bitcast<f32>(aux[input + 4u]), bitcast<f32>(aux[input + 5u])));
+        maximum = max(maximum, vec3<f32>(bitcast<f32>(aux[input + 6u]), bitcast<f32>(aux[input + 7u]), bitcast<f32>(aux[input + 8u])));
+        size = max(size, bitcast<f32>(aux[input + 9u]));
+        let flag = bitcast<f32>(aux[input + 10u]);
+        valid = valid && flag != 0.0;
+        found = found || flag == 2.0;
+    }
+    atomicStore(&trail_scratch[thread * 3u], occupied);
+    atomicStore(&trail_scratch[thread * 3u + 1u], retired);
+    atomicStore(&trail_scratch[thread * 3u + 2u], truncated);
+    for (var axis = 0u; axis < 3u; axis += 1u) {
+        trail_priority[thread * 8u + axis] = minimum[axis];
+        trail_priority[thread * 8u + 3u + axis] = maximum[axis];
+    }
+    trail_priority[thread * 8u + 6u] = size;
+    trail_priority[thread * 8u + 7u] = select(0.0, select(1.0, 2.0, found), valid);
+    workgroupBarrier();
+    for (var gap = 32u; gap > 0u; gap /= 2u) {
+        if thread < gap {
+            for (var stat = 0u; stat < 3u; stat += 1u) {
+                atomicAdd(&trail_scratch[thread * 3u + stat], atomicLoad(&trail_scratch[(thread + gap) * 3u + stat]));
+            }
+            for (var axis = 0u; axis < 3u; axis += 1u) {
+                trail_priority[thread * 8u + axis] = min(trail_priority[thread * 8u + axis], trail_priority[(thread + gap) * 8u + axis]);
+                trail_priority[thread * 8u + 3u + axis] = max(trail_priority[thread * 8u + 3u + axis], trail_priority[(thread + gap) * 8u + 3u + axis]);
+            }
+            trail_priority[thread * 8u + 6u] = max(trail_priority[thread * 8u + 6u], trail_priority[(thread + gap) * 8u + 6u]);
+            let a = trail_priority[thread * 8u + 7u];
+            let b = trail_priority[(thread + gap) * 8u + 7u];
+            trail_priority[thread * 8u + 7u] = select(max(a, b), 0.0, a == 0.0 || b == 0.0);
+        }
+        workgroupBarrier();
+    }
+
+    if thread != 0u { return; }
+    occupied = atomicLoad(&trail_scratch[0]);
+    retired = atomicLoad(&trail_scratch[1]);
+    truncated = atomicLoad(&trail_scratch[2]);
+    let evictions = atomicLoad(&counters[stats + 2u]);
+    particles[root].packed_emitter_alive = set_alive(particles[root].packed_emitter_alive, 1u);
+    particles[root].rotation = now;
+    particles[root].particle_index = globals.seed;
+    aux[root * 3u] = globals._padding.x;
+    aux[root * 3u + 1u] = evictions;
+    let peak = max(occupied, select(aux[root * 3u + 2u], 0u, reset));
+    aux[root * 3u + 2u] = peak;
+    // Small asynchronous profiler readback; never copy the history buffer.
+    atomicStore(&counters[stats], occupied);
+    atomicStore(&counters[stats + 1u], retired);
+    atomicStore(&counters[stats + 2u], evictions);
+    atomicStore(&counters[stats + 3u], peak);
+    atomicStore(&counters[stats + 4u], globals._padding.x);
+    atomicStore(&counters[stats + 5u], truncated);
+    particles[root].position = vec3<f32>(trail_priority[0], trail_priority[1], trail_priority[2]);
+    particles[root].color = vec4<f32>(trail_priority[3], trail_priority[4], trail_priority[5], trail_priority[6]);
+    particles[root].size = select(0.0, select(2.0, 1.0, trail_priority[7] == 2.0), trail_priority[7] != 0.0);
+}

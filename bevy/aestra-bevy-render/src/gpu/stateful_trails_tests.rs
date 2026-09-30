@@ -6,10 +6,15 @@ struct EventTrailScene {
     render_globals: Buffer,
     group: BindGroup,
     trail_pipelines: [ComputePipeline; 3],
+    paged_pipelines: [ComputePipeline; 9],
     history: stateful_trails::History,
 }
 
 fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
+    sized_event_trail_scene(mixed, 800)
+}
+
+fn sized_event_trail_scene(mixed: bool, stars: u32) -> Option<EventTrailScene> {
     use encase::{ShaderType, StorageBuffer, internal::WriteInto};
     fn encode<T: ShaderType + WriteInto>(value: &T) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -20,13 +25,15 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
     scene.domains.clear();
     let template = scene.dispatches[0].clone();
     let emitter_count = if mixed { 3 } else { 2 };
+    // Large cohorts use coincident real source deaths, not an unsupported fan-out.
+    let sources = if stars == 800 { 1 } else { stars / 512 };
     scene.dispatches = vec![
         StatefulDispatch {
-            capacity: 1,
+            capacity: sources,
             slot_offset: 0,
             emitter_index: 0,
             emitter_count,
-            spawn_rate: 60.0,
+            spawn_rate: 60.0 * sources as f32,
             speed: (4.0, 4.0),
             lifetime: (0.1, 0.1),
             gravity: [0.0; 3],
@@ -40,8 +47,8 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
             ..template.clone()
         },
         StatefulDispatch {
-            capacity: 800,
-            slot_offset: 1,
+            capacity: stars,
+            slot_offset: sources,
             emitter_index: 1,
             emitter_count,
             spawn_rate: 0.0,
@@ -67,19 +74,19 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
             )
         })
         .collect();
-    let slots = 801 + u32::from(mixed);
+    let slots = sources + stars + u32::from(mixed);
     let points = 32;
-    let owners = 1024;
+    let owners = if stars == 800 { 1024 } else { stars * 2 };
     let records = slots + 1 + points * owners;
     let mut emitters = vec![
         GpuEmitter {
-            max_particles: 1,
+            max_particles: sources,
             stateful: 1,
             ..Default::default()
         },
         GpuEmitter {
-            slot_offset: 1,
-            max_particles: 800,
+            slot_offset: sources,
+            max_particles: stars,
             stateful: 1,
             trail_offset: slots,
             trail_points: points,
@@ -94,7 +101,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         one.keys[0] = Vec2::new(0.0, 1.0);
         one.count = 1;
         emitters.push(GpuEmitter {
-            slot_offset: 801,
+            slot_offset: sources + stars,
             max_particles: 1,
             burst_count: 1,
             duration: 10.0,
@@ -115,6 +122,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         world_from_effect: Mat4::IDENTITY,
         ..Default::default()
     };
+    let trail_plan = aestra_gpu::TrailScratchPlan::configure(&mut emitters, records).unwrap();
     let buffer = |bytes: &[u8]| {
         scene.device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("event-to-trail conformance"),
@@ -130,7 +138,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         buffer(&vec![0; 256]),
         buffer(&encode(&indirect_draw_commands_with_statistics(&emitters))),
         buffer(&encode(&globals)),
-        buffer(&vec![0; records as usize * 12]),
+        buffer(&vec![0; trail_plan.aux_words as usize * 4]),
     ];
     scene.render = [
         buffers[1].clone(),
@@ -177,7 +185,20 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
                 aestra_gpu::shader::compile_wesl(
                     "package::event_trails",
                     SIMULATION_WESL,
-                    &["reset", "simulate", "update_trails"],
+                    &[
+                        "reset",
+                        "simulate",
+                        "update_trails",
+                        "sort_trail_page",
+                        "merge_trail_pages",
+                        "present_trail_heads",
+                        "reserve_trail_owners",
+                        "scan_trail_births",
+                        "scan_trail_birth_pages",
+                        "update_trail_owners",
+                        "bound_trail_page",
+                        "finish_trail_pages",
+                    ],
                 )
                 .unwrap()
                 .wgsl
@@ -208,6 +229,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         pipeline("simulate"),
         pipeline("update_trails"),
     ];
+    let paged_pipelines = aestra_gpu::PAGED_TRAIL_ENTRY_POINTS.map(pipeline);
     let render_globals = buffer(&vec![0; 256]);
     let mut context = trail_checkpoints::TrailContext::default();
     for (index, value) in Mat4::IDENTITY.to_cols_array().iter().enumerate() {
@@ -229,6 +251,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         has_trails: true,
         ribbon_workgroups: 0,
         trail_workgroups: emitter_count,
+        trail_plan,
         total_slots: slots,
         simulation_time: 0.0,
         seek_quality: SeekQuality::Exact,
@@ -243,7 +266,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
             source: 0,
             target: 1,
             trigger: aestra_core::EventTrigger::OnDeath,
-            count: 800,
+            count: stars / sources,
             inherit: 0.0,
         }],
         routed: false,
@@ -258,6 +281,7 @@ fn event_trail_scene(mixed: bool) -> Option<EventTrailScene> {
         render_globals,
         group,
         trail_pipelines,
+        paged_pipelines,
         history: default(),
     })
 }
@@ -266,6 +290,14 @@ impl EventTrailScene {
     fn frame(&mut self, target: u32, budget: u32) {
         let scene = &mut self.scene;
         self.history.sync(&self.effect, &scene.states);
+        let paged = self.effect.trail_plan.paged().then(|| {
+            paged_trails::Dispatch::new(
+                &scene.device,
+                self.effect.trail_plan,
+                self.paged_pipelines.each_ref(),
+                self.effect.trail_workgroups,
+            )
+        });
         let mut observer = stateful_trails::Observer {
             history: &mut self.history,
             effect: &self.effect,
@@ -273,6 +305,7 @@ impl EventTrailScene {
             reset: &self.trail_pipelines[0],
             simulate: &self.trail_pipelines[1],
             update: &self.trail_pipelines[2],
+            paged: paged.as_ref(),
             ribbons: None,
             globals: &self.buffers[6],
             render_globals: &self.render_globals,
@@ -334,10 +367,12 @@ impl EventTrailScene {
 
     fn trail_state(&self) -> (Vec<u8>, Vec<u8>) {
         let root = self.effect.total_slots as usize;
+        let records = self.buffers[1].size() as usize / 48;
         (
             read_back(&self.scene.device, &self.scene.queue, &self.buffers[1])[root * 48..]
                 .to_vec(),
-            read_back(&self.scene.device, &self.scene.queue, &self.buffers[7])[root * 12..]
+            read_back(&self.scene.device, &self.scene.queue, &self.buffers[7])
+                [root * 12..records * 12]
                 .to_vec(),
         )
     }
@@ -347,6 +382,63 @@ impl EventTrailScene {
         [0, 1, 2, 5].map(|index| {
             u32::from_le_bytes(bytes[(8 + index) * 4..(9 + index) * 4].try_into().unwrap())
         })
+    }
+}
+
+#[test]
+fn paged_event_born_trails_observe_large_live_cohorts_and_retire_without_loss() {
+    for stars in [2048, 8192] {
+        let Some(mut test) = sized_event_trail_scene(true, stars) else {
+            assert!(
+                std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                "native GPU required"
+            );
+            return;
+        };
+        for tick in 0..=30 {
+            test.frame(tick, 4);
+        }
+        assert_eq!(test.usage(), [stars, 0, 0, 0]);
+        let forward = test.trail_state();
+        let mut owners = 0;
+        for (index, record) in forward.0.as_chunks::<48>().0.iter().enumerate() {
+            if index > 0
+                && (index - 1) % 32 == 0
+                && u32::from_le_bytes(record[40..44].try_into().unwrap()) & 0xffff != 0
+            {
+                owners += 1;
+                let base = index * 12;
+                assert!(u32::from_le_bytes(forward.1[base + 4..base + 8].try_into().unwrap()) > 2);
+            }
+        }
+        assert_eq!(owners, stars);
+        test.frame(30, 4);
+        assert!(
+            test.trail_state() == forward,
+            "paused paged histories changed"
+        );
+        while test.history.tick != Some(40) {
+            test.frame(40, 4);
+        }
+        assert_eq!(test.usage(), [stars, stars, 0, 0]);
+        while test.history.tick != Some(60) {
+            test.frame(60, 4);
+        }
+        assert_eq!(test.usage(), [0, 0, 0, 0]);
+        test.effect.history_epoch = 1;
+        test.scene
+            .queue
+            .write_buffer(&test.buffers[6], 24, &1u32.to_le_bytes());
+        test.frame(0, 4);
+        while test.history.tick != Some(30) {
+            test.frame(30, 4);
+        }
+        let mut restarted = test.trail_state();
+        restarted.1[..4].copy_from_slice(&forward.1[..4]);
+        assert!(
+            restarted == forward,
+            "paged allocation changed across batched restart"
+        );
     }
 }
 

@@ -351,8 +351,28 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
                                 0
                             });
                     // Compact indices, local ranks, owner offsets, indirect/header and parameters.
-                    let compaction = 8 * candidates + 4 * u64::from(capacity) + 128;
-                    Some((1 + u64::from(capacity) * u64::from(max_points)) * 64 + compaction)
+                    let compaction = 8 * candidates
+                        + 4 * u64::from(capacity)
+                        + 4 * u64::from(capacity).div_ceil(1024)
+                        + 128;
+                    // Large native history pools append temporary sort/lookup/rank/page
+                    // ranges to aux; matches aestra-gpu's TrailScratchPlan without a
+                    // backend dependency or any persistent ownership ABI change.
+                    let scratch = if capacity > 1024 || e.max_particles > 1024 {
+                        let heads = u64::from(e.max_particles.max(1)).next_power_of_two();
+                        let owners = u64::from(capacity.max(1)).next_power_of_two();
+                        4 * (3 * heads
+                            + 2 * owners
+                            + heads.div_ceil(1024)
+                            + 12 * owners.div_ceil(1024))
+                    } else {
+                        0
+                    };
+                    Some(
+                        (1 + u64::from(capacity) * u64::from(max_points)) * 64
+                            + compaction
+                            + scratch,
+                    )
                 }
                 _ => None,
             })

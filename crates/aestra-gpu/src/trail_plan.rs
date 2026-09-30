@@ -1,0 +1,195 @@
+//! Checked temporary storage/dispatch planning for large logical history pools.
+use crate::Vec3;
+use crate::{GpuArtifactError, GpuEmitter};
+use encase::ShaderType;
+
+pub const PAGED_TRAIL_ENTRY_POINTS: [&str; 9] = [
+    "sort_trail_page",
+    "merge_trail_pages",
+    "present_trail_heads",
+    "reserve_trail_owners",
+    "scan_trail_births",
+    "scan_trail_birth_pages",
+    "update_trail_owners",
+    "bound_trail_page",
+    "finish_trail_pages",
+];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrailScratchPlan {
+    pub aux_words: u32,
+    pub max_heads: u32,
+    pub max_owners: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TrailPass {
+    pub entry: usize,
+    pub parameter: u32,
+    pub workgroups: u32,
+}
+
+impl TrailScratchPlan {
+    /// Append disjoint temporary ranges after persistent aux. Spare emitter lanes
+    /// carry numeric integers (not denormal bitcasts); enforce exact f32 representation.
+    pub fn configure(emitters: &mut [GpuEmitter], records: u32) -> Result<Self, GpuArtifactError> {
+        let mut plan = Self {
+            aux_words: records.checked_mul(3).ok_or(GpuArtifactError::TrailLimit)?,
+            ..Self::default()
+        };
+        for emitter in emitters {
+            emitter._spawn_inverse_padding = Vec3::ZERO;
+            if emitter.trail_points < 2
+                || (emitter.max_particles <= 1024 && emitter.trail_capacity <= 1024)
+            {
+                continue;
+            }
+            let heads = emitter
+                .max_particles
+                .max(1)
+                .checked_next_power_of_two()
+                .ok_or(GpuArtifactError::TrailLimit)?;
+            let owners = emitter
+                .trail_capacity
+                .max(1)
+                .checked_next_power_of_two()
+                .ok_or(GpuArtifactError::TrailLimit)?;
+            emitter._spawn_inverse_padding =
+                Vec3::new(plan.aux_words as f32, heads as f32, owners as f32);
+            plan.aux_words = plan
+                .aux_words
+                .checked_add(
+                    heads
+                        .checked_mul(3)
+                        .and_then(|n| n.checked_add(owners.checked_mul(2)?))
+                        .and_then(|n| n.checked_add(heads.div_ceil(1024)))
+                        .and_then(|n| n.checked_add(owners.div_ceil(1024).checked_mul(12)?))
+                        .ok_or(GpuArtifactError::TrailLimit)?,
+                )
+                .ok_or(GpuArtifactError::TrailLimit)?;
+            if plan.aux_words > (1 << 24) {
+                return Err(GpuArtifactError::TrailLimit);
+            }
+            plan.max_heads = plan.max_heads.max(heads);
+            plan.max_owners = plan.max_owners.max(owners);
+        }
+        Ok(plan)
+    }
+
+    pub fn paged(self) -> bool {
+        self.max_heads != 0
+    }
+
+    /// One parameter upload is reused for every live fixed tick in this frame.
+    pub fn passes(self) -> Vec<TrailPass> {
+        if !self.paged() {
+            return Vec::new();
+        }
+        let mut passes = Vec::new();
+        let sort = |passes: &mut Vec<TrailPass>, kind: u32, size: u32| {
+            passes.push(TrailPass {
+                entry: 0,
+                parameter: kind,
+                workgroups: size.div_ceil(1024),
+            });
+            let mut parity = 0;
+            let mut width = 1024;
+            while width < size {
+                passes.push(TrailPass {
+                    entry: 1,
+                    parameter: kind | (width.ilog2() << 8) | (parity << 16),
+                    workgroups: size.div_ceil(64),
+                });
+                parity = 1 - parity;
+                width *= 2;
+            }
+            kind | (parity << 16)
+        };
+        let heads = sort(&mut passes, 0, self.max_heads);
+        passes.push(TrailPass {
+            entry: 2,
+            parameter: heads,
+            workgroups: self.max_heads.div_ceil(64),
+        });
+        let owners = sort(&mut passes, 1, self.max_owners);
+        passes.push(TrailPass {
+            entry: 3,
+            parameter: owners,
+            workgroups: self.max_heads.div_ceil(64),
+        });
+        passes.push(TrailPass {
+            entry: 4,
+            parameter: 0,
+            workgroups: self.max_heads.div_ceil(1024),
+        });
+        passes.push(TrailPass {
+            entry: 5,
+            parameter: 0,
+            workgroups: 1,
+        });
+        let candidates = sort(&mut passes, 2, self.max_owners);
+        passes.push(TrailPass {
+            entry: 6,
+            parameter: candidates,
+            workgroups: self.max_heads.div_ceil(64),
+        });
+        passes.push(TrailPass {
+            entry: 7,
+            parameter: 0,
+            workgroups: self.max_owners.div_ceil(1024),
+        });
+        passes.push(TrailPass {
+            entry: 8,
+            parameter: 0,
+            workgroups: 1,
+        });
+        passes
+    }
+
+    /// Reject unsupported allocations before any capacity-sized buffer is created.
+    pub fn fits(
+        self,
+        records: u32,
+        emitters: u32,
+        binding_bytes: u64,
+        buffer_bytes: u64,
+        dispatch: u32,
+    ) -> bool {
+        let maximum = binding_bytes.min(buffer_bytes);
+        u64::from(records) * 48 <= maximum
+            && u64::from(self.aux_words) * 4 <= maximum
+            && u64::from(emitters) * GpuEmitter::min_size().get() <= maximum
+            && emitters <= dispatch
+            && self.max_heads.max(self.max_owners).div_ceil(64) <= dispatch
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plans_disjoint_exact_ranges_and_rejects_overflow_and_device_pressure() {
+        let mut emitters = vec![
+            GpuEmitter {
+                max_particles: 2053,
+                trail_capacity: 8192,
+                trail_points: 4,
+                ..Default::default()
+            };
+            2
+        ];
+        let records = 2 * (2053 + 1 + 8192 * 4);
+        let plan = TrailScratchPlan::configure(&mut emitters, records).unwrap();
+        assert!(emitters[1]._spawn_inverse_padding.x > emitters[0]._spawn_inverse_padding.x);
+        assert_eq!(plan.max_heads, 4096);
+        assert_eq!(plan.max_owners, 8192);
+        assert!(plan.fits(records, 2, 128 << 20, 256 << 20, 65535));
+        assert!(!plan.fits(records, 2, 1024, 256 << 20, 65535));
+        assert!(!plan.fits(records, 2, 128 << 20, 256 << 20, 1));
+        assert!(!plan.fits(records, 65535, 8 << 20, 256 << 20, 65535));
+        assert!(TrailScratchPlan::configure(&mut emitters, u32::MAX).is_err());
+        emitters[0].max_particles = u32::MAX;
+        assert!(TrailScratchPlan::configure(&mut emitters, 1).is_err());
+    }
+}

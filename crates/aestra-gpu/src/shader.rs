@@ -15,7 +15,11 @@ pub const SIMULATION_WESL: &str = concat!(
     "\n",
     include_str!("shaders/aestra_trail_bounds.wesl"),
     "\n",
-    include_str!("shaders/aestra_trail_history.wesl")
+    include_str!("shaders/aestra_trail_sample.wesl"),
+    "\n",
+    include_str!("shaders/aestra_trail_history.wesl"),
+    "\n",
+    include_str!("shaders/aestra_trail_paged.wesl")
 );
 pub const SPRITE_VERTEX_WESL: &str = concat!(
     include_str!("shaders/aestra_trail_geometry.wesl"),
@@ -141,7 +145,21 @@ impl GpuShaderKind {
 
     const fn required_entry_points(self) -> &'static [&'static str] {
         match self {
-            Self::Simulation => &["reset", "simulate", "link_ribbons", "update_trails"],
+            Self::Simulation => &[
+                "reset",
+                "simulate",
+                "link_ribbons",
+                "update_trails",
+                "sort_trail_page",
+                "merge_trail_pages",
+                "present_trail_heads",
+                "reserve_trail_owners",
+                "scan_trail_births",
+                "scan_trail_birth_pages",
+                "update_trail_owners",
+                "bound_trail_page",
+                "finish_trail_pages",
+            ],
             Self::SpriteRender => &[
                 "vertex",
                 "fragment_alpha",

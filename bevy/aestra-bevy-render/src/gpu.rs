@@ -4,6 +4,7 @@ mod bounds;
 mod extension_stages;
 mod geometry_statistics;
 mod mesh_inputs;
+mod paged_trails;
 mod particle_statistics;
 mod physics;
 mod preparation_timing;
@@ -124,6 +125,7 @@ pub(crate) struct GpuEffectBuffers {
     has_trails: bool,
     ribbon_workgroups: u32,
     trail_workgroups: u32,
+    trail_plan: aestra_gpu::TrailScratchPlan,
     total_slots: u32,
     simulation_time: f32,
     /// The requested fidelity of stateful seeking this frame (hybrid roadmap M12): `Preview` bounds the
@@ -630,6 +632,7 @@ struct SimulationPipeline {
     simulate: CachedComputePipelineId,
     link_ribbons: CachedComputePipelineId,
     update_trails: CachedComputePipelineId,
+    paged_trails: [CachedComputePipelineId; 9],
 }
 
 /// The stateful GPU backend's compute pipelines (hybrid roadmap M6), built from the unified
@@ -804,8 +807,19 @@ pub(crate) fn prepare_gpu_effects(
         }
         player.refresh_automatic_material_bindings();
         let artifact_result =
-            GpuEffectArtifact::dynamics_from_instance(&player.instance).and_then(|d| {
+            GpuEffectArtifact::dynamics_from_instance(&player.instance).and_then(|mut d| {
+                let plan =
+                    aestra_gpu::TrailScratchPlan::configure(&mut d.emitters, d.storage_records)?;
                 if d.storage_records > capabilities.max_particles {
+                    return Err(GpuArtifactError::TrailLimit);
+                }
+                if !plan.fits(
+                    d.storage_records,
+                    d.emitters.len() as u32,
+                    capabilities.max_storage_buffer_binding_size,
+                    capabilities.max_buffer_size,
+                    capabilities.max_compute_workgroups_per_dimension,
+                ) {
                     return Err(GpuArtifactError::TrailLimit);
                 }
                 GpuEffectArtifact::from_instance(&player.instance)
@@ -1091,6 +1105,11 @@ pub(crate) fn prepare_gpu_effects(
             .filter(|(_, e)| e.trail_points >= 2)
             .map(|(i, e)| (i as u32, e.trail_offset))
             .collect();
+        let trail_plan = aestra_gpu::TrailScratchPlan::configure(
+            &mut artifact.emitters,
+            artifact.particles.len() as u32,
+        )
+        .expect("validated trail plan");
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let ribbon_renderers = artifact
             .renderers
@@ -1117,7 +1136,6 @@ pub(crate) fn prepare_gpu_effects(
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         // Full record count, including the trail-history storage region past
         // total_slots, so aux (indexed by slot) covers trail head/record slots.
-        let record_count = artifact.particles.len();
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
         let alive = buffers.add(ShaderBuffer::from(vec![
             0_u32;
@@ -1132,7 +1150,7 @@ pub(crate) fn prepare_gpu_effects(
         let aux = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             if has_ribbons || has_trails {
-                record_count * 3
+                trail_plan.aux_words as usize
             } else {
                 1
             }
@@ -1223,6 +1241,7 @@ pub(crate) fn prepare_gpu_effects(
                 trail_roots,
                 ribbon_workgroups,
                 trail_workgroups,
+                trail_plan,
                 total_slots: artifact.total_slots,
                 simulation_state: artifact.simulation_state,
                 stateful_dispatch,
@@ -2409,9 +2428,18 @@ fn init_pipeline(
     let update_trails = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("aestra record trail history".into()),
         layout: vec![layout.clone()],
-        shader,
+        shader: shader.clone(),
         entry_point: Some("update_trails".into()),
         ..default()
+    });
+    let paged_trails = aestra_gpu::PAGED_TRAIL_ENTRY_POINTS.map(|entry| {
+        pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+            label: Some(format!("aestra {entry}").into()),
+            layout: vec![layout.clone()],
+            shader: shader.clone(),
+            entry_point: Some(entry.into()),
+            ..default()
+        })
     });
     commands.insert_resource(SimulationPipeline {
         layout,
@@ -2419,6 +2447,7 @@ fn init_pipeline(
         simulate,
         link_ribbons,
         update_trails,
+        paged_trails,
     });
 }
 
@@ -4008,6 +4037,12 @@ fn run_simulation(
     });
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);
+    let paged_pipelines: Option<[&ComputePipeline; 9]> = pipeline
+        .paged_trails
+        .map(|id| pipeline_cache.get_compute_pipeline(id))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|pipelines| pipelines.try_into().ok());
     let (Some(reset), Some(simulate)) = (
         pipeline_cache.get_compute_pipeline(pipeline.reset),
         pipeline_cache.get_compute_pipeline(pipeline.simulate),
@@ -4040,6 +4075,19 @@ fn run_simulation(
             .map(|h| h.1.checkpoints.bytes())
             .sum::<u64>();
     for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
+        let paged = if effect.trail_plan.paged() {
+            let Some(pipelines) = paged_pipelines else {
+                continue;
+            };
+            Some(paged_trails::Dispatch::new(
+                &render_device,
+                effect.trail_plan,
+                pipelines,
+                effect.trail_workgroups,
+            ))
+        } else {
+            None
+        };
         // Histories shared with stateful emitters advance in the lockstep path:
         // reset/present analytic heads, present stateful heads, then record trails
         // after each tick's event births. Other mixed effects retain the old path.
@@ -4093,6 +4141,7 @@ fn run_simulation(
                         reset,
                         simulate,
                         update,
+                        paged: paged.as_ref(),
                         ribbons: link_ribbons,
                         globals: &globals.buffer,
                         render_globals: &render_globals.buffer,
@@ -4382,20 +4431,61 @@ fn run_simulation(
                             label: Some("aestra trail history"),
                             timestamp_writes: timing_batch.as_ref().zip(timing_index).and_then(
                                 |(batch, index)| {
-                                    batch.writes(index, false, observation + 1 == observation_count)
+                                    batch.writes(
+                                        index,
+                                        false,
+                                        observation + 1 == observation_count && paged.is_none(),
+                                    )
                                 },
                             ),
                         });
                 pass.set_bind_group(0, &bind_group.0, &[]);
                 pass.set_pipeline(update_trails);
                 pass.dispatch_workgroups(effect.trail_workgroups, 1, 1);
-                if effect.has_ribbons
+                if paged.is_none()
+                    && effect.has_ribbons
                     && let Some(link_ribbons) = link_ribbons
                 {
                     pass.set_pipeline(link_ribbons);
                     pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
                 }
                 drop(pass);
+                if let Some(paged) = &paged {
+                    let Some(globals) = buffers.get(&effect.globals) else {
+                        continue;
+                    };
+                    paged.record(
+                        render_context.command_encoder(),
+                        &bind_group.0,
+                        &globals.buffer,
+                    );
+                }
+                if paged.is_some()
+                    && effect.has_ribbons
+                    && let Some(link_ribbons) = link_ribbons
+                {
+                    let mut pass = render_context.command_encoder().begin_compute_pass(
+                        &ComputePassDescriptor {
+                            label: Some("aestra ribbons after histories"),
+                            timestamp_writes: None,
+                        },
+                    );
+                    pass.set_bind_group(0, &bind_group.0, &[]);
+                    pass.set_pipeline(link_ribbons);
+                    pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+                }
+                if paged.is_some() {
+                    drop(render_context.command_encoder().begin_compute_pass(
+                        &ComputePassDescriptor {
+                            label: Some("aestra paged trails timing end"),
+                            timestamp_writes: timing_batch.as_ref().zip(timing_index).and_then(
+                                |(batch, index)| {
+                                    batch.writes(index, false, observation + 1 == observation_count)
+                                },
+                            ),
+                        },
+                    ));
+                }
                 trail_span.end(render_context.command_encoder());
             }
             if let Some((_, times, _, state)) = &replay {
@@ -4790,6 +4880,7 @@ mod tests {
                     has_trails: false,
                     ribbon_workgroups: 1,
                     trail_workgroups: 1,
+                    trail_plan: default(),
                     total_slots: 1,
                     simulation_time: 0.0,
                     seek_quality: SeekQuality::Exact,

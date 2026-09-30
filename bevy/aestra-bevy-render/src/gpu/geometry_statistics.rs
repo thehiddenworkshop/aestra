@@ -347,6 +347,7 @@ mod tests {
                 has_trails: false,
                 ribbon_workgroups: 1,
                 trail_workgroups: 1,
+                trail_plan: default(),
                 total_slots: 8,
                 simulation_time: 1.5,
                 seek_quality: aestra_runtime::SeekQuality::Exact,

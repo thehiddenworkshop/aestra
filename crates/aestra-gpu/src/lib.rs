@@ -13,6 +13,8 @@ pub mod reduce;
 pub mod ribbon_bounds;
 pub mod scan;
 pub mod shader;
+mod trail_plan;
+pub use trail_plan::{PAGED_TRAIL_ENTRY_POINTS, TrailPass, TrailScratchPlan};
 pub mod volume;
 mod world_sdf;
 
@@ -73,7 +75,7 @@ pub const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpuArtifactError {
     #[error(
-        "trail history supports one renderer per emitter, at most 1024 parents, parent capacity–1024 trail owners, 2–64 points, and 1,048,576 total particle/history records"
+        "trail history requires one renderer per emitter, owner capacity >= parent capacity, 2–64 points, <= 1,048,576 total particle/history records, and scratch/buffers/dispatches within device limits"
     )]
     TrailLimit,
     #[error("emitter '{0}' has no {1} instruction")]
@@ -172,6 +174,8 @@ pub struct GpuEmitter {
     /// Total emission over the emitter's source duration — the denominator for the
     /// spawn-inverse fraction. Zero when the table is unused.
     pub spawn_inverse_total: f32,
+    /// Large trail scratch: exact numeric [aux base, padded heads, padded owners].
+    /// Reuses spare ABI lanes; zero for the <=1,024-owner cooperative path.
     pub _spawn_inverse_padding: Vec3,
     pub trail_offset: u32,
     pub trail_points: u32,
@@ -227,8 +231,9 @@ pub struct GpuGlobals {
     pub duration: f32,
     pub continuous: u32,
     pub _padding: UVec2,
-    /// World-space trail recording. `_padding.x` is the discontinuity epoch. Byte offsets up to here
-    /// (time 0, epoch 24, this matrix 32) are written directly by trail replay: add fields after it.
+    /// World-space trail recording. `_padding.x` is the discontinuity epoch;
+    /// `_padding.y` is the transient paged-history stage parameter. Byte offsets up to here
+    /// (time 0, epoch 24, stage 28, matrix 32) are written directly: add fields after it.
     pub world_from_effect: Mat4,
     /// Where a host's `stop_emitting` / `kill` cut emission, in instance time (event system E2b):
     /// no particle born at or after `emission_end` is shown, and none at all from `kill_time`.
@@ -2249,10 +2254,8 @@ impl GpuEffectArtifact {
             ) = trails.first().copied().unwrap_or_default();
             if !trails.is_empty() {
                 if trails.len() > 1
-                    || emitter.max_particles > 1024
                     || !(2..=64).contains(&trail_points)
                     || trail_capacity < emitter.max_particles
-                    || trail_capacity > 1024
                     || !trail_distance.is_finite()
                     || trail_distance < 0.001
                     || !trail_tolerance.is_finite()
@@ -2263,7 +2266,12 @@ impl GpuEffectArtifact {
                     return Err(GpuArtifactError::TrailLimit);
                 }
                 history_offset = history_offset
-                    .checked_add(1 + trail_capacity * trail_points)
+                    .checked_add(
+                        trail_capacity
+                            .checked_mul(trail_points)
+                            .and_then(|records| records.checked_add(1))
+                            .ok_or(GpuArtifactError::TrailLimit)?,
+                    )
                     .ok_or(GpuArtifactError::TrailLimit)?;
                 if history_offset > 1_048_576 {
                     return Err(GpuArtifactError::TrailLimit);
@@ -2610,6 +2618,7 @@ impl GpuEffectArtifact {
         } else {
             GpuSimulationState::default()
         };
+        TrailScratchPlan::configure(&mut emitters, history_offset)?;
         Ok(GpuEffectDynamics {
             mesh_bounds,
             ribbon_bounds,

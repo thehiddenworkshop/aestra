@@ -34,7 +34,7 @@ impl TrailField {
             Self::Interval => (1.0 / 240.0, f32::MAX),
             Self::Distance | Self::Tolerance | Self::TileLength => (0.001, f32::MAX),
             Self::Points => (2.0, 64.0),
-            Self::Capacity => (1.0, 1024.0),
+            Self::Capacity => (1.0, u32::MAX as f32),
         }
     }
     pub(super) fn clamp(self, value: f32) -> f32 {
@@ -1336,7 +1336,7 @@ fn renderer_scrubbable_number(
             session
                 .selected_layer()
                 .map_or(1.0, |emitter| emitter.max_particles as f32),
-            1024.0,
+            u32::MAX as f32,
         ),
         RendererNumberControl::Trail(_, field) => field.bounds(),
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
@@ -3262,9 +3262,9 @@ mod tests {
         let parents = session.selected_layer().unwrap().max_particles;
         assert_eq!(
             (widget.value, widget.min, widget.max, widget.step),
-            (parents as f32, parents as f32, 1024.0, 1.0)
+            (parents as f32, parents as f32, u32::MAX as f32, 1.0)
         );
-        for (input, expected) in [(0.0, parents), (5000.0, 1024), (511.6, 512)] {
+        for (input, expected) in [(0.0, parents), (5000.0, 5000), (511.6, 512)] {
             let command = renderer_numeric_scrub_command(&session, control, input).unwrap();
             assert!(
                 matches!(command, EffectCommand::SetRendererProperties { properties: RendererProperties::Trail { max_trails, max_points: 32, width: 2.0, .. }, .. } if max_trails == expected)

@@ -40,6 +40,7 @@ pub(super) struct Observer<'a> {
     pub reset: &'a ComputePipeline,
     pub simulate: &'a ComputePipeline,
     pub update: &'a ComputePipeline,
+    pub paged: Option<&'a paged_trails::Dispatch<'a>>,
     pub ribbons: Option<&'a ComputePipeline>,
     pub globals: &'a Buffer,
     pub render_globals: &'a Buffer,
@@ -126,9 +127,26 @@ impl Observer<'_> {
         pass.set_bind_group(0, self.group, &[]);
         pass.set_pipeline(self.update);
         pass.dispatch_workgroups(self.effect.trail_workgroups, 1, 1);
-        if self.effect.has_ribbons
+        if self.paged.is_none()
+            && self.effect.has_ribbons
             && let Some(ribbons) = self.ribbons
         {
+            pass.set_pipeline(ribbons);
+            pass.dispatch_workgroups(self.effect.ribbon_workgroups, 1, 1);
+        }
+        drop(pass);
+        if let Some(paged) = self.paged {
+            paged.record(encoder, self.group, self.globals);
+        }
+        if self.paged.is_some()
+            && self.effect.has_ribbons
+            && let Some(ribbons) = self.ribbons
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("aestra ribbons after histories"),
+                timestamp_writes: None,
+            });
+            pass.set_bind_group(0, self.group, &[]);
             pass.set_pipeline(ribbons);
             pass.dispatch_workgroups(self.effect.ribbon_workgroups, 1, 1);
         }

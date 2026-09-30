@@ -2169,7 +2169,7 @@ impl EditorSession {
             sample_interval: 0.025,
             lifetime: 0.65,
             max_points: 32,
-            max_trails: emitter.max_particles.saturating_mul(2).min(1024),
+            max_trails: emitter.max_particles.saturating_mul(2),
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: aestra_core::default_trail_sample_distance(),
             curve_tolerance: 0.01,

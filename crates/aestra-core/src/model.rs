@@ -3369,7 +3369,6 @@ impl RendererInstance {
                 sample_interval,
                 lifetime,
                 max_points,
-                max_trails,
                 sample_distance,
                 curve_tolerance,
                 tile_length,
@@ -3388,12 +3387,11 @@ impl RendererInstance {
                     || !lifetime.is_finite()
                     || *lifetime <= 0.0
                     || !(2..=64).contains(max_points)
-                    || *max_trails > 1024
                 {
                     invalid_value(
                         report,
                         path,
-                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance/curve tolerance/tile length >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
+                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance/curve tolerance/tile length >= 0.001 world units and 2–64 points (0 trails inherits parent capacity)",
                     );
                 }
                 Some(RENDERER_TRAIL)

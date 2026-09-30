@@ -444,6 +444,17 @@ fn separate_trail_budget_retains_burst_tails_until_expiry_or_oldest_retired_evic
 
 #[test]
 fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_groups() {
+    check_cooperative(1024);
+}
+
+#[test]
+fn paged_trails_keep_large_partial_pools_and_deterministic_retired_eviction() {
+    for owners in [1025, 2053, 8192] {
+        check_cooperative(owners);
+    }
+}
+
+fn check_cooperative(owners: u32) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(descriptor);
@@ -461,7 +472,10 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
         ..Default::default()
     }))
     .unwrap();
-    let entries = ["update_trails", "link_ribbons"];
+    let entries = ["update_trails", "link_ribbons"]
+        .into_iter()
+        .chain(aestra_gpu::PAGED_TRAIL_ENTRY_POINTS)
+        .collect::<Vec<_>>();
     let shader = compile_wesl("package::hero_trails", SIMULATION_WESL, &entries).unwrap();
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
@@ -489,47 +503,57 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
-    let pipelines = entries.map(|entry| {
-        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &module,
-            entry_point: Some(entry),
-            compilation_options: Default::default(),
-            cache: None,
+    let pipelines = entries
+        .iter()
+        .map(|entry| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
         })
-    });
-    const OWNERS: u32 = 1024;
+        .collect::<Vec<_>>();
     const POINTS: u32 = 4;
-    const PARENTS: u32 = 2048;
-    const RECORDS: usize = (PARENTS + 2 * (1 + OWNERS * POINTS)) as usize;
-    let roots = [PARENTS, PARENTS + 1 + OWNERS * POINTS];
+    let parents = owners * 2;
+    let records = (parents + 2 * (1 + owners * POINTS)) as usize;
+    let roots = [parents, parents + 1 + owners * POINTS];
+    let mut emitters = roots
+        .iter()
+        .enumerate()
+        .map(|(index, &root)| GpuEmitter {
+            slot_offset: index as u32 * owners,
+            max_particles: owners,
+            _turbulence_padding: index as u32 * 3,
+            trail_offset: root,
+            trail_points: POINTS,
+            trail_capacity: owners,
+            trail_interval: 0.125,
+            trail_lifetime: 1.0,
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
+    let plan = aestra_gpu::TrailScratchPlan::configure(&mut emitters, records as u32).unwrap();
+    let stages = plan.passes();
+    let parameters = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: &stages
+            .iter()
+            .flat_map(|stage| stage.parameter.to_le_bytes())
+            .collect::<Vec<_>>(),
+        usage: wgpu::BufferUsages::COPY_SRC,
+    });
     let data = [
-        encode(
-            &roots
-                .iter()
-                .enumerate()
-                .map(|(index, &root)| GpuEmitter {
-                    slot_offset: index as u32 * OWNERS,
-                    max_particles: OWNERS,
-                    // Second emitter draws a three-strand Ribbon alongside its Trail.
-                    _turbulence_padding: index as u32 * 3,
-                    trail_offset: root,
-                    trail_points: POINTS,
-                    trail_capacity: OWNERS,
-                    trail_interval: 0.125,
-                    trail_lifetime: 1.0,
-                    ..Default::default()
-                })
-                .collect::<Vec<_>>(),
-        ),
-        encode(&vec![GpuParticle::default(); RECORDS]),
-        encode(&vec![0u32; PARENTS as usize]),
-        encode(&vec![0u32; PARENTS as usize]),
+        encode(&emitters),
+        encode(&vec![GpuParticle::default(); records]),
+        encode(&vec![0u32; parents as usize]),
+        encode(&vec![0u32; parents as usize]),
         encode(&vec![0u32; 14]),
         encode(&vec![0u32; 8]),
         encode(&GpuGlobals::default()),
-        encode(&vec![0u32; RECORDS * 3]),
+        encode(&vec![0u32; plan.aux_words as usize]),
     ];
     let buffers = data
         .iter()
@@ -556,7 +580,7 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
             .collect::<Vec<_>>(),
     });
     // Intentionally colliding hash buckets, shuffled compacted order and high IDs.
-    let identity = |n: u32| 0xff00_0000 + n * 2048;
+    let identity = |n: u32| 0xe000_0000 + n * 2048;
     let run = |time: f32, ids: &[u32]| {
         for emitter in 0..2u32 {
             let particles = ids
@@ -574,16 +598,16 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
             if !ids.is_empty() {
                 queue.write_buffer(
                     &buffers[1],
-                    u64::from(emitter * OWNERS) * 48,
+                    u64::from(emitter * owners) * 48,
                     &encode(&particles),
                 );
                 let shuffled = (0..ids.len() as u32)
                     .rev()
-                    .map(|n| emitter * OWNERS + n)
+                    .map(|n| emitter * owners + n)
                     .collect::<Vec<_>>();
                 queue.write_buffer(
                     &buffers[2],
-                    u64::from(emitter * OWNERS) * 4,
+                    u64::from(emitter * owners) * 4,
                     &encode(&shuffled),
                 );
             }
@@ -598,7 +622,7 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
             0,
             &encode(&GpuGlobals {
                 time,
-                total_slots: PARENTS,
+                total_slots: parents,
                 emitter_count: 2,
                 ..Default::default()
             }),
@@ -609,6 +633,17 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
             pass.set_bind_group(0, &group, &[]);
             pass.set_pipeline(&pipelines[0]);
             pass.dispatch_workgroups(2, 1, 1);
+        }
+        for (index, stage) in stages.iter().enumerate() {
+            encoder.copy_buffer_to_buffer(&parameters, index as u64 * 4, &buffers[6], 28, 4);
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_pipeline(&pipelines[2 + stage.entry]);
+            pass.dispatch_workgroups(stage.workgroups, 2, 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_bind_group(0, &group, &[]);
             pass.set_pipeline(&pipelines[1]);
             pass.dispatch_workgroups(1, 1, 1);
         }
@@ -651,22 +686,23 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
         readback.unmap();
         let p = buffers[1].size() as usize;
         let a = buffers[7].size() as usize;
-        let result = expand_legacy(&bytes[..p], &bytes[p..p + a], &bytes[p + a..], RECORDS);
+        let result = expand_legacy(&bytes[..p], &bytes[p..p + a], &bytes[p + a..], records);
         for &root in &roots {
-            assert_world_bounds(&result, root as usize, POINTS as usize, OWNERS as usize);
+            assert_world_bounds(&result, root as usize, POINTS as usize, owners as usize);
         }
         result
     };
-    let initial = run(0.0, &(0..800).collect::<Vec<_>>());
-    let ids = (0..400)
+    let initial_count = owners * 25 / 32;
+    let initial = run(0.0, &(0..initial_count).collect::<Vec<_>>());
+    let ids = (0..initial_count / 2)
         .map(|n| n * 2 + 1)
-        .chain(800..1200)
+        .chain(initial_count..initial_count + initial_count / 2)
         .collect::<Vec<_>>();
     let next = run(0.25, &ids);
     let mut strand_order = ids
         .iter()
         .enumerate()
-        .map(|(slot, &n)| (slot as u32 + OWNERS, identity(n)))
+        .map(|(slot, &n)| (slot as u32 + owners, identity(n)))
         .collect::<Vec<_>>();
     strand_order.sort_by_key(|&(slot, id)| (id % 3, id, slot));
     for (index, &(slot, id)) in strand_order.iter().enumerate() {
@@ -684,17 +720,17 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
         let stats = |bytes: &[u8], lane: usize| {
             // expand_legacy appends counter words after the particle records.
             u32::from_le_bytes(
-                bytes[(RECORDS * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
+                bytes[(records * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
                     .try_into()
                     .unwrap(),
             )
         };
-        assert_eq!(stats(&initial, 0), 800);
-        assert_eq!(stats(&next, 0), 1024);
-        assert_eq!(stats(&next, 1), 224);
-        assert_eq!(stats(&next, 2), 176);
+        assert_eq!(stats(&initial, 0), initial_count);
+        assert_eq!(stats(&next, 0), owners);
+        assert_eq!(stats(&next, 1), owners - ids.len() as u32);
+        assert_eq!(stats(&next, 2), initial_count + initial_count / 2 - owners);
         let owner_slot = |n| {
-            (0..OWNERS)
+            (0..owners)
                 .map(|owner| (root + 1 + owner * POINTS) as usize)
                 .find(|&slot| word(&next, slot, 44) != 0 && word(&next, slot, 48) == identity(n))
                 .unwrap()
@@ -702,7 +738,7 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
         for &n in &ids {
             owner_slot(n);
         }
-        for n in (1..800).step_by(2) {
+        for n in (1..initial_count).step_by(2) {
             let slot = owner_slot(n);
             assert_eq!(
                 word(&initial, slot, 48),
@@ -716,27 +752,42 @@ fn cooperative_trails_keep_800_heads_and_retired_tails_in_independent_emitter_gr
             );
         }
     }
-    assert_eq!(
-        next,
-        run(0.25, &ids),
-        "paused observations must not change history"
+    let paused = run(0.25, &ids);
+    assert!(
+        next == paused,
+        "paused observation changed byte {:?}",
+        next.iter().zip(&paused).position(|(a, b)| a != b)
     );
     let retired = run(0.5, &[]);
     let expired = run(1.5, &[]);
-    let full = run(1.625, &(0..1024).collect::<Vec<_>>());
+    let full = run(1.625, &(0..owners).collect::<Vec<_>>());
+    let restarted = run(0.0, &(0..owners / 2).collect::<Vec<_>>());
     for emitter in 0..2usize {
         let count = |bytes: &[u8], lane: usize| {
             u32::from_le_bytes(
-                bytes[(RECORDS * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
+                bytes[(records * 64 + (2 + emitter * 6 + lane) * 4)..][..4]
                     .try_into()
                     .unwrap(),
             )
         };
-        assert_eq!(count(&retired, 0), 1024);
-        assert_eq!(count(&retired, 1), 1024);
+        assert_eq!(count(&retired, 0), owners);
+        assert_eq!(count(&retired, 1), owners);
         assert_eq!(count(&expired, 0), 0);
-        assert_eq!(count(&full, 0), 1024);
+        assert_eq!(count(&full, 0), owners);
         assert_eq!(count(&full, 1), 0);
+        assert_eq!(count(&restarted, 0), owners / 2);
+        assert_eq!(count(&restarted, 1), 0);
+        assert_eq!(count(&restarted, 2), 0, "restart clears eviction totals");
+        for owner in 0..owners / 2 {
+            assert_eq!(
+                word(
+                    &restarted,
+                    (roots[emitter] + 1 + owner * POINTS) as usize,
+                    56
+                ),
+                1
+            );
+        }
     }
 }
 

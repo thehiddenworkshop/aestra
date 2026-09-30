@@ -132,6 +132,19 @@ fn generated_wgsl_matches_reviewable_snapshots() {
 }
 
 #[test]
+fn paged_history_uses_portable_passes_with_eight_storage_bindings() {
+    let shader = aestra_gpu::shader::compile_wesl(
+        "package::paged_trails",
+        aestra_gpu::shader::SIMULATION_WESL,
+        &aestra_gpu::PAGED_TRAIL_ENTRY_POINTS,
+    )
+    .unwrap();
+    assert_translates_to_spirv(&shader.wgsl);
+    assert_translates_to_hlsl(&shader.wgsl);
+    assert_eq!(shader.wgsl.matches("@binding(").count(), 8);
+}
+
+#[test]
 fn trail_compaction_is_portable_and_keeps_existing_vertex_binding_budget() {
     let source = aestra_gpu::shader::trail_compact_wesl();
     assert!(!source.contains("bevy::"));
