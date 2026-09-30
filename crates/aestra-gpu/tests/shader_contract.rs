@@ -138,7 +138,12 @@ fn trail_compaction_is_portable_and_keeps_existing_vertex_binding_budget() {
     let shader = aestra_gpu::shader::compile_wesl(
         "package::aestra_trail_compact",
         &source,
-        &["classify_trail", "prefix_trail", "scatter_trail"],
+        &[
+            "classify_trail",
+            "prefix_trail",
+            "prefix_trail_pages",
+            "scatter_trail",
+        ],
     )
     .unwrap();
     assert_translates_to_spirv(&shader.wgsl);

@@ -1577,9 +1577,22 @@ The live event-to-trail benchmark (RTX 4070 SUPER/Vulkan, 960×540, 120 warm-up 
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail --camera close --backend gpu --gpu-bench target/fireworks-f1/event-born-trails-bench.json
 ```
 
+### Implemented — paged trail draw compaction
+
+- Replaced the draw-compaction prefix's single-workgroup logical-owner ceiling with 1,024-owner pages. Each page scans in its own workgroup; a separate scan prefixes page totals, and scatter combines page/local offsets in exact original owner/primitive order. The page-total scan itself processes tiles, rather than introducing another 1,024-page ceiling.
+- Workgroup scratch remains bounded to 4 KiB plus one word. Temporary storage adds one word per page, with no new binding, persistent history layout change, checkpoint work or CPU readback in the live path. Pools through 1,024 owners retain the three-dispatch path and skip page-offset loads; larger pools use four dispatches.
+- Native GPU tests exercise sparse page boundaries, partial last pages, dense 8,192-owner histories, all UV/cap combinations, retirement/expiry, repeated frames and cleared restart state. A separate prefix-only test checks exact offsets for 1,048,583 synthetic owner counts across 1,025 pages, plus empty/singleton cases. It does not allocate those histories or certify million-owner runtime support.
+- The existing event-to-trail live fixture (same RTX 4070 SUPER/Vulkan, 960×540, 120 warm-up/600 measured frames) measures compaction **0.215/0.257/0.259 ms p50/p95/p99**, compared with the previous **0.212/0.252/0.258 ms**; simulation is **3.234/3.914/3.959 ms**. This checks the small-pool production path, not large-pool performance. Later-cohort destination/history pressure still applies; no full-demand/finale budget certification is inferred.
+- **This is drawing infrastructure, not completion of the pool scale gate.** Compiler/artifact limits remain 1,024 parents/owners because history identity lookup and deterministic allocation still use one fixed-size workgroup. Production multi-page allocation, device-aware resource planning and overlapping-shell/finale certification remain open.
+
+```powershell
+cargo test --locked -p aestra-bevy-render --test trail_compaction_conformance -- --nocapture
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail --camera close --backend gpu --gpu-bench target/fireworks-f1/paged-compaction-final-bench.json
+```
+
 ### Tasks
 
-- Extend the cooperative implementation to multi-workgroup/paged logical pools beyond 1,024 owners, preserving section 8's ownership, tail and ordering contracts.
+- Next: page the history identity lookup, survivor reservation and deterministic birth/retired-tail allocation, preserving section 8's ownership contracts; then raise the compiler/artifact owner limits with matching runtime conformance tests. Draw compaction's paged infrastructure is now in place.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

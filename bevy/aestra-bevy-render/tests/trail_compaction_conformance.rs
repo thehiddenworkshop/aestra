@@ -12,12 +12,13 @@ fn encode<T: ShaderType + encase::internal::WriteInto>(value: &T) -> Vec<u8> {
 
 #[test]
 fn compacted_trails_preserve_order_caps_expired_anchors_and_rebuild_after_seek() {
-    for owners in [70, 800, 1024] {
-        check_compaction(owners);
+    for owners in [70, 800, 1024, 1025, 2053, 8192] {
+        check_compaction(owners, false);
     }
+    check_compaction(8192, true);
 }
 
-fn check_compaction(owners: u32) {
+fn check_compaction(owners: u32, dense: bool) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let gpu = wgpu::Instance::new(descriptor);
@@ -34,7 +35,12 @@ fn check_compaction(owners: u32) {
     let code = shader::compile_wesl(
         "package::trail_compact",
         &shader::trail_compact_wesl(),
-        &["classify_trail", "prefix_trail", "scatter_trail"],
+        &[
+            "classify_trail",
+            "prefix_trail",
+            "prefix_trail_pages",
+            "scatter_trail",
+        ],
     )
     .unwrap();
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -67,7 +73,13 @@ fn check_compaction(owners: u32) {
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
-    let pipelines = ["classify_trail", "prefix_trail", "scatter_trail"].map(|entry| {
+    let pipelines = [
+        "classify_trail",
+        "prefix_trail",
+        "prefix_trail_pages",
+        "scatter_trail",
+    ]
+    .map(|entry| {
         device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
@@ -92,11 +104,24 @@ fn check_compaction(owners: u32) {
     renderer.attribute_flags.z = 0;
     renderer.frame_count = 5;
     renderer.frame_rate = 1.0;
-    // Cross workgroup boundaries, with most owners empty; capped stride is 20.
+    // Cross page/workgroup boundaries and partially filled final pages.
     renderer.playback_mode = owners;
+    if owners == 1025 && !dense {
+        check_page_total_scan(&device, &queue, &layout, &pipelines[1..3], &renderer);
+    }
     let mut particles = vec![GpuParticle::default(); 1 + owners as usize * 5];
     let mut aux = vec![0u32; particles.len() * 3];
-    for owner in [0, 32, owners - 1] {
+    let active: Vec<u32> = if dense {
+        (0..owners).collect()
+    } else {
+        [0, 32, 1023, 1024, 2047, 2048, owners - 1]
+            .into_iter()
+            .filter(|owner| *owner < owners)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    };
+    for &owner in &active {
         let base = (1 + owner * 5) as usize;
         // Retired owners also retain an alive history header, even without a live parent.
         particles[base] = GpuParticle {
@@ -132,7 +157,10 @@ fn check_compaction(owners: u32) {
             }),
             encode(&aux.to_vec()),
             encode(&UVec4::new(0, count, owners, stride)),
-            encode(&vec![u32::MAX; (count + owners) as usize]),
+            encode(&vec![
+                u32::MAX;
+                (count + owners + owners.div_ceil(1024)) as usize
+            ]),
             encode(&vec![u32::MAX; (count + 4) as usize]),
         ]
         .into_iter()
@@ -172,13 +200,17 @@ fn check_compaction(owners: u32) {
         // Repeated frames must overwrite counters and ranks, not accumulate.
         for _ in 0..repeats {
             for (stage, pipeline) in pipelines.iter().enumerate() {
+                if stage == 2 && owners <= 1024 {
+                    continue;
+                }
                 let mut pass = encoder.begin_compute_pass(&Default::default());
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &group, &[]);
                 pass.dispatch_workgroups(
                     match stage {
                         0 => owners.div_ceil(64),
-                        1 => 1,
+                        1 => owners.div_ceil(1024),
+                        2 => 1,
                         _ => count.div_ceil(64),
                     },
                     1,
@@ -223,8 +255,9 @@ fn check_compaction(owners: u32) {
     for flags in [0, 1, 2, 3] {
         // Stretch/tiled UVs and flat/round caps.
         let stride = if flags & 2 != 0 { 20 } else { 4 };
-        let expected: Vec<_> = [0, 32, owners - 1]
-            .into_iter()
+        let expected: Vec<_> = active
+            .iter()
+            .copied()
             .flat_map(|owner| {
                 [0, 1]
                     .into_iter()
@@ -236,11 +269,11 @@ fn check_compaction(owners: u32) {
         assert_eq!(run(&particles, &aux, flags, 1.5, 4), expected);
     }
     // Coincident head: reject only the zero-length body, keep round cap using the preceding anchor.
-    for owner in [0, 32, owners - 1] {
+    for &owner in &active {
         particles[(1 + owner * 5) as usize].position = Vec3::X;
     }
     let capped = run(&particles, &aux, 2, 1.5, 2);
-    for owner in [0, 32, owners - 1] {
+    for &owner in &active {
         assert!(!capped.contains(&(owner * 20 + 1)));
         assert!(capped.contains(&(owner * 20 + 12)));
     }
@@ -255,4 +288,109 @@ fn check_compaction(owners: u32) {
     assert!(run(&particles, &aux, 2, 4.0, 1).is_empty());
     aux.fill(0);
     assert!(run(&particles, &aux, 2, 0.0, 2).is_empty());
+}
+
+// Exercise the top-level carry across more than 1,024 pages without allocating
+// synthetic million-owner geometry. This tests prefixing only, not runtime pool support.
+fn check_page_total_scan(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    pipelines: &[wgpu::ComputePipeline],
+    renderer: &aestra_gpu::GpuRenderer,
+) {
+    for owners in [0_u32, 1, 1024, 1_048_583] {
+        let pages = owners.div_ceil(1024);
+        let counts: Vec<u32> = (0..owners).map(|owner| (owner / 37) % 4).collect();
+        let mut scratch = counts.clone();
+        scratch.resize((owners + pages).max(1) as usize, u32::MAX);
+        let buffers: Vec<_> = [
+            encode(&vec![GpuParticle::default()]),
+            encode(&vec![*renderer]),
+            encode(&GpuRenderGlobals::default()),
+            encode(&vec![0_u32]),
+            encode(&UVec4::new(0, 0, owners, 1)),
+            encode(&scratch),
+            encode(&vec![u32::MAX; 4]),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(binding, bytes)| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("paged trail prefix test"),
+                contents: &bytes,
+                usage: (if binding == 4 {
+                    wgpu::BufferUsages::UNIFORM
+                } else {
+                    wgpu::BufferUsages::STORAGE
+                }) | wgpu::BufferUsages::COPY_SRC,
+            })
+        })
+        .collect();
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout,
+            entries: &buffers
+                .iter()
+                .enumerate()
+                .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                    binding: binding as u32,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect::<Vec<_>>(),
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: buffers[5].size() + 16,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        for (stage, pipeline) in pipelines.iter().enumerate() {
+            if stage == 1 && (1..=1024).contains(&owners) {
+                continue;
+            }
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(if stage == 0 { pages } else { 1 }, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&buffers[6], 0, &readback, 0, 16);
+        encoder.copy_buffer_to_buffer(&buffers[5], 0, &readback, 16, buffers[5].size());
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(std::time::Duration::from_secs(60)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        let data = readback.slice(..).get_mapped_range();
+        let words: Vec<_> = data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|word| u32::from_le_bytes(*word))
+            .collect();
+        assert_eq!(&words[..4], &[4, counts.iter().sum(), 0, 0]);
+        let mut global_offset = 0_u32;
+        for page in 0..pages {
+            assert_eq!(words[4 + (owners + page) as usize], global_offset);
+            let mut local_offset = 0_u32;
+            for owner in page * 1024..((page + 1) * 1024).min(owners) {
+                assert_eq!(words[4 + owner as usize], local_offset);
+                local_offset += counts[owner as usize];
+            }
+            global_offset += local_offset;
+        }
+    }
 }

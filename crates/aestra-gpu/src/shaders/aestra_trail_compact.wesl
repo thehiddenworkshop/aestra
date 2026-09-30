@@ -22,18 +22,19 @@ fn classify_trail(@builtin(global_invocation_id) id: vec3<u32>) {
     scratch[compact.y + owner] = count;
 }
 
+// One 4 KiB scratch page per workgroup, independent of logical pool capacity.
+// Storage scratch: candidate ranks, owner-local offsets, then page totals/offsets.
+const TRAIL_SCAN_PAGE: u32 = 1024u;
 var<workgroup> trail_owner_scan: array<u32, 1024>;
+var<workgroup> trail_page_total: u32;
 
-@compute @workgroup_size(64)
-fn prefix_trail(@builtin(local_invocation_index) thread: u32) {
-    // Parallel exclusive scan preserves the existing alpha draw order exactly.
+fn trail_scan_width(count: u32) -> u32 {
     var size = 1u;
-    while size < compact.z { size *= 2u; }
-    for (var owner = thread; owner < size; owner += 64u) {
-        var count = 0u;
-        if owner < compact.z { count = scratch[compact.y + owner]; }
-        trail_owner_scan[owner] = count;
-    }
+    while size < count { size *= 2u; }
+    return size;
+}
+
+fn scan_trail_page(thread: u32, size: u32) {
     workgroupBarrier();
     for (var width = 2u; width <= size; width *= 2u) {
         for (var n = (thread + 1u) * width - 1u; n < size; n += 64u * width) {
@@ -42,10 +43,7 @@ fn prefix_trail(@builtin(local_invocation_index) thread: u32) {
         workgroupBarrier();
     }
     if thread == 0u {
-        compacted[0] = 4u;
-        compacted[1] = trail_owner_scan[size - 1u];
-        compacted[2] = 0u;
-        compacted[3] = 0u;
+        trail_page_total = trail_owner_scan[size - 1u];
         trail_owner_scan[size - 1u] = 0u;
     }
     workgroupBarrier();
@@ -57,8 +55,62 @@ fn prefix_trail(@builtin(local_invocation_index) thread: u32) {
         }
         workgroupBarrier();
     }
-    for (var owner = thread; owner < compact.z; owner += 64u) {
-        scratch[compact.y + owner] = trail_owner_scan[owner];
+}
+
+@compute @workgroup_size(64)
+fn prefix_trail(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) thread: u32) {
+    let start = group.x * TRAIL_SCAN_PAGE;
+    let size = trail_scan_width(min(compact.z - start, TRAIL_SCAN_PAGE));
+    for (var local = thread; local < size; local += 64u) {
+        var count = 0u;
+        if start + local < compact.z { count = scratch[compact.y + start + local]; }
+        trail_owner_scan[local] = count;
+    }
+    scan_trail_page(thread, size);
+    for (var local = thread; local < size; local += 64u) {
+        if start + local < compact.z {
+            scratch[compact.y + start + local] = trail_owner_scan[local];
+        }
+    }
+    if thread == 0u {
+        scratch[compact.y + compact.z + group.x] = trail_page_total;
+        // Keep existing single-page pools on the three-dispatch path.
+        if compact.z <= TRAIL_SCAN_PAGE {
+            scratch[compact.y + compact.z] = 0u;
+            compacted[0] = 4u;
+            compacted[1] = trail_page_total;
+            compacted[2] = 0u;
+            compacted[3] = 0u;
+        }
+    }
+}
+
+@compute @workgroup_size(64)
+fn prefix_trail_pages(@builtin(local_invocation_index) thread: u32) {
+    let pages = (compact.z + TRAIL_SCAN_PAGE - 1u) / TRAIL_SCAN_PAGE;
+    var carry = 0u;
+    // Normally one iteration; tiled page-total scans avoid a second logical cap.
+    for (var start = 0u; start < pages; start += TRAIL_SCAN_PAGE) {
+        let size = trail_scan_width(min(pages - start, TRAIL_SCAN_PAGE));
+        for (var local = thread; local < size; local += 64u) {
+            var count = 0u;
+            if start + local < pages { count = scratch[compact.y + compact.z + start + local]; }
+            trail_owner_scan[local] = count;
+        }
+        scan_trail_page(thread, size);
+        for (var local = thread; local < size; local += 64u) {
+            if start + local < pages {
+                scratch[compact.y + compact.z + start + local] = carry + trail_owner_scan[local];
+            }
+        }
+        carry += trail_page_total;
+        workgroupBarrier();
+    }
+    if thread == 0u {
+        compacted[0] = 4u;
+        compacted[1] = carry;
+        compacted[2] = 0u;
+        compacted[3] = 0u;
     }
 }
 
@@ -68,6 +120,10 @@ fn scatter_trail(@builtin(global_invocation_id) id: vec3<u32>) {
     if candidate >= compact.y { return; }
     let local = scratch[candidate];
     if local == 0xffffffffu { return; }
-    let offset = scratch[compact.y + candidate / compact.w];
+    let owner = candidate / compact.w;
+    var offset = scratch[compact.y + owner];
+    if compact.z > TRAIL_SCAN_PAGE {
+        offset += scratch[compact.y + compact.z + owner / TRAIL_SCAN_PAGE];
+    }
     compacted[4u + offset + local] = candidate;
 }
