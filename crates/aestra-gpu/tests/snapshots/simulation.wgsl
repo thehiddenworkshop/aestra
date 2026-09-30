@@ -1228,6 +1228,10 @@ fn paged_bounds(e: Emitter) -> u32 {
     return paged_pages(e) + (paged_heads(e) + 1023u) / 1024u;
 }
 
+fn paged_needs_candidates(e: Emitter) -> bool {
+    return aux[paged_bounds(e)] != 0u;
+}
+
 var<workgroup> paged_values: array<u32, 1024>;
 
 const TRAIL_SORT_PAGE: u32 = 256u;
@@ -1299,7 +1303,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
         return;
     }
     let size = min(TRAIL_SORT_PAGE, count - start);
-    let recording = kind == 0u || paged_record(e);
+    let recording = kind == 0u || (paged_record(e) && (kind != 2u || paged_needs_candidates(e)));
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
     for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
@@ -1365,6 +1369,9 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
 fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     let e = emitters[id.y];
     if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) {
+        return;
+    }
+    if paged_kind() == 2u && !paged_needs_candidates(e) {
         return;
     }
     let count = select(paged_owners(e), paged_heads(e), paged_kind() == 0u);
@@ -1538,6 +1545,7 @@ fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(loca
         workgroupBarrier();
     }
     if thread == 0u && recording {
+        aux[paged_bounds(e)] = carry;
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
 }

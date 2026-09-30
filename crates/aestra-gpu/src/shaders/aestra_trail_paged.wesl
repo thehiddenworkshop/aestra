@@ -33,6 +33,11 @@ fn paged_mapping(e: Emitter) -> u32 { return paged_base(e) + 2u * paged_heads(e)
 fn paged_pages(e: Emitter) -> u32 { return paged_mapping(e) + paged_heads(e); }
 fn paged_bounds(e: Emitter) -> u32 { return paged_pages(e) + (paged_heads(e) + 1023u) / 1024u; }
 
+// The birth-page scan publishes its total in the first bounds-output word.
+// Candidate ordering consumes it before bound_trail_page replaces the word
+// with the current occupied count. No extra scratch or persistent state is needed.
+fn paged_needs_candidates(e: Emitter) -> bool { return aux[paged_bounds(e)] != 0u; }
+
 var<workgroup> paged_values: array<u32, 1024>;
 const TRAIL_SORT_PAGE: u32 = 256u;
 // One owner per lane: long sample rings no longer serialize sixteen owners on
@@ -91,7 +96,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     if start >= count { return; }
     let size = min(TRAIL_SORT_PAGE, count - start);
     // Owner pages sort only when the history records (see `paged_record`).
-    let recording = kind == 0u || paged_record(e);
+    let recording = kind == 0u || (paged_record(e) && (kind != 2u || paged_needs_candidates(e)));
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
     for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
@@ -148,6 +153,9 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
 fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     let e = emitters[id.y];
     if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) { return; }
+    // Unlike page sorting this kernel has no barriers and can return early on
+    // the storage-backed flag. The owner mapping already covers every live head.
+    if paged_kind() == 2u && !paged_needs_candidates(e) { return; }
     let count = select(paged_owners(e), paged_heads(e), paged_kind() == 0u);
     let n = id.x;
     if n >= count { return; }
@@ -280,6 +288,7 @@ fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(loca
         workgroupBarrier();
     }
     if thread == 0u && recording {
+        aux[paged_bounds(e)] = carry;
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
 }

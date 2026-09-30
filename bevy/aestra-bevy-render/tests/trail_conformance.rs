@@ -611,7 +611,23 @@ fn check_cooperative(owners: u32) {
         1 => 0,
         _ => 0xe000_0000 + n * 2048,
     };
-    let run = |time: f32, ids: &[u32]| {
+    // Poison both candidate lists after reservation. With no births, neither
+    // candidate sorting nor owner updates may consume/replace these words.
+    let candidate_poison = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("unused candidate ordering poison"),
+        contents: &encode(&vec![
+            0xfeed_beefu32;
+            owners.next_power_of_two() as usize * 2
+        ]),
+        usage: wgpu::BufferUsages::COPY_SRC,
+    });
+    let birth_totals = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("trail birth scan totals"),
+        size: 8,
+        mapped_at_creation: false,
+        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+    });
+    let run = |time: f32, ids: &[u32], no_births: bool| {
         for emitter in 0..2u32 {
             let particles = ids
                 .iter()
@@ -670,6 +686,31 @@ fn check_cooperative(owners: u32) {
             pass.set_bind_group(0, &group, &[]);
             pass.set_pipeline(&pipelines[2 + stage.entry]);
             pass.dispatch_workgroups(stage.workgroups, 2, 1);
+            drop(pass);
+            if stage.entry == 5 {
+                for (emitter, e) in emitters.iter().enumerate() {
+                    let heads = e.max_particles.next_power_of_two();
+                    let pool = e.trail_capacity.next_power_of_two();
+                    let lists = e._spawn_inverse_padding.x as u32 + 2 * heads;
+                    let bounds = lists + 2 * pool + heads + heads.div_ceil(1024);
+                    encoder.copy_buffer_to_buffer(
+                        &buffers[7],
+                        u64::from(bounds) * 4,
+                        &birth_totals,
+                        emitter as u64 * 4,
+                        4,
+                    );
+                    if no_births {
+                        encoder.copy_buffer_to_buffer(
+                            &candidate_poison,
+                            0,
+                            &buffers[7],
+                            u64::from(lists) * 4,
+                            u64::from(pool) * 8,
+                        );
+                    }
+                }
+            }
         }
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
@@ -677,7 +718,7 @@ fn check_cooperative(owners: u32) {
             pass.set_pipeline(&pipelines[1]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        let size = buffers[1].size() + buffers[7].size() + buffers[4].size();
+        let size = buffers[1].size() + buffers[7].size() + buffers[4].size() + 8;
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size,
@@ -695,6 +736,7 @@ fn check_cooperative(owners: u32) {
             );
             offset += buffers[index].size();
         }
+        encoder.copy_buffer_to_buffer(&birth_totals, 0, &readback, offset, 8);
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback
@@ -716,21 +758,56 @@ fn check_cooperative(owners: u32) {
         readback.unmap();
         let p = buffers[1].size() as usize;
         let a = buffers[7].size() as usize;
-        let result = expand_legacy(&bytes[..p], &bytes[p..p + a], &bytes[p + a..], records);
+        let c = buffers[4].size() as usize;
+        if plan.paged() && time == 0.0 {
+            for emitter in 0..2 {
+                assert_eq!(
+                    &bytes[p + a + c + emitter * 4..p + a + c + emitter * 4 + 4],
+                    &(ids.len() as u32).to_le_bytes(),
+                    "reset publishes the complete birth total across scan pages"
+                );
+            }
+        }
+        if no_births {
+            for (emitter, e) in emitters.iter().enumerate() {
+                assert_eq!(
+                    &bytes[p + a + c + emitter * 4..p + a + c + emitter * 4 + 4],
+                    &0u32.to_le_bytes(),
+                    "continuing heads must request no new owners"
+                );
+                let lists = e._spawn_inverse_padding.x as usize
+                    + 2 * e.max_particles.next_power_of_two() as usize;
+                let end = lists + 2 * e.trail_capacity.next_power_of_two() as usize;
+                assert!(
+                    bytes[p + lists * 4..p + end * 4]
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .all(|word| *word == 0xfeed_beefu32.to_le_bytes()),
+                    "unused candidate sorting overwrote its poisoned lists"
+                );
+            }
+        }
+        let result = expand_legacy(
+            &bytes[..p],
+            &bytes[p..p + a],
+            &bytes[p + a..p + a + c],
+            records,
+        );
         for &root in &roots {
             assert_world_bounds(&result, root as usize, POINTS as usize, owners as usize);
         }
         result
     };
     let initial_count = owners * 25 / 32;
-    let initial = run(0.0, &(0..initial_count).collect::<Vec<_>>());
+    let initial = run(0.0, &(0..initial_count).collect::<Vec<_>>(), false);
     let ids = (0..initial_count / 2)
         // Keep both identity extrema (MAX and zero) alive through reservation,
         // not just initial sorting. The rest still collide in hash buckets.
         .map(|n| if n == 0 { 0 } else { n * 2 - 1 })
         .chain(initial_count..initial_count + initial_count / 2)
         .collect::<Vec<_>>();
-    let next = run(0.25, &ids);
+    let next = run(0.25, &ids, false);
     let mut strand_order = ids
         .iter()
         .enumerate()
@@ -830,16 +907,27 @@ fn check_cooperative(owners: u32) {
             );
         }
     }
-    let paused = run(0.25, &ids);
+    let paused = run(0.25, &ids, false);
     assert!(
         next == paused,
         "paused observation changed byte {:?}",
         next.iter().zip(&paused).position(|(a, b)| a != b)
     );
-    let retired = run(0.5, &[]);
-    let expired = run(1.5, &[]);
-    let full = run(1.625, &(0..owners).collect::<Vec<_>>());
-    let restarted = run(0.0, &(0..owners / 2).collect::<Vec<_>>());
+    let continuing = run(0.375, &ids, plan.paged());
+    for &root in &roots {
+        for owner in 0..owners {
+            let slot = (root + 1 + owner * POINTS) as usize;
+            assert_eq!(
+                word(&continuing, slot, 48),
+                word(&next, slot, 48),
+                "no-birth update moved or replaced an owner"
+            );
+        }
+    }
+    let retired = run(0.5, &[], false);
+    let expired = run(1.5, &[], false);
+    let full = run(1.625, &(0..owners).collect::<Vec<_>>(), false);
+    let restarted = run(0.0, &(0..owners / 2).collect::<Vec<_>>(), false);
     for emitter in 0..2usize {
         let count = |bytes: &[u8], lane: usize| {
             u32::from_le_bytes(

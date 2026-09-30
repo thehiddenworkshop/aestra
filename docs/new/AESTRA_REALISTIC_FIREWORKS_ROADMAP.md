@@ -1781,9 +1781,38 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe trail-hero --camera close --backend gpu --history replay-enabled --sample-frames 30,120,250 --capture target/fireworks-f1/history-replay-analytic-trails
 ```
 
+### Implemented — birth-gated live trail candidate ordering
+
+- Paged trail allocation now orders replacement candidates only when the GPU birth scan finds a head needing a new owner. Continuing heads use the existing owner mapping. Birth/eviction observations retain the same deterministic free-first, oldest-retired ordering and physical-owner tie breaks; owner-identity sorting, expiry, head ordering, sampling and bounds remain unchanged. The cooperative small-pool path is unchanged.
+- The scan publishes its complete birth total in the first transient bounds-output word; candidate sorting/merging reads it before the bounds pass overwrites it with occupied counts. This adds **no buffers, persistent state, storage bindings, CPU readbacks or checkpoint retention**. Page sorting masks loads/comparisons/stores but retains uniform barriers for D3D/FXC portability; barrier-free candidate merge kernels return early. Dispatches are still encoded: one observation still counts **9,046 workgroups**, not fewer dispatched groups.
+- Native GPU regressions poison both candidate-list ping-pong ranges after reservation on a no-birth observation, then verify they remain untouched while owner identities and world bounds stay valid. Initial/reset scans must publish the full birth count across pages. Coverage includes two emitters, strand ordering, identity extrema, partial/non-power-of-two pools (1,025 and 2,053 owners), 8,192 owners, retirement, expiry, deterministic eviction and restart. The loss-free volley and mixed analytic/stateful replay tests also pass. Generated WGSL validation/snapshot and HLSL/SPIR-V translation remain passing.
+- Sequential RTX 4070 SUPER/Vulkan runs use playback-only, 960×540, close camera, high tier, default-fast transparency and 120 warm-up/600 measured host frames. A fresh control was built with the previous shader (always sorting candidates); optimized run 1 preceded that control, and run 2 followed it. All have **600 unique complete-window samples**, the same 1 zero-/598 one-/1 two-tick mix, **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, zero overflow/omission/rejection/eviction/truncation, zero checkpoint capture bytes and the unchanged **38,580,664-byte configured-buffer estimate** (not total GPU memory).
+
+GPU timings in milliseconds; p50 / p95 / p99:
+
+| Measurement | Previous-shader fresh control | Birth-gated run 1 | Birth-gated run 2 |
+| --- | ---: | ---: | ---: |
+| Complete simulation window (600 samples) | 2.540 / 2.836 / 2.970 | 2.263 / 2.618 / 2.855 | 2.384 / 2.654 / 2.875 |
+| 1 tick, 1 observation, no checkpoint copies (598 samples) | 2.541 / 2.836 / 2.983 | 2.263 / 2.619 / 2.859 | 2.384 / 2.654 / 2.876 |
+| Last-observation allocation/sample diagnostic (600 samples) | 0.741 / 0.829 / 0.885 | 0.443 / 0.536 / 0.833 | 0.472 / 0.539 / 0.846 |
+
+- Allocation/sample p95 falls about **35%**; complete simulation p95 falls **6–8%** against the fresh control. Birth observations still pay candidate ordering, so high-percentile allocation spikes remain. Run-to-run drift and population/time differences are not controlled by grouping, diagnostic phase percentiles cannot be summed into a frame, and one two-tick sample cannot certify catch-up performance. This is a live-path improvement, **not completion of the full-frame/finale budget gate**.
+- Optimized volley frame 240 remains byte-identical to the previous reference (SHA256 `4B45502997252D44EE17DB4C64FB0950691A987CF82981DE0FE21199B6E2F051`); this is output evidence at that frame, not an all-assets/all-times visual guarantee.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test shader_contract --test trail_contract
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --test-threads=1
+cargo test --locked -p aestra-bevy-render --lib trail -- --test-threads=1
+cargo clippy --locked -p aestra-gpu -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/birth-gated-candidates-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/birth-gated-candidates-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/birth-gated-candidates-volley-overlap
+```
+
 ### Tasks
 
-- Next: investigate the remaining **live** paged-history reservation/allocation/bounds work and variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
+- Next: investigate the remaining **live owner-identity reservation** work (fresh-control p95 0.690 ms), head ordering and birth-observation candidate spikes, then variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.
