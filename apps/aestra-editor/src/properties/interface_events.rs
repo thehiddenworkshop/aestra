@@ -4,8 +4,9 @@
 
 use super::*;
 use aestra_core::{
-    EventDefinition, EventDefinitionId, EventDirection, EventField, EventFieldId, EventFieldType,
-    EventRouteId, InputSpawnRoute, MAX_EVENT_LINK_COUNT, RESERVED_EVENT_NAMES,
+    EventAggregation, EventDefinition, EventDefinitionId, EventDirection, EventField, EventFieldId,
+    EventFieldType, EventRouteId, InputSpawnRoute, MAX_EVENT_LINK_COUNT, MAX_OUTPUTS_PER_TICK,
+    ParticleOutputRoute, RESERVED_EVENT_NAMES,
 };
 
 /// A declared-event edit a button or menu carries.
@@ -29,11 +30,31 @@ pub(super) enum EventDeclarationAction {
     SetRouteTarget(EventRouteId, EmitterId),
     /// Centers a route's burst on one of its input's `vec3` fields, or on the effect origin.
     SetRoutePosition(EventRouteId, Option<EventFieldId>),
+    /// Raises a declared output from the first emitter's particle deaths, first per tick (E3).
+    AddOutputRoute(EventDefinitionId),
+    RemoveOutputRoute(EventRouteId),
+    SetOutputSource(EventRouteId, EmitterId),
+    SetOutputTrigger(EventRouteId, EventTrigger),
+    /// First per tick (`false`), or each event up to the route's limit (`true`).
+    SetOutputEachEvent(EventRouteId, bool),
 }
 
 /// The particles-per-event input of an input route.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 struct RouteCountControl(EventRouteId);
+
+/// The outputs-per-tick limit of an output route raising each event.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputLimitControl(EventRouteId);
+
+/// Outputs an each-event route raises per tick at first.
+const DEFAULT_OUTPUT_LIMIT: u32 = 4;
+
+const TRIGGERS: [EventTrigger; 3] = [
+    EventTrigger::OnSpawn,
+    EventTrigger::OnDeath,
+    EventTrigger::OnCollision,
+];
 
 /// Particles a new input route spawns per event.
 const DEFAULT_ROUTE_COUNT: u32 = 32;
@@ -73,7 +94,30 @@ pub(super) fn register(app: &mut App) {
     app.add_observer(activate)
         .add_observer(rename)
         .add_observer(change_route_count)
-        .add_systems(Update, sync_route_counts.in_set(PropertiesSet::Sync));
+        .add_observer(change_output_limit)
+        .add_systems(
+            Update,
+            (sync_route_counts, sync_output_limits).in_set(PropertiesSet::Sync),
+        );
+}
+
+/// The command editing output route `id` as `edit` says, its limit kept in range; `None` when the
+/// route is gone or the edit changes nothing.
+fn output_route_edit(
+    effect: &EffectAsset,
+    id: EventRouteId,
+    edit: impl FnOnce(&mut ParticleOutputRoute),
+) -> Option<EffectCommand> {
+    let route = effect
+        .particle_outputs
+        .iter()
+        .find(|route| route.id == id)?;
+    let mut changed = route.clone();
+    edit(&mut changed);
+    if let EventAggregation::EachEvent { limit } = &mut changed.aggregation {
+        *limit = (*limit).clamp(1, MAX_OUTPUTS_PER_TICK);
+    }
+    (&changed != route).then_some(EffectCommand::SetParticleOutput { id, route: changed })
 }
 
 /// The command editing input route `id` as `edit` says, the count kept in range; `None` when the
@@ -226,6 +270,45 @@ pub(super) fn apply(
             };
             ("interface-edit-route-command", command)
         }
+        EventDeclarationAction::AddOutputRoute(output) => {
+            let Some(emitter) = effect.emitters.first() else {
+                session.status = localizer.text("interface-status-route-needs-emitter");
+                session.ui_revision += 1;
+                return false;
+            };
+            (
+                "interface-add-output-route-command",
+                EffectCommand::AddParticleOutput {
+                    route: ParticleOutputRoute::new(emitter.id, EventTrigger::OnDeath, output),
+                    index: effect.particle_outputs.len(),
+                },
+            )
+        }
+        EventDeclarationAction::RemoveOutputRoute(id) => (
+            "interface-remove-output-route-command",
+            EffectCommand::RemoveParticleOutput { id },
+        ),
+        EventDeclarationAction::SetOutputSource(id, _)
+        | EventDeclarationAction::SetOutputTrigger(id, _)
+        | EventDeclarationAction::SetOutputEachEvent(id, _) => {
+            let Some(command) = output_route_edit(effect, id, |route| match action {
+                EventDeclarationAction::SetOutputSource(_, emitter) => route.source = emitter,
+                EventDeclarationAction::SetOutputTrigger(_, trigger) => route.trigger = trigger,
+                EventDeclarationAction::SetOutputEachEvent(_, each) => {
+                    route.aggregation = match (each, route.aggregation) {
+                        (false, _) => EventAggregation::FirstPerTick,
+                        (true, each @ EventAggregation::EachEvent { .. }) => each,
+                        (true, EventAggregation::FirstPerTick) => EventAggregation::EachEvent {
+                            limit: DEFAULT_OUTPUT_LIMIT,
+                        },
+                    }
+                }
+                _ => unreachable!("matched above"),
+            }) else {
+                return false;
+            };
+            ("interface-edit-output-route-command", command)
+        }
         EventDeclarationAction::Remove(id) => (
             "interface-remove-event-command",
             EffectCommand::RemoveEventDefinition { id },
@@ -288,7 +371,27 @@ pub(super) fn apply(
         EffectCommand::AddInputSpawn { route, .. } => Some(route.clone()),
         _ => None,
     };
+    let raised = match &command {
+        EffectCommand::AddParticleOutput { route, .. } => Some(route.clone()),
+        _ => None,
+    };
     let changed = session.execute(localizer.text(label), command, true);
+    // An output route raises in the preview: say where to hear it.
+    if changed && let Some(route) = raised {
+        let mut args = FluentArgs::new();
+        if let Some((_, output)) = find(&session.effect, route.output) {
+            args.set("output", output.name.clone());
+        }
+        if let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == route.source)
+        {
+            args.set("emitter", emitter.name.clone());
+        }
+        session.status = localizer.text_with("interface-status-output-route-added", &args);
+    }
     // A route is a rule, not a spawn: say what it does, and how to try it.
     if changed && let Some(route) = added {
         let mut args = FluentArgs::new();
@@ -406,6 +509,67 @@ fn change_route_count(
     }
     if let Ok(RouteCountControl(id)) = controls.get(change.source) {
         set_route_count(&mut session, *id, change.value, &localizer);
+    }
+}
+
+/// Sets an each-event output route's outputs-per-tick limit. Returns whether the effect changed; a
+/// value out of range is clamped, and one that changes nothing shows the route's limit again.
+pub(super) fn set_output_limit(
+    session: &mut EditorSession,
+    id: EventRouteId,
+    limit: i32,
+    localizer: &Localizer,
+) -> bool {
+    let limit = limit.max(1) as u32;
+    let command = output_route_edit(&session.effect, id, |route| {
+        if let EventAggregation::EachEvent { limit: current } = &mut route.aggregation {
+            *current = limit;
+        }
+    });
+    match command {
+        Some(command) => session.execute(
+            localizer.text("interface-edit-output-route-command"),
+            command,
+            true,
+        ),
+        None => {
+            session.ui_revision += 1;
+            false
+        }
+    }
+}
+
+fn change_output_limit(
+    change: On<ValueChange<i32>>,
+    controls: Query<&OutputLimitControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    if let Ok(OutputLimitControl(id)) = controls.get(change.source) {
+        set_output_limit(&mut session, *id, change.value, &localizer);
+    }
+}
+
+fn sync_output_limits(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &OutputLimitControl), Added<OutputLimitControl>>,
+) {
+    for (entity, OutputLimitControl(id)) in &controls {
+        if let Some(route) = session
+            .effect
+            .particle_outputs
+            .iter()
+            .find(|route| route.id == *id)
+        {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::I32(route.aggregation.limit() as i32),
+            });
+        }
     }
 }
 
@@ -583,6 +747,12 @@ fn spawn_declared_event(
         .iter()
         .filter(|route| route.input == definition.id)
         .collect();
+    let raisers: Vec<&ParticleOutputRoute> = session
+        .effect
+        .particle_outputs
+        .iter()
+        .filter(|route| route.output == definition.id)
+        .collect();
     parent
         .spawn((
             Node {
@@ -625,9 +795,16 @@ fn spawn_declared_event(
             for route in &routes {
                 spawn_route(card, session, definition, route, localizer);
             }
+            for route in &raisers {
+                spawn_output_route(card, session, definition, route, localizer);
+            }
             if direction == EventDirection::Input && routes.is_empty() {
                 card.spawn_empty()
                     .apply_scene(label_dim(localizer.text("interface-event-input-unhandled")));
+            }
+            if direction == EventDirection::Output && raisers.is_empty() {
+                card.spawn_empty()
+                    .apply_scene(label_dim(localizer.text("interface-event-output-unraised")));
             }
             card.spawn(Node {
                 width: Val::Percent(100.0),
@@ -637,8 +814,20 @@ fn spawn_declared_event(
             })
             .with_children(|row| {
                 if direction == EventDirection::Output {
-                    row.spawn_empty()
-                        .apply_scene(label_dim(localizer.text("interface-event-output-unraised")));
+                    row.spawn((
+                        Node::default(),
+                        EditorTooltip::description(
+                            localizer.text("interface-add-output-route-description"),
+                        ),
+                    ))
+                    .with_children(|add| {
+                        spawn_feathers_action_button(
+                            add,
+                            &localizer.text("interface-add-output-route"),
+                            EventDeclarationAction::AddOutputRoute(definition.id),
+                            false,
+                        );
+                    });
                 } else {
                     row.spawn(Node {
                         align_items: AlignItems::Center,
@@ -675,6 +864,108 @@ fn spawn_declared_event(
                     false,
                 );
             });
+        });
+}
+
+/// One output route: `Raised by [emitter] [particle event] [aggregation] [limit] ×`.
+fn spawn_output_route(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    output: &EventDefinition,
+    route: &ParticleOutputRoute,
+    localizer: &Localizer,
+) {
+    let emitters = session
+        .effect
+        .emitters
+        .iter()
+        .map(|emitter| ComboOption {
+            label: emitter.name.clone(),
+            selected: emitter.id == route.source,
+            action: EventDeclarationAction::SetOutputSource(route.id, emitter.id),
+        })
+        .collect::<Vec<_>>();
+    let source = emitters
+        .iter()
+        .find(|option| option.selected)
+        .map_or_else(|| route.source.to_string(), |option| option.label.clone());
+    let triggers = TRIGGERS.map(|trigger| ComboOption {
+        label: localized_event_trigger(localizer, trigger),
+        selected: trigger == route.trigger,
+        action: EventDeclarationAction::SetOutputTrigger(route.id, trigger),
+    });
+    let each = matches!(route.aggregation, EventAggregation::EachEvent { .. });
+    let aggregation_label = |each: bool| {
+        localizer.text(if each {
+            "interface-output-route-each"
+        } else {
+            "interface-output-route-first"
+        })
+    };
+    let aggregations = [false, true].map(|option| ComboOption {
+        label: aggregation_label(option),
+        selected: option == each,
+        action: EventDeclarationAction::SetOutputEachEvent(route.id, option),
+    });
+    let mut args = FluentArgs::new();
+    args.set("output", output.name.clone());
+    args.set("max", MAX_OUTPUTS_PER_TICK);
+    let description = localizer.text_with("interface-output-route-description", &args);
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(5.0),
+                row_gap: Val::Px(3.0),
+                ..default()
+            },
+            EditorTooltip::description(description),
+        ))
+        .with_children(|row| {
+            row.spawn_empty().apply_scene(label_dim(
+                localizer.text("interface-output-route-raised-by"),
+            ));
+            spawn_combo_control(
+                row,
+                &source,
+                &localizer.text("interface-output-route-emitter"),
+                &emitters,
+                110.0,
+            );
+            spawn_combo_control(
+                row,
+                &localized_event_trigger(localizer, route.trigger),
+                &localizer.text("interface-output-route-trigger"),
+                &triggers,
+                110.0,
+            );
+            spawn_combo_control(
+                row,
+                &aggregation_label(each),
+                &localizer.text("interface-output-route-aggregation"),
+                &aggregations,
+                110.0,
+            );
+            if each {
+                let limit_title = localizer.text("interface-output-route-limit");
+                row.spawn(Node {
+                    width: Val::Px(52.0),
+                    ..default()
+                })
+                .with_children(|limit| {
+                    limit
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_integer_input())
+                        .insert((OutputLimitControl(route.id), AccessibleLabel(limit_title)));
+                });
+            }
+            mini_button(
+                row,
+                "×",
+                EventDeclarationAction::RemoveOutputRoute(route.id),
+            );
         });
 }
 
@@ -1047,6 +1338,82 @@ mod tests {
             &localizer
         ));
         assert!(session.effect.input_spawns.is_empty());
+    }
+
+    #[test]
+    fn an_output_is_raised_from_particle_events_through_its_routes() {
+        let mut session = crate::test_support::session_with_timing_slack();
+        let localizer = Localizer::new("en-US").unwrap();
+        let emitter = session.effect.emitters[0].id;
+        apply(
+            EventDeclarationAction::Add(EventDirection::Output),
+            &mut session,
+            &localizer,
+        );
+        let output = session.effect.event_outputs[0].id;
+
+        // A new route raises it from the first emitter's deaths, first per tick.
+        assert!(apply(
+            EventDeclarationAction::AddOutputRoute(output),
+            &mut session,
+            &localizer
+        ));
+        assert!(
+            session.status.contains("Heard in the preview"),
+            "{}",
+            session.status
+        );
+        let route = session.effect.particle_outputs[0].clone();
+        assert_eq!(
+            (route.source, route.trigger, route.output, route.aggregation),
+            (
+                emitter,
+                EventTrigger::OnDeath,
+                output,
+                EventAggregation::FirstPerTick
+            )
+        );
+        assert!(apply(
+            EventDeclarationAction::SetOutputTrigger(route.id, EventTrigger::OnSpawn),
+            &mut session,
+            &localizer
+        ));
+        assert!(apply(
+            EventDeclarationAction::SetOutputEachEvent(route.id, true),
+            &mut session,
+            &localizer
+        ));
+        assert!(set_output_limit(&mut session, route.id, 99, &localizer));
+        assert_eq!(
+            session.effect.particle_outputs[0].aggregation,
+            EventAggregation::EachEvent {
+                limit: MAX_OUTPUTS_PER_TICK
+            }
+        );
+        assert!(!set_output_limit(&mut session, route.id, 99, &localizer));
+
+        // The preview compiles it: the emitter reports its spawns, and still emits on its own.
+        let compiled = session.preview().unwrap().effect();
+        assert_eq!(compiled.particle_outputs().count(), 1);
+        assert_eq!(
+            compiled.event_mask(0),
+            aestra_runtime::event_trigger_bit(EventTrigger::OnSpawn)
+        );
+        assert!(!compiled.is_event_target(0));
+
+        session.undo();
+        assert_eq!(
+            session.effect.particle_outputs[0].aggregation,
+            EventAggregation::EachEvent {
+                limit: DEFAULT_OUTPUT_LIMIT
+            }
+        );
+        assert!(apply(
+            EventDeclarationAction::RemoveOutputRoute(route.id),
+            &mut session,
+            &localizer
+        ));
+        assert!(session.effect.particle_outputs.is_empty());
     }
 
     #[test]
