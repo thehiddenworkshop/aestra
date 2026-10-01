@@ -65,7 +65,7 @@ use bevy::prelude::*;
 fn camera(mut commands: Commands) {
     let mut camera = commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 20.0, 80.0)
         .looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y)));
-    PhotographicPreview { exposure_stops: 2.0, ..default() }.apply(&mut camera);
+    PhotographicPreview::default().apply(&mut camera);
 }
 ```
 
@@ -81,6 +81,28 @@ When HDR and LDR cameras share a window, their intermediate textures are separat
 cameras should clear their source to `Color::NONE` and alpha-composite their output with no output
 clear (`CameraOutputMode::Write`, `BlendState::ALPHA_BLENDING`, `ClearColorConfig::None`), so an opaque
 or stale LDR source does not hide the tonemapped effect. Their grading remains independent.
+
+## Fireworks radiance controls
+
+The editable shells in `assets/test/effects/fireworks_*.aestra.ron` expose independent
+`Star radiance` and `Trail radiance` scalar parameters, using ordinary material effect bindings:
+
+```rust
+use aestra_bevy::Value;
+
+let radiance = source.parameters.iter().find(|p| p.name == "Star radiance").unwrap().id;
+player.set_parameter(radiance, Value::Scalar(8.0))?;
+// player.clear_parameter(radiance)?; restores the authored default.
+```
+
+Choose variations before playback for game workloads; existing parameter-edit/history
+invalidation semantics still apply. These are artistic linear RGB gains, not physical watts:
+defaults are 8 for sprite stars/launch/flash and 4 for trails, with a graph-level clamp to 0..64.
+Alpha, smoke, cooling gradients and simulation inputs are independent. Unit gain restores the
+old material response. HDR preserves values above 1 until the display transform; start with
+the photographic profile's default 0 stops. No new shell-specific runtime setter is required.
+Low-level material hosts can now also import `MaterialBindingContext` from `aestra_bevy`
+alongside `MaterialRuntimeBinding` to resolve the same dynamic effect bindings.
 
 ## Where to look
 

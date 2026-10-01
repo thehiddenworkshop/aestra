@@ -52,7 +52,9 @@ pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
 pub use world::sdf_from_meshes;
 
-pub use aestra_bevy_render::material::{MaterialRuntimeBinding, compile_material_program};
+pub use aestra_bevy_render::material::{
+    MaterialBindingContext, MaterialRuntimeBinding, compile_material_program,
+};
 pub use aestra_bevy_render::preview;
 pub use aestra_bevy_render::{
     ActiveBackend, AestraRenderPlugin, AestraRenderSet, AestraRenderSettings as AestraSettings,

@@ -8,7 +8,9 @@
         (
             id: "a3574a00-0000-4000-8000-0000000f5329",
             program: Project("a3574a00-0000-4000-8000-0000000f4f40"),
-            values: {},
+            values: {
+                "a3574a00-0000-4000-8000-0000000f4f9a": EffectParameter("a3574a00-0000-4000-8000-0000000f380c"),
+            },
             render_state: (
                 blend: Additive,
                 depth_test: LessEqual,
@@ -19,7 +21,9 @@
         (
             id: "a3574a00-0000-4000-8000-0000000f532a",
             program: Project("a3574a00-0000-4000-8000-0000000f4fa4"),
-            values: {},
+            values: {
+                "a3574a00-0000-4000-8000-0000000f4ffe": EffectParameter("a3574a00-0000-4000-8000-0000000f380d"),
+            },
             render_state: (
                 blend: Additive,
                 depth_test: LessEqual,
@@ -40,6 +44,18 @@
         ),
     ],
     parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f380c",
+            name: "Star radiance",
+            default: Scalar(8.0),
+            exposed: true,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f380d",
+            name: "Trail radiance",
+            default: Scalar(4.0),
+            exposed: true,
+        ),
         (
             id: "a3574a00-0000-4000-8000-0000000f3802",
             name: "Launch speed",
@@ -921,7 +937,7 @@
         ),
     ],
     metadata: {
-        "notes": "Generic death links drive stars/flash/smoke. Launch plume is an independent authored approximation. HDR/bloom, volumetric lighting and production scale remain later gates.",
+        "notes": "Generic death links drive stars/flash/smoke. Launch plume is an independent authored approximation. Star/trail radiance are linear RGB gains clamped to 0..64 by the materials; use an HDR camera. Reference tuning, volumetric lighting and production scale remain later gates.",
         "preview_seed": "17428930557923819521",
         "status": "F3 visual prototype; not Test A performance certification",
     },

@@ -133,7 +133,7 @@ auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
 Opt into a fixed photographic response for luminous effects (legacy previews remain unchanged):
 
 ```powershell
-cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 2 --tonemapping tony --bloom 0.15 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-photo
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 0 --tonemapping tony --bloom 0.15 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-radiance
 ```
 
 `--hdr` enables a floating-point intermediate target, not HDR monitor output. The photographic
@@ -157,6 +157,14 @@ coverage remain opacity, not an emission multiplier. HDR hosts should preserve t
 their target and apply their display transform once after compositing. A separate `Emissive`
 output is not necessary for these unlit fireworks; lit material/light transport would require
 a separate design. Exposure, bloom, camera, sky and audio remain host presentation concerns.
+
+The four editable shell prototypes expose `Star radiance` (default 8) and `Trail radiance`
+(default 4) as ordinary effect scalar parameters. Star gain also covers the launch, flash and
+Pistil's inner stars; trail gain affects ribbon history independently. Smoke, cooling colors,
+opacity, trajectories and widths are unchanged. The material graphs clamp these artistic
+linear-RGB multipliers to 0..64 (not an engine-wide radiance limit); old material instances
+without a binding retain gain 1. Use an HDR camera and start at 0 display stops. These defaults
+are a visual starting point, not physical calibration or certified subpixel energy preservation.
 
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are

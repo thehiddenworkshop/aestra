@@ -2211,6 +2211,54 @@ photographic baseline. Full interactive editor acceptance (scrubbing controls, c
 transforms, restarting with saved preferences, narrow layouts in both locales) remains a manual
 check; the native smoke models camera composition rather than driving the full editor UI.
 
+### F4C implemented — authored HDR radiance controls (2026-10-01)
+
+- The four editable shell assets expose **Star radiance** (default 8) and **Trail radiance**
+  (default 4) as stable-ID scalar effect parameters. Existing semantic material effect bindings
+  resolve them through normal project compilation and host `EffectPlayer::set_parameter` /
+  `clear_parameter`; no firework-specific runtime feature or shader specialization was added.
+  Star gain also covers launch/flash and Pistil's inner stars; trail gain is independent.
+- Shared star/ribbon graphs multiply linear `ParticleColor` by a gain clamped to 0..64.
+  This bound is an editable **asset policy**, not an engine-wide HDR ceiling. Gains are artistic
+  scene-RGB units, not calibrated watts. Alpha remains particle opacity times the procedural
+  mask, with no dependency on gain; smoke materials, cooling gradients, sizes, widths, event
+  counts and dynamics are unchanged. Material defaults remain 1 for older unbound instances.
+- Game hosts should choose variants before playback. Runtime material binding refresh reuses
+  the compiled program, but this does **not** promise cost-free arbitrary live effect-parameter
+  edits: existing parameter/history invalidation semantics still apply. `MaterialBindingContext`
+  is now re-exported by `aestra_bevy` for low-level hosts alongside `MaterialRuntimeBinding`.
+- Regression coverage walks RGB/alpha expression dependencies, checks the asset clamp and
+  unit fallback, compiles the generated shader with unclamped RGB, resolves independent gains
+  from real compiled effect instances (including zero, unit and out-of-policy inputs), restores
+  defaults, and checks unchanged GPU dynamics inputs. All four source fixtures round-trip and
+  resolve through the ordinary project loader.
+
+Native Vulkan captures on **RTX 4070 SUPER**, 960×540, fixed F0 seed, playback-only history,
+Tony tonemapping, **0 stops** and natural bloom 0.15:
+
+- Wide: `target/fireworks-f4/{peony,chrysanthemum,pistil,willow}-radiance`.
+  Frames 45/80/110/150/210/300; Willow additionally samples 390/450.
+- Chrysanthemum audience/close: `target/fireworks-f4/chrysanthemum-radiance-{audience,close}`,
+  with the same six frames and response settings.
+- All six reports succeed on native GPU, with zero reported trail evictions/truncation.
+  Estimated peak particles remain 310 (Peony/Chrysanthemum/Willow) and 406 (Pistil).
+  These are bounded prototype observations, not full requested/produced-work or budget gates.
+- Contact sheets show luminous star cores and cooling golden ribbons; Peony's red and Pistil's
+  blue/gold layering remain distinguishable after the early bright phase. Wide late stars still
+  become dim, close framing clips the initial burst, and smoke remains an unlit approximation.
+  These observations are not reference-footage/AAA acceptance or cross-GPU determinism proof.
+
+Reproduce the wide chrysanthemum capture:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 0 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-radiance
+```
+
+Verification: viewer suite **49 passed, one ignored fixture exporter**, project suites,
+strict viewer/Bevy-client all-target Clippy and formatting/diff checks pass. The shell source
+appearance now intentionally differs from F4A/B's unit-radiance captures; their recorded images
+remain historical controls, not the new golden reference. Interactive editor acceptance remains open.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
@@ -2226,9 +2274,10 @@ check; the native smoke models camera composition rather than driving the full e
 
 ### Still open before F4 acceptance
 
-- Authored HDR radiance/emission gain, highlight/color preservation, and subpixel star
-  energy/size tuning against reference footage. F3 material defaults are deliberately not
-  rewritten by this slice; display exposure is not a substitute for correct source radiance.
+- Refine authored radiance/highlight/color preservation against reference footage; the new
+  8/4 gains are initial artistic defaults, not physical calibration. Add/test generic subpixel
+  star energy/size handling instead of treating increased gain or display exposure as a cure
+  for undersampled geometry. This slice does not change sprite/trail rasterization or LOD.
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.

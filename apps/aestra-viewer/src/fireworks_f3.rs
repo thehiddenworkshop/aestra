@@ -42,16 +42,18 @@ pub fn effect(probe: Probe) -> EffectAsset {
 mod authored {
     use super::*;
     use aestra_bevy::material::{
-        MaterialDomain, MaterialExpression, MaterialExpressionKind as Expr, MaterialInput,
-        MaterialInstance, MaterialOutputs, MaterialProgram, MaterialProgramRef,
-        MaterialRenderState, MaterialRenderStatePolicy, MaterialValue, MaterialVectorComponent,
+        MaterialDomain, MaterialEvaluationDomain, MaterialExpression,
+        MaterialExpressionKind as Expr, MaterialInput, MaterialInstance, MaterialOutputs,
+        MaterialParameter, MaterialParameterValue, MaterialProgram, MaterialProgramRef,
+        MaterialRenderState, MaterialRenderStatePolicy, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
     };
     use aestra_bevy::{
         BlendMode, ColorKey, Curve, CurveKey, EffectId, EffectParameter, EffectPlaybackMode,
         Emitter, EmitterShape, EventId, EventLink, EventTrigger, Gradient, MaterialExpressionId,
-        MaterialId, MaterialProgramId, ModuleInstance, ParameterId, RendererInstance,
-        RendererProperties, RendererTypeId, ScalarRange, TrailEndCap, TrailSamplingMode,
-        TrailUvMode, Value, VelocityDistribution,
+        MaterialId, MaterialParameterId, MaterialProgramId, ModuleInstance, ParameterId,
+        RendererInstance, RendererProperties, RendererTypeId, ScalarRange, TrailEndCap,
+        TrailSamplingMode, TrailUvMode, Value, VelocityDistribution,
     };
     use std::collections::BTreeMap;
 
@@ -155,7 +157,16 @@ mod authored {
                 program: MaterialProgramRef::Project(MaterialProgramId::from_u128(
                     BASE + 8000 + index as u128 * 100,
                 )),
-                values: BTreeMap::new(),
+                values: if index < 2 {
+                    BTreeMap::from([(
+                        MaterialParameterId::from_u128(BASE + 8000 + index as u128 * 100 + 90),
+                        MaterialParameterValue::EffectParameter(ParameterId::from_u128(
+                            base + 60 + index as u128,
+                        )),
+                    )])
+                } else {
+                    BTreeMap::new()
+                },
                 render_state: MaterialRenderState {
                     blend: if id == SMOKE {
                         BlendMode::Alpha
@@ -164,6 +175,16 @@ mod authored {
                     },
                     ..MaterialRenderState::additive_sprite()
                 },
+            });
+        }
+        // Linear scene-radiance multipliers, independent of bounded opacity and
+        // cooling gradients. These are artistic units, not calibrated watts.
+        for (index, name, gain) in [(0, "Star radiance", 8.0), (1, "Trail radiance", 4.0)] {
+            effect.parameters.push(EffectParameter {
+                id: ParameterId::from_u128(base + 60 + index),
+                name: name.into(),
+                default: Value::Scalar(gain),
+                exposed: true,
             });
         }
         let warm = [
@@ -436,7 +457,7 @@ mod authored {
             "preview_seed".into(),
             super::super::fireworks_f0::SEED.to_string(),
         );
-        effect.metadata.insert("notes".into(), "Generic death links drive stars/flash/smoke. Launch plume is an independent authored approximation. HDR/bloom, volumetric lighting and production scale remain later gates.".into());
+        effect.metadata.insert("notes".into(), "Generic death links drive stars/flash/smoke. Launch plume is an independent authored approximation. Star/trail radiance are linear RGB gains clamped to 0..64 by the materials; use an HDR camera. Reference tuning, volumetric lighting and production scale remain later gates.".into());
         effect
     }
 
@@ -531,12 +552,36 @@ mod authored {
                     ]);
                 }
                 expressions.push((13, Expr::Multiply(id(2), id(12))));
+                if index < 2 {
+                    let gain = MaterialParameterId::from_u128(base + 90);
+                    program.parameters.push(MaterialParameter {
+                        id: gain,
+                        name: "Radiance gain".into(),
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: MaterialEvaluationDomain::Effect,
+                        // Existing instances without a binding retain unit radiance.
+                        default: Some(MaterialValue::Float(1.0)),
+                    });
+                    expressions.extend([
+                        (14, Expr::Parameter(gain)),
+                        (15, Expr::Constant(MaterialValue::Float(64.0))),
+                        (
+                            16,
+                            Expr::Clamp {
+                                value: id(14),
+                                min: id(4),
+                                max: id(15),
+                            },
+                        ),
+                        (17, Expr::Multiply(id(1), id(16))),
+                    ]);
+                }
                 program.expressions = expressions
                     .into_iter()
                     .map(|(n, kind)| MaterialExpression { id: id(n), kind })
                     .collect();
                 program.outputs = MaterialOutputs {
-                    color: id(1),
+                    color: id(if index < 2 { 17 } else { 1 }),
                     alpha: id(13),
                     vertex_offset: None,
                 };
@@ -908,6 +953,144 @@ mod tests {
             let mut restored = Vec::new();
             instance.evaluate(&mut restored);
             assert_eq!(before, restored);
+        }
+    }
+
+    #[test]
+    fn f4_radiance_controls_resolve_independently_without_changing_particle_inputs() {
+        use aestra_bevy::material::{
+            MaterialExpressionKind, MaterialParameterValue, MaterialValue,
+        };
+        use aestra_bevy::{EffectPlayer, PlaybackHistoryPolicy, Value};
+        use aestra_bevy::{MaterialBindingContext, MaterialRuntimeBinding};
+        use aestra_gpu::GpuEffectArtifact;
+        use std::sync::Arc;
+
+        let index = aestra_project::ProjectAssetIndex::scan(super::super::viewer_asset_root(None));
+        for probe in Probe::ALL {
+            let source = effect(probe);
+            let resolved = index.resolve_effect_project(&source).unwrap();
+            let compiled = aestra_bevy::EffectCompiler::default()
+                .compile_resolved_project(&resolved)
+                .unwrap();
+            let mut player = EffectPlayer::from_compiled(compiled.root)
+                .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+            let baseline = GpuEffectArtifact::dynamics_from_instance(player.instance()).unwrap();
+            for (material_index, name, default) in
+                [(0, "Star radiance", 8.0), (1, "Trail radiance", 4.0)]
+            {
+                let parameter = source.parameters.iter().find(|p| p.name == name).unwrap();
+                assert!(parameter.exposed);
+                assert_eq!(parameter.default, Value::Scalar(default));
+                let material = &source.material_instances[material_index];
+                let (&gain, binding) = material.values.first_key_value().unwrap();
+                assert_eq!(
+                    binding,
+                    &MaterialParameterValue::EffectParameter(parameter.id)
+                );
+                let aestra_bevy::material::MaterialProgramRef::Project(program_id) =
+                    material.program
+                else {
+                    panic!("fireworks use project material programs")
+                };
+                let program = &resolved.material_programs[&program_id];
+                // Walk the actual output DAGs, not just the top-level nodes:
+                // source gain must reach RGB but never alpha/coverage.
+                let depends_on_gain = |output| {
+                    let mut pending = vec![output];
+                    while let Some(id) = pending.pop() {
+                        let expression = program.expressions.iter().find(|e| e.id == id).unwrap();
+                        if expression.kind == MaterialExpressionKind::Parameter(gain) {
+                            return true;
+                        }
+                        pending.extend(expression.kind.dependencies());
+                    }
+                    false
+                };
+                assert!(depends_on_gain(program.outputs.color));
+                assert!(!depends_on_gain(program.outputs.alpha));
+                let clamp = program
+                    .expressions
+                    .iter()
+                    .find_map(|e| match e.kind {
+                        MaterialExpressionKind::Clamp { min, max, .. } => Some((min, max)),
+                        _ => None,
+                    })
+                    .unwrap();
+                for (id, expected) in [(clamp.0, 0.0), (clamp.1, 64.0)] {
+                    assert_eq!(
+                        program
+                            .expressions
+                            .iter()
+                            .find(|e| e.id == id)
+                            .unwrap()
+                            .kind,
+                        MaterialExpressionKind::Constant(MaterialValue::Float(expected))
+                    );
+                }
+                assert_eq!(
+                    program.parameters[0].default,
+                    Some(MaterialValue::Float(1.0))
+                );
+                let gpu_program = Arc::new(aestra_bevy::compile_material_program(program).unwrap());
+                assert!(
+                    gpu_program
+                        .shader
+                        .wgsl
+                        .contains("vec4<f32>(output.rgb, clamp(output.a")
+                );
+                let mut old_instance = material.clone();
+                old_instance.values.clear();
+                MaterialRuntimeBinding::from_instance(Arc::clone(&gpu_program), &old_instance)
+                    .unwrap();
+                let mut runtime = MaterialRuntimeBinding::from_instance_with_context(
+                    Arc::clone(&gpu_program),
+                    material,
+                    &MaterialBindingContext::from_effect_instance(player.instance()),
+                )
+                .unwrap();
+                assert_eq!(runtime.values()[&gain], MaterialValue::Float(default));
+                for value in [0.0, 1.0, 16.0, -1.0, 100.0] {
+                    player
+                        .set_parameter(parameter.id, Value::Scalar(value))
+                        .unwrap();
+                    runtime
+                        .refresh_dynamic_values(&MaterialBindingContext::from_effect_instance(
+                            player.instance(),
+                        ))
+                        .unwrap();
+                    assert_eq!(runtime.values()[&gain], MaterialValue::Float(value));
+                    assert!(Arc::ptr_eq(runtime.program(), &gpu_program));
+                    let after =
+                        GpuEffectArtifact::dynamics_from_instance(player.instance()).unwrap();
+                    assert_eq!(format!("{baseline:?}"), format!("{after:?}"));
+                    // Updating one gain does not touch the other, nor the smoke instance.
+                    let other = source
+                        .parameters
+                        .iter()
+                        .find(|p| {
+                            p.name
+                                == if material_index == 0 {
+                                    "Trail radiance"
+                                } else {
+                                    "Star radiance"
+                                }
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        player.instance().parameter(other.id),
+                        Some(&aestra_bevy::RuntimeValue::compile(&other.default).unwrap())
+                    );
+                }
+                player.clear_parameter(parameter.id).unwrap();
+                runtime
+                    .refresh_dynamic_values(&MaterialBindingContext::from_effect_instance(
+                        player.instance(),
+                    ))
+                    .unwrap();
+                assert_eq!(runtime.values()[&gain], MaterialValue::Float(default));
+            }
+            assert!(source.material_instances[2].values.is_empty());
         }
     }
 
