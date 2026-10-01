@@ -380,6 +380,47 @@ mod authored {
             effect.events.push(link);
             effect.emitters.push(inner);
         }
+        // Expose full cooling gradients instead of replacing them with flat
+        // tints. Heads and ribbon histories read the same particle appearance;
+        // the two smoke emitters deliberately share one independent control.
+        for (index, name, targets) in [
+            (0, "Launch color", &[0][..]),
+            (1, "Star color", &[1][..]),
+            (2, "Flash color", &[2][..]),
+            (3, "Smoke color", &[3, 4][..]),
+            (
+                4,
+                "Pistil color",
+                if probe == Probe::Pistil {
+                    &[5][..]
+                } else {
+                    &[][..]
+                },
+            ),
+        ] {
+            let Some(&first) = targets.first() else {
+                continue;
+            };
+            let Some(Value::Gradient(mut gradient)) =
+                effect.emitters[first].modules[4].parameter_value("color")
+            else {
+                panic!("prototype appearance must have a color gradient")
+            };
+            // Parameter defaults have their own stable authoring identities.
+            gradient.id = aestra_bevy::GradientId::from_u128(base + 80 + index);
+            let id = ParameterId::from_u128(base + 53 + index);
+            effect.parameters.push(EffectParameter {
+                id,
+                name: name.into(),
+                default: Value::Gradient(gradient),
+                exposed: true,
+            });
+            for &target in targets {
+                effect.emitters[target].modules[4]
+                    .bindings
+                    .insert("color".into(), id);
+            }
+        }
         // Include the long Willow decay and retired trail history in the root
         // playback window; keep the launch plume's intentionally short window.
         for emitter in &mut effect.emitters {
@@ -677,6 +718,196 @@ mod tests {
                     resolved.material_programs[&expected.id].normalized()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn f3_color_controls_preserve_defaults_and_pack_independent_host_overrides() {
+        use aestra_bevy::{
+            ColorKey, EffectPlayer, Gradient, ModuleParameters, PlaybackHistoryPolicy, Value,
+        };
+        use aestra_gpu::{GpuEffectArtifact, GpuGradient};
+        use std::sync::Arc;
+
+        fn assert_gradient(actual: &GpuGradient, expected: &Gradient) {
+            assert_eq!(actual.count as usize, expected.keys.len());
+            for (actual, expected) in actual.keys.iter().zip(&expected.keys) {
+                assert_eq!(actual.time, expected.time);
+                assert_eq!(actual.color.to_array(), expected.color);
+            }
+        }
+
+        let index = aestra_project::ProjectAssetIndex::scan(super::super::viewer_asset_root(None));
+        let override_gradient = Gradient::new(vec![
+            ColorKey::new(0.0, [0.1, 1.0, 0.2, 1.0]),
+            ColorKey::new(0.6, [0.02, 0.5, 0.1, 1.0]),
+            ColorKey::new(1.0, [0.0, 0.08, 0.02, 1.0]),
+        ]);
+        for probe in Probe::ALL {
+            let source = effect(probe);
+            let resolved = index.resolve_effect_project(&source).unwrap();
+            let project = Arc::new(
+                aestra_bevy::EffectCompiler::default()
+                    .compile_resolved_project(&resolved)
+                    .unwrap(),
+            );
+            let mut player = EffectPlayer::from_project(project.clone())
+                .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+            player.seek_frame(120);
+            let other = EffectPlayer::from_project(project);
+            let baseline = GpuEffectArtifact::dynamics_from_instance(player.instance()).unwrap();
+            let controls: Vec<_> = source
+                .parameters
+                .iter()
+                .filter(|p| matches!(p.default, Value::Gradient(_)))
+                .collect();
+            assert_eq!(controls.len(), if probe == Probe::Pistil { 5 } else { 4 });
+            for parameter in controls {
+                assert!(parameter.exposed);
+                let Value::Gradient(default) = &parameter.default else {
+                    unreachable!()
+                };
+                let targets: Vec<_> = source
+                    .emitters
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, emitter)| {
+                        emitter.modules[4].bindings.get("color") == Some(&parameter.id)
+                    })
+                    .map(|(index, _)| index)
+                    .collect();
+                assert!(!targets.is_empty());
+                assert_eq!(
+                    targets.len(),
+                    if parameter.name == "Smoke color" {
+                        2
+                    } else {
+                        1
+                    }
+                );
+                for &target in &targets {
+                    let ModuleParameters::Appearance { color, .. } =
+                        &source.emitters[target].modules[4].parameters
+                    else {
+                        unreachable!()
+                    };
+                    assert_eq!(default.keys, color.keys);
+                    assert_ne!(default.id, color.id);
+                    assert_gradient(&baseline.emitters[target].color, default);
+                }
+                let time = player.instance().time();
+                assert!((time - 2.0).abs() < 1e-5);
+                player
+                    .set_parameter(parameter.id, Value::Gradient(override_gradient.clone()))
+                    .unwrap();
+                assert_eq!(player.instance().time(), time);
+                assert_eq!(player.history_policy(), PlaybackHistoryPolicy::PlaybackOnly);
+                assert!(Arc::ptr_eq(player.effect(), other.effect()));
+                let updated = GpuEffectArtifact::dynamics_from_instance(player.instance()).unwrap();
+                let untouched =
+                    GpuEffectArtifact::dynamics_from_instance(other.instance()).unwrap();
+                assert_eq!(updated.total_slots, baseline.total_slots);
+                assert_eq!(updated.storage_records, baseline.storage_records);
+                assert_eq!(updated.simulation_state, baseline.simulation_state);
+                assert_eq!(updated.renderers.len(), baseline.renderers.len());
+                for (i, emitter) in updated.emitters.iter().enumerate() {
+                    if targets.contains(&i) {
+                        assert_gradient(&emitter.color, &override_gradient);
+                    } else {
+                        assert_eq!(emitter.color.count, baseline.emitters[i].color.count);
+                        for (actual, expected) in emitter
+                            .color
+                            .keys
+                            .iter()
+                            .zip(&baseline.emitters[i].color.keys)
+                        {
+                            assert_eq!(actual.time, expected.time);
+                            assert_eq!(actual.color, expected.color);
+                        }
+                    }
+                    assert_eq!(
+                        untouched.emitters[i].color.keys[0].color,
+                        baseline.emitters[i].color.keys[0].color
+                    );
+                }
+                assert!(
+                    player
+                        .set_parameter(parameter.id, Value::Scalar(0.5))
+                        .is_err()
+                );
+                assert_eq!(
+                    player.instance().parameter(parameter.id),
+                    Some(
+                        &aestra_bevy::RuntimeValue::compile(&Value::Gradient(
+                            override_gradient.clone()
+                        ))
+                        .unwrap()
+                    )
+                );
+                player.clear_parameter(parameter.id).unwrap();
+                let restored =
+                    GpuEffectArtifact::dynamics_from_instance(player.instance()).unwrap();
+                for &target in &targets {
+                    assert_gradient(&restored.emitters[target].color, default);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn f3_smoke_color_overrides_reach_cpu_samples_without_changing_trajectories() {
+        use aestra_bevy::{ColorKey, EffectInstance, Gradient, PlaybackHistoryPolicy, Value};
+        let index = aestra_project::ProjectAssetIndex::scan(super::super::viewer_asset_root(None));
+        for probe in Probe::ALL {
+            let source = effect(probe);
+            let resolved = index.resolve_effect_project(&source).unwrap();
+            let compiled = aestra_bevy::EffectCompiler::default()
+                .compile_resolved_project(&resolved)
+                .unwrap();
+            let mut instance =
+                EffectInstance::with_seed(compiled.root, super::super::fireworks_f0::SEED)
+                    .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+            // The stateless CPU reference does not spawn stateful event targets;
+            // use the authored analytic plume for its appearance-path check.
+            instance.seek(0.75);
+            let mut before = Vec::new();
+            instance.evaluate(&mut before);
+            assert!(before.iter().any(|p| p.emitter_index == 3));
+            let parameter = source
+                .parameters
+                .iter()
+                .find(|p| p.name == "Smoke color")
+                .unwrap();
+            instance
+                .set_parameter(
+                    parameter.id,
+                    Value::Gradient(Gradient::new(vec![ColorKey::new(
+                        0.0,
+                        [0.0, 1.0, 0.0, 1.0],
+                    )])),
+                )
+                .unwrap();
+            let mut after = Vec::new();
+            instance.evaluate(&mut after);
+            assert_eq!(before.len(), after.len());
+            for (old, new) in before.iter().zip(&after) {
+                assert_eq!(old.emitter_index, new.emitter_index);
+                assert_eq!(old.particle_index, new.particle_index);
+                assert_eq!(old.position, new.position);
+                assert_eq!(old.normalized_age, new.normalized_age);
+                assert_eq!(old.size, new.size);
+                assert_eq!(old.rotation, new.rotation);
+                if old.emitter_index == 3 {
+                    assert_eq!(&new.color[..3], &[0.0, 1.0, 0.0]);
+                    assert_eq!(old.color[3], new.color[3]);
+                } else {
+                    assert_eq!(old.color, new.color);
+                }
+            }
+            instance.clear_parameter(parameter.id).unwrap();
+            let mut restored = Vec::new();
+            instance.evaluate(&mut restored);
+            assert_eq!(before, restored);
         }
     }
 

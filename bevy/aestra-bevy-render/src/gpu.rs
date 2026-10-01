@@ -6250,6 +6250,71 @@ mod coupled_tests {
     }
 
     #[test]
+    fn event_born_particles_present_changed_cooling_gradients_without_changing_state() {
+        let Some((mut scene, links)) = chained_event_scene() else {
+            assert!(
+                std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                "stateful appearance regression requires a hardware GPU"
+            );
+            return;
+        };
+        scene.dispatches[0].spawn_rate = 0.0;
+        scene.dispatches[0].burst_count = 1;
+        scene.dispatches[0].lifetime = (0.25, 0.25);
+        advance_chained_event_scene(&mut scene, &links, 80);
+        let baseline = chained_event_snapshot(&scene);
+        assert_eq!(baseline.spawn_counts[..2], [1, 48]);
+        assert_eq!(baseline.particles[1].len(), 48);
+        let original_presentation = read_back(&scene.device, &scene.queue, &scene.render[0]);
+        let fingerprint = scene.dispatches[1].fingerprint();
+        let gradient = aestra_core::Gradient::new(vec![
+            aestra_core::ColorKey::new(0.0, [0.1, 1.0, 0.2, 1.0]),
+            aestra_core::ColorKey::new(0.6, [0.02, 0.5, 0.1, 1.0]),
+            aestra_core::ColorKey::new(1.0, [0.0, 0.08, 0.02, 1.0]),
+        ]);
+        let mut packed = GpuGradient {
+            count: gradient.keys.len() as u32,
+            ..Default::default()
+        };
+        for (key, source) in packed.keys.iter_mut().zip(&gradient.keys) {
+            key.color = Vec4::from_array(source.color);
+            key.time = source.time;
+        }
+        scene.dispatches[1].appearance.color = packed;
+        assert_eq!(scene.dispatches[1].fingerprint(), fingerprint);
+        // Re-present the current tick, not a new simulation or an extra burst.
+        advance_chained_event_scene(&mut scene, &links, 80);
+        assert_eq!(chained_event_snapshot(&scene), baseline);
+        let words: Vec<_> = read_back(&scene.device, &scene.queue, &scene.render[0])
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| u32::from_le_bytes(*bytes))
+            .collect();
+        let particles: Vec<_> = words
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .filter(|particle| particle[10] >> 16 == 1 && particle[10] & 0xffff != 0)
+            .collect();
+        assert_eq!(particles.len(), 48);
+        let expected = aestra_runtime::CompiledGradient::compile(&gradient);
+        for particle in particles {
+            let color = expected.sample(f32::from_bits(particle[9]));
+            for (actual, expected) in particle[..4].iter().zip(color) {
+                assert!((f32::from_bits(*actual) - expected).abs() < 1e-5);
+            }
+        }
+        scene.dispatches[1].appearance.color = GpuGradient::default();
+        advance_chained_event_scene(&mut scene, &links, 80);
+        assert_eq!(chained_event_snapshot(&scene), baseline);
+        assert_eq!(
+            read_back(&scene.device, &scene.queue, &scene.render[0]),
+            original_presentation
+        );
+    }
+
+    #[test]
     fn authored_one_shot_burst_launches_once_and_drives_death_links_after_seek() {
         for burst_tick in [0, 30] {
             let Some((mut scene, links)) = chained_event_scene() else {

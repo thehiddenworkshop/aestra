@@ -20,4 +20,5 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+aestra-gpu = { path = "../../crates/aestra-gpu" }
 tempfile.workspace = true

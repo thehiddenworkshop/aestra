@@ -337,6 +337,7 @@ dependencies = [
  "aestra-example-extension",
  "aestra-extension",
  "aestra-fluid",
+ "aestra-gpu",
  "aestra-project",
  "bevy",
  "image",

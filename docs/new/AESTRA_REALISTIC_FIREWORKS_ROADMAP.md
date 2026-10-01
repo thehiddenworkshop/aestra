@@ -2067,7 +2067,31 @@ Peony, ring and palm can all be authored generically.
 - CLI probes `f3-pistil` and `f3-willow` load the checked-in sources through normal project resolution. Regression tests cover all four fixture round-trips, material compilation, project/CLI preparation, bounded event targets without autonomous births, Pistil speed/color separation and Willow history/playback-window coverage. Viewer suite: **43 passed, one ignored fixture-export helper**; strict viewer Clippy and formatting pass.
 - Inspected native GPU **playback-only** captures in `target/fireworks-f3/pistil` (frames 45/80/110/150/210/300) and `target/fireworks-f3/willow` (45/80/150/240/330/390/450/510). Pistil telemetry peaks at 256 outer and 96 inner stars; Willow peaks at 256 stars. Both show one launch/flash and 24 burst-smoke particles. Willow's final report has zero alive particles, occupied/retired trails and submitted geometry, with zero reported trail truncations/evictions. These are endpoint telemetry and visual checks, not per-frame budget certification. Pistil's wide-view star heads are still dim; Willow's expansion, falling arcs and cooling tail decay are visible but require reference/HDR tuning.
 
-These are **bounded-count visual prototypes, not completed production shells**. Even Pistil's 352 stars do not certify the named Test A workload, finale budgets, or F1/F1B's resource/performance gates. Still open: reference-footage comparison and material/curve tuning, exposed color controls, editor manual acceptance, and production-scale timing/memory certification.
+### Exposed cooling gradients — 2026-10-01
+
+- All four sources expose **Launch color**, **Star color**, **Flash color** and **Smoke color** as ordinary `Gradient` parameters; Pistil additionally exposes **Pistil color** independently of its outer shell. The two smoke emitters share one control. Defaults preserve the authored gradients, including their cooling keys; parameter gradients have stable IDs distinct from module-local gradients. Particle heads and trail history use the same appearance input rather than separate material tints.
+- Hosts use the existing `EffectPlayer::set_parameter(id, Value::Gradient(...))` and `clear_parameter(id)` APIs; no shell-specific setter, material program change or runtime feature was added. Set per-shell variations **before playback** for game workloads. Existing parameter/history invalidation semantics still apply to later edits; this slice does not claim cost-free live recoloring of retained trails or unlimited GPU gradient key counts (the fixtures use at most three keys within the existing eight-key budget).
+- Regression tests cover preserved defaults, source/project compilation, typed host overrides and clear, independent layers/instances, unchanged GPU storage budgets and playhead/history policy, and analytic CPU plume color without trajectory changes. The stateless CPU evaluator does not produce the stateful event-born star cohorts. A required-hardware native GPU production-loop test separately checks gradient interpolation on real event-born particles, unchanged simulation/birth counters when re-presenting the same tick, and byte-exact presentation restoration. Viewer suite: **45 passed, one ignored fixture-export helper**; strict viewer/render Clippy and formatting pass.
+- Default native GPU playback-only capture `target/fireworks-f3/chrysanthemum-color-controls` uses frames 45/80/110/150/210/300. SHA-256 comparison of all six frame PNGs against `target/fireworks-f3/chrysanthemum-fixed` is byte-identical: exposing the defaults did not change that shell's captured appearance. Project tests also pass. No editor manual acceptance or production timing certification is implied by these checks.
+
+Example host-side variation after compiling/resolving the project and constructing its player:
+
+```rust
+use aestra_bevy::{ColorKey, Gradient, Value};
+
+let star_color = player.effect().parameters.iter()
+    .find(|parameter| parameter.name == "Star color")
+    .expect("F3 shell exposes Star color")
+    .source;
+player.set_parameter(star_color, Value::Gradient(Gradient::new(vec![
+    ColorKey::new(0.0, [0.1, 1.0, 0.2, 1.0]),
+    ColorKey::new(0.6, [0.02, 0.5, 0.1, 1.0]),
+    ColorKey::new(1.0, [0.0, 0.08, 0.02, 1.0]),
+])))?;
+// player.clear_parameter(star_color)?; // restores this shell's default gradient
+```
+
+These are **bounded-count visual prototypes, not completed production shells**. Even Pistil's 352 stars do not certify the named Test A workload, finale budgets, or F1/F1B's resource/performance gates. Still open: reference-footage comparison and material/curve tuning, editor manual acceptance (including exposed-gradient editing), and production-scale timing/memory certification. The next visual slice is F4's HDR/exposure/bloom response; production certification remains a separate gate.
 
 Example deterministic capture:
 
