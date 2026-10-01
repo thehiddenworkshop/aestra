@@ -104,6 +104,35 @@ the photographic profile's default 0 stops. No new shell-specific runtime setter
 Low-level material hosts can now also import `MaterialBindingContext` from `aestra_bevy`
 alongside `MaterialRuntimeBinding` to resolve the same dynamic effect bindings.
 
+## Subpixel additive sprites
+
+For distant luminous stars, hosts can opt into a native GPU presentation policy:
+
+```rust
+use aestra_bevy::SpriteSampling;
+
+app.insert_resource(SpriteSampling { minimum_pixels: 2.0 });
+```
+
+The default is 0 (disabled). The resource normalizes to 0..8 physical main-pass pixels;
+non-finite inputs disable it. It measures the shorter rotated quad axis using each camera's
+unjittered projection and viewport, expands undersampled quads uniformly, then attenuates
+final alpha by inverse expanded area. This preserves continuous footprint energy without
+changing authored opacity inputs, radiance, particle size/state, event counts or replay history.
+Resource edits update renderer inputs without restarting simulation. It does not enable HDR.
+
+Only native GPU **additive Sprite** draws qualify. Flipbooks, meshes, ribbons, trails and CPU
+reference/readback presentation are unchanged. Wireframe remains a diagnostic outline rather
+than energy-attenuated shading. The floor is a host quality policy, not an asset/particle limit.
+Qualifying draws bypass CPU frustum culling because view-dependent expansion can exceed their
+world AABB; normal raster clipping remains. Disabling the resource restores ordinary sprite
+culling. Budget the extra offscreen submissions and fill cost before enabling it for a finale.
+
+This is not an analytic pixel integral or a guarantee of shimmer-free arbitrary textured masks.
+Projection is exact for ordinary camera-facing perspective/orthographic quads at constant
+view depth; custom projections use a center-Jacobian estimate. Zero/degenerate footprints are
+not resurrected. Start at 2 pixels and compare temporal appearance and GPU cost on target hardware.
+
 ## Where to look
 
 | I want… | Read |

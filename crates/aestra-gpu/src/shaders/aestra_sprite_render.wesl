@@ -7,6 +7,7 @@ struct VertexOutput {
     @location(3) @interpolate(flat) visible: u32,
     @location(4) uv: vec2<f32>,
     @location(5) @interpolate(flat) textured: u32,
+    @location(6) sampling_coverage: f32,
 }
 
 @vertex
@@ -23,6 +24,7 @@ fn vertex(
     output.visible = sprite.visible;
     output.uv = sprite.uv;
     output.textured = sprite.textured;
+    output.sampling_coverage = sprite.sampling_coverage;
     return output;
 }
 
@@ -37,7 +39,7 @@ fn particle_color(input: VertexOutput) -> vec4<f32> {
     if (input.textured & 2u) != 0u { distance = abs(input.quad_position.x); }
     var coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);
     if (input.textured & 4u) != 0u { coverage *= input.quad_position.y; }
-    return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage);
+    return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage * input.sampling_coverage);
 }
 
 @fragment

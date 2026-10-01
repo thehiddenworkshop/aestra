@@ -315,8 +315,11 @@ fn varying_layout_keeps_coverage_but_only_interpolates_live_material_inputs() {
             .collect::<Vec<_>>()
     };
     let coverage = vec![QuadPosition, Softness, Textured, Visible];
-    assert_eq!(fields(&minimal), coverage);
-    assert_eq!(minimal.varying_layout.component_count(), 5);
+    assert_eq!(
+        fields(&minimal),
+        [coverage.clone(), vec![SamplingCoverage]].concat()
+    );
+    assert_eq!(minimal.varying_layout.component_count(), 6);
     assert_portable_shader_targets(&minimal.shader.wgsl);
 
     for (input, varying) in [
@@ -334,8 +337,9 @@ fn varying_layout_keeps_coverage_but_only_interpolates_live_material_inputs() {
         let compiled = compile(&program);
         let mut expected = coverage.clone();
         expected.push(varying);
+        expected.push(SamplingCoverage);
         assert_eq!(fields(&compiled), expected);
-        assert_eq!(compiled.varying_layout.component_count(), 6);
+        assert_eq!(compiled.varying_layout.component_count(), 7);
         assert_ne!(compiled.program_fingerprint, minimal.program_fingerprint);
         let variant = MaterialPipelineVariant {
             target_format: MaterialColorTargetFormat::Bgra8UnormSrgb,
@@ -358,10 +362,11 @@ fn varying_layout_keeps_coverage_but_only_interpolates_live_material_inputs() {
             Textured,
             Visible,
             Uv0,
-            ParticleColor
+            ParticleColor,
+            SamplingCoverage
         ]
     );
-    assert_eq!(flame.varying_layout.component_count(), 11);
+    assert_eq!(flame.varying_layout.component_count(), 12);
     assert!(flame.shader.wesl.contains("input.particle_color.a"));
     assert!(!flame.shader.wesl.contains("input.particle_opacity"));
     let mut reversed = two_texture_flame_program();
@@ -710,7 +715,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "b1173ea7106374bb14f2fa127adefda8bfb1c1d54ee3be0194e4cd613e604a0e"
+        "b99a5324bffda7d8d22bba8fca2f9df7bb1daf657e975eb062ff71231f1b8827"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

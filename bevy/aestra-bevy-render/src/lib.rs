@@ -11,6 +11,7 @@ pub mod gpu;
 mod host_transform;
 pub mod material;
 pub mod preview;
+pub mod sampling;
 
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
@@ -349,6 +350,7 @@ impl Plugin for AestraRenderPlugin {
                 .before(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
         );
         app.init_resource::<AestraRenderSettings>()
+            .init_resource::<sampling::SpriteSampling>()
             .init_resource::<AestraTextureRoot>()
             .init_resource::<GpuCapabilities>()
             .init_resource::<AestraRuntimeStatus>()

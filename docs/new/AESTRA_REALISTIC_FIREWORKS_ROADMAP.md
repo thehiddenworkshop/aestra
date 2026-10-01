@@ -2259,6 +2259,63 @@ strict viewer/Bevy-client all-target Clippy and formatting/diff checks pass. The
 appearance now intentionally differs from F4A/B's unit-radiance captures; their recorded images
 remain historical controls, not the new golden reference. Interactive editor acceptance remains open.
 
+### F4D implemented — opt-in subpixel additive sprite sampling (2026-10-01)
+
+- Generic host resource `aestra_bevy::SpriteSampling { minimum_pixels: 2.0 }`, default 0,
+  controls **native GPU additive Sprite** presentation only. Finite values normalize to 0..8
+  physical main-pass pixels; non-finite values disable it. The bound is a quality policy,
+  not an engine-wide effect/particle constraint. No authored asset or compiler format changes.
+- The shared vertex path projects both rotated quad axes through each camera's unjittered
+  matrix and main-pass viewport. Below the shorter-axis floor, geometry expands uniformly
+  and final fragment alpha is attenuated by inverse expanded area. The shared helper is used
+  by legacy and semantic materials, including constant-alpha programs. Authored ParticleOpacity
+  remains unchanged; gain, state, emission, trails and playback/replay histories are untouched.
+  Renderer-resource changes apply without rebuilding particle buffers or restarting playback.
+- Flipbooks, meshes, ribbons, trails and CPU reference/readback presentation are excluded.
+  Zero/degenerate footprints are not resurrected; resolved quads are unchanged. Wireframe is
+  still diagnostic shading. No extra passes, sample history or per-particle CPU work are added.
+  Projection is exact for standard camera-facing perspective/orthographic quads; custom
+  projections use a center Jacobian. This preserves **continuous footprint area × alpha**,
+  not exact pixel-integrated radiometry or shimmer-free arbitrary material masks.
+- Expanded screen footprints can exceed ordinary world AABBs. Qualifying draws therefore
+  bypass CPU frustum culling while retaining raster clipping; turning off the policy restores
+  ordinary sprite culling. This adds potential offscreen submissions/fill cost, not a free
+  performance guarantee. Production/finale and temporal-quality gates remain open.
+- Viewer option `--sprite-min-pixels 0..8` does not enable HDR. Nonzero policies reject explicit
+  CPU/readback modes; automatic CPU fallback ignores it, so inspect the selected backend.
+  Schema-1 reports add normalized requested `capture.response.sprite_minimum_pixels` (absent
+  in old reports means disabled). Editor defaults have not been changed by this host/viewer slice.
+
+Validation:
+
+- Native GPU compute/raster regression exercises the actual shared shader: perspective and
+  orthographic projection, viewport scaling, behind-camera/degenerate geometry, disabled/resolved
+  cases and inverse-area identity. Sixteen isolated quarter-pixel sprites at distinct X/Y pixel
+  phases exhibit untreated dropout; 2- and 4-pixel floors keep all tested phases nonzero, with
+  each cell's alpha sum bounded by the original square footprint area. Legacy and constant-alpha
+  semantic paths pass; zero-size geometry remains invisible and 4-pixel sprites render identically
+  with the policy on/off. This bounded test is not a universal material/temporal certification.
+- Policy normalization/excluded renderer kinds, reversible culling, viewer CLI/no simulation
+  change and report metadata are covered. Shader snapshots and varying/fingerprint goldens
+  explicitly include the new presentation coverage scalar. Portable WGSL/SPIR-V/HLSL contracts
+  and native legacy/semantic/mesh/MSAA stage linking pass; viewer suite: **50 passed, one ignored**.
+- RTX 4070 SUPER Vulkan, 960×540, fixed F0 seed, playback-only, Tony, 0 stops, bloom 0.15:
+  `target/fireworks-f4/chrysanthemum-sampling-off` is byte-identical to all six F4C baseline PNGs.
+  `target/fireworks-f4/chrysanthemum-sampling-2` uses the same frame sequence and records floor 2.
+  Wide `target/fireworks-f4/{peony,pistil,willow}-sampling-2` also succeed on native GPU;
+  Willow includes late frames 390/450. These are prototype integration captures, not AAA references.
+  Native HDR multi-camera viewport smoke (`target/fireworks-f4/sampling-viewport-smoke`) passes
+  three frames with floor 2: particles remain visible in the preview and absent from the overlay probe.
+  Still captures exercise integration, not an animated shimmer/performance acceptance gate.
+
+Strict all-target Clippy for GPU/renderer/Bevy client/viewer and formatting/diff checks pass.
+
+Reproduce the treated wide capture:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 0 --sprite-min-pixels 2 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-sampling-2
+```
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
@@ -2275,9 +2332,10 @@ remain historical controls, not the new golden reference. Interactive editor acc
 ### Still open before F4 acceptance
 
 - Refine authored radiance/highlight/color preservation against reference footage; the new
-  8/4 gains are initial artistic defaults, not physical calibration. Add/test generic subpixel
-  star energy/size handling instead of treating increased gain or display exposure as a cure
-  for undersampled geometry. This slice does not change sprite/trail rasterization or LOD.
+  8/4 gains are initial artistic defaults, not physical calibration. F4D adds opt-in sprite
+  footprint treatment; assess temporal star appearance, narrower trail sampling, offscreen
+  submission cost and overdraw before choosing a production default. Trail rasterization/LOD
+  and analytic pixel integration remain unchanged.
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.

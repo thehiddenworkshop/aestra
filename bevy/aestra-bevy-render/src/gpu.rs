@@ -491,6 +491,7 @@ impl StatefulDispatch {
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
+    renderer_kind: u32,
     owner: Entity,
     mesh: Option<Handle<Mesh>>,
     wireframe_geometry: Option<Arc<wireframe::WireframeGeometry>>,
@@ -800,6 +801,7 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
 
 pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
+    sampling: Option<Res<crate::sampling::SpriteSampling>>,
     capabilities: Res<GpuCapabilities>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
@@ -1152,6 +1154,12 @@ pub(crate) fn prepare_gpu_effects(
             .len()
             .div_ceil(WORKGROUP_SIZE as usize) as u32;
         let trail_workgroups = player.effect().emitters.len() as u32;
+        sampling
+            .as_deref()
+            .copied()
+            .unwrap_or_default()
+            .apply(&mut artifact.renderers);
+        let renderer_kinds: Vec<_> = artifact.renderers.iter().map(|r| r.renderer_kind).collect();
         let renderer_owners: Vec<_> = artifact.renderers.iter().map(|r| r.playback_mode).collect();
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         // Full record count, including the trail-history storage region past
@@ -1347,6 +1355,7 @@ pub(crate) fn prepare_gpu_effects(
                         let mut draw = parent.spawn((
                             HostMotionDraw,
                             GpuDrawInstance {
+                                renderer_kind: renderer_kinds[renderer_index as usize],
                                 owner: entity,
                                 mesh,
                                 wireframe_geometry: None,
@@ -1579,6 +1588,7 @@ type PreparedDraws<'w, 's> = Query<
 >;
 
 fn update_gpu_inputs(
+    sampling: Option<Res<crate::sampling::SpriteSampling>>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: PreparedGpuPlayers,
@@ -1710,6 +1720,11 @@ fn update_gpu_inputs(
                 );
             }
             let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
+            sampling
+                .as_deref()
+                .copied()
+                .unwrap_or_default()
+                .apply(&mut dynamics.renderers);
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(dynamics.emitters);
             }
@@ -1786,6 +1801,7 @@ fn sync_host_motion_draw_globals(
 #[allow(clippy::type_complexity)]
 fn sync_host_motion_replay_culling(
     mut commands: Commands,
+    sampling: Option<Res<crate::sampling::SpriteSampling>>,
     players: Query<(&PresentedEffect, &GpuEffectBuffers)>,
     draws: Query<(
         Entity,
@@ -1796,10 +1812,21 @@ fn sync_host_motion_replay_culling(
         Has<ribbon_bounds::RibbonBoundsSource>,
     )>,
 ) {
+    let minimum_pixels = sampling
+        .as_deref()
+        .copied()
+        .unwrap_or_default()
+        .normalized()
+        .minimum_pixels;
     for (entity, parent, draw, uncullable, was_forced, ribbon) in &draws {
-        let forced = players.get(parent.parent()).is_ok_and(|(player, gpu)| {
-            gpu.has_trails && !player.instance.host_transform_context().is_identity()
-        });
+        // A view-dependent pixel floor can expand a sprite beyond world-space AABBs.
+        // Opt-in draws retain GPU clip rejection, but bypass CPU frustum culling.
+        let sampled_sprite =
+            minimum_pixels > 0.0 && draw.renderer_kind == 0 && draw.blend == GpuBlend::Additive;
+        let forced = sampled_sprite
+            || players.get(parent.parent()).is_ok_and(|(player, gpu)| {
+                gpu.has_trails && !player.instance.host_transform_context().is_identity()
+            });
         if forced {
             if !uncullable || !was_forced {
                 commands
@@ -4748,6 +4775,70 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sprite_sampling_culling_override_is_opt_in_and_reversible() {
+        let mut app = App::new();
+        app.init_resource::<crate::sampling::SpriteSampling>()
+            .add_systems(Update, sync_host_motion_replay_culling);
+        let parent = app.world_mut().spawn_empty().id();
+        let mut draws = Vec::new();
+        for (kind, blend) in [
+            (0, GpuBlend::Additive),
+            (0, GpuBlend::Alpha),
+            (1, GpuBlend::Additive),
+            (2, GpuBlend::Additive),
+            (3, GpuBlend::Additive),
+            (4, GpuBlend::Additive),
+        ] {
+            draws.push(
+                app.world_mut()
+                    .spawn((
+                        ChildOf(parent),
+                        GpuDrawInstance {
+                            renderer_kind: kind,
+                            owner: parent,
+                            mesh: None,
+                            wireframe_geometry: None,
+                            renderers: default(),
+                            particles: default(),
+                            alive: default(),
+                            aux: default(),
+                            indirect: default(),
+                            render_globals: default(),
+                            render_params: default(),
+                            texture: default(),
+                            fallback_texture: default(),
+                            renderer_order: 0,
+                            emitter_index: 0,
+                            indirect_offset: 0,
+                            blend,
+                            material: aestra_core::MaterialId::new(),
+                            semantic_material: None,
+                            render_mode: GpuRenderMode::Rendered,
+                            mesh_center: Vec3::ZERO,
+                            trail_owners: 0,
+                            trail_instances: None,
+                        },
+                    ))
+                    .id(),
+            );
+        }
+        for minimum in [0.0, 2.0, 0.0, f32::NAN] {
+            app.world_mut()
+                .resource_mut::<crate::sampling::SpriteSampling>()
+                .minimum_pixels = minimum;
+            app.update();
+            for (index, entity) in draws.iter().enumerate() {
+                assert_eq!(
+                    app.world()
+                        .entity(*entity)
+                        .contains::<visibility::NoFrustumCulling>(),
+                    index == 0 && minimum == 2.0
+                );
+            }
+        }
+    }
 
     #[test]
     fn event_link_statistics_record_admission_and_separate_both_drop_causes() {

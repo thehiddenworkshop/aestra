@@ -24,6 +24,8 @@ pub const SIMULATION_WESL: &str = concat!(
     include_str!("shaders/aestra_trail_paged.wesl")
 );
 pub const SPRITE_VERTEX_WESL: &str = concat!(
+    include_str!("shaders/aestra_sprite_sampling.wesl"),
+    "\n",
     include_str!("shaders/aestra_trail_geometry.wesl"),
     "\n",
     include_str!("shaders/aestra_sprite_vertex.wesl"),
@@ -33,6 +35,8 @@ pub const SPRITE_VERTEX_WESL: &str = concat!(
     include_str!("shaders/aestra_trail_vertex.wesl")
 );
 pub const SPRITE_RENDER_WESL: &str = concat!(
+    include_str!("shaders/aestra_sprite_sampling.wesl"),
+    "\n",
     include_str!("shaders/aestra_trail_geometry.wesl"),
     "\n",
     include_str!("shaders/aestra_sprite_vertex.wesl"),

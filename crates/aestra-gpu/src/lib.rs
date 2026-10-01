@@ -206,7 +206,8 @@ pub struct GpuRenderer {
     /// Flipbook flags; for Trail, 0 = Stretch and 1 = Tile UVs.
     pub flipbook_flags: u32,
     pub frame_rate: f32,
-    /// x: omitted particle reads; y: strip width (f32 bits); z: trail history offset.
+    /// x: omitted particle reads; y: strip width or sprite pixel floor (f32 bits);
+    /// z: trail history offset. Sprite floor is native-host presentation policy, default 0.
     pub attribute_flags: UVec3,
     /// Flipbook rectangles; Trail uses only frames[0].x for world-space tile length.
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],

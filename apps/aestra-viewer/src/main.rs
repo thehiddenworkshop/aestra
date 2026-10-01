@@ -67,6 +67,7 @@ fn main() {
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
+        eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -141,6 +142,9 @@ fn main() {
             presentation: config.presentation,
             max_gpu_particles: config.max_gpu_particles,
             transparent_order: config.transparent_order,
+        })
+        .insert_resource(aestra_bevy::SpriteSampling {
+            minimum_pixels: config.sprite_minimum_pixels,
         })
         .insert_resource(prepared)
         .insert_resource(config)
@@ -247,6 +251,7 @@ struct ViewerConfig {
     /// The quality tier the effect is compiled for (fluid F12); `high` is the authored effect.
     tier: aestra_bevy::QualityTier,
     photographic: Option<photographic::PhotographicPreview>,
+    sprite_minimum_pixels: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,6 +373,7 @@ impl ViewerConfig {
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
         let mut photographic = None;
+        let mut sprite_minimum_pixels = 0.0;
         let mut args = arguments.into_iter();
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -398,6 +404,11 @@ impl ViewerConfig {
                 "--stable-transparency" => transparent_order = TransparentOrderMode::StableCapture,
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
+                "--sprite-min-pixels" => {
+                    let value = args.next().ok_or("--sprite-min-pixels requires a value")?;
+                    sprite_minimum_pixels =
+                        photographic::bounded_number(&value, "--sprite-min-pixels", 0.0, 8.0)?;
+                }
                 "--hdr" => {
                     photographic.get_or_insert_with(photographic::PhotographicPreview::default);
                 }
@@ -571,6 +582,16 @@ impl ViewerConfig {
         if fireworks_f0 {
             view_3d = true;
         }
+        if sprite_minimum_pixels > 0.0
+            && matches!(
+                presentation,
+                PresentationMode::CpuReference | PresentationMode::GpuReadback
+            )
+        {
+            return Err(
+                "--sprite-min-pixels requires native GPU presentation (auto or gpu)".into(),
+            );
+        }
         Ok(Self {
             effect_path,
             fireworks_f0,
@@ -590,6 +611,7 @@ impl ViewerConfig {
             view_3d,
             tier,
             photographic,
+            sprite_minimum_pixels,
         })
     }
 
@@ -1442,7 +1464,10 @@ fn receive_capture(
                 columns,
                 rows,
                 tick_rate: DEFAULT_PLAYBACK_TICK_RATE,
-                response: photographic::CaptureResponse::new(report.config.photographic),
+                response: photographic::CaptureResponse::new(
+                    report.config.photographic,
+                    report.config.sprite_minimum_pixels,
+                ),
             },
             &report.prepared.compiler,
             PreviewRuntimeData {
@@ -1676,6 +1701,45 @@ mod tests {
             );
         }
         for arguments in [vec!["--history"], vec!["--history", "other"]] {
+            assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
+    fn sprite_sampling_is_opt_in_native_only_and_does_not_change_playback() {
+        let baseline = ViewerConfig::from_iter(std::iter::empty()).unwrap();
+        assert_eq!(baseline.sprite_minimum_pixels, 0.0);
+        for value in ["0", "2", "8"] {
+            let config = ViewerConfig::from_iter(
+                ["--sprite-min-pixels", value]
+                    .into_iter()
+                    .map(str::to_owned),
+            )
+            .unwrap();
+            assert_eq!(config.sprite_minimum_pixels, value.parse::<f32>().unwrap());
+            assert!(config.photographic.is_none());
+            assert_eq!(config.resolved_seed(), baseline.resolved_seed());
+            assert_eq!(config.history_policy, baseline.history_policy);
+            assert_eq!(config.capture_sampling, baseline.capture_sampling);
+            assert_eq!(
+                prepare_viewer(&config)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled,
+                prepare_viewer(&baseline)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled
+            );
+        }
+        for arguments in [
+            vec!["--sprite-min-pixels"],
+            vec!["--sprite-min-pixels", "NaN"],
+            vec!["--sprite-min-pixels", "inf"],
+            vec!["--sprite-min-pixels", "-1"],
+            vec!["--sprite-min-pixels", "9"],
+            vec!["--sprite-min-pixels", "2", "--backend", "cpu"],
+            vec!["--backend", "cpu", "--sprite-min-pixels", "2"],
+            vec!["--backend", "gpu-readback", "--sprite-min-pixels", "2"],
+        ] {
             assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
         }
     }
@@ -1963,6 +2027,7 @@ mod tests {
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),
             photographic: None,
+            sprite_minimum_pixels: 0.0,
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");

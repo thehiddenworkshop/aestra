@@ -56,6 +56,7 @@ pub use aestra_bevy_render::material::{
     MaterialBindingContext, MaterialRuntimeBinding, compile_material_program,
 };
 pub use aestra_bevy_render::preview;
+pub use aestra_bevy_render::sampling::SpriteSampling;
 pub use aestra_bevy_render::{
     ActiveBackend, AestraRenderPlugin, AestraRenderSet, AestraRenderSettings as AestraSettings,
     AestraRuntimeStatus, BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode,

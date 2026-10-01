@@ -166,6 +166,18 @@ linear-RGB multipliers to 0..64 (not an engine-wide radiance limit); old materia
 without a binding retain gain 1. Use an HDR camera and start at 0 display stops. These defaults
 are a visual starting point, not physical calibration or certified subpixel energy preservation.
 
+Native GPU hosts can opt into `aestra_bevy::SpriteSampling { minimum_pixels: 2.0 }`, or pass
+`--sprite-min-pixels 2` to the viewer. The default 0 preserves previous images. This expands
+undersampled additive sprite quads in physical main-pass pixels and applies inverse-area alpha
+attenuation; simulation, replay and authored radiance remain independent. Values are finite
+0..8; it does not enable HDR. Explicit CPU/readback modes reject a nonzero viewer policy;
+with automatic fallback, check the reported selected backend (CPU ignores the policy).
+`capture.response.sprite_minimum_pixels` records the normalized requested policy. Flipbooks,
+meshes and strip/trail renderers are unchanged. This is continuous-area compensation, not
+exact pixel-integrated radiometry or universal temporal antialiasing. Qualifying draws bypass
+CPU frustum culling to avoid clipping expanded footprints, so production/offscreen budgets
+still need measurement. Editor defaults remain unchanged.
+
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
 canonicalized. Implicit-derivative texture samples carry an explicit IR sampling contract and are

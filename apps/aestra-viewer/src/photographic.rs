@@ -18,12 +18,18 @@ pub struct CaptureResponse {
     bloom_intensity: f32,
     bloom_preset: &'static str,
     deband_dither: &'static str,
+    sprite_minimum_pixels: f32,
 }
 
 impl CaptureResponse {
-    pub fn new(settings: Option<PhotographicPreview>) -> Self {
+    pub fn new(settings: Option<PhotographicPreview>, sprite_minimum_pixels: f32) -> Self {
         let settings = settings.map(PhotographicPreview::normalized);
         Self {
+            sprite_minimum_pixels: aestra_bevy::SpriteSampling {
+                minimum_pixels: sprite_minimum_pixels,
+            }
+            .normalized()
+            .minimum_pixels,
             hdr: settings.is_some(),
             exposure_stops: settings.map_or(0.0, |s| s.exposure_stops),
             tonemapping: settings.map(|s| s.tonemapping),

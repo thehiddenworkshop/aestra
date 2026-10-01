@@ -3,6 +3,13 @@ struct View {
     unjittered_clip_from_world: mat4x4<f32>,
     world_from_clip: mat4x4<f32>,
     world_from_view: mat4x4<f32>,
+    view_from_world: mat4x4<f32>,
+    clip_from_view: mat4x4<f32>,
+    view_from_clip: mat4x4<f32>,
+    world_position: vec3<f32>,
+    exposure: f32,
+    viewport: vec4<f32>,
+    main_pass_viewport: vec4<f32>,
 }
 
 // Native particle presentation. The vertex shader expands one compacted alive
@@ -64,6 +71,7 @@ struct SpriteVertexData {
     effect_time: f32,
     particle_normalized_age: f32,
     ribbon_direction: vec3<f32>,
+    sampling_coverage: f32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -161,15 +169,28 @@ fn aestra_sprite_vertex(
     let effect_scale_y = length(globals.world_from_effect[1].xyz);
     let camera_right = normalize(view.world_from_view[0].xyz);
     let camera_up = normalize(view.world_from_view[1].xyz);
+    var sampling = vec2<f32>(1.0, 1.0);
+    let minimum_pixels = bitcast<f32>(renderer.attribute_flags.y);
+    if renderer.renderer_kind == 0u && renderer.blend_mode == 1u && minimum_pixels > 0.0 {
+        let center_clip = view.unjittered_clip_from_world * world_center;
+        if center_clip.w > 0.000001 && particle.size > 0.0 {
+            let axis_x = (camera_right * cosine * effect_scale_x + camera_up * sine * effect_scale_y) * particle.size;
+            let axis_y = (-camera_right * sine * effect_scale_x + camera_up * cosine * effect_scale_y) * particle.size;
+            let projected_pixels = aestra_sprite_projected_pixels(view.unjittered_clip_from_world,
+                world_center, axis_x, axis_y, view.main_pass_viewport.zw);
+            sampling = aestra_sprite_sampling(projected_pixels, minimum_pixels);
+        }
+    }
     let world_position = world_center
         + vec4<f32>(
-            camera_right * rotated.x * effect_scale_x
-                + camera_up * rotated.y * effect_scale_y,
+            (camera_right * rotated.x * effect_scale_x
+                + camera_up * rotated.y * effect_scale_y) * sampling.x,
             0.0,
         );
 
     var output: SpriteVertexData;
     output.clip_position = view.clip_from_world * world_position;
+    output.sampling_coverage = sampling.y;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
         if (renderer.attribute_flags.x & 8u) == 0u {

@@ -714,9 +714,10 @@ mod tests {
         write_preview_report(
             directory.path(),
             PreviewCaptureData {
-                response: crate::photographic::CaptureResponse::new(Some(
-                    crate::photographic::PhotographicPreview::default(),
-                )),
+                response: crate::photographic::CaptureResponse::new(
+                    Some(crate::photographic::PhotographicPreview::default()),
+                    2.0,
+                ),
                 sampled_frames: &[0, 30, 120],
                 seed: 42,
                 width: 960,
@@ -747,6 +748,7 @@ mod tests {
         assert_eq!(value["capture"]["response"]["exposure_stops"], 0.0);
         assert_eq!(value["capture"]["response"]["tonemapping"], "tony");
         assert_eq!(value["capture"]["response"]["deband_dither"], "disabled");
+        assert_eq!(value["capture"]["response"]["sprite_minimum_pixels"], 2.0);
         assert_eq!(value["instances"].as_array().unwrap().len(), 2);
         assert_eq!(value["instances"][0]["clip_path"], serde_json::json!([]));
         assert_eq!(value["instances"][1]["clip_path"][0], path);
@@ -860,7 +862,7 @@ mod tests {
         write_preview_report(
             output_directory.path(),
             PreviewCaptureData {
-                response: crate::photographic::CaptureResponse::new(None),
+                response: crate::photographic::CaptureResponse::new(None, 0.0),
                 sampled_frames: &[30],
                 seed: 42,
                 width: 64,

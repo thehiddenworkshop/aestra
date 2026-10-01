@@ -75,5 +75,6 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     output.textured = r.textured | 6u;
     output.effect_time = globals.time;
     output.particle_normalized_age = particles[slot].normalized_age;
+    output.sampling_coverage = 1.0;
     return output;
 }

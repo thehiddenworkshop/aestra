@@ -15,6 +15,7 @@ pub enum MaterialVarying {
     Softness,
     Textured,
     Visible,
+    SamplingCoverage,
     Uv0,
     ParticleColor,
     ParticleOpacity,
@@ -47,6 +48,7 @@ impl MaterialVarying {
             Self::Softness => ("softness", "f32", "", "sprite.softness"),
             Self::Textured => ("textured", "u32", "@interpolate(flat) ", "sprite.textured"),
             Self::Visible => ("visible", "u32", "@interpolate(flat) ", "sprite.visible"),
+            Self::SamplingCoverage => ("sampling_coverage", "f32", "", "sprite.sampling_coverage"),
             Self::Uv0 => ("uv0", "vec2<f32>", "", "sprite.uv"),
             Self::ParticleColor => ("particle_color", "vec4<f32>", "", "sprite.color"),
             Self::ParticleOpacity => ("particle_opacity", "f32", "", "sprite.color.a"),
@@ -141,6 +143,10 @@ impl MaterialVaryingLayout {
             {
                 varyings.push(varying);
             }
+        }
+        if ir.domain != MaterialDomain::Mesh {
+            // Append so the existing authored-input locations stay stable.
+            varyings.push(MaterialVarying::SamplingCoverage);
         }
         Self {
             domain: ir.domain,

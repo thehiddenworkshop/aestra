@@ -1,3 +1,23 @@
+fn aestra_sprite_sampling(projected_pixels: f32, minimum_pixels: f32) -> vec2<f32> {
+    if minimum_pixels <= 0.0 || projected_pixels >= minimum_pixels || projected_pixels <= 1e-6 {
+        return vec2<f32>(1.0, 1.0);
+    }
+    let ratio = projected_pixels / minimum_pixels;
+    return vec2<f32>(1.0 / ratio, ratio * ratio);
+}
+
+fn aestra_sprite_projected_pixels(clip_from_world: mat4x4<f32>, center: vec4<f32>, axis_x: vec3<f32>, axis_y: vec3<f32>, viewport_size: vec2<f32>) -> f32 {
+    let clip = clip_from_world * center;
+    if clip.w <= 1e-6 {
+        return 0.0;
+    }
+    let x = clip_from_world * vec4<f32>(axis_x, 0.0);
+    let y = clip_from_world * vec4<f32>(axis_y, 0.0);
+    let ndc = clip.xy / clip.w;
+    let factor = max(viewport_size, vec2<f32>(1.0)) * 0.5 / clip.w;
+    return min(length((x.xy - ndc * x.w) * factor), length((y.xy - ndc * y.w) * factor));
+}
+
 fn trail_slot(base: u32, capacity: u32, index: u32) -> u32 {
     let count = aux[base * 3u + 1u];
     if index == count {
@@ -24,7 +44,14 @@ struct View {
     clip_from_world: mat4x4<f32>,
     unjittered_clip_from_world: mat4x4<f32>,
     world_from_clip: mat4x4<f32>,
-    world_from_view: mat4x4<f32>
+    world_from_view: mat4x4<f32>,
+    view_from_world: mat4x4<f32>,
+    clip_from_view: mat4x4<f32>,
+    view_from_clip: mat4x4<f32>,
+    world_position: vec3<f32>,
+    exposure: f32,
+    viewport: vec4<f32>,
+    main_pass_viewport: vec4<f32>
 }
 
 struct Renderer {
@@ -86,7 +113,8 @@ struct SpriteVertexData {
     textured: u32,
     effect_time: f32,
     particle_normalized_age: f32,
-    ribbon_direction: vec3<f32>
+    ribbon_direction: vec3<f32>,
+    sampling_coverage: f32
 }
 
 @group(0) @binding(0)
@@ -184,9 +212,21 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     let effect_scale_y = length(globals.world_from_effect[1].xyz);
     let camera_right = normalize(view.world_from_view[0].xyz);
     let camera_up = normalize(view.world_from_view[1].xyz);
-    let world_position = world_center + vec4<f32>(camera_right * rotated.x * effect_scale_x + camera_up * rotated.y * effect_scale_y, 0.0);
+    var sampling = vec2<f32>(1.0, 1.0);
+    let minimum_pixels = bitcast<f32>(renderer.attribute_flags.y);
+    if renderer.renderer_kind == 0u && renderer.blend_mode == 1u && minimum_pixels > 0.0 {
+        let center_clip = view.unjittered_clip_from_world * world_center;
+        if center_clip.w > 1e-6 && particle.size > 0.0 {
+            let axis_x = (camera_right * cosine * effect_scale_x + camera_up * sine * effect_scale_y) * particle.size;
+            let axis_y = (-camera_right * sine * effect_scale_x + camera_up * cosine * effect_scale_y) * particle.size;
+            let projected_pixels = aestra_sprite_projected_pixels(view.unjittered_clip_from_world, world_center, axis_x, axis_y, view.main_pass_viewport.zw);
+            sampling = aestra_sprite_sampling(projected_pixels, minimum_pixels);
+        }
+    }
+    let world_position = world_center + vec4<f32>((camera_right * rotated.x * effect_scale_x + camera_up * rotated.y * effect_scale_y) * sampling.x, 0.0);
     var output: SpriteVertexData;
     output.clip_position = view.clip_from_world * world_position;
+    output.sampling_coverage = sampling.y;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
         if (renderer.attribute_flags.x & 8u) == 0u {
@@ -283,6 +323,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     if (renderer.attribute_flags.x & 32u) == 0u {
         output.particle_normalized_age = particles[slot].normalized_age;
     }
+    output.sampling_coverage = 1.0;
     return output;
 }
 
@@ -366,6 +407,7 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     output.textured = r.textured | 6u;
     output.effect_time = globals.time;
     output.particle_normalized_age = particles[slot].normalized_age;
+    output.sampling_coverage = 1.0;
     return output;
 }
 
@@ -383,7 +425,9 @@ struct VertexOutput {
     @location(4)
     uv: vec2<f32>,
     @location(5) @interpolate(flat)
-    textured: u32
+    textured: u32,
+    @location(6)
+    sampling_coverage: f32
 }
 
 @vertex
@@ -397,6 +441,7 @@ fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     output.visible = sprite.visible;
     output.uv = sprite.uv;
     output.textured = sprite.textured;
+    output.sampling_coverage = sprite.sampling_coverage;
     return output;
 }
 
@@ -415,7 +460,7 @@ fn particle_color(input: VertexOutput) -> vec4<f32> {
     if (input.textured & 4u) != 0u {
         coverage *= input.quad_position.y;
     }
-    return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage);
+    return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage * input.sampling_coverage);
 }
 
 @fragment
