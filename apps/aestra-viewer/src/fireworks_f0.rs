@@ -384,6 +384,16 @@ pub fn event_trail_volley_probe() -> EffectAsset {
     effect
 }
 
+/// Same reserved particle/history capacity as the dense volley, but 80-star
+/// cohorts. Isolates low occupancy without hiding cost by shrinking the pools.
+pub fn sparse_event_trail_volley_probe() -> EffectAsset {
+    let mut effect = event_trail_volley_probe();
+    effect.id = EffectId::from_u128(16);
+    effect.name = "Fireworks F1B Sparse Trail Volley".into();
+    effect.events[0].count = 80;
+    effect
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,6 +516,29 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(trails, [(16384, 32, 1.0)]);
+    }
+
+    #[test]
+    fn sparse_volley_keeps_dense_pool_budgets_and_only_reduces_cohort_demand() {
+        let mut source = sparse_event_trail_volley_probe();
+        let dense = event_trail_volley_probe();
+        assert_eq!(source.events[0].count, 80);
+        let index = aestra_project::ProjectAssetIndex::scan(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
+        );
+        let resolved = index.resolve_effect_project(&source).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_resolved_project(&resolved)
+            .unwrap();
+        assert_eq!(compiled.root.event_links[0].count, 80);
+        assert_eq!(compiled.root.emitters[1].max_particles, 8192);
+        source.id = dense.id;
+        source.name = dense.name.clone();
+        source.events[0].count = 800;
+        assert_eq!(
+            source.to_pretty_ron().unwrap(),
+            dense.to_pretty_ron().unwrap()
+        );
     }
 
     #[test]

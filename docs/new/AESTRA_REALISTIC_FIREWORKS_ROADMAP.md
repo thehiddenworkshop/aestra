@@ -1840,9 +1840,48 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/head-matched-owners-volley-overlap
 ```
 
+### Implemented — live-prefix heads and top-K replacement candidates
+
+- Head merges now read/write only the actual compacted live prefix, with every opposing-run search bounded to that prefix. Empty head pages skip payload initialization, key caching, comparisons and stores. Active partial pages still initialize their local sentinels, and passes beyond the live prefix's required merge depth still copy it to preserve the planned ping-pong parity. Page barriers and capacity-sized dispatches remain unchanged for D3D/FXC uniformity; this is not GPU-indirect dispatch or an active-page planner.
+- Replacement merges retain only the first **K = birth count** candidates per run. The global first K cannot contain an element outside either input run's first K. Searches and writes respect those retained lengths, preserving free-first, oldest-retired and physical-slot tie-breaking. Discarded suffixes may be stale and are never read by subsequent merges/allocation. Candidate pages still sort their complete local page on a birth observation; no-birth gating remains. Storage bindings, configured scratch/history allocation, persistent history and checkpoint format are unchanged. No CPU readback, retained map or new replay state is introduced.
+- Native conformance poisons inactive head pages and every discarded candidate suffix with invalid physical indices before consumers run, and compares presented live heads against a CPU `(strand, stable ID, physical slot)` ordering oracle before later ribbon linking can mask an error. Fresh allocation covers live/K counts **0, 1, 255, 256, 257, 511, 512, 513, 1023**, partial 1,025/2,053-owner pools and an 8,192-owner pool. Existing two-emitter/strand/extreme-ID/retired-identity reuse/oldest-retired eviction tests pass, together with the loss-free event volley, sampling/bounds, history-policy and replay/checkpoint tests. The GPU library/contracts (35 tests), native trail conformance (12), renderer trail regressions (11), viewer tests (37), generated WGSL snapshot/validation, HLSL/SPIR-V translation and all-target Clippy pass.
+- New viewer probe **`event-trail-sparse`** changes only volley demand from 800 to 80 stars per cohort, apart from its display name/asset ID. It retains the dense probe's **8,192-particle / 16,384-history / 32-point** budgets, timing and geometry. A compile/normalized-RON test enforces that equality. This distinguishes low occupancy from an artificially smaller allocation.
+- Six sequential RTX 4070 SUPER/Vulkan runs use playback-only, 960×540 close camera, high tier, default-fast transparency and 120 warm-up/600 measured host frames. Controls use commit `ccf4198e`'s shader with the same current viewer fixture; dense run order is optimized/control/optimized repeat, sparse order is control/optimized/optimized repeat. Compare each probe to its own control, not dense to sparse. Every run keeps **600 unique complete-window samples**, zero source overflow, expansion omission, destination rejection, trail eviction/truncation and checkpoint capture bytes. Dense runs retain **37,600 accepted/captured children**, **7,201 peak live**, **10,400 occupied/3,200 retired histories**; sparse runs retain **3,760 accepted/captured**, **721 peak live**, **1,040 occupied/320 retired**. All retain the **38,580,664-byte configured-buffer estimate** (not total resident memory) and **5,974 encoded history workgroups per observation**, including inactive groups; two-observation windows encode 11,948.
+
+GPU timings in milliseconds; p50 / p95 / p99:
+
+| Probe / measurement | Fresh control | Optimized run 1 | Optimized run 2 |
+| --- | ---: | ---: | ---: |
+| Dense complete simulation (600 samples) | 1.739 / 2.159 / 2.520 | 1.673 / 2.161 / 2.495 | 2.041 / 2.168 / 2.510 |
+| Sparse complete simulation (600 samples) | 1.691 / 1.805 / 2.134 | 1.647 / 1.712 / 1.995 | 1.653 / 1.982 / 2.555 |
+| Sparse 1 tick, 1 observation, no copies (598 / 598 / 571 samples) | 1.691 / 1.805 / 2.137 | 1.647 / 1.712 / 1.995 | 1.653 / 1.769 / 2.040 |
+| Sparse last-observation head diagnostic (600 samples) | 0.480 / 0.514 / 0.521 | 0.433 / 0.449 / 0.456 | 0.433 / 0.463 / 0.467 |
+| Sparse last-observation allocation/sample diagnostic (600 samples) | 0.417 / 0.466 / 0.800 | 0.419 / 0.458 / 0.717 | 0.420 / 0.456 / 0.726 |
+
+- Dense simulation **p95 is essentially unchanged** and median/mean gains do not repeat; this does not establish a dense-volley improvement. Sparse head p95 is about **10–13% lower** and allocation/sample p99 about **9–10% lower**, with one-tick simulation p95 about **2–5% lower**. These are sequential observations, not paired population/time/clock-controlled measurements, and diagnostic percentiles cannot be summed into a frame.
+- All dense runs and sparse control/run 1 have the 1 zero-/598 one-/1 two-tick mix. Sparse run 2 instead has **14 zero-/571 one-/15 two-tick windows**; its aggregate p95/p99 are worse than control despite the lower one-tick/phase timings. Do not discard those windows or claim overall catch-up latency improved. Its two-tick p95 is 3.016 ms, from only 15 samples, not a certification. The named **full-frame/finale budget gate remains open**.
+- Optimized dense volley frame 240 remains byte-identical to the prior overlap reference (SHA256 `4B45502997252D44EE17DB4C64FB0950691A987CF82981DE0FE21199B6E2F051`). This is a targeted visual check, not an all-assets/all-times guarantee.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test shader_contract --test trail_contract
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --test-threads=1
+cargo test --locked -p aestra-bevy-render --lib trail -- --test-threads=1
+cargo test --locked -p aestra-viewer --bin aestra-viewer
+cargo clippy --locked -p aestra-gpu -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/live-prefix-topk-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/live-prefix-topk-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-sparse --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/live-prefix-topk-sparse-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-sparse --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/live-prefix-topk-sparse-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/live-prefix-topk-volley-overlap
+```
+
+Fresh control reports are `target/fireworks-f1/live-prefix-topk-control-bench.json` and `target/fireworks-f1/live-prefix-topk-sparse-control-bench.json`, produced with only the paged shader restored to `ccf4198e` while keeping the new sparse probe.
+
 ### Tasks
 
-- Next: investigate remaining **head ordering and birth-observation candidate spikes**, then variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
+- Next: profile the remaining **capacity-sized page dispatch/barrier and birth-prefix scan work**, then introduce a checked GPU-counted active-page/dispatch path if the measurements justify it. The sparse result suggests fixed-capacity overhead remains important, but does not isolate its cost. Preserve the same reserved buffers and loss-free output; do not optimize editor replay ahead of playback.
+- Reduce remaining dense birth-observation candidate work (including full local-page sorting), and measure variable multi-tick catch-up with enough work-matched samples. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

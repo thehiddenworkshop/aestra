@@ -137,9 +137,10 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     let start = group.x * TRAIL_SORT_PAGE;
     if start >= count { return; }
     let size = min(TRAIL_SORT_PAGE, count - start);
-    // Owner pages sort only when the history records (see `paged_record`).
-    let recording = kind == 0u || (paged_record(e) && (kind != 2u || paged_needs_candidates(e)));
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
+    // Empty head pages need neither initialized sentinels nor sorted keys:
+    // merges bound every read to the live prefix. Keep barriers uniform to FXC.
+    let recording = (kind == 0u && start < live) || (kind == 2u && paged_record(e) && paged_needs_candidates(e));
     for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
         var value = 0xffffffffu;
@@ -193,10 +194,17 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     // Unlike page sorting this kernel has no barriers and can return early on
     // the storage-backed flag. The owner mapping already covers every live head.
     if paged_kind() == 2u && !paged_needs_candidates(e) { return; }
-    let count = select(paged_owners(e), paged_heads(e), paged_kind() == 0u);
+    let kind = paged_kind();
+    let live = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
+    let count = select(paged_owners(e), live, kind == 0u);
     let n = id.x;
     if n >= count { return; }
     let width = 1u << ((globals._padding.y >> 8u) & 255u);
+    // Each candidate run needs only its first K entries, where K is the total
+    // births. The global first K can only come from the first K of either input.
+    // Keep physical run strides/parity unchanged; suffixes may contain stale data.
+    let retained = min(aux[paged_bounds(e)], count);
+    if kind == 2u && n % width >= retained { return; }
     let source = paged_list(e, paged_source());
     let destination = paged_list(e, 1u - paged_source());
     let value = aux[source + n];
@@ -206,7 +214,8 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     let right = (n & width) != 0u;
     let other = select(block + width, block, right);
     var low = 0u;
-    var high = width;
+    var high = min(width, count - min(other, count));
+    if kind == 2u { high = min(high, retained); }
     while low < high {
         let middle = (low + high) / 2u;
         let candidate = aux[source + other + middle];
@@ -220,6 +229,7 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
         else { high = middle; }
     }
     let rank = block + n % width + low;
+    if kind == 2u && rank - block >= retained { return; }
     aux[destination + rank] = value;
 }
 

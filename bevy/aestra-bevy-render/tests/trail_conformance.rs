@@ -627,6 +627,12 @@ fn check_cooperative(owners: u32) {
         mapped_at_creation: false,
         usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
     });
+    let presented_heads = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("sorted trail heads before later phases"),
+        size: buffers[2].size(),
+        mapped_at_creation: false,
+        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+    });
     let run = |time: f32, ids: &[u32], no_births: bool| {
         for emitter in 0..2u32 {
             let particles = ids
@@ -681,12 +687,65 @@ fn check_cooperative(owners: u32) {
             pass.dispatch_workgroups(2, 1, 1);
         }
         for (index, stage) in stages.iter().enumerate() {
+            if stage.entry == 0 && stage.parameter == 0 {
+                // Completely unwritten head pages contain invalid physical
+                // indices, not zero-initialized sentinels. Merges must ignore them.
+                for e in &emitters {
+                    encoder.copy_buffer_to_buffer(
+                        &candidate_poison,
+                        0,
+                        &buffers[7],
+                        e._spawn_inverse_padding.x as u64 * 4,
+                        u64::from(e.max_particles.next_power_of_two()) * 8,
+                    );
+                }
+            }
             encoder.copy_buffer_to_buffer(&parameters, index as u64 * 4, &buffers[6], 28, 4);
             let mut pass = encoder.begin_compute_pass(&Default::default());
             pass.set_bind_group(0, &group, &[]);
             pass.set_pipeline(&pipelines[2 + stage.entry]);
             pass.dispatch_workgroups(stage.workgroups, 2, 1);
             drop(pass);
+            if stage.entry == 2 {
+                encoder.copy_buffer_to_buffer(
+                    &buffers[2],
+                    0,
+                    &presented_heads,
+                    0,
+                    buffers[2].size(),
+                );
+            }
+            if time == 0.0 && (stage.entry == 0 || stage.entry == 1) && stage.parameter & 255 == 2 {
+                // At reset every head is a birth, so K is known. Poison every
+                // candidate run's discarded suffix before the next merge. A
+                // global top-K cannot consume these words, even on partial pools.
+                let (width, source) = if stage.entry == 0 {
+                    (256u32, 0u32)
+                } else {
+                    (
+                        2u32 << ((stage.parameter >> 8) & 255),
+                        1 - ((stage.parameter >> 16) & 1),
+                    )
+                };
+                for e in &emitters {
+                    let pool = e.trail_capacity.next_power_of_two();
+                    let lists =
+                        e._spawn_inverse_padding.x as u32 + 2 * e.max_particles.next_power_of_two();
+                    for start in (0..pool).step_by(width as usize) {
+                        let end = (start + width).min(pool);
+                        let suffix = (start + ids.len() as u32).min(end);
+                        if suffix < end {
+                            encoder.copy_buffer_to_buffer(
+                                &candidate_poison,
+                                0,
+                                &buffers[7],
+                                u64::from(lists + source * pool + suffix) * 4,
+                                u64::from(end - suffix) * 4,
+                            );
+                        }
+                    }
+                }
+            }
             if stage.entry == 2 && no_births {
                 for e in &emitters {
                     let lists =
@@ -722,7 +781,8 @@ fn check_cooperative(owners: u32) {
             pass.set_pipeline(&pipelines[1]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        let size = buffers[1].size() + buffers[7].size() + buffers[4].size() + 8;
+        let size =
+            buffers[1].size() + buffers[7].size() + buffers[4].size() + 8 + presented_heads.size();
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size,
@@ -741,6 +801,13 @@ fn check_cooperative(owners: u32) {
             offset += buffers[index].size();
         }
         encoder.copy_buffer_to_buffer(&birth_totals, 0, &readback, offset, 8);
+        encoder.copy_buffer_to_buffer(
+            &presented_heads,
+            0,
+            &readback,
+            offset + 8,
+            presented_heads.size(),
+        );
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback
@@ -763,6 +830,24 @@ fn check_cooperative(owners: u32) {
         let p = buffers[1].size() as usize;
         let a = buffers[7].size() as usize;
         let c = buffers[4].size() as usize;
+        if plan.paged() {
+            for (emitter, e) in emitters.iter().enumerate() {
+                let mut expected = ids
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, &n)| (slot as u32, identity(n)))
+                    .collect::<Vec<_>>();
+                expected.sort_by_key(|&(slot, id)| (id % e._turbulence_padding.max(1), id, slot));
+                for (rank, &(slot, _)) in expected.iter().enumerate() {
+                    let at = p + a + c + 8 + (emitter * owners as usize + rank) * 4;
+                    assert_eq!(
+                        &bytes[at..at + 4],
+                        &(e.slot_offset + slot).to_le_bytes(),
+                        "live head ordering consumed an inactive page"
+                    );
+                }
+            }
+        }
         if plan.paged() && time == 0.0 {
             for emitter in 0..2 {
                 assert_eq!(
@@ -972,6 +1057,26 @@ fn check_cooperative(owners: u32) {
                 word(&returning, slot, 56) > 1,
                 "returning identity lost its retired ring"
             );
+        }
+    }
+    if plan.paged() {
+        // Exercise empty, tiny, and non-power-of-two live/top-K prefixes across
+        // page and merge boundaries. Reset then retire so every iteration is fresh.
+        for count in [0, 1, 255, 256, 257, 511, 512, 513, 1023] {
+            let fresh = run(0.0, &(0..count).rev().collect::<Vec<_>>(), false);
+            for &root in &roots {
+                let mut expected = (0..count).map(identity).collect::<Vec<_>>();
+                let strands = if root == roots[0] { 1 } else { 3 };
+                expected.sort_by_key(|&id| (id % strands, id));
+                for (owner, &id) in expected.iter().enumerate() {
+                    assert_eq!(
+                        word(&fresh, (root + 1 + owner as u32 * POINTS) as usize, 48),
+                        id,
+                        "top-K changed deterministic birth allocation"
+                    );
+                }
+            }
+            run(0.125, &[], false);
         }
     }
 }
