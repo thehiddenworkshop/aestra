@@ -39,6 +39,12 @@ fn paged_bounds(e: Emitter) -> u32 { return paged_pages(e) + (paged_heads(e) + 1
 // with the current occupied count. No extra scratch or persistent state is needed.
 fn paged_needs_candidates(e: Emitter) -> bool { return aux[paged_bounds(e)] != 0u; }
 
+// The next bounds word is transient too: sufficient empty owners already have
+// a stable compacted prefix in owner list 1. No merge parity is involved.
+fn paged_free_candidates(e: Emitter) -> bool {
+    return paged_needs_candidates(e) && aux[paged_bounds(e) + 1u] >= aux[paged_bounds(e)];
+}
+
 var<workgroup> paged_values: array<u32, 1024>;
 const TRAIL_SORT_PAGE: u32 = 256u;
 // One owner per lane: long sample rings no longer serialize sixteen owners on
@@ -63,16 +69,23 @@ fn paged_key_address(e: Emitter, value: u32) -> u32 {
 // Valid history has one owner per stable ID, so matches have disjoint destinations.
 // Rebuild from persistent owner records each tick; no lookup survives a checkpoint.
 fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
-    if !paged_record(e) { return; }
+    if !paged_record(e) || start >= paged_owners(e) { return; }
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
     let reset = paged_reset(e);
     let strands = max(e._turbulence_padding, 1u);
-    for (var n = start + thread; n < min(start + TRAIL_SORT_PAGE, e.trail_capacity); n += 64u) {
+    // Four contiguous owners per lane keep the full 64-lane matching width and
+    // pack empty flags into one word, with no atomic append or extra barriers.
+    let first = start + thread * 4u;
+    var free = 0u;
+    for (var n = first; n < min(first + 4u, e.trail_capacity); n += 1u) {
         let base = e.trail_offset + 1u + n * e.trail_points;
         if reset || globals.time - particles[base].rotation >= e.trail_lifetime {
             particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
         }
-        if particle_alive(particles[base]) == 0u { continue; }
+        if particle_alive(particles[base]) == 0u {
+            free |= 1u << (n - first);
+            continue;
+        }
         let identity = particles[base].particle_index;
         let strand = identity % strands;
         var low = 0u;
@@ -92,6 +105,9 @@ fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
             }
         }
     }
+    // List 0 is otherwise unused until candidate ordering. Rebuild padding as
+    // zero masks too; never read history outside the real owner capacity.
+    aux[paged_list(e, 0u) + start / 4u + thread] = free;
 }
 
 fn paged_cached_key(e: Emitter, value: u32) -> vec4<u32> {
@@ -131,7 +147,8 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     if !paged_trail(e) { return; }
     let kind = paged_kind();
     // Kind comes from read-only globals, so this branch/return is uniform even
-    // for D3D/FXC. Matching has no barriers and does not touch owner sort lists.
+    // for D3D/FXC. Matching has no barriers and rebuilds packed free flags in
+    // list 0; it never reads a prior observation's candidate list.
     if kind == 1u { match_trail_page(e, group.y, group.x * TRAIL_SORT_PAGE, thread); return; }
     let count = select(paged_owners(e), paged_heads(e), kind == 0u);
     let start = group.x * TRAIL_SORT_PAGE;
@@ -140,7 +157,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
     // Empty head pages need neither initialized sentinels nor sorted keys:
     // merges bound every read to the live prefix. Keep barriers uniform to FXC.
-    let recording = (kind == 0u && start < live) || (kind == 2u && paged_record(e) && paged_needs_candidates(e));
+    let recording = (kind == 0u && start < live) || (kind == 2u && paged_record(e) && paged_needs_candidates(e) && !paged_free_candidates(e));
     for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
         var value = 0xffffffffu;
@@ -193,7 +210,7 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) { return; }
     // Unlike page sorting this kernel has no barriers and can return early on
     // the storage-backed flag. The owner mapping already covers every live head.
-    if paged_kind() == 2u && !paged_needs_candidates(e) { return; }
+    if paged_kind() == 2u && (!paged_needs_candidates(e) || paged_free_candidates(e)) { return; }
     let kind = paged_kind();
     let live = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
     let count = select(paged_owners(e), live, kind == 0u);
@@ -330,6 +347,34 @@ fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(loca
         aux[paged_bounds(e)] = carry;
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
+    // Reuse this existing dispatch and shared scan for deterministic empty-owner
+    // compaction. Matching / expiry classified real owners into list 0. Each
+    // lane counts a contiguous physical block; reserved live and unexpired
+    // retired owners are never free. Padding is never classified or consumed.
+    // All lanes still reach barriers when paused or birth-free (FXC uniformity).
+    let block = max(paged_owners(e) / 256u, 1u);
+    let first = thread * block;
+    let end = min(first + block, (e.trail_capacity + 3u) / 4u);
+    var free = 0u;
+    for (var n = first; recording && carry != 0u && n < end; n += 1u) {
+        free += countOneBits(aux[paged_base(e) + 2u * paged_heads(e) + n]);
+    }
+    paged_values[thread] = free;
+    paged_scan(thread, min(paged_owners(e), 64u));
+    let total = paged_total;
+    var rank = paged_values[thread];
+    if thread == 0u && recording { aux[paged_bounds(e) + 1u] = total; }
+    // A global first K of empty slots has exactly the existing candidate order.
+    // If insufficient, leave the output list untouched: keep oldest-retired sort.
+    for (var n = first; recording && carry != 0u && total >= carry && n < end && rank < carry; n += 1u) {
+        var flags = aux[paged_base(e) + 2u * paged_heads(e) + n];
+        while flags != 0u && rank < carry {
+            let owner = n * 4u + firstTrailingBit(flags);
+            aux[paged_base(e) + 2u * paged_heads(e) + paged_owners(e) + rank] = owner;
+            rank += 1u;
+            flags &= flags - 1u;
+        }
+    }
 }
 
 @compute @workgroup_size(64)
@@ -342,7 +387,7 @@ fn update_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
     let born = owner == 0xffffffffu;
     if born {
         let rank = aux[paged_base(e) + id.x] + aux[paged_pages(e) + id.x / 1024u];
-        let candidate = aux[paged_list(e, paged_source()) + rank];
+        let candidate = aux[paged_list(e, select(paged_source(), 1u, paged_free_candidates(e))) + rank];
         // Live count <= parent capacity <= owner capacity guarantees a free candidate.
         if candidate == 0xffffffffu { return; }
         owner = e.trail_offset + 1u + candidate * e.trail_points;

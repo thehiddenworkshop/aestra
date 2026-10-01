@@ -1232,6 +1232,10 @@ fn paged_needs_candidates(e: Emitter) -> bool {
     return aux[paged_bounds(e)] != 0u;
 }
 
+fn paged_free_candidates(e: Emitter) -> bool {
+    return paged_needs_candidates(e) && aux[paged_bounds(e) + 1u] >= aux[paged_bounds(e)];
+}
+
 var<workgroup> paged_values: array<u32, 1024>;
 
 const TRAIL_SORT_PAGE: u32 = 256u;
@@ -1253,18 +1257,21 @@ fn paged_key_address(e: Emitter, value: u32) -> u32 {
 }
 
 fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
-    if !paged_record(e) {
+    if !paged_record(e) || start >= paged_owners(e) {
         return;
     }
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
     let reset = paged_reset(e);
     let strands = max(e._turbulence_padding, 1u);
-    for (var n = start + thread; n < min(start + TRAIL_SORT_PAGE, e.trail_capacity); n += 64u) {
+    let first = start + thread * 4u;
+    var free = 0u;
+    for (var n = first; n < min(first + 4u, e.trail_capacity); n += 1u) {
         let base = e.trail_offset + 1u + n * e.trail_points;
         if reset || globals.time - particles[base].rotation >= e.trail_lifetime {
             particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
         }
         if particle_alive(particles[base]) == 0u {
+            free |= 1u << (n - first);
             continue;
         }
         let identity = particles[base].particle_index;
@@ -1291,6 +1298,7 @@ fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
             }
         }
     }
+    aux[paged_list(e, 0u) + start / 4u + thread] = free;
 }
 
 fn paged_cached_key(e: Emitter, value: u32) -> vec4<u32> {
@@ -1349,7 +1357,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     }
     let size = min(TRAIL_SORT_PAGE, count - start);
     let live = min(atomicLoad(&indirect[group.y * 4u + 1u]), e.max_particles);
-    let recording = (kind == 0u && start < live) || (kind == 2u && paged_record(e) && paged_needs_candidates(e));
+    let recording = (kind == 0u && start < live) || (kind == 2u && paged_record(e) && paged_needs_candidates(e) && !paged_free_candidates(e));
     for (var local = thread; recording && local < size; local += 64u) {
         let n = start + local;
         var value = 4294967295u;
@@ -1408,7 +1416,7 @@ fn merge_trail_pages(@builtin(global_invocation_id) id: vec3<u32>) {
     if !paged_trail(e) || (paged_kind() != 0u && !paged_record(e)) {
         return;
     }
-    if paged_kind() == 2u && !paged_needs_candidates(e) {
+    if paged_kind() == 2u && (!paged_needs_candidates(e) || paged_free_candidates(e)) {
         return;
     }
     let kind = paged_kind();
@@ -1579,6 +1587,29 @@ fn scan_trail_birth_pages(@builtin(workgroup_id) group: vec3<u32>, @builtin(loca
         aux[paged_bounds(e)] = carry;
         atomicStore(&counters[2u + group.y * 6u + 2u], select(aux[e.trail_offset * 3u + 1u], 0u, paged_reset(e)));
     }
+    let block = max(paged_owners(e) / 256u, 1u);
+    let first = thread * block;
+    let end = min(first + block, (e.trail_capacity + 3u) / 4u);
+    var free = 0u;
+    for (var n = first; recording && carry != 0u && n < end; n += 1u) {
+        free += countOneBits(aux[paged_base(e) + 2u * paged_heads(e) + n]);
+    }
+    paged_values[thread] = free;
+    paged_scan(thread, min(paged_owners(e), 64u));
+    let total = paged_total;
+    var rank = paged_values[thread];
+    if thread == 0u && recording {
+        aux[paged_bounds(e) + 1u] = total;
+    }
+    for (var n = first; recording && carry != 0u && total >= carry && n < end && rank < carry; n += 1u) {
+        var flags = aux[paged_base(e) + 2u * paged_heads(e) + n];
+        while (flags != 0u && rank < carry) {
+            let owner = n * 4u + firstTrailingBit(flags);
+            aux[paged_base(e) + 2u * paged_heads(e) + paged_owners(e) + rank] = owner;
+            rank += 1u;
+            flags &= flags - 1u;
+        }
+    }
 }
 
 @compute @workgroup_size(64)
@@ -1595,7 +1626,7 @@ fn update_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
     let born = owner == 4294967295u;
     if born {
         let rank = aux[paged_base(e) + id.x] + aux[paged_pages(e) + id.x / 1024u];
-        let candidate = aux[paged_list(e, paged_source()) + rank];
+        let candidate = aux[paged_list(e, select(paged_source(), 1u, paged_free_candidates(e))) + rank];
         if candidate == 4294967295u {
             return;
         }

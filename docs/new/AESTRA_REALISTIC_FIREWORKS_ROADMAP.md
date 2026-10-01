@@ -1910,9 +1910,40 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/masked-birth-scan-volley-overlap
 ```
 
+### Implemented — deterministic packed free-owner compaction
+
+- Owner matching now processes four contiguous physical owners on each of its 64 lanes and packs their empty flags into one word in existing owner list 0. Expiry happens before classification; reserved live and unexpired retired owners cannot be free. Real owners are read once during matching; padded masks are explicitly zeroed. The existing birth-page dispatch counts these masks, scans 64 lane totals and, **only when empty slots cover all K births**, scatters the first K empty owners in ascending physical-slot order into list 1. Birth rank/strand ordering is unchanged, and the fast path explicitly consumes list 1 independently of shared merge parity.
+- Sufficient empties bypass candidate key loads/comparisons and merge-list work. Insufficient empties retain the existing empty-first / oldest-retired / physical-slot-tie-break sorting path. There is no extra buffer, binding, entry point, dispatch, append atomic, CPU readback or persistent lookup; masks are rebuilt on every recording observation. **Capacity-sized dispatches and the sorting kernel's uniform barriers remain** for FXC portability, and the birth-page dispatch adds one 64-lane scan, including its barriers on birth-free observations. This is not an active-page dispatch reduction.
+- Native coverage adds fragmented expired/reserved/unexpired-retired pools at **K = free−1, free, free+1**, with independent allocation/eviction oracles, preserved surviving sample rings, both strand orders, partial last blocks and 1,025/2,053/8,192-owner pools. The harness also deliberately uses a larger shared dispatch schedule to test local range guards and extra merge parity. Poisoned input lists are rebuilt without being read; birth-free candidate ordering preserves masks, unused padding and the output list. Existing prefix, extreme-ID, reappearing-ID, reset, pause, spatial-sampling, 64-point-ring, replay and loss-free event-volley regressions remain green. **95 targeted tests** (35 GPU library/contracts, 12 native conformance, 11 coupled renderer trail tests, 37 viewer tests), all-target Clippy and formatting pass.
+- The first prototype serially reread strided history records in the birth-page workgroup and raised dense allocation/sample diagnostic p99 from **0.860 to 1.075 ms**. Classifying compact flags during matching reduced that to 0.915 ms; packing four flags per word reduced it further to **0.706 / 0.712 ms** in two dense runs. Only the packed implementation remains. Intermediate reports are `free-owner-volley-bench.json` and `free-flags-{volley,sparse}-bench.json` under `target/fireworks-f1/`.
+- Fresh controls are from `f7deec36`. Final measurements use the same RTX 4070 SUPER/Vulkan, high-tier/default-fast/playback-only, 960×540 close-camera probes and 120 warm-up / 600 measured host frames. Every control/final run retains dense **37,600 captured = accepted**, **7,201 live / 10,400 occupied / 3,200 retired** peaks, or sparse **3,760 captured = accepted**, **721 / 1,040 / 320** peaks, with zero overflow, omission, rejection, eviction, truncation and checkpoint capture bytes. Configured-buffer estimate stays **38,580,664 bytes** (not total resident memory); launched history groups stay **5,974 per observation** / 11,948 for two.
+
+GPU milliseconds; p50 / p95 / p99:
+
+| Probe / measurement | Fresh control | Packed run 1 | Packed run 2 |
+| --- | ---: | ---: | ---: |
+| Dense complete simulation (600 samples) | 2.071 / 2.163 / 2.512 | 2.013 / 2.330 / 3.998 | 2.035 / 2.183 / 3.909 |
+| Dense 1 tick, 1 observation, no copies (598 / 565 / 584 samples) | 2.071 / 2.163 / 2.515 | 2.013 / 2.179 / 2.374 | 2.035 / 2.177 / 2.364 |
+| Dense last-observation allocation/sample diagnostic (600 samples) | 0.499 / 0.528 / 0.860 | 0.479 / 0.538 / 0.706 | 0.488 / 0.539 / 0.712 |
+| Sparse complete simulation (600 samples) | 1.645 / 1.757 / 2.042 | 1.670 / 1.772 / 1.895 | Not repeated |
+| Sparse 1 tick, 1 observation, no copies (598 each) | 1.645 / 1.757 / 2.050 | 1.670 / 1.772 / 1.897 | Not repeated |
+| Sparse last-observation allocation/sample diagnostic (600 samples) | 0.407 / 0.459 / 0.724 | 0.427 / 0.462 / 0.559 | Not repeated |
+
+- The allocation/sample diagnostic p99 reduction repeats in dense runs, but median/p95 gains are small or absent; **do not claim an overall p95 win**. Dense control has 1 zero-/598 one-/1 two-tick frames, versus **17/565/18** and **8/584/8** in packed runs. All-frame tail latency is worse with the extra catch-up windows (two-tick p95 4.360 / 4.183 ms, only 18 / 8 samples). Sparse control/final both have 1/598/1. Sequential runs are not paired population/time/clock controls, and a last-observation diagnostic is not a complete frame or a birth-only timing. Keep every frame window visible; the **full-frame/finale performance gate remains open**.
+- Dense frame 240 is byte-identical to the prior reference: `target/fireworks-f1/packed-free-volley-overlap/frame-000.png`, SHA256 `4B45502997252D44EE17DB4C64FB0950691A987CF82981DE0FE21199B6E2F051`. This remains a targeted visual check, not an all-assets/all-times guarantee.
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/packed-free-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/packed-free-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-sparse --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/packed-free-sparse-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/packed-free-volley-overlap
+```
+
+Control reports: `target/fireworks-f1/free-owner-control-bench.json` and `free-owner-sparse-control-bench.json`, generated before the shader change at `f7deec36`. Verification commands are the preceding section's commands, plus `cargo test --locked -p aestra-viewer --bin aestra-viewer`.
+
 ### Tasks
 
-- Next: build and measure a **deterministic free-owner compaction fast path** for birth observations, so sufficient free slots bypass candidate sorting/merges. Exclude reserved live owners, retain ascending physical-slot priority, and preserve the existing oldest-retired fallback when free slots are insufficient. Compare unchanged loss-free demand, populations, output and all frame windows before enabling it. Do not optimize editor replay ahead of playback.
+- Next: add **controlled playback-only benchmark tick schedules** for reproducible one-tick and multi-tick catch-up comparisons, retaining the existing real-time/all-frame reports separately. Advance the live runtime rather than opting into replay; pair each timing window with demanded/accepted births, live/retired populations and history work. Use work-matched repetitions to isolate the remaining head-ordering, matching, uniform-barrier and catch-up costs before another optimization. Do not optimize editor replay ahead of playback.
 - Measure variable multi-tick catch-up with enough work-matched samples. Revisit GPU-counted dispatch only with an encoding plan whose preparation/copy/validation costs are demonstrated to pay for themselves; fewer launched groups alone was not a win. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
