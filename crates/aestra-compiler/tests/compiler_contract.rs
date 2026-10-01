@@ -1141,6 +1141,7 @@ fn configured_motion_effect() -> EffectAsset {
         .find(|module| module.module_type.0 == MODULE_INITIALIZE)
         .unwrap();
     initialize.parameters = ModuleParameters::Initialize {
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         lifetime: ScalarRange::new(2.0, 2.0),
         speed: ScalarRange::new(10.0, 10.0),
         direction: [1.0, 0.0, 0.0],
@@ -2900,6 +2901,7 @@ fn a_recorded_binding_trace_drives_the_instance_and_makes_live_input_replayable(
         lifetime: (2.0, 3.0),
         direction: [0.0, 1.0, 0.0],
         spread: 0.8,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.0,
         shape: aestra_runtime::SpawnShape::Point,
         turbulence: 0.0,

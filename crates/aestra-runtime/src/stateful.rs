@@ -89,9 +89,8 @@ pub const MAX_COLLIDERS: usize = 4;
 /// Fixed configuration for the prototype stateful integrator. Richer than a single speed/lifetime:
 /// per-particle random speed and lifetime ranges, an authored launch direction with a spread cone,
 /// linear drag, a spawn shape, and value-noise turbulence. Every axis is deterministic from
-/// `(seed, ordinal[, age])` and — deliberately — trig-free, so the GPU kernels can reproduce it
-/// bit-for-bit (`normalize` and shapes use only IEEE-correctly-rounded `sqrt`/division; turbulence is
-/// hash value noise with a polynomial smoothstep, never `sin`).
+/// `(seed, ordinal[, age])`. Legacy sampling is trig-free and bit-exact across
+/// CPU/GPU; explicit F2 distributions use trig with tolerance-checked parity.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatefulConfig {
     /// Constant acceleration applied to velocity each tick.
@@ -104,8 +103,12 @@ pub struct StatefulConfig {
     pub lifetime: (f32, f32),
     /// The base launch direction; normalized at spawn (a zero vector falls back to the random unit).
     pub direction: [f32; 3],
+    /// Explicit launch distribution, independent of `shape`. LegacyCone retains
+    /// the historical mixed-vector sampler and its spread-factor convention.
+    pub velocity_distribution: aestra_core::VelocityDistribution,
     /// Cone spread: `0` launches straight along `direction`, larger values blend in more of the
-    /// per-particle random unit vector before renormalizing.
+    /// per-particle random unit vector before renormalizing. For explicit modes,
+    /// this is the full Cone opening angle in degrees (other modes ignore it).
     pub spread: f32,
     /// Linear velocity damping per second (`v -= drag * v * dt` each tick); `0` disables it.
     pub drag: f32,
@@ -675,17 +678,26 @@ impl StatefulSimulation {
 
 /// The full launch velocity for a particle: an authored direction blended with the per-particle random
 /// unit vector to a spread cone, renormalized, and scaled by a per-particle random speed. Canonical for
-/// both this CPU reference and the GPU spawn kernel — trig-free so they match bit-for-bit.
+/// both this CPU reference and the GPU spawn kernel. Legacy sampling is
+/// trig-free/bit-exact; explicit F2 modes are checked within float tolerance.
 fn launch_velocity(config: &StatefulConfig, seed: u64, ordinal: u64) -> [f32; 3] {
-    let random_unit = launch_direction(seed, ordinal);
-    // Cone: base direction + spread * random unit, renormalized. Falls back to the random unit when
-    // the base direction is zero (matching the GPU, which normalizes the same mixed vector).
-    let mixed = [
-        config.direction[0] + config.spread * random_unit[0],
-        config.direction[1] + config.spread * random_unit[1],
-        config.direction[2] + config.spread * random_unit[2],
-    ];
-    let direction = normalize_or(mixed, random_unit);
+    let direction = if config.velocity_distribution.is_legacy() {
+        let random_unit = launch_direction(seed, ordinal);
+        let mixed = [
+            config.direction[0] + config.spread * random_unit[0],
+            config.direction[1] + config.spread * random_unit[1],
+            config.direction[2] + config.spread * random_unit[2],
+        ];
+        normalize_or(mixed, random_unit)
+    } else {
+        crate::sample_velocity_distribution(
+            config.velocity_distribution,
+            config.direction,
+            config.spread,
+            spawn_uniform(seed, ordinal, 30),
+            spawn_uniform(seed, ordinal, 31),
+        )
+    };
     let speed = lerp(
         config.speed.0,
         config.speed.1,
@@ -1023,6 +1035,7 @@ mod tests {
             lifetime: (1.2, 1.8),
             direction: [0.0, 1.0, 0.0],
             spread: 0.4,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             drag: 0.5,
             shape: SpawnShape::Sphere { radius: 3.0 },
             placement: SpawnPlacement::IDENTITY,
@@ -1167,6 +1180,7 @@ mod tests {
             lifetime: (100.0, 100.0),
             direction: [0.0, 1.0, 0.0],
             spread: 0.0,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             drag: 0.0,
             shape: SpawnShape::Point,
             placement: SpawnPlacement::IDENTITY,
@@ -1249,6 +1263,7 @@ mod tests {
             drag: 0.0,
             turbulence: 0.0,
             spread: 0.0,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             ..config()
         };
         let mut placed = StatefulSimulation::new(config, 3);
@@ -1310,6 +1325,7 @@ mod tests {
             lifetime: (1000.0, 1000.0),
             direction: [0.0, -1.0, 0.0],
             spread: 0.0,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             drag: 0.0,
             shape: SpawnShape::Point,
             placement: SpawnPlacement::IDENTITY,
@@ -1347,6 +1363,7 @@ mod tests {
             lifetime: (1000.0, 1000.0),
             direction: [0.0, -1.0, 0.0],
             spread: 0.0,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             drag: 0.0,
             shape: SpawnShape::Point,
             placement: SpawnPlacement::IDENTITY,
@@ -1497,6 +1514,7 @@ mod tests {
             lifetime: (3.0, 3.5),
             direction: [0.0, 1.0, 0.0],
             spread: 0.5,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
             drag: 0.0,
             shape: SpawnShape::Point,
             turbulence: 0.0,

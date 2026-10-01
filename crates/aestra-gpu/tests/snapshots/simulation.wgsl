@@ -1,3 +1,45 @@
+fn aestra_velocity_direction(mode: u32, axis: vec3<f32>, spread_degrees: f32, u: f32, v: f32) -> vec3<f32> {
+    var forward = vec3<f32>(0.0, 1.0, 0.0);
+    var safe_axis = axis;
+    if max(abs(axis.x), max(abs(axis.y), abs(axis.z))) > 1e20 {
+        safe_axis = axis * 1e-20;
+    }
+    let largest = max(abs(safe_axis.x), max(abs(safe_axis.y), abs(safe_axis.z)));
+    if largest > 0.0 {
+        let scaled = safe_axis / largest;
+        forward = scaled / sqrt(dot(scaled, scaled));
+    }
+    if mode <= 1u {
+        return forward;
+    }
+    var height = 0.0;
+    var radius = 1.0;
+    if mode == 2u {
+        let half_angle = min(abs(spread_degrees) * 0.008726646259971648, 3.141592653589793);
+        height = 1.0 - u * (1.0 - cos(half_angle));
+        radius = sqrt(max(1.0 - height * height, 0.0));
+    }
+    else if mode == 3u {
+        height = 1.0 - 2.0 * u;
+        radius = sqrt(max(1.0 - height * height, 0.0));
+    }
+    else if mode == 4u {
+        height = u;
+        radius = sqrt(max(1.0 - u * u, 0.0));
+    }
+    else if mode == 5u {
+        radius = sqrt(u);
+    }
+    var helper = vec3<f32>(0.0, 1.0, 0.0);
+    if largest == 0.0 || abs(axis.y) > abs(axis.x) {
+        helper = vec3<f32>(1.0, 0.0, 0.0);
+    }
+    let tangent = normalize(cross(helper, forward));
+    let bitangent = cross(forward, tangent);
+    let phi = v * 6.283185307179586;
+    return forward * height + tangent * (radius * cos(phi)) + bitangent * (radius * sin(phi));
+}
+
 const MAX_CURVE_KEYS: u32 = 8u;
 
 const SPAWN_INVERSE_SAMPLES: u32 = 32u;
@@ -44,7 +86,7 @@ struct Emitter {
     omitted_attributes: u32,
     drag_curve: Curve,
     direction: vec3<f32>,
-    _direction_padding: f32,
+    velocity_distribution: u32,
     lifetime: vec2<f32>,
     speed: vec2<f32>,
     angular_velocity: vec2<f32>,
@@ -542,18 +584,24 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let normalized_age = age / lifetime;
     var position = vec3<f32>(0.0);
     if (emitter.omitted_attributes & 1u) == 0u {
-        let forward = normalize(emitter.direction);
-        let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
-        let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
-        let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
-        let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
-        var helper = vec3<f32>(0.0, 1.0, 0.0);
-        if abs(forward.y) >= 0.999 {
-            helper = vec3<f32>(1.0, 0.0, 0.0);
+        var direction = vec3<f32>(0.0);
+        if emitter.velocity_distribution == 0u {
+            let forward = normalize(emitter.direction);
+            let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
+            let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
+            let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+            let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
+            var helper = vec3<f32>(0.0, 1.0, 0.0);
+            if abs(forward.y) >= 0.999 {
+                helper = vec3<f32>(1.0, 0.0, 0.0);
+            }
+            let tangent = normalize(cross(helper, forward));
+            let bitangent = cross(forward, tangent);
+            direction = forward * cos_theta + tangent * (sin_theta * cos(direction_angle)) + bitangent * (sin_theta * sin(direction_angle));
         }
-        let tangent = normalize(cross(helper, forward));
-        let bitangent = cross(forward, tangent);
-        let direction = forward * cos_theta + tangent * (sin_theta * cos(direction_angle)) + bitangent * (sin_theta * sin(direction_angle));
+        else {
+            direction = aestra_velocity_direction(emitter.velocity_distribution, emitter.direction, emitter.spread_radians * 57.29577951308232, hash01_seeded(particle_index, 30u, particle_seed), hash01_seeded(particle_index, 31u, particle_seed));
+        }
         let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
         let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
         var origin = vec3<f32>(0.0);

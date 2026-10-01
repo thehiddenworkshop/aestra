@@ -150,6 +150,30 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopContinuous);
     assert_ribbon_strands_match_across_seeks_and_loops(&harness);
     assert_emission_cutoffs_match(&harness);
+    assert_velocity_distributions_match(&harness);
+}
+
+fn assert_velocity_distributions_match(harness: &GpuHarness) {
+    for mode in aestra_core::VelocityDistribution::ALL {
+        for shape in [EmitterShape::Point, EmitterShape::Sphere { radius: 2.0 }] {
+            let mut effect = EffectAsset::new("Velocity conformance", 2.0);
+            effect.playback_mode = EffectPlaybackMode::LoopContinuous;
+            let mut emitter = Emitter::basic_sprite("Shell", 2.0);
+            emitter.modules[0] = ModuleInstance::emission(12.0, 128);
+            emitter.modules[1] = ModuleInstance::shape(shape);
+            emitter.modules[2] = ModuleInstance::initialize_with_distribution(
+                ScalarRange::new(0.8, 1.6),
+                ScalarRange::new(18.0, 22.0),
+                mode,
+                [0.25, 1.0, -0.2],
+                60.0,
+                ScalarRange::new(-1.0, 1.0),
+            );
+            effect.emitters.push(emitter);
+            let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+            assert_effect_matches_at_times(harness, compiled, &[0.05, 0.55, 1.1, 2.55, 4.1]);
+        }
+    }
 }
 
 /// A host's stop_emitting then kill (event system E2b): the GPU hides exactly the particles the CPU
@@ -751,6 +775,7 @@ fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool
                 direction,
                 spread_degrees,
                 angular_velocity,
+                ..
             } => {
                 *lifetime = ScalarRange::new(0.8, 1.6);
                 *speed = ScalarRange::new(2.0, 5.0);

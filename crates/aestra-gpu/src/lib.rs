@@ -140,7 +140,8 @@ pub struct GpuEmitter {
     pub omitted_attributes: u32,
     pub drag_curve: GpuCurve,
     pub direction: Vec3,
-    pub _direction_padding: f32,
+    /// F2 distribution ABI tag; occupies the former direction padding lane.
+    pub velocity_distribution: u32,
     pub lifetime: Vec2,
     pub speed: Vec2,
     pub angular_velocity: Vec2,
@@ -344,7 +345,9 @@ pub struct GpuSimulationState {
 /// `aestra_runtime::StatefulSimulation::{splitmix64, launch_direction}`, conformance-checked against
 /// it, and included by the GPU spawn shader. Prepend it to a shader module and call
 /// `spawn_launch_direction(seed, ordinal)`.
-pub const STATEFUL_SPAWN_RNG_WGSL: &str = r#"
+pub const STATEFUL_SPAWN_RNG_WGSL: &str = concat!(
+    include_str!("shaders/aestra_velocity.wesl"),
+    r#"
 // u64 emulated as vec2<u32> = (lo, hi).
 fn aestra_mul_u32_full(a: u32, b: u32) -> vec2<u32> {
     let a0 = a & 0xFFFFu; let a1 = a >> 16u;
@@ -423,6 +426,17 @@ fn spawn_launch_velocity(
     let speed = speed_min + (speed_max - speed_min) * aestra_spawn_uniform(seed, ord, 0u);
     return dir * speed;
 }
+fn spawn_distributed_velocity(
+    seed: vec2<u32>, ordinal: u32, speed_min: f32, speed_max: f32,
+    direction: vec3<f32>, spread: f32, mode: u32
+) -> vec3<f32> {
+    if mode == 0u { return spawn_launch_velocity(seed, ordinal, speed_min, speed_max, direction, spread); }
+    let ord = vec2<u32>(ordinal, 0u);
+    let dir = aestra_velocity_direction(mode, direction, spread,
+        aestra_spawn_uniform(seed, ord, 30u), aestra_spawn_uniform(seed, ord, 31u));
+    let speed = speed_min + (speed_max - speed_min) * aestra_spawn_uniform(seed, ord, 0u);
+    return dir * speed;
+}
 // A signed per-particle uniform in [-1, 1) for a channel. Mirrors the CPU reference's spawn_signed.
 fn aestra_spawn_signed(seed: vec2<u32>, ordinal: vec2<u32>, channel: u32) -> f32 {
     return aestra_spawn_uniform(seed, ordinal, channel) * 2.0 - 1.0;
@@ -482,7 +496,8 @@ fn spawn_turbulence(seed: vec2<u32>, ordinal: u32, age: f32, strength: f32) -> v
         strength * aestra_turbulence_noise(seed, ordinal, 11u, age),
         strength * aestra_turbulence_noise(seed, ordinal, 12u, age));
 }
-"#;
+"#
+);
 
 /// A GPU atomic slot allocator for stateful particle death/reuse (hybrid roadmap M6): dead slots are
 /// pushed onto a free list and reused by spawns. The including shader must declare the module-scope
@@ -801,8 +816,9 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// presentation buffer *and* compacts the live slots into `alive_indices` while bumping the indirect
 /// draw count and live counter — the same compaction the analytic `simulate` performs, so the stateful
 /// output draws through the identical render path. `order_present` then stabilizes the transparent
-/// draw order for bounded live sets. All dynamics mirror
-/// `aestra_runtime::StatefulSimulation` bit-for-bit. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
+/// draw order for bounded live sets. Legacy dynamics mirror
+/// `aestra_runtime::StatefulSimulation` bit-for-bit; explicit F2 distributions
+/// use tolerance-checked trig. `params` is [`STATEFUL_SIMULATION_PARAM_WORDS`]
 /// `u32`s: `[capacity, spawn_per_tick, seed_lo, seed_hi, speed_min, speed_max, lifetime_min,
 /// lifetime_max, dt, gx, gy, gz, dir_x, dir_y, dir_z, spread, drag, emitter_index, slot_offset,
 /// turbulence, shape_kind, shape_radius, half_x, half_y, half_z, subtick]` (floats stored as bits;
@@ -812,8 +828,13 @@ pub const STATEFUL_SIMULATION_BINDINGS: &str = r#"
 /// [`STATEFUL_COLLISION_WGSL`]), then the spawn placement (the emitter transform,
 /// `aestra_runtime::SpawnPlacement`): a flag word at 67 (`0` = identity, skipped), translation at
 /// 68..71, the unit rotation quaternion `xyzw` at 71..75 and scale at 75..78; then the appearance
-/// `present` draws with (see [`pack_stateful_appearance`]), from 78.
-pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_WORLD_BASE + STATEFUL_WORLD_WORDS;
+/// `present` draws with (see [`pack_stateful_appearance`]), from 78. The F2
+/// velocity mode is appended at [`STATEFUL_VELOCITY_MODE_INDEX`] (188). For
+/// explicit modes `spread` is the full cone angle in degrees; mode 0 retains
+/// the legacy spread-factor convention. No storage binding is added.
+pub const STATEFUL_VELOCITY_MODE_INDEX: usize = STATEFUL_WORLD_BASE + STATEFUL_WORLD_WORDS;
+pub const STATEFUL_SIMULATION_PARAM_WORDS: usize = STATEFUL_VELOCITY_MODE_INDEX + 1;
+const _: () = assert!(STATEFUL_VELOCITY_MODE_INDEX == 188);
 
 /// Packs an emitter's colliders into the stateful params' collider block (hybrid roadmap M10): the
 /// count at 26, then up to `MAX_COLLIDERS` 10-word records from 27 — `[kind, a.xyz, b.xyz,
@@ -1709,8 +1730,9 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ordinal = atomicAdd(&spawn_counter, 1u);
     let seed = vec2<u32>(params[2], params[3]);
     let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
-    let velocity = spawn_launch_velocity(
-        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let velocity = spawn_distributed_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction,
+        bitcast<f32>(params[15]), params[188]);
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
@@ -2116,8 +2138,9 @@ fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ordinal = plan[5] + i;
     let seed = vec2<u32>(params[2], params[3]);
     let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
-    let launch = spawn_launch_velocity(
-        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let launch = spawn_distributed_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction,
+        bitcast<f32>(params[15]), params[188]);
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let r = 4u + i * 8u;
@@ -2557,8 +2580,12 @@ impl GpuEffectArtifact {
                 drag_source,
                 omitted_attributes: 0,
                 drag_curve,
-                direction: Vec3::from_array(init.direction).normalize_or_zero(),
-                _direction_padding: 0.0,
+                direction: if init.velocity_distribution.is_legacy() {
+                    Vec3::from_array(init.direction).normalize_or_zero()
+                } else {
+                    Vec3::from_array(init.direction)
+                },
+                velocity_distribution: init.velocity_distribution as u32,
                 lifetime: Vec2::new(init.lifetime.min, init.lifetime.max),
                 speed: Vec2::new(init.speed.min, init.speed.max),
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
@@ -2972,6 +2999,7 @@ struct GpuInitialize {
     direction: [f32; 3],
     spread_degrees: f32,
     angular_velocity: ScalarRange,
+    velocity_distribution: aestra_core::VelocityDistribution,
 }
 
 fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitialize> {
@@ -2984,6 +3012,7 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
                 direction,
                 spread_degrees,
                 angular_velocity,
+                velocity_distribution,
                 ..
             } => Some(GpuInitialize {
                 lifetime: *lifetime.resolve(values),
@@ -2991,6 +3020,7 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
                 direction: *direction.resolve(values),
                 spread_degrees: *spread_degrees.resolve(values),
                 angular_velocity: *angular_velocity.resolve(values),
+                velocity_distribution: *velocity_distribution,
             }),
             _ => None,
         })

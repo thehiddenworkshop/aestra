@@ -3617,6 +3617,38 @@ mod tests {
     }
 
     #[test]
+    fn properties_velocity_distribution_choice_is_semantic_and_undoable() {
+        let mut session = test_support::session_with_timing_slack();
+        let module = session
+            .selected_layer()
+            .unwrap()
+            .module_by_type(aestra_core::MODULE_INITIALIZE)
+            .unwrap()
+            .id;
+        let registry = ModuleRegistry::builtin();
+        let input = registry
+            .get(&aestra_core::ModuleTypeId::new(
+                aestra_core::MODULE_INITIALIZE,
+            ))
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "velocity_distribution")
+            .unwrap() as u8;
+        let original = properties_module_parameter(&session, module, "velocity_distribution");
+        set_module_choice(&mut session, &registry, module, input, 6, &test_localizer());
+        assert_eq!(
+            properties_module_parameter(&session, module, "velocity_distribution"),
+            Some(Value::Text("Ring".into()))
+        );
+        session.undo();
+        assert_eq!(
+            properties_module_parameter(&session, module, "velocity_distribution"),
+            original
+        );
+    }
+
+    #[test]
     fn properties_emitter_transform_components_are_semantic_and_undoable() {
         let mut session = test_support::session_with_timing_slack();
         assert!(set_emitter_transform_component(
@@ -3806,6 +3838,25 @@ pub(crate) fn set_module_choice(
         return;
     }
     let current = properties_module_parameter(session, module_id, input.name);
+    if input.name == "velocity_distribution" {
+        let Some(mode) = aestra_core::VelocityDistribution::ALL.get(choice as usize) else {
+            set_properties_status(session, localizer, PropertiesStatus::ChoiceUnavailable);
+            return;
+        };
+        if let Some(command) = properties_module_parameter_command(
+            session,
+            module_id,
+            input.name,
+            Value::Text(mode.name().into()),
+        ) {
+            session.execute(
+                localizer.text("properties-edit-module-input-command"),
+                command,
+                true,
+            );
+        }
+        return;
+    }
     let shape = match choice {
         0 => EmitterShape::Point,
         1 => match current {
@@ -7165,6 +7216,8 @@ pub(crate) fn localized_properties_input(
         ("speed", true) => "properties-input-speed-description",
         ("direction", false) => "properties-input-direction",
         ("direction", true) => "properties-input-direction-description",
+        ("velocity_distribution", false) => "properties-input-velocity-distribution",
+        ("velocity_distribution", true) => "properties-input-velocity-distribution-description",
         ("spread_degrees", false) => "properties-input-spread",
         ("spread_degrees", true) => "properties-input-spread-description",
         ("angular_velocity", false) => "properties-input-angular-velocity",
@@ -8194,10 +8247,31 @@ fn spawn_properties_choice_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: u8,
+    input_name: &str,
     title: &str,
     description: &str,
     value: &Value,
 ) {
+    if input_name == "velocity_distribution"
+        && let Value::Text(name) = value
+        && let Some(mode) = aestra_core::VelocityDistribution::from_name(name)
+    {
+        let options = aestra_core::VelocityDistribution::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(choice, option)| ComboOption {
+                label: option.name().into(),
+                selected: option == mode,
+                action: PropertiesAction::SetModuleChoice {
+                    module,
+                    input,
+                    choice: choice as u8,
+                },
+            })
+            .collect::<Vec<_>>();
+        spawn_properties_combo_row(parent, title, mode.name(), &options, Some(description));
+        return;
+    }
     let Value::Shape(shape) = value else {
         spawn_properties_read_only_control(parent, title, &format_value(value.clone()));
         return;

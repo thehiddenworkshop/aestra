@@ -22,6 +22,56 @@ fn test_effect() -> EffectAsset {
 }
 
 #[test]
+fn velocity_distribution_edits_validate_and_undo_atomically() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_INITIALIZE)
+        .unwrap()
+        .id;
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+    let edit = |name: &str| {
+        EffectTransaction::single(
+            "Velocity distribution",
+            EffectCommand::SetModuleParameter {
+                emitter,
+                module,
+                parameter: "velocity_distribution".into(),
+                value: Value::Text(name.into()),
+            },
+        )
+    };
+    for mode in aestra_core::VelocityDistribution::ALL {
+        history
+            .execute(&mut effect, &LockState::default(), edit(mode.name()))
+            .unwrap();
+        assert_eq!(
+            effect.emitters[0]
+                .module_by_type(MODULE_INITIALIZE)
+                .unwrap()
+                .parameter_value("velocity_distribution"),
+            Some(Value::Text(mode.name().into()))
+        );
+    }
+    let before_invalid = effect.clone();
+    assert!(
+        history
+            .execute(&mut effect, &LockState::default(), edit("unknown mode"))
+            .is_err()
+    );
+    assert_eq!(effect, before_invalid);
+    for _ in aestra_core::VelocityDistribution::ALL {
+        history.undo(&mut effect).unwrap();
+    }
+    assert_eq!(effect, original);
+    for _ in aestra_core::VelocityDistribution::ALL {
+        history.redo(&mut effect).unwrap();
+    }
+    assert_eq!(effect, before_invalid);
+}
+
+#[test]
 fn host_motion_edits_validate_diff_and_undo_atomically() {
     let mut effect = test_effect();
     let original = effect.clone();

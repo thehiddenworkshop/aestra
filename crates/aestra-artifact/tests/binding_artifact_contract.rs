@@ -113,13 +113,20 @@ fn corrupted_binding_data_is_rejected() {
 }
 
 #[test]
-fn artifact_version_3_is_rejected_so_it_is_recompiled() {
+fn old_artifact_versions_are_rejected_so_they_are_recompiled() {
     let text = String::from_utf8(encode_effect(&compiled_project().root).unwrap()).unwrap();
-    let old = text.replacen("format_version:4", "format_version:3", 1);
-    assert!(matches!(
-        decode_effect(old.as_bytes()),
-        Err(ArtifactError::UnsupportedVersion { found: 3 })
-    ));
+    for version in [3, 4] {
+        let old = text.replacen(
+            &format!(
+                "format_version:{}",
+                aestra_artifact::CURRENT_ARTIFACT_VERSION
+            ),
+            &format!("format_version:{version}"),
+            1,
+        );
+        assert!(matches!(decode_effect(old.as_bytes()),
+            Err(ArtifactError::UnsupportedVersion { found }) if found == version));
+    }
 }
 
 #[test]

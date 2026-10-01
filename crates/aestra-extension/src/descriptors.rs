@@ -84,7 +84,16 @@ impl InputMetadata {
             value_type: self.value_type,
             default: self.default_value.clone(),
             unit: self.unit.map(str::to_string),
-            control: self.control.to_property_control(),
+            control: if self.name == "velocity_distribution" {
+                PropertyControl::Choice {
+                    options: aestra_core::VelocityDistribution::ALL
+                        .into_iter()
+                        .map(|mode| mode.name().into())
+                        .collect(),
+                }
+            } else {
+                self.control.to_property_control()
+            },
             sources: self.sources.clone(),
             handle: self.handle,
         }

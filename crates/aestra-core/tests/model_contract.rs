@@ -8,6 +8,38 @@ use aestra_core::{
 };
 
 #[test]
+fn velocity_distributions_round_trip_without_rewriting_legacy_initializers() {
+    let legacy = aestra_core::ModuleInstance::initialize(
+        ScalarRange::new(1.0, 2.0),
+        ScalarRange::new(18.0, 22.0),
+        [0.0, 1.0, 0.0],
+        30.0,
+        ScalarRange::new(0.0, 0.0),
+    );
+    let legacy_ron = ron::ser::to_string(&legacy).unwrap();
+    assert!(!legacy_ron.contains("velocity_distribution"));
+    assert_eq!(
+        ron::de::from_str::<aestra_core::ModuleInstance>(&legacy_ron).unwrap(),
+        legacy
+    );
+    for mode in aestra_core::VelocityDistribution::ALL {
+        let module = aestra_core::ModuleInstance::initialize_with_distribution(
+            ScalarRange::new(1.0, 2.0),
+            ScalarRange::new(18.0, 22.0),
+            mode,
+            [0.0, 1.0, 0.0],
+            30.0,
+            ScalarRange::new(0.0, 0.0),
+        );
+        let ron = ron::ser::to_string(&module).unwrap();
+        assert_eq!(
+            ron::de::from_str::<aestra_core::ModuleInstance>(&ron).unwrap(),
+            module
+        );
+    }
+}
+
+#[test]
 fn emitter_regions_split_and_join_without_changing_source_time() {
     let emitter = Emitter::basic_sprite("Emitter", 2.0);
     let implicit = emitter.timeline_regions();

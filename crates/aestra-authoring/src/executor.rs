@@ -1503,6 +1503,18 @@ fn set_module_parameter(
         {
             Some(Value::Vec3(std::mem::replace(direction, value)))
         }
+        (
+            ModuleParameters::Initialize {
+                velocity_distribution,
+                ..
+            },
+            Value::Text(value),
+        ) if parameter == "velocity_distribution" => {
+            let mode = aestra_core::VelocityDistribution::from_name(&value).ok_or_else(unknown)?;
+            Some(Value::Text(
+                std::mem::replace(velocity_distribution, mode).name().into(),
+            ))
+        }
         (ModuleParameters::Initialize { spread_degrees, .. }, Value::Scalar(value))
             if parameter == "spread_degrees" =>
         {
@@ -1566,6 +1578,7 @@ fn expected_parameter_type(parameters: &ModuleParameters, parameter: &str) -> Op
             Some("range")
         }
         (ModuleParameters::Initialize { .. }, "direction") => Some("vec3"),
+        (ModuleParameters::Initialize { .. }, "velocity_distribution") => Some("text"),
         (ModuleParameters::Initialize { .. }, "spread_degrees") => Some("scalar"),
         (ModuleParameters::Motion { .. }, "gravity") => Some("vec3"),
         (ModuleParameters::Motion { .. }, "drag" | "turbulence") => Some("scalar"),

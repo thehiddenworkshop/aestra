@@ -75,6 +75,7 @@ fn stateful_params(
 ) -> Vec<u32> {
     let (shape_kind, shape_radius, half) = shape_params(config.shape);
     let mut words = vec![0_u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    words[aestra_gpu::STATEFUL_VELOCITY_MODE_INDEX] = config.velocity_distribution as u32;
     words[..26].copy_from_slice(&[
         config.capacity,
         config.spawn_per_tick,
@@ -344,8 +345,9 @@ fn spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ordinal = atomicAdd(&spawn_counter, 1u);
     let seed = vec2<u32>(params[2], params[3]);
     let direction = vec3<f32>(bitcast<f32>(params[12]), bitcast<f32>(params[13]), bitcast<f32>(params[14]));
-    let velocity = spawn_launch_velocity(
-        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction, bitcast<f32>(params[15]));
+    let velocity = spawn_distributed_velocity(
+        seed, ordinal, bitcast<f32>(params[4]), bitcast<f32>(params[5]), direction,
+        bitcast<f32>(params[15]), params[188]);
     let lifetime = bitcast<f32>(params[6])
         + (bitcast<f32>(params[7]) - bitcast<f32>(params[6])) * aestra_spawn_uniform(seed, vec2<u32>(ordinal, 0u), 1u);
     let half_extents = vec3<f32>(bitcast<f32>(params[22]), bitcast<f32>(params[23]), bitcast<f32>(params[24]));
@@ -2040,6 +2042,7 @@ fn gpu_spawn_and_integrate_matches_the_cpu_reference() {
         lifetime: (1000.0, 1000.0),
         direction: [0.2, 1.0, -0.1],
         spread: 0.6,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.5,
         shape: SpawnShape::Box {
             half_extents: [4.0, 1.0, 6.0],
@@ -2098,6 +2101,7 @@ fn gpu_death_loop_checkpoint_seek_reaches_the_uninterrupted_state() {
         lifetime: (0.45, 0.6),
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.0 },
         turbulence: 7.0,
@@ -2186,6 +2190,7 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
         lifetime: (0.45, 0.6),
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.8,
         shape: SpawnShape::Sphere { radius: 2.5 },
         turbulence: 7.0,
@@ -2240,6 +2245,66 @@ fn gpu_death_loop_with_reuse_matches_the_cpu_reference() {
 }
 
 #[test]
+fn explicit_velocity_distributions_match_gpu_across_death_reuse_and_replay() {
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    for mode in aestra_core::VelocityDistribution::ALL {
+        for direction in [
+            [0.0, 1.0, 0.0],
+            [1.0, -2.0, 0.25],
+            [0.0; 3],
+            [2e-7, 0.0, 0.0],
+            [f32::MAX, 0.0, 0.0],
+        ] {
+            if mode.is_legacy() && direction[0] == f32::MAX {
+                continue;
+            }
+            let config = StatefulConfig {
+                gravity: [0.0, -9.81, 0.0],
+                spawn_per_tick: 4,
+                speed: (18.0, 22.0),
+                lifetime: (0.45, 0.6),
+                direction,
+                velocity_distribution: mode,
+                spread: if mode.is_legacy() { 0.5 } else { 60.0 },
+                drag: 0.8,
+                shape: SpawnShape::Point,
+                turbulence: 0.0,
+                placement: SpawnPlacement::IDENTITY,
+                colliders: [Collider::NONE; MAX_COLLIDERS],
+                collider_count: 0,
+                capacity: 512,
+                homing: None,
+            };
+            let seed = 0xDEAD_BEEF_CAFE_F00D;
+            let gpu = harness
+                .advance_stateful_with_death(&config, seed, 90)
+                .unwrap();
+            let mut cpu = StatefulSimulation::new(config, seed);
+            cpu.advance_to_tick(30);
+            let snapshot = cpu.clone();
+            cpu.advance_to_tick(90);
+            let samples = cpu.alive_particles();
+            cpu = snapshot;
+            cpu.advance_to_tick(90);
+            assert_eq!(samples, cpu.alive_particles(), "{mode:?} replay");
+            assert_eq!(gpu.len(), samples.len());
+            let by_id: std::collections::HashMap<_, _> = gpu.into_iter().collect();
+            for (id, expected) in samples {
+                let actual = by_id.get(&id).expect("stable spawn identity");
+                for axis in 0..3 {
+                    assert!(
+                        (expected[axis] - actual[axis]).abs() <= 1e-3 + 1e-4 * expected[axis].abs(),
+                        "{mode:?}, direction {direction:?}, ordinal {id}, axis {axis}: CPU {expected:?}, GPU {actual:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn gpu_spawn_placement_matches_the_cpu_reference() {
     // A moved, rotated and scaled emitter: the GPU spawn kernel places each spawn exactly as
     // `SpawnPlacement` does on the CPU, through a window with death and reuse.
@@ -2255,6 +2320,7 @@ fn gpu_spawn_placement_matches_the_cpu_reference() {
         lifetime: (0.45, 0.6),
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.8,
         shape: SpawnShape::Box {
             half_extents: [3.0, 1.0, 2.0],
@@ -2314,6 +2380,7 @@ fn collision_config(colliders: [Collider; MAX_COLLIDERS], collider_count: u32) -
         lifetime: (1.2, 1.6),
         direction: [0.0, 1.0, 0.0],
         spread: 0.7,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.3,
         shape: SpawnShape::Sphere { radius: 1.0 },
         turbulence: 3.0,
@@ -2681,6 +2748,7 @@ fn homing_config(lost: aestra_runtime::HomingLostPolicy, arrival_radius: f32) ->
         lifetime: (3.0, 3.5),
         direction: [0.0, 1.0, 0.0],
         spread: 0.8,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.0,
         shape: SpawnShape::Sphere { radius: 0.5 },
         turbulence: 0.0,
@@ -2835,6 +2903,7 @@ fn gpu_spawns_follow_a_moving_attachment_like_the_cpu_reference_and_leave_a_wake
         lifetime: (0.8, 1.0),
         direction: [0.0, 1.0, 0.0],
         spread: 0.4,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.5,
         shape: SpawnShape::Sphere { radius: 0.1 },
         turbulence: 0.0,
@@ -3376,6 +3445,7 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         lifetime: (1.0, 1.3),
         direction: [0.0, 1.0, 0.0],
         spread: 0.4,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.1,
         shape: SpawnShape::Sphere { radius: 0.5 },
         turbulence: 2.0,
@@ -3391,13 +3461,29 @@ fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
         speed: (1.0, 2.0),
         lifetime: (0.3, 0.5),
         spread: 1.0,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         turbulence: 0.0,
         colliders: [Collider::NONE; MAX_COLLIDERS],
         collider_count: 0,
         capacity,
         ..fountain
     };
-    let configs = [fountain, sub(2048), sub(64), sub(1024)];
+    let configs = [
+        fountain,
+        StatefulConfig {
+            velocity_distribution: aestra_core::VelocityDistribution::Ring,
+            ..sub(2048)
+        },
+        StatefulConfig {
+            velocity_distribution: aestra_core::VelocityDistribution::Sphere,
+            ..sub(64)
+        },
+        StatefulConfig {
+            velocity_distribution: aestra_core::VelocityDistribution::Cone,
+            spread: 60.0,
+            ..sub(1024)
+        },
+    ];
     let link = |trigger, target, count, inherit| CompiledEventLink {
         source: 0,
         trigger,
@@ -3483,6 +3569,7 @@ fn gpu_input_bursts_spawn_like_the_cpu_reference() {
         lifetime: (0.8, 1.0),
         direction: [0.0, 1.0, 0.0],
         spread: 0.4,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.1,
         shape: SpawnShape::Sphere { radius: 0.5 },
         turbulence: 1.0,
@@ -3498,6 +3585,7 @@ fn gpu_input_bursts_spawn_like_the_cpu_reference() {
         speed: (4.0, 8.0),
         lifetime: (0.3, 0.5),
         spread: 1.0,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         turbulence: 0.0,
         capacity: 96,
         ..fountain
@@ -3593,6 +3681,7 @@ fn gpu_particle_outputs_raise_the_cpu_reference_stream() {
         lifetime: (0.6, 1.1),
         direction: [0.0, 1.0, 0.0],
         spread: 0.5,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.05,
         shape: SpawnShape::Sphere { radius: 0.5 },
         turbulence: 1.0,
@@ -3757,6 +3846,7 @@ fn gpu_world_colliders_match_the_cpu_reference_in_a_placed_effect() {
         lifetime: (1.6, 2.0),
         direction: [0.0, -1.0, 0.0],
         spread: 0.8,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.1,
         shape: SpawnShape::Sphere { radius: 2.0 },
         turbulence: 0.0,
@@ -3864,6 +3954,7 @@ fn gpu_physics_colliders_match_the_cpu_reference_against_every_proxy_kind() {
         lifetime: (1.4, 1.8),
         direction: [0.0, -1.0, 0.0],
         spread: 1.0,
+        velocity_distribution: aestra_core::VelocityDistribution::LegacyCone,
         drag: 0.1,
         shape: SpawnShape::Box {
             half_extents: [6.0, 0.5, 6.0],

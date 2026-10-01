@@ -184,9 +184,10 @@ struct StatefulDispatch {
     speed: (f32, f32),
     /// Per-particle lifetime range `(min, max)` in seconds.
     lifetime: (f32, f32),
-    /// Base launch direction; the per-particle direction is `normalize(direction + spread * random)`.
+    /// Local launch axis. Mode 0 retains `normalize(direction + spread * random)`.
     direction: [f32; 3],
-    /// Cone spread factor mapped from the authored spread angle (`0` = straight along `direction`).
+    velocity_distribution: u32,
+    /// Legacy cone factor (mode 0), otherwise the full cone angle in degrees.
     spread: f32,
     /// Linear velocity damping per second (`v -= drag * v * dt`).
     drag: f32,
@@ -411,6 +412,7 @@ impl StatefulDispatch {
             self.direction[1].to_bits(),
             self.direction[2].to_bits(),
             self.spread.to_bits(),
+            self.velocity_distribution,
             self.drag.to_bits(),
             self.turbulence.to_bits(),
             self.shape_kind,
@@ -1052,9 +1054,13 @@ pub(crate) fn prepare_gpu_effects(
                                     emitter.direction.y,
                                     emitter.direction.z,
                                 ],
-                                // Map the authored spread half-angle to the cone factor: 0 rad -> straight,
-                                // ~90 deg -> factor 1, blending in more of the random unit vector.
-                                spread: emitter.spread_radians / std::f32::consts::FRAC_PI_2,
+                                // Preserve the legacy spread factor; explicit modes use degrees.
+                                velocity_distribution: emitter.velocity_distribution,
+                                spread: if emitter.velocity_distribution == 0 {
+                                    emitter.spread_radians / std::f32::consts::FRAC_PI_2
+                                } else {
+                                    emitter.spread_radians.to_degrees()
+                                },
                                 drag: 0.5 * (emitter.drag.x + emitter.drag.y),
                                 turbulence: 0.5 * (emitter.turbulence.x + emitter.turbulence.y),
                                 // Map the analytic shape encoding to the stateful one (sphere/box/point).
@@ -3143,6 +3149,7 @@ fn stateful_params_bytes(
         .and_then(|(schedule, tick)| TickSchedule::at(&schedule.placement, tick))
         .unwrap_or(dispatch.placement);
     let mut words = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
+    words[aestra_gpu::STATEFUL_VELOCITY_MODE_INDEX] = dispatch.velocity_distribution;
     words[..26].copy_from_slice(&[
         dispatch.capacity,
         spawn_per_tick,
@@ -4867,6 +4874,7 @@ mod tests {
             lifetime: (1.0, 1.5),
             direction: [0.0, 1.0, 0.0],
             spread: 0.4,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone as u32,
             drag: 0.5,
             turbulence: 4.0,
             shape_kind: 1,
@@ -4897,6 +4905,13 @@ mod tests {
             base.fingerprint(),
             base.clone().fingerprint(),
             "stable for equal dynamics"
+        );
+        let mut changed = base.clone();
+        changed.velocity_distribution = aestra_core::VelocityDistribution::Ring as u32;
+        assert_ne!(
+            base.fingerprint(),
+            changed.fingerprint(),
+            "distribution change invalidates history"
         );
         let mut changed = base.clone();
         changed.gravity[1] = -12.0;
@@ -5732,6 +5747,7 @@ mod coupled_tests {
             lifetime: (3.0, 4.0),
             direction: [0.0, 1.0, 0.0],
             spread: 0.6,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone as u32,
             drag: 0.0,
             turbulence: 0.0,
             shape_kind: 1,
@@ -5825,6 +5841,7 @@ mod coupled_tests {
             speed: (38.0, 46.0),
             lifetime: (1.1, 1.5),
             spread: 0.1,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone as u32,
             gravity: [0.0, -25.0, 0.0],
             shape_kind: 0,
             event_mask: 2,
@@ -5838,6 +5855,7 @@ mod coupled_tests {
             speed: (10.0, 18.0),
             lifetime: (2.2, 2.8),
             spread: std::f32::consts::PI,
+            velocity_distribution: aestra_core::VelocityDistribution::LegacyCone as u32,
             gravity: [0.0, -20.0, 0.0],
             event_mask: 4,
             colliders: vec![aestra_core::Collider {

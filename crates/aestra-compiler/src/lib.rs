@@ -1538,6 +1538,17 @@ impl EffectCompiler {
         }
         for (input_name, parameter_id) in &module.bindings {
             let binding_path = format!("{path}.bindings.{input_name}");
+            if module.module_type.0 == MODULE_INITIALIZE && input_name == "velocity_distribution" {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidValue,
+                        binding_path,
+                        "velocity_distribution is a compile-time choice; bind direction, spread or speed instead",
+                    ),
+                );
+                continue;
+            }
             let Some(input) = metadata
                 .inputs
                 .iter()
@@ -2594,8 +2605,10 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             direction,
             spread_degrees,
             angular_velocity,
+            velocity_distribution,
         } => Instruction::Initialize {
             source: module.id,
+            velocity_distribution: *velocity_distribution,
             lifetime: expression(
                 module,
                 "lifetime",

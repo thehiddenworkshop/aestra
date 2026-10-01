@@ -13,7 +13,7 @@ use aestra_bevy::{
 
 pub const SEED: u64 = 0xf1e0_0000_0000_0001;
 
-fn fix_emitter_ids(emitter: &mut Emitter, base: u128) {
+pub(crate) fn fix_emitter_ids(emitter: &mut Emitter, base: u128) {
     emitter.id = EmitterId::from_u128(base);
     for (index, module) in emitter.modules.iter_mut().enumerate() {
         module.id = ModuleId::from_u128(base + 10 + index as u128);

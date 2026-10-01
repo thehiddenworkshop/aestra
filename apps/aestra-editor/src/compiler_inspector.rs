@@ -987,9 +987,10 @@ fn instruction_summary(instruction: &Instruction) -> String {
             direction,
             spread_degrees,
             angular_velocity,
+            velocity_distribution,
             ..
         } => format!(
-            "life {lifetime:?}  ·  speed {speed:?}  ·  direction {direction:?}  ·  spread {spread_degrees:?}  ·  angular {angular_velocity:?}"
+            "life {lifetime:?}  ·  speed {speed:?}  ·  distribution {velocity_distribution:?}  ·  axis {direction:?}  ·  spread {spread_degrees:?}  ·  angular {angular_velocity:?}"
         ),
         Instruction::Motion {
             gravity,

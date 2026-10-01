@@ -1127,6 +1127,19 @@ fn spawn_module_input_controls(
                 spawn_extension_note(card, &format!("Provided by {provider}"), theme::TEXT_FAINT);
             }
             for (input_index, input) in metadata.inputs.iter().enumerate() {
+                if input.name == "spread_degrees"
+                    && let aestra_core::ModuleParameters::Initialize {
+                        velocity_distribution,
+                        ..
+                    } = &module.parameters
+                    && !matches!(
+                        velocity_distribution,
+                        aestra_core::VelocityDistribution::LegacyCone
+                            | aestra_core::VelocityDistribution::Cone
+                    )
+                {
+                    continue;
+                }
                 spawn_input_control(
                     card,
                     module,
@@ -1581,6 +1594,7 @@ fn spawn_input_control(
             parent,
             module.id,
             input_index,
+            input.name,
             &display_name,
             &description,
             &value,

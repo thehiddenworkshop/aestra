@@ -22,6 +22,32 @@ use aestra_runtime::{
 };
 
 #[test]
+fn explicit_velocity_distributions_survive_compiled_artifact_round_trips() {
+    for mode in aestra_core::VelocityDistribution::ALL {
+        let mut effect = EffectAsset::new("Velocity", 2.0);
+        let mut emitter = Emitter::basic_sprite("Shell", 2.0);
+        if let ModuleParameters::Initialize {
+            velocity_distribution,
+            ..
+        } = &mut emitter.modules[2].parameters
+        {
+            *velocity_distribution = mode;
+        }
+        effect.emitters.push(emitter);
+        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let bytes = encode_effect(&compiled).unwrap();
+        assert_eq!(decode_effect(&bytes).unwrap(), compiled);
+        if mode.is_legacy() {
+            assert!(
+                !std::str::from_utf8(&bytes)
+                    .unwrap()
+                    .contains("velocity_distribution")
+            );
+        }
+    }
+}
+
+#[test]
 fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history() {
     let effect = EffectAsset::from_ron(include_str!(
         "../../../assets/test/effects/moving_trail_lab.aestra.ron"

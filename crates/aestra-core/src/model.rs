@@ -1654,6 +1654,7 @@ impl Emitter {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                ..
             } => (
                 *lifetime,
                 *speed,
@@ -2009,6 +2010,26 @@ impl ModuleInstance {
         spread_degrees: f32,
         angular_velocity: ScalarRange,
     ) -> Self {
+        Self::initialize_with_distribution(
+            lifetime,
+            speed,
+            crate::VelocityDistribution::LegacyCone,
+            direction,
+            spread_degrees,
+            angular_velocity,
+        )
+    }
+
+    /// Initial velocity independent of the position Shape module. `direction`
+    /// is the local axis, and spread is the full Cone opening angle in degrees.
+    pub fn initialize_with_distribution(
+        lifetime: ScalarRange,
+        speed: ScalarRange,
+        velocity_distribution: crate::VelocityDistribution,
+        direction: [f32; 3],
+        spread_degrees: f32,
+        angular_velocity: ScalarRange,
+    ) -> Self {
         Self {
             id: ModuleId::new(),
             module_type: ModuleTypeId::new(MODULE_INITIALIZE),
@@ -2020,6 +2041,7 @@ impl ModuleInstance {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                velocity_distribution,
             },
             property_sources: BTreeMap::new(),
             property_source_values: BTreeMap::new(),
@@ -2213,6 +2235,7 @@ impl ModuleInstance {
                 Some(ValueType::Range)
             }
             (ModuleParameters::Initialize { .. }, "direction") => Some(ValueType::Vec3),
+            (ModuleParameters::Initialize { .. }, "velocity_distribution") => Some(ValueType::Text),
             (ModuleParameters::Initialize { .. }, "spread_degrees") => Some(ValueType::Scalar),
             (ModuleParameters::Motion { .. }, "gravity") => Some(ValueType::Vec3),
             (ModuleParameters::Homing { .. }, "target" | "target_velocity") => {
@@ -2250,6 +2273,13 @@ impl ModuleInstance {
                 Some(Value::Range(*lifetime))
             }
             (ModuleParameters::Initialize { speed, .. }, "speed") => Some(Value::Range(*speed)),
+            (
+                ModuleParameters::Initialize {
+                    velocity_distribution,
+                    ..
+                },
+                "velocity_distribution",
+            ) => Some(Value::Text(velocity_distribution.name().into())),
             (ModuleParameters::Initialize { direction, .. }, "direction") => {
                 Some(Value::Vec3(*direction))
             }
@@ -2478,6 +2508,7 @@ impl ModuleInstance {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                ..
             } => {
                 validate_range(*lifetime, path, "lifetime", report);
                 validate_range(*speed, path, "speed", report);
@@ -2711,6 +2742,11 @@ pub enum ModuleParameters {
         direction: [f32; 3],
         spread_degrees: f32,
         angular_velocity: ScalarRange,
+        #[serde(
+            default,
+            skip_serializing_if = "crate::VelocityDistribution::is_legacy"
+        )]
+        velocity_distribution: crate::VelocityDistribution,
     },
     Motion {
         gravity: [f32; 3],

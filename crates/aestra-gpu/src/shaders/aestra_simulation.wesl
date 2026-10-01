@@ -45,7 +45,7 @@ struct Emitter {
     omitted_attributes: u32,
     drag_curve: Curve,
     direction: vec3<f32>,
-    _direction_padding: f32,
+    velocity_distribution: u32,
     lifetime: vec2<f32>,
     speed: vec2<f32>,
     angular_velocity: vec2<f32>,
@@ -606,20 +606,28 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let normalized_age = age / lifetime;
     var position = vec3<f32>(0.0);
     if (emitter.omitted_attributes & 1u) == 0u {
-        let forward = normalize(emitter.direction);
-        let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
-        let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
-        let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
-        let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
-        var helper = vec3<f32>(0.0, 1.0, 0.0);
-        if abs(forward.y) >= 0.999 {
-            helper = vec3<f32>(1.0, 0.0, 0.0);
+        var direction = vec3<f32>(0.0);
+        if emitter.velocity_distribution == 0u {
+            let forward = normalize(emitter.direction);
+            let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
+            let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
+            let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+            let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
+            var helper = vec3<f32>(0.0, 1.0, 0.0);
+            if abs(forward.y) >= 0.999 {
+                helper = vec3<f32>(1.0, 0.0, 0.0);
+            }
+            let tangent = normalize(cross(helper, forward));
+            let bitangent = cross(forward, tangent);
+            direction = forward * cos_theta
+                + tangent * (sin_theta * cos(direction_angle))
+                + bitangent * (sin_theta * sin(direction_angle));
+        } else {
+            direction = aestra_velocity_direction(emitter.velocity_distribution, emitter.direction,
+                emitter.spread_radians * 57.29577951308232,
+                hash01_seeded(particle_index, 30u, particle_seed),
+                hash01_seeded(particle_index, 31u, particle_seed));
         }
-        let tangent = normalize(cross(helper, forward));
-        let bitangent = cross(forward, tangent);
-        let direction = forward * cos_theta
-            + tangent * (sin_theta * cos(direction_angle))
-            + bitangent * (sin_theta * sin(direction_angle));
         let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
         let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
         var origin = vec3<f32>(0.0);

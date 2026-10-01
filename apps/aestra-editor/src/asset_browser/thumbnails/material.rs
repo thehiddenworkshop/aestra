@@ -271,6 +271,7 @@ fn preview_emitter(renderer: RendererInstance) -> Emitter {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                ..
             } => {
                 *lifetime = ScalarRange::new(PREVIEW_DURATION * 8.0, PREVIEW_DURATION * 8.0);
                 *speed = ScalarRange::new(0.0, 0.0);

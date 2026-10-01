@@ -23,6 +23,7 @@ mod staged;
 mod stateful;
 mod tier;
 mod trace;
+mod velocity;
 pub use binding::*;
 pub use execution_ir::{
     AESTRA_DOMAIN_HOST_INPUT, AESTRA_RESOURCE_FRAME, AESTRA_RESOURCE_HOST_BINDINGS,
@@ -57,6 +58,7 @@ pub use stateful::{
 };
 pub use tier::QualityTier;
 pub use trace::{BindingRecorder, BindingTrace, trace_tick};
+pub use velocity::sample_velocity_distribution;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
@@ -569,6 +571,7 @@ pub enum Instruction {
         direction: Expression<[f32; 3]>,
         spread_degrees: Expression<f32>,
         angular_velocity: Expression<ScalarRange>,
+        velocity_distribution: aestra_core::VelocityDistribution,
     },
     Motion {
         source: ModuleId,
@@ -2354,12 +2357,22 @@ fn evaluate_cycle(
                     hash01(index, 16, cycle_seed),
                 ],
             );
-            let direction = sample_direction(
-                initializer.direction,
-                initializer.spread_degrees,
-                index,
-                cycle_seed,
-            );
+            let direction = if initializer.velocity_distribution.is_legacy() {
+                sample_direction(
+                    initializer.direction,
+                    initializer.spread_degrees,
+                    index,
+                    cycle_seed,
+                )
+            } else {
+                sample_velocity_distribution(
+                    initializer.velocity_distribution,
+                    initializer.direction,
+                    initializer.spread_degrees,
+                    hash01(index, 30, cycle_seed),
+                    hash01(index, 31, cycle_seed),
+                )
+            };
             let speed = initializer.speed.sample(hash01(index, 2, cycle_seed));
             let origin = sample_shape(shape, index, cycle_seed);
             let damping = (-drag.max(0.0) * age).exp();
@@ -2631,6 +2644,7 @@ struct Initializer {
     direction: [f32; 3],
     spread_degrees: f32,
     angular_velocity: ScalarRange,
+    velocity_distribution: aestra_core::VelocityDistribution,
 }
 
 fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Initializer> {
@@ -2643,6 +2657,7 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
                 direction,
                 spread_degrees,
                 angular_velocity,
+                velocity_distribution,
                 ..
             } => Some(Initializer {
                 lifetime: *lifetime.resolve(parameters),
@@ -2650,6 +2665,7 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
                 direction: *direction.resolve(parameters),
                 spread_degrees: *spread_degrees.resolve(parameters),
                 angular_velocity: *angular_velocity.resolve(parameters),
+                velocity_distribution: *velocity_distribution,
             }),
             _ => None,
         })

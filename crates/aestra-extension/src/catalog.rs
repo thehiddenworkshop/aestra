@@ -299,6 +299,13 @@ pub(crate) fn builtin_modules() -> Vec<ModuleMetadata> {
                 InputSourceKind::HostBinding,
             ]),
             input(
+                "velocity_distribution",
+                "Velocity Distribution",
+                "Independent of spawn position. Axis orients cone/hemisphere and the ring/disk plane. Disk scales speed by a uniform-area radius; Ring preserves speed. Legacy Cone preserves old effects.",
+                aestra_core::Value::Text(aestra_core::VelocityDistribution::LegacyCone.name().into()),
+                InputControl::Choice,
+            ),
+            input(
                 "spread_degrees",
                 "Spread",
                 "Angular launch cone around the central direction.",

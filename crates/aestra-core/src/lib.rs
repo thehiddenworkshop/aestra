@@ -14,6 +14,7 @@ mod migration;
 mod model;
 mod property_schema;
 mod transform_curve;
+mod velocity;
 
 pub use authored_v4::*;
 pub use binding::*;
@@ -28,6 +29,7 @@ pub use migration::*;
 pub use model::*;
 pub use property_schema::*;
 pub use transform_curve::*;
+pub use velocity::*;
 
 /// The only effect format accepted by this version of Aestra.
 pub const CURRENT_FORMAT_VERSION: u32 = 4;

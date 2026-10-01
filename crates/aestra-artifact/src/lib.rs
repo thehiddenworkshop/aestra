@@ -32,8 +32,10 @@ pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
 /// v3 added the per-emitter simulation class (hybrid roadmap M2/M3, unified U3). v4 adds compiled
 /// host bindings and clip binding forwards (host bindings HB2) together with plugin extension stages
 /// and their Execution IR (extensible-stages M10), as one coordinated bump. Artifacts are compiled
-/// output: older versions are recompiled from source, never migrated.
-pub const CURRENT_ARTIFACT_VERSION: u32 = 4;
+/// output: older versions are recompiled from source, never migrated. v5 adds
+/// explicit velocity distributions; older readers must not silently ignore
+/// the new mode and run a legacy cone instead.
+pub const CURRENT_ARTIFACT_VERSION: u32 = 5;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -458,6 +460,11 @@ enum InstructionV1 {
         direction: ExpressionV1<[f32; 3]>,
         spread_degrees: ExpressionV1<f32>,
         angular_velocity: ExpressionV1<ScalarRange>,
+        #[serde(
+            default,
+            skip_serializing_if = "aestra_core::VelocityDistribution::is_legacy"
+        )]
+        velocity_distribution: aestra_core::VelocityDistribution,
     },
     Motion {
         source: ModuleId,
@@ -1860,8 +1867,10 @@ impl InstructionV1 {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                velocity_distribution,
             } => Self::Initialize {
                 source: *source,
+                velocity_distribution: *velocity_distribution,
                 lifetime: encode_expression(lifetime, Clone::clone, format!("{path}.lifetime"))?,
                 speed: encode_expression(speed, Clone::clone, format!("{path}.speed"))?,
                 direction: encode_expression(direction, Clone::clone, format!("{path}.direction"))?,
@@ -1947,8 +1956,10 @@ impl InstructionV1 {
                 direction,
                 spread_degrees,
                 angular_velocity,
+                velocity_distribution,
             } => Instruction::Initialize {
                 source,
+                velocity_distribution,
                 lifetime: decode_range_expression(
                     lifetime,
                     parameters,
