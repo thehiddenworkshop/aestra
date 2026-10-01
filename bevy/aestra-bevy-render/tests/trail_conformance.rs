@@ -1062,7 +1062,9 @@ fn check_cooperative(owners: u32) {
     if plan.paged() {
         // Exercise empty, tiny, and non-power-of-two live/top-K prefixes across
         // page and merge boundaries. Reset then retire so every iteration is fresh.
-        for count in [0, 1, 255, 256, 257, 511, 512, 513, 1023] {
+        for count in [
+            0, 1, 15, 16, 17, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025,
+        ] {
             let fresh = run(0.0, &(0..count).rev().collect::<Vec<_>>(), false);
             for &root in &roots {
                 let mut expected = (0..count).map(identity).collect::<Vec<_>>();

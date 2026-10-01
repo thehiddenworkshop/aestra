@@ -1527,12 +1527,22 @@ fn scan_trail_births(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_inv
     }
     let size = min(1024u, paged_heads(e) - start);
     let recording = paged_record(e);
-    for (var n = thread; n < size; n += 64u) {
-        paged_values[n] = select(0u, aux[paged_base(e) + start + n], recording);
+    let lanes = min(size, 64u);
+    let block = max(size / 64u, 1u);
+    let first = thread * block;
+    let end = min(first + block, size);
+    var flags = 0u;
+    for (var n = first; n < end; n += 1u) {
+        if recording && aux[paged_base(e) + start + n] != 0u {
+            flags |= 1u << (n - first);
+        }
     }
-    paged_scan(thread, size);
-    for (var n = thread; recording && n < size; n += 64u) {
-        aux[paged_base(e) + start + n] = paged_values[n];
+    paged_values[thread] = countOneBits(flags);
+    paged_scan(thread, lanes);
+    let offset = paged_values[thread];
+    for (var n = first; recording && n < end; n += 1u) {
+        let preceding = (1u << (n - first)) - 1u;
+        aux[paged_base(e) + start + n] = offset + countOneBits(flags & preceding);
     }
     if thread == 0u && recording {
         aux[paged_pages(e) + group.x] = paged_total;
