@@ -2174,6 +2174,43 @@ remain zero. A native 2D Prism Bloom capture exercises ACES, -1 stop and disable
 Viewer tests (49 passed, one ignored fixture exporter), strict all-target Clippy, formatting
 and diff checks pass.
 
+### F4B implemented — editor controls and shared host profile (2026-10-01)
+
+- The viewer and editor use one serializable `PhotographicPreview` profile in the shared
+  renderer, publicly available to hosts through `aestra_bevy::preview`. It owns fixed stops,
+  the display transform and natural bloom strength; application normalizes invalid values.
+- Settings → Preview offers an opt-in HDR toggle, exposure (-8 to 8), bloom (0 to 1), and
+  Tony/ACES/Reinhard selector. Numeric controls use bounded steps of 0.1 stops / 0.01 bloom.
+  Labels and descriptions are localized in English and French.
+- Settings format 5 persists the profile. Older settings migrate without enabling HDR or
+  changing existing grid/autoplay preferences. Disabling HDR retains the saved profile but
+  restores the effect camera's legacy 3D response.
+- Only `PreviewRenderCamera` receives the profile. Thumbnails, material-node previews and
+  their cameras remain untouched. Gizmo/UI cameras stay LDR, clearing their separate intermediate
+  textures to transparent and alpha-compositing over the HDR viewport; otherwise those LDR
+  textures overwrite/hide the particles. Turning HDR off restores legacy composition.
+  Camera changes do not recompile or restart an effect;
+  new/restored viewport cameras receive the active profile too.
+- The viewer's editor-viewport layering smoke mode now accepts the same photographic
+  options, applying them only to its effect camera, not its overlay/probe cameras.
+- Exposure/bloom scrubbing updates the camera continuously without rebuilding the settings UI
+  or saving to disk on every pointer event; the final event persists the profile.
+
+Verification: four editor photographic tests, 22 settings-related tests, nine localization tests,
+three shared-profile tests and 48 viewer tests pass (one fixture exporter remains ignored).
+Strict all-target Clippy for editor/viewer/renderer/Bevy client and formatting/diff checks pass.
+The native GPU layering smoke passes at three frames with **both** an LDR UI camera and gizmo
+overlay after the HDR effect camera, with no particles in the isolated layer-15 probe:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --backend gpu --semantic-materials --hdr --exposure 2 --editor-viewport-smoke target/fireworks-f4/editor-photo-ui-composited --frames 3
+```
+
+The six-frame chrysanthemum capture using the shared profile is byte-identical to F4A's
+photographic baseline. Full interactive editor acceptance (scrubbing controls, changing display
+transforms, restarting with saved preferences, narrow layouts in both locales) remains a manual
+check; the native smoke models camera composition rather than driving the full editor UI.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
@@ -2189,8 +2226,6 @@ and diff checks pass.
 
 ### Still open before F4 acceptance
 
-- Editor photographic controls and an explicitly shared, reproducible preview profile;
-  the editor viewport layering smoke test rejects viewer photographic options for now.
 - Authored HDR radiance/emission gain, highlight/color preservation, and subpixel star
   energy/size tuning against reference footage. F3 material defaults are deliberately not
   rewritten by this slice; display exposure is not a substitute for correct source radiance.

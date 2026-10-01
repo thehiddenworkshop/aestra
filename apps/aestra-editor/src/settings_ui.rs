@@ -76,6 +76,7 @@ enum SettingsToggle {
     AutosaveEnabled,
     ShowGrid,
     PlayOnOpen,
+    PhotographicPreview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +86,8 @@ enum SettingsNumber {
     CaptureFrameRate,
     ContactSheetColumns,
     UiScale,
+    PreviewExposure,
+    PreviewBloom,
 }
 
 #[derive(Resource, Default)]
@@ -98,6 +101,7 @@ pub(crate) struct SettingsPanelState {
 enum SettingsUiAction {
     SelectCategory(SettingsCategory),
     SetLocale(usize),
+    SetPreviewTonemapping(aestra_bevy_render::preview::DisplayTransform),
     Reset,
 }
 
@@ -361,6 +365,31 @@ fn spawn_settings_category(
                 SettingsToggle::PlayOnOpen,
                 localizer,
             );
+            spawn_settings_toggle(
+                parent,
+                &localizer.text("settings-preview-photographic"),
+                &localizer.text("settings-preview-photographic-description"),
+                settings.preview.photographic_enabled,
+                SettingsToggle::PhotographicPreview,
+                localizer,
+            );
+            if settings.preview.photographic_enabled {
+                spawn_settings_scalar(
+                    parent,
+                    &localizer.text("settings-preview-exposure"),
+                    &localizer.text("settings-preview-exposure-description"),
+                    SettingsNumber::PreviewExposure,
+                    Some("EV"),
+                );
+                spawn_settings_scalar(
+                    parent,
+                    &localizer.text("settings-preview-bloom"),
+                    &localizer.text("settings-preview-bloom-description"),
+                    SettingsNumber::PreviewBloom,
+                    None,
+                );
+                spawn_preview_tonemapping(parent, settings, localizer);
+            }
         }
         SettingsCategory::Performance => {
             spawn_settings_integer(
@@ -626,6 +655,34 @@ fn spawn_settings_locale(
     });
 }
 
+fn spawn_preview_tonemapping(
+    parent: &mut ChildSpawnerCommands,
+    settings: &EditorSettings,
+    localizer: &Localizer,
+) {
+    use aestra_bevy_render::preview::DisplayTransform;
+    let title = localizer.text("settings-preview-tonemapping");
+    settings_row(
+        parent,
+        &title,
+        &localizer.text("settings-preview-tonemapping-description"),
+        |controls| {
+            let options = [
+                (DisplayTransform::Tony, "Tony McMapface"),
+                (DisplayTransform::Aces, "ACES"),
+                (DisplayTransform::Reinhard, "Reinhard"),
+            ]
+            .map(|(transform, label)| ComboOption {
+                label: label.into(),
+                selected: settings.preview.photographic.tonemapping == transform,
+                action: SettingsUiAction::SetPreviewTonemapping(transform),
+            });
+            let current = options.iter().find(|option| option.selected).unwrap();
+            spawn_combo_control(controls, &current.label, &title, &options, 180.0);
+        },
+    );
+}
+
 fn spawn_settings_integer(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -753,6 +810,18 @@ fn handle_settings_actions(
                     );
                 }
             }
+            SettingsUiAction::SetPreviewTonemapping(transform) => {
+                if resources.settings.preview.photographic.tonemapping != transform {
+                    resources.settings.preview.photographic.tonemapping = transform;
+                    session.ui_revision += 1;
+                    persist_editor_settings(
+                        &resources.settings,
+                        &mut resources.persistence,
+                        &mut session,
+                        &resources.localizer,
+                    );
+                }
+            }
             SettingsUiAction::Reset => match resources.persistence.replace_with_defaults() {
                 Ok(defaults) => {
                     *resources.settings = defaults;
@@ -831,6 +900,11 @@ fn apply_settings_toggle(
             settings.preview.play_on_open = value;
             changed
         }
+        SettingsToggle::PhotographicPreview => {
+            let changed = settings.preview.photographic_enabled != value;
+            settings.preview.photographic_enabled = value;
+            changed
+        }
     }
 }
 
@@ -885,7 +959,9 @@ fn apply_settings_integer(
             settings.capture.contact_sheet_columns = value;
             changed
         }
-        SettingsNumber::UiScale => false,
+        SettingsNumber::UiScale
+        | SettingsNumber::PreviewExposure
+        | SettingsNumber::PreviewBloom => false,
     }
 }
 
@@ -898,17 +974,24 @@ fn handle_settings_scalar_change(
     mut ui_scale: ResMut<UiScale>,
     localizer: Res<Localizer>,
 ) {
-    if !change.is_final {
-        return;
-    }
     let Ok(control) = controls.get(change.source) else {
         return;
     };
-    if control.0 != SettingsNumber::UiScale {
+    let photographic = matches!(
+        control.0,
+        SettingsNumber::PreviewExposure | SettingsNumber::PreviewBloom
+    );
+    if !change.value.is_finite() || (!change.is_final && !photographic) {
         return;
     }
-    if apply_settings_scalar(&mut settings, control.0, change.value) {
-        ui_scale.0 = settings.appearance.ui_scale;
+    let changed = apply_settings_scalar(&mut settings, control.0, change.value);
+    // Scrubbing previews the camera response continuously without rebuilding the settings UI
+    // or writing preferences on every pointer event. The final event commits the profile even
+    // when its value already arrived in an intermediate event.
+    if change.is_final && (changed || photographic) {
+        if control.0 == SettingsNumber::UiScale {
+            ui_scale.0 = settings.appearance.ui_scale;
+        }
         session.ui_revision += 1;
         persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
     }
@@ -919,13 +1002,29 @@ fn apply_settings_scalar(
     setting: SettingsNumber,
     value: f32,
 ) -> bool {
-    if setting != SettingsNumber::UiScale {
+    if !value.is_finite() {
         return false;
     }
-    let value = ((value / 100.0).clamp(0.75, 1.5) * 20.0).round() / 20.0;
-    let changed = settings.appearance.ui_scale != value;
-    settings.appearance.ui_scale = value;
-    changed
+    match setting {
+        SettingsNumber::UiScale => {
+            let value = ((value / 100.0).clamp(0.75, 1.5) * 20.0).round() / 20.0;
+            let changed = settings.appearance.ui_scale != value;
+            settings.appearance.ui_scale = value;
+            changed
+        }
+        SettingsNumber::PreviewExposure | SettingsNumber::PreviewBloom => {
+            let previous = settings.preview.photographic;
+            match setting {
+                SettingsNumber::PreviewExposure => {
+                    settings.preview.photographic.exposure_stops = value
+                }
+                _ => settings.preview.photographic.bloom_intensity = value,
+            }
+            settings.preview.photographic = settings.preview.photographic.normalized();
+            previous != settings.preview.photographic
+        }
+        _ => false,
+    }
 }
 
 fn sync_settings_number_inputs(
@@ -936,6 +1035,29 @@ fn sync_settings_number_inputs(
     for (entity, control) in &controls {
         let value = settings_number_input_value(&settings, control.0);
         commands.trigger(UpdateNumberInput { entity, value });
+        let profile = settings.preview.photographic;
+        let scrub = match control.0 {
+            SettingsNumber::PreviewExposure => {
+                Some(crate::feathers::number_input::ScrubbableNumber::new(
+                    profile.exposure_stops,
+                    -8.0,
+                    8.0,
+                    0.1,
+                ))
+            }
+            SettingsNumber::PreviewBloom => {
+                Some(crate::feathers::number_input::ScrubbableNumber::new(
+                    profile.bloom_intensity,
+                    0.0,
+                    1.0,
+                    0.01,
+                ))
+            }
+            _ => None,
+        };
+        if let Some(scrub) = scrub {
+            commands.entity(entity).insert(scrub);
+        }
     }
 }
 
@@ -957,12 +1079,122 @@ fn settings_number_input_value(
             NumberInputValue::I32(i32::from(settings.capture.contact_sheet_columns))
         }
         SettingsNumber::UiScale => NumberInputValue::F32(settings.appearance.ui_scale * 100.0),
+        SettingsNumber::PreviewExposure => {
+            NumberInputValue::F32(settings.preview.photographic.exposure_stops)
+        }
+        SettingsNumber::PreviewBloom => {
+            NumberInputValue::F32(settings.preview.photographic.bloom_intensity)
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn photographic_controls_share_bounds_and_leave_other_preferences_untouched() {
+        let mut settings = EditorSettings::default();
+        let mut menu = MenuState::default();
+        let original = settings.clone();
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::PhotographicPreview,
+            true
+        ));
+        assert!(apply_settings_scalar(
+            &mut settings,
+            SettingsNumber::PreviewExposure,
+            20.0
+        ));
+        assert!(apply_settings_scalar(
+            &mut settings,
+            SettingsNumber::PreviewBloom,
+            -1.0
+        ));
+        assert_eq!(settings.preview.photographic.exposure_stops, 8.0);
+        assert_eq!(settings.preview.photographic.bloom_intensity, 0.0);
+        assert!(!apply_settings_scalar(
+            &mut settings,
+            SettingsNumber::PreviewExposure,
+            f32::NAN
+        ));
+        assert!(!apply_settings_scalar(
+            &mut settings,
+            SettingsNumber::PreviewBloom,
+            f32::INFINITY
+        ));
+        assert_eq!(
+            settings_number_input_value(&settings, SettingsNumber::PreviewExposure),
+            NumberInputValue::F32(8.0)
+        );
+        assert_eq!(settings.appearance, original.appearance);
+        assert_eq!(settings.general, original.general);
+        assert_eq!(settings.preview.show_grid, original.preview.show_grid);
+        assert_eq!(settings.preview.play_on_open, original.preview.play_on_open);
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::PhotographicPreview,
+            false
+        ));
+        assert_eq!(
+            settings.preview.photographic.exposure_stops, 8.0,
+            "disabling retains the user's profile"
+        );
+    }
+
+    #[test]
+    fn photographic_scrubbing_updates_preview_and_only_persists_on_release() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.ron");
+        let session = EditorSession::for_unopened_project();
+        let effect_revision = session.document_revision();
+        let ui_revision = session.ui_revision;
+        let mut app = App::new();
+        app.init_resource::<EditorSettings>()
+            .init_resource::<UiScale>()
+            .insert_resource(session)
+            .insert_resource(SettingsPersistence::for_test(path.clone()))
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(handle_settings_scalar_change);
+        let source = app
+            .world_mut()
+            .spawn(SettingsNumberControl(SettingsNumber::PreviewExposure))
+            .id();
+        app.world_mut().trigger(ValueChange {
+            source,
+            value: 2.0_f32,
+            is_final: false,
+        });
+        assert_eq!(
+            app.world()
+                .resource::<EditorSettings>()
+                .preview
+                .photographic
+                .exposure_stops,
+            2.0
+        );
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            ui_revision
+        );
+        assert!(!path.exists());
+        app.world_mut().trigger(ValueChange {
+            source,
+            value: 2.0_f32,
+            is_final: true,
+        });
+        assert!(path.exists());
+        let loaded: EditorSettings =
+            ron::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(loaded.preview.photographic.exposure_stops, 2.0);
+        assert_eq!(
+            app.world().resource::<EditorSession>().document_revision(),
+            effect_revision
+        );
+    }
 
     #[test]
     fn extension_toggles_maintain_a_sorted_disabled_list() {

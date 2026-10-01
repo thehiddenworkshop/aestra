@@ -571,16 +571,6 @@ impl ViewerConfig {
         if fireworks_f0 {
             view_3d = true;
         }
-        if photographic.is_some()
-            && capture_mode
-                .as_ref()
-                .is_some_and(CaptureMode::is_editor_viewport_smoke)
-        {
-            return Err(
-                "photographic options are not supported by the editor viewport layering smoke test"
-                    .into(),
-            );
-        }
         Ok(Self {
             effect_path,
             fireworks_f0,
@@ -924,7 +914,7 @@ fn setup(
     player.set_seed(config.resolved_seed());
     let presentation = PresentedEffect::new(player.effect().clone());
     if editor_viewport_smoke {
-        spawn_editor_viewport_smoke_scene(&mut commands);
+        spawn_editor_viewport_smoke_scene(&mut commands, config.photographic);
         commands.spawn((player, presentation, RenderLayers::layer(0)));
         return;
     }
@@ -1078,13 +1068,16 @@ fn migrate_viewer_materials(
     Ok(document.programs)
 }
 
-fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
+fn spawn_editor_viewport_smoke_scene(
+    commands: &mut Commands,
+    photographic: Option<photographic::PhotographicPreview>,
+) {
     let preview_viewport = Viewport {
         physical_position: UVec2::new(EDITOR_PREVIEW_X, EDITOR_PREVIEW_Y),
         physical_size: UVec2::new(EDITOR_PREVIEW_WIDTH, EDITOR_PREVIEW_HEIGHT),
         ..default()
     };
-    commands.spawn((
+    let mut preview_camera = commands.spawn((
         Camera3d::default(),
         Camera {
             order: -2,
@@ -1095,11 +1088,43 @@ fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
         editor_preview_camera_transform(),
         RenderLayers::layer(0),
     ));
+    if let Some(profile) = photographic {
+        profile.apply(&mut preview_camera);
+    }
+    if photographic.is_some() {
+        // Model the editor's separate LDR UI camera too: it must not erase the HDR viewport.
+        commands.spawn((
+            Camera2d,
+            IsDefaultUiCamera,
+            RenderLayers::layer(31),
+            Camera {
+                order: 0,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                output_mode: bevy::camera::CameraOutputMode::Write {
+                    blend_state: Some(bevy::render::render_resource::BlendState::ALPHA_BLENDING),
+                    clear_color: ClearColorConfig::None,
+                },
+                ..default()
+            },
+        ));
+    }
     commands.spawn((
         Camera3d::default(),
         Camera {
             order: 1,
-            clear_color: ClearColorConfig::None,
+            clear_color: if photographic.is_some() {
+                ClearColorConfig::Custom(Color::NONE)
+            } else {
+                ClearColorConfig::None
+            },
+            output_mode: if photographic.is_some() {
+                bevy::camera::CameraOutputMode::Write {
+                    blend_state: Some(bevy::render::render_resource::BlendState::ALPHA_BLENDING),
+                    clear_color: ClearColorConfig::None,
+                }
+            } else {
+                Default::default()
+            },
             viewport: Some(preview_viewport),
             ..default()
         },
@@ -1732,7 +1757,6 @@ mod tests {
             vec!["--bloom", "1.1"],
             vec!["--tonemapping"],
             vec!["--tonemapping", "none"],
-            vec!["--hdr", "--editor-viewport-smoke", "unused"],
         ] {
             assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
         }
@@ -1748,6 +1772,31 @@ mod tests {
                     .photographic
                     .is_some()
             );
+        }
+    }
+
+    #[test]
+    fn photographic_viewport_smoke_profiles_only_the_effect_camera() {
+        use bevy::{camera::Hdr, post_process::bloom::Bloom};
+        let config = ViewerConfig::from_iter(
+            ["--hdr", "--editor-viewport-smoke", "unused"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .unwrap();
+        let mut world = World::new();
+        spawn_editor_viewport_smoke_scene(&mut world.commands(), config.photographic);
+        world.flush();
+        let mut cameras = world.query::<(&Camera, &RenderLayers, Has<Hdr>, Has<Bloom>)>();
+        let cameras = cameras.iter(&world).collect::<Vec<_>>();
+        assert_eq!(cameras.len(), 4);
+        for (camera, layers, hdr, bloom) in cameras {
+            if layers == &RenderLayers::layer(0) {
+                assert_eq!(camera.order, -2);
+                assert!(hdr && bloom);
+            } else {
+                assert!(!hdr && !bloom);
+            }
         }
     }
 

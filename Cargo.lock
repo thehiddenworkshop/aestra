@@ -187,6 +187,7 @@ dependencies = [
  "encase",
  "naga",
  "pollster",
+ "serde",
  "tracing",
  "wgpu",
 ]

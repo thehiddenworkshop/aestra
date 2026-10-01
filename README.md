@@ -144,8 +144,12 @@ energy-conserving bloom at 0.15. No auto exposure is used; deband dithering is d
 mode. Exposure is Bevy's scene-wide color-grading exposure, so it affects Aestra's unlit
 particles as well as scene geometry; it is not a calibrated physical camera EV100 control.
 Bloom runs before this display exposure. Capture reports record the effective settings under
-`capture.response`; PNGs are the tonemapped SDR result. The editor viewport layering smoke
-test intentionally rejects these options. Editor controls and physical radiance tuning remain
+`capture.response`; PNGs are the tonemapped SDR result. Settings → Preview exposes the same
+profile in the editor: enable Photographic preview, then adjust Exposure, Bloom and Tonemapping.
+Preferences are persisted; older settings keep HDR disabled. Only the effect viewport camera
+receives photographic grading; thumbnails and node previews are unchanged. Gizmo/UI cameras
+remain LDR and use transparent compositing over the HDR viewport. The editor viewport layering smoke
+test accepts the same options for native GPU validation. Physical radiance tuning remains
 separate follow-up work.
 
 Aestra's unlit semantic material `Color` output already accepts linear RGB above 1; alpha and

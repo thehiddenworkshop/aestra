@@ -10,6 +10,7 @@ pub mod execution;
 pub mod gpu;
 mod host_transform;
 pub mod material;
+pub mod preview;
 
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,

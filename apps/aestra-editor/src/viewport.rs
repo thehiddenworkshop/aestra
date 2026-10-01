@@ -121,6 +121,8 @@ impl Plugin for ViewportPlugin {
                     navigate_preview_camera,
                     sync_preview_grid,
                     sync_preview_display_mode,
+                    sync_preview_photographic_response,
+                    sync_photographic_overlay_composition,
                     update_preview_display_controls,
                     update_transform_gizmo_controls,
                     host_motion::pick_pose,
@@ -620,6 +622,78 @@ fn spawn_preview_camera(commands: &mut Commands) -> Entity {
         ))
         .id()
 }
+
+fn sync_preview_photographic_response(
+    mut commands: Commands,
+    settings: Res<EditorSettings>,
+    cameras: Query<(Entity, Option<&AppliedPhotographicResponse>), With<PreviewRenderCamera>>,
+) {
+    let desired = settings
+        .preview
+        .photographic_enabled
+        .then_some(settings.preview.photographic.normalized());
+    for (camera, applied) in &cameras {
+        if applied.is_some_and(|applied| applied.0 == desired) {
+            continue;
+        }
+        // A new legacy camera needs no mutation: preserve Bevy's baseline required components.
+        if let Some(profile) = desired {
+            profile.apply(&mut commands.entity(camera));
+        } else if applied.is_some() {
+            aestra_bevy_render::preview::restore_legacy_3d_response(&mut commands.entity(camera));
+        }
+        commands
+            .entity(camera)
+            .insert(AppliedPhotographicResponse(desired));
+    }
+}
+
+#[derive(Component)]
+struct AppliedPhotographicResponse(Option<aestra_bevy_render::preview::PhotographicPreview>);
+
+#[allow(clippy::type_complexity)]
+fn sync_photographic_overlay_composition(
+    mut commands: Commands,
+    settings: Res<EditorSettings>,
+    mut cameras: Query<
+        (
+            Entity,
+            &mut Camera,
+            Option<&RenderLayers>,
+            Has<IsDefaultUiCamera>,
+            Option<&AppliedOverlayComposition>,
+        ),
+        Without<PreviewRenderCamera>,
+    >,
+) {
+    let enabled = settings.preview.photographic_enabled;
+    for (entity, mut camera, layers, ui, applied) in &mut cameras {
+        if !ui && !layers.is_some_and(|layers| layers == &RenderLayers::layer(15)) {
+            continue;
+        }
+        if applied.is_some_and(|applied| applied.0 == enabled) {
+            continue;
+        }
+        if enabled {
+            // HDR and LDR cameras have separate intermediate textures. Clear the overlay to
+            // transparent, not an opaque/stale LDR image that would hide the tonemapped viewport.
+            camera.clear_color = ClearColorConfig::Custom(Color::NONE);
+            camera.output_mode = bevy::camera::CameraOutputMode::Write {
+                blend_state: Some(bevy::render::render_resource::BlendState::ALPHA_BLENDING),
+                clear_color: ClearColorConfig::None,
+            };
+        } else if applied.is_some() {
+            camera.clear_color = ClearColorConfig::None;
+            camera.output_mode = Default::default();
+        }
+        commands
+            .entity(entity)
+            .insert(AppliedOverlayComposition(enabled));
+    }
+}
+
+#[derive(Component)]
+struct AppliedOverlayComposition(bool);
 
 fn configure_transform_gizmo_overlay_camera(
     mut cameras: Query<
@@ -3287,6 +3361,125 @@ fn update_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn photographic_response_updates_restores_and_isolates_the_effect_camera() {
+        use bevy::{
+            camera::Hdr,
+            core_pipeline::tonemapping::{DebandDither, Tonemapping},
+            post_process::bloom::Bloom,
+            render::view::ColorGrading,
+        };
+        let mut app = App::new();
+        app.init_resource::<EditorSettings>().add_systems(
+            Update,
+            (
+                sync_preview_photographic_response,
+                sync_photographic_overlay_composition,
+            )
+                .chain(),
+        );
+        let effect = app
+            .world_mut()
+            .spawn((Camera3d::default(), PreviewRenderCamera))
+            .id();
+        let overlay = app
+            .world_mut()
+            .spawn((Camera3d::default(), RenderLayers::layer(15)))
+            .id();
+        let thumbnail = app.world_mut().spawn(Camera3d::default()).id();
+        let ui = app.world_mut().spawn((Camera2d, IsDefaultUiCamera)).id();
+        app.update();
+        assert!(app.world().get::<Hdr>(effect).is_none());
+        {
+            let mut settings = app.world_mut().resource_mut::<EditorSettings>();
+            settings.preview.photographic_enabled = true;
+            settings.preview.photographic.exposure_stops = 2.0;
+        }
+        app.update();
+        assert!(app.world().get::<Hdr>(effect).is_some());
+        assert!(app.world().get::<Bloom>(effect).is_some());
+        assert_eq!(
+            app.world()
+                .get::<ColorGrading>(effect)
+                .unwrap()
+                .global
+                .exposure,
+            2.0
+        );
+        for camera in [overlay, thumbnail] {
+            assert!(app.world().get::<Hdr>(camera).is_none());
+            assert!(app.world().get::<ColorGrading>(camera).is_none());
+        }
+        for camera in [overlay, ui] {
+            let camera = app.world().get::<Camera>(camera).unwrap();
+            assert!(
+                matches!(camera.clear_color, ClearColorConfig::Custom(color) if color == Color::NONE)
+            );
+            assert!(matches!(
+                camera.output_mode,
+                bevy::camera::CameraOutputMode::Write {
+                    blend_state: Some(_),
+                    clear_color: ClearColorConfig::None
+                }
+            ));
+        }
+        app.world_mut()
+            .resource_mut::<EditorSettings>()
+            .preview
+            .photographic
+            .bloom_intensity = 0.0;
+        app.update();
+        assert!(app.world().get::<Bloom>(effect).is_none());
+        app.world_mut()
+            .resource_mut::<EditorSettings>()
+            .preview
+            .photographic_enabled = false;
+        app.update();
+        assert!(app.world().get::<Hdr>(effect).is_none());
+        assert!(app.world().get::<Bloom>(effect).is_none());
+        assert_eq!(
+            app.world()
+                .get::<ColorGrading>(effect)
+                .unwrap()
+                .global
+                .exposure,
+            0.0
+        );
+        assert_eq!(
+            *app.world().get::<Tonemapping>(effect).unwrap(),
+            Tonemapping::default()
+        );
+        assert_eq!(
+            *app.world().get::<DebandDither>(effect).unwrap(),
+            DebandDither::Enabled
+        );
+        for camera in [overlay, ui] {
+            assert!(matches!(
+                app.world().get::<Camera>(camera).unwrap().clear_color,
+                ClearColorConfig::None
+            ));
+        }
+        // A restored or recreated viewport camera receives the already-enabled profile.
+        app.world_mut()
+            .resource_mut::<EditorSettings>()
+            .preview
+            .photographic_enabled = true;
+        let recreated = app
+            .world_mut()
+            .spawn((Camera3d::default(), PreviewRenderCamera))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<ColorGrading>(recreated)
+                .unwrap()
+                .global
+                .exposure,
+            2.0
+        );
+        assert!(app.world().get::<Hdr>(recreated).is_some());
+    }
 
     fn navigation_app() -> (App, Entity, Entity) {
         let mut app = App::new();

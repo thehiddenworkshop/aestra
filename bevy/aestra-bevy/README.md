@@ -54,6 +54,34 @@ Compare the viewer's live GPU work using `--history playback-only` or
 `--history replay-enabled` with `--gpu-bench output.json`. The report records the
 policy and the checkpoint bytes copied in each matched simulation frame.
 
+## Photographic preview profile
+
+Hosts can opt an effect camera into the same fixed profile used by the editor and viewer:
+
+```rust
+use aestra_bevy::preview::PhotographicPreview;
+use bevy::prelude::*;
+
+fn camera(mut commands: Commands) {
+    let mut camera = commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 20.0, 80.0)
+        .looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y)));
+    PhotographicPreview { exposure_stops: 2.0, ..default() }.apply(&mut camera);
+}
+```
+
+The serializable profile contains fixed relative exposure stops (-8 to 8), `DisplayTransform`
+(Tony, ACES or Reinhard), and natural bloom strength (0 to 1; 0 removes bloom). It normalizes
+non-finite/out-of-range host values before applying. HDR is an intermediate render target,
+not HDR monitor output. Bloom runs before scene-wide display exposure; no auto exposure,
+simulation mutation or material rewrite is involved. The host still chooses which camera
+receives the profile: do not apply it to UI/gizmo cameras. Applying it replaces that camera's
+grading, tonemapping and bloom settings. `restore_legacy_3d_response` restores Bevy's legacy
+3D defaults; hosts with a custom baseline should restore their own camera snapshot instead.
+When HDR and LDR cameras share a window, their intermediate textures are separate. Later UI/gizmo
+cameras should clear their source to `Color::NONE` and alpha-composite their output with no output
+clear (`CameraOutputMode::Write`, `BlendState::ALPHA_BLENDING`, `ClearColorConfig::None`), so an opaque
+or stale LDR source does not hide the tonemapped effect. Their grading remains independent.
+
 ## Where to look
 
 | I want… | Read |

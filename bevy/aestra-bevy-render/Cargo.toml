@@ -13,6 +13,7 @@ aestra-core = { path = "../../crates/aestra-core" }
 aestra-gpu = { path = "../../crates/aestra-gpu" }
 aestra-runtime = { path = "../../crates/aestra-runtime" }
 bevy.workspace = true
+serde.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 

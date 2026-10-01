@@ -8,7 +8,7 @@ use std::{
 };
 use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
-pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 4;
+pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 5;
 
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -44,6 +44,7 @@ impl Default for EditorSettings {
 impl EditorSettings {
     pub(crate) fn normalized(mut self) -> Self {
         self.version = SETTINGS_FORMAT_VERSION;
+        self.preview.photographic = self.preview.photographic.normalized();
         self.performance.preview_particle_limit =
             self.performance.preview_particle_limit.clamp(64, 384);
         self.general.autosave_interval_seconds =
@@ -127,6 +128,8 @@ impl Default for GeneralSettings {
 pub(crate) struct PreviewSettings {
     pub(crate) show_grid: bool,
     pub(crate) play_on_open: bool,
+    pub(crate) photographic_enabled: bool,
+    pub(crate) photographic: aestra_bevy_render::preview::PhotographicPreview,
 }
 
 impl Default for PreviewSettings {
@@ -134,6 +137,8 @@ impl Default for PreviewSettings {
         Self {
             show_grid: true,
             play_on_open: true,
+            photographic_enabled: false,
+            photographic: Default::default(),
         }
     }
 }
@@ -578,6 +583,33 @@ mod tests {
             EditorSettings::default().general.autosave_interval_seconds,
             30
         );
+    }
+
+    #[test]
+    fn legacy_settings_keep_ldr_and_photographic_preferences_round_trip() {
+        use aestra_bevy_render::preview::{DisplayTransform, PhotographicPreview};
+        let legacy: EditorSettings =
+            ron::from_str("(version: 4, preview: (show_grid: false, play_on_open: false))")
+                .unwrap();
+        let mut migrated = legacy.normalized();
+        assert!(!migrated.preview.photographic_enabled);
+        assert!(!migrated.preview.show_grid);
+        assert!(!migrated.preview.play_on_open);
+        assert_eq!(migrated.version, SETTINGS_FORMAT_VERSION);
+        migrated.preview.photographic_enabled = true;
+        migrated.preview.photographic = PhotographicPreview {
+            exposure_stops: 2.0,
+            tonemapping: DisplayTransform::Aces,
+            bloom_intensity: 0.3,
+        };
+        let source = ron::to_string(&migrated).unwrap();
+        let loaded: EditorSettings = ron::from_str(&source).unwrap();
+        assert_eq!(loaded.normalized(), migrated);
+        migrated.preview.photographic.exposure_stops = f32::NAN;
+        migrated.preview.photographic.bloom_intensity = 99.0;
+        let normalized = migrated.normalized();
+        assert_eq!(normalized.preview.photographic.exposure_stops, 0.0);
+        assert_eq!(normalized.preview.photographic.bloom_intensity, 1.0);
     }
 
     #[test]
