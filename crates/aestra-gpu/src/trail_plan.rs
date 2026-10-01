@@ -117,10 +117,16 @@ impl TrailScratchPlan {
             parameter: heads,
             workgroups: self.max_heads.div_ceil(64),
         });
-        let owners = sort(&mut passes, 1, self.max_owners);
+        // Kind 1 matches/expires owners against the already sorted heads in one
+        // pass. There is no owner-ID sorting network or merge chain.
+        passes.push(TrailPass {
+            entry: 0,
+            parameter: 1,
+            workgroups: self.max_owners.div_ceil(SORT_PAGE),
+        });
         passes.push(TrailPass {
             entry: 3,
-            parameter: owners,
+            parameter: 1,
             workgroups: self.max_heads.div_ceil(64),
         });
         passes.push(TrailPass {
@@ -254,7 +260,7 @@ mod tests {
                 ..Default::default()
             }
             .passes();
-            for kind in 0..3 {
+            for kind in [0, 2] {
                 let size = if kind == 0 { heads } else { owners };
                 let start = passes
                     .iter()
@@ -275,6 +281,26 @@ mod tests {
                     index += 1;
                 }
                 assert_eq!(passes[index].parameter, kind | (parity << 16));
+            }
+            let reservation = passes
+                .iter()
+                .position(|pass| pass.entry == 0 && pass.parameter == 1)
+                .unwrap();
+            assert_eq!(
+                passes[reservation - 1].entry,
+                2,
+                "head presentation clears mappings before matching"
+            );
+            assert_eq!(passes[reservation].workgroups, owners.div_ceil(SORT_PAGE));
+            assert_eq!(passes[reservation + 1].entry, 3);
+            assert_eq!(passes[reservation + 1].parameter, 1);
+            assert!(
+                !passes
+                    .iter()
+                    .any(|pass| pass.entry == 1 && pass.parameter & 255 == 1)
+            );
+            if heads == 8192 && owners == 16384 {
+                assert_eq!(passes.iter().map(|pass| pass.workgroups).sum::<u32>(), 2986);
             }
         }
     }

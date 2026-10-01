@@ -1810,9 +1810,39 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/birth-gated-candidates-volley-overlap
 ```
 
+### Implemented — direct live head/owner matching
+
+- Paged reservation no longer sorts the entire owner pool by stable ID. Head presentation clears the per-head owner map; a barrier-free owner-page pass expires old owners and binary-searches the already ordered `(strand, stable ID)` head list using its compact cached keys. Occupied matching owners reserve their existing physical slots before birth ranks/candidate allocation. The following reservation pass emits birth flags directly from the map. Kind 1 of the existing page entry point now means matching; planner tests require it to follow head presentation and have **no owner merge chain**. Head and replacement-candidate ordering, the eight-storage-binding ABI, scratch allocation, persistent history/checkpoint format and cooperative small-pool algorithm are unchanged.
+- Matches have disjoint destinations: valid history has at most one owner per stable ID. Starting/reset history is empty; existing identities reserve their unique owners, and missing identities receive distinct deterministic candidate ranks with reserved owners excluded. This preserves uniqueness across retirement, expiry and recycled IDs. Matching reads the freshly generated head cache before candidate ordering reuses it, and reconstructs the map from persistent records every observation; no retained map or new playback/replay state is needed.
+- Native regressions now poison both owner-list ping-pong ranges **before reservation**, proving matching does not consume or overwrite the removed owner-sort outputs. Continuing/no-birth observations also leave these ranges untouched through allocation. Reappearing retired identities with reversed compacted head order must reuse the same physical owner and preserve their sample rings. Existing two-emitter/strand/extreme-ID/partial-pool/8,192-owner eviction tests, the 16-cohort loss-free volley, sampling/bounds and replay/checkpoint reconstruction regressions pass. Generated WGSL validation/snapshot, HLSL/SPIR-V translation and checked range/planner tests pass.
+- Three sequential runs on RTX 4070 SUPER/Vulkan use the same playback-only volley, 960×540 close camera, high tier, default-fast transparency and 120 warm-up/600 measured host frames. The fresh control uses commit `4057bea4`'s shader and planner (birth-gated candidates plus owner sorting); optimized run 1 precedes it and run 2 follows it. All retain **600 unique complete-window samples**, the 1 zero-/598 one-/1 two-tick mix, **37,600 captured/accepted children**, **7,201 peak live particles**, **10,400 occupied/3,200 retired histories**, zero overflow/omission/rejection/eviction/truncation, zero checkpoint capture bytes and the unchanged **38,580,664-byte configured-buffer estimate** (not total resident memory).
+- Six owner-merge dispatches are removed per observation. Encoded history work falls from **9,046 to 5,974 workgroups** for this two-emitter fixture; two-observation windows fall from 18,092 to 11,948. These counts include over-dispatched/inactive groups and are not a count of useful owner operations. The source still visits owners to expire/match them; this is not a sparse active-owner allocator or GPU-indirect dispatch path.
+
+GPU timings in milliseconds; p50 / p95 / p99:
+
+| Measurement | Fresh owner-sort control | Direct-matching run 1 | Direct-matching run 2 |
+| --- | ---: | ---: | ---: |
+| Complete simulation window (600 samples) | 2.082 / 2.640 / 2.877 | 1.970 / 2.148 / 2.513 | 2.015 / 2.158 / 2.531 |
+| 1 tick, 1 observation, no checkpoint copies (598 samples) | 2.082 / 2.641 / 2.881 | 1.970 / 2.148 / 2.516 | 2.015 / 2.158 / 2.532 |
+| Last-observation reservation diagnostic (600 samples) | 0.551 / 0.723 / 0.729 | 0.205 / 0.221 / 0.224 | 0.206 / 0.222 / 0.225 |
+
+- Reservation p95 improves about **69%**, complete simulation p95 about **18–19%** against the fresh control. Allocation/sample p99 is still 0.886/0.891 ms versus control 0.855 ms: birth candidate sorting remains a separate bottleneck. Sequential runs and matching aggregate demand/tick mix do not control exact populations/time or clock drift; diagnostic phase percentiles cannot be summed into a frame, and the single two-tick sample does not certify catch-up. The named **full-frame/finale budget gate remains open**.
+- Optimized volley frame 240 is byte-identical to the prior overlap reference (SHA256 `4B45502997252D44EE17DB4C64FB0950691A987CF82981DE0FE21199B6E2F051`). This complements the native ownership/history tests but is not an all-assets/all-times visual guarantee.
+
+```powershell
+cargo test --locked -p aestra-gpu --lib --test shader_contract --test trail_contract
+$env:AESTRA_REQUIRE_GPU_CONFORMANCE = '1'
+cargo test --locked -p aestra-bevy-render --test trail_conformance -- --test-threads=1
+cargo test --locked -p aestra-bevy-render --lib trail -- --test-threads=1
+cargo clippy --locked -p aestra-gpu -p aestra-bevy-render -p aestra-viewer --all-targets -- -D warnings
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/head-matched-owners-volley-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --gpu-bench target/fireworks-f1/head-matched-owners-volley-repeat-bench.json
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera close --backend gpu --history playback-only --sample-frames 240 --capture target/fireworks-f1/head-matched-owners-volley-overlap
+```
+
 ### Tasks
 
-- Next: investigate the remaining **live owner-identity reservation** work (fresh-control p95 0.690 ms), head ordering and birth-observation candidate spikes, then variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
+- Next: investigate remaining **head ordering and birth-observation candidate spikes**, then variable multi-tick catch-up, using playback-only frame-aligned samples with unchanged loss-free demand/populations/output. Certify the named full-frame budget on measured hardware before claiming the trail scale gate complete. Do not optimize editor replay ahead of playback.
 - Establish thousands-of-trails overlapping-shell/finale benchmarks and investigate aggregate high-percentile spikes before declaring the named full-frame budget met.
 - Replace single-buffer/record ceilings with checked, device-aware resource planning and chunking where needed.
 - Make active/retired tails, evictions, truncation, memory and per-pass cost visible in the profiler.

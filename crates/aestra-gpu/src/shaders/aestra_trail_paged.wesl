@@ -1,6 +1,7 @@
 // Large pools use storage-backed lists and page-local sorting. _spawn_inverse_padding
 // carries exact integer-valued [scratch base, padded heads, padded owners].
-// Globals._padding.y is transient [sort kind:8, merge exponent:8, source parity:1].
+// Globals._padding.y is transient [phase kind:8, merge exponent:8, source parity:1].
+// Kind 0 orders heads, kind 1 matches owners, kind 2 orders replacement candidates.
 // No persistent history state depends on this scratch or on atomic append order.
 fn paged_trail(e: Emitter) -> bool {
     return e.trail_points >= 2u && (e.max_particles > 1024u || e.trail_capacity > 1024u);
@@ -47,11 +48,50 @@ var<workgroup> paged_keys: array<vec4<u32>, TRAIL_SORT_PAGE>;
 
 // Two words per physical index, reused for each ordered phase. Keep this cache
 // outside all list/rank/page outputs: later scans overwrite the head sort list.
+fn paged_key_cache(e: Emitter) -> u32 {
+    return paged_bounds(e) + 12u * ((paged_owners(e) + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE);
+}
+
 fn paged_key_address(e: Emitter, value: u32) -> u32 {
-    let cache = paged_bounds(e) + 12u * ((paged_owners(e) + TRAIL_BOUNDS_PAGE - 1u) / TRAIL_BOUNDS_PAGE);
     var index = value;
     if paged_kind() == 0u { index -= e.slot_offset; }
-    return cache + 2u * index;
+    return paged_key_cache(e) + 2u * index;
+}
+
+// Heads are already ordered by (strand, stable ID). Match occupied owners into
+// that list instead of sorting the entire owner pool by ID every observation.
+// Valid history has one owner per stable ID, so matches have disjoint destinations.
+// Rebuild from persistent owner records each tick; no lookup survives a checkpoint.
+fn match_trail_page(e: Emitter, emitter_index: u32, start: u32, thread: u32) {
+    if !paged_record(e) { return; }
+    let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
+    let reset = paged_reset(e);
+    let strands = max(e._turbulence_padding, 1u);
+    for (var n = start + thread; n < min(start + TRAIL_SORT_PAGE, e.trail_capacity); n += 64u) {
+        let base = e.trail_offset + 1u + n * e.trail_points;
+        if reset || globals.time - particles[base].rotation >= e.trail_lifetime {
+            particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
+        }
+        if particle_alive(particles[base]) == 0u { continue; }
+        let identity = particles[base].particle_index;
+        let strand = identity % strands;
+        var low = 0u;
+        var high = count;
+        while low < high {
+            let middle = (low + high) / 2u;
+            let slot = alive_indices[e.slot_offset + middle];
+            let key = paged_key_cache(e) + 2u * (slot - e.slot_offset);
+            let less = aux[key] < strand || (aux[key] == strand && aux[key + 1u] < identity);
+            if less { low = middle + 1u; } else { high = middle; }
+        }
+        if low < count {
+            let slot = alive_indices[e.slot_offset + low];
+            if particles[slot].particle_index == identity {
+                aux[paged_mapping(e) + low] = base;
+                particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u);
+            }
+        }
+    }
 }
 
 fn paged_cached_key(e: Emitter, value: u32) -> vec4<u32> {
@@ -70,7 +110,6 @@ fn paged_key(e: Emitter, value: u32) -> vec4<u32> {
         return vec4<u32>(identity % max(e._turbulence_padding, 1u), identity, value, 0u);
     }
     let p = particles[e.trail_offset + 1u + value * e.trail_points];
-    if paged_kind() == 1u { return vec4<u32>(0u, p.particle_index, value, 0u); }
     return vec4<u32>(u32(particle_alive(p) != 0u), bitcast<u32>(p.rotation), value, 0u);
 }
 
@@ -91,6 +130,9 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
     let e = emitters[group.y];
     if !paged_trail(e) { return; }
     let kind = paged_kind();
+    // Kind comes from read-only globals, so this branch/return is uniform even
+    // for D3D/FXC. Matching has no barriers and does not touch owner sort lists.
+    if kind == 1u { match_trail_page(e, group.y, group.x * TRAIL_SORT_PAGE, thread); return; }
     let count = select(paged_owners(e), paged_heads(e), kind == 0u);
     let start = group.x * TRAIL_SORT_PAGE;
     if start >= count { return; }
@@ -105,12 +147,7 @@ fn sort_trail_page(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invoc
             if n < live { value = alive_indices[e.slot_offset + n]; }
         } else if n < e.trail_capacity {
             let base = e.trail_offset + 1u + n * e.trail_points;
-            if kind == 1u {
-                if paged_reset(e) || globals.time - particles[base].rotation >= e.trail_lifetime {
-                    particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
-                }
-                if particle_alive(particles[base]) != 0u { value = n; }
-            } else if particle_alive(particles[base]) != 2u { value = n; }
+            if particle_alive(particles[base]) != 2u { value = n; }
         }
         paged_values[local] = value;
     }
@@ -192,6 +229,7 @@ fn present_trail_heads(@builtin(global_invocation_id) id: vec3<u32>) {
     if !paged_trail(e) { return; }
     let count = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
     if id.x < count { alive_indices[e.slot_offset + id.x] = aux[paged_list(e, paged_source()) + id.x]; }
+    if paged_record(e) && id.x < paged_heads(e) { aux[paged_mapping(e) + id.x] = 0xffffffffu; }
 }
 
 @compute @workgroup_size(64)
@@ -199,33 +237,7 @@ fn reserve_trail_owners(@builtin(global_invocation_id) id: vec3<u32>) {
     let e = emitters[id.y];
     if !paged_record(e) || id.x >= paged_heads(e) { return; }
     let count = min(atomicLoad(&indirect[id.y * 4u + 1u]), e.max_particles);
-    var owner = 0xffffffffu;
-    if id.x < count {
-        let stable_id = particles[alive_indices[e.slot_offset + id.x]].particle_index;
-        let source = paged_list(e, paged_source());
-        var low = 0u;
-        var high = paged_owners(e);
-        while low < high {
-            let middle = (low + high) / 2u;
-            let candidate = aux[source + middle];
-            var less = false;
-            if candidate != 0xffffffffu {
-                less = paged_cached_key(e, candidate).y < stable_id;
-            }
-            if less { low = middle + 1u; } else { high = middle; }
-        }
-        if low < paged_owners(e) {
-            let candidate = aux[source + low];
-            if candidate != 0xffffffffu {
-                let base = e.trail_offset + 1u + candidate * e.trail_points;
-                if paged_cached_key(e, candidate).y == stable_id {
-                    owner = base;
-                    particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u);
-                }
-            }
-        }
-    }
-    aux[paged_mapping(e) + id.x] = owner;
+    let owner = aux[paged_mapping(e) + id.x];
     aux[paged_base(e) + id.x] = u32(id.x < count && owner == 0xffffffffu);
 }
 

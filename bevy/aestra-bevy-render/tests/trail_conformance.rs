@@ -611,8 +611,8 @@ fn check_cooperative(owners: u32) {
         1 => 0,
         _ => 0xe000_0000 + n * 2048,
     };
-    // Poison both candidate lists after reservation. With no births, neither
-    // candidate sorting nor owner updates may consume/replace these words.
+    // Poison both owner-list ranges before reservation. Matching must not use
+    // them, and with no births candidate ordering must leave them untouched too.
     let candidate_poison = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("unused candidate ordering poison"),
         contents: &encode(&vec![
@@ -687,6 +687,19 @@ fn check_cooperative(owners: u32) {
             pass.set_pipeline(&pipelines[2 + stage.entry]);
             pass.dispatch_workgroups(stage.workgroups, 2, 1);
             drop(pass);
+            if stage.entry == 2 && no_births {
+                for e in &emitters {
+                    let lists =
+                        e._spawn_inverse_padding.x as u32 + 2 * e.max_particles.next_power_of_two();
+                    encoder.copy_buffer_to_buffer(
+                        &candidate_poison,
+                        0,
+                        &buffers[7],
+                        u64::from(lists) * 4,
+                        u64::from(e.trail_capacity.next_power_of_two()) * 8,
+                    );
+                }
+            }
             if stage.entry == 5 {
                 for (emitter, e) in emitters.iter().enumerate() {
                     let heads = e.max_particles.next_power_of_two();
@@ -700,15 +713,6 @@ fn check_cooperative(owners: u32) {
                         emitter as u64 * 4,
                         4,
                     );
-                    if no_births {
-                        encoder.copy_buffer_to_buffer(
-                            &candidate_poison,
-                            0,
-                            &buffers[7],
-                            u64::from(lists) * 4,
-                            u64::from(pool) * 8,
-                        );
-                    }
                 }
             }
         }
@@ -784,7 +788,7 @@ fn check_cooperative(owners: u32) {
                         .0
                         .iter()
                         .all(|word| *word == 0xfeed_beefu32.to_le_bytes()),
-                    "unused candidate sorting overwrote its poisoned lists"
+                    "reservation or unused candidate sorting touched poisoned owner lists"
                 );
             }
         }
@@ -952,6 +956,21 @@ fn check_cooperative(owners: u32) {
                     56
                 ),
                 1
+            );
+        }
+    }
+    // Stable IDs reappearing before expiry must reuse their retired owners and
+    // preserve sample rings, even when compacted head order changes completely.
+    run(0.125, &[], false);
+    let returning_ids = (0..owners / 2).rev().collect::<Vec<_>>();
+    let returning = run(0.25, &returning_ids, plan.paged());
+    for &root in &roots {
+        for owner in 0..owners / 2 {
+            let slot = (root + 1 + owner * POINTS) as usize;
+            assert_eq!(word(&returning, slot, 48), word(&restarted, slot, 48));
+            assert!(
+                word(&returning, slot, 56) > 1,
+                "returning identity lost its retired ring"
             );
         }
     }
