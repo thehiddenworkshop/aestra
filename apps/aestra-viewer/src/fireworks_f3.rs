@@ -5,15 +5,19 @@ use aestra_bevy::EffectAsset;
 pub enum Probe {
     Peony,
     Chrysanthemum,
+    Pistil,
+    Willow,
 }
 
 impl Probe {
-    pub const ALL: [Self; 2] = [Self::Peony, Self::Chrysanthemum];
+    pub const ALL: [Self; 4] = [Self::Peony, Self::Chrysanthemum, Self::Pistil, Self::Willow];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Peony => "f3-peony",
             Self::Chrysanthemum => "f3-chrysanthemum",
+            Self::Pistil => "f3-pistil",
+            Self::Willow => "f3-willow",
         }
     }
 
@@ -28,6 +32,8 @@ pub fn effect(probe: Probe) -> EffectAsset {
         Probe::Chrysanthemum => {
             include_str!("../../../assets/test/effects/fireworks_chrysanthemum.aestra.ron")
         }
+        Probe::Pistil => include_str!("../../../assets/test/effects/fireworks_pistil.aestra.ron"),
+        Probe::Willow => include_str!("../../../assets/test/effects/fireworks_willow.aestra.ron"),
     })
     .expect("checked-in F3 prototype must parse")
 }
@@ -126,17 +132,19 @@ mod authored {
 
     pub fn build(probe: Probe) -> EffectAsset {
         let base = BASE + 1000 * (1 + probe as u128);
-        let chrysanthemum = probe == Probe::Chrysanthemum;
+        let willow = probe == Probe::Willow;
+        let duration = if willow { 9.0 } else { 7.0 };
         let mut effect = EffectAsset::new(
             format!(
                 "Fireworks {} Prototype",
-                if chrysanthemum {
-                    "Chrysanthemum"
-                } else {
-                    "Peony"
+                match probe {
+                    Probe::Peony => "Peony",
+                    Probe::Chrysanthemum => "Chrysanthemum",
+                    Probe::Pistil => "Pistil",
+                    Probe::Willow => "Willow",
                 }
             ),
-            7.0,
+            duration,
         );
         effect.id = EffectId::from_u128(base);
         effect.playback_mode = EffectPlaybackMode::Once;
@@ -163,14 +171,18 @@ mod authored {
             (0.3, [1.0, 0.6, 0.15, 1.0]),
             (1.0, [0.55, 0.08, 0.01, 1.0]),
         ];
-        let star_color = if chrysanthemum {
-            warm
-        } else {
-            [
+        let star_color = match probe {
+            Probe::Chrysanthemum | Probe::Willow => warm,
+            Probe::Peony => [
                 (0.0, [1.0, 0.85, 0.8, 1.0]),
                 (0.25, [0.85, 0.04, 0.09, 1.0]),
                 (1.0, [0.3, 0.01, 0.02, 1.0]),
-            ]
+            ],
+            Probe::Pistil => [
+                (0.0, [0.85, 0.95, 1.0, 1.0]),
+                (0.25, [0.08, 0.3, 1.0, 1.0]),
+                (1.0, [0.015, 0.06, 0.3, 1.0]),
+            ],
         };
         let mut launch = emitter(
             "Launch shell",
@@ -194,19 +206,46 @@ mod authored {
             256,
             0.0,
             0,
-            ScalarRange::new(2.4, 3.1),
-            ScalarRange::new(18.0, 22.0),
+            if willow {
+                ScalarRange::new(4.2, 5.0)
+            } else {
+                ScalarRange::new(2.4, 3.1)
+            },
+            if willow {
+                ScalarRange::new(14.0, 18.0)
+            } else {
+                ScalarRange::new(18.0, 22.0)
+            },
             VelocityDistribution::Sphere,
             0.0,
-            0.55,
+            if willow { 0.75 } else { 0.55 },
             &[(0.0, 0.55), (0.7, 0.35), (1.0, 0.03)],
             &[(0.0, 1.0), (0.55, 0.85), (1.0, 0.0)],
             &star_color,
             STAR,
             base + 200,
         );
-        if chrysanthemum {
+        if probe == Probe::Chrysanthemum {
             trail(&mut stars, 0.5, 0.8, 256);
+        }
+        if willow {
+            trail(&mut stars, 0.5, 1.4, 256);
+            // Bound long drooping histories by time, not distance: 64 points cover
+            // more than the 1.4-second visible tail, including one boundary sample.
+            if let RendererProperties::Trail {
+                sampling,
+                sample_interval,
+                ..
+            } = &mut stars.renderers[1].properties
+            {
+                *sampling = TrailSamplingMode::Time;
+                *sample_interval = 1.0 / 30.0;
+            }
+            if let aestra_bevy::ModuleParameters::Motion { gravity, .. } =
+                &mut stars.modules[3].parameters
+            {
+                *gravity = [0.0, -7.0, 0.0];
+            }
         }
         let flash = emitter(
             "Burst flash",
@@ -290,7 +329,11 @@ mod authored {
             (
                 1,
                 "Star speed",
-                Value::Range(ScalarRange::new(18.0, 22.0)),
+                Value::Range(if willow {
+                    ScalarRange::new(14.0, 18.0)
+                } else {
+                    ScalarRange::new(18.0, 22.0)
+                }),
                 &mut stars.modules[2],
                 "speed",
             ),
@@ -305,6 +348,45 @@ mod authored {
             module.bindings.insert(input.into(), id);
         }
         effect.emitters = vec![launch, stars, flash, launch_smoke, burst_smoke];
+        if probe == Probe::Pistil {
+            let mut inner = emitter(
+                "Pistil stars",
+                96,
+                0.0,
+                0,
+                ScalarRange::new(2.1, 2.7),
+                ScalarRange::new(8.0, 10.0),
+                VelocityDistribution::Sphere,
+                0.0,
+                0.55,
+                &[(0.0, 0.55), (0.7, 0.35), (1.0, 0.03)],
+                &[(0.0, 1.0), (0.55, 0.85), (1.0, 0.0)],
+                &warm,
+                STAR,
+                base + 600,
+            );
+            let id = ParameterId::from_u128(base + 52);
+            effect.parameters.push(EffectParameter {
+                id,
+                name: "Pistil speed".into(),
+                default: Value::Range(ScalarRange::new(8.0, 10.0)),
+                exposed: true,
+            });
+            inner.modules[2].bindings.insert("speed".into(), id);
+            let mut link = EventLink::new(effect.emitters[0].id, EventTrigger::OnDeath, inner.id);
+            link.id = EventId::from_u128(base + 703);
+            link.count = 96;
+            link.inherit_velocity = 0.02;
+            effect.events.push(link);
+            effect.emitters.push(inner);
+        }
+        // Include the long Willow decay and retired trail history in the root
+        // playback window; keep the launch plume's intentionally short window.
+        for emitter in &mut effect.emitters {
+            if emitter.name != "Launch smoke" {
+                emitter.duration = duration;
+            }
+        }
         effect.metadata.insert(
             "status".into(),
             "F3 visual prototype; not Test A performance certification".into(),
@@ -442,8 +524,14 @@ mod tests {
             let compiled = aestra_bevy::EffectCompiler::default()
                 .compile_with_material_programs(&effect, &programs)
                 .unwrap();
-            assert_eq!(compiled.emitters.len(), 5);
-            assert_eq!(effect.events.len(), 3);
+            assert_eq!(
+                compiled.emitters.len(),
+                if probe == Probe::Pistil { 6 } else { 5 }
+            );
+            assert_eq!(
+                effect.events.len(),
+                if probe == Probe::Pistil { 4 } else { 3 }
+            );
             assert_eq!(effect.events[0].count, 256);
             assert!(
                 effect
@@ -452,10 +540,121 @@ mod tests {
                     .all(|e| e.source == effect.emitters[0].id
                         && e.trigger == aestra_bevy::EventTrigger::OnDeath)
             );
+            // Every event cohort has its own bounded target pool, and none of
+            // those targets can independently emit a duplicate cohort.
+            for link in &effect.events {
+                let target = effect
+                    .emitters
+                    .iter()
+                    .find(|e| e.id == link.target)
+                    .unwrap();
+                assert!(link.count <= target.max_particles);
+                assert!(matches!(
+                    target.modules[0].parameters,
+                    aestra_bevy::ModuleParameters::Emission {
+                        spawn_rate: 0.0,
+                        burst_count: 0
+                    }
+                ));
+            }
             for program in programs.values() {
                 aestra_bevy::compile_material_program(program).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn pistil_layers_share_a_death_origin_but_keep_distinct_speeds_and_colors() {
+        use aestra_bevy::{ModuleParameters, Value, VelocityDistribution};
+        let effect = effect(Probe::Pistil);
+        let outer = &effect.emitters[1];
+        let inner = &effect.emitters[5];
+        let mut speeds = Vec::new();
+        for emitter in [outer, inner] {
+            let ModuleParameters::Initialize {
+                speed,
+                velocity_distribution,
+                ..
+            } = emitter.modules[2].parameters
+            else {
+                panic!("star initialization missing")
+            };
+            assert_eq!(velocity_distribution, VelocityDistribution::Sphere);
+            speeds.push(speed);
+            let parameter = effect
+                .parameters
+                .iter()
+                .find(|p| p.id == emitter.modules[2].bindings["speed"])
+                .unwrap();
+            assert!(parameter.exposed);
+            assert_eq!(parameter.default, Value::Range(speed));
+        }
+        assert!(speeds[1].max < speeds[0].min);
+        assert_eq!(effect.events[0].source, effect.events[3].source);
+        assert_eq!(
+            effect.events[0].inherit_velocity,
+            effect.events[3].inherit_velocity
+        );
+        assert_eq!(effect.events[3].count, 96);
+        let ModuleParameters::Appearance {
+            color: outer_color, ..
+        } = &outer.modules[4].parameters
+        else {
+            panic!("outer appearance missing")
+        };
+        let ModuleParameters::Appearance {
+            color: inner_color, ..
+        } = &inner.modules[4].parameters
+        else {
+            panic!("inner appearance missing")
+        };
+        assert_ne!(outer_color.keys, inner_color.keys);
+    }
+
+    #[test]
+    fn willow_history_and_playback_window_cover_the_full_decay_with_bounded_storage() {
+        use aestra_bevy::{ModuleParameters, RendererProperties, TrailSamplingMode};
+        let effect = effect(Probe::Willow);
+        let launch = &effect.emitters[0];
+        let stars = &effect.emitters[1];
+        let ModuleParameters::Initialize {
+            lifetime: launch_life,
+            ..
+        } = launch.modules[2].parameters
+        else {
+            panic!("launch initialization missing")
+        };
+        let ModuleParameters::Initialize {
+            lifetime: star_life,
+            ..
+        } = stars.modules[2].parameters
+        else {
+            panic!("star initialization missing")
+        };
+        let RendererProperties::Trail {
+            sampling,
+            sample_interval,
+            lifetime,
+            max_points,
+            max_trails,
+            ..
+        } = stars.renderers[1].properties
+        else {
+            panic!("Willow trail missing")
+        };
+        assert_eq!(sampling, TrailSamplingMode::Time);
+        assert_eq!(max_trails, stars.max_particles);
+        assert_eq!(max_points, 64);
+        assert!(sample_interval > 0.0);
+        assert!((max_points - 1) as f32 * sample_interval > lifetime);
+        assert!(star_life.min > 4.0 && lifetime > 1.0);
+        // Include a fixed-tick margin for the last death and retained history.
+        assert!(launch_life.max + star_life.max + lifetime + 1.0 / 60.0 < effect.duration);
+        assert_eq!(stars.duration, effect.duration);
+        assert_eq!(effect.emitters[3].duration, 1.3);
+        assert!(
+            matches!(stars.modules[3].parameters, ModuleParameters::Motion { gravity, drag, .. } if gravity[1] < 0.0 && drag > 0.0)
+        );
     }
 
     #[test]
@@ -468,7 +667,10 @@ mod tests {
             let compiled = aestra_bevy::EffectCompiler::default()
                 .compile_resolved_project(&resolved)
                 .unwrap();
-            assert_eq!(compiled.root.emitters.len(), 5);
+            assert_eq!(
+                compiled.root.emitters.len(),
+                if probe == Probe::Pistil { 6 } else { 5 }
+            );
             for expected in authored::programs() {
                 assert_eq!(
                     expected.normalized(),

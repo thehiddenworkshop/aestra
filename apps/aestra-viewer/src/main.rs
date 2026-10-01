@@ -64,7 +64,7 @@ fn main() {
         eprintln!("aestra-viewer: {error}");
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
-        eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
+        eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -375,10 +375,10 @@ impl ViewerConfig {
                 "--fireworks-f0" => fireworks_f0 = true,
                 "--fireworks-f0-probe" => {
                     let value = args.next().ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe, f3-peony or f3-chrysanthemum",
+                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe or f3 shell probe (peony/chrysanthemum/pistil/willow)",
                     )?;
                     fireworks_probe = Some(FireworksProbe::parse(&value).ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe, f3-peony or f3-chrysanthemum",
+                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe or f3 shell probe (peony/chrysanthemum/pistil/willow)",
                     )?);
                 }
                 "--camera" => {

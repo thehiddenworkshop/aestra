@@ -2059,12 +2059,22 @@ Peony, ring and palm can all be authored generically.
 - Viewer entry points are `--fireworks-f0 --fireworks-f0-probe f3-peony` / `f3-chrysanthemum`; choose `--camera wide --backend gpu --history playback-only`. Source generation/round-trip, semantic material compilation, normal project resolution and CLI preparation are regression-tested.
 - Native playback-only captures at frames 45/80/110/150/210/300 were inspected in `target/fireworks-f3/{peony-fixed,chrysanthemum-fixed}`: launch, flash, expansion, star-trail arcs and decay are present. Both telemetry reports show peaks of one launch, 256 stars, one flash and 24 burst-smoke particles. These observed peaks are not a full requested/produced-work or performance certification. Viewer tests (41 passed, fixture-export helper ignored), project suites, the native authored-burst regression, fingerprint tests, strict Clippy and formatting pass. The wide-view red Peony is visibly dim; HDR response and visual/material tuning remain necessary.
 
-These are **low-count visual prototypes, not completed production shells**. They do not replace the 300–800-star Test A workload, verify finale budgets, or close F1/F1B's resource/performance gates. Still open: reference-footage comparison and material/curve tuning, exposed color controls, Pistil/Willow, editor manual acceptance, and production-scale timing/memory certification.
+### Pistil / Willow prototype extension — 2026-10-01
+
+- Added editable `assets/test/effects/fireworks_pistil.aestra.ron` and `fireworks_willow.aestra.ron`, using the same three project-resolved semantic materials and ordinary effect/compiler/host APIs. No runtime or shader specialization was needed.
+- **Pistil:** the launch death drives a 256-star blue outer shell and a separate 96-star gold inner layer, alongside flash and smoke. Both layers inherit the same origin/velocity contribution but have non-overlapping speed ranges (18–22 and 8–10); the inner speed is also exposed. Its six emitters/four links are bounded pools, not an event-limit workaround.
+- **Willow:** 256 gold stars live for 4.2–5 seconds with authored gravity/drag and 1.4-second cooling trails. Time sampling at 30 Hz uses 64 points per owner, enough to retain the visible window plus its boundary sample. A nine-second root/target window includes star death and retired-history decay; the independent launch plume still emits only for 1.3 seconds. This is a single cohort with 256 star owners, not overlapping-volley certification.
+- CLI probes `f3-pistil` and `f3-willow` load the checked-in sources through normal project resolution. Regression tests cover all four fixture round-trips, material compilation, project/CLI preparation, bounded event targets without autonomous births, Pistil speed/color separation and Willow history/playback-window coverage. Viewer suite: **43 passed, one ignored fixture-export helper**; strict viewer Clippy and formatting pass.
+- Inspected native GPU **playback-only** captures in `target/fireworks-f3/pistil` (frames 45/80/110/150/210/300) and `target/fireworks-f3/willow` (45/80/150/240/330/390/450/510). Pistil telemetry peaks at 256 outer and 96 inner stars; Willow peaks at 256 stars. Both show one launch/flash and 24 burst-smoke particles. Willow's final report has zero alive particles, occupied/retired trails and submitted geometry, with zero reported trail truncations/evictions. These are endpoint telemetry and visual checks, not per-frame budget certification. Pistil's wide-view star heads are still dim; Willow's expansion, falling arcs and cooling tail decay are visible but require reference/HDR tuning.
+
+These are **bounded-count visual prototypes, not completed production shells**. Even Pistil's 352 stars do not certify the named Test A workload, finale budgets, or F1/F1B's resource/performance gates. Still open: reference-footage comparison and material/curve tuning, exposed color controls, editor manual acceptance, and production-scale timing/memory certification.
 
 Example deterministic capture:
 
 ```powershell
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f3/chrysanthemum
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-pistil --camera wide --backend gpu --history playback-only --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f3/pistil
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-willow --camera wide --backend gpu --history playback-only --sample-frames 45,80,150,240,330,390,450,510 --capture target/fireworks-f3/willow
 ```
 
 Build:
