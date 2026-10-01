@@ -1,0 +1,71 @@
+(
+    id: "a3574a00-0000-4000-8000-0000000f4f40",
+    schema_version: 1,
+    name: "Fireworks Star Core",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Additive,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f41",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f42",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f43",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f46",
+            kind: Constant(Vec2((0.5, 0.5))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f47",
+            kind: Constant(Float(0.45)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f48",
+            kind: Constant(Float(0.2)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f49",
+            kind: Constant(Bool(false)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f4c",
+            kind: RadialMask(
+                uv: "a3574a00-0000-4000-8000-0000000f4f43",
+                center: "a3574a00-0000-4000-8000-0000000f4f46",
+                radius: "a3574a00-0000-4000-8000-0000000f4f47",
+                softness: "a3574a00-0000-4000-8000-0000000f4f48",
+                invert: "a3574a00-0000-4000-8000-0000000f4f49",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4f4d",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f4f42", "a3574a00-0000-4000-8000-0000000f4f4c"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-0000000f4f41",
+        alpha: "a3574a00-0000-4000-8000-0000000f4f4d",
+    ),
+)

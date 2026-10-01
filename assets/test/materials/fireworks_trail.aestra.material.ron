@@ -1,0 +1,88 @@
+(
+    id: "a3574a00-0000-4000-8000-0000000f4fa4",
+    schema_version: 1,
+    name: "Fireworks Cooling Trail",
+    domain: Ribbon,
+    render_state_policy: (
+        default: (
+            blend: Additive,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fa5",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fa6",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fa7",
+            kind: Input(RibbonUv),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fa8",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fa9",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4faa",
+            kind: ExtractComponent(
+                value: "a3574a00-0000-4000-8000-0000000f4fa7",
+                component: Y,
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fab",
+            kind: Constant(Float(0.5)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fac",
+            kind: Subtract("a3574a00-0000-4000-8000-0000000f4faa", "a3574a00-0000-4000-8000-0000000f4fab"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fad",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f4fac", "a3574a00-0000-4000-8000-0000000f4fac"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fae",
+            kind: Constant(Float(0.25)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4faf",
+            kind: Smoothstep(
+                edge_min: "a3574a00-0000-4000-8000-0000000f4fa8",
+                edge_max: "a3574a00-0000-4000-8000-0000000f4fae",
+                value: "a3574a00-0000-4000-8000-0000000f4fad",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fb0",
+            kind: Subtract("a3574a00-0000-4000-8000-0000000f4fa9", "a3574a00-0000-4000-8000-0000000f4faf"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f4fb1",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f4fa6", "a3574a00-0000-4000-8000-0000000f4fb0"),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-0000000f4fa5",
+        alpha: "a3574a00-0000-4000-8000-0000000f4fb1",
+    ),
+)

@@ -180,6 +180,9 @@ struct StatefulDispatch {
     emitter_count: u32,
     /// Mean particles emitted per second; fractional per-tick spawns accumulate across ticks.
     spawn_rate: f32,
+    /// Authored one-shot births, emitted once on the first tick crossing start_time.
+    burst_count: u32,
+    burst_tick: u32,
     /// Per-particle launch speed range `(min, max)`.
     speed: (f32, f32),
     /// Per-particle lifetime range `(min, max)` in seconds.
@@ -404,6 +407,8 @@ impl StatefulDispatch {
             self.slot_offset,
             self.emitter_index,
             self.spawn_rate.to_bits(),
+            self.burst_count,
+            self.burst_tick,
             self.speed.0.to_bits(),
             self.speed.1.to_bits(),
             self.lifetime.0.to_bits(),
@@ -1047,6 +1052,14 @@ pub(crate) fn prepare_gpu_effects(
                                 } else {
                                     0.5 * (emitter.spawn_rate.x + emitter.spawn_rate.y)
                                 },
+                                burst_count: if player.effect().is_event_target(index) {
+                                    0
+                                } else {
+                                    emitter.burst_count
+                                },
+                                burst_tick: (emitter.start_time / STATEFUL_TICK_DT).ceil().max(1.0)
+                                    as u32
+                                    - 1,
                                 speed: (emitter.speed.x, emitter.speed.y),
                                 lifetime: (emitter.lifetime.x, emitter.lifetime.y),
                                 direction: [
@@ -3296,7 +3309,14 @@ fn stateful_tick_group(
         persistent.spawn_accumulator += dispatch.spawn_rate * STATEFUL_TICK_DT;
         let spawn_count = persistent.spawn_accumulator.floor();
         persistent.spawn_accumulator -= spawn_count;
-        (spawn_count as u32).min(dispatch.capacity)
+        let burst = if persistent.last_tick == dispatch.burst_tick {
+            dispatch.burst_count
+        } else {
+            0
+        };
+        (spawn_count as u32)
+            .saturating_add(burst)
+            .min(dispatch.capacity)
     };
     let params = device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("aestra stateful tick params"),
@@ -4870,6 +4890,8 @@ mod tests {
             emitter_index: 0,
             emitter_count: 1,
             spawn_rate: 24.0,
+            burst_count: 0,
+            burst_tick: 0,
             speed: (10.0, 14.0),
             lifetime: (1.0, 1.5),
             direction: [0.0, 1.0, 0.0],
@@ -4905,6 +4927,20 @@ mod tests {
             base.fingerprint(),
             base.clone().fingerprint(),
             "stable for equal dynamics"
+        );
+        let mut changed = base.clone();
+        changed.burst_count = 1;
+        assert_ne!(
+            base.fingerprint(),
+            changed.fingerprint(),
+            "burst edits invalidate history"
+        );
+        let mut changed = base.clone();
+        changed.burst_tick = 30;
+        assert_ne!(
+            base.fingerprint(),
+            changed.fingerprint(),
+            "burst timing edits invalidate history"
         );
         let mut changed = base.clone();
         changed.velocity_distribution = aestra_core::VelocityDistribution::Ring as u32;
@@ -5743,6 +5779,8 @@ mod coupled_tests {
             emitter_index: index,
             emitter_count: 2,
             spawn_rate: 90.0,
+            burst_count: 0,
+            burst_tick: 0,
             speed: (0.0, 4.0),
             lifetime: (3.0, 4.0),
             direction: [0.0, 1.0, 0.0],
@@ -6209,6 +6247,53 @@ mod coupled_tests {
         advance_event_scene(&mut late, &links, &wired, 50);
         advance_event_scene(&mut late, &links, &wired, 150);
         assert_eq!(chained_event_snapshot(&late), expected);
+    }
+
+    #[test]
+    fn authored_one_shot_burst_launches_once_and_drives_death_links_after_seek() {
+        for burst_tick in [0, 30] {
+            let Some((mut scene, links)) = chained_event_scene() else {
+                assert!(
+                    std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                    "authored burst regression requires a hardware GPU"
+                );
+                return;
+            };
+            scene.dispatches[0].spawn_rate = 0.0;
+            scene.dispatches[0].burst_count = 1;
+            scene.dispatches[0].burst_tick = burst_tick;
+            scene.dispatches[0].lifetime = (0.25, 0.25);
+            advance_chained_event_scene(&mut scene, &links, burst_tick + 1);
+            assert_eq!(chained_event_snapshot(&scene).spawn_counts[0], 1);
+            advance_chained_event_scene(&mut scene, &links, 80);
+            let expected = chained_event_snapshot(&scene);
+            assert_eq!(
+                expected.spawn_counts[0], 1,
+                "no continuous emission or repeated burst"
+            );
+            assert_eq!(
+                expected.spawn_counts[1], 48,
+                "one real death drives exactly one child cohort"
+            );
+            advance_chained_event_scene(&mut scene, &links, burst_tick);
+            advance_chained_event_scene(&mut scene, &links, 80);
+            assert_eq!(
+                chained_event_snapshot(&scene),
+                expected,
+                "replay neither drops nor doubles the launch"
+            );
+
+            scene.dispatches[0].cutoffs.stop_tick = Some(0);
+            for state in &mut scene.states {
+                state.reset_to_zero(&scene.device);
+            }
+            advance_chained_event_scene(&mut scene, &links, 80);
+            assert_eq!(
+                chained_event_snapshot(&scene).spawn_counts[..2],
+                [0, 0],
+                "stop suppresses authored birth and its child links"
+            );
+        }
     }
 
     #[test]

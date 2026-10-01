@@ -2049,6 +2049,24 @@ Peony, ring and palm can all be authored generically.
 
 **Entry gate:** F1's single-link burst and F1B's single-emitter trail workloads compile, run, replay and stay within the named Test A budget. A small sketch may precede these gates; a production hero shell may not be declared complete without them.
 
+### Prototype implementation — 2026-10-01
+
+- Editable source effects `assets/test/effects/fireworks_peony.aestra.ron` and `fireworks_chrysanthemum.aestra.ron` share the three procedural semantic materials `assets/test/materials/fireworks_{star,trail,smoke}.aestra.material.ron`. They resolve through the normal project loader, not viewer-injected material definitions, and can be loaded by a host through the existing project/compiler APIs.
+- Each is a seven-second, one-shot shell: a single launch particle with a cooling trail; one actual launch-death event produces **256 stars through one link**, one short flash and 24 smoke puffs through two other links. Sphere velocity, independent speed/lifetime ranges, gravity/drag and appearance curves drive expansion and cooling. Chrysanthemum adds a bounded 64-point/256-owner trail pool to the same star emitter; Peony keeps clean star heads.
+- The short launch smoke plume is an independent authored approximation, not smoke attached to live rocket positions. Burst smoke uses particle sprites, not a fluid domain; lighting, HDR/bloom and smoke realism are not certified by this slice.
+- Launch speed and star speed are exposed Range parameters. Stable source/curve/renderer/material IDs and the F0 seed make the fixtures reproducible; ordinary effect placement, seed selection and `PlaybackHistoryPolicy::PlaybackOnly` remain host-controlled. No firework-specific runtime type was added.
+- The visual slice revealed that native stateful ordinary emission ignored authored `burst_count`. The generic dispatch now carries one-shot birth count/timing, suppresses autonomous births on event targets, honors emission stop cutoffs and fingerprints count/timing edits. A native production-loop regression checks initial and delayed bursts, one real child cohort, no repeated launch, exact backward-seek replay and stop suppression. This fixes **authored one-shot emission**, not every live host burst/UI interaction.
+- Viewer entry points are `--fireworks-f0 --fireworks-f0-probe f3-peony` / `f3-chrysanthemum`; choose `--camera wide --backend gpu --history playback-only`. Source generation/round-trip, semantic material compilation, normal project resolution and CLI preparation are regression-tested.
+- Native playback-only captures at frames 45/80/110/150/210/300 were inspected in `target/fireworks-f3/{peony-fixed,chrysanthemum-fixed}`: launch, flash, expansion, star-trail arcs and decay are present. Both telemetry reports show peaks of one launch, 256 stars, one flash and 24 burst-smoke particles. These observed peaks are not a full requested/produced-work or performance certification. Viewer tests (41 passed, fixture-export helper ignored), project suites, the native authored-burst regression, fingerprint tests, strict Clippy and formatting pass. The wide-view red Peony is visibly dim; HDR response and visual/material tuning remain necessary.
+
+These are **low-count visual prototypes, not completed production shells**. They do not replace the 300–800-star Test A workload, verify finale budgets, or close F1/F1B's resource/performance gates. Still open: reference-footage comparison and material/curve tuning, exposed color controls, Pistil/Willow, editor manual acceptance, and production-scale timing/memory certification.
+
+Example deterministic capture:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f3/chrysanthemum
+```
+
 Build:
 
 1. Peony.

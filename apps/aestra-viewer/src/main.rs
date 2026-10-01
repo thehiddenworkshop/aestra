@@ -1,4 +1,5 @@
 mod fireworks_f0;
+mod fireworks_f3;
 mod gpu_bench;
 mod preview_report;
 mod velocity_f2;
@@ -63,6 +64,7 @@ fn main() {
         eprintln!("aestra-viewer: {error}");
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
+        eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -118,6 +120,7 @@ fn main() {
             Some(FireworksProbe::EventTrailVolley) => "fireworks_f1b_event_trail_volley",
             Some(FireworksProbe::EventTrailSparse) => "fireworks_f1b_event_trail_sparse",
             Some(FireworksProbe::Velocity(probe)) => probe.name(),
+            Some(FireworksProbe::Shell(probe)) => probe.name(),
             None => "fireworks_f0",
         }
         .to_owned()
@@ -261,6 +264,7 @@ enum FireworksProbe {
     EventTrailVolley,
     EventTrailSparse,
     Velocity(velocity_f2::Probe),
+    Shell(fireworks_f3::Probe),
 }
 
 impl FireworksProbe {
@@ -274,7 +278,9 @@ impl FireworksProbe {
             "event-trail-large" => Some(Self::EventTrailLarge),
             "event-trail-volley" => Some(Self::EventTrailVolley),
             "event-trail-sparse" => Some(Self::EventTrailSparse),
-            _ => velocity_f2::Probe::parse(value).map(Self::Velocity),
+            _ => velocity_f2::Probe::parse(value)
+                .map(Self::Velocity)
+                .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell)),
         }
     }
 }
@@ -369,10 +375,10 @@ impl ViewerConfig {
                 "--fireworks-f0" => fireworks_f0 = true,
                 "--fireworks-f0-probe" => {
                     let value = args.next().ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe or f2-peony, f2-ring, f2-palm, f2-hemisphere-fan, f2-double-ring",
+                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe, f3-peony or f3-chrysanthemum",
                     )?;
                     fireworks_probe = Some(FireworksProbe::parse(&value).ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe or f2-peony, f2-ring, f2-palm, f2-hemisphere-fan, f2-double-ring",
+                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe, f3-peony or f3-chrysanthemum",
                     )?);
                 }
                 "--camera" => {
@@ -741,6 +747,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
                 fireworks_f0::sparse_event_trail_volley_probe()
             }
             Some(FireworksProbe::Velocity(probe)) => velocity_f2::effect(probe),
+            Some(FireworksProbe::Shell(probe)) => fireworks_f3::effect(probe),
             None => fireworks_f0::effect(),
         })
     } else {
