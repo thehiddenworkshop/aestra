@@ -130,6 +130,30 @@ driver, physical capacity, and configured particle budget. Use `--backend
 auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
 `--max-gpu-particles <count>` to test budget fallback.
 
+Opt into a fixed photographic response for luminous effects (legacy previews remain unchanged):
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 2 --tonemapping tony --bloom 0.15 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-photo
+```
+
+`--hdr` enables a floating-point intermediate target, not HDR monitor output. The photographic
+options also enable HDR individually: `--exposure` accepts fixed relative stops from -8 to 8,
+`--tonemapping` accepts `tony`, `aces`, or `reinhard`, and `--bloom` accepts a scattering strength
+from 0 to 1 (0 disables bloom). Defaults are 0 stops, Tony McMapface and natural,
+energy-conserving bloom at 0.15. No auto exposure is used; deband dithering is disabled in this
+mode. Exposure is Bevy's scene-wide color-grading exposure, so it affects Aestra's unlit
+particles as well as scene geometry; it is not a calibrated physical camera EV100 control.
+Bloom runs before this display exposure. Capture reports record the effective settings under
+`capture.response`; PNGs are the tonemapped SDR result. The editor viewport layering smoke
+test intentionally rejects these options. Editor controls and physical radiance tuning remain
+separate follow-up work.
+
+Aestra's unlit semantic material `Color` output already accepts linear RGB above 1; alpha and
+coverage remain opacity, not an emission multiplier. HDR hosts should preserve this radiance in
+their target and apply their display transform once after compositing. A separate `Emissive`
+output is not necessary for these unlit fireworks; lit material/light transport would require
+a separate design. Exposure, bloom, camera, sky and audio remain host presentation concerns.
+
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
 canonicalized. Implicit-derivative texture samples carry an explicit IR sampling contract and are

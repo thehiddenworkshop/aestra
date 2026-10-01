@@ -2139,6 +2139,65 @@ No new firework-specific core concepts are allowed unless a generic need is demo
 
 **Goal:** make physically bright effects read correctly.
 
+### F4A implemented — fixed viewer photographic response (2026-10-01)
+
+- Opt-in `--hdr`, `--exposure -8..8`, `--tonemapping tony|aces|reinhard`, and
+  `--bloom 0..1`. Any photographic option selects an HDR intermediate camera target;
+  legacy camera defaults and existing visual references are unchanged.
+- The default photographic profile uses Tony McMapface, fixed 0-stop exposure,
+  natural energy-conserving bloom (0.15, zero threshold), and disabled deband dithering.
+  Zero bloom omits the bloom pass. There is no adaptive/auto exposure.
+- Exposure uses scene-wide `ColorGrading.global.exposure`, not PBR-only camera
+  `Exposure`: it affects the custom unlit Aestra particle/material paths too. These are
+  relative display stops, not a calibrated physical EV100 camera. Bloom precedes display
+  exposure; exposure does not change bloom's source radiance or simulation.
+- `preview-report.json` records `capture.response` as additive schema-1 metadata:
+  HDR, stops, display transform, bloom strength/preset and dither policy. Older reports
+  without this field represent legacy defaults. Captures remain tonemapped SDR PNGs.
+- Tests cover component placement, zero-bloom behavior, finite/bounded CLI values,
+  order-independent options, report metadata, and identical compiled effects/seeds/history/
+  sampled frames with and without the photographic controls.
+
+Validation command:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 2 --tonemapping tony --bloom 0.15 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-photo
+```
+
+Native GPU capture shows a luminous burst and brighter cooling trails using the **same**
+F3 chrysanthemum asset and seed. Two independent photographic captures have byte-identical
+PNGs at all six sampled frames on the tested adapter. This is a same-adapter repeatability
+check, not a cross-GPU bit-exact guarantee or production-performance certification.
+The new legacy capture also matches the prior F3 color-control baseline byte-for-byte at
+all six frames; compiler metadata is identical, peak particles remain 310 and trail evictions
+remain zero. A native 2D Prism Bloom capture exercises ACES, -1 stop and disabled bloom.
+Viewer tests (49 passed, one ignored fixture exporter), strict all-target Clippy, formatting
+and diff checks pass.
+
+### HDR material / host convention
+
+- Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
+  material fragment shader preserves RGB rather than clamping it to display range.
+  Alpha/coverage are bounded opacity, separate from radiance. Do not encode emission gain
+  by increasing alpha, or tonemap inside the material before additive compositing.
+- The existing HDR-specialized render targets support the material and legacy particle
+  paths. A separate `Emissive` output is **not required for these unlit fireworks**;
+  reconsider it only for a generic lit-material/light-transport requirement.
+- Bevy hosts can attach `Hdr`, `Tonemapping`, `ColorGrading`, and optional `Bloom` to the
+  effect camera using Bevy's existing API. No firework-specific Aestra runtime concept or
+  simulation parameter is introduced. UI/overlay cameras must remain separate.
+
+### Still open before F4 acceptance
+
+- Editor photographic controls and an explicitly shared, reproducible preview profile;
+  the editor viewport layering smoke test rejects viewer photographic options for now.
+- Authored HDR radiance/emission gain, highlight/color preservation, and subpixel star
+  energy/size tuning against reference footage. F3 material defaults are deliberately not
+  rewritten by this slice; display exposure is not a substitute for correct source radiance.
+- Compare all shell types at close/audience/wide framing and assess the night scene,
+  smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
+- Production budget/finale gates remain open. F4 is **in progress**, not complete.
+
 ### Tasks
 
 - render preview through HDR target where appropriate;

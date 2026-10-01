@@ -1,6 +1,7 @@
 mod fireworks_f0;
 mod fireworks_f3;
 mod gpu_bench;
+mod photographic;
 mod preview_report;
 mod velocity_f2;
 mod visual_regression;
@@ -65,6 +66,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
+        eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -244,6 +246,7 @@ struct ViewerConfig {
     view_3d: bool,
     /// The quality tier the effect is compiled for (fluid F12); `high` is the authored effect.
     tier: aestra_bevy::QualityTier,
+    photographic: Option<photographic::PhotographicPreview>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,6 +367,7 @@ impl ViewerConfig {
         let mut history_policy = aestra_bevy::PlaybackHistoryPolicy::default();
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
+        let mut photographic = None;
         let mut args = arguments.into_iter();
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -394,6 +398,31 @@ impl ViewerConfig {
                 "--stable-transparency" => transparent_order = TransparentOrderMode::StableCapture,
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
+                "--hdr" => {
+                    photographic.get_or_insert_with(photographic::PhotographicPreview::default);
+                }
+                "--exposure" => {
+                    let value = args.next().ok_or("--exposure requires relative stops")?;
+                    photographic
+                        .get_or_insert_with(photographic::PhotographicPreview::default)
+                        .exposure_stops =
+                        photographic::bounded_number(&value, "--exposure", -8.0, 8.0)?;
+                }
+                "--tonemapping" => {
+                    let value = args
+                        .next()
+                        .ok_or("--tonemapping requires tony, aces or reinhard")?;
+                    photographic
+                        .get_or_insert_with(photographic::PhotographicPreview::default)
+                        .tonemapping = photographic::DisplayTransform::parse(&value)?;
+                }
+                "--bloom" => {
+                    let value = args.next().ok_or("--bloom requires a strength")?;
+                    photographic
+                        .get_or_insert_with(photographic::PhotographicPreview::default)
+                        .bloom_intensity =
+                        photographic::bounded_number(&value, "--bloom", 0.0, 1.0)?;
+                }
                 "--gpu-bench" => {
                     gpu_bench = Some(PathBuf::from(
                         args.next()
@@ -542,6 +571,16 @@ impl ViewerConfig {
         if fireworks_f0 {
             view_3d = true;
         }
+        if photographic.is_some()
+            && capture_mode
+                .as_ref()
+                .is_some_and(CaptureMode::is_editor_viewport_smoke)
+        {
+            return Err(
+                "photographic options are not supported by the editor viewport layering smoke test"
+                    .into(),
+            );
+        }
         Ok(Self {
             effect_path,
             fireworks_f0,
@@ -560,6 +599,7 @@ impl ViewerConfig {
             history_policy,
             view_3d,
             tier,
+            photographic,
         })
     }
 
@@ -895,7 +935,7 @@ fn setup(
         } else {
             framing_transform(&prepared.compiled)
         };
-        commands.spawn((
+        let mut camera = commands.spawn((
             Camera3d::default(),
             Camera {
                 clear_color: ClearColorConfig::Custom(Color::srgb(0.009, 0.012, 0.024)),
@@ -903,8 +943,14 @@ fn setup(
             },
             camera_transform,
         ));
+        if let Some(settings) = config.photographic {
+            settings.apply(&mut camera);
+        }
     } else {
-        commands.spawn(Camera2d);
+        let mut camera = commands.spawn(Camera2d);
+        if let Some(settings) = config.photographic {
+            settings.apply(&mut camera);
+        }
     }
     commands.spawn((player, presentation));
 
@@ -1302,6 +1348,7 @@ fn capture_frame(maximum_frame: u64, index: usize, frame_count: usize) -> u64 {
 
 #[derive(SystemParam)]
 struct CaptureReportContext<'w, 's> {
+    config: Res<'w, ViewerConfig>,
     runtime: Res<'w, AestraRuntimeStatus>,
     settings: Res<'w, AestraSettings>,
     capabilities: Res<'w, GpuCapabilities>,
@@ -1370,6 +1417,7 @@ fn receive_capture(
                 columns,
                 rows,
                 tick_rate: DEFAULT_PLAYBACK_TICK_RATE,
+                response: photographic::CaptureResponse::new(report.config.photographic),
             },
             &report.prepared.compiler,
             PreviewRuntimeData {
@@ -1608,6 +1656,102 @@ mod tests {
     }
 
     #[test]
+    fn photographic_preview_is_opt_in_order_independent_and_does_not_change_playback() {
+        assert!(
+            ViewerConfig::from_iter(std::iter::empty())
+                .unwrap()
+                .photographic
+                .is_none()
+        );
+        let baseline = ViewerConfig::from_iter(
+            ["--fireworks-f0", "--fireworks-f0-probe", "f3-chrysanthemum"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .unwrap();
+        for options in [
+            [
+                "--hdr",
+                "--exposure",
+                "2",
+                "--tonemapping",
+                "aces",
+                "--bloom",
+                "0",
+            ],
+            [
+                "--exposure",
+                "2",
+                "--tonemapping",
+                "aces",
+                "--bloom",
+                "0",
+                "--hdr",
+            ],
+        ] {
+            let config = ViewerConfig::from_iter(
+                ["--fireworks-f0", "--fireworks-f0-probe", "f3-chrysanthemum"]
+                    .into_iter()
+                    .chain(options)
+                    .map(str::to_owned),
+            )
+            .unwrap();
+            assert_eq!(
+                config.photographic,
+                Some(photographic::PhotographicPreview {
+                    exposure_stops: 2.0,
+                    tonemapping: photographic::DisplayTransform::Aces,
+                    bloom_intensity: 0.0,
+                })
+            );
+            assert_eq!(config.resolved_seed(), baseline.resolved_seed());
+            assert_eq!(config.history_policy, baseline.history_policy);
+            assert_eq!(config.capture_sampling, baseline.capture_sampling);
+            assert_eq!(
+                prepare_viewer(&config)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled,
+                prepare_viewer(&baseline)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled
+            );
+        }
+    }
+
+    #[test]
+    fn photographic_arguments_reject_nonfinite_out_of_range_and_unsupported_settings() {
+        for arguments in [
+            vec!["--exposure"],
+            vec!["--exposure", "NaN"],
+            vec!["--exposure", "inf"],
+            vec!["--exposure", "-9"],
+            vec!["--exposure", "9"],
+            vec!["--bloom"],
+            vec!["--bloom", "NaN"],
+            vec!["--bloom", "-0.1"],
+            vec!["--bloom", "1.1"],
+            vec!["--tonemapping"],
+            vec!["--tonemapping", "none"],
+            vec!["--hdr", "--editor-viewport-smoke", "unused"],
+        ] {
+            assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
+        }
+        for arguments in [
+            vec!["--exposure", "-8"],
+            vec!["--exposure", "8"],
+            vec!["--bloom", "1"],
+            vec!["--tonemapping", "reinhard"],
+        ] {
+            assert!(
+                ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned))
+                    .unwrap()
+                    .photographic
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
     fn fireworks_f0_selects_fixed_camera_and_seed() {
         let config = ViewerConfig::from_iter(
             [
@@ -1769,6 +1913,7 @@ mod tests {
             history_policy: aestra_bevy::PlaybackHistoryPolicy::default(),
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),
+            photographic: None,
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");

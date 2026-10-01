@@ -85,6 +85,7 @@ impl CompilerPreviewData {
 }
 
 pub struct PreviewCaptureData<'a> {
+    pub response: crate::photographic::CaptureResponse,
     pub sampled_frames: &'a [u64],
     pub seed: u64,
     pub width: u32,
@@ -152,6 +153,7 @@ pub fn write_preview_report(
             max_particles: compiler.max_particles,
         }),
         capture: Some(PreviewCapture {
+            response: capture.response,
             tick_rate: capture.tick_rate,
             seed: format!("0x{:016x}", capture.seed),
             frame_width: capture.width,
@@ -300,6 +302,7 @@ struct PreviewEffect {
 
 #[derive(Serialize)]
 struct PreviewCapture {
+    response: crate::photographic::CaptureResponse,
     tick_rate: u32,
     seed: String,
     frame_width: u32,
@@ -711,6 +714,9 @@ mod tests {
         write_preview_report(
             directory.path(),
             PreviewCaptureData {
+                response: crate::photographic::CaptureResponse::new(Some(
+                    crate::photographic::PhotographicPreview::default(),
+                )),
                 sampled_frames: &[0, 30, 120],
                 seed: 42,
                 width: 960,
@@ -737,6 +743,10 @@ mod tests {
             serde_json::from_slice(&fs::read(directory.path().join(PREVIEW_REPORT_FILE)).unwrap())
                 .unwrap();
         assert_eq!(value["status"], "succeeded");
+        assert_eq!(value["capture"]["response"]["hdr"], true);
+        assert_eq!(value["capture"]["response"]["exposure_stops"], 0.0);
+        assert_eq!(value["capture"]["response"]["tonemapping"], "tony");
+        assert_eq!(value["capture"]["response"]["deband_dither"], "disabled");
         assert_eq!(value["instances"].as_array().unwrap().len(), 2);
         assert_eq!(value["instances"][0]["clip_path"], serde_json::json!([]));
         assert_eq!(value["instances"][1]["clip_path"][0], path);
@@ -850,6 +860,7 @@ mod tests {
         write_preview_report(
             output_directory.path(),
             PreviewCaptureData {
+                response: crate::photographic::CaptureResponse::new(None),
                 sampled_frames: &[30],
                 seed: 42,
                 width: 64,
