@@ -2744,6 +2744,41 @@ F4 remains **in progress**. Next prioritize authored-shell visual/reference acce
 close/audience/wide framing, then real-time full-show/finale and target-device tier validation.
 Do not choose a shipping pixel floor or declare AAA readiness from these stress fixtures.
 
+### F4L implemented — reproducible all-shell visual review (2026-10-02)
+
+- Added `benchmarks/fireworks/capture-shell-review.ps1`: PowerShell 7, build once, sequential
+  native-GPU captures for all four F3 prototypes × close/audience/wide × authored floors 0/0
+  versus opt-in floors 2/2. Fixed 960×540/high-tier/seed/60 Hz, playback-only history,
+  HDR/Tony/0 stops/bloom 0.15 and stable small-cohort transparency. Eight explicit lifecycle
+  frames per case include the final seven-/nine-second cleanup endpoint.
+- The runner rejects existing output folders, native-backend/compatibility failures, wrong
+  capture metadata, missing images, incomplete observed star peaks, and nonzero/unavailable
+  endpoint live/history/eviction/truncation metrics. A machine-readable review manifest
+  preserves the plan, source hashes, Git/dirty provenance, adapter, endpoint metrics and PNG
+  hashes. `-PlanOnly` is non-mutating; filters deduplicate. Failed runs preserve partial
+  evidence. There is **no automatic artistic or golden-reference approval**.
+- RTX 4070 SUPER/Vulkan development-build run under
+  `target/fireworks-f4/f4l-shell-review` completed **24 cases / 192 frame PNGs**. All cases
+  observed 256 main stars; Pistil additionally observed 96 inner stars. Every final report
+  measured zero live particles, occupied/retired histories, evictions and truncation.
+  These are peak/endpoint checks, not per-frame demand auditing or live performance budgets.
+- Inspected all three framings for each shell and selected authored/sampled comparisons.
+  Cooling colors, distinct Pistil layers and falling Chrysanthemum/Willow arcs are present;
+  narrow untreated trails can look dotted, with better continuity under floor 2 but visibly
+  different thickness. The F0 close camera crops the elevated bursts, so it cannot establish
+  whole-shell close acceptance. Late red/blue heads, shared circular flash and localized
+  smoke still need a chosen photographic target and moving-sequence review.
+- Review protocol and findings are in `benchmarks/fireworks/README.md` and
+  `benchmarks/fireworks/shell-review-2026-10-02.md`. Plan/parser checks and rejection checks
+  for CPU fallback, wrong frames/policies, truncation, unavailable counters and incomplete
+  main cohorts pass. No runtime/API, authored effect/material or shipping-default change.
+
+F4 remains **in progress** for artistic acceptance: still captures are neither animation nor
+real-footage proof. Fix review-camera framing and select the reference target before approving
+images. Production-density/full-show/target-tier gates remain open. F5's bounded generic
+two-generation event-chain and host-cue validation is the next runtime milestone; these images
+alone do not justify more open-ended culling optimization.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated

@@ -18,6 +18,49 @@ Captures use exact 60 Hz simulation frames and write a capture manifest with the
 
 The built-in scene intentionally has no HDR/bloom, VFX lighting or smoke. The ground and markers are visual scale/light-response references, not proof of those later capabilities. The CLI camera presets are fixed: `close`, `audience` and `wide`; `--camera` is only valid with `--fireworks-f0`.
 
+## Authored-shell review matrix — F4L
+
+Use PowerShell 7 and a native GPU. This builds the viewer once, then sequentially captures
+Peony, Chrysanthemum, Pistil and Willow from close/audience/wide cameras with two independent
+presentation policies: `authored` (sprite/trail floors 0/0) and `sampled` (2/2). The latter is
+an **opt-in comparison**, not a new runtime default. These are the bounded F3 prototypes,
+not the production-density Test A workload.
+
+```powershell
+pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -PlanOnly
+pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -OutputDirectory target/fireworks-f4/shell-review-new
+# A single case, useful for reproducing a visual finding:
+pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -Shell willow -Camera wide -Response sampled -OutputDirectory target/fireworks-f4/willow-review-new
+```
+
+The output folder must not exist; there is no overwrite/resume or automatic golden-reference
+approval. `-PlanOnly` prints the exact commands without building, launching or writing files.
+Camera/response/shell filters are deduplicated. Captures use high tier, seed
+`0xf1e0000000000001`, GPU/playback-only history, opt-in stable transparency, 960×540,
+60 Hz, HDR/Tony/0-stop exposure/0.15 bloom. Stable ordering is for these small visual probes,
+**not** the fast unsorted live-performance path.
+
+| Shell | Exact lifecycle frames, in contact-sheet reading order |
+| --- | --- |
+| Peony, Chrysanthemum, Pistil | 45, 80, 110, 150, 210, 300, 390, 420 |
+| Willow | 45, 80, 110, 150, 240, 330, 450, 540 |
+
+Each case writes eight frame PNGs, a contact sheet, capture manifest and preview report.
+The runner checks native-GPU success/compatibility, resolution/seed/frame/response metadata,
+the observed 256-star main cohort (plus Pistil's 96-star inner cohort), and measured zero
+final live particles, occupied/retired trails, evictions and truncation. These endpoint/peak
+checks do not establish per-frame production, never-dropped events or real-time performance.
+Failures stop the run and preserve partial evidence. `review-manifest.json` records the plan,
+Git revision/dirty paths, viewer/asset source hashes, adapter, endpoint telemetry and each
+frame's SHA-256; artistic acceptance remains explicitly pending.
+
+Inspect the individual PNGs at native resolution, not only the downscaled contact sheet.
+Compare launch/flash hierarchy, expansion, color separation, arc shape, tail continuity and
+decay; note camera crops and smoke/scene limitations separately from rendering defects.
+Stills cannot certify animated shimmer or AAA realism. Select real footage with an agreed
+camera/exposure target before artistic approval; do not run `--approve-visual-reference`
+merely because the runner passes. See [the first review](shell-review-2026-10-02.md).
+
 ## First measured baseline — 2026-09-29
 
 Worktree based on roadmap commit `3fa3805`, plus the uncommitted F0 fixture/viewer changes. The [machine-readable baseline](baseline-2026-09-29.json) records the run settings and values. Windows, NVIDIA GeForce RTX 4070 SUPER, Vulkan, driver reported as NVIDIA; 960 × 540, GPU backend, high tier, default seed `0xf1e0000000000001`, audience camera. The viewer reported a physical capacity of 4,194,240 particles and an effective configured budget of 262,144. The effect's compiled capacity is 6,208 particles. Three runs each used 120 warm-up and 600 measured frames; values below are milliseconds from the available GPU timestamp diagnostics:
