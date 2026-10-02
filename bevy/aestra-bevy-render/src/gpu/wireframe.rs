@@ -265,6 +265,7 @@ mod tests {
             semantic_material: None,
             render_mode: GpuRenderMode::Wireframe,
             mesh_center: Vec3::ZERO,
+            sampled_sprite_cull: None,
         };
         let first = app.world_mut().spawn(draw.clone()).id();
         let second = app.world_mut().spawn(draw).id();

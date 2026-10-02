@@ -11,6 +11,7 @@ use aestra_gpu::material::{
 };
 use bevy::{
     app::SubApp,
+    camera::MainPassResolutionOverride,
     core_pipeline::{
         core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
         core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d, TransparentSortingInfo3d},
@@ -26,11 +27,13 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderStartup, RenderSystems,
+        camera::TemporalJitter,
         mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator},
         render_asset::RenderAssets,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
-            RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
+            RenderCommandResult, SetItemPipeline, SortedPhaseItem, SortedRenderPhase,
+            TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupEntry, BindGroupLayoutDescriptor,
@@ -757,6 +760,26 @@ fn prepare_render_bind_groups(
     }
 }
 
+fn reject_sampled_sprite<I: SortedPhaseItem>(
+    phase: &mut SortedRenderPhase<I>,
+    bounds: Option<&super::sprite_culling::Bounds>,
+    view: Option<&super::sprite_culling::View>,
+    render_entity: Entity,
+    main_entity: MainEntity,
+) -> bool {
+    if bounds
+        .zip(view)
+        .is_some_and(|(bounds, view)| !view.visible(bounds))
+    {
+        // Sorted phases retain entries: a previously visible draw must be removed.
+        phase.remove(render_entity, main_entity);
+        true
+    } else {
+        false
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn queue_gpu_sprites(
     draw_functions: Res<DrawFunctions<Transparent2d>>,
     pipeline: Res<GpuSpritePipeline>,
@@ -764,13 +787,20 @@ fn queue_gpu_sprites(
     pipeline_cache: Res<PipelineCache>,
     effects: Query<(&GpuDrawInstance, Option<&PreparedMeshDraw>)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
-    views: Query<(&RenderVisibleEntities, &ExtractedView, &Msaa)>,
+    views: Query<(
+        &RenderVisibleEntities,
+        &ExtractedView,
+        &Msaa,
+        Option<&TemporalJitter>,
+        Option<&MainPassResolutionOverride>,
+    )>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::queue_sprites").entered();
     let draw_functions = draw_functions.read();
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites>();
-    for (visible_entities, view, msaa) in &views {
+    for (visible_entities, view, msaa, jitter, resolution) in &views {
+        let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
@@ -783,6 +813,15 @@ fn queue_gpu_sprites(
             let Ok((effect, mesh)) = effects.get(*render_entity) else {
                 continue;
             };
+            if reject_sampled_sprite(
+                phase,
+                effect.sampled_sprite_cull.as_ref(),
+                sampled_culling.as_ref(),
+                *render_entity,
+                *main_entity,
+            ) {
+                continue;
+            }
             if effect.mesh.is_some()
                 && (mesh.is_none()
                     || (effect.semantic_material.is_none()
@@ -831,6 +870,7 @@ fn queue_gpu_sprites(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn queue_gpu_sprites_3d(
     draw_functions: Res<DrawFunctions<Transparent3d>>,
     pipeline_resources: (
@@ -841,14 +881,20 @@ fn queue_gpu_sprites_3d(
     ),
     effects: Query<(&GpuDrawInstance, Option<&PreparedMeshDraw>)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
-    views: Query<(&RenderVisibleEntities, &ExtractedView)>,
+    views: Query<(
+        &RenderVisibleEntities,
+        &ExtractedView,
+        Option<&TemporalJitter>,
+        Option<&MainPassResolutionOverride>,
+    )>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
     let draw_functions = draw_functions.read();
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
     let semantic_depth_draw_function = draw_functions.id::<DrawSemanticDepthGpuSprites3d>();
-    for (visible_entities, view) in &views {
+    for (visible_entities, view, jitter, resolution) in &views {
+        let sampled_culling = super::sprite_culling::prepare(view, resolution, jitter.is_some());
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
@@ -859,6 +905,15 @@ fn queue_gpu_sprites_3d(
             let Ok((effect, mesh)) = effects.get(render_entity) else {
                 continue;
             };
+            if reject_sampled_sprite(
+                phase,
+                effect.sampled_sprite_cull.as_ref(),
+                sampled_culling.as_ref(),
+                render_entity,
+                main_entity,
+            ) {
+                continue;
+            }
             if effect.mesh.is_some()
                 && (mesh.is_none()
                     || (effect.semantic_material.is_none()
@@ -1183,6 +1238,100 @@ mod tests {
         render::{render_phase::ViewRangefinder3d, view::RenderVisibleEntitiesClass},
     };
     use std::any::TypeId;
+
+    #[test]
+    fn sampled_sprite_culling_removes_retained_draws_and_allows_reentry_in_both_phases() {
+        use bevy::render::{
+            render_phase::DrawFunctionId, render_resource::CachedRenderPipelineId,
+            view::RetainedViewEntity,
+        };
+        let mut world = World::new();
+        let render_entity = world.spawn_empty().id();
+        let main_entity = MainEntity::from(world.spawn_empty().id());
+        let extracted = ExtractedView {
+            retained_view_entity: RetainedViewEntity::new(main_entity, None, 0),
+            clip_from_view: Mat4::perspective_infinite_reverse_rh(1.0, 1.0, 0.1),
+            world_from_view: GlobalTransform::IDENTITY,
+            clip_from_world: None,
+            target_format: TextureFormat::Rgba16Float,
+            viewport: UVec4::new(0, 0, 540, 540),
+            color_grading: default(),
+            invert_culling: false,
+        };
+        let culling = super::super::sprite_culling::prepare(&extracted, None, false).unwrap();
+        let mut bounds = super::super::sprite_culling::Bounds {
+            half_extents: Vec3::ZERO,
+            maximum_size: 0.01,
+            minimum_pixels: 2.0,
+            world_from_effect: Mat4::from_translation(Vec3::new(0.0, 0.0, -10.0)),
+        };
+        let mut phase2d = SortedRenderPhase::<Transparent2d>::default();
+        let mut phase3d = SortedRenderPhase::<Transparent3d>::default();
+        for x in [0.0, 100.0, 0.0] {
+            bounds.world_from_effect.w_axis.x = x;
+            let rejected2d = reject_sampled_sprite(
+                &mut phase2d,
+                Some(&bounds),
+                Some(&culling),
+                render_entity,
+                main_entity,
+            );
+            let rejected3d = reject_sampled_sprite(
+                &mut phase3d,
+                Some(&bounds),
+                Some(&culling),
+                render_entity,
+                main_entity,
+            );
+            assert_eq!(rejected2d, x == 100.0);
+            assert_eq!(rejected3d, rejected2d);
+            if rejected2d {
+                assert_eq!(phase2d.iter_entities().count(), 0);
+                assert_eq!(phase3d.iter_entities().count(), 0);
+            } else {
+                phase2d.add_retained(Transparent2d {
+                    sort_key: FloatOrd(0.0),
+                    entity: (render_entity, main_entity),
+                    pipeline: CachedRenderPipelineId::INVALID,
+                    draw_function: DrawFunctionId(0),
+                    batch_range: 0..1,
+                    extracted_index: usize::MAX,
+                    extra_index: PhaseItemExtraIndex::None,
+                    indexed: false,
+                });
+                phase3d.add_retained(Transparent3d {
+                    sorting_info: gpu_draw_sorting_info(Vec3::ZERO, 0),
+                    distance: 0.0,
+                    pipeline: CachedRenderPipelineId::INVALID,
+                    entity: (render_entity, main_entity),
+                    draw_function: DrawFunctionId(0),
+                    batch_range: 0..1,
+                    extra_index: PhaseItemExtraIndex::None,
+                    indexed: false,
+                });
+                assert_eq!(phase2d.iter_entities().count(), 1);
+                assert_eq!(phase3d.iter_entities().count(), 1);
+            }
+        }
+        // Unsupported bounds/cameras must retain entries rather than accidentally remove them.
+        bounds.world_from_effect.w_axis.x = 100.0;
+        assert!(!reject_sampled_sprite(
+            &mut phase2d,
+            None,
+            Some(&culling),
+            render_entity,
+            main_entity
+        ));
+        assert!(!reject_sampled_sprite(
+            &mut phase3d,
+            Some(&bounds),
+            None,
+            render_entity,
+            main_entity
+        ));
+        assert_eq!(phase2d.iter_entities().count(), 1);
+        assert_eq!(phase3d.iter_entities().count(), 1);
+    }
 
     #[test]
     fn semantic_pipeline_identity_ignores_instance_uniform_bytes() {

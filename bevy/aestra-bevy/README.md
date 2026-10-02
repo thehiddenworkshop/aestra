@@ -125,8 +125,13 @@ Only native GPU **additive Sprite** draws qualify. Flipbooks, meshes, ribbons, t
 reference/readback presentation are unchanged. Wireframe remains a diagnostic outline rather
 than energy-attenuated shading. The floor is a host quality policy, not an asset/particle limit.
 Qualifying draws bypass CPU frustum culling because view-dependent expansion can exceed their
-world AABB; normal raster clipping remains. Disabling the resource restores ordinary sprite
-culling. Budget the extra offscreen submissions and fill cost before enabling it for a finale.
+world AABB. Analytic, non-displaced sprites now receive a conservative per-view queue check
+with a physical-pixel margin, so fully offscreen effects can skip drawing without clipping
+expanded edge footprints. Bounds refresh from current particle inputs and the propagated host
+transform; camera data is prepared once per view. Stateful/event histories, displaced materials,
+jittered/custom projections and unsupported transforms retain the safe raster-clipping fallback.
+Disabling the resource restores ordinary sprite culling. This skips draw work, not simulation:
+budget visible overlap/fill and fallback submissions before enabling it for a finale.
 
 This is not an analytic pixel integral or a guarantee of shimmer-free arbitrary textured masks.
 Projection is exact for ordinary camera-facing perspective/orthographic quads at constant

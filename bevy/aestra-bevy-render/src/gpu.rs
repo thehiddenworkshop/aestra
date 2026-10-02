@@ -11,6 +11,7 @@ mod preparation_timing;
 mod render;
 mod ribbon_bounds;
 mod simulation_timing;
+mod sprite_culling;
 mod stateful_trails;
 mod trail_checkpoints;
 mod trail_compaction;
@@ -514,6 +515,7 @@ struct GpuDrawInstance {
     semantic_material: Option<GpuSemanticMaterialBinding>,
     render_mode: GpuRenderMode,
     mesh_center: Vec3,
+    sampled_sprite_cull: Option<sprite_culling::Bounds>,
 }
 
 #[derive(Clone)]
@@ -560,6 +562,9 @@ impl ExtractComponent for GpuDrawInstance {
         visibility.get().then(|| {
             let mut extracted = instance.clone();
             extracted.mesh_center = gpu_draw_mesh_center(transform, bounds);
+            if let Some(culling) = &mut extracted.sampled_sprite_cull {
+                culling.world_from_effect = Mat4::from(transform.affine());
+            }
             extracted
         })
     }
@@ -1378,6 +1383,7 @@ pub(crate) fn prepare_gpu_effects(
                                 semantic_material,
                                 render_mode,
                                 mesh_center: Vec3::ZERO,
+                                sampled_sprite_cull: None,
                             },
                             render_layers.cloned().unwrap_or_default(),
                             bounds,
@@ -1620,6 +1626,8 @@ fn update_gpu_inputs(
                 if let Ok((mut draw, mut draw_layers, mesh_bounds, ribbon_bounds)) =
                     draw_instances.get_mut(child)
                 {
+                    // Failed/unsupported dynamic preparation must never retain stale cull bounds.
+                    draw.sampled_sprite_cull = None;
                     if let Some(mut source) = ribbon_bounds {
                         source.0 = None;
                     }
@@ -1666,8 +1674,42 @@ fn update_gpu_inputs(
             }
             if let Some(children) = children {
                 for child in children.iter() {
-                    if let Ok((draw, _, mesh_bounds, ribbon_bounds)) = draw_instances.get_mut(child)
+                    if let Ok((mut draw, _, mesh_bounds, ribbon_bounds)) =
+                        draw_instances.get_mut(child)
                     {
+                        let minimum_pixels = sampling
+                            .as_deref()
+                            .copied()
+                            .unwrap_or_default()
+                            .normalized()
+                            .minimum_pixels;
+                        // Event/stateful/attached histories cannot be bounded by the analytic
+                        // spawn envelope. Vertex displacement likewise keeps the safe fallback.
+                        if dynamics.simulation_state.records == 0
+                            && minimum_pixels > 0.0
+                            && draw.renderer_kind == 0
+                            && draw.blend == GpuBlend::Additive
+                            && !draw
+                                .semantic_material
+                                .as_ref()
+                                .is_some_and(|binding| binding.program.has_vertex_offset)
+                        {
+                            draw.sampled_sprite_cull = dynamics
+                                .mesh_bounds
+                                .get(draw.emitter_index as usize)
+                                .map(|motion| sprite_culling::Bounds {
+                                    half_extents: motion.position_half_extents,
+                                    maximum_size: motion.maximum_size
+                                        * motion
+                                            .linear_from_local
+                                            .x_axis
+                                            .length()
+                                            .max(motion.linear_from_local.y_axis.length())
+                                            .max(motion.linear_from_local.z_axis.length()),
+                                    world_from_effect: Mat4::IDENTITY,
+                                    minimum_pixels,
+                                });
+                        }
                         if let Some(mut source) = ribbon_bounds {
                             source.0 = dynamics
                                 .ribbon_bounds
@@ -1803,10 +1845,10 @@ fn sync_host_motion_replay_culling(
     mut commands: Commands,
     sampling: Option<Res<crate::sampling::SpriteSampling>>,
     players: Query<(&PresentedEffect, &GpuEffectBuffers)>,
-    draws: Query<(
+    mut draws: Query<(
         Entity,
         &ChildOf,
-        &GpuDrawInstance,
+        &mut GpuDrawInstance,
         Has<visibility::NoFrustumCulling>,
         Has<HostMotionReplayCulling>,
         Has<ribbon_bounds::RibbonBoundsSource>,
@@ -1818,15 +1860,19 @@ fn sync_host_motion_replay_culling(
         .unwrap_or_default()
         .normalized()
         .minimum_pixels;
-    for (entity, parent, draw, uncullable, was_forced, ribbon) in &draws {
+    for (entity, parent, mut draw, uncullable, was_forced, ribbon) in &mut draws {
         // A view-dependent pixel floor can expand a sprite beyond world-space AABBs.
-        // Opt-in draws retain GPU clip rejection, but bypass CPU frustum culling.
+        // Bypass unpadded main-world frustum culling; safe analytic draws receive a
+        // padded per-view queue check instead. Unknown bounds still use GPU clip rejection.
         let sampled_sprite =
             minimum_pixels > 0.0 && draw.renderer_kind == 0 && draw.blend == GpuBlend::Additive;
-        let forced = sampled_sprite
-            || players.get(parent.parent()).is_ok_and(|(player, gpu)| {
-                gpu.has_trails && !player.instance.host_transform_context().is_identity()
-            });
+        let replaying_host = players.get(parent.parent()).is_ok_and(|(player, gpu)| {
+            gpu.has_trails && !player.instance.host_transform_context().is_identity()
+        });
+        if replaying_host {
+            draw.sampled_sprite_cull = None;
+        }
+        let forced = sampled_sprite || replaying_host;
         if forced {
             if !uncullable || !was_forced {
                 commands
@@ -4817,6 +4863,7 @@ mod tests {
                             semantic_material: None,
                             render_mode: GpuRenderMode::Rendered,
                             mesh_center: Vec3::ZERO,
+                            sampled_sprite_cull: None,
                             trail_owners: 0,
                             trail_instances: None,
                         },

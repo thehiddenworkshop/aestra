@@ -2431,6 +2431,60 @@ raster regression and strict renderer/viewer all-target Clippy pass. F4 remains 
 artistic reference comparison, narrow-trail sampling and full finale/target-tier budgets remain
 separate acceptance gates; the new sprite stress probes do not substitute for them.
 
+### F4G implemented — conservative sampled-sprite queue culling (2026-10-02)
+
+- Both 2D and 3D native render queues can now reject fully offscreen, minimum-footprint
+  additive Sprite draws before pipeline specialization/submission. Main-world visibility
+  stays permissive: the ordinary unpadded AABB must not discard expanded edge footprints.
+  Camera data is prepared once per view; no per-particle CPU scan, GPU dispatch or particle
+  readback is added. Simulation continues when drawing is skipped.
+- Bounds refresh from current analytic dynamics and the exact propagated draw transform.
+  Particle-position bounds are separate from billboard geometry: an outward-rounded sphere
+  encloses every rotated quad corner using maximum authored size and emitter maximum scale.
+  The projected side planes also include the pixel floor's full corner radius, physical
+  main-pass resolution/aspect ratio and a one-pixel raster/rounding allowance. Near/far
+  rejection is intentionally left to raster clipping; bounds crossing the eye plane fail open.
+- Eligibility is deliberately narrow: effects with stateful/event/attachment simulation
+  records and materials with vertex offsets retain the fallback. So do trail host-motion
+  histories, nonuniform/sheared/singular effect transforms, scaled/sheared cameras, temporal
+  jitter, nonstandard projection Jacobians, disagreeing custom clip overrides and invalid or
+  overflowing bounds. Standard off-center perspective/orthographic cameras and independent
+  viewport origins/resolutions are supported. The host sampling default remains disabled.
+- Six CPU regressions cover all four expanded viewport edges, fully offscreen rejection,
+  independent views, main-pass resolution overrides, rotated/mirrored uniform transforms,
+  invalid/unbounded cases and a shader-geometry corner oracle over pixel aspect, size, scale
+  and rotation. The existing reversible visibility-policy test and required native raster
+  regression (legacy + semantic paths, static/temporal/edge cases) pass. A retained-phase
+  transition regression verifies draw removal and re-entry in both 2D and 3D: skipping a queue
+  insertion alone would leave the previous frame's entry alive. Viewer tests remain
+  **55 passed, one ignored**; strict renderer/viewer all-target Clippy passes.
+
+Four sequential native-GPU development-build runs repeat the F4F setup on **RTX 4070 SUPER /
+Vulkan**, 960×540, high tier, wide camera, migrated semantic material, fixed seed, HDR/Tony,
+exposure 0, bloom 0.15, fast transparency and playback-only history (120 warm-up + 600 measured
+frames). Reports are `target/fireworks-f4/f4g-sprite-{fill,offscreen}-{2,4}-bench.json`.
+
+| Probe | Pixel floor | Transparent-pass p50 / p95 (ms) | Vertex invocations/frame | Fragment invocations/frame |
+| --- | ---: | ---: | ---: | ---: |
+| Dense patch | 2 | 0.858 / 0.863 | 262,144 | 577,752 |
+| Dense patch | 4 | 1.516 / 1.623 | 262,144 | 1,692,139 |
+| Offscreen | 2 | unavailable (no transparent-pass samples) | unavailable | unavailable |
+| Offscreen | 4 | unavailable (no transparent-pass samples) | unavailable | unavailable |
+
+The treated offscreen queue now has no transparent-pass observations, matching F4F's
+untreated culling baseline instead of submitting 262,144 invisible vertices. This is **not a
+measured zero-duration pass**. In-view vertex/fragment counts match F4F exactly for all 600
+observations; concentrated fill remains expensive, and sequential timings are not a controlled
+whole-frame performance guarantee. All four runs keep **65,536 live particles** and estimated
+effect-buffer memory **4,194,328 bytes**. Offscreen simulation p95 is 0.743/0.765 ms, independently
+measured; do not sum percentiles. Offscreen HDR captures at frames 120/360 are byte-identical
+to the F4F background under both policies (`target/fireworks-f4/f4g-offscreen-{2,4}-capture`).
+
+F4 remains in progress: this resolves the analytic offscreen-submission probe, not history-aware
+stateful culling, dense visible fill, narrow-trail sampling, artistic reference matching or full
+finale/target-tier budgets. There is no new host API and no change to authored assets, particle
+state, shaders, replay policy or production-wide sampling defaults.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
