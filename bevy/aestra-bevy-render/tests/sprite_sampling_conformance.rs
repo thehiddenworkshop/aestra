@@ -115,6 +115,7 @@ fn subpixel_sprites_survive_pixel_phase_without_amplifying_quad_energy() {
         let large_on = raster(&device, &queue, shader, fragment, renderer, 4.0, 2.0);
         assert_eq!(large_off, large_on, "resolved quads must be unchanged");
         assert_temporal_sampling(&device, &queue, shader, fragment, renderer);
+        assert_viewport_clipping(&device, &queue, shader, fragment, renderer);
     }
 }
 
@@ -146,6 +147,7 @@ fn assert_temporal_sampling(
                         floor,
                         phase,
                         rotation,
+                        translation_pixels: [0.0; 2],
                     },
                 );
                 for (trajectory, energy) in trajectories.iter_mut().zip(cell_energy(&bytes)) {
@@ -207,6 +209,70 @@ fn assert_temporal_sampling(
     }
 }
 
+fn assert_viewport_clipping(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
+    renderer: GpuRenderer,
+) {
+    // One column/row's centers are a quarter pixel beyond each clip edge. The original
+    // quads are entirely outside, but expanded footprints correctly reach the viewport.
+    // This is why world-space AABB culling cannot discard treated draws unchanged.
+    for translation_pixels in [[28.25, 0.0], [-29.0, 0.0], [0.0, 28.25], [0.0, -29.0]] {
+        for floor in [0.0, 2.0, 4.0] {
+            let bytes = raster_case(
+                device,
+                queue,
+                source,
+                fragment,
+                renderer,
+                RasterCase {
+                    pixels: 0.25,
+                    floor,
+                    phase: [0.0; 2],
+                    rotation: 0.0,
+                    translation_pixels,
+                },
+            );
+            let energy = cell_energy(&bytes).iter().sum::<f32>();
+            assert!(energy.is_finite());
+            if floor == 0.0 {
+                assert_eq!(
+                    energy, 0.0,
+                    "untreated {fragment} edge {translation_pixels:?}"
+                );
+            } else {
+                assert!(
+                    energy > 0.0 && energy <= 4.0 * 0.0625,
+                    "expanded {fragment} edge {translation_pixels:?}, floor {floor}: {energy}"
+                );
+            }
+        }
+    }
+    // The maximum policy must not pull a distant offscreen draw back into view.
+    for floor in [0.0, 2.0, 4.0, 8.0] {
+        let bytes = raster_case(
+            device,
+            queue,
+            source,
+            fragment,
+            renderer,
+            RasterCase {
+                pixels: 0.25,
+                floor,
+                phase: [0.0; 2],
+                rotation: 0.65,
+                translation_pixels: [64.0, 0.0],
+            },
+        );
+        assert!(
+            bytes.iter().all(|byte| *byte == 0),
+            "fully clipped {fragment}, floor {floor}"
+        );
+    }
+}
+
 fn cell_energy(bytes: &[u8]) -> Vec<f32> {
     (0..16)
         .map(|cell| {
@@ -243,6 +309,7 @@ fn raster(
             floor,
             phase: [0.0; 2],
             rotation: 0.0,
+            translation_pixels: [0.0; 2],
         },
     )
 }
@@ -252,6 +319,7 @@ struct RasterCase {
     floor: f32,
     phase: [f32; 2],
     rotation: f32,
+    translation_pixels: [f32; 2],
 }
 
 fn raster_case(
@@ -370,8 +438,14 @@ fn raster_case(
     renderer.attribute_flags.y = case.floor.to_bits();
     let particles = (0..16)
         .map(|i| {
-            let x = 4.0 + (i % 4) as f32 * 8.0 + ((i % 4) as f32 * 0.25 + case.phase[0]).fract();
-            let y = 4.0 + (i / 4) as f32 * 8.0 + ((i / 4) as f32 * 0.25 + case.phase[1]).fract();
+            let x = 4.0
+                + (i % 4) as f32 * 8.0
+                + ((i % 4) as f32 * 0.25 + case.phase[0]).fract()
+                + case.translation_pixels[0];
+            let y = 4.0
+                + (i / 4) as f32 * 8.0
+                + ((i / 4) as f32 * 0.25 + case.phase[1]).fract()
+                + case.translation_pixels[1];
             GpuParticle {
                 color: Vec4::ONE,
                 position: Vec3::new(x / 16.0 - 1.0, 1.0 - y / 16.0, 0.5),

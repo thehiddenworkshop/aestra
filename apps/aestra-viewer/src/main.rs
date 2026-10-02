@@ -1,5 +1,6 @@
 mod fireworks_f0;
 mod fireworks_f3;
+mod fireworks_f4;
 mod gpu_bench;
 mod photographic;
 mod preview_report;
@@ -66,6 +67,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
+        eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary quarter-pixel sprites at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
         std::process::exit(2);
@@ -125,6 +127,7 @@ fn main() {
             Some(FireworksProbe::EventTrailSparse) => "fireworks_f1b_event_trail_sparse",
             Some(FireworksProbe::Velocity(probe)) => probe.name(),
             Some(FireworksProbe::Shell(probe)) => probe.name(),
+            Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
         .to_owned()
@@ -275,6 +278,7 @@ enum FireworksProbe {
     EventTrailSparse,
     Velocity(velocity_f2::Probe),
     Shell(fireworks_f3::Probe),
+    Raster(fireworks_f4::Probe),
 }
 
 impl FireworksProbe {
@@ -290,7 +294,8 @@ impl FireworksProbe {
             "event-trail-sparse" => Some(Self::EventTrailSparse),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
-                .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell)),
+                .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
+                .or_else(|| fireworks_f4::Probe::parse(value).map(Self::Raster)),
         }
     }
 }
@@ -387,10 +392,10 @@ impl ViewerConfig {
                 "--fireworks-f0" => fireworks_f0 = true,
                 "--fireworks-f0-probe" => {
                     let value = args.next().ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe or f3 shell probe (peony/chrysanthemum/pistil/willow)",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3 shell or f4 raster probe",
                     )?;
                     fireworks_probe = Some(FireworksProbe::parse(&value).ok_or(
-                        "--fireworks-f0-probe requires an event/trail probe, f2 distribution probe or f3 shell probe (peony/chrysanthemum/pistil/willow)",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3 shell or f4 raster probe",
                     )?);
                 }
                 "--camera" => {
@@ -583,6 +588,16 @@ impl ViewerConfig {
         }
         if fireworks_f0 {
             view_3d = true;
+        }
+        if matches!(fireworks_probe, Some(FireworksProbe::Raster(_)))
+            && capture_mode
+                .as_ref()
+                .is_some_and(CaptureMode::is_editor_viewport_smoke)
+        {
+            return Err(
+                "f4 raster probes require the calibrated fireworks camera, not viewport-smoke mode"
+                    .into(),
+            );
         }
         if sprite_minimum_pixels > 0.0
             && matches!(
@@ -802,6 +817,9 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             }
             Some(FireworksProbe::Velocity(probe)) => velocity_f2::effect(probe),
             Some(FireworksProbe::Shell(probe)) => fireworks_f3::effect(probe),
+            Some(FireworksProbe::Raster(probe)) => {
+                fireworks_f4::effect(probe, config.fireworks_camera)
+            }
             None => fireworks_f0::effect(),
         })
     } else {
@@ -966,7 +984,10 @@ fn setup(
             settings.apply(&mut camera);
         }
     }
-    commands.spawn((player, presentation));
+    let mut effect = commands.spawn((player, presentation));
+    if let Some(FireworksProbe::Raster(probe)) = config.fireworks_probe {
+        effect.insert(fireworks_f4::placement(probe, config.fireworks_camera));
+    }
 
     if config.fireworks_f0 {
         spawn_fireworks_validation_scene(&mut commands, &mut meshes, &mut materials);
@@ -1947,6 +1968,48 @@ mod tests {
     }
 
     #[test]
+    fn raster_stress_cli_prepares_both_material_paths_and_records_nominal_calibration() {
+        for probe in fireworks_f4::Probe::ALL {
+            for semantic in [false, true] {
+                let mut config = ViewerConfig::from_iter(
+                    [
+                        "--fireworks-f0",
+                        "--fireworks-f0-probe",
+                        probe.name(),
+                        "--camera",
+                        "wide",
+                        "--history",
+                        "playback-only",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned),
+                )
+                .unwrap();
+                config.semantic_materials = semantic;
+                assert_eq!(config.fireworks_probe, Some(FireworksProbe::Raster(probe)));
+                assert!(config.view_3d);
+                let prepared =
+                    prepare_viewer(&config).unwrap_or_else(|failure| panic!("{}", failure.message));
+                assert_eq!(prepared.compiled.emitters.len(), 1);
+                assert!(prepared.compiled.event_links.is_empty());
+                let presentation =
+                    serde_json::to_value(gpu_bench::BenchPresentation::from_config(&config))
+                        .unwrap();
+                assert_eq!(
+                    presentation["raster_probe"]["particles"],
+                    fireworks_f4::PARTICLES
+                );
+                assert_eq!(presentation["legacy_material_migration"], semantic);
+                assert_eq!(presentation["raster_probe"]["nominal_quad_pixels"], 0.25);
+                assert_eq!(
+                    presentation["raster_probe"]["reference_physical_viewport"],
+                    serde_json::json!([960, 540])
+                );
+            }
+        }
+    }
+
+    #[test]
     fn fireworks_camera_requires_the_fixture_and_a_valid_preset() {
         for arguments in [
             vec!["--camera", "close"],
@@ -1954,6 +2017,13 @@ mod tests {
             vec!["--fireworks-f0", "--effect", "other.aestra.ron"],
             vec!["--fireworks-f0-probe", "event"],
             vec!["--fireworks-f0", "--fireworks-f0-probe", "other"],
+            vec![
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f4-sprite-fill",
+                "--editor-viewport-smoke",
+                "unused-output",
+            ],
         ] {
             assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
         }

@@ -2366,6 +2366,71 @@ renderer/viewer all-target Clippy and formatting/diff checks pass. No new runtim
 simulation/replay state or production defaults are introduced. F4 remains in progress for
 reference-footage/artistic acceptance, narrow trails, offscreen/fill stress and finale budgets.
 
+### F4F implemented — dense sprite fill and offscreen submission probes (2026-10-02)
+
+- Added viewer probes `f4-sprite-fill` and `f4-sprite-offscreen`: one analytic emitter and
+  one additive sprite draw, 65,536 stationary particles with constant size/color/opacity,
+  no trails/events or replay storage. At the 960×540 reference physical viewport, quarter-pixel
+  quads occupy a 16×16-pixel patch. A 30-second lifetime keeps the cohort unchanged throughout
+  the benchmark's measured window. IDs and seed are fixed; close/audience/wide presets each
+  calibrate the same projected footprint rather than accidentally comparing different sizes.
+- The offscreen pair moves the effect through **host placement**, keeping its local bounds
+  near zero, with its patch centered at NDC x=2. Baking the offset into an emitter would make
+  the origin-centered conservative AABB intersect the frustum and invalidate the ordinary
+  culling baseline. Tests use the actual GPU dynamics bounds and Bevy frustum intersection
+  to gate this distinction for all three cameras. CPU samples gate stationarity and full
+  cohort count; CLI preparation tests cover legacy and migrated semantic materials.
+- Benchmark presentation metadata adds `legacy_material_migration` and optional `raster_probe`
+  calibration (count, nominal quad/patch pixels, reference physical viewport, center NDC x).
+  Calibration is not a claim about a resized/HiDPI window: compare observed physical sizes.
+  Viewport-smoke mode is rejected for these probes because it replaces the calibrated camera.
+- Extended the native raster test for both legacy and constant-alpha semantic shader paths:
+  untreated quarter-pixel quads just outside each of the four viewport edges are invisible;
+  the expanded footprints correctly cross those edges at 2/4 pixels with bounded coverage.
+  Wholly offscreen rotated quads remain fully clipped even at the 8-pixel policy maximum.
+
+Six sequential native-GPU development-build runs on **RTX 4070 SUPER / Vulkan**, 960×540,
+high tier, wide camera, migrated semantic material, fixed seed `0xf1e0000000000001`, HDR,
+Tony, exposure 0, bloom 0.15, fast transparency and playback-only history:
+120 warm-up + 600 measured viewer frames per run. All reports observe native GPU only,
+65,536 live particles and estimated effect-buffer memory **4,194,328 bytes**. No event/trail
+measurements are claimed for this analytic sprite-only workload.
+
+| Probe | Pixel floor | Transparent-pass p50 / p95 (ms) | Vertex invocations/frame | Fragment invocations/frame |
+| --- | ---: | ---: | ---: | ---: |
+| Dense patch | 0 | 0.540 / 0.542 | 262,144 | 16,543 |
+| Dense patch | 2 | 0.856 / 0.863 | 262,144 | 577,752 |
+| Dense patch | 4 | 1.419 / 1.617 | 262,144 | 1,692,139 |
+| Offscreen | 0 | unavailable (no transparent-pass samples) | unavailable | unavailable |
+| Offscreen | 2 | 0.168 / 0.170 | 262,144 | 0 |
+| Offscreen | 4 | 0.170 / 0.171 | 262,144 | 0 |
+
+Each available pass/counter has 600 fresh observations; vertex/fragment counts are constant
+in this stationary scene. Offscreen treated draws output zero clipped primitives, while
+ordinary frustum culling removes the untreated draw; absence of a pass is **not** encoded
+as a measured zero duration. HDR captures at frames 120/360 are byte-identical across all
+three offscreen policies. Simulation p95 ranges 0.717–0.724 ms, separately measured; do not
+sum it with transparent-pass percentiles or call this a complete-frame/post-process budget.
+
+These measurements expose the real quality/cost tradeoff: minimum-footprint treatment avoids
+dropout but adds substantial fill under concentrated overlap, and the current safety bypass
+still spends vertex work on invisible effects. They are sequential observations, not a
+hardware-independent budget or proof of final-show performance. Keep the default disabled;
+target hardware/scene tests and conservative projection-aware culling are follow-ups before
+making a production-wide sampling policy. No simulation, shaders or runtime culling defaults
+change in this slice.
+
+Reproduce each combination with one of the two probe names and pixel floors 0/2/4:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f4-sprite-fill --camera wide --semantic-materials --backend gpu --history playback-only --hdr --exposure 0 --sprite-min-pixels 2 --gpu-bench target/fireworks-f4/f4-sprite-fill-2-bench.json
+```
+
+Verification: viewer suite **55 passed, one ignored**, native projection/static/temporal/edge
+raster regression and strict renderer/viewer all-target Clippy pass. F4 remains in progress:
+artistic reference comparison, narrow-trail sampling and full finale/target-tier budgets remain
+separate acceptance gates; the new sprite stress probes do not substitute for them.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated

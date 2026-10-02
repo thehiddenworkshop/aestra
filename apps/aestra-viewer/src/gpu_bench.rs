@@ -59,6 +59,8 @@ pub struct BenchPresentation {
     transparent_order: &'static str,
     max_gpu_particles: u32,
     quality_tier: String,
+    legacy_material_migration: bool,
+    raster_probe: Option<crate::fireworks_f4::RasterProbeSetup>,
     response: crate::photographic::CaptureResponse,
 }
 
@@ -100,6 +102,11 @@ impl BenchPresentation {
             },
             max_gpu_particles: config.max_gpu_particles,
             quality_tier: config.tier.name.clone(),
+            legacy_material_migration: config.semantic_materials,
+            raster_probe: match config.fireworks_probe {
+                Some(crate::FireworksProbe::Raster(probe)) => Some(probe.setup()),
+                _ => None,
+            },
             response: crate::photographic::CaptureResponse::new(
                 config.photographic,
                 config.sprite_minimum_pixels,

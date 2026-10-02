@@ -192,6 +192,17 @@ procedural mask integral. Two pixels is a low-cost starting policy; four pixels 
 further in this bounded probe but can increase fill substantially. Neither certifies arbitrary
 textures, HDR post-processing, trail antialiasing or finale budgets.
 
+For bounded fill/culling stress, use `--fireworks-f0 --fireworks-f0-probe f4-sprite-fill`
+or `f4-sprite-offscreen` with `--camera wide --backend gpu --history playback-only`.
+Both run 65,536 stationary additive sprites: nominal quarter-pixel quads in a 16×16-pixel
+patch at 960×540. The second moves the same cohort wholly offscreen through host placement.
+Compare `--sprite-min-pixels 0`, `2`, and `4` with identical HDR/material options and
+`--gpu-bench output.json`. Reports record nominal probe calibration separately from observed
+window sizes and record whether legacy materials were migrated with `--semantic-materials`.
+The native raster test covers all four viewport edges and fully clipped expanded footprints.
+Expansion increases fragment work; culling bypass still submits offscreen vertices. These
+probes measure that tradeoff, not an authored finale or a universal production budget.
+
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
 canonicalized. Implicit-derivative texture samples carry an explicit IR sampling contract and are
