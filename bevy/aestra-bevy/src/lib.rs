@@ -577,11 +577,11 @@ impl EffectPlayer {
         self.choreography_started = true;
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => {
-                self.driver.instance.advance_with_choreography_events(
-                    result.ticks as f32 * tick_seconds,
+                self.driver.instance.advance_clock_with_choreography_events(
+                    previous_clock,
+                    self.driver.clock,
                     &mut self.choreography_events,
                 );
-                self.sync_instance_time();
             }
             SimulationSeekMode::CheckpointRestore | SimulationSeekMode::RestartReplay => {
                 let ticks = if looping {
@@ -1060,6 +1060,32 @@ mod tests {
             player.instance().parameter(parameter_id),
             Some(RuntimeValue::Scalar(40.0))
         ));
+    }
+
+    #[test]
+    fn analytic_forward_clock_does_not_invalidate_history() {
+        for mode in [EffectPlaybackMode::Once, EffectPlaybackMode::LoopContinuous] {
+            for policy in [
+                PlaybackHistoryPolicy::PlaybackOnly,
+                PlaybackHistoryPolicy::ReplayEnabled,
+            ] {
+                let mut effect = EffectAsset::new("Forward history", 30.0);
+                effect.playback_mode = mode;
+                effect.emitters.push(Emitter::basic_sprite("Emitter", 30.0));
+                let mut player = EffectPlayer::new(&effect).with_history_policy(policy);
+                assert_eq!(player.seek_mode(), SimulationSeekMode::StatelessDirect);
+                let epoch = player.instance().history_epoch();
+                for frame in 1..=1800 {
+                    player.advance_clock(1.0 / 60.0);
+                    assert_eq!(
+                        player.instance().history_epoch(),
+                        epoch,
+                        "forward frame {frame}, {mode:?}, {policy:?}"
+                    );
+                    assert_eq!(player.simulation_time(), frame as f32 / 60.0);
+                }
+            }
+        }
     }
 
     #[test]

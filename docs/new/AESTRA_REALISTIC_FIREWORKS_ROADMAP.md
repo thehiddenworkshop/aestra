@@ -2611,6 +2611,8 @@ pass percentiles, claim smooth production playback or hide rebuilds with an aver
 The next runtime investigation should trace why this static-placement, forward-only fixture
 reconstructs history and prevent unnecessary live reconstruction without breaking genuine
 restart/seek/context-edit correctness. Pixel-padded trail culling remains a separate opportunity.
+**Follow-up:** F4J below resolves the avoidable clock-driven invalidation in these probes;
+the F4I measurements above remain the pre-fix evidence, not current performance claims.
 
 Captures at frames 120/360 verify the in-view overlap patch. Offscreen floors 0/4 are byte-identical
 at both frames (`target/fireworks-f4/f4i-{fill-2,offscreen-0,offscreen-4}-capture`); the shader's
@@ -2626,6 +2628,58 @@ fixed-clock/metadata and measured-minimum telemetry regressions, strict viewer a
 Clippy, and native captures/measurements above. F4 remains **in progress**: the new probes make
 trail cost and the live history-work spike observable; they do not close playback/finale budgets,
 all-shell photographic reference review, textured/tapered/cap costs or lower-device tiers.
+
+### F4J implemented — clock-authoritative live analytic trail playback (2026-10-02)
+
+- Reproduced the generic player bug with a failing regression at **forward frame 3**:
+  analytic playback first added an f32 tick delta to instance time, then corrected it to
+  the exact frame-clock time. A one-ULP downward correction called `set_playback_time`,
+  which correctly recognized a backward discontinuity and bumped the history epoch.
+  Repeated false epochs made the renderer reconstruct trails during ordinary live playback.
+- Added engine-neutral `EffectInstance::advance_clock_with_choreography_events` and wired
+  the Bevy analytic player to it. Consecutive forward clock snapshots now supply time once;
+  no intermediate f32 integration/downward correction occurs. Single-effect and project
+  cue enumeration share clock/cycle windows, including fractional-duration restart loops
+  rounded to final frames, authored continuous-loop periods and end-before-start ordering.
+  Stateful per-tick integration remains unchanged.
+- No epsilon suppresses actual backward seeks: even a one-ULP backward external time change
+  still invalidates history. Restart loops invalidate once per advance crossing a loop;
+  continuous forward loops do not. Explicit seeks/restarts, seed/context edits, bounded GPU
+  reconstruction and the PlaybackOnly/ReplayEnabled checkpoint distinction are preserved.
+  No trail pool, sampling, material, raster policy, culling or shipping default changes.
+
+Three sequential native-GPU development-build reruns use the **same F4I setup**: RTX 4070
+SUPER / Vulkan, 960×540, high tier, wide camera, migrated semantic material, fixed seed,
+HDR/Tony/exposure 0/bloom 0.15, playback-only history, 1/60 step, 120 warm-up + 600 measured
+viewer frames. Each delivers **600 fresh paired simulation observations**, all in the single
+work group `observations=1, workgroups=1899`: **zero 240-observation reconstruction batches**.
+All retain minimum/peak live particles and occupied trail owners **8,192**, zero retired owners,
+evictions/truncation, and estimated effect-buffer memory **5,445,936 bytes**.
+
+| Probe | Trail floor | F4I simulation p99 (ms) | F4J simulation p50 / p95 / p99 / max (ms) |
+| --- | ---: | ---: | ---: |
+| Dense patch | 0 | 61.915 | 1.513 / 1.651 / 1.660 / 1.684 |
+| Dense patch | 2 | 62.022 | 1.606 / 1.696 / 1.705 / 1.719 |
+| Offscreen | 2 | 62.161 | 1.430 / 1.701 / 1.713 / 1.733 |
+
+Reports: `target/fireworks-f4/f4j-f4-trail-{fill-0,fill-2,offscreen-2}-bench.json`.
+This is evidence that the extra history work and its roughly 62 ms tail latency disappear,
+**not** an optimization of one-observation dispatches: current normal-work medians/p95 are
+higher than F4I, and fresh delivery counts/execution cadence differ. No GPU-clock explanation
+is claimed without measurement. Transparent-pass p95 is 0.497/0.536/0.446 ms respectively;
+those values are not raster improvements or whole-frame budgets. The fixed-step probes still
+do not certify real-time catch-up, production finale throughput or lower-device tiers.
+
+Exact-frame floor-2 dense captures at **120/360** are byte-identical to F4I, preserving seek
+output (`target/fireworks-f4/f4j-fill-2-capture`). Verification: runtime **70 unit + one
+integration tests**, Bevy **40 tests**, renderer **five trail-reconstruction tests**, required
+native GPU trail history/seek conformance, viewer **58 passed, one ignored**, and strict
+all-target Clippy for runtime/Bevy/renderer/viewer. New regressions cover 1,800 forward ticks
+under both history policies, Once/continuous/restart modes, fractional loops, speed/batched
+ticks, single/project cues, silent seeks (including the inclusive final frame), restart
+re-emission, real one-ULP backward jumps,
+seed invalidation and bounded genuine trail reconstruction. F4 remains **in progress**;
+pixel-padded trail culling and production/reference/tier gates remain separate next steps.
 
 ### HDR material / host convention
 
@@ -2650,8 +2704,9 @@ all-shell photographic reference review, textured/tapered/cap costs or lower-dev
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.
-  F4I exposes 240-observation history-work spikes during live playback-only presentation;
-  resolve that generic playback issue before certifying a smooth runtime tier.
+  F4J resolves F4I's avoidable 240-observation clock-driven history rebuilds in the bounded
+  analytic probes. Still measure real-time/full-show playback and target-device tiers;
+  removing that bug alone does not certify a smooth runtime tier.
 
 ### Tasks
 

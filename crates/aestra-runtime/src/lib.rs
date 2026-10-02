@@ -2051,6 +2051,72 @@ impl EffectInstance {
         self.sync_binding_trace();
     }
 
+    /// Advance analytic playback using the clock as the sole time authority, emitting
+    /// all crossed cues. Supply consecutive snapshots of the same forward-playing clock;
+    /// repositioning/seeking must use the explicit seek APIs instead. Different tick rates
+    /// or non-forward intervals are ignored. Restart loops invalidate history once per
+    /// advance that crosses a loop; ordinary forward rounding never invalidates history.
+    pub fn advance_clock_with_choreography_events(
+        &mut self,
+        previous: PlaybackClock,
+        current: PlaybackClock,
+        output: &mut Vec<DispatchedChoreographyEvent>,
+    ) {
+        output.clear();
+        if previous.tick_rate() != current.tick_rate()
+            || current.elapsed_frame <= previous.elapsed_frame
+        {
+            return;
+        }
+        let mode = self.effect.playback_mode;
+        let duration = self.effect.duration;
+        let frames = current.maximum_frame(duration);
+        if mode == EffectPlaybackMode::LoopRestart
+            && frames > 0
+            && (current.elapsed_frame / frames != previous.elapsed_frame / frames
+                || previous.frame() == frames)
+        {
+            self.mark_history_discontinuity();
+        }
+        project::for_each_clock_event_window(
+            mode,
+            duration,
+            previous,
+            current,
+            !self.choreography_started,
+            |window, allow_looping| {
+                project::for_each_cycle_window(
+                    window,
+                    duration,
+                    allow_looping && mode.is_looping(),
+                    |window| {
+                        output.extend(
+                            self.effect
+                                .choreography_events
+                                .iter()
+                                .filter(|event| {
+                                    let time = f64::from(event.time);
+                                    (time > window.start
+                                        || (window.include_start && time == window.start))
+                                        && time <= window.end
+                                })
+                                .map(DispatchedChoreographyEvent::from),
+                        );
+                    },
+                );
+            },
+        );
+        // Do not first integrate an f32 delta and then correct it downward: that
+        // correction looks like a backward seek to set_playback_time/trail history.
+        self.time = if mode.is_continuous() {
+            current.elapsed_time()
+        } else {
+            current.time(duration)
+        };
+        self.choreography_started = true;
+        self.sync_binding_trace();
+    }
+
     /// Advances playback and emits every deterministic choreography event crossed by the
     /// interval. Events at time zero fire on the first advance and again after each loop wrap.
     pub fn advance_with_choreography_events(

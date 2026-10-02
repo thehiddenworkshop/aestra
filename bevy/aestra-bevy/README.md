@@ -54,6 +54,16 @@ Compare the viewer's live GPU work using `--history playback-only` or
 `--history replay-enabled` with `--gpu-bench output.json`. The report records the
 policy and the checkpoint bytes copied in each matched simulation frame.
 
+Analytic `EffectPlayer` playback uses its fixed clock as the sole time authority:
+ordinary forward ticks do not invalidate trail history, including across continuous
+loops. Restart loops, explicit seeks/restarts and history-affecting edits still reset
+or reconstruct it. Engine-neutral integrations can use
+`EffectInstance::advance_clock_with_choreography_events(previous_clock, current_clock, output)`
+with consecutive forward clock snapshots. Do not integrate a floating-point delta
+and then correct the instance to a slightly lower exact frame time: that correction
+is deliberately treated as a backward discontinuity by `set_playback_time`.
+External repositioning must use the seek contract, not the forward-advance API.
+
 ## Photographic preview profile
 
 Hosts can opt an effect camera into the same fixed profile used by the editor and viewer:

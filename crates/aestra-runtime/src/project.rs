@@ -30,11 +30,100 @@ pub struct ProjectChoreographyEvent {
 }
 
 #[derive(Clone, Copy)]
-struct EventWindow {
-    start: f64,
-    end: f64,
+pub(super) struct EventWindow {
+    pub start: f64,
+    pub end: f64,
+    pub include_start: bool,
+    pub root_offset: f64,
+}
+
+/// Share exact clock boundaries between single-effect and project notifications.
+pub(super) fn for_each_clock_event_window(
+    mode: EffectPlaybackMode,
+    duration: f32,
+    previous: crate::PlaybackClock,
+    current: crate::PlaybackClock,
     include_start: bool,
-    root_offset: f64,
+    mut visit: impl FnMut(EventWindow, bool),
+) {
+    if previous.tick_rate() != current.tick_rate()
+        || current.elapsed_frame <= previous.elapsed_frame
+    {
+        return;
+    }
+    if mode != EffectPlaybackMode::LoopRestart {
+        visit(
+            EventWindow {
+                start: previous.elapsed_time().into(),
+                end: current.elapsed_time().into(),
+                include_start,
+                root_offset: 0.0,
+            },
+            true,
+        );
+        return;
+    }
+    let frames = current.maximum_frame(duration);
+    if frames == 0 {
+        return;
+    }
+    // Split on integer frame boundaries, not rounded floating-point periods.
+    let first = previous.elapsed_frame / frames;
+    let last = current.elapsed_frame / frames;
+    for cycle in first..=last {
+        let base = cycle * frames;
+        let from = previous.elapsed_frame.saturating_sub(base).min(frames);
+        let to = current.elapsed_frame.saturating_sub(base).min(frames);
+        visit(
+            EventWindow {
+                start: f64::from(current.time_for_frame(from, duration)),
+                end: f64::from(current.time_for_frame(to, duration)),
+                // Seeking to the inclusive final frame leaves the clock at the
+                // boundary (normal looping leaves it at zero). Its next advance
+                // enters a fresh cycle, even though elapsed_frame / frames agrees.
+                include_start: cycle > first || include_start || previous.frame() == frames,
+                root_offset: base as f64 / f64::from(current.tick_rate()),
+            },
+            false,
+        );
+    }
+}
+
+pub(super) fn for_each_cycle_window(
+    window: EventWindow,
+    duration: f32,
+    looping: bool,
+    mut visit: impl FnMut(EventWindow),
+) {
+    let duration = f64::from(duration);
+    if !duration.is_finite() || duration <= 0.0 {
+        return;
+    }
+    let first = if looping {
+        (window.start / duration).floor() as u64
+    } else {
+        0
+    };
+    let last = if looping {
+        (window.end / duration).floor() as u64
+    } else {
+        0
+    };
+    for cycle in first..=last {
+        let base = cycle as f64 * duration;
+        let start = (window.start - base).max(0.0);
+        let end = (window.end - base).min(duration);
+        let include_start = cycle > first || window.include_start;
+        if start > end || (start == end && !include_start) {
+            continue;
+        }
+        visit(EventWindow {
+            start,
+            end,
+            include_start,
+            root_offset: window.root_offset + base,
+        });
+    }
 }
 
 impl CompiledEffectProject {
@@ -61,41 +150,23 @@ impl CompiledEffectProject {
         current: crate::PlaybackClock,
         include_start: bool,
     ) -> Vec<ProjectChoreographyEvent> {
-        if self.root.playback_mode != EffectPlaybackMode::LoopRestart {
-            return self.events_between(
-                previous.elapsed_time(),
-                current.elapsed_time(),
-                include_start,
-            );
-        }
         let mut output = Vec::new();
-        let frames = current.maximum_frame(self.root.duration);
-        if frames == 0
-            || previous.tick_rate() != current.tick_rate()
-            || current.elapsed_frame <= previous.elapsed_frame
-        {
-            return output;
-        }
-        // Split on integer frame boundaries, not rounded floating-point periods.
-        let first = previous.elapsed_frame / frames;
-        let last = current.elapsed_frame / frames;
-        for cycle in first..=last {
-            let base = cycle * frames;
-            let from = previous.elapsed_frame.saturating_sub(base).min(frames);
-            let to = current.elapsed_frame.saturating_sub(base).min(frames);
-            self.collect_events(
-                &self.root,
-                &mut Vec::new(),
-                EventWindow {
-                    start: f64::from(current.time_for_frame(from, self.root.duration)),
-                    end: f64::from(current.time_for_frame(to, self.root.duration)),
-                    include_start: cycle > first || include_start,
-                    root_offset: base as f64 / f64::from(current.tick_rate()),
-                },
-                false,
-                &mut output,
-            );
-        }
+        for_each_clock_event_window(
+            self.root.playback_mode,
+            self.root.duration,
+            previous,
+            current,
+            include_start,
+            |window, allow_looping| {
+                self.collect_events(
+                    &self.root,
+                    &mut Vec::new(),
+                    window,
+                    allow_looping,
+                    &mut output,
+                );
+            },
+        );
         sort_events(&mut output);
         output
     }
@@ -134,30 +205,17 @@ impl CompiledEffectProject {
         allow_looping: bool,
         output: &mut Vec<ProjectChoreographyEvent>,
     ) {
-        let duration = f64::from(effect.duration);
-        if !duration.is_finite() || duration <= 0.0 || path.len() >= 64 {
+        if path.len() >= 64 {
             return;
         }
         let looping = allow_looping && effect.playback_mode.is_looping();
-        let first = if looping {
-            (window.start / duration).floor() as u64
-        } else {
-            0
-        };
-        let last = if looping {
-            (window.end / duration).floor() as u64
-        } else {
-            0
-        };
-        for cycle in first..=last {
-            let base = cycle as f64 * duration;
-            let start = (window.start - base).max(0.0);
-            let end = (window.end - base).min(duration);
-            let include_start = cycle > first || window.include_start;
-            if start > end || (start == end && !include_start) {
-                continue;
-            }
-            let root_offset = window.root_offset + base;
+        for_each_cycle_window(window, effect.duration, looping, |window| {
+            let EventWindow {
+                start,
+                end,
+                include_start,
+                root_offset,
+            } = window;
             for event in &effect.choreography_events {
                 let time = f64::from(event.time);
                 if (time > start || (include_start && time == start)) && time <= end {
@@ -196,7 +254,7 @@ impl CompiledEffectProject {
                 );
                 path.pop();
             }
-        }
+        });
     }
 
     pub fn instances(&self, time: f32, seed: u64) -> Vec<ScheduledEffectInstance> {

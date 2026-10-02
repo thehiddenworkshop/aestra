@@ -89,6 +89,70 @@ mod tests {
     const STEP: f32 = 1.0 / 60.0;
 
     #[test]
+    fn analytic_clock_keeps_live_trails_incremental_and_real_seeks_bounded() {
+        use aestra_core::{EffectAsset, EffectPlaybackMode};
+        use aestra_runtime::{EffectInstance, PlaybackClock, PlaybackHistoryPolicy};
+        use std::sync::Arc;
+
+        for mode in [EffectPlaybackMode::Once, EffectPlaybackMode::LoopContinuous] {
+            for policy in [
+                PlaybackHistoryPolicy::PlaybackOnly,
+                PlaybackHistoryPolicy::ReplayEnabled,
+            ] {
+                let mut asset = EffectAsset::new("Clock history", 30.0);
+                asset.playback_mode = mode;
+                let compiled = Arc::new(
+                    aestra_compiler::EffectCompiler::default()
+                        .compile(&asset)
+                        .unwrap(),
+                );
+                let mut instance = EffectInstance::new(compiled).with_history_policy(policy);
+                let mut clock = PlaybackClock::default();
+                let mut replay = TrailReplay::default();
+                let mut events = Vec::new();
+                assert_eq!(replay.observations(instance.history_epoch(), 0.0), [0.0]);
+                for _ in 0..1800 {
+                    let previous = clock;
+                    clock.advance(STEP, 1.0, 30.0, mode.is_looping());
+                    instance.advance_clock_with_choreography_events(previous, clock, &mut events);
+                    assert!(!replay.needs_restore(instance.history_epoch(), instance.time()));
+                    assert_eq!(
+                        replay.observations(instance.history_epoch(), instance.time()),
+                        [instance.time()]
+                    );
+                }
+                // PlaybackOnly still preserves authored trails and genuine reconstruction.
+                clock.seek_frame(600, 30.0);
+                instance.mark_history_discontinuity();
+                instance.set_playback_time(clock.time(30.0));
+                assert!(replay.needs_restore(instance.history_epoch(), instance.time()));
+                assert_eq!(
+                    replay
+                        .observations(instance.history_epoch(), instance.time())
+                        .len(),
+                    MAX_STEPS_PER_FRAME
+                );
+                while replay.replaying {
+                    assert!(
+                        replay
+                            .observations(instance.history_epoch(), instance.time())
+                            .len()
+                            <= MAX_STEPS_PER_FRAME
+                    );
+                }
+                assert_eq!(replay.time, instance.time());
+                assert_eq!(
+                    replay.observations(instance.history_epoch(), instance.time()),
+                    [instance.time()]
+                );
+                instance.restart();
+                assert!(replay.needs_restore(instance.history_epoch(), 0.0));
+                assert_eq!(replay.observations(instance.history_epoch(), 0.0), [0.0]);
+            }
+        }
+    }
+
+    #[test]
     fn tracked_playback_fills_skipped_ticks_and_rebuilds_after_subframe_samples() {
         let mut replay = TrailReplay::default();
         replay.observations(1, 1.0);
