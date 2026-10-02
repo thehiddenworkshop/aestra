@@ -2779,6 +2779,40 @@ images. Production-density/full-show/target-tier gates remain open. F5's bounded
 two-generation event-chain and host-cue validation is the next runtime milestone; these images
 alone do not justify more open-ended culling optimization.
 
+### F4M implemented — reference-driven hero shell (2026-10-02)
+
+- Reviewed the six user-provided photographs. Cannes is the primary pink/gold layer target;
+  London informs spark-rich tails/smoke. The references are appearance guides, not calibrated
+  radiance, shutter settings or animated acceptance. Originals are not packaged in Aestra.
+- Added the separate editable `assets/test/effects/fireworks_reference_hero.aestra.ron` and
+  two ordinary project material programs: warm-white age-cooling sprite cores and longitudinal
+  tail-alpha taper over existing history-width fade. All four F3 assets and runtime APIs,
+  hard limits and sampling defaults remain unchanged. Color gradients and RGB radiance remain
+  exposed generic effect parameters; alpha/coverage is independent of radiance gains.
+- Seven emitters / ten renderers / 722 physical particle slots. One real rocket death drives
+  384 pink outer stars, 96 slower gold stars, 128 loose embers, one compact flash and 48 smoke
+  particles. Independent lifetime/speed/drag choices add variation; bounded 64-point histories
+  use 60 Hz sampling and 0.7/0.85-second tail lifetimes. This is one generation, **not F5**.
+- `f4-reference-hero` uses the saved project asset and independent whole-shell viewer cameras
+  without changing F0/F3 framing. Extended the review runner with explicit `-Shell reference-hero`:
+  six camera/floor cases, eight lifecycle frames through the eight-second cleanup endpoint,
+  expected main/inner/ember/smoke cohort checks and source provenance. Default matrix is unchanged.
+- Final RTX 4070 SUPER/Vulkan evidence under `target/fireworks-f4/f4m-reference-hero-framed`
+  passed **six cases / 48 frames** with measured expected peaks and zero endpoint live particles,
+  occupied/retired histories, evictions and truncation. The first close framing cropped late
+  falling tails; the revised final captures contain the visible tails at sampled frames.
+  Viewer tests, missing-cohort runner checks and warnings-as-errors Clippy pass.
+- Findings/reproduction/remaining gaps: `benchmarks/fireworks/reference-hero-2026-10-02.md`.
+  Pink/gold separation and head hierarchy improve, but untreated distant trails remain dotted;
+  floor 2 changes width and remains opt-in. Smoke is a more visible **unlit approximation**, not
+  burst-driven lighting or trajectory-linked volumetrics. No artistic/golden approval, live
+  timing or production-density certification follows from this static run.
+
+F4 remains **in progress**. Next runtime slice is F5's bounded generic two-generation
+particle-event chain and host-cue validation, emphasizing forward playback without replay
+history. F7/F8 retain transient-light/lit-smoke integration. Scene, audio assets/mixing, sky,
+reflections and choreography stay host-side; no firework-specific runtime API is introduced.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated

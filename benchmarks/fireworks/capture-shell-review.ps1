@@ -2,7 +2,7 @@
 # Capture evidence only: never automatically approve artistic/golden references.
 [CmdletBinding()]
 param(
-    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow')]
+    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Shell = @('peony', 'chrysanthemum', 'pistil', 'willow'),
     [ValidateSet('close', 'audience', 'wide')]
@@ -28,6 +28,8 @@ $cases = @(
     foreach ($shellName in ($Shell | Select-Object -Unique)) {
         $frames = if ($shellName -eq 'willow') {
             @(45, 80, 110, 150, 240, 330, 450, 540)
+        } elseif ($shellName -eq 'reference-hero') {
+            @(45, 80, 110, 150, 210, 270, 360, 480)
         } else {
             @(45, 80, 110, 150, 210, 300, 390, 420)
         }
@@ -42,7 +44,7 @@ $cases = @(
                     response = $responseName
                     frames = $frames
                     arguments = @(
-                        '--fireworks-f0', '--fireworks-f0-probe', "f3-$shellName",
+                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } else { "f3-$shellName" }),
                         '--camera', $cameraName, '--semantic-materials',
                         '--backend', 'gpu', '--history', 'playback-only',
                         '--tier', 'high', '--seed', '0xf1e0000000000001',
@@ -94,13 +96,22 @@ function Assert-Capture($case, $report, $directory) {
         }
     }
     $stars = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Main stars') })
-    if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne 256) {
-        throw "$($case.name): missing the expected 256-star main cohort"
+    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } else { 256 }
+    if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne $mainCount) {
+        throw "$($case.name): missing the expected $mainCount-star main cohort"
     }
     if ($case.shell -eq 'pistil') {
         $inner = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Pistil stars') })
         if ($inner.Count -ne 1 -or $inner[0].peak_particles -ne 96) {
             throw "$($case.name): missing the expected 96-star inner cohort"
+        }
+    }
+    if ($case.shell -eq 'reference-hero') {
+        foreach ($expected in @(@('Gold inner stars', 96), @('Free cooling embers', 128), @('Burst smoke', 48))) {
+            $cohort = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ ' + $expected[0]) })
+            if ($cohort.Count -ne 1 -or $cohort[0].peak_particles -ne $expected[1]) {
+                throw "$($case.name): missing the expected $($expected[0]) cohort"
+            }
         }
     }
     foreach ($file in @('contact-sheet.png', 'capture-manifest.md') + @($report.capture.frames.image)) {
@@ -123,7 +134,8 @@ try {
     New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
     $revision = (& git rev-parse HEAD)
     $dirty = @(& git status --porcelain)
-    $sourcePaths = @('apps/aestra-viewer/src/main.rs', 'apps/aestra-viewer/src/fireworks_f3.rs') +
+    $sourcePaths = @('apps/aestra-viewer/src/main.rs', 'apps/aestra-viewer/src/fireworks_f3.rs',
+                     'apps/aestra-viewer/src/fireworks_f0.rs', 'apps/aestra-viewer/src/fireworks_hero.rs') +
         @(Get-ChildItem assets/test/effects/fireworks_*.aestra.ron,
                        assets/test/materials/fireworks_*.aestra.material.ron | ForEach-Object FullName)
     $sourceHashes = @($sourcePaths | ForEach-Object {

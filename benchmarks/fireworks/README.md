@@ -61,6 +61,27 @@ Stills cannot certify animated shimmer or AAA realism. Select real footage with 
 camera/exposure target before artistic approval; do not run `--approve-visual-reference`
 merely because the runner passes. See [the first review](shell-review-2026-10-02.md).
 
+## Reference-driven hero — F4M
+
+`assets/test/effects/fireworks_reference_hero.aestra.ron` is a separate, editable
+Cannes-inspired pink/gold shell. The four F3 assets and runtime sampling defaults are
+unchanged. It uses the existing project material, appearance, death-event and trail APIs;
+there is no fireworks-specific simulation or private viewer material injection.
+
+```powershell
+pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -Shell reference-hero -PlanOnly
+pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -Shell reference-hero -OutputDirectory target/fireworks-f4/hero-review-new
+# Interactive native-GPU playback, explicitly without replay history:
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f4-reference-hero --camera close --semantic-materials --backend gpu --history playback-only --hdr --exposure 0 --tonemapping tony --bloom 0.15 --sprite-min-pixels 2 --trail-min-pixels 2
+```
+
+The runner still defaults to the original four-shell/24-case matrix. Selecting
+`reference-hero` produces six cases (three cameras × two floor policies), frames
+45, 80, 110, 150, 210, 270, 360, 480. It checks observed main/inner/ember/smoke peaks of
+384/96/128/48 and the same measured-zero final cleanup gates. The hero has independent
+whole-shell camera presets; their positions are not interchangeable with F0's baseline
+detail/distance cameras. See [reference choices and findings](reference-hero-2026-10-02.md).
+
 ## First measured baseline — 2026-09-29
 
 Worktree based on roadmap commit `3fa3805`, plus the uncommitted F0 fixture/viewer changes. The [machine-readable baseline](baseline-2026-09-29.json) records the run settings and values. Windows, NVIDIA GeForce RTX 4070 SUPER, Vulkan, driver reported as NVIDIA; 960 × 540, GPU backend, high tier, default seed `0xf1e0000000000001`, audience camera. The viewer reported a physical capacity of 4,194,240 particles and an effective configured budget of 262,144. The effect's compiled capacity is 6,208 particles. Three runs each used 120 warm-up and 600 measured frames; values below are milliseconds from the available GPU timestamp diagnostics:

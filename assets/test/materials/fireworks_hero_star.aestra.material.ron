@@ -1,0 +1,149 @@
+(
+    id: "a3574a00-0000-4000-8000-0000000f73e8",
+    schema_version: 1,
+    name: "Fireworks Hero Hot Core",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Additive,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7442",
+            name: "Radiance gain",
+            value_type: Float,
+            evaluation_domain: Effect,
+            default: Some(Float(1.0)),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73e9",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ea",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73eb",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ec",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ed",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ee",
+            kind: Constant(Vec2((0.5, 0.5))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ef",
+            kind: Constant(Float(0.45)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f0",
+            kind: Constant(Float(0.2)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f1",
+            kind: Constant(Bool(false)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f4",
+            kind: RadialMask(
+                uv: "a3574a00-0000-4000-8000-0000000f73eb",
+                center: "a3574a00-0000-4000-8000-0000000f73ee",
+                radius: "a3574a00-0000-4000-8000-0000000f73ef",
+                softness: "a3574a00-0000-4000-8000-0000000f73f0",
+                invert: "a3574a00-0000-4000-8000-0000000f73f1",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f5",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f73ea", "a3574a00-0000-4000-8000-0000000f73f4"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f6",
+            kind: Parameter("a3574a00-0000-4000-8000-0000000f7442"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f7",
+            kind: Constant(Float(64.0)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f8",
+            kind: Clamp(
+                value: "a3574a00-0000-4000-8000-0000000f73f6",
+                min: "a3574a00-0000-4000-8000-0000000f73ec",
+                max: "a3574a00-0000-4000-8000-0000000f73f7",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73f9",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f7401", "a3574a00-0000-4000-8000-0000000f73f8"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73fa",
+            kind: Constant(Float(0.16)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73fb",
+            kind: Constant(Float(0.14)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73fc",
+            kind: RadialMask(
+                uv: "a3574a00-0000-4000-8000-0000000f73eb",
+                center: "a3574a00-0000-4000-8000-0000000f73ee",
+                radius: "a3574a00-0000-4000-8000-0000000f73fa",
+                softness: "a3574a00-0000-4000-8000-0000000f73fb",
+                invert: "a3574a00-0000-4000-8000-0000000f73f1",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73fd",
+            kind: Constant(ColorSrgb((1.0, 0.97, 0.9, 1.0))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73fe",
+            kind: Input(ParticleNormalizedAge),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f73ff",
+            kind: Subtract("a3574a00-0000-4000-8000-0000000f73ed", "a3574a00-0000-4000-8000-0000000f73fe"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7400",
+            kind: Multiply("a3574a00-0000-4000-8000-0000000f73fc", "a3574a00-0000-4000-8000-0000000f73ff"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f7401",
+            kind: Lerp(
+                start: "a3574a00-0000-4000-8000-0000000f73e9",
+                end: "a3574a00-0000-4000-8000-0000000f73fd",
+                factor: "a3574a00-0000-4000-8000-0000000f7400",
+            ),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-0000000f73f9",
+        alpha: "a3574a00-0000-4000-8000-0000000f73f5",
+    ),
+)

@@ -1,6 +1,7 @@
 mod fireworks_f0;
 mod fireworks_f3;
 mod fireworks_f4;
+mod fireworks_hero;
 mod gpu_bench;
 mod photographic;
 mod preview_report;
@@ -129,6 +130,7 @@ fn main() {
             Some(FireworksProbe::EventTrailSparse) => "fireworks_f1b_event_trail_sparse",
             Some(FireworksProbe::Velocity(probe)) => probe.name(),
             Some(FireworksProbe::Shell(probe)) => probe.name(),
+            Some(FireworksProbe::ReferenceHero) => "f4-reference-hero",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -289,6 +291,7 @@ enum FireworksProbe {
     EventTrailSparse,
     Velocity(velocity_f2::Probe),
     Shell(fireworks_f3::Probe),
+    ReferenceHero,
     Raster(fireworks_f4::Probe),
 }
 
@@ -303,6 +306,7 @@ impl FireworksProbe {
             "event-trail-large" => Some(Self::EventTrailLarge),
             "event-trail-volley" => Some(Self::EventTrailVolley),
             "event-trail-sparse" => Some(Self::EventTrailSparse),
+            "f4-reference-hero" => Some(Self::ReferenceHero),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -849,6 +853,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             }
             Some(FireworksProbe::Velocity(probe)) => velocity_f2::effect(probe),
             Some(FireworksProbe::Shell(probe)) => fireworks_f3::effect(probe),
+            Some(FireworksProbe::ReferenceHero) => fireworks_hero::effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -995,7 +1000,11 @@ fn setup(
 
     if config.view_3d {
         let camera_transform = if config.fireworks_f0 {
-            config.fireworks_camera.transform()
+            if config.fireworks_probe == Some(FireworksProbe::ReferenceHero) {
+                fireworks_hero::camera(config.fireworks_camera)
+            } else {
+                config.fireworks_camera.transform()
+            }
         } else {
             framing_transform(&prepared.compiled)
         };
