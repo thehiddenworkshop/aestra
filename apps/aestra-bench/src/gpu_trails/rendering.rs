@@ -401,7 +401,7 @@ impl Scene {
                         renderer_index: 0,
                         instance_count: candidates,
                         epoch: 1,
-                        _padding: 0,
+                        pixel_radius_per_clip_w: 0.0,
                     }),
                     true,
                 );

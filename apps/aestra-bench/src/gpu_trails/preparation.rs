@@ -128,7 +128,7 @@ pub(super) fn run(config: &Config) -> Report {
             renderer_index: 0,
             instance_count: CANDIDATES,
             epoch: 1,
-            _padding: 0,
+            pixel_radius_per_clip_w: 0.0,
         }),
         true,
     );
