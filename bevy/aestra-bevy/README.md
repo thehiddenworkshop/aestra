@@ -162,6 +162,24 @@ projections. Wireframe remains a diagnostic outline, not energy-attenuated shadi
 Viewer comparison: `--trail-min-pixels 0|2|4` (native `auto`/`gpu` only). Reports record
 `trail_minimum_pixels` separately from the sprite floor and photographic response.
 
+For concentrated fill and offscreen submission comparisons, the viewer has trail-only probes
+`f4-trail-fill` / `f4-trail-offscreen`: 8,192 live parents and owner slots, eight-point pools,
+flat caps, 0.08-second history, quarter-pixel head width, and a moving 16-pixel seed patch at
+the reference 960×540 viewport. They are raster stress fixtures, not authored shells/finale tiers.
+
+```sh
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f4-trail-fill --camera wide --semantic-materials --backend gpu --history playback-only --hdr --trail-min-pixels 2 --gpu-bench target/fireworks-f4/trail-fill-2.json
+```
+
+Repeat with floors 0/2/4 and both probes. Raster **benchmarks only** advance simulation by a
+fixed 1/60 second per viewer frame, keeping work comparable even when rendering slows; normal
+playback and other live-throughput benchmarks keep their original clocks. Reports record this
+step, nominal calibration, observed physical viewport/backend, minimum/peak observed occupancy,
+evictions/truncation and fresh diagnostic sample counts. Missing timings remain unavailable,
+not measured zero. Asynchronous counts are observations, not frame-aligned certificates; check
+them and requested-time ranges before comparing timings. Do not sum pass percentiles into a
+whole-frame budget or infer real-time catch-up throughput from the fixed-step probes.
+
 ## Where to look
 
 | I want… | Read |

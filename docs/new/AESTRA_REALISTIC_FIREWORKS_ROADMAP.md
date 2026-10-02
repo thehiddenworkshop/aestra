@@ -2549,6 +2549,84 @@ one ignored**, and strict renderer/viewer all-target Clippy pass. F4 remains in 
 all-shell reference matching, trail fill/offscreen budgets and production finale/target tiers
 must still be evaluated before choosing any sampling default. No shipping default is enabled.
 
+### F4I implemented — dense trail raster-cost and playback-work probes (2026-10-02)
+
+- Added `f4-trail-fill` / `f4-trail-offscreen`: a single analytic emitter, **8,192 live
+  particles and owner slots**, one additive Trail draw, no sprite heads/events, eight-point
+  pools, flat caps, Time sampling at 1/60 second and 0.08-second tails. Particle size is 1;
+  authored head width projects to 0.25 pixels at the reference 960×540 viewport. A camera-aligned
+  16×16-pixel seed patch moves at 15 pixels/second. The short history fits with its boundary
+  anchor/head rather than silently truncating a one-second tail into eight points.
+- Each pair shares IDs, seed, material and simulation. Only its name and host placement differ;
+  offscreen placement starts at NDC x=2 and moves farther right. CPU projection/trajectory tests
+  cover all three camera presets, full live counts, constant width/color and the measured 2–12
+  second window. CLI compilation covers legacy and migrated semantic paths. These concentrated
+  short-strip fixtures are not curved/rounded hero trails, finale content or a quality tier.
+- Raster **benchmarks only**, including the older sprite probes, now use a recorded 1/60-second
+  simulation step per viewer frame. Normal playback, explicit-frame captures and non-raster
+  live-throughput benchmarks retain their existing clocks. An initial wall-clock attempt reached
+  retirement during measurement and was rejected; only the final `f4i-f4-trail-*-bench.json`
+  reports below are acceptance evidence. Fixed-step raster cost is not proof of real-time catch-up.
+- Reports add optional `raster_probe.trail` calibration and `fixed_simulation_step_seconds`.
+  Trail reports leave `nominal_quad_pixels` null rather than claiming a sprite footprint.
+  `min_live_particles` / `min_occupied_trails` complement peaks, preserving unavailable values
+  as null; a peak alone can hide a cohort retiring later. Counts remain asynchronous host
+  observations, not frame-aligned certificates. Fresh timestamp and pipeline-statistic sample
+  counts must be reported, not assumed equal to the 600 measured viewer frames.
+
+Six sequential native-GPU development-build runs on **RTX 4070 SUPER / Vulkan**, 960×540,
+high tier, wide camera, migrated semantic material, seed `0xf1e0000000000001`, HDR, Tony,
+exposure 0, bloom 0.15, fast transparency, sprite floor 0 and playback-only history. Each run
+has 120 warm-up + 600 measured viewer frames. All six observe native GPU only, minimum/peak
+live particles and occupied owners **8,192**, zero retired owners/evictions/truncation, and
+estimated effect-buffer memory **5,445,936 bytes**. Named time/counter paths cover the trail-only
+transparent pass, not simulation, post-processing, total frame time or the whole example host.
+
+| Probe | Trail pixel floor | Transparent-pass p50 / p95 (ms) | Vertex invocations p50 / p95 | Fragment invocations p50 | Fresh time / counter observations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Dense patch | 0 | 0.113 / 0.193 | 163,840 / 196,608 | 4,910 | 326 / 446 |
+| Dense patch | 2 | 0.133 / 0.222 | 163,840 / 196,608 | 73,570 | 326 / 442 |
+| Dense patch | 4 | 0.139 / 0.220 | 163,840 / 196,608 | 147,126 | 324 / 439 |
+| Offscreen | 0 | 0.002 / 0.003 | 0 / 0 | 0 | 317 / 437 |
+| Offscreen | 2 | 0.110 / 0.202 | 163,840 / 196,608 | 0 | 313 / 428 |
+| Offscreen | 4 | 0.113 / 0.214 | 163,840 / 196,608 | 0 | 324 / 439 |
+
+History expiry/head observations vary submitted segment counts; these are distributions, not
+identical per-frame work claims. The offscreen untreated path still has a measured pass with a
+zero-instance indirect draw, unlike F4G's absent sprite pass. Treated offscreen paths produce
+zero clipped primitives/fragments but pay vertex cost through the safe spatial-culling bypass.
+The roughly 15×/30× median fragment increase in this overlap patch exposes the fill tradeoff;
+single sequential timings/clock variance do not establish scaling laws or imply floor 4 is
+cheaper than floor 2 from one p95. No sampling default or runtime culling changes in F4I.
+
+**Playback blocker exposed, not optimized away:** paired simulation frames observe the normal
+one-history-observation workload and also **240-observation / 455,760-history-workgroup batches**
+during the live playback-only run. In the dense floor-0 report, normal one-observation work has
+p95 **0.739 ms**, while four 240-observation frames cost **61.915–62.030 ms** and report a processed
+time of 3.9833333 seconds. Aggregate simulation p99 across the six reports is **61.915–62.167 ms**.
+This is explicit extra history work, not a raster-cost improvement or merely discarded timestamp
+noise. In this analytic trail path, the timing report's `requested_time` is populated from the
+last processed observation; it is not proof of reaching the viewer's eventual target. Do not sum
+pass percentiles, claim smooth production playback or hide rebuilds with an average.
+The next runtime investigation should trace why this static-placement, forward-only fixture
+reconstructs history and prevent unnecessary live reconstruction without breaking genuine
+restart/seek/context-edit correctness. Pixel-padded trail culling remains a separate opportunity.
+
+Captures at frames 120/360 verify the in-view overlap patch. Offscreen floors 0/4 are byte-identical
+at both frames (`target/fireworks-f4/f4i-{fill-2,offscreen-0,offscreen-4}-capture`); the shader's
+clipped fallback adds no visible geometry. Reproduce all six measurements using the two probe
+names and floors 0/2/4:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f4-trail-fill --camera wide --semantic-materials --backend gpu --history playback-only --hdr --exposure 0 --trail-min-pixels 2 --gpu-bench target/fireworks-f4/f4i-f4-trail-fill-2-bench.json
+```
+
+Verification: viewer suite **58 passed, one ignored**, history-budget/projection/trajectory,
+fixed-clock/metadata and measured-minimum telemetry regressions, strict viewer all-target
+Clippy, and native captures/measurements above. F4 remains **in progress**: the new probes make
+trail cost and the live history-work spike observable; they do not close playback/finale budgets,
+all-shell photographic reference review, textured/tapered/cap costs or lower-device tiers.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
@@ -2572,6 +2650,8 @@ must still be evaluated before choosing any sampling default. No shipping defaul
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.
+  F4I exposes 240-observation history-work spikes during live playback-only presentation;
+  resolve that generic playback issue before certifying a smooth runtime tier.
 
 ### Tasks
 

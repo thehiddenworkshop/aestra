@@ -61,6 +61,7 @@ pub struct BenchPresentation {
     quality_tier: String,
     legacy_material_migration: bool,
     raster_probe: Option<crate::fireworks_f4::RasterProbeSetup>,
+    fixed_simulation_step_seconds: Option<f64>,
     response: crate::photographic::CaptureResponse,
 }
 
@@ -107,6 +108,9 @@ impl BenchPresentation {
                 Some(crate::FireworksProbe::Raster(probe)) => Some(probe.setup()),
                 _ => None,
             },
+            fixed_simulation_step_seconds: config
+                .raster_bench_step()
+                .map(|step| step.as_secs_f64()),
             response: crate::photographic::CaptureResponse::new(
                 config.photographic,
                 config.sprite_minimum_pixels,
@@ -352,7 +356,9 @@ struct GpuBenchReport<'a> {
 
 #[derive(Default, Serialize)]
 struct WorkStats {
+    min_live_particles: Option<u32>,
     peak_live_particles: Option<u32>,
+    min_occupied_trails: Option<u32>,
     peak_occupied_trails: Option<u32>,
     peak_retired_trails: Option<u32>,
     max_trail_evictions: Option<u32>,
@@ -379,6 +385,15 @@ impl WorkStats {
                 *target = Some(target.unwrap_or(0).max(value));
             }
         }
+        fn minimum(target: &mut Option<u32>, value: ProfileValue<u32>) {
+            if let ProfileValue::Measured(value) = value {
+                *target = Some(target.unwrap_or(value).min(value));
+            }
+        }
+        // Peaks alone can hide a cohort retiring during a raster benchmark. Like
+        // peaks, these are asynchronous host observations, not per-frame certificates.
+        minimum(&mut self.min_live_particles, profile.alive_particles);
+        minimum(&mut self.min_occupied_trails, profile.occupied_trails);
         peak(&mut self.peak_live_particles, profile.alive_particles);
         peak(&mut self.peak_occupied_trails, profile.occupied_trails);
         peak(&mut self.peak_retired_trails, profile.retired_trails);
@@ -697,6 +712,8 @@ mod tests {
         let mut work = WorkStats::default();
         work.record(&profile, Some(&GpuEventLinkStatistics::default()));
         assert_eq!(work.peak_live_particles, None);
+        assert_eq!(work.min_live_particles, None);
+        assert_eq!(work.min_occupied_trails, None);
         assert!(work.links.is_none());
         profile.0.alive_particles = ProfileValue::Measured(7200);
         profile.0.occupied_trails = ProfileValue::Measured(10400);
@@ -715,6 +732,8 @@ mod tests {
         work.record(&profile, Some(&events));
         let json = serde_json::to_value(&work).unwrap();
         assert_eq!(json["peak_live_particles"], 7200);
+        assert_eq!(json["min_live_particles"], 0);
+        assert_eq!(json["min_occupied_trails"], 10400);
         assert_eq!(json["peak_occupied_trails"], 10400);
         assert_eq!(json["peak_retired_trails"], 3200);
         assert_eq!(json["links"][0]["accepted"], 12800);

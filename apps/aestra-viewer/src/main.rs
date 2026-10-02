@@ -67,7 +67,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
-        eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary quarter-pixel sprites at 960x540, not shell certification).");
+        eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
         eprintln!("Native GPU additive trails: --trail-min-pixels 0..8 (default 0; try 2). Presentation width only; not history sampling or HDR.");
@@ -114,6 +114,7 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
+    let raster_bench_step = config.raster_bench_step();
     let gpu_bench_presentation = gpu_bench::BenchPresentation::from_config(&config);
     let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
@@ -192,6 +193,11 @@ fn main() {
                 gpu_bench::drive_gpu_bench,
             ),
         );
+    if let Some(step) = raster_bench_step {
+        // Same live workload at the same simulation frame regardless of GPU/host speed.
+        // These are raster-cost probes, not real-time catch-up throughput benchmarks.
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step));
+    }
     if let Some(capture) = capture {
         app.insert_resource(capture)
             .init_resource::<CaptureRenderReadiness>()
@@ -360,6 +366,12 @@ impl CaptureMode {
 }
 
 impl ViewerConfig {
+    fn raster_bench_step(&self) -> Option<Duration> {
+        (self.gpu_bench.is_some()
+            && matches!(self.fireworks_probe, Some(FireworksProbe::Raster(_))))
+        .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
+    }
+
     fn from_args() -> Result<Self, String> {
         Self::from_iter(env::args().skip(1))
     }
@@ -2062,17 +2074,54 @@ mod tests {
                 let presentation =
                     serde_json::to_value(gpu_bench::BenchPresentation::from_config(&config))
                         .unwrap();
-                assert_eq!(
-                    presentation["raster_probe"]["particles"],
-                    fireworks_f4::PARTICLES
-                );
+                assert_eq!(presentation["raster_probe"]["particles"], probe.particles());
                 assert_eq!(presentation["legacy_material_migration"], semantic);
-                assert_eq!(presentation["raster_probe"]["nominal_quad_pixels"], 0.25);
+                if probe.is_trail() {
+                    assert!(presentation["raster_probe"]["nominal_quad_pixels"].is_null());
+                    assert_eq!(
+                        presentation["raster_probe"]["trail"]["nominal_head_width_pixels"],
+                        0.25
+                    );
+                    assert_eq!(presentation["raster_probe"]["trail"]["max_points"], 8);
+                    assert_eq!(presentation["raster_probe"]["trail"]["end_cap"], "flat");
+                    assert_eq!(prepared.compiled.emitters[0].renderers.len(), 1);
+                } else {
+                    assert_eq!(presentation["raster_probe"]["nominal_quad_pixels"], 0.25);
+                    assert!(presentation["raster_probe"]["trail"].is_null());
+                }
                 assert_eq!(
                     presentation["raster_probe"]["reference_physical_viewport"],
                     serde_json::json!([960, 540])
                 );
             }
+        }
+    }
+
+    #[test]
+    fn only_raster_benchmarks_use_a_fixed_and_recorded_simulation_step() {
+        for probe in fireworks_f4::Probe::ALL {
+            let mut config = ViewerConfig::from_iter(
+                [
+                    "--fireworks-f0",
+                    "--fireworks-f0-probe",
+                    probe.name(),
+                    "--gpu-bench",
+                    "unused-report.json",
+                ]
+                .into_iter()
+                .map(str::to_owned),
+            )
+            .unwrap();
+            let step = config.raster_bench_step().unwrap().as_secs_f64();
+            assert!((step - 1.0 / 60.0).abs() < 1e-9);
+            let presentation =
+                serde_json::to_value(gpu_bench::BenchPresentation::from_config(&config)).unwrap();
+            assert_eq!(presentation["fixed_simulation_step_seconds"], step);
+            config.gpu_bench = None;
+            assert!(config.raster_bench_step().is_none());
+            config.gpu_bench = Some(PathBuf::from("unused-report.json"));
+            config.fireworks_probe = Some(FireworksProbe::EventTrailVolley);
+            assert!(config.raster_bench_step().is_none());
         }
     }
 
