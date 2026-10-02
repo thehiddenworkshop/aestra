@@ -111,6 +111,7 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
+    let gpu_bench_presentation = gpu_bench::BenchPresentation::from_config(&config);
     let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
         match config.fireworks_probe {
@@ -202,7 +203,8 @@ fn main() {
                 gpu_bench::DEFAULT_GPU_BENCH_WARMUP,
                 gpu_bench::DEFAULT_GPU_BENCH_FRAMES,
             )
-            .with_history_policy(history_policy),
+            .with_history_policy(history_policy)
+            .with_presentation(gpu_bench_presentation),
         );
     }
     if log_diagnostics {
@@ -1199,11 +1201,16 @@ fn editor_preview_camera_transform() -> Transform {
 }
 
 fn viewer_controls(
+    benchmark: Option<Res<gpu_bench::GpuBenchPlan>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut players: Query<&mut EffectPlayer>,
     mut commands: Commands,
     mut screenshot_index: Local<u32>,
 ) {
+    // Benchmark setup must not silently change via play/seek/seed/wireframe hotkeys.
+    if benchmark.is_some() {
+        return;
+    }
     if keys.just_pressed(KeyCode::Space) {
         for mut player in &mut players {
             player.playing = !player.playing;
@@ -1679,6 +1686,43 @@ fn luminous_pixels_in_columns(image: &RgbaImage, start_x: u32, width: u32) -> us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn benchmark_hotkeys_cannot_mutate_recorded_playback_setup() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut world = World::new();
+        let mut keys = ButtonInput::<KeyCode>::default();
+        for key in [KeyCode::Space, KeyCode::BracketRight, KeyCode::KeyW] {
+            keys.press(key);
+        }
+        world.insert_resource(keys);
+        world.insert_resource(gpu_bench::GpuBenchPlan::new(
+            PathBuf::new(),
+            "controls".into(),
+            1,
+            1,
+        ));
+        let mut player = EffectPlayer::new(&aestra_bevy::EffectAsset::new("controls", 1.0));
+        player.set_seed(1234);
+        let entity = world.spawn(player).id();
+        world.run_system_once(viewer_controls).unwrap();
+        let player = world.get::<EffectPlayer>(entity).unwrap();
+        assert_eq!(player.instance().seed(), 1234);
+        assert!(player.playing);
+        assert_eq!(
+            player.render_mode(),
+            aestra_bevy::EffectRenderMode::Rendered
+        );
+        world.remove_resource::<gpu_bench::GpuBenchPlan>();
+        world.run_system_once(viewer_controls).unwrap();
+        let player = world.get::<EffectPlayer>(entity).unwrap();
+        assert_eq!(player.instance().seed(), 1235);
+        assert!(!player.playing);
+        assert_eq!(
+            player.render_mode(),
+            aestra_bevy::EffectRenderMode::Wireframe
+        );
+    }
 
     #[test]
     fn viewer_history_policy_is_explicit_and_defaults_to_replay() {

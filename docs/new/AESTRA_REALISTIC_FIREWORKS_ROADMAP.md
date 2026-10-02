@@ -2316,6 +2316,56 @@ Reproduce the treated wide capture:
 cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-chrysanthemum --camera wide --backend gpu --history playback-only --hdr --exposure 0 --sprite-min-pixels 2 --sample-frames 45,80,110,150,210,300 --capture target/fireworks-f4/chrysanthemum-sampling-2
 ```
 
+### F4E implemented — temporal sampling gates and reproducible presentation benchmarks (2026-10-02)
+
+- Native raster regression now sweeps 16 isolated quarter-pixel stars over 32 pixel-phase steps,
+  at 0 and 0.65-radian orientations, through both the legacy and constant-alpha semantic shaders.
+  It checks finite/nonnegative sums, treated footprint bounds, no treated dropouts, reduced
+  brightness modulation and phase-averaged agreement (within 5%) with the analytic integral of
+  the procedural smoothstep-feathered circular mask. This is a bounded pre-postprocess probe,
+  not a universal guarantee for textures, trails or a complete animated fireworks scene.
+- RTX 4070 SUPER Vulkan observations, **512 samples per orientation/path/policy**:
+  untreated quads drop out in **488 samples**, with relative standard deviation 4.65–4.66;
+  floor 2 has **zero dropout**, relative deviation 0.267; floor 4 has **zero dropout**, deviation
+  0.0674. Treated mean alpha is 0.03984–0.03989 versus continuous integral 0.039858.
+  Legacy/semantic results agree. The test enforces the improvement and continuous-average gates,
+  not exact cross-adapter floating-point values. A 2-pixel floor still has visible modulation in
+  this probe; 4 pixels is a quality option, not a free or automatically enabled default.
+- Benchmark JSON adds requested `presentation` (seed, camera, HDR/exposure/tonemapping/bloom,
+  sprite floor, tier, budget, render mode and ordering), detected `adapter`, measured-window
+  `effect_backends` sets and `physical_window_sizes`. Per-effect fallback is not confused with
+  the global device decision; unknown data remains null/empty, not a fabricated successful
+  native run. Multiple backends or sizes expose a mixed window. Player hotkeys cannot change
+  playback, seed or shading while a benchmark runs. Existing timing/work scope is unchanged.
+
+Playback-only repeated-volley observations (`event-trail-volley`), fixed F0 seed, wide,
+960×540, high tier, native Vulkan on RTX 4070 SUPER, HDR Tony/0 stops/bloom 0.15, fast ordering,
+**120 warm-up + 600 measured viewer frames**:
+
+- Reports: `target/fireworks-f4/sampling-volley-{0,2}-bench.json`.
+- Both report peak live particles **7,201**, occupied trails **10,400**, retired trails **3,200**,
+  estimated buffer bytes **38,580,664**, no source-event overflow, expansion omission,
+  destination rejection, history eviction or truncation. Observed link demand/acceptance is
+  **37,600** in both runs; these asynchronous totals include warm-up, not just the measured window.
+- Transparent-pass GPU p50/p95: floor 0 **1.580/1.699 ms**, floor 2 **1.525/1.649 ms**.
+  Mean fragment invocations: **244,246** versus **245,648**. Coupled simulation p50/p95:
+  **1.891/2.050 ms** versus **1.867/2.007 ms**. Each timing distribution has 600 observations.
+  These are two sequential observations, **not evidence the policy speeds up rendering**, a
+  whole-frame sum, or a certified budget: clocks, phase/work distribution and background load
+  can vary. The trail-heavy probe also does not isolate worst-case tiny-sprite fill or the
+  cost of F4D's offscreen culling bypass. Test those on target hardware before choosing a default.
+
+Reproduce either run by setting `--sprite-min-pixels` to 0 or 2:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe event-trail-volley --camera wide --backend gpu --history playback-only --hdr --exposure 0 --sprite-min-pixels 2 --gpu-bench target/fireworks-f4/sampling-volley-2-bench.json
+```
+
+Verification: native temporal regression, viewer suite **52 passed, one ignored**, strict
+renderer/viewer all-target Clippy and formatting/diff checks pass. No new runtime passes,
+simulation/replay state or production defaults are introduced. F4 remains in progress for
+reference-footage/artistic acceptance, narrow trails, offscreen/fill stress and finale budgets.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated

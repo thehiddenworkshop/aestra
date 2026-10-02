@@ -178,6 +178,20 @@ exact pixel-integrated radiometry or universal temporal antialiasing. Qualifying
 CPU frustum culling to avoid clipping expanded footprints, so production/offscreen budgets
 still need measurement. Editor defaults remain unchanged.
 
+`--gpu-bench output.json` now records the requested presentation profile, seed, camera, tier,
+ordering, budget and render mode alongside the detected adapter/driver, observed per-effect
+backends and physical primary-window sizes. Compare native-GPU runs with matching setup and
+work; a requested pixel floor is not proof a fallback renderer applied it. Multiple observed
+backends or window sizes indicate a mixed measured window. Player hotkeys are disabled during
+benchmarks to keep recorded seed/playback/render-mode settings fixed. Missing timestamp samples
+remain unavailable, and stage percentiles must not be summed into whole-frame costs.
+
+The native sprite conformance test also sweeps moving quarter-pixel quads across pixel phases,
+checking dropout, brightness modulation and phase-averaged coverage against the continuous
+procedural mask integral. Two pixels is a low-cost starting policy; four pixels reduces modulation
+further in this bounded probe but can increase fill substantially. Neither certifies arbitrary
+textures, HDR post-processing, trail antialiasing or finale budgets.
+
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
 canonicalized. Implicit-derivative texture samples carry an explicit IR sampling contract and are

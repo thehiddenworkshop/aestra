@@ -10,11 +10,11 @@
 //! (Vulkan/DX12); diagnostics whose GPU value is unavailable simply produce no
 //! samples.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use aestra_bevy::{
-    EffectProfiler, PresentedEffect, ProfileValue,
+    EffectProfiler, EffectRuntimeStatus, GpuCapabilities, PresentedEffect, ProfileValue,
     gpu::{GpuEventLinkStatistics, GpuParticleStatistics, GpuSimulationFrame, GpuSimulationTiming},
 };
 use bevy::app::AppExit;
@@ -43,6 +43,76 @@ pub struct GpuBenchPlan {
     simulation_sequences: BTreeMap<Entity, u64>,
     simulation_frames: BTreeMap<String, Vec<SimulationFrame>>,
     history_policy: aestra_bevy::PlaybackHistoryPolicy,
+    presentation: Option<BenchPresentation>,
+    adapter: Option<BenchAdapter>,
+    effect_backends: BTreeMap<String, BTreeSet<String>>,
+    physical_window_sizes: BTreeSet<[u32; 2]>,
+}
+
+/// Requested viewer setup, not a claim that an unsupported policy was applied by a fallback.
+#[derive(Serialize)]
+pub struct BenchPresentation {
+    seed: String,
+    requested_backend: &'static str,
+    camera: &'static str,
+    render_mode: &'static str,
+    transparent_order: &'static str,
+    max_gpu_particles: u32,
+    quality_tier: String,
+    response: crate::photographic::CaptureResponse,
+}
+
+impl BenchPresentation {
+    pub fn from_config(config: &crate::ViewerConfig) -> Self {
+        Self {
+            seed: format!("0x{:016x}", config.resolved_seed()),
+            requested_backend: match config.presentation {
+                aestra_bevy::PresentationMode::Auto => "auto",
+                aestra_bevy::PresentationMode::Gpu => "gpu",
+                aestra_bevy::PresentationMode::GpuReadback => "gpu-readback",
+                aestra_bevy::PresentationMode::CpuReference => "cpu",
+            },
+            camera: if config
+                .capture_mode
+                .as_ref()
+                .is_some_and(crate::CaptureMode::is_editor_viewport_smoke)
+            {
+                "editor-viewport-smoke"
+            } else if config.fireworks_f0 {
+                match config.fireworks_camera {
+                    crate::FireworksCamera::Close => "close",
+                    crate::FireworksCamera::Audience => "audience",
+                    crate::FireworksCamera::Wide => "wide",
+                }
+            } else if config.view_3d {
+                "framed-3d"
+            } else {
+                "2d"
+            },
+            render_mode: if config.wireframe {
+                "wireframe"
+            } else {
+                "rendered"
+            },
+            transparent_order: match config.transparent_order {
+                aestra_bevy::TransparentOrderMode::Fast => "fast",
+                aestra_bevy::TransparentOrderMode::StableCapture => "stable-capture",
+            },
+            max_gpu_particles: config.max_gpu_particles,
+            quality_tier: config.tier.name.clone(),
+            response: crate::photographic::CaptureResponse::new(
+                config.photographic,
+                config.sprite_minimum_pixels,
+            ),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct BenchAdapter {
+    name: String,
+    backend: String,
+    driver: String,
 }
 
 impl GpuBenchPlan {
@@ -60,11 +130,20 @@ impl GpuBenchPlan {
             simulation_sequences: BTreeMap::new(),
             simulation_frames: BTreeMap::new(),
             history_policy: default(),
+            presentation: None,
+            adapter: None,
+            effect_backends: BTreeMap::new(),
+            physical_window_sizes: BTreeSet::new(),
         }
     }
 
     pub fn with_history_policy(mut self, policy: aestra_bevy::PlaybackHistoryPolicy) -> Self {
         self.history_policy = policy;
+        self
+    }
+
+    pub fn with_presentation(mut self, presentation: BenchPresentation) -> Self {
+        self.presentation = Some(presentation);
         self
     }
 
@@ -75,6 +154,10 @@ impl GpuBenchPlan {
             .map(|(path, values)| (path.clone(), Stats::from_samples(values)))
             .collect();
         let report = GpuBenchReport {
+            presentation: self.presentation.as_ref(),
+            adapter: self.adapter.as_ref(),
+            effect_backends: &self.effect_backends,
+            physical_window_sizes: &self.physical_window_sizes,
             effect: self.effect.clone(),
             history_policy: match self.history_policy {
                 aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly => "playback-only",
@@ -239,6 +322,11 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 
 #[derive(Serialize)]
 struct GpuBenchReport<'a> {
+    presentation: Option<&'a BenchPresentation>,
+    adapter: Option<&'a BenchAdapter>,
+    effect_backends: &'a BTreeMap<String, BTreeSet<String>>,
+    /// All physical primary-window sizes observed in the measured window, not logical DPI units.
+    physical_window_sizes: &'a BTreeSet<[u32; 2]>,
     effect: String,
     history_policy: &'static str,
     warmup: usize,
@@ -313,7 +401,14 @@ impl WorkStats {
 pub fn drive_gpu_bench(
     plan: Option<ResMut<GpuBenchPlan>>,
     diagnostics: Res<DiagnosticsStore>,
-    effects: Query<(Entity, &EffectProfiler, Option<&GpuEventLinkStatistics>)>,
+    effects: Query<(
+        Entity,
+        &EffectProfiler,
+        Option<&GpuEventLinkStatistics>,
+        Option<&EffectRuntimeStatus>,
+    )>,
+    capabilities: Option<Res<GpuCapabilities>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     timings: Query<(
         Entity,
         &PresentedEffect,
@@ -364,7 +459,24 @@ pub fn drive_gpu_bench(
             plan.record_diagnostic(path, measurement, true);
         }
     }
-    for (entity, profiler, events) in &effects {
+    if let Some(capabilities) = capabilities.filter(|caps| caps.detected) {
+        plan.adapter = Some(BenchAdapter {
+            name: capabilities.adapter_name.clone(),
+            backend: capabilities.backend.clone(),
+            driver: capabilities.driver.clone(),
+        });
+    }
+    for window in &windows {
+        plan.physical_window_sizes
+            .insert([window.physical_width(), window.physical_height()]);
+    }
+    for (entity, profiler, events, runtime) in &effects {
+        if let Some(runtime) = runtime {
+            plan.effect_backends
+                .entry(entity.to_string())
+                .or_default()
+                .insert(runtime.active.to_string());
+        }
         plan.work
             .entry(entity.to_string())
             .or_default()
@@ -391,6 +503,111 @@ pub fn drive_gpu_bench(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn benchmark_records_requested_presentation_and_actual_fallback_and_window_sizes() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("report.json");
+        let config = crate::ViewerConfig::from_iter(
+            [
+                "--fireworks-f0",
+                "--camera",
+                "wide",
+                "--hdr",
+                "--sprite-min-pixels",
+                "2",
+                "--history",
+                "playback-only",
+                "--seed",
+                "0x1234",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+        let plan = GpuBenchPlan::new(output.clone(), "fixture".into(), 1, 2)
+            .with_history_policy(config.history_policy)
+            .with_presentation(BenchPresentation::from_config(&config));
+        let mut app = App::new();
+        app.add_message::<AppExit>()
+            .init_resource::<DiagnosticsStore>()
+            .insert_resource(plan)
+            .insert_resource(GpuCapabilities {
+                detected: true,
+                adapter_name: "test adapter".into(),
+                backend: "test backend".into(),
+                driver: "test driver".into(),
+                ..default()
+            })
+            .add_systems(Update, drive_gpu_bench);
+        let compiled = aestra_bevy::EffectCompiler::default()
+            .compile(&aestra_bevy::EffectAsset::new("report", 6.0))
+            .unwrap();
+        let entity = app
+            .world_mut()
+            .spawn((
+                EffectProfiler(aestra_bevy::EffectProfile::from_compiled(&compiled)),
+                EffectRuntimeStatus {
+                    active: aestra_bevy::ActiveBackend::CpuReference,
+                    reason: "budget fallback".into(),
+                    compatibility: aestra_bevy::CompatibilityReport::compatible(
+                        aestra_bevy::CompatibilityTarget::CpuReference,
+                    ),
+                },
+            ))
+            .id();
+        let window = app
+            .world_mut()
+            .spawn((
+                Window {
+                    resolution: bevy::window::WindowResolution::new(320, 180),
+                    ..default()
+                },
+                bevy::window::PrimaryWindow,
+            ))
+            .id();
+        app.update(); // warm-up size must not enter the measured set
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .unwrap()
+            .resolution
+            .set_physical_resolution(960, 540);
+        app.update();
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .unwrap()
+            .resolution
+            .set_physical_resolution(1280, 720);
+        // Preserve all observed decisions, not only the last backend in a mixed window.
+        app.world_mut()
+            .get_mut::<EffectRuntimeStatus>(entity)
+            .unwrap()
+            .active = aestra_bevy::ActiveBackend::Gpu;
+        app.update();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        assert_eq!(report["presentation"]["camera"], "wide");
+        assert_eq!(report["presentation"]["seed"], "0x0000000000001234");
+        assert_eq!(report["presentation"]["requested_backend"], "auto");
+        assert_eq!(report["presentation"]["response"]["hdr"], true);
+        assert_eq!(
+            report["presentation"]["response"]["sprite_minimum_pixels"],
+            2.0
+        );
+        assert_eq!(
+            report["effect_backends"][entity.to_string()],
+            serde_json::json!(["CPU reference", "native GPU"])
+        );
+        assert_eq!(report["adapter"]["name"], "test adapter");
+        assert_eq!(
+            report["physical_window_sizes"],
+            serde_json::json!([[960, 540], [1280, 720]])
+        );
+        assert!(
+            report["metrics"].as_object().unwrap().is_empty(),
+            "missing timings must not masquerade as measured zero"
+        );
+    }
 
     #[test]
     fn diagnostics_only_count_fresh_finite_measurements_after_warmup() {
@@ -511,5 +728,14 @@ mod tests {
         assert_eq!(report["warmup"], 120);
         assert_eq!(report["frames"], 2);
         assert_eq!(report["history_policy"], "playback-only");
+        assert!(report["adapter"].is_null());
+        assert!(report["presentation"].is_null());
+        assert!(report["effect_backends"].as_object().unwrap().is_empty());
+        assert!(
+            report["physical_window_sizes"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }

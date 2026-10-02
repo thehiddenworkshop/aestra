@@ -114,6 +114,96 @@ fn subpixel_sprites_survive_pixel_phase_without_amplifying_quad_energy() {
         let large_off = raster(&device, &queue, shader, fragment, renderer, 4.0, 0.0);
         let large_on = raster(&device, &queue, shader, fragment, renderer, 4.0, 2.0);
         assert_eq!(large_off, large_on, "resolved quads must be unchanged");
+        assert_temporal_sampling(&device, &queue, shader, fragment, renderer);
+    }
+}
+
+fn assert_temporal_sampling(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
+    renderer: GpuRenderer,
+) {
+    // Cross the pixel lattice continuously in two axes, at two quad orientations.
+    // Read linear alpha before exposure/bloom. This is a bounded procedural-mask probe,
+    // not a guarantee of shimmer-free arbitrary semantic materials or trail sampling.
+    for rotation in [0.0, 0.65] {
+        let mut untreated_cv = 0.0;
+        let mut two_pixel_cv = 0.0;
+        for floor in [0.0, 2.0, 4.0] {
+            let mut trajectories = vec![Vec::new(); 16];
+            for tick in 0..32 {
+                let phase = [tick as f32 / 32.0, tick as f32 * 0.618034 / 32.0];
+                let bytes = raster_case(
+                    device,
+                    queue,
+                    source,
+                    fragment,
+                    renderer,
+                    RasterCase {
+                        pixels: 0.25,
+                        floor,
+                        phase,
+                        rotation,
+                    },
+                );
+                for (trajectory, energy) in trajectories.iter_mut().zip(cell_energy(&bytes)) {
+                    trajectory.push(energy);
+                }
+            }
+            let samples = trajectories.iter().flatten().copied().collect::<Vec<_>>();
+            let mean = samples.iter().sum::<f32>() / samples.len() as f32;
+            let cv = (samples
+                .iter()
+                .map(|energy| (energy - mean).powi(2))
+                .sum::<f32>()
+                / samples.len() as f32)
+                .sqrt()
+                / mean;
+            let dropouts = samples.iter().filter(|energy| **energy == 0.0).count();
+            eprintln!(
+                "{fragment}: rotation={rotation}, floor={floor}, samples={}, dropouts={dropouts}, mean_alpha={mean:.6}, relative_stddev={cv:.4}",
+                samples.len()
+            );
+            let upper_bound = if floor == 0.0 { 1.0 } else { 0.0625 };
+            assert!(
+                samples.iter().all(|value| value.is_finite()
+                    && *value >= 0.0
+                    && *value <= upper_bound + 1e-5)
+            );
+            if floor == 0.0 {
+                assert!(
+                    dropouts > 0 && mean > 0.0,
+                    "probe must demonstrate untreated modulation, not all-invisible geometry"
+                );
+                untreated_cv = cv;
+            } else {
+                assert_eq!(
+                    dropouts, 0,
+                    "{fragment}: moving sampled quads must not drop out"
+                );
+                assert!(
+                    cv < untreated_cv * 0.5,
+                    "{fragment}: temporal modulation {cv} did not improve over {untreated_cv}"
+                );
+                // Integral of the smoothstep-feathered circular mask: R²π(1-f+0.3f²).
+                // Phase-averaged sum, not an analytic integral for each rasterized frame.
+                let expected = 0.0625 * std::f32::consts::PI * 0.25 * (1.0 - 0.2 + 0.3 * 0.2 * 0.2);
+                assert!(
+                    (mean - expected).abs() < expected * 0.05,
+                    "phase-averaged coverage drifted: {mean} != {expected}"
+                );
+                if floor == 2.0 {
+                    two_pixel_cv = cv;
+                } else {
+                    assert!(
+                        cv < two_pixel_cv * 0.5,
+                        "larger floor must improve this bounded procedural probe"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -138,9 +228,39 @@ fn raster(
     queue: &wgpu::Queue,
     source: &str,
     fragment: &str,
-    mut renderer: GpuRenderer,
+    renderer: GpuRenderer,
     pixels: f32,
     floor: f32,
+) -> Vec<u8> {
+    raster_case(
+        device,
+        queue,
+        source,
+        fragment,
+        renderer,
+        RasterCase {
+            pixels,
+            floor,
+            phase: [0.0; 2],
+            rotation: 0.0,
+        },
+    )
+}
+
+struct RasterCase {
+    pixels: f32,
+    floor: f32,
+    phase: [f32; 2],
+    rotation: f32,
+}
+
+fn raster_case(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
+    mut renderer: GpuRenderer,
+    case: RasterCase,
 ) -> Vec<u8> {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sprite sampling raster"),
@@ -247,15 +367,16 @@ fn raster(
             resource: view.as_entire_binding(),
         }],
     });
-    renderer.attribute_flags.y = floor.to_bits();
+    renderer.attribute_flags.y = case.floor.to_bits();
     let particles = (0..16)
         .map(|i| {
-            let x = 4.0 + (i % 4) as f32 * 8.0 + (i % 4) as f32 * 0.25;
-            let y = 4.0 + (i / 4) as f32 * 8.0 + (i / 4) as f32 * 0.25;
+            let x = 4.0 + (i % 4) as f32 * 8.0 + ((i % 4) as f32 * 0.25 + case.phase[0]).fract();
+            let y = 4.0 + (i / 4) as f32 * 8.0 + ((i / 4) as f32 * 0.25 + case.phase[1]).fract();
             GpuParticle {
                 color: Vec4::ONE,
                 position: Vec3::new(x / 16.0 - 1.0, 1.0 - y / 16.0, 0.5),
-                size: pixels / 16.0,
+                size: case.pixels / 16.0,
+                rotation: case.rotation,
                 packed_emitter_alive: 1,
                 particle_index: i,
                 ..Default::default()
