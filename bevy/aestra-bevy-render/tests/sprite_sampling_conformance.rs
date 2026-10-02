@@ -116,6 +116,7 @@ fn subpixel_sprites_survive_pixel_phase_without_amplifying_quad_energy() {
         assert_eq!(large_off, large_on, "resolved quads must be unchanged");
         assert_temporal_sampling(&device, &queue, shader, fragment, renderer);
         assert_viewport_clipping(&device, &queue, shader, fragment, renderer);
+        assert_trail_sampling(&device, &queue, shader, fragment, renderer);
     }
 }
 
@@ -148,6 +149,7 @@ fn assert_temporal_sampling(
                         phase,
                         rotation,
                         translation_pixels: [0.0; 2],
+                        trail: None,
                     },
                 );
                 for (trajectory, energy) in trajectories.iter_mut().zip(cell_energy(&bytes)) {
@@ -233,6 +235,7 @@ fn assert_viewport_clipping(
                     phase: [0.0; 2],
                     rotation: 0.0,
                     translation_pixels,
+                    trail: None,
                 },
             );
             let energy = cell_energy(&bytes).iter().sum::<f32>();
@@ -264,6 +267,7 @@ fn assert_viewport_clipping(
                 phase: [0.0; 2],
                 rotation: 0.65,
                 translation_pixels: [64.0, 0.0],
+                trail: None,
             },
         );
         assert!(
@@ -271,6 +275,185 @@ fn assert_viewport_clipping(
             "fully clipped {fragment}, floor {floor}"
         );
     }
+}
+
+fn assert_trail_sampling(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
+    renderer: GpuRenderer,
+) {
+    let render = |pixels, floor, phase, fade, caps| {
+        raster_case(
+            device,
+            queue,
+            source,
+            fragment,
+            renderer,
+            RasterCase {
+                pixels,
+                floor,
+                phase: [phase, 0.0],
+                rotation: 0.0,
+                translation_pixels: [0.0; 2],
+                trail: Some(TrailCase { fade, caps }),
+            },
+        )
+    };
+    for fade in [1.0_f32, 0.5] {
+        for caps in [false, true] {
+            let mut baseline_cv = 0.0;
+            for floor in [0.0, 2.0, 4.0] {
+                let mut energies = Vec::new();
+                for tick in 0..32 {
+                    energies.extend(cell_energy(&render(
+                        0.25,
+                        floor,
+                        tick as f32 / 32.0,
+                        fade,
+                        caps,
+                    )));
+                }
+                let mean = energies.iter().sum::<f32>() / energies.len() as f32;
+                let cv = (energies
+                    .iter()
+                    .map(|energy| (energy - mean).powi(2))
+                    .sum::<f32>()
+                    / energies.len() as f32)
+                    .sqrt()
+                    / mean;
+                let dropouts = energies.iter().filter(|energy| **energy == 0.0).count();
+                eprintln!(
+                    "trail {fragment}: fade={fade}, caps={caps}, floor={floor}, samples={}, dropouts={dropouts}, mean_alpha={mean:.6}, relative_stddev={cv:.4}",
+                    energies.len()
+                );
+                assert!(
+                    energies
+                        .iter()
+                        .all(|energy| energy.is_finite() && *energy >= 0.0)
+                );
+                if floor == 0.0 {
+                    assert!(dropouts > 0 && mean > 0.0);
+                    baseline_cv = cv;
+                } else {
+                    assert_eq!(dropouts, 0, "sampled trail body/joins must stay visible");
+                    assert!(cv < baseline_cv * 0.5);
+                    // Four-pixel length × authored width × age fade; strip mask integral
+                    // is (1 - feather/2). Caps add only their original quarter-pixel area,
+                    // not a large new halo from the widened circle.
+                    let body_integral = 4.0 * 0.25 * fade.powi(2) * 0.9;
+                    assert!(
+                        (mean - body_integral).abs() < body_integral * 0.15,
+                        "trail energy changed: {mean} vs {body_integral}"
+                    );
+                }
+            }
+        }
+    }
+    for floor in [2.0, 4.0] {
+        assert!(
+            render(0.0, floor, 0.0, 1.0, true)
+                .iter()
+                .all(|value| *value == 0)
+        );
+        assert!(
+            render(0.25, floor, 0.0, 0.0, true)
+                .iter()
+                .all(|value| *value == 0)
+        );
+    }
+    assert_eq!(
+        render(4.0, 0.0, 0.0, 1.0, false),
+        render(4.0, 2.0, 0.0, 1.0, false),
+        "resolved trail widths must be unchanged"
+    );
+    for rotation in [0.65, 1.2] {
+        for tick in 0..16 {
+            let bytes = raster_case(
+                device,
+                queue,
+                source,
+                fragment,
+                renderer,
+                RasterCase {
+                    pixels: 0.25,
+                    floor: 2.0,
+                    phase: [tick as f32 / 16.0, 0.0],
+                    rotation,
+                    translation_pixels: [0.0; 2],
+                    trail: Some(TrailCase {
+                        fade: 1.0,
+                        caps: true,
+                    }),
+                },
+            );
+            assert!(
+                cell_energy(&bytes)
+                    .iter()
+                    .all(|energy| energy.is_finite() && *energy > 0.0 && *energy < 1.2),
+                "angled trail must stay visible without gaining energy"
+            );
+        }
+    }
+    for (translation_pixels, floor) in [
+        ([28.25, 0.0], 0.0),
+        ([28.25, 0.0], 2.0),
+        ([-29.0, 0.0], 2.0),
+        ([64.0, 0.0], 8.0),
+    ] {
+        let bytes = raster_case(
+            device,
+            queue,
+            source,
+            fragment,
+            renderer,
+            RasterCase {
+                pixels: 0.25,
+                floor,
+                phase: [0.0; 2],
+                rotation: 0.0,
+                translation_pixels,
+                trail: Some(TrailCase {
+                    fade: 1.0,
+                    caps: false,
+                }),
+            },
+        );
+        let energy: f32 = cell_energy(&bytes).into_iter().sum();
+        assert_eq!(
+            energy > 0.0,
+            floor == 2.0,
+            "expanded trail edge must survive; wholly offscreen trails must clip"
+        );
+    }
+    let mut alpha = renderer;
+    alpha.blend_mode = aestra_gpu::GpuBlend::Alpha as u32;
+    let alpha_case = |floor| {
+        raster_case(
+            device,
+            queue,
+            source,
+            fragment,
+            alpha,
+            RasterCase {
+                pixels: 0.25,
+                floor,
+                phase: [0.0; 2],
+                rotation: 0.0,
+                translation_pixels: [0.0; 2],
+                trail: Some(TrailCase {
+                    fade: 1.0,
+                    caps: true,
+                }),
+            },
+        )
+    };
+    assert_eq!(
+        alpha_case(0.0),
+        alpha_case(2.0),
+        "non-additive trails must stay untouched"
+    );
 }
 
 fn cell_energy(bytes: &[u8]) -> Vec<f32> {
@@ -310,6 +493,7 @@ fn raster(
             phase: [0.0; 2],
             rotation: 0.0,
             translation_pixels: [0.0; 2],
+            trail: None,
         },
     )
 }
@@ -320,6 +504,13 @@ struct RasterCase {
     phase: [f32; 2],
     rotation: f32,
     translation_pixels: [f32; 2],
+    trail: Option<TrailCase>,
+}
+
+#[derive(Clone, Copy)]
+struct TrailCase {
+    fade: f32,
+    caps: bool,
 }
 
 fn raster_case(
@@ -436,7 +627,7 @@ fn raster_case(
         }],
     });
     renderer.attribute_flags.y = case.floor.to_bits();
-    let particles = (0..16)
+    let mut particles = (0..16)
         .map(|i| {
             let x = 4.0
                 + (i % 4) as f32 * 8.0
@@ -457,6 +648,36 @@ fn raster_case(
             }
         })
         .collect::<Vec<_>>();
+    let mut aux = vec![0_u32; 128];
+    let mut instance_count = 16;
+    if let Some(trail) = case.trail {
+        renderer.renderer_kind = 4;
+        renderer.frame_count = 3;
+        renderer.frame_rate = 1.0;
+        renderer.flipbook_flags = if trail.caps { 2 } else { 0 };
+        renderer.attribute_flags.y = (case.pixels / 16.0).to_bits();
+        renderer.attribute_flags.z = 0;
+        renderer.frames[63].w = case.floor;
+        let centers = particles;
+        particles = vec![GpuParticle::default(); 49];
+        aux = vec![0_u32; 49 * 3];
+        for (owner, center) in centers.into_iter().enumerate() {
+            let base = 1 + owner * 3;
+            // Two body segments share their midpoint; both caps use the same endpoint frame.
+            for (slot, offset) in [(base, 2.0_f32), (base + 1, -2.0), (base + 2, 0.0)] {
+                particles[slot] = GpuParticle {
+                    position: center.position
+                        + Vec3::new(-case.rotation.sin(), case.rotation.cos(), 0.0)
+                            * (offset / 16.0),
+                    size: 1.0,
+                    rotation: trail.fade - 1.0,
+                    ..center
+                };
+            }
+            aux[base * 3 + 1] = 2;
+        }
+        instance_count = 16 * if trail.caps { 18 } else { 2 };
+    }
     let data = [
         storage(&vec![renderer]),
         storage(&particles),
@@ -466,7 +687,7 @@ fn raster_case(
             ..Default::default()
         }),
         storage(&GpuRenderParams::default()),
-        storage(&vec![0_u32; 128]),
+        storage(&aux),
     ];
     let buffers = data
         .iter()
@@ -552,7 +773,7 @@ fn raster_case(
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &view_group, &[]);
         pass.set_bind_group(1, &draw_group, &[]);
-        pass.draw(0..4, 0..16);
+        pass.draw(0..4, 0..instance_count);
     }
     encoder.copy_texture_to_buffer(
         target.as_image_copy(),

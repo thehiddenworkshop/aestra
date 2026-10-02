@@ -110,7 +110,8 @@ impl BenchPresentation {
             response: crate::photographic::CaptureResponse::new(
                 config.photographic,
                 config.sprite_minimum_pixels,
-            ),
+            )
+            .with_trail_sampling(config.trail_minimum_pixels),
         }
     }
 }

@@ -209,7 +209,8 @@ pub struct GpuRenderer {
     /// x: omitted particle reads; y: strip width or sprite pixel floor (f32 bits);
     /// z: trail history offset. Sprite floor is native-host presentation policy, default 0.
     pub attribute_flags: UVec3,
-    /// Flipbook rectangles; Trail uses only frames[0].x for world-space tile length.
+    /// Flipbook rectangles; Trail uses frames[0].x for world-space tile length and
+    /// frames[63].w for an opt-in additive presentation pixel floor (default 0).
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
 
@@ -2447,6 +2448,11 @@ impl GpuEffectArtifact {
                             )
                         }
                     };
+                    // Trail presentation reserves the final frame W lane for a host pixel
+                    // floor. Portable artifacts must default to OFF, not the UV max (1).
+                    if renderer_kind == 4 {
+                        frames[63].w = 0.0;
+                    }
                     GpuRenderer {
                         emitter_index: emitter_index as u32,
                         blend_mode: match blend {

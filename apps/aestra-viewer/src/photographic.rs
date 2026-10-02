@@ -19,12 +19,14 @@ pub struct CaptureResponse {
     bloom_preset: &'static str,
     deband_dither: &'static str,
     sprite_minimum_pixels: f32,
+    trail_minimum_pixels: f32,
 }
 
 impl CaptureResponse {
     pub fn new(settings: Option<PhotographicPreview>, sprite_minimum_pixels: f32) -> Self {
         let settings = settings.map(PhotographicPreview::normalized);
         Self {
+            trail_minimum_pixels: 0.0,
             sprite_minimum_pixels: aestra_bevy::SpriteSampling {
                 minimum_pixels: sprite_minimum_pixels,
             }
@@ -45,5 +47,12 @@ impl CaptureResponse {
                 "camera_default"
             },
         }
+    }
+
+    pub fn with_trail_sampling(mut self, minimum_pixels: f32) -> Self {
+        self.trail_minimum_pixels = aestra_bevy::TrailRasterSampling { minimum_pixels }
+            .normalized()
+            .minimum_pixels;
+        self
     }
 }

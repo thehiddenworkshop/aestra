@@ -40,6 +40,18 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
     );
     let instance = EffectInstance::new(compiled);
     let gpu = GpuEffectArtifact::from_instance(&instance).unwrap();
+    assert_eq!(
+        gpu.renderers[0].frames[63].w, 0.0,
+        "trail raster policy must default off in portable artifacts"
+    );
+    assert_eq!(
+        GpuEffectArtifact::dynamics_from_instance(&instance)
+            .unwrap()
+            .renderers[0]
+            .frames[63]
+            .w,
+        0.0
+    );
     assert_eq!(gpu.particles.len(), 8 + 1 + 8 * 32);
     assert_eq!(gpu.total_slots, 8);
     assert_eq!(

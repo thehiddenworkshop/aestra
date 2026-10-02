@@ -35,9 +35,109 @@ impl SpriteSampling {
     }
 }
 
+/// Opt-in minimum projected width for native additive Trail bodies and round caps.
+/// Not history sampling/LOD: authored widths, simulation and retained points are unchanged.
+/// Expanded bodies attenuate final alpha by inverse width; caps by inverse area.
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq)]
+pub struct TrailRasterSampling {
+    /// Physical main-pass pixels; 0 disables treatment. Normalized to finite 0..8.
+    pub minimum_pixels: f32,
+}
+
+impl TrailRasterSampling {
+    pub fn normalized(self) -> Self {
+        Self {
+            minimum_pixels: SpriteSampling {
+                minimum_pixels: self.minimum_pixels,
+            }
+            .normalized()
+            .minimum_pixels,
+        }
+    }
+
+    pub(crate) fn apply(self, renderers: &mut [aestra_gpu::GpuRenderer]) {
+        let pixels = self.normalized().minimum_pixels;
+        for renderer in renderers {
+            if renderer.renderer_kind == 4
+                && renderer.blend_mode == aestra_gpu::GpuBlend::Additive as u32
+            {
+                // Trail records only use frames[0].x for tile length. Reserve the last W
+                // lane for presentation width without changing the shared renderer ABI.
+                renderer.frames[63].w = pixels;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trail_raster_policy_preserves_width_history_and_other_renderer_kinds() {
+        let mut source = aestra_core::EffectAsset::new("Trail sampling", 1.0);
+        source
+            .emitters
+            .push(aestra_core::Emitter::basic_sprite("Test", 1.0));
+        let compiled = std::sync::Arc::new(
+            aestra_compiler::EffectCompiler::default()
+                .compile(&source)
+                .unwrap(),
+        );
+        let baseline = aestra_gpu::GpuEffectArtifact::from_instance(
+            &aestra_runtime::EffectInstance::new(compiled),
+        )
+        .unwrap()
+        .renderers[0];
+        for kind in 0..5 {
+            for blend in [aestra_gpu::GpuBlend::Alpha, aestra_gpu::GpuBlend::Additive] {
+                let mut original = baseline;
+                original.renderer_kind = kind;
+                if kind == 4 {
+                    original.frames[63].w = 0.0;
+                }
+                original.blend_mode = blend as u32;
+                original.attribute_flags.y = 0.17_f32.to_bits();
+                original.frames[0].x = 12.0;
+                let mut renderers = [original];
+                TrailRasterSampling {
+                    minimum_pixels: 2.0,
+                }
+                .apply(&mut renderers);
+                let mut expected = original;
+                if kind == 4 && blend == aestra_gpu::GpuBlend::Additive {
+                    expected.frames[63].w = 2.0;
+                }
+                assert_eq!(storage(&renderers[0]), storage(&expected));
+                TrailRasterSampling::default().apply(&mut renderers);
+                assert_eq!(storage(&renderers[0]), storage(&original));
+            }
+        }
+        for input in [f32::NAN, f32::INFINITY, -1.0] {
+            assert_eq!(
+                TrailRasterSampling {
+                    minimum_pixels: input
+                }
+                .normalized()
+                .minimum_pixels,
+                0.0
+            );
+        }
+        assert_eq!(
+            TrailRasterSampling {
+                minimum_pixels: 100.0
+            }
+            .normalized()
+            .minimum_pixels,
+            8.0
+        );
+    }
+
+    fn storage(value: &aestra_gpu::GpuRenderer) -> Vec<u8> {
+        let mut buffer = bevy::render::render_resource::encase::StorageBuffer::new(Vec::new());
+        buffer.write(value).unwrap();
+        buffer.into_inner()
+    }
 
     #[test]
     fn policy_is_opt_in_finite_and_only_changes_additive_sprite_presentation() {

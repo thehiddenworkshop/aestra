@@ -70,6 +70,7 @@ fn main() {
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary quarter-pixel sprites at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
+        eprintln!("Native GPU additive trails: --trail-min-pixels 0..8 (default 0; try 2). Presentation width only; not history sampling or HDR.");
         std::process::exit(2);
     });
     // Packaged extensions (extensible-stages M12) installed in the effect's project.
@@ -149,6 +150,9 @@ fn main() {
         })
         .insert_resource(aestra_bevy::SpriteSampling {
             minimum_pixels: config.sprite_minimum_pixels,
+        })
+        .insert_resource(aestra_bevy::TrailRasterSampling {
+            minimum_pixels: config.trail_minimum_pixels,
         })
         .insert_resource(prepared)
         .insert_resource(config)
@@ -257,6 +261,7 @@ struct ViewerConfig {
     tier: aestra_bevy::QualityTier,
     photographic: Option<photographic::PhotographicPreview>,
     sprite_minimum_pixels: f32,
+    trail_minimum_pixels: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,6 +386,7 @@ impl ViewerConfig {
         let mut tier = aestra_bevy::QualityTier::default();
         let mut photographic = None;
         let mut sprite_minimum_pixels = 0.0;
+        let mut trail_minimum_pixels = 0.0;
         let mut args = arguments.into_iter();
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -415,6 +421,11 @@ impl ViewerConfig {
                     let value = args.next().ok_or("--sprite-min-pixels requires a value")?;
                     sprite_minimum_pixels =
                         photographic::bounded_number(&value, "--sprite-min-pixels", 0.0, 8.0)?;
+                }
+                "--trail-min-pixels" => {
+                    let value = args.next().ok_or("--trail-min-pixels requires a value")?;
+                    trail_minimum_pixels =
+                        photographic::bounded_number(&value, "--trail-min-pixels", 0.0, 8.0)?;
                 }
                 "--hdr" => {
                     photographic.get_or_insert_with(photographic::PhotographicPreview::default);
@@ -609,6 +620,14 @@ impl ViewerConfig {
                 "--sprite-min-pixels requires native GPU presentation (auto or gpu)".into(),
             );
         }
+        if trail_minimum_pixels > 0.0
+            && matches!(
+                presentation,
+                PresentationMode::CpuReference | PresentationMode::GpuReadback
+            )
+        {
+            return Err("--trail-min-pixels requires native GPU presentation (auto or gpu)".into());
+        }
         Ok(Self {
             effect_path,
             fireworks_f0,
@@ -629,6 +648,7 @@ impl ViewerConfig {
             tier,
             photographic,
             sprite_minimum_pixels,
+            trail_minimum_pixels,
         })
     }
 
@@ -1495,7 +1515,8 @@ fn receive_capture(
                 response: photographic::CaptureResponse::new(
                     report.config.photographic,
                     report.config.sprite_minimum_pixels,
-                ),
+                )
+                .with_trail_sampling(report.config.trail_minimum_pixels),
             },
             &report.prepared.compiler,
             PreviewRuntimeData {
@@ -1767,6 +1788,52 @@ mod tests {
         }
         for arguments in [vec!["--history"], vec!["--history", "other"]] {
             assert!(ViewerConfig::from_iter(arguments.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
+    fn trail_raster_sampling_is_native_opt_in_and_recorded_without_changing_playback() {
+        let baseline = ViewerConfig::from_iter(std::iter::empty()).unwrap();
+        assert_eq!(baseline.trail_minimum_pixels, 0.0);
+        for value in ["0", "2", "8"] {
+            let config = ViewerConfig::from_iter(
+                ["--trail-min-pixels", value].into_iter().map(str::to_owned),
+            )
+            .unwrap();
+            let pixels = value.parse::<f32>().unwrap();
+            assert_eq!(config.trail_minimum_pixels, pixels);
+            assert_eq!(config.sprite_minimum_pixels, 0.0);
+            assert_eq!(config.history_policy, baseline.history_policy);
+            assert_eq!(config.resolved_seed(), baseline.resolved_seed());
+            assert!(config.photographic.is_none());
+            assert_eq!(
+                prepare_viewer(&config)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled,
+                prepare_viewer(&baseline)
+                    .unwrap_or_else(|e| panic!("{}", e.message))
+                    .compiled
+            );
+            let response = serde_json::to_value(
+                photographic::CaptureResponse::new(
+                    config.photographic,
+                    config.sprite_minimum_pixels,
+                )
+                .with_trail_sampling(config.trail_minimum_pixels),
+            )
+            .unwrap();
+            assert_eq!(response["trail_minimum_pixels"], pixels);
+        }
+        for args in [
+            vec!["--trail-min-pixels"],
+            vec!["--trail-min-pixels", "NaN"],
+            vec!["--trail-min-pixels", "inf"],
+            vec!["--trail-min-pixels", "-1"],
+            vec!["--trail-min-pixels", "9"],
+            vec!["--trail-min-pixels", "2", "--backend", "cpu"],
+            vec!["--backend", "gpu-readback", "--trail-min-pixels", "2"],
+        ] {
+            assert!(ViewerConfig::from_iter(args.into_iter().map(str::to_owned)).is_err());
         }
     }
 
@@ -2142,6 +2209,7 @@ mod tests {
             tier: aestra_bevy::QualityTier::default(),
             photographic: None,
             sprite_minimum_pixels: 0.0,
+            trail_minimum_pixels: 0.0,
         };
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/test/effects/nested_moving_trail_lab.aestra.ron");

@@ -29,6 +29,9 @@ fn trail_outside() -> bool {
     }
     if bounds.size == 2.0 { return true; }
     if bounds.size != 1.0 { return false; }
+    // A pixel floor can expand beyond the authored world-width bounds. Keep empty-history
+    // rejection above, but fail open spatially until this view's padded bounds are available.
+    if r.blend_mode == 1u && r.frames[63].w > 0.0 { return false; }
     let width = abs(bitcast<f32>(r.attribute_flags.y));
     let minimum = bounds.position;
     let maximum = bounds.color.xyz;

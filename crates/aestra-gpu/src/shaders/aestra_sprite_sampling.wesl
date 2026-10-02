@@ -9,6 +9,15 @@ fn aestra_sprite_sampling(projected_pixels: f32, minimum_pixels: f32) -> vec2<f3
     return vec2<f32>(1.0 / ratio, ratio * ratio);
 }
 
+// Strips expand only in width. Do not use a sprite's inverse-AREA attenuation here.
+fn aestra_strip_sampling(projected_pixels: f32, minimum_pixels: f32) -> vec2<f32> {
+    if minimum_pixels <= 0.0 || projected_pixels >= minimum_pixels || projected_pixels <= 0.000001 {
+        return vec2<f32>(1.0, 1.0);
+    }
+    let ratio = projected_pixels / minimum_pixels;
+    return vec2<f32>(1.0 / ratio, ratio);
+}
+
 // Center Jacobian in physical main-pass pixels. Independent of viewport origin and jitter;
 // exact for standard camera-facing perspective/orthographic quads at constant view depth.
 fn aestra_sprite_projected_pixels(clip_from_world: mat4x4<f32>, center: vec4<f32>,

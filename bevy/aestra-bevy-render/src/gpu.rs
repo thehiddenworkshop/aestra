@@ -807,6 +807,7 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
 pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
     sampling: Option<Res<crate::sampling::SpriteSampling>>,
+    trail_sampling: Option<Res<crate::sampling::TrailRasterSampling>>,
     capabilities: Res<GpuCapabilities>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
@@ -1160,6 +1161,11 @@ pub(crate) fn prepare_gpu_effects(
             .div_ceil(WORKGROUP_SIZE as usize) as u32;
         let trail_workgroups = player.effect().emitters.len() as u32;
         sampling
+            .as_deref()
+            .copied()
+            .unwrap_or_default()
+            .apply(&mut artifact.renderers);
+        trail_sampling
             .as_deref()
             .copied()
             .unwrap_or_default()
@@ -1595,6 +1601,7 @@ type PreparedDraws<'w, 's> = Query<
 
 fn update_gpu_inputs(
     sampling: Option<Res<crate::sampling::SpriteSampling>>,
+    trail_sampling: Option<Res<crate::sampling::TrailRasterSampling>>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: PreparedGpuPlayers,
@@ -1763,6 +1770,11 @@ fn update_gpu_inputs(
             }
             let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
             sampling
+                .as_deref()
+                .copied()
+                .unwrap_or_default()
+                .apply(&mut dynamics.renderers);
+            trail_sampling
                 .as_deref()
                 .copied()
                 .unwrap_or_default()

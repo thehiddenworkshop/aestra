@@ -49,10 +49,17 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     let side = ribbon_unit(cross(direction, forward), ribbon_unit(view.world_from_view[0].xyz, vec3<f32>(1.0, 0.0, 0.0)));
     let fade = clamp(1.0 - (globals.time - particles[slot].rotation) / r.frame_rate, 0.0, 1.0);
     let width = particles[slot].size * bitcast<f32>(r.attribute_flags.y) * fade;
+    var sampling = vec2<f32>(1.0, 1.0);
+    if r.blend_mode == 1u && r.frames[63].w > 0.0 && width > 0.0 {
+        let center = vec4<f32>(particles[slot].position, 1.0);
+        let projected = aestra_sprite_projected_pixels(view.unjittered_clip_from_world,
+            center, side * width, side * width, view.main_pass_viewport.zw);
+        sampling = aestra_strip_sampling(projected, r.frames[63].w);
+    }
     // Project the tangent into the billboard plane, keeping caps circular
     // when the trajectory points partly toward the camera.
     let tangent = ribbon_unit(cross(forward, side), direction);
-    let position = particles[slot].position + (side * corner.x + tangent * extension) * width * 0.5;
+    let position = particles[slot].position + (side * corner.x + tangent * extension) * width * sampling.x * 0.5;
     output.clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
     output.color = r.tint;
     if r.particle_color != 0u { output.color *= particles[slot].color; }
@@ -75,6 +82,7 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     output.textured = r.textured | 6u;
     output.effect_time = globals.time;
     output.particle_normalized_age = particles[slot].normalized_age;
-    output.sampling_coverage = 1.0;
+    // Bodies expand in one dimension; round caps expand in two.
+    output.sampling_coverage = sampling.y * select(1.0, sampling.y, cap);
     return output;
 }

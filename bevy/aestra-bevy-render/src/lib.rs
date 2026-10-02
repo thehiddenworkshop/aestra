@@ -351,6 +351,7 @@ impl Plugin for AestraRenderPlugin {
         );
         app.init_resource::<AestraRenderSettings>()
             .init_resource::<sampling::SpriteSampling>()
+            .init_resource::<sampling::TrailRasterSampling>()
             .init_resource::<AestraTextureRoot>()
             .init_resource::<GpuCapabilities>()
             .init_resource::<AestraRuntimeStatus>()

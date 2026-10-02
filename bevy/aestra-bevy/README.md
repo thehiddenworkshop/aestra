@@ -138,6 +138,30 @@ Projection is exact for ordinary camera-facing perspective/orthographic quads at
 view depth; custom projections use a center-Jacobian estimate. Zero/degenerate footprints are
 not resurrected. Start at 2 pixels and compare temporal appearance and GPU cost on target hardware.
 
+## Subpixel additive trails
+
+```rust
+use aestra_bevy::TrailRasterSampling;
+app.insert_resource(TrailRasterSampling { minimum_pixels: 2.0 });
+```
+
+This independent policy defaults to 0, normalizes finite inputs to 0..8 physical main-pass
+pixels and affects only native GPU **additive Trail** presentation. It measures each point's
+faded width through the camera's unjittered projection, widening only undersampled geometry.
+Bodies attenuate final alpha by inverse width; round caps attenuate by inverse area. Authored
+widths, radiance, particle state, UVs, history sampling/LOD, pool sizes and replay are unchanged.
+Live resource edits update presentation without restarting the effect. Ribbons, non-additive
+trails and CPU reference/readback paths are excluded. Zero/expired widths stay invisible.
+
+Pixel expansion exceeds ordinary world bounds, so enabled trails retain conservative CPU
+visibility and bypass the unpadded GPU spatial cull (empty histories still reject). Budget
+extra offscreen submissions and visible fill. The procedural-mask raster tests are not a
+guarantee of shimmer-free arbitrary textures, strongly tapering/depth-varying joins or custom
+projections. Wireframe remains a diagnostic outline, not energy-attenuated shading.
+
+Viewer comparison: `--trail-min-pixels 0|2|4` (native `auto`/`gpu` only). Reports record
+`trail_minimum_pixels` separately from the sprite floor and photographic response.
+
 ## Where to look
 
 | I want… | Read |

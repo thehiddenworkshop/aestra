@@ -55,6 +55,7 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         .unwrap()
         .renderers[0];
     renderer.renderer_kind = 4;
+    renderer.frames[63].w = 0.0;
     renderer.attribute_flags.z = 0;
     renderer.attribute_flags.y = 1.0f32.to_bits();
     let globals = GpuRenderGlobals {
@@ -193,6 +194,32 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         "another camera sees the same world history"
     );
     assert_eq!(run(outside, params, renderer), 0);
+    let mut sampled = renderer;
+    sampled.blend_mode = aestra_gpu::GpuBlend::Additive as u32;
+    sampled.frames[63].w = 2.0;
+    assert_eq!(
+        run(outside, params, sampled),
+        79,
+        "screen-width expansion must bypass unpadded spatial culling"
+    );
+    assert_eq!(
+        run(
+            GpuParticle {
+                size: 2.0,
+                ..outside
+            },
+            params,
+            sampled
+        ),
+        0,
+        "empty histories remain rejected"
+    );
+    sampled.blend_mode = aestra_gpu::GpuBlend::Alpha as u32;
+    assert_eq!(
+        run(outside, params, sampled),
+        0,
+        "excluded blend modes keep authored-width culling"
+    );
     queue.write_buffer(&buffers[6], 0, &encode(&vec![4u32, 17, 0, 0]));
     assert_eq!(
         run(header, params, renderer),

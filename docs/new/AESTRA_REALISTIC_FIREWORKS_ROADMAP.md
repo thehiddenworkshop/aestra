@@ -2485,6 +2485,70 @@ stateful culling, dense visible fill, narrow-trail sampling, artistic reference 
 finale/target-tier budgets. There is no new host API and no change to authored assets, particle
 state, shaders, replay policy or production-wide sampling defaults.
 
+### F4H implemented — opt-in minimum-width additive trails (2026-10-02)
+
+- Added independent host resource `TrailRasterSampling { minimum_pixels }`, re-exported by
+  `aestra-bevy`. Default 0; finite 0..8 physical main-pass pixels. Only native GPU additive
+  **Trail** draws qualify: ribbons, other blends, sprites/meshes/flipbooks and CPU/readback
+  presentation are unchanged. This is raster treatment, not Time/Distance/Adaptive history
+  sampling, pool LOD, replay storage or a new authored trail width.
+- Shared legacy/semantic trail vertices measure each point's faded projected width through
+  the unjittered main-pass camera, widening only undersampled geometry. Final coverage is
+  attenuated by inverse width on strip bodies and inverse area on circular caps. Existing
+  endpoint frames keep shared joins attached. Original particle color/opacity/size, width,
+  age fading, UV distance, history, event demand and simulation remain unchanged. Zero-width,
+  expired and already-resolved geometry do not acquire new treatment/energy.
+- Reuses the Trail-only `frames[63].w` presentation lane; renderer/storage binding sizes are
+  unchanged. Portable artifact and dynamic builders explicitly initialize it to **0**, not
+  the flipbook UV default of 1. Bevy uploads policy changes with current render inputs without
+  rebuilding/restarting the simulation. Host control is independent from `SpriteSampling`.
+- Until per-view pixel-padded trail bounds are available, enabled trails bypass the existing
+  unpadded GPU spatial cull. CPU visibility stays conservative, raster clipping remains and
+  valid empty histories can still reject. Native culling regressions cover this fallback,
+  empty histories, excluded blends and restoration of normal culling at floor 0. Offscreen
+  submissions and increased visible fill are costs, not an optimization/free quality gain.
+- Viewer adds `--trail-min-pixels 0..8`, rejects treatment for CPU/readback requests and records
+  `trail_minimum_pixels` in benchmark/capture response metadata. Existing schema-1 consumers
+  can ignore the additive field; absence in older reports means default-disabled treatment.
+  CLI tests prove unchanged compiled assets, seeds, history and photographic settings.
+
+Required native **RTX 4070 SUPER / Vulkan** raster tests use 16 independent, joined four-pixel
+trail bodies crossing 32 pixel phases: **512 samples per row/path**, untextured procedural
+mask, feather 0.2, linear coverage before HDR/bloom. Legacy additive and constant-alpha semantic
+paths produce the same values (semantic fading/attenuation does not depend on an authored
+ParticleOpacity node). Both body-only and round-cap variants pass; selected body results:
+
+| Age fade | Pixel floor | Dropouts / 512 | Mean summed alpha | Relative temporal standard deviation |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 0 | 400 | 0.875000 | 1.8898 |
+| 1 | 2 | 0 | 0.900015 | 0.1831 |
+| 1 | 4 | 0 | 0.899995 | 0.1029 |
+| 0.5 | 0 | 464 | 0.187500 | 3.1091 |
+| 0.5 | 2 | 0 | 0.225004 | 0.1831 |
+| 0.5 | 4 | 0 | 0.224999 | 0.1029 |
+
+The body integral is `4 × 0.25 × fade² × (1 - feather/2)`, giving 0.9/0.225. Cap variants
+add their original small area rather than a bright widened halo (mean 0.944469/0.943936 at
+fade 1 for floors 2/4). Tests also cover angled trails, expanded viewport edges, wholly clipped
+offscreen geometry, zero/expired widths, byte-identical resolved widths and unchanged alpha
+blends. This bounded probe is not analytic integration of arbitrary textured masks, a guarantee
+for sharply tapering/depth-varying joins or custom cameras, or a full-show quality/budget gate.
+
+Wide-camera HDR willow captures at frames **80/150/300/540** compare floors 0/2 with identical
+seed, playback-only history, sprite floor 2, exposure 0, Tony and bloom 0.15. Late trails are
+visibly continuous rather than broken streaks. Artifacts/reports:
+`target/fireworks-f4/f4h-willow-trail-{0,2}`. Reproduce the treated capture:
+
+```powershell
+cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f3-willow --camera wide --backend gpu --history playback-only --hdr --exposure 0 --sprite-min-pixels 2 --trail-min-pixels 2 --sample-frames 80,150,300,540 --capture target/fireworks-f4/f4h-willow-trail-2
+```
+
+Verification: native sprite/trail raster and trail-culling regressions, policy tests, portable
+WGSL/SPIR-V/HLSL shader/Trail contracts, reviewed shader snapshots, viewer suite **56 passed,
+one ignored**, and strict renderer/viewer all-target Clippy pass. F4 remains in progress:
+all-shell reference matching, trail fill/offscreen budgets and production finale/target tiers
+must still be evaluated before choosing any sampling default. No shipping default is enabled.
+
 ### HDR material / host convention
 
 - Unlit semantic material `Color` is linear scene RGB and may exceed 1; the generated
@@ -2502,9 +2566,9 @@ state, shaders, replay policy or production-wide sampling defaults.
 
 - Refine authored radiance/highlight/color preservation against reference footage; the new
   8/4 gains are initial artistic defaults, not physical calibration. F4D adds opt-in sprite
-  footprint treatment; assess temporal star appearance, narrower trail sampling, offscreen
-  submission cost and overdraw before choosing a production default. Trail rasterization/LOD
-  and analytic pixel integration remain unchanged.
+  footprint treatment and F4H adds opt-in trail width treatment; assess remaining textured/
+  tapered cases, offscreen submission cost and overdraw before choosing a production default.
+  Trail history LOD and analytic pixel integration remain unchanged.
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.
