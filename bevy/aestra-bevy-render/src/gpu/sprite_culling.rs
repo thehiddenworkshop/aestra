@@ -14,6 +14,7 @@ pub(super) struct View {
     clip_from_world: Mat4,
     pixel_padding: Vec2,
     pixel_ratio: f32,
+    pixel_radius_per_clip_w: f32,
 }
 
 /// Prepare camera data once per view, not once per draw or particle. None fails open.
@@ -54,7 +55,15 @@ impl View {
             clip_from_world,
             pixel_padding: Vec2::splat(2.0) / viewport.as_vec2(),
             pixel_ratio,
+            pixel_radius_per_clip_w: 1.0001 / pixels.min_element(),
         })
+    }
+
+    /// Standard billboard-plane unit axes have a projected width of at least
+    /// min(lens * viewport) / (2 * clip W). Bound the radius of expanded strips
+    /// and circular caps, with a small guard for accepted camera/float roundoff.
+    pub(super) fn pixel_radius_per_clip_w(&self) -> f32 {
+        self.pixel_radius_per_clip_w
     }
 
     /// Unknown/unbounded inputs fail open. This is per draw/view, never per particle.
@@ -229,6 +238,43 @@ mod tests {
             ndc.y * w / projection.y_axis.y,
             -depth,
         )
+    }
+
+    #[test]
+    fn trail_radius_scale_uses_the_smallest_physical_pixel_lens_axis() {
+        for projection in projections() {
+            let mut extracted = extracted(projection);
+            for viewport in [UVec2::new(960, 540), UVec2::new(240, 540)] {
+                let override_resolution = MainPassResolutionOverride(viewport);
+                let expected = 1.0001
+                    / (Vec2::new(projection.x_axis.x.abs(), projection.y_axis.y.abs())
+                        * viewport.as_vec2())
+                    .min_element();
+                assert_eq!(
+                    prepare(&extracted, Some(&override_resolution), false)
+                        .unwrap()
+                        .pixel_radius_per_clip_w(),
+                    expected
+                );
+                extracted.viewport.x = 100;
+                extracted.viewport.y = 200;
+                extracted.world_from_view = GlobalTransform::from(
+                    Transform::from_xyz(12.0, 3.0, -4.0).with_rotation(Quat::from_euler(
+                        EulerRot::XYZ,
+                        0.4,
+                        1.3,
+                        0.2,
+                    )),
+                );
+                assert_eq!(
+                    prepare(&extracted, Some(&override_resolution), false)
+                        .unwrap()
+                        .pixel_radius_per_clip_w(),
+                    expected,
+                    "viewport origin and camera pose do not change physical width"
+                );
+            }
+        }
     }
 
     #[test]

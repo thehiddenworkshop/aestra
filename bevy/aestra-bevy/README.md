@@ -164,10 +164,14 @@ Live resource edits update presentation without restarting the effect. Ribbons, 
 trails and CPU reference/readback paths are excluded. Zero/expired widths stay invisible.
 
 Pixel expansion exceeds ordinary world bounds, so enabled trails retain conservative CPU
-visibility and bypass the unpadded GPU spatial cull (empty histories still reject). Budget
-extra offscreen submissions and visible fill. The procedural-mask raster tests are not a
-guarantee of shimmer-free arbitrary textures, strongly tapering/depth-varying joins or custom
-projections. Wireframe remains a diagnostic outline, not energy-attenuated shading.
+visibility. Per-view GPU culling pads current whole-history bounds for the physical main-pass
+resolution on standard rigid perspective/orthographic cameras, including round caps. Unknown
+or stale bounds, unsupported camera transforms/projections and eye-plane-crossing histories
+fail open; jittered views and custom vertex displacement retain the conservative fallback.
+Culling suppresses offscreen raster work, not simulation or history recording. Visible fill
+still needs budgeting. The procedural-mask raster tests are not a guarantee of shimmer-free
+arbitrary textures or strongly tapering/depth-varying joins. Wireframe remains a diagnostic
+outline, not energy-attenuated shading.
 
 Viewer comparison: `--trail-min-pixels 0|2|4` (native `auto`/`gpu` only). Reports record
 `trail_minimum_pixels` separately from the sprite floor and photographic response.

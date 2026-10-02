@@ -68,7 +68,7 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         renderer_index: 0,
         instance_count: 79,
         epoch: 9,
-        _padding: 0,
+        pixel_radius_per_clip_w: 0.0,
     };
     let header = GpuParticle {
         packed_emitter_alive: 1,
@@ -200,8 +200,69 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
     assert_eq!(
         run(outside, params, sampled),
         79,
-        "screen-width expansion must bypass unpadded spatial culling"
+        "unsupported views still bypass spatial culling"
     );
+    let sampled_params = GpuTrailCullParams {
+        pixel_radius_per_clip_w: 1.0001 / 540.0,
+        ..params
+    };
+    assert_eq!(
+        run(outside, sampled_params, sampled),
+        0,
+        "supported view rejects distant sampled history"
+    );
+    let mut thin = sampled;
+    thin.attribute_flags.y = 0.0001_f32.to_bits();
+    for floor in [2.0, 4.0, 8.0] {
+        thin.frames[63].w = floor;
+        for edge in [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y] {
+            let near = moved(edge * 1.0005 + Vec3::Z * 0.5);
+            let far = moved(edge * 1.2 + Vec3::Z * 0.5);
+            for flags in [0, 2] {
+                thin.flipbook_flags = flags;
+                assert_eq!(run(near, params, thin), 79);
+                assert_eq!(
+                    run(near, sampled_params, thin),
+                    79,
+                    "expanded body/cap at every edge stays visible"
+                );
+                assert_eq!(
+                    run(far, sampled_params, thin),
+                    0,
+                    "wholly outside expanded radius"
+                );
+            }
+        }
+    }
+    thin.frames[63].w = 4.0;
+    let near = moved(Vec3::new(1.02, 0.0, 0.5));
+    assert_eq!(run(near, sampled_params, thin), 0);
+    assert_eq!(
+        run(
+            near,
+            GpuTrailCullParams {
+                pixel_radius_per_clip_w: 1.0001 / 54.0,
+                ..params
+            },
+            thin
+        ),
+        79,
+        "lower physical render resolution widens the same floor"
+    );
+    for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(
+            run(
+                outside,
+                GpuTrailCullParams {
+                    pixel_radius_per_clip_w: scale,
+                    ..params
+                },
+                sampled
+            ),
+            79,
+            "unsupported or invalid pixel scale fails open"
+        );
+    }
     assert_eq!(
         run(
             GpuParticle {
@@ -333,6 +394,7 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         ),
         79
     );
+    sampled.blend_mode = aestra_gpu::GpuBlend::Additive as u32;
     let perspective = GpuTrailCullParams {
         clip_from_world: Mat4::perspective_infinite_reverse_rh(1.0, 1.0, 0.1),
         ..params
@@ -345,4 +407,93 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         run(moved(Vec3::new(30.0, 0.0, -3.0)), perspective, renderer),
         0
     );
+    let perspective = GpuTrailCullParams {
+        pixel_radius_per_clip_w: 1.0001 / (perspective.clip_from_world.y_axis.y * 540.0),
+        ..perspective
+    };
+    assert_eq!(
+        run(moved(Vec3::new(30.0, 0.0, -3.0)), perspective, sampled),
+        0
+    );
+    let crosses_eye = GpuParticle {
+        position: Vec3::new(30.0, 0.0, -3.0),
+        color: Vec4::new(31.0, 0.0, 3.0, 1.0),
+        ..header
+    };
+    assert_eq!(
+        run(crosses_eye, perspective, sampled),
+        79,
+        "eye-plane crossing fails open"
+    );
+    assert_eq!(
+        run(
+            outside,
+            GpuTrailCullParams {
+                epoch: 10,
+                ..sampled_params
+            },
+            sampled
+        ),
+        79,
+        "sampled views cannot trust stale epoch bounds either"
+    );
+    for projection in [
+        Mat4::perspective_infinite_reverse_rh(1.0, 960.0 / 540.0, 0.1),
+        Mat4::orthographic_rh(-16.0, 16.0, -9.0, 9.0, 0.1, 1000.0),
+    ] {
+        for viewport in [
+            bevy::math::Vec2::new(960.0, 540.0),
+            bevy::math::Vec2::new(96.0, 54.0),
+        ] {
+            let pose = Mat4::from_scale_rotation_translation(
+                Vec3::ONE,
+                bevy::math::Quat::from_euler(bevy::math::EulerRot::XYZ, 0.4, 1.3, 0.2),
+                Vec3::new(12.0, 3.0, -4.0),
+            );
+            let view_params = GpuTrailCullParams {
+                clip_from_world: projection * pose.inverse(),
+                pixel_radius_per_clip_w: 1.0001
+                    / (bevy::math::Vec2::new(projection.x_axis.x.abs(), projection.y_axis.y.abs())
+                        * viewport)
+                        .min_element(),
+                ..params
+            };
+            let depth = -10.0;
+            let clip = projection * Vec3::new(0.0, 0.0, depth).extend(1.0);
+            let position = |ndc: bevy::math::Vec2| {
+                pose.transform_point3(Vec3::new(
+                    (ndc.x * clip.w - clip.x) / projection.x_axis.x,
+                    (ndc.y * clip.w - clip.y) / projection.y_axis.y,
+                    depth,
+                ))
+            };
+            for floor in [2.0, 4.0, 8.0] {
+                thin.frames[63].w = floor;
+                for edge in [
+                    bevy::math::Vec2::X,
+                    -bevy::math::Vec2::X,
+                    bevy::math::Vec2::Y,
+                    -bevy::math::Vec2::Y,
+                ] {
+                    assert_eq!(
+                        run(
+                            moved(position(
+                                edge * (bevy::math::Vec2::ONE
+                                    + bevy::math::Vec2::splat(0.5) / viewport)
+                            )),
+                            view_params,
+                            thin
+                        ),
+                        79,
+                        "rotated camera retains widened edge"
+                    );
+                    assert_eq!(
+                        run(moved(position(edge * 1.2)), view_params, thin),
+                        0,
+                        "rotated camera rejects offscreen history"
+                    );
+                }
+            }
+        }
+    }
 }

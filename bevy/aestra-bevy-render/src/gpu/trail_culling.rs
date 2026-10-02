@@ -4,6 +4,7 @@ use super::{GpuDrawInstance, GpuEffectBuffers, GpuParticle, GpuRenderGlobals, Gp
 use aestra_gpu::GpuTrailCullParams;
 use bevy::{
     app::SubApp,
+    camera::MainPassResolutionOverride,
     prelude::*,
     render::{
         Render, RenderStartup, RenderSystems,
@@ -97,7 +98,12 @@ fn init_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: Res<Pi
 
 #[allow(clippy::too_many_arguments)]
 fn prepare(
-    views: Query<(Entity, &ExtractedView, Option<&TemporalJitter>)>,
+    views: Query<(
+        Entity,
+        &ExtractedView,
+        Option<&TemporalJitter>,
+        Option<&MainPassResolutionOverride>,
+    )>,
     draws: Query<(Entity, &GpuDrawInstance)>,
     effects: Query<&GpuEffectBuffers>,
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
@@ -114,7 +120,7 @@ fn prepare(
         .iter()
         .map(|effect| (effect.render_globals.id(), effect.history_epoch))
         .collect();
-    for (view_entity, view, jitter) in &views {
+    for (view_entity, view, jitter, resolution) in &views {
         // Until we consume the exact jittered view uniform, opt out for TAA views.
         if jitter.is_some() {
             continue;
@@ -125,6 +131,11 @@ fn prepare(
         if !matrix.is_finite() || !matrix.determinant().is_finite() || matrix.determinant() == 0.0 {
             continue;
         }
+        // Reuse the sprite camera contract: standard rigid projection, exact
+        // physical main-pass resolution, no unsupported override or jitter.
+        // Zero retains empty-history rejection but fails open for sampled widths.
+        let pixel_radius_per_clip_w = super::sprite_culling::prepare(view, resolution, false)
+            .map_or(0.0, |view| view.pixel_radius_per_clip_w());
         for (draw_entity, draw) in &draws {
             let Some(instance_count) = draw.trail_instances else {
                 continue;
@@ -154,7 +165,7 @@ fn prepare(
                 renderer_index: draw.renderer_order,
                 instance_count,
                 epoch,
-                _padding: 0,
+                pixel_radius_per_clip_w,
             };
             let mut encoded = UniformBuffer::new(Vec::new());
             encoded.write(&params).expect("trail culling uniform ABI");

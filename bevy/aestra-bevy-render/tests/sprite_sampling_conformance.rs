@@ -427,6 +427,60 @@ fn assert_trail_sampling(
             "expanded trail edge must survive; wholly offscreen trails must clip"
         );
     }
+    // Compare actual production trail rasterization with/without the native
+    // indirect cull, not a duplicate CPU formula. Includes expanded side edges,
+    // rotated/age-faded strips and wholly offscreen histories.
+    for caps in [false, true] {
+        for fade in [1.0, 0.5] {
+            for translation_pixels in [
+                [28.25, 0.0],
+                [-29.0, 0.0],
+                [0.0, 28.25],
+                [0.0, -29.0],
+                [64.0, 0.0],
+            ] {
+                let case = RasterCase {
+                    pixels: 0.25,
+                    floor: 4.0,
+                    phase: [0.0; 2],
+                    rotation: 0.65,
+                    translation_pixels,
+                    trail: Some(TrailCase { fade, caps }),
+                };
+                assert_eq!(
+                    raster_case(device, queue, source, fragment, renderer, case),
+                    raster_case_with_culling(device, queue, source, fragment, renderer, case, true),
+                    "culled raster differs at {translation_pixels:?}, caps={caps}, fade={fade}"
+                );
+            }
+        }
+    }
+    for caps in [false, true] {
+        for (translation_pixels, rotation) in [
+            ([30.25, 0.0], std::f32::consts::FRAC_PI_2),
+            ([0.0, 30.25], 0.0),
+        ] {
+            let case = RasterCase {
+                pixels: 0.25,
+                floor: 4.0,
+                phase: [0.0; 2],
+                rotation,
+                translation_pixels,
+                trail: Some(TrailCase { fade: 1.0, caps }),
+            };
+            let direct = raster_case(device, queue, source, fragment, renderer, case);
+            assert_eq!(
+                cell_energy(&direct).into_iter().sum::<f32>() > 0.0,
+                caps,
+                "only the widened round cap enters this viewport"
+            );
+            assert_eq!(
+                direct,
+                raster_case_with_culling(device, queue, source, fragment, renderer, case, true),
+                "cap-only overlap must survive culling"
+            );
+        }
+    }
     let mut alpha = renderer;
     alpha.blend_mode = aestra_gpu::GpuBlend::Alpha as u32;
     let alpha_case = |floor| {
@@ -498,6 +552,7 @@ fn raster(
     )
 }
 
+#[derive(Clone, Copy)]
 struct RasterCase {
     pixels: f32,
     floor: f32,
@@ -518,8 +573,21 @@ fn raster_case(
     queue: &wgpu::Queue,
     source: &str,
     fragment: &str,
+    renderer: GpuRenderer,
+    case: RasterCase,
+) -> Vec<u8> {
+    raster_case_with_culling(device, queue, source, fragment, renderer, case, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raster_case_with_culling(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
     mut renderer: GpuRenderer,
     case: RasterCase,
+    culling: bool,
 ) -> Vec<u8> {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sprite sampling raster"),
@@ -676,6 +744,26 @@ fn raster_case(
             }
             aux[base * 3 + 1] = 2;
         }
+        if culling {
+            let minimum = particles[1..]
+                .iter()
+                .fold(Vec3::splat(f32::INFINITY), |bounds, particle| {
+                    bounds.min(particle.position)
+                });
+            let maximum = particles[1..]
+                .iter()
+                .fold(Vec3::splat(f32::NEG_INFINITY), |bounds, particle| {
+                    bounds.max(particle.position)
+                });
+            particles[0] = GpuParticle {
+                position: minimum,
+                color: maximum.extend(1.0),
+                size: 1.0,
+                packed_emitter_alive: 1,
+                ..Default::default()
+            };
+            aux[0] = 9;
+        }
         instance_count = 16 * if trail.caps { 18 } else { 2 };
     }
     let data = [
@@ -756,6 +844,7 @@ fn raster_case(
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&Default::default());
+    let indirect = culling.then(|| trail_indirect(device, &mut encoder, &buffers, instance_count));
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -773,7 +862,11 @@ fn raster_case(
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &view_group, &[]);
         pass.set_bind_group(1, &draw_group, &[]);
-        pass.draw(0..4, 0..instance_count);
+        if let Some(indirect) = &indirect {
+            pass.draw_indirect(indirect, 0);
+        } else {
+            pass.draw(0..4, 0..instance_count);
+        }
     }
     encoder.copy_texture_to_buffer(
         target.as_image_copy(),
@@ -792,6 +885,81 @@ fn raster_case(
         },
     );
     map(device, queue, encoder, &readback)
+}
+
+fn trail_indirect(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    buffers: &[wgpu::Buffer],
+    instance_count: u32,
+) -> wgpu::Buffer {
+    let code = aestra_gpu::shader::compile_wesl(
+        "package::trail_cull",
+        &aestra_gpu::shader::trail_cull_wesl(),
+        &["cull_trail"],
+    )
+    .unwrap();
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("production trail culling before raster"),
+        source: wgpu::ShaderSource::Wgsl(code.wgsl.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &shader,
+        entry_point: Some("cull_trail"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: &storage(&aestra_gpu::GpuTrailCullParams {
+            clip_from_world: Mat4::IDENTITY,
+            renderer_index: 0,
+            instance_count,
+            epoch: 9,
+            pixel_radius_per_clip_w: 1.0001 / 32.0,
+        }),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let indirect = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 16,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
+        mapped_at_creation: false,
+    });
+    let source = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: &storage(&vec![4_u32, instance_count, 0, 0]),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let inputs = [
+        &buffers[1],
+        &buffers[0],
+        &params,
+        &indirect,
+        &buffers[3],
+        &buffers[5],
+        &source,
+    ];
+    let entries = inputs
+        .iter()
+        .enumerate()
+        .map(|(binding, buffer)| wgpu::BindGroupEntry {
+            binding: binding as u32,
+            resource: buffer.as_entire_binding(),
+        })
+        .collect::<Vec<_>>();
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &entries,
+    });
+    let mut pass = encoder.begin_compute_pass(&Default::default());
+    pass.set_pipeline(&pipeline);
+    pass.set_bind_group(0, &group, &[]);
+    pass.dispatch_workgroups(1, 1, 1);
+    indirect
 }
 
 fn assert_projection_math(device: &wgpu::Device, queue: &wgpu::Queue) {

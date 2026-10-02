@@ -54,7 +54,12 @@ pub struct GpuTrailCullParams {
     pub renderer_index: u32,
     pub instance_count: u32,
     pub epoch: u32,
-    pub _padding: u32,
+    /// World-space radius per minimum-width pixel and positive clip W. Hosts derive
+    /// this conservatively as 1 / min(abs(projection.xy diagonal) * physical
+    /// main-pass viewport), with a roundoff guard (Bevy uses 1.0001), for a rigid,
+    /// standard camera. Zero disables sampled spatial rejection.
+    /// This occupies the former padding word; the uniform layout is unchanged.
+    pub pixel_radius_per_clip_w: f32,
 }
 /// Eight triangles per semicircular endpoint; must match the trail vertex shader.
 pub const TRAIL_CAP_SEGMENTS: u32 = 8;

@@ -2679,7 +2679,70 @@ under both history policies, Once/continuous/restart modes, fractional loops, sp
 ticks, single/project cues, silent seeks (including the inclusive final frame), restart
 re-emission, real one-ULP backward jumps,
 seed invalidation and bounded genuine trail reconstruction. F4 remains **in progress**;
-pixel-padded trail culling and production/reference/tier gates remain separate next steps.
+Pixel-padded trail culling follows in F4K below; production/reference/tier gates remain open.
+
+### F4K implemented — pixel-aware whole-history trail culling (2026-10-02)
+
+- Replaced F4H's unconditional sampled additive-trail spatial bypass with a conservative
+  per-view radius enclosing the widened strip and circular caps. The GPU uses the current
+  whole-history position AABB and maximum recorded size, including retired tails, rather
+  than the current head alone. Authored width is retained; the pixel floor is bounded using
+  the smallest physical-pixel projection axis and maximum positive clip W over the history.
+  Frustum planes test the point AABB plus a width/cap sphere; rotated cameras no longer pay
+  the unnecessarily loose world-axis cube padding.
+- Reused the sprite camera contract: standard rigid perspective/orthographic cameras,
+  physical main-pass resolution (including resolution overrides), and consistent unjittered
+  projection. Unknown/stale/non-finite bounds, unsupported camera scale/shear/projection,
+  invalid pixel coefficients and eye-plane-crossing sampled histories fail open. Jittered
+  views and custom vertex displacement keep the existing no-cull fallback. Empty-history
+  rejection and per-view indirect counts remain; no CPU readback or additional binding.
+- The 80-byte `GpuTrailCullParams` ABI reuses its former padding word as
+  `pixel_radius_per_clip_w`. Other hosts can supply zero for the previous sampled spatial
+  fallback, or the documented conservative camera coefficient for supported views.
+  CPU visibility remains permissive. This is whole-draw raster rejection, **not** simulation
+  culling, per-segment compaction, trail-pool reduction or a new shipping pixel-floor default.
+
+Sequential native-GPU development-build runs use the same F4I/F4J setup: RTX 4070 SUPER /
+Vulkan, 960×540, high tier, wide camera, migrated semantic material, fixed seed,
+HDR/Tony/exposure 0/bloom 0.15, playback-only history, 1/60 step, 120 warm-up + 600 measured
+frames. All three deliver **600 fresh raster and paired simulation observations**, each
+simulation observation doing 1,899 workgroups with no 240-observation reconstruction batches.
+Minimum/peak live particles and occupied owners stay **8,192**, retired owners/evictions/
+truncation stay zero, and estimated effect-buffer memory remains **5,445,936 bytes**.
+
+| Probe | Trail floor | Transparent GPU p50 / p95 (ms) | Vertex invocations min / max | Simulation p50 / p95 / p99 / max (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Dense patch | 2 | 0.396 / 0.536 | 163,840 / 196,608 | 1.534 / 1.722 / 1.743 / 1.756 |
+| Offscreen | 2 | 0.003 / 0.004 | 0 / 0 | 1.576 / 1.776 / 1.791 / 1.814 |
+| Offscreen | 4 | 0.003 / 0.004 | 0 / 0 | 1.629 / 1.789 / 1.806 / 1.844 |
+
+Reports: `target/fireworks-f4/f4k-f4-trail-{fill-2,offscreen-2,offscreen-4}-bench.json`.
+F4J's floor-2 offscreen baseline submitted 163,840–196,608 vertices per sample and measured
+transparent-pass p50/p95 **0.345/0.446 ms** despite zero fragments. Both F4K offscreen runs
+record zero vertex, clipper and fragment invocations throughout; history keeps recording.
+The dense probe retains its visible workload and similar raster p95. These are transparent
+pass timings, **not** separately measured culling cost, whole-frame budgets or proof of
+real-time catch-up/full-show/finale throughput. Simulation is not optimized here; its measured
+medians/p95 vary and do not show an improvement over F4J.
+
+Verification:
+
+- Required native GPU decision tests retain expanded footprints at all four viewport edges
+  for floors 2/4/8, flat/round caps, translated/rotated perspective and orthographic cameras,
+  and differing physical resolutions; distant histories reject. Existing multi-view,
+  compacted-count, re-entry, retired-tail and invalidation cases continue to pass.
+- Production legacy and semantic additive raster paths produce **byte-identical pixels**
+  with culling on/off across all four edges, fade levels, rotated strips, fully offscreen
+  histories and cases where only a widened round cap enters the viewport.
+- Exact-frame dense floor-2 captures at 120/360 are byte-identical to F4J; offscreen floor-4
+  captures at 120/360 are byte-identical to F4I (`target/fireworks-f4/f4k-{fill-2,offscreen-4}-capture`).
+- Portable shader contract tests **9 passed** (WGSL/SPIR-V/HLSL translation), renderer camera/
+  queue tests **8 passed**, both required native GPU conformance suites passed, viewer
+  **58 passed, one ignored**, and strict all-target Clippy for GPU/renderer/Bevy/viewer passed.
+
+F4 remains **in progress**. Next prioritize authored-shell visual/reference acceptance at
+close/audience/wide framing, then real-time full-show/finale and target-device tier validation.
+Do not choose a shipping pixel floor or declare AAA readiness from these stress fixtures.
 
 ### HDR material / host convention
 
@@ -2699,13 +2762,16 @@ pixel-padded trail culling and production/reference/tier gates remain separate n
 - Refine authored radiance/highlight/color preservation against reference footage; the new
   8/4 gains are initial artistic defaults, not physical calibration. F4D adds opt-in sprite
   footprint treatment and F4H adds opt-in trail width treatment; assess remaining textured/
-  tapered cases, offscreen submission cost and overdraw before choosing a production default.
+  tapered cases, unsupported-view offscreen submission cost and visible overdraw before
+  choosing a production default. F4K removes sampled-trail offscreen raster work for supported
+  cameras in the bounded probes, not all workload or camera configurations.
   Trail history LOD and analytic pixel integration remain unchanged.
 - Compare all shell types at close/audience/wide framing and assess the night scene,
   smoke and heavy-overlap response. This slice proves the response path, not AAA realism.
 - Production budget/finale gates remain open. F4 is **in progress**, not complete.
   F4J resolves F4I's avoidable 240-observation clock-driven history rebuilds in the bounded
-  analytic probes. Still measure real-time/full-show playback and target-device tiers;
+  analytic probes; F4K adds safe pixel-aware trail culling. Still measure real-time/full-show
+  playback and target-device tiers;
   removing that bug alone does not certify a smooth runtime tier.
 
 ### Tasks
