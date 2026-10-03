@@ -1189,7 +1189,10 @@ fn navigate_to_diagnostic(
     };
     if matches!(
         target,
-        SemanticTarget::Emitter(_) | SemanticTarget::Module(_) | SemanticTarget::Renderer(_)
+        SemanticTarget::Emitter(_)
+            | SemanticTarget::Module(_)
+            | SemanticTarget::Renderer(_)
+            | SemanticTarget::PointLight(_)
     ) {
         session.selection.primary = target;
     }
@@ -1199,6 +1202,12 @@ fn navigate_to_diagnostic(
 }
 
 fn semantic_target_for_diagnostic_path(effect: &EffectAsset, path: &str) -> Option<SemanticTarget> {
+    if let Some(index) = diagnostic_collection_index(path, "point_lights") {
+        return effect
+            .point_lights
+            .get(index)
+            .map(|binding| SemanticTarget::PointLight(binding.id));
+    }
     if let Some(clip_index) = diagnostic_collection_index(path, "effect_clips") {
         return effect
             .effect_clips
@@ -1347,6 +1356,42 @@ mod tests {
         ));
         assert_eq!(session.selection.primary, SemanticTarget::Module(expected));
         assert_eq!(session.selected_layer_index().unwrap(), 2);
+    }
+
+    #[test]
+    fn diagnostic_navigation_selects_the_owning_point_light_by_stable_id() {
+        let mut session = test_support::session_with_timing_slack();
+        let binding = aestra_core::PointLightBinding::new(
+            aestra_core::EventRouteId::new(),
+            aestra_core::PointLightPulse::flash([1.0; 3], 1000.0, 10.0, 0.6),
+        );
+        let id = binding.id;
+        session.effect.point_lights.push(binding);
+        session.diagnostics = session.effect.validation_report();
+        let index = session
+            .diagnostics
+            .diagnostics
+            .iter()
+            .position(|diagnostic| diagnostic.path == "effect.point_lights[0].route")
+            .unwrap();
+        assert!(navigate_to_diagnostic(
+            &mut session,
+            None,
+            DiagnosticSource::Current,
+            index
+        ));
+        assert_eq!(session.selection.primary, SemanticTarget::PointLight(id));
+        assert_eq!(
+            semantic_target_for_diagnostic_path(
+                &session.effect,
+                "effect.point_lights[0].pulse.range"
+            ),
+            Some(SemanticTarget::PointLight(id))
+        );
+        assert_eq!(
+            semantic_target_for_diagnostic_path(&session.effect, "effect.point_lights[9].route"),
+            None
+        );
     }
 
     #[test]

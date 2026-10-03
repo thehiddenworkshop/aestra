@@ -24,6 +24,10 @@ pub(super) fn spawn_selection_inspector(
             spawn_effect_details(parent, session, localizer);
             return;
         }
+        SemanticTarget::PointLight(_) => {
+            super::scene_lights::spawn(parent, session, localizer);
+            return;
+        }
         SemanticTarget::Module(id) => {
             // A module of the effect's own simulation stages (fluid F2).
             if let Some((path, module)) = session
@@ -159,6 +163,7 @@ pub(super) fn spawn_effect_details(
             );
         });
     super::interface::spawn_interface(parent, session, localizer);
+    super::scene_lights::spawn(parent, session, localizer);
 }
 
 /// The Emitter-item inspector details (extensible-stages M9, §28.1): name, enabled, capacity, transform,

@@ -19,6 +19,7 @@ pub enum SemanticTarget {
     Curve(CurveId),
     Gradient(GradientId),
     Event(EventId),
+    PointLight(aestra_core::EventRouteId),
 }
 
 impl fmt::Display for SemanticTarget {
@@ -35,6 +36,7 @@ impl fmt::Display for SemanticTarget {
             Self::Curve(id) => write!(formatter, "curve {id}"),
             Self::Gradient(id) => write!(formatter, "gradient {id}"),
             Self::Event(id) => write!(formatter, "event {id}"),
+            Self::PointLight(id) => write!(formatter, "point light {id}"),
         }
     }
 }
@@ -331,6 +333,10 @@ impl LockState {
 
 fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<SemanticTarget>) {
     match command {
+        EffectCommand::AddPointLight { .. } => (None, None),
+        EffectCommand::RemovePointLight { id } | EffectCommand::SetPointLight { id, .. } => {
+            (None, Some(SemanticTarget::PointLight(*id)))
+        }
         EffectCommand::SetEffectName { .. }
         | EffectCommand::SetParticleBudgets { .. }
         | EffectCommand::SetEffectDuration { .. }
@@ -488,6 +494,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
 
 fn target_exists(target: SemanticTarget, effect: &EffectAsset) -> bool {
     match target {
+        SemanticTarget::PointLight(id) => {
+            effect.point_lights.iter().any(|binding| binding.id == id)
+        }
         SemanticTarget::Effect(id) => effect.id == id,
         SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Marker(id) => effect.markers.iter().any(|marker| marker.id == id),

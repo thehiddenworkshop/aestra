@@ -1416,8 +1416,46 @@ fn apply_command(
                 route: previous,
             }]
         }
+        EffectCommand::AddPointLight { binding, index } => {
+            checked_insert(
+                &mut effect.point_lights,
+                *index,
+                binding.clone(),
+                "effect point lights",
+            )?;
+            vec![EffectCommand::RemovePointLight { id: binding.id }]
+        }
+        EffectCommand::RemovePointLight { id } => {
+            let index = point_light_index(effect, *id)?;
+            let binding = effect.point_lights.remove(index);
+            vec![EffectCommand::AddPointLight { binding, index }]
+        }
+        EffectCommand::SetPointLight { id, binding } => {
+            let index = point_light_index(effect, *id)?;
+            let mut replacement = binding.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.point_lights[index], replacement);
+            vec![EffectCommand::SetPointLight {
+                id: *id,
+                binding: previous,
+            }]
+        }
     };
     Ok(inverse)
+}
+
+fn point_light_index(
+    effect: &EffectAsset,
+    id: aestra_core::EventRouteId,
+) -> Result<usize, CommandError> {
+    effect
+        .point_lights
+        .iter()
+        .position(|binding| binding.id == id)
+        .ok_or_else(|| CommandError::NotFound {
+            kind: "point light binding",
+            id: id.to_string(),
+        })
 }
 
 fn set_module_parameter(

@@ -423,6 +423,19 @@ pub enum EffectCommand {
         id: aestra_core::EventRouteId,
         route: aestra_core::ParticleOutputRoute,
     },
+    /// Adds an authored, representative light. Runtime pool budgets remain host-owned.
+    AddPointLight {
+        binding: aestra_core::PointLightBinding,
+        index: usize,
+    },
+    RemovePointLight {
+        id: aestra_core::EventRouteId,
+    },
+    /// Replaces the light's settings without changing its semantic identity.
+    SetPointLight {
+        id: aestra_core::EventRouteId,
+        binding: aestra_core::PointLightBinding,
+    },
 }
 
 impl EffectCommand {

@@ -89,6 +89,33 @@ impl EffectDiff {
         diff_effect_clips(before, after, &mut changes);
         diff_markers(before, after, &mut changes);
         diff_choreography_events(before, after, &mut changes);
+        for (index, binding) in before.point_lights.iter().enumerate() {
+            let current = after.point_lights.iter().find(|item| item.id == binding.id);
+            if current != Some(binding) {
+                changes.push(SemanticChange {
+                    kind: if current.is_some() {
+                        ChangeKind::Modified
+                    } else {
+                        ChangeKind::Removed
+                    },
+                    target: SemanticTarget::PointLight(binding.id),
+                    path: format!("effect.point_lights[{index}]"),
+                    before: Some(format!("{binding:?}")),
+                    after: current.map(|item| format!("{item:?}")),
+                });
+            }
+        }
+        for (index, binding) in after.point_lights.iter().enumerate() {
+            if !before.point_lights.iter().any(|item| item.id == binding.id) {
+                changes.push(SemanticChange {
+                    kind: ChangeKind::Added,
+                    target: SemanticTarget::PointLight(binding.id),
+                    path: format!("effect.point_lights[{index}]"),
+                    before: None,
+                    after: Some(format!("{binding:?}")),
+                });
+            }
+        }
 
         let before_emitters = indexed_emitters(before);
         let after_emitters = indexed_emitters(after);

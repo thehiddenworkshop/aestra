@@ -46,6 +46,7 @@ mod mesh_drop;
 mod module_controls;
 mod referenced_effect;
 mod renderer_controls;
+mod scene_lights;
 mod stack_panel;
 mod texture_drop;
 mod virtual_drop;
@@ -107,6 +108,7 @@ impl Plugin for PropertiesPlugin {
         asset_drop::register(app);
         interface::register(app);
         interface_events::register(app);
+        scene_lights::register(app);
         event_links::register(app);
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
@@ -921,6 +923,9 @@ fn apply_material_program_edit(
 // Properties domain implementation.
 fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool {
     match target {
+        SemanticTarget::PointLight(id) => {
+            effect.point_lights.iter().any(|binding| binding.id == id)
+        }
         SemanticTarget::Effect(id) => effect.id == id,
         SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Marker(id) => effect.markers.iter().any(|marker| marker.id == id),
@@ -963,6 +968,7 @@ pub(crate) fn focus_compiled_target(
             | SemanticTarget::Module(_)
             | SemanticTarget::Renderer(_)
             | SemanticTarget::ChoreographyEvent(_)
+            | SemanticTarget::PointLight(_)
     ) {
         session.selection.primary = target;
     }
