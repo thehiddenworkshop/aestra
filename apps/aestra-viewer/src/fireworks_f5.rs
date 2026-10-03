@@ -1,4 +1,4 @@
-//! Editable bounded secondary shells: multi-break and delayed burning-carrier crackle.
+//! Editable bounded secondary shells: multi-break, crackle and four-arm crossette.
 use aestra_bevy::EffectAsset;
 
 pub fn effect() -> EffectAsset {
@@ -15,6 +15,13 @@ pub fn crackle_effect() -> EffectAsset {
     .expect("checked-in crackle shell must parse")
 }
 
+pub fn crossette_effect() -> EffectAsset {
+    EffectAsset::from_ron(include_str!(
+        "../../../assets/test/effects/fireworks_crossette.aestra.ron"
+    ))
+    .expect("checked-in crossette shell must parse")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -28,6 +35,134 @@ mod tests {
 
     fn build() -> EffectAsset {
         build_variant(false)
+    }
+
+    fn build_crossette() -> EffectAsset {
+        let base = BASE + 0x2000;
+        let mut shell = build();
+        shell.id = EffectId::from_u128(base);
+        shell.name = "Fireworks Crossette".into();
+        shell.emitters[1].max_particles = 32;
+        if let ModuleParameters::Initialize { lifetime, .. } =
+            &mut shell.emitters[1].modules[2].parameters
+        {
+            *lifetime = ScalarRange::new(0.85, 0.95);
+        }
+        shell.emitters.truncate(5);
+        // Each link requests ONE arm per actual parent death. Four spherical
+        // samples cannot guarantee a cross; four constant directions can.
+        // This plane is effect-local XY, not aligned to each parent's heading.
+        let template = build().emitters[5].clone();
+        for (name, direction) in [
+            ("Crossette NE", [1.0, 1.0, 0.0]),
+            ("Crossette NW", [-1.0, 1.0, 0.0]),
+            ("Crossette SW", [-1.0, -1.0, 0.0]),
+            ("Crossette SE", [1.0, -1.0, 0.0]),
+        ] {
+            let mut arm = template.clone();
+            arm.name = name.into();
+            arm.max_particles = 32;
+            if let ModuleParameters::Initialize {
+                lifetime,
+                speed,
+                direction: axis,
+                spread_degrees,
+                velocity_distribution,
+                ..
+            } = &mut arm.modules[2].parameters
+            {
+                *lifetime = ScalarRange::new(0.75, 0.75);
+                *speed = ScalarRange::new(10.0, 10.0);
+                *axis = direction;
+                *spread_degrees = 0.0;
+                *velocity_distribution = aestra_bevy::VelocityDistribution::Constant;
+            }
+            if let ModuleParameters::Motion { drag, .. } = &mut arm.modules[3].parameters {
+                *drag = 0.25;
+            }
+            shell.emitters.push(arm);
+        }
+        // New stable identities, with one shared exposed arm-color control.
+        for (i, parameter) in shell.parameters.iter_mut().enumerate() {
+            let old = parameter.id;
+            parameter.id = ParameterId::from_u128(base + 50 + i as u128);
+            if let Value::Gradient(color) = &mut parameter.default {
+                color.id = GradientId::from_u128(base + 800 + i as u128);
+            }
+            if parameter.name == "Secondary sparks color" {
+                parameter.name = "Crossette arms color".into();
+            }
+            for emitter in &mut shell.emitters {
+                for module in &mut emitter.modules {
+                    for binding in module.bindings.values_mut() {
+                        if *binding == old {
+                            *binding = parameter.id;
+                        }
+                    }
+                }
+            }
+            for material in &mut shell.material_instances {
+                for value in material.values.values_mut() {
+                    if *value == aestra_bevy::material::MaterialParameterValue::EffectParameter(old)
+                    {
+                        *value = aestra_bevy::material::MaterialParameterValue::EffectParameter(
+                            parameter.id,
+                        );
+                    }
+                }
+            }
+        }
+        for (i, emitter) in shell.emitters.iter_mut().enumerate() {
+            super::super::fireworks_f0::fix_emitter_ids(emitter, base + 0x10000 + i as u128 * 100);
+            for renderer in &mut emitter.renderers {
+                if let RendererProperties::Trail {
+                    max_trails,
+                    lifetime,
+                    width,
+                    ..
+                } = &mut renderer.properties
+                {
+                    *max_trails = emitter.max_particles;
+                    if i >= 5 {
+                        *lifetime = 0.5;
+                        *width = 0.18;
+                    }
+                }
+            }
+        }
+        shell.events.clear();
+        for (i, source, target, count, inherit) in [
+            (0, 0, 1, 32, 0.02),
+            (1, 0, 2, 1, 0.02),
+            (2, 0, 4, 48, 0.02),
+            (3, 1, 5, 1, 0.3),
+            (4, 1, 6, 1, 0.3),
+            (5, 1, 7, 1, 0.3),
+            (6, 1, 8, 1, 0.3),
+        ] {
+            let mut link = EventLink::new(
+                shell.emitters[source].id,
+                EventTrigger::OnDeath,
+                shell.emitters[target].id,
+            );
+            link.id = EventId::from_u128(base + 850 + i);
+            link.count = count;
+            link.inherit_velocity = inherit;
+            shell.events.push(link);
+        }
+        for (i, output) in shell.event_outputs.iter_mut().enumerate() {
+            output.id = aestra_bevy::EventDefinitionId::from_u128(base + 900 + i as u128);
+            if i == 2 {
+                output.name = "crossette_split".into();
+            }
+            let route = &mut shell.particle_outputs[i];
+            route.id = aestra_bevy::EventRouteId::from_u128(base + 910 + i as u128);
+            route.source = shell.emitters[if i == 2 { 1 } else { 0 }].id;
+            route.output = output.id;
+        }
+        shell.metadata.insert("status".into(), "F5D bounded four-arm crossette prototype; artistic and finale-scale acceptance pending".into());
+        shell.metadata.insert("notes".into(), "One rocket feeds 32 stars. Each real star death feeds one child in each of four constant XY diagonal directions, sharing its birth position and 30% inherited velocity (128 arms total). Fixed effect-local plane, not parent-oriented; no random four-sample substitute or host timer. Reuses HDR materials, cooling trails and unlit smoke.".into());
+        shell
     }
 
     fn build_variant(crackle: bool) -> EffectAsset {
@@ -481,11 +616,135 @@ mod tests {
     }
 
     #[test]
+    fn crossette_has_exactly_four_deterministic_arms_per_parent_and_compiles() {
+        let shell = crossette_effect();
+        assert_eq!(
+            shell.to_pretty_ron().unwrap(),
+            build_crossette().to_pretty_ron().unwrap()
+        );
+        let index = aestra_project::ProjectAssetIndex::scan(super::super::viewer_asset_root(None));
+        let project = index.resolve_effect_project(&shell).unwrap();
+        let compiled = aestra_bevy::EffectCompiler::default()
+            .compile_resolved_project(&project)
+            .unwrap();
+        let instance =
+            aestra_bevy::EffectInstance::with_seed(compiled.root, super::super::fireworks_f0::SEED)
+                .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
+        assert_eq!(
+            aestra_gpu::GpuEffectArtifact::from_instance(&instance)
+                .unwrap()
+                .emitters
+                .len(),
+            9
+        );
+        assert_eq!(
+            shell.emitters.iter().map(|e| e.max_particles).sum::<u32>(),
+            274
+        );
+        assert_eq!(shell.events.len(), 7);
+        for (i, direction) in [
+            [1.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0],
+            [-1.0, -1.0, 0.0],
+            [1.0, -1.0, 0.0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let arm = &shell.emitters[5 + i];
+            let link = &shell.events[3 + i];
+            assert_eq!(
+                (
+                    link.source,
+                    link.target,
+                    link.count,
+                    link.trigger,
+                    link.inherit_velocity
+                ),
+                (shell.emitters[1].id, arm.id, 1, EventTrigger::OnDeath, 0.3)
+            );
+            assert!(
+                matches!(arm.modules[2].parameters, ModuleParameters::Initialize {
+                direction: axis, speed, lifetime, spread_degrees: 0.0,
+                velocity_distribution: aestra_bevy::VelocityDistribution::Constant, ..
+            } if axis == direction && speed.min == 10.0 && speed.max == 10.0 && lifetime.min == 0.75 && lifetime.max == 0.75)
+            );
+        }
+        for &i in &[1, 2, 4, 5, 6, 7, 8] {
+            assert!(matches!(
+                shell.emitters[i].modules[0].parameters,
+                ModuleParameters::Emission {
+                    spawn_rate: 0.0,
+                    burst_count: 0
+                }
+            ));
+        }
+        for emitter in &shell.emitters {
+            for renderer in &emitter.renderers {
+                if let RendererProperties::Trail {
+                    max_trails,
+                    lifetime,
+                    sample_interval,
+                    max_points,
+                    ..
+                } = renderer.properties
+                {
+                    assert_eq!(max_trails, emitter.max_particles);
+                    assert!(lifetime / sample_interval + 2.0 <= max_points as f32);
+                }
+            }
+        }
+        assert_eq!(shell.event_outputs[2].name, "crossette_split");
+        assert_eq!(shell.particle_outputs[2].source, shell.emitters[1].id);
+    }
+
+    #[test]
+    fn crossette_cli_supports_live_playback_capture_and_host_check() {
+        let config = super::super::ViewerConfig::from_iter(
+            [
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f5-crossette",
+                "--backend",
+                "gpu",
+                "--history",
+                "playback-only",
+                "--fireworks-cue-check",
+                "unused-crossette-cues.json",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::prepare_viewer(&config)
+                .unwrap_or_else(|e| panic!("{}", e.message))
+                .compiled
+                .name,
+            "Fireworks Crossette"
+        );
+        let mut benchmark = config;
+        benchmark.fireworks_cue_check = None;
+        assert!(benchmark.probe_bench_step().is_none());
+        benchmark.gpu_bench = Some("unused.json".into());
+        assert!(benchmark.probe_bench_step().is_some());
+    }
+
+    #[test]
     #[ignore = "prints fixture source for a reviewed apply_patch update"]
     fn export_crackle_fixture() {
         println!(
             "F5_CRACKLE={}",
             serde_json::to_string(&build_variant(true).to_pretty_ron().unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "prints fixture source for a reviewed apply_patch update"]
+    fn export_crossette_fixture() {
+        println!(
+            "F5_CROSSETTE={}",
+            serde_json::to_string(&build_crossette().to_pretty_ron().unwrap()).unwrap()
         );
     }
 }

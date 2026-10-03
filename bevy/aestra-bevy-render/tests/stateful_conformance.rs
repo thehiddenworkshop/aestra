@@ -3761,6 +3761,207 @@ fn gpu_delayed_crackle_carriers_match_cpu_and_retire_all_short_sparks() {
 }
 
 #[test]
+fn gpu_crossette_fans_out_four_coherent_arms_from_each_real_parent_death() {
+    use aestra_core::{EventAggregation, EventTrigger, VelocityDistribution};
+    use aestra_runtime::{
+        CompiledEventLink, CompiledParticleOutput, InputSpawnBurst, ParticleEvent,
+    };
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    let rocket = StatefulConfig {
+        gravity: [0.0, -9.81, 0.0],
+        spawn_per_tick: 0,
+        speed: (24.0, 24.0),
+        lifetime: (0.25, 0.25),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.0,
+        velocity_distribution: VelocityDistribution::Constant,
+        drag: 0.0,
+        shape: SpawnShape::Point,
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 1,
+        homing: None,
+    };
+    let directions = [
+        [1.0, 1.0, 0.0],
+        [-1.0, 1.0, 0.0],
+        [-1.0, -1.0, 0.0],
+        [1.0, -1.0, 0.0],
+    ];
+    let mut configs = vec![
+        rocket,
+        StatefulConfig {
+            lifetime: (0.85, 0.95),
+            speed: (18.0, 22.0),
+            velocity_distribution: VelocityDistribution::Sphere,
+            drag: 0.45,
+            capacity: 32,
+            ..rocket
+        },
+    ];
+    configs.extend(directions.map(|direction| StatefulConfig {
+        direction,
+        lifetime: (0.75, 0.75),
+        speed: (10.0, 10.0),
+        drag: 0.25,
+        capacity: 32,
+        ..rocket
+    }));
+    let mut links = vec![CompiledEventLink {
+        source: 0,
+        target: 1,
+        trigger: EventTrigger::OnDeath,
+        count: 32,
+        inherit: 0.02,
+    }];
+    links.extend((2..6).map(|target| CompiledEventLink {
+        source: 1,
+        target,
+        trigger: EventTrigger::OnDeath,
+        count: 1,
+        inherit: 0.3,
+    }));
+    let bursts = [InputSpawnBurst {
+        tick: 0,
+        route: 0,
+        target: 0,
+        count: 1,
+        events: vec![ParticleEvent {
+            ordinal: 0,
+            position: [12.0, 4.0, -8.0],
+            velocity: [0.0; 3],
+        }],
+    }];
+    let outputs: Vec<_> = (2..6)
+        .map(|source| CompiledParticleOutput {
+            output: format!("arm_{source}_retirement"),
+            source,
+            trigger: EventTrigger::OnDeath,
+            aggregation: EventAggregation::FirstPerTick,
+        })
+        .collect();
+    let seed = 0xf1e0_0000_0000_0001;
+    for ticks in [60, 70, 95, 150] {
+        let mut sims: Vec<_> = configs
+            .iter()
+            .enumerate()
+            .map(|(i, config)| {
+                StatefulSimulation::new(*config, seed ^ (i as u64).wrapping_mul(0x9E37_79B9))
+            })
+            .collect();
+        let mut admitted = [0; 5];
+        for tick in 0..ticks {
+            for sim in &mut sims {
+                sim.advance_tick();
+            }
+            for (i, link) in links.iter().enumerate() {
+                let parents = sims[link.source].events(link.trigger).to_vec();
+                let before = sims[link.target].alive_particles();
+                sims[link.target].spawn_from_events(&parents, link.count, link.inherit);
+                let after = sims[link.target].alive_particles();
+                assert_eq!(
+                    after.len() - before.len(),
+                    parents.len() * link.count as usize
+                );
+                admitted[i] += after.len() - before.len();
+                for (id, position) in after
+                    .iter()
+                    .filter(|(id, _)| !before.iter().any(|(old, _)| old == id))
+                {
+                    assert!(
+                        parents.iter().any(|parent| parent.position == *position),
+                        "arm {id} must be born at a real parent death"
+                    );
+                }
+            }
+            for burst in bursts.iter().filter(|b| b.tick == u64::from(tick)) {
+                sims[burst.target].spawn_from_events(&burst.events, burst.count, 0.0);
+            }
+        }
+        let (gpu, events) =
+            advance_production_linked(&harness, &configs, &links, &bursts, &outputs, seed, ticks)
+                .unwrap();
+        for (sim, particles) in sims.iter().zip(&gpu) {
+            assert_same_particles(&sim.alive_particles(), particles);
+        }
+        if ticks == 95 {
+            assert_eq!(admitted, [32; 5]);
+            assert!(gpu[2..].iter().all(|arm| arm.len() == 32));
+            // Equal lifetime/speed/drag and shared inheritance keep opposite
+            // arms symmetric around their moving centroid, in the XY plane.
+            for (id, _) in &gpu[2] {
+                let positions: Vec<_> = gpu[2..]
+                    .iter()
+                    .map(|arm| arm.iter().find(|(ordinal, _)| ordinal == id).unwrap().1)
+                    .collect();
+                let center: [f32; 3] = std::array::from_fn(|axis| {
+                    positions.iter().map(|p| p[axis]).sum::<f32>() / 4.0
+                });
+                let offsets: Vec<[f32; 3]> = positions
+                    .iter()
+                    .map(|p| std::array::from_fn(|axis| p[axis] - center[axis]))
+                    .collect();
+                for (offset, direction) in offsets.iter().zip(directions) {
+                    assert!(offset[0] * direction[0] > 0.5 && offset[1] * direction[1] > 0.5);
+                    assert!(offset[2].abs() < 0.001);
+                    assert!((offset[0].abs() - offset[1].abs()).abs() < 0.001);
+                }
+                for (arm, opposite) in offsets[..2].iter().zip(&offsets[2..]) {
+                    assert!(arm.iter().zip(opposite).all(|(a, b)| (a + b).abs() < 0.001));
+                }
+            }
+            let reversed: Vec<_> = links.iter().rev().copied().collect();
+            let reordered =
+                advance_production_linked(&harness, &configs, &reversed, &bursts, &[], seed, ticks)
+                    .unwrap()
+                    .0;
+            for (original, other) in gpu.iter().zip(reordered) {
+                assert_same_particles(original, &other);
+            }
+            let independent: Vec<_> = links
+                .iter()
+                .map(|l| CompiledEventLink { inherit: 0.0, ..*l })
+                .collect();
+            let without = advance_production_linked(
+                &harness,
+                &configs,
+                &independent,
+                &bursts,
+                &[],
+                seed,
+                ticks,
+            )
+            .unwrap()
+            .0;
+            assert!(
+                gpu[2]
+                    .iter()
+                    .zip(&without[2])
+                    .any(|((_, a), (_, b))| a.iter().zip(b).any(|(x, y)| (x - y).abs() > 0.1))
+            );
+        }
+        if ticks == 150 {
+            assert_eq!(admitted, [32; 5]);
+            assert!(gpu.iter().all(Vec::is_empty));
+            for source in 2..6 {
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|e| e.kind == format!("arm_{source}_retirement"))
+                        .map(|e| e.magnitude as u32)
+                        .sum::<u32>(),
+                    32
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
     // A fountain bouncing on the ground feeds three sub-emitters: a splash per bounce (OnCollision,
     // two particles, inheriting some velocity), a puff per death (OnDeath, three, capped by a small

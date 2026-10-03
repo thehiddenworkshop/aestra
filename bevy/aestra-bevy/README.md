@@ -80,6 +80,15 @@ Use link admission telemetry or subsequent actual transitions for those particle
 assume an `OnSpawn` observer sees every event-created child. This is a bounded high-tier fixture,
 not finale-scale, acoustic or artistic certification.
 
+`fireworks_crossette.aestra.ron` uses four ordinary death links, each spawning one child
+per main-star death. Four constant XY diagonal directions guarantee a four-arm cross
+around the inherited moving center, rather than four random samples. Thirty-two parents
+produce 128 arms; all arms share the parent position and 30% inherited velocity. The plane
+is effect-local and follows effect placement, not each parent's heading. `crossette_split`
+observes main-star `OnDeath` once per split, not four independent sound routes; the viewer's
+`f5-crossette` probe and host check validate admission, resume and restart. No new runtime
+trigger or firework-specific API is needed for this bounded fixed-plane variant.
+
 Native GPU particle-route and timeline-cue messages carry `playback_epoch: Some(epoch)`.
 For a root player, reject queued messages whose epoch no longer equals
 `player.instance().history_epoch()`. A seek silences particle reconstruction through its

@@ -70,7 +70,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
-        eprintln!("F5 secondary shells: f5-multi-break | f5-crackle. --fireworks-cue-check fresh-output.json validates generic host output delivery with --backend gpu --history playback-only (no audio playback).");
+        eprintln!("F5 secondary shells: f5-multi-break | f5-crackle | f5-crossette. --fireworks-cue-check fresh-output.json validates generic host output delivery with --backend gpu --history playback-only (no audio playback).");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -119,7 +119,7 @@ fn main() {
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
     let fireworks_cue_check = config.fireworks_cue_check.clone();
-    let crackle_cue_check = config.fireworks_probe == Some(FireworksProbe::Crackle);
+    let cue_probe = config.fireworks_probe;
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -143,6 +143,7 @@ fn main() {
             Some(FireworksProbe::ReferenceHero) => "f4-reference-hero",
             Some(FireworksProbe::MultiBreak) => "f5-multi-break",
             Some(FireworksProbe::Crackle) => "f5-crackle",
+            Some(FireworksProbe::Crossette) => "f5-crossette",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -214,10 +215,10 @@ fn main() {
     }
     if let Some(path) = fireworks_cue_check {
         let check = fireworks_cues::Check::new(path);
-        app.insert_resource(if crackle_cue_check {
-            check.with_crackle()
-        } else {
-            check
+        app.insert_resource(match cue_probe {
+            Some(FireworksProbe::Crackle) => check.with_crackle(),
+            Some(FireworksProbe::Crossette) => check.with_crossette(),
+            _ => check,
         })
         .add_systems(
             Update,
@@ -319,6 +320,7 @@ enum FireworksProbe {
     ReferenceHero,
     MultiBreak,
     Crackle,
+    Crossette,
     Raster(fireworks_f4::Probe),
 }
 
@@ -336,6 +338,7 @@ impl FireworksProbe {
             "f4-reference-hero" => Some(Self::ReferenceHero),
             "f5-multi-break" => Some(Self::MultiBreak),
             "f5-crackle" => Some(Self::Crackle),
+            "f5-crossette" => Some(Self::Crossette),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -407,6 +410,7 @@ impl ViewerConfig {
                     FireworksProbe::Raster(_)
                         | FireworksProbe::MultiBreak
                         | FireworksProbe::Crackle
+                        | FireworksProbe::Crossette
                 )
             ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
@@ -690,14 +694,18 @@ impl ViewerConfig {
         if let Some(path) = &fireworks_cue_check {
             if !matches!(
                 fireworks_probe,
-                Some(FireworksProbe::MultiBreak | FireworksProbe::Crackle)
+                Some(
+                    FireworksProbe::MultiBreak
+                        | FireworksProbe::Crackle
+                        | FireworksProbe::Crossette
+                )
             ) || !fireworks_f0
                 || gpu_bench.is_some()
                 || capture_mode.is_some()
                 || history_policy != aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly
                 || presentation != PresentationMode::Gpu
             {
-                return Err("--fireworks-cue-check requires f5-multi-break or f5-crackle, --backend gpu and --history playback-only, without capture/benchmark modes".into());
+                return Err("--fireworks-cue-check requires f5-multi-break, f5-crackle or f5-crossette, --backend gpu and --history playback-only, without capture/benchmark modes".into());
             }
             if path.exists() {
                 return Err("--fireworks-cue-check requires a fresh report path".into());
@@ -916,6 +924,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             Some(FireworksProbe::ReferenceHero) => fireworks_hero::effect(),
             Some(FireworksProbe::MultiBreak) => fireworks_f5::effect(),
             Some(FireworksProbe::Crackle) => fireworks_f5::crackle_effect(),
+            Some(FireworksProbe::Crossette) => fireworks_f5::crossette_effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -1071,6 +1080,7 @@ fn setup(
                     FireworksProbe::ReferenceHero
                         | FireworksProbe::MultiBreak
                         | FireworksProbe::Crackle
+                        | FireworksProbe::Crossette
                 )
             ) {
                 fireworks_hero::camera(config.fireworks_camera)

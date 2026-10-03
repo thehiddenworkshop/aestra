@@ -61,12 +61,20 @@ impl Check {
         self
     }
 
+    pub fn with_crossette(mut self) -> Self {
+        self.parent_count = 32;
+        self.secondary_kind = "crossette_split";
+        self.seek_tick = 133;
+        self
+    }
+
     fn hear(&mut self, output: &AestraOutputEvent, epoch: u32) -> Result<(), String> {
         let (emitter, sound) = match output.event.kind.as_str() {
             "launch" => (0, "host/firework_launch"),
             "main_break" => (0, "host/firework_main_break"),
             "secondary_break" => (1, "host/firework_secondary_break"),
             "crackle" => (5, "host/firework_crackle"),
+            "crossette_split" => (1, "host/firework_crossette_split"),
             _ => return Ok(()),
         };
         if output.playback_epoch != Some(epoch) {
@@ -267,7 +275,7 @@ pub fn drive(
     check.waiting = true;
     check.settled = 0;
     if check.run == 1 {
-        player.seek_frame(160);
+        player.seek_frame(check.seek_tick);
         check.seek_tick = aestra_bevy::trace_tick(player.instance().history_epoch_start_time());
     } else {
         player.restart();

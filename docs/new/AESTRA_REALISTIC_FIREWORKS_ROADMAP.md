@@ -59,7 +59,8 @@ The main gaps have changed. They are no longer "Aestra needs a stateful particle
 Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are implemented;
 F4 artistic acceptance remains open. **F5A validates a bounded two-generation death-event
 shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C adds
-a bounded delayed-carrier crackle chain. Next is bounded crossette authoring (F5D)**, not
+a bounded delayed-carrier crackle chain and four-arm crossette. Next is bounded strobe
+authoring (F5E)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -2978,10 +2979,42 @@ At least one shell uses two generations of particle-driven spawning.
   red main burst followed by brief warm dots and smoke; human/moving-footage artistic
   acceptance remains open. Evidence/reproduction: `benchmarks/fireworks/crackle-2026-10-03.md`.
 
-F5 is **in progress**, not complete. Next is F5D: author a bounded crossette and validate
-its characteristic four-way split, using generic velocity/event controls; add semantics
+### F5D implemented — bounded four-arm crossette (2026-10-03)
+
+- Ordinary editable asset `assets/test/effects/fireworks_crossette.aestra.ron`, viewer probe
+  `f5-crossette`. One rocket death feeds 32 main stars. Each main-star death feeds four
+  **distinct directions**, one child per link, not four random spherical samples: constant
+  NE/NW/SW/SE directions in effect-local XY. All arms share the real death position and
+  30% inherited velocity; equal speed 10, lifetime 0.75 seconds, drag 0.25 and gravity keep
+  opposite arms symmetric about their moving center. Main lifetime 0.85–0.95 seconds staggers
+  the splits. Four emitters express four genuinely different velocities, not a workaround
+  for capacity limits. No new runtime trigger, timer or firework-specific API.
+- Nine emitters, seven links, capacity 274, including 128 arm particles and 161 trail slots.
+  Arm histories last 0.5 seconds at 60 Hz within 64 points per owner. Reuses HDR materials,
+  exposed radiance/color controls and unlit smoke. Fixed effect-local plane follows effect
+  placement, **not each parent's heading**; per-parent orientation/roll remains unsupported
+  by this fixture, not certified by shared velocity inheritance.
+- Native uninterrupted GPU / playback-only admits demand = accepted
+  **32 / 1 / 48 / 32 / 32 / 32 / 32**. No source overflow, omissions/rejections, trail eviction
+  or truncation; checkpoint-capture bytes remain zero. RTX 4070 SUPER/Vulkan, high tier,
+  960×540, manual 60 Hz. Lifecycle plus idle tail is not finale throughput certification.
+- `crossette_split` comes from actual main-star deaths, before the four arms; one host cue
+  per split, coalesced `FirstPerTick`, not one sound per arm. Initial/restarted streams each
+  account for all 32 parents in six packets at ticks 132–137. Seek to frame 133 reconstructs
+  silently through tick 132; five packets / 29 remaining parents resume and match the
+  original stream. Actual sounds, placement and voice pooling remain host-owned.
+- Production compute conformance compares CPU/GPU live positions at intermediate ticks,
+  checks births at real parent positions, four-way geometry, opposite-arm symmetry,
+  link-order independence, inherited-motion contribution and all 128 eventual retirements.
+  Required-GPU suite: 30 passed; viewer: 69 passed / five exporters ignored; Clippy passes.
+  Three camera cases / 24 PNGs pass full-cohort and endpoint cleanup checks. Stills remain
+  dim/sparse at audience distance; artistic/moving-footage acceptance remains open.
+  Evidence/reproduction: `benchmarks/fireworks/crossette-2026-10-03.md`.
+
+F5 is **in progress**, not complete. Next is F5E: author bounded strobe stars with real
+on/off radiance and phase variation using generic material/appearance controls; add semantics
 only if the authored workload demonstrates a real gap. Sound implementation remains host-owned.
-Crossette/strobe authoring, crackle tier-specific count policies, moving-footage and
+Strobe authoring, parent-oriented crossettes, tier-specific count policies, moving-footage and
 artistic approval, heavy overlapping/finale event load and target-tier resource gates remain
 open. Do not infer those from this intentionally bounded multi-break fixture.
 
