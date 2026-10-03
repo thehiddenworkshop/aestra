@@ -1,14 +1,14 @@
 #requires -Version 7.0
 # Read-only per-clip admission gate. Missing observations fail, never become zero.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReportsDirectory)
+param([Parameter(Mandatory)][string]$ReportsDirectory, [string]$ReportPrefix = 'f6a-show', [string]$ReportSuffix = '')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $sources = @('f8000', 'f9000', 'fa000', 'fb000', 'f8000', 'f8000', 'f8000',
     'fa000', 'f9000', 'f8000', 'f9000', 'fb000', 'fa000')
 $previousMemory = [long]::MaxValue
 foreach ($tier in @('high', 'medium', 'low')) {
-    $report = Get-Content -LiteralPath (Join-Path $ReportsDirectory "f6a-show-$tier.json") -Raw | ConvertFrom-Json
+    $report = Get-Content -LiteralPath (Join-Path $ReportsDirectory "$ReportPrefix-$tier$ReportSuffix.json") -Raw | ConvertFrom-Json
     if ($report.effect -ne 'f6-show' -or $report.history_policy -ne 'playback-only' -or
         $report.presentation.quality_tier -ne $tier -or $report.presentation.transparent_order -ne 'fast' -or
         $report.presentation.seed -ne '0xf1e0000000000001' -or

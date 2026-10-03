@@ -73,8 +73,10 @@ authoring controls (manual visual acceptance remains open). **F7C now implements
 particle scene-output model, compiled plans and deterministic CPU/reference candidates, persisted in
 artifact v7. F7D1 now has a measured portable per-output GPU selection prototype;
 F7D2A adds global admission and opt-in live GPU presentation wiring, validated against overlapping
-stateful launch-to-star event chains. Full-show selection timing, live realization and lit smoke remain open.**
-The next engine step is F7D2B's authored hero/F6 show selection and resource measurements,
+stateful launch-to-star event chains. F7D2B now measures the current authored hero, overlapping volley
+and F6 show with ordinary material/trail rendering intact across all tiers. Production-finale
+certification, live selected-light realization and lit smoke remain open.**
+The next engine step is F7E's bounded asynchronous selected-light realization and latency/receiver gate,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3950,11 +3952,42 @@ changing particle state or output-event semantics.
   the matching manifest **in the render world**, not realized scene lights or a main-world mailbox.
   There is no production synchronous GPU wait, full-particle transfer or replay dependency.
 
-**Next: F7D2B.** Measure selection-enabled authored hero, overlapping shells and F6 show/finale
-inputs with material/trail presentation intact, reporting GPU selection/full-frame p50/p95/p99,
-requested/candidate/selected/dropped counts and total reserved selection bytes across tiers. Existing
-F7D1 selection-only timings do not certify this adapter/full show. Do not mark F7D complete yet.
-F7E's bounded async selected-set realization/latency gate follows; do not begin one entity per particle.
+**F7D2B implemented (2026-10-04): current authored-workload selection and resource measurements.**
+
+- The explicit viewer benchmark adds deterministic generic scene-output fixtures without modifying
+  saved effects, material/trail presentation, event chains, particle/history budgets or choreography.
+  Hero/overlapping-volley/F6 show run at all three tiers, with selection-disabled global-cap-zero
+  baselines. Shader startup is gated before forward playback; 60 Hz benchmark ticks use no replay
+  history and disable editor catch-up pacing. Normal interactive behavior remains unchanged.
+- Three reusable asynchronous slots copy only 16 counter bytes each, never source/selected particle
+  records. A four-result mailbox preserves origin tick/sequence tags and reports busy/overwrite losses.
+  GPU diagnostics record selection and one outer render-graph timestamp window, **not** application
+  frame time. Timing distributions are independent of counter observations; do not sum percentiles or
+  infer incremental cost by subtracting independently sampled baseline percentiles.
+- On RTX 4070 SUPER/Vulkan, first show selection p50/p95/p99 was **0.680/1.107/1.245 ms** at high;
+  three high runs gave p95 **1.096–1.107 ms**. Medium/low varied substantially, retained in evidence,
+  so there is no certified tier speed ordering or production frame budget. High render-window p95 was
+  6.929 ms versus 5.802 ms in its independent selection-disabled baseline.
+- At peak show candidates, high/medium/low counters were **1536/1536/96/1440**,
+  **576/576/48/528**, and **192/192/24/168** (requested/candidate/selected/budget-dropped).
+  Up to 31 source runs reserved **314,960/111,888/54,064 bytes**, respectively. All sets obeyed
+  host/frame caps and counter algebra; no outputs were rejected. One repeated medium run explicitly
+  skipped a busy readback slot rather than waiting. Per-output caps still apply before global admission.
+- Both enabled/disabled shows and two additional enabled shows per tier pass the strict 13-clip
+  forward admission/cleanup gate: exact 8413/3317/1217 admitted children, no overflow/omission/rejection,
+  no trail evictions/truncation, and zero final particles/history/clip owners. A zero-memory-budget
+  probe reports explicit rejection and publishes no selected frame. The generic dense-pool F7D1
+  conformance remains separate; this fixture is the **current bounded show**, not production-density
+  finale acceptance.
+- [Workload evidence, provenance and reproduction](../../benchmarks/fireworks/particle-light-workloads-2026-10-04.md),
+  [machine-readable measurements](../../benchmarks/fireworks/particle-light-workloads-2026-10-04.json), and
+  `benchmarks/fireworks/validate-particle-lights.ps1` capture this gate. Selected buffers remain
+  render-world data, not realized lights or an editor viewport-lighting implementation.
+
+**Next: F7E.** Implement bounded async selected-record realization and measure update latency,
+stale-epoch handling, pool cost and moving-star receiver response. No one-entity-per-particle path.
+F7D's production-finale resource/performance certification remains open; selection measurements
+alone do not complete F7's visible-lighting or lit-smoke gates.
 
 **Goal:** turn thousands of luminous particles into a small bounded selected-light set entirely on the
 presentation side.
@@ -4169,7 +4202,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype and F7D2A's global admission/live GPU integration are implemented; F7B2's manual UI/visual gate remains open. Next measure F7D2B's authored hero/full-show selection costs and resource usage, then measure F7E's bounded asynchronous realization before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. Next implement and measure F7E's bounded asynchronous selected-light realization before committing to a deep Bevy render-pipeline integration. The current bounded-show measurements are not production-finale or visible selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4583,17 +4616,16 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7D2B authored hero/full-show selection measurements (F7D2A integration implemented)
-2. F7E   bounded Bevy realization and visual/performance measurement
-3. F7F   quality tiers; shadows remain off by default
-4. F8.3  make smoke actually consume scene lighting
+1. F7E   bounded async Bevy selected-light realization and latency/receiver measurement
+2. F7F   quality tiers; shadows remain off by default
+3. F8.3  make smoke actually consume scene lighting
 ```
 
 F7B2 editor controls are implemented; complete their manual UI/visual acceptance alongside source
 authoring, without treating them as evidence of continuous particle lights or editor viewport lighting.
-F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selection and F7D2A's
-global admission/live GPU wiring are implemented; full-show selection measurements and
-selected-light realization remain open.
+F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selection, F7D2A's
+global admission/live GPU wiring and F7D2B's current authored hero/volley/show selection measurements
+are implemented. Production-finale certification and selected-light realization remain open.
 
 Do not begin with deep backend-specific clustered-light injection. First prove that the generic model,
 selection policy, visual contribution and selected-light budgets are correct. Escalate from bounded

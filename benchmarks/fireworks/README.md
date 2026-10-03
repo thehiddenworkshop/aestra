@@ -1,6 +1,6 @@
 # Fireworks F0 — reproducible validation baseline
 
-This is the baseline for [the realistic-fireworks roadmap](../../docs/new/AESTRA_REALISTIC_FIREWORKS_ROADMAP.md), not a production shell. The viewer flag `--fireworks-f0` builds one effect with rockets, a 48-star `OnDeath` burst, and collision glints. Its authored IDs and seed are fixed unless `--seed` overrides the seed. The same viewer supplies exact simulation-frame capture, native GPU timing and a fixed dark 3D scene with a ground plane and two geometry markers. Fixed inputs do not imply the current GPU event chain is bitwise repeatable; see the observation below.
+This is the baseline for [the realistic-fireworks roadmap](../../docs/new/AESTRA_REALISTIC_FIREWORKS_ROADMAP_2026-10-03.md), not a production shell. The viewer flag `--fireworks-f0` builds one effect with rockets, a 48-star `OnDeath` burst, and collision glints. Its authored IDs and seed are fixed unless `--seed` overrides the seed. The same viewer supplies exact simulation-frame capture, native GPU timing and a fixed dark 3D scene with a ground plane and two geometry markers. Fixed inputs do not imply the current GPU event chain is bitwise repeatable; see the observation below.
 
 ## Capture protocol
 
@@ -18,6 +18,10 @@ These do not certify finale scale.
 
 F7D1 adds [portable particle-light selection measurements](particle-light-selection-2026-10-03.md).
 They cover per-output GPU selection only, not live realization or full-show lighting acceptance.
+F7D2A adds [global admission and live GPU integration](particle-light-live-integration-2026-10-03.md).
+F7D2B measures [authored hero/volley/show selection with normal rendering intact](particle-light-workloads-2026-10-04.md),
+with counter/resource gates and explicit cap-zero baselines. Visible selected-light realization and
+production-finale certification remain separate acceptance gates.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 

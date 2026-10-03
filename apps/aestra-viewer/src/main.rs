@@ -10,6 +10,7 @@ mod fireworks_show;
 mod fireworks_spatial_cues;
 mod fireworks_strobe;
 mod gpu_bench;
+mod particle_light_bench;
 mod photographic;
 mod preview_report;
 mod velocity_f2;
@@ -78,6 +79,7 @@ fn main() {
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
         eprintln!("Authored scene lights: --transient-lights with f6-show and --backend gpu. Saved representative pulses, bounded to 8/4/2 shadowless lights for high/medium/low; particle smoke remains unlit.");
+        eprintln!("F7 selection-only benchmark: --particle-light-bench with f4-reference-hero, f5-secondary-volley or f6-show, --gpu-bench and --history playback-only. Adds light-output fixture plans without changing normal materials/trails; no visible particle lights. Global caps 96/48/24 by tier; override with --particle-light-cap N (0 is baseline), --particle-light-memory-mib N (default 64). --headless-bench renders the same 960x540 scene offscreen without a window.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -142,6 +144,19 @@ fn main() {
             },
             ..default()
         });
+    let particle_light_settings = config.particle_light_bench.then(|| {
+        aestra_bevy::gpu::particle_lights::AestraParticleLightSettings {
+            max_lights: config
+                .particle_light_cap
+                .unwrap_or(match config.tier.name.as_str() {
+                    "high" => 96,
+                    "medium" => 48,
+                    _ => 24,
+                }),
+            max_scratch_bytes: u64::from(config.particle_light_memory_mib) * 1024 * 1024,
+        }
+    });
+    let headless = config.headless_bench;
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -187,6 +202,31 @@ fn main() {
             .unwrap_or_else(|| "prism_bloom".to_owned())
     };
 
+    let plugins = DefaultPlugins
+        .set(AssetPlugin {
+            file_path: asset_root,
+            ..default()
+        })
+        .set(WindowPlugin {
+            exit_condition: if headless {
+                bevy::window::ExitCondition::DontExit
+            } else {
+                WindowPlugin::default().exit_condition
+            },
+            primary_window: (!headless).then(|| Window {
+                title: "Aestra Viewer".into(),
+                resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT),
+                resizable: true,
+                ..default()
+            }),
+            ..default()
+        })
+        .build();
+    let plugins = if headless {
+        plugins.disable::<bevy::winit::WinitPlugin>()
+    } else {
+        plugins
+    };
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
         .insert_resource(AestraSettings {
@@ -205,20 +245,7 @@ fn main() {
         // Show a slice through plugin grid fields (a fluid's density) (fluid F1).
         .insert_resource(aestra_bevy::gpu::AestraDebugViews { field_slices: true })
         .add_plugins((
-            DefaultPlugins
-                .set(AssetPlugin {
-                    file_path: asset_root,
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Aestra Viewer".into(),
-                        resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT),
-                        resizable: true,
-                        ..default()
-                    }),
-                    ..default()
-                }),
+            plugins,
             AestraPlugin,
             // Records GPU timestamps for Aestra's simulation pass (the
             // `aestra::gpu::simulate` span) and Bevy's transparent passes on
@@ -238,6 +265,18 @@ fn main() {
                 gpu_bench::drive_gpu_bench.after(aestra_bevy::AestraSet::Profile),
             ),
         );
+    if headless {
+        app.add_plugins(bevy::app::ScheduleRunnerPlugin::run_loop(
+            Duration::from_millis(1),
+        ));
+    }
+    if let Some(settings) = particle_light_settings {
+        particle_light_bench::install(&mut app, settings);
+        app.add_systems(
+            Update,
+            gpu_bench::publish_light_tick.before(gpu_bench::drive_gpu_bench),
+        );
+    }
     if let Some(settings) = light_settings {
         app.insert_resource(settings)
             .add_plugins(aestra_bevy::AestraTransientLightPlugin);
@@ -335,6 +374,10 @@ struct ViewerConfig {
     gpu_bench: Option<PathBuf>,
     fireworks_cue_check: Option<PathBuf>,
     transient_lights: bool,
+    particle_light_bench: bool,
+    particle_light_cap: Option<u32>,
+    particle_light_memory_mib: u32,
+    headless_bench: bool,
     history_policy: aestra_bevy::PlaybackHistoryPolicy,
     /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
     /// one. Otherwise the viewer is 2-D.
@@ -468,6 +511,7 @@ impl ViewerConfig {
                         | FireworksProbe::Strobe
                         | FireworksProbe::SecondaryVolley
                         | FireworksProbe::Show
+                        | FireworksProbe::ReferenceHero
                 )
             ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
@@ -496,6 +540,10 @@ impl ViewerConfig {
         let mut gpu_bench = None;
         let mut fireworks_cue_check = None;
         let mut transient_lights = false;
+        let mut particle_light_bench = false;
+        let mut particle_light_cap = None;
+        let mut particle_light_memory_mib = 64;
+        let mut headless_bench = false;
         let mut history_policy = aestra_bevy::PlaybackHistoryPolicy::default();
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
@@ -533,6 +581,23 @@ impl ViewerConfig {
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
                 "--transient-lights" => transient_lights = true,
+                "--particle-light-bench" => particle_light_bench = true,
+                "--headless-bench" => headless_bench = true,
+                "--particle-light-cap" => {
+                    particle_light_cap = Some(
+                        args.next()
+                            .ok_or("--particle-light-cap requires a count")?
+                            .parse::<u32>()
+                            .map_err(|_| "--particle-light-cap requires an unsigned count")?,
+                    );
+                }
+                "--particle-light-memory-mib" => {
+                    particle_light_memory_mib = args
+                        .next()
+                        .ok_or("--particle-light-memory-mib requires MiB")?
+                        .parse::<u32>()
+                        .map_err(|_| "--particle-light-memory-mib requires unsigned MiB")?;
+                }
                 "--sprite-min-pixels" => {
                     let value = args.next().ok_or("--sprite-min-pixels requires a value")?;
                     sprite_minimum_pixels =
@@ -757,6 +822,32 @@ impl ViewerConfig {
         {
             return Err("--transient-lights requires f6-show and --backend gpu".into());
         }
+        if headless_bench && (gpu_bench.is_none() || capture_mode.is_some()) {
+            return Err("--headless-bench requires --gpu-bench without capture".into());
+        }
+        if (particle_light_cap.is_some() || particle_light_memory_mib != 64)
+            && !particle_light_bench
+        {
+            return Err("particle-light budget options require --particle-light-bench".into());
+        }
+        if particle_light_bench
+            && (gpu_bench.is_none()
+                || capture_mode.is_some()
+                || fireworks_cue_check.is_some()
+                || transient_lights
+                || presentation != PresentationMode::Gpu
+                || history_policy != aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly
+                || !matches!(
+                    fireworks_probe,
+                    Some(
+                        FireworksProbe::ReferenceHero
+                            | FireworksProbe::SecondaryVolley
+                            | FireworksProbe::Show
+                    )
+                ))
+        {
+            return Err("--particle-light-bench requires a hero/secondary-volley/show GPU benchmark with --history playback-only and no capture/cue-check/transient-lights".into());
+        }
         if let Some(path) = &fireworks_cue_check {
             if !matches!(
                 fireworks_probe,
@@ -795,6 +886,10 @@ impl ViewerConfig {
             gpu_bench,
             fireworks_cue_check,
             transient_lights,
+            particle_light_bench,
+            particle_light_cap,
+            particle_light_memory_mib,
+            headless_bench,
             history_policy,
             view_3d,
             tier,
@@ -1025,6 +1120,12 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
                 message: format!("could not resolve viewer project: {error}"),
                 diagnostics: vec![],
             })?;
+    if config.particle_light_bench {
+        for effect in std::iter::once(&mut resolved.root).chain(resolved.dependencies.values_mut())
+        {
+            particle_light_bench::add_outputs(effect);
+        }
+    }
     if config.semantic_materials {
         for effect in std::iter::once(&mut resolved.root).chain(resolved.dependencies.values_mut())
         {
@@ -1117,6 +1218,7 @@ fn setup(
     prepared: Res<PreparedViewer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let effect_name = prepared.compiled.name.clone();
     let regression_scene = config
@@ -1134,7 +1236,7 @@ fn setup(
         player.set_render_mode(aestra_bevy::EffectRenderMode::Wireframe);
     }
     player.set_seed(config.resolved_seed());
-    if config.fireworks_cue_check.is_some() {
+    if config.fireworks_cue_check.is_some() || config.particle_light_bench {
         player.playing = false;
     }
     let presentation = PresentedEffect::new(player.effect().clone());
@@ -1174,11 +1276,29 @@ fn setup(
             },
             camera_transform,
         ));
+        if config.headless_bench {
+            let target = images.add(Image::new_target_texture(
+                VIEW_WIDTH,
+                VIEW_HEIGHT,
+                bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+                None,
+            ));
+            camera.insert(bevy::camera::RenderTarget::Image(target.into()));
+        }
         if let Some(settings) = config.photographic {
             settings.apply(&mut camera);
         }
     } else {
         let mut camera = commands.spawn(Camera2d);
+        if config.headless_bench {
+            let target = images.add(Image::new_target_texture(
+                VIEW_WIDTH,
+                VIEW_HEIGHT,
+                bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+                None,
+            ));
+            camera.insert(bevy::camera::RenderTarget::Image(target.into()));
+        }
         if let Some(settings) = config.photographic {
             settings.apply(&mut camera);
         }
@@ -2278,6 +2398,77 @@ mod tests {
     }
 
     #[test]
+    fn particle_light_benchmark_requires_an_explicit_live_gpu_fixture() {
+        for probe in ["f4-reference-hero", "f5-secondary-volley", "f6-show"] {
+            let config = ViewerConfig::from_iter(
+                [
+                    "--fireworks-f0",
+                    "--fireworks-f0-probe",
+                    probe,
+                    "--backend",
+                    "gpu",
+                    "--history",
+                    "playback-only",
+                    "--particle-light-bench",
+                    "--particle-light-cap",
+                    "0",
+                    "--headless-bench",
+                    "--gpu-bench",
+                    "unused.json",
+                ]
+                .into_iter()
+                .map(str::to_owned),
+            )
+            .unwrap();
+            assert!(config.particle_light_bench && config.headless_bench);
+            assert_eq!(config.particle_light_cap, Some(0));
+            assert!(config.probe_bench_step().is_some());
+            let presentation =
+                serde_json::to_value(gpu_bench::BenchPresentation::from_config(&config)).unwrap();
+            assert_eq!(presentation["global_particle_light_cap"], 0);
+            assert_eq!(
+                presentation["headless_target"],
+                serde_json::json!([960, 540])
+            );
+        }
+        for args in [
+            vec!["--particle-light-bench"],
+            vec!["--particle-light-cap", "2"],
+            vec!["--particle-light-memory-mib", "1"],
+            vec!["--headless-bench"],
+            vec![
+                "--particle-light-bench",
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f4-reference-hero",
+                "--gpu-bench",
+                "unused.json",
+            ],
+            vec![
+                "--particle-light-bench",
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f3-peony",
+                "--backend",
+                "gpu",
+                "--history",
+                "playback-only",
+                "--gpu-bench",
+                "unused.json",
+            ],
+            vec![
+                "--headless-bench",
+                "--gpu-bench",
+                "unused.json",
+                "--capture",
+                "unused",
+            ],
+        ] {
+            assert!(ViewerConfig::from_iter(args.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
     fn raster_benchmarks_use_a_fixed_and_recorded_simulation_step() {
         for probe in fireworks_f4::Probe::ALL {
             let mut config = ViewerConfig::from_iter(
@@ -2435,6 +2626,10 @@ mod tests {
             gpu_bench: None,
             fireworks_cue_check: None,
             transient_lights: false,
+            particle_light_bench: false,
+            particle_light_cap: None,
+            particle_light_memory_mib: 64,
+            headless_bench: false,
             history_policy: aestra_bevy::PlaybackHistoryPolicy::default(),
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),

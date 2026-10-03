@@ -53,6 +53,9 @@ pub struct GpuBenchPlan {
     peak_active_clip_instances: usize,
     active_clip_instances_at_end: usize,
     project_work: BTreeMap<String, WorkStats>,
+    particle_lights: Vec<crate::particle_light_bench::Observation>,
+    light_skipped_busy: u64,
+    light_overwritten_results: u64,
 }
 
 /// Stable authored identity for transient ECS owners, retained after clips expire.
@@ -104,6 +107,10 @@ pub struct BenchPresentation {
     raster_probe: Option<crate::fireworks_f4::RasterProbeSetup>,
     fixed_simulation_step_seconds: Option<f64>,
     response: crate::photographic::CaptureResponse,
+    particle_light_benchmark_fixture: bool,
+    global_particle_light_cap: Option<u32>,
+    particle_light_memory_mib: Option<u32>,
+    headless_target: Option<[u32; 2]>,
 }
 
 impl BenchPresentation {
@@ -155,6 +162,22 @@ impl BenchPresentation {
                 config.sprite_minimum_pixels,
             )
             .with_trail_sampling(config.trail_minimum_pixels),
+            particle_light_benchmark_fixture: config.particle_light_bench,
+            global_particle_light_cap: config.particle_light_bench.then(|| {
+                config
+                    .particle_light_cap
+                    .unwrap_or(match config.tier.name.as_str() {
+                        "high" => 96,
+                        "medium" => 48,
+                        _ => 24,
+                    })
+            }),
+            particle_light_memory_mib: config
+                .particle_light_bench
+                .then_some(config.particle_light_memory_mib),
+            headless_target: config
+                .headless_bench
+                .then_some([crate::VIEW_WIDTH, crate::VIEW_HEIGHT]),
         }
     }
 }
@@ -189,6 +212,9 @@ impl GpuBenchPlan {
             peak_active_clip_instances: 0,
             active_clip_instances_at_end: 0,
             project_work: BTreeMap::new(),
+            particle_lights: Vec::new(),
+            light_skipped_busy: 0,
+            light_overwritten_results: 0,
         }
     }
 
@@ -209,6 +235,9 @@ impl GpuBenchPlan {
             .map(|(path, values)| (path.clone(), Stats::from_samples(values)))
             .collect();
         let report = GpuBenchReport {
+            particle_lights: &self.particle_lights,
+            light_skipped_busy: self.light_skipped_busy,
+            light_overwritten_results: self.light_overwritten_results,
             presentation: self.presentation.as_ref(),
             adapter: self.adapter.as_ref(),
             effect_backends: &self.effect_backends,
@@ -381,6 +410,12 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 
 #[derive(Serialize)]
 struct GpuBenchReport<'a> {
+    /// Counter copies tagged with the originating render frame. No source/selected
+    /// records are mapped. Timings are independent fresh render diagnostics, not
+    /// frame-paired with these counters; final in-flight results may be absent.
+    particle_lights: &'a [crate::particle_light_bench::Observation],
+    light_skipped_busy: u64,
+    light_overwritten_results: u64,
     instances: &'a BTreeMap<String, BenchInstance>,
     /// ECS presentations, not simultaneously alive particle cohorts.
     peak_active_clip_instances: usize,
@@ -502,6 +537,8 @@ impl WorkStats {
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)]
 pub struct BenchEffects<'w, 's> {
+    light_start: Option<Res<'w, crate::particle_light_bench::Start>>,
+    lights: Option<Res<'w, crate::particle_light_bench::Mailbox>>,
     roots: Query<
         'w,
         's,
@@ -554,6 +591,24 @@ pub fn drive_gpu_bench(
     if plan.remaining == 0 {
         return;
     }
+    if effects
+        .light_start
+        .as_ref()
+        .is_some_and(|start| !start.ready)
+    {
+        // Shader preparation must not consume the forward show or warm-up window.
+        if let Some(mailbox) = &effects.lights {
+            mailbox.take();
+        }
+        return;
+    }
+    if let Some(mailbox) = &effects.lights {
+        let (observations, busy, overwritten) = mailbox.take();
+        plan.light_skipped_busy = busy;
+        plan.light_overwritten_results = overwritten;
+        plan.particle_lights
+            .extend(observations.into_iter().filter(|o| o.tick.measured));
+    }
     let measured = plan.warmup_remaining == 0;
     // Capture identity during warm-up too: short-lived children must not vanish
     // from the report merely because their ECS owner was destroyed before measurement.
@@ -586,8 +641,9 @@ pub fn drive_gpu_bench(
     for diagnostic in diagnostics.iter() {
         let path = diagnostic.path().as_str();
         // Aestra's passes, and the transparent passes its particles and volumes draw in.
-        if [
+        let included = [
             "aestra::gpu::simulate",
+            "aestra::gpu::particle_lights",
             "aestra::gpu::trail_history",
             "aestra::gpu::trail_particles",
             "aestra::gpu::trail_compaction",
@@ -597,8 +653,9 @@ pub fn drive_gpu_bench(
         ]
         .iter()
         .any(|pass| path.contains(pass))
-            && let Some(measurement) = diagnostic.measurement()
-        {
+            || path.ends_with("aestra::bench::full_frame/elapsed_gpu")
+            || path.ends_with("aestra::bench::full_frame/elapsed_cpu");
+        if included && let Some(measurement) = diagnostic.measurement() {
             plan.record_diagnostic(path, measurement, true);
         }
     }
@@ -668,6 +725,18 @@ pub fn drive_gpu_bench(
                 exit.write(AppExit::error());
             }
         }
+    }
+}
+
+pub fn publish_light_tick(
+    plan: Option<Res<GpuBenchPlan>>,
+    time: Res<Time>,
+    mut tick: ResMut<crate::particle_light_bench::Tick>,
+) {
+    if let Some(plan) = plan {
+        tick.index = (plan.warmup - plan.warmup_remaining + plan.frames - plan.remaining) as u64;
+        tick.measured = plan.warmup_remaining == 0;
+        tick.host_elapsed_seconds = time.elapsed_secs();
     }
 }
 
