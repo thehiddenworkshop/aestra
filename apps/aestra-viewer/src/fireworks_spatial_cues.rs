@@ -53,6 +53,7 @@ pub struct Check {
     seen: BTreeSet<(u32, EffectClipId, String, u64)>,
     stale_ignored: u32,
     done: bool,
+    lights: Option<serde_json::Value>,
 }
 
 impl Check {
@@ -70,6 +71,7 @@ impl Check {
             seen: BTreeSet::new(),
             stale_ignored: 0,
             done: false,
+            lights: None,
         }
     }
 
@@ -245,6 +247,7 @@ impl Check {
             "epochs": self.epochs, "seek_seconds": SEEK, "stale_host_messages_ignored": self.stale_ignored,
             "clip_count": self.project.root.effect_clips.len(), "run": self.run,
             "frames": self.frames, "waiting": self.waiting, "cues": self.cues,
+            "transient_lights": self.lights,
             "scope": "13 repeated/transformed clips, static nonidentity ECS root placement; historical authored transforms are unit-tested. FirstPerTick coalescing, 32-tick ring, not lossless gameplay delivery. Host sound names only; no audio playback. Arbitrarily moving ECS placement is delivery-time, not recorded history." });
         let written = (|| -> Result<(), String> {
             if let Some(parent) = self.output.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -295,11 +298,23 @@ pub fn drive(
         Option<&EffectRuntimeStatus>,
     )>,
     mut exit: MessageWriter<AppExit>,
+    light_stats: Option<Res<aestra_bevy::TransientLightStatistics>>,
+    light_settings: Option<Res<aestra_bevy::TransientLightSettings>>,
 ) {
     if check.done {
         return;
     }
     check.frames += 1;
+    if let (Some(stats), Some(settings)) = (&light_stats, &light_settings) {
+        check.lights = Some(serde_json::json!({
+            "budget": settings.max_lights, "allocated": stats.allocated,
+            "active": stats.active, "peak_active": stats.peak_active,
+            "accepted": stats.accepted, "budget_dropped": stats.budget_dropped,
+            "duplicate": stats.duplicate, "invalid": stats.invalid,
+            "stale": stats.stale, "expired": stats.expired, "disabled": stats.disabled,
+            "scope": "Opt-in host main_break bindings, representative shadowless pooled lights. Not authored outputs or lit smoke."
+        }));
+    }
     if check.frames > 9000 {
         check.finish(Err("spatial GPU cue check timed out".into()), &mut exit);
         return;
@@ -378,7 +393,23 @@ pub fn drive(
         return;
     }
     if check.run == 2 {
-        let result = check.validate();
+        let result = check.validate().and_then(|()| {
+            if let (Some(stats), Some(settings)) = (&light_stats, &light_settings) {
+                let requested = check.cues.iter().filter(|c| c.kind == "main_break").count() as u64;
+                if stats.accepted == 0
+                    || stats.accepted + stats.budget_dropped + stats.expired != requested
+                    || stats.active != 0
+                    || stats.allocated > settings.max_lights
+                    || stats.peak_active > settings.max_lights
+                    || stats.invalid + stats.stale + stats.duplicate + stats.disabled != 0
+                {
+                    return Err(format!(
+                        "light admission/cleanup failed for {requested} burst cues: {stats:?}"
+                    ));
+                }
+            }
+            Ok(())
+        });
         check.finish(result, &mut exit);
         return;
     }

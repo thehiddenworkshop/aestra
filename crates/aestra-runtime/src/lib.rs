@@ -18,6 +18,7 @@ mod execution_ir;
 mod outputs;
 mod physics;
 mod profile;
+mod scene_outputs;
 mod sdf;
 mod staged;
 mod stateful;
@@ -46,6 +47,9 @@ pub use interface::{
 };
 pub use outputs::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
+pub use scene_outputs::{
+    MAX_LIGHT_CURVE_KEYS, PointLightPulse, PointLightSample, TransientPointLight,
+};
 pub use sdf::*;
 pub use staged::{
     StagedDispatch, StagedPass, StagedPlan, StagedPlanError, StagedResource,

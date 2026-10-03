@@ -63,8 +63,10 @@ bounded delayed-carrier crackle and four-arm crossette; F5E adds independently p
 strobe stars with exact off intervals. F5F adds explicit tier-specific secondary-shell
 budgets and measured overlapping forward playback. F6A adds a bounded 26-second reusable
 show with per-clip admission/cleanup reporting across all three tiers. F6B validates
-nested spatial particle cues at all three tiers, including seek/restart suppression**.
-The next engine milestone is F7's generic transient-light outputs, not
+nested spatial particle cues at all three tiers, including seek/restart suppression.
+F7A adds engine-neutral host-submitted light pulses, a bounded opt-in Bevy pool and
+native show/receiver acceptance. Authored light-output bindings and lit smoke remain open**.
+The next engine step is F7B's authored light-output integration, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3208,8 +3210,8 @@ Evidence and reproduction: `benchmarks/fireworks/show-composition-2026-10-03.md`
 
 Evidence/reproduction: `benchmarks/fireworks/spatial-host-cues-2026-10-03.md`.
 
-**Next engine work: F7 — generic transient-light output semantics and a bounded Bevy
-adapter.** Audio playback/mixing/assets, skybox and host scene/choreography integration
+**F7A follows below: generic transient-light intents and a bounded Bevy adapter.**
+Audio playback/mixing/assets, skybox and host scene/choreography integration
 remain host-owned. Manual editor authoring and artistic acceptance remain separate open
 F6 gates; F6 is not marked production/AAA-complete by this API check.
 
@@ -3238,6 +3240,40 @@ Implement bounded pooled transient lights.
 ### Deliverable
 
 Fireworks visibly illuminate reference geometry and smoke.
+
+### F7A implemented — representative light contract and bounded host adapter (2026-10-03)
+
+- Engine-neutral `PointLightPulse`/`TransientPointLight`: normalized linear RGB, lumens,
+  range/radius, lifetime, finite ordered bounded intensity/range curves; occurrence-time
+  sampling independent of particle/trail lifetime. No host entities or firework vocabulary.
+- Opt-in `AestraTransientLightPlugin` accepts epoch-qualified `AestraLightOutput` intents.
+  Defaults: 16 pooled point lights, 128 intents/frame; portable ceilings: 64/1,024.
+  Global host enable, lumen/range clamps and live admission budgets; shadows disabled.
+  Saturation drops new pulses with counters, never creates a light for each star.
+- World-space proxies avoid double root placement, inherit render layers and reuse entities.
+  Pause freezes decay. Delayed delivery samples current pulse age, not peak brightness.
+  Expiry, seek/restart epochs, root despawn and disable clear live intents. No future queue,
+  seek reconstruction of light history, moving proxy attachment or EachEvent identity claim.
+- Viewer `--transient-lights` is an explicit **example-host binding**, one pulse per real
+  `main_break`; respects per-clip exposed star colors and high/medium/low 8/4/2-light caps.
+  The reusable show itself remains ordinary saved effect/clip content.
+- Native full show → seek 18s/resume → restart checks passed on RTX 4070 SUPER/Vulkan:
+  27 burst intents each; high/medium admit 27, low admits 23 and reports four saturation
+  drops. Peak occupancy 3/3/2, final active zero, no invalid/stale/duplicate/expired intents.
+- Fixed-frame HDR captures with bloom off show a measurable colored diffuse-receiver
+  response at burst height, fading to identical light-off pixels after expiry. Ordinary
+  meshes are illuminated; current unlit particle smoke is **not**. Neutral receiver panels
+  are host viewer test geometry, not authored show content.
+
+Evidence and commands: `benchmarks/fireworks/transient-lights-2026-10-03.md`.
+Runtime/adapter/binding unit tests and native receiver check cover the first slice;
+these are API/render acceptance, not a lighting-cost/finale benchmark or AAA art approval.
+
+**Next: F7B — authored generic representative-light output bindings** (compiler/runtime
+contract, persisted configuration and editor integration), so effect authors need not
+hard-code route names/color/envelopes in each host. Keep the host's global disable and
+budget authority. Lit particle/volume smoke remains an explicit F7/F8 renderer gate;
+do not mark F7 complete until that interaction and production lighting budgets are validated.
 
 ---
 

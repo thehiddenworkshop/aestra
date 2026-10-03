@@ -5,6 +5,7 @@ mod fireworks_f3;
 mod fireworks_f4;
 mod fireworks_f5;
 mod fireworks_hero;
+mod fireworks_lights;
 mod fireworks_show;
 mod fireworks_spatial_cues;
 mod fireworks_strobe;
@@ -76,6 +77,7 @@ fn main() {
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
+        eprintln!("F7A host lights: --transient-lights with f6-show and --backend gpu. One shadowless pulse per main_break, bounded to 8/4/2 lights for high/medium/low; not authored light outputs or lit smoke.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -130,6 +132,10 @@ fn main() {
     let cue_parent_count = prepared.compiled.event_links.first().map_or(0, |l| l.count);
     let cue_project = prepared.project.clone();
     let cue_seed = config.resolved_seed();
+    let light_binding = config.transient_lights.then(|| {
+        fireworks_lights::Bindings::new(&prepared.project, &config.tier)
+            .expect("checked-in show must expose its bound star colors")
+    });
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -226,6 +232,17 @@ fn main() {
                 gpu_bench::drive_gpu_bench.after(aestra_bevy::AestraSet::Profile),
             ),
         );
+    if let Some(binding) = light_binding {
+        app.insert_resource(binding.settings())
+            .insert_resource(binding)
+            .add_plugins(aestra_bevy::AestraTransientLightPlugin)
+            .add_systems(
+                Update,
+                fireworks_lights::bind
+                    .after(aestra_bevy::AestraSet::Playback)
+                    .before(aestra_bevy::AestraSet::SceneOutputs),
+            );
+    }
     if let Some(step) = probe_bench_step {
         // Same live workload at the same simulation frame regardless of GPU/host speed.
         // Raster-cost and bounded event-chain probes, not real-time catch-up throughput benchmarks.
@@ -318,6 +335,7 @@ struct ViewerConfig {
     diagnostics: bool,
     gpu_bench: Option<PathBuf>,
     fireworks_cue_check: Option<PathBuf>,
+    transient_lights: bool,
     history_policy: aestra_bevy::PlaybackHistoryPolicy,
     /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
     /// one. Otherwise the viewer is 2-D.
@@ -478,6 +496,7 @@ impl ViewerConfig {
         let mut diagnostics = false;
         let mut gpu_bench = None;
         let mut fireworks_cue_check = None;
+        let mut transient_lights = false;
         let mut history_policy = aestra_bevy::PlaybackHistoryPolicy::default();
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
@@ -514,6 +533,7 @@ impl ViewerConfig {
                 "--stable-transparency" => transparent_order = TransparentOrderMode::StableCapture,
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
+                "--transient-lights" => transient_lights = true,
                 "--sprite-min-pixels" => {
                     let value = args.next().ok_or("--sprite-min-pixels requires a value")?;
                     sprite_minimum_pixels =
@@ -731,6 +751,13 @@ impl ViewerConfig {
         {
             return Err("--trail-min-pixels requires native GPU presentation (auto or gpu)".into());
         }
+        if transient_lights
+            && (!fireworks_f0
+                || fireworks_probe != Some(FireworksProbe::Show)
+                || presentation != PresentationMode::Gpu)
+        {
+            return Err("--transient-lights requires f6-show and --backend gpu".into());
+        }
         if let Some(path) = &fireworks_cue_check {
             if !matches!(
                 fireworks_probe,
@@ -768,6 +795,7 @@ impl ViewerConfig {
             diagnostics,
             gpu_bench,
             fireworks_cue_check,
+            transient_lights,
             history_policy,
             view_3d,
             tier,
@@ -1167,6 +1195,10 @@ fn setup(
 
     if config.fireworks_f0 {
         spawn_fireworks_validation_scene(&mut commands, &mut meshes, &mut materials);
+        if config.fireworks_probe == Some(FireworksProbe::Show) {
+            // Shared light-on/off receivers; never change geometry with the lighting toggle.
+            fireworks_lights::spawn_receivers(&mut commands, &mut meshes, &mut materials);
+        }
     }
 
     // The 2-D grid and HUD are sprites and UI for the 2-D view; regression scenes stay bare.
@@ -1675,7 +1707,8 @@ fn receive_capture(
                     report.config.photographic,
                     report.config.sprite_minimum_pixels,
                 )
-                .with_trail_sampling(report.config.trail_minimum_pixels),
+                .with_trail_sampling(report.config.trail_minimum_pixels)
+                .with_transient_lights(report.config.transient_lights),
             },
             &report.prepared.compiler,
             PreviewRuntimeData {
@@ -1978,7 +2011,8 @@ mod tests {
                     config.photographic,
                     config.sprite_minimum_pixels,
                 )
-                .with_trail_sampling(config.trail_minimum_pixels),
+                .with_trail_sampling(config.trail_minimum_pixels)
+                .with_transient_lights(config.transient_lights),
             )
             .unwrap();
             assert_eq!(response["trail_minimum_pixels"], pixels);
@@ -2401,6 +2435,7 @@ mod tests {
             diagnostics: false,
             gpu_bench: None,
             fireworks_cue_check: None,
+            transient_lights: false,
             history_policy: aestra_bevy::PlaybackHistoryPolicy::default(),
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),

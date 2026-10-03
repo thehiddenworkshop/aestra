@@ -310,6 +310,66 @@ compiler so its material-function library is expanded before runtime binding. Th
 accepts these compiler-expanded custom calls without needing the authoring library again.
 Audio assets, per-flash sound policies, voice budgets and mixing remain host responsibilities.
 
+## Representative transient scene lights (opt-in)
+
+The engine-neutral `aestra_runtime::{PointLightPulse, TransientPointLight}` contract
+describes a world position, root-clock occurrence time, normalized linear RGB, lumens,
+range, radius and lifetime. Intensity and range curves sample normalized pulse age
+(at most 32 finite, ordered keys). This is a host-submitted scene intent, **not yet an
+authored renderer/output type**. Nothing in the core is named after fireworks.
+
+```rust,no_run
+use aestra_bevy::{
+    AestraPlugin, AestraTransientLightPlugin, AestraLightOutput, AestraOutputEvent,
+    AestraSet, PointLightPulse, TransientLightSettings,
+};
+use bevy::prelude::*;
+
+fn bind_lights(mut cues: MessageReader<AestraOutputEvent>, mut lights: MessageWriter<AestraLightOutput>) {
+    for cue in cues.read().filter(|cue| cue.event.kind == "burst") {
+        if let Some(light) = AestraLightOutput::from_particle(
+            cue, PointLightPulse::flash([1.0, 0.2, 0.1], 50_000.0, 30.0, 0.5),
+        ) {
+            lights.write(light);
+        }
+    }
+}
+let mut app = App::new();
+app.add_plugins((DefaultPlugins, AestraPlugin, AestraTransientLightPlugin))
+    .insert_resource(TransientLightSettings { max_lights: 8, ..default() })
+    .add_systems(Update, bind_lights.after(AestraSet::Playback).before(AestraSet::SceneOutputs));
+```
+
+Bind a selected **FirstPerTick** particle route, not every star/EachEvent output. The
+conversion deliberately ignores particle count: one cue produces one representative
+light. Legacy stage/choreography/finished messages lacking spatial metadata are not
+converted. For other use cases hosts can submit the envelope themselves with root,
+epoch and a stable `TransientLightKey`. Pulse identity includes clip path, output,
+emitter and tick, scoped to root/epoch; do not reuse it for independent intents.
+
+The adapter defaults to 16 pooled, shadowless point lights, 128 requests/frame,
+1,000,000 lumens and 200 world-unit range. Host settings can disable lights or lower
+these budgets live; portable ceilings are 64 lights and 1,024 requests/frame. Excess
+new intents are dropped, not queued or allowed to evict a live pulse; read
+`TransientLightStatistics` for accepted/duplicate/budget/invalid/stale/expired/disabled
+counts and active/allocated/peak occupancy. Bound the producer's message volume too:
+the adapter caps consumption, not allocations made by arbitrary host producers.
+
+Lights reuse entities, inherit the root's `RenderLayers`, and remain unparented at the
+already-transformed world position (no double root transform). Shadows/contact shadows
+are disabled. Decay uses **occurrence time**, so delayed readback does not replay peak
+brightness. Pause freezes the pulse; seek/restart epoch changes, expiry, root despawn,
+or disabling the adapter clear active intents. Future and already-expired submissions
+are dropped; there is no future scheduler or light-history reconstruction on seek.
+Host ECS motion after the event does not move that already-emitted pulse.
+
+Viewer opt-in: `--fireworks-f0 --fireworks-f0-probe f6-show --backend gpu --transient-lights`.
+The example host binds `main_break` to clip-overridden star colors and 8/4/2 high/medium/low
+budgets. Add `--history playback-only --fireworks-cue-check fresh-report.json` to validate
+admission and cleanup over full playback, seek and restart. These lights affect ordinary
+lit scene meshes; Aestra's current unlit particle smoke is **not** illuminated by them.
+Authored light-output bindings, lit smoke and production lighting budgets remain F7/F8 gates.
+
 ## Where to look
 
 | I want… | Read |

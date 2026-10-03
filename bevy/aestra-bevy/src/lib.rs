@@ -40,14 +40,20 @@ mod bindings;
 #[cfg(test)]
 mod choreography_tests;
 mod input_events;
+mod lights;
 mod project;
 mod project_profile;
 mod world;
+pub use aestra_runtime::{PointLightPulse, PointLightSample, TransientPointLight};
 pub use bindings::{
     AestraBindingRecorder, AestraBindingTrace, AestraBindings, AestraLinearVelocity, binding_frame,
     spatial_snapshot,
 };
 pub use input_events::AestraEventInput;
+pub use lights::{
+    AestraLightOutput, AestraTransientLightPlugin, MAX_TRANSIENT_LIGHTS, TransientLightKey,
+    TransientLightProxy, TransientLightSettings, TransientLightStatistics,
+};
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;
 pub use world::sdf_from_meshes;
@@ -120,6 +126,8 @@ pub enum AestraSet {
     Playback,
     /// Current presentation snapshots and project totals, after render preparation.
     Profile,
+    /// Optional transient-light adapter; host cue-to-light bindings run before this.
+    SceneOutputs,
 }
 
 /// Fired after an [`EffectPlayer`] crosses a compiled choreography event during normal playback.
