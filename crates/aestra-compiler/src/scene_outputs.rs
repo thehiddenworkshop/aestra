@@ -4,6 +4,59 @@ use aestra_runtime::{
 };
 use std::collections::BTreeMap;
 
+pub(crate) fn compile_particle_outputs(
+    asset: &EffectAsset,
+    emitter: &aestra_core::Emitter,
+    slots: &BTreeMap<aestra_core::ParameterId, ParameterSlot>,
+    tier: &str,
+) -> Vec<aestra_runtime::SceneOutputPlan> {
+    use aestra_core::{ParticleLightColorSource, SceneOutputProperties, Value};
+    use aestra_runtime::{
+        CompiledCurve, CompiledGradient, ParticleLightColorPlan, ParticlePointLightPlan,
+        SceneOutputPlan, SceneOutputPlanKind,
+    };
+    emitter
+        .scene_outputs
+        .iter()
+        .filter(|output| emitter.enabled && output.enabled)
+        .map(|output| {
+            let SceneOutputProperties::ParticlePointLight(light) = &output.properties;
+            let color = match light.color_source {
+                ParticleLightColorSource::ParticleColor => ParticleLightColorPlan::ParticleColor,
+                ParticleLightColorSource::Constant(rgb) => ParticleLightColorPlan::Constant(rgb),
+                ParticleLightColorSource::GradientParameter(id) => {
+                    if let Some(slot) = slots.get(&id) {
+                        ParticleLightColorPlan::GradientParameter(*slot)
+                    } else {
+                        let Value::Gradient(gradient) = &asset
+                            .parameters
+                            .iter()
+                            .find(|p| p.id == id)
+                            .expect("validated scene-output parameter exists")
+                            .default
+                        else {
+                            unreachable!("validated scene-output gradient type");
+                        };
+                        ParticleLightColorPlan::Gradient(CompiledGradient::compile(gradient))
+                    }
+                }
+            };
+            SceneOutputPlan {
+                source: output.id,
+                kind: SceneOutputPlanKind::ParticlePointLight(ParticlePointLightPlan {
+                    color,
+                    intensity: CompiledCurve::compile(&light.intensity_curve),
+                    range: CompiledCurve::compile(&light.range_curve),
+                    radius: light.radius,
+                    selection_policy: light.selection_policy,
+                    max_lights: light.max_lights(tier),
+                    priority: light.priority,
+                }),
+            }
+        })
+        .collect()
+}
+
 /// Source validation has checked stable references and representative semantics.
 pub(crate) fn compile(
     asset: &EffectAsset,

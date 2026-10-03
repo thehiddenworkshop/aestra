@@ -96,8 +96,15 @@ fn source_and_artifact_round_trip_preserve_the_complete_binding() {
     let text = String::from_utf8(encode_effect(&compiled).unwrap()).unwrap();
     assert!(matches!(
         decode_effect(
-            text.replacen("format_version:6", "format_version:5", 1)
-                .as_bytes()
+            text.replacen(
+                &format!(
+                    "format_version:{}",
+                    aestra_artifact::CURRENT_ARTIFACT_VERSION
+                ),
+                "format_version:5",
+                1
+            )
+            .as_bytes()
         ),
         Err(ArtifactError::UnsupportedVersion { found: 5 })
     ));

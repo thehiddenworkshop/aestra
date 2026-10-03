@@ -512,6 +512,7 @@ impl EffectAsset {
         crate::event_routes::validate_input_spawns(self, &mut report, &mut semantic_ids);
         crate::event_routes::validate_particle_outputs(self, &mut report, &mut semantic_ids);
         crate::scene_outputs::validate_bindings(self, &mut report, &mut semantic_ids);
+        crate::particle_lights::validate_particle_outputs(self, &mut report, &mut semantic_ids);
         for (index, clip) in self.effect_clips.iter().enumerate() {
             let path = format!("effect.effect_clips[{index}]");
             register_id(
@@ -1263,6 +1264,9 @@ pub struct Emitter {
     pub simulation_domain: SimulationDomain,
     pub modules: Vec<ModuleInstance>,
     pub renderers: Vec<RendererInstance>,
+    /// Material-free presentation sinks, independent of simulation and host events.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scene_outputs: Vec<crate::SceneOutputInstance>,
     /// The registered stage type of each authored simulation stage, by stage name (extensible-stages
     /// M10). A stage absent here is the generic [`crate::AESTRA_STAGE_SIMULATION`]; a plugin stage names
     /// its own namespaced type, which is how the compiler finds its capabilities and lowering.
@@ -1430,6 +1434,7 @@ impl Emitter {
                 ),
             ],
             renderers: vec![RendererInstance::sprite(DEFAULT_SPRITE_MATERIAL_ID)],
+            scene_outputs: Vec::new(),
             simulation_stage_types: BTreeMap::new(),
         }
     }
@@ -1444,6 +1449,9 @@ impl Emitter {
         }
         for renderer in &mut self.renderers {
             renderer.id = RendererId::new();
+        }
+        for output in &mut self.scene_outputs {
+            output.regenerate_ids();
         }
     }
 
@@ -1815,11 +1823,11 @@ impl Emitter {
         for (index, module) in self.modules.iter().enumerate() {
             module.validate(&format!("{path}.modules[{index}]"), report, semantic_ids);
         }
-        if self.renderers.is_empty() {
+        if self.renderers.is_empty() && !self.scene_outputs.iter().any(|output| output.enabled) {
             report.push(Diagnostic::error(
                 DiagnosticCode::MissingRenderer,
                 format!("{path}.renderers"),
-                "emitter must have at least one renderer",
+                "emitter must have at least one renderer or enabled scene output",
             ));
         }
         for (index, renderer) in self.renderers.iter().enumerate() {

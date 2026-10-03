@@ -716,6 +716,19 @@ impl EffectCompiler {
                 .filter_map(|light| light.color_parameter.as_ref().map(|color| color.parameter)),
         );
         let mut parameters = Vec::new();
+        referenced_parameters.extend(asset.emitters.iter().filter(|e| e.enabled).flat_map(|e| {
+            e.scene_outputs
+                .iter()
+                .filter(|o| o.enabled)
+                .filter_map(|output| {
+                    let aestra_core::SceneOutputProperties::ParticlePointLight(light) =
+                        &output.properties;
+                    match light.color_source {
+                        aestra_core::ParticleLightColorSource::GradientParameter(id) => Some(id),
+                        _ => None,
+                    }
+                })
+        }));
         let mut parameter_slots = BTreeMap::new();
         for parameter in asset
             .parameters
@@ -1129,6 +1142,12 @@ impl EffectCompiler {
                     ),
                     execution: execution.clone(),
                     renderers: renderers.clone(),
+                    scene_outputs: scene_outputs::compile_particle_outputs(
+                        asset,
+                        emitter,
+                        &parameter_slots,
+                        &self.tier.name,
+                    ),
                     extension_renderers: extension_renderers.clone(),
                     extension_stages: extension_stages.clone(),
                 });
@@ -1931,13 +1950,14 @@ impl EffectCompiler {
                 .iter()
                 .filter(|renderer| renderer.enabled)
                 .count();
-            if enabled_renderers == 0 {
+            if enabled_renderers == 0 && !emitter.scene_outputs.iter().any(|output| output.enabled)
+            {
                 push_unique(
                     report,
                     Diagnostic::error(
                         DiagnosticCode::MissingRenderer,
                         format!("{emitter_path}.renderers"),
-                        "emitter must have at least one enabled renderer",
+                        "emitter must have at least one enabled renderer or scene output",
                     ),
                 );
             }

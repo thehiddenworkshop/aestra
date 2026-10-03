@@ -16,6 +16,7 @@ pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod execution_ir;
 mod outputs;
+mod particle_lights;
 mod physics;
 mod profile;
 mod scene_outputs;
@@ -46,6 +47,7 @@ pub use interface::{
     InterfaceWorldRequirement, field_label, world_label,
 };
 pub use outputs::*;
+pub use particle_lights::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 pub use scene_outputs::{
     CompiledPointLightBinding, LightBindingError, MAX_LIGHT_CURVE_KEYS, PointLightPulse,
@@ -1143,6 +1145,8 @@ pub struct CompiledEmitter {
     /// and what stage-id source navigation resolves against. Derivable from `execution` and vice versa.
     pub stages: CompiledLifecycleStages,
     pub renderers: Vec<RendererPlan>,
+    /// Material-free presentation plans. Never run by simulation or event delivery.
+    pub scene_outputs: Vec<SceneOutputPlan>,
     /// Extension (plugin) renderers on this emitter (extensible-stages M8), carried generically so no
     /// core `RendererPlanKind` variant is needed. Empty for effects using only built-in renderers.
     pub extension_renderers: Vec<CompiledExtensionRenderer>,

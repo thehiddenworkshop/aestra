@@ -65,7 +65,7 @@ impl PointLightPulse {
     }
 }
 
-fn valid_curve(curve: &Curve, positive: bool) -> bool {
+pub(crate) fn valid_curve(curve: &Curve, positive: bool) -> bool {
     let valid_value =
         |value: f32| value.is_finite() && if positive { value > 0.0 } else { value >= 0.0 };
     !curve.keys.is_empty()

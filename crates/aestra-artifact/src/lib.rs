@@ -25,7 +25,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
+mod particle_lights;
 mod v4;
+use particle_lights::SceneOutputV7;
 use v4::{BindingForwardV4, BindingV4, ExtensionStageV4, HostFieldV4};
 
 pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
@@ -37,7 +39,9 @@ pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
 /// the new mode and run a legacy cone instead.
 /// v6 adds representative authored scene-light bindings; old readers must not
 /// silently ignore lighting behavior. Recompile v5 artifacts from source.
-pub const CURRENT_ARTIFACT_VERSION: u32 = 6;
+/// v7 persists material-free particle scene-output plans and their quality limits.
+/// Recompile v6 artifacts rather than silently dropping particle lighting.
+pub const CURRENT_ARTIFACT_VERSION: u32 = 7;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -670,6 +674,8 @@ struct EmitterV1 {
     attachment: Option<AttachmentV4>,
     execution: ExecutionPlanV1,
     renderers: Vec<RendererPlanV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    scene_outputs: Vec<SceneOutputV7>,
     /// Extension (plugin) renderers (extensible-stages M8). Defaulted for artifacts baked before
     /// extension-renderer support, so older artifacts still decode.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2400,6 +2406,17 @@ impl EmitterV1 {
                 &format!("effect.emitters[{index}].execution"),
             )?,
             renderers: emitter.renderers.iter().map(RendererPlanV1::from).collect(),
+            scene_outputs: emitter
+                .scene_outputs
+                .iter()
+                .enumerate()
+                .map(|(output_index, output)| {
+                    SceneOutputV7::encode(
+                        output,
+                        &format!("effect.emitters[{index}].scene_outputs[{output_index}]"),
+                    )
+                })
+                .collect::<Result<_, _>>()?,
             extension_renderers: emitter
                 .extension_renderers
                 .iter()
@@ -2439,6 +2456,20 @@ impl EmitterV1 {
         // the same stage identities without storing them separately.
         let stages =
             aestra_runtime::CompiledLifecycleStages::from_execution_plan(&execution, self.source);
+        let mut output_ids = BTreeSet::new();
+        let scene_outputs = self
+            .scene_outputs
+            .into_iter()
+            .enumerate()
+            .map(|(index, output)| {
+                let output_path = format!("{path}.scene_outputs[{index}]");
+                let plan = output.decode(parameters.parameters, &output_path)?;
+                if !output_ids.insert(plan.source) {
+                    return invalid(output_path, "duplicate scene-output identity");
+                }
+                Ok(plan)
+            })
+            .collect::<Result<_, _>>()?;
         Ok(CompiledEmitter {
             source: self.source,
             region: self.region,
@@ -2468,6 +2499,7 @@ impl EmitterV1 {
             stages,
             execution,
             renderers: self.renderers.into_iter().map(RendererPlan::from).collect(),
+            scene_outputs,
             extension_renderers: self
                 .extension_renderers
                 .into_iter()

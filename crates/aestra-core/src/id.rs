@@ -65,6 +65,7 @@ impl EmitterId {
 semantic_id!(EmitterRegionId);
 semantic_id!(ModuleId);
 semantic_id!(RendererId);
+semantic_id!(SceneOutputId);
 semantic_id!(CurveId);
 semantic_id!(GradientId);
 semantic_id!(ParameterId);

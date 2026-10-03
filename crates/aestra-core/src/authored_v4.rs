@@ -255,6 +255,8 @@ pub struct V4Emitter {
     pub simulation_stages: Vec<V4SimulationStage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renderers: Vec<RendererInstance>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scene_outputs: Vec<crate::SceneOutputInstance>,
 }
 
 /// The full authored **format v4** document (extensible-stages M3). Serde DTO over the flat in-memory
@@ -397,6 +399,7 @@ fn emitter_to_v4(emitter: &Emitter) -> Result<V4Emitter, V4ConversionError> {
         lifecycle,
         simulation_stages,
         renderers: emitter.renderers.clone(),
+        scene_outputs: emitter.scene_outputs.clone(),
     })
 }
 
@@ -447,6 +450,7 @@ fn emitter_from_v4(emitter: V4Emitter) -> Emitter {
         simulation_domain: id_to_domain(&emitter.domain),
         modules,
         renderers: emitter.renderers,
+        scene_outputs: emitter.scene_outputs,
         simulation_stage_types,
     }
 }
@@ -581,6 +585,7 @@ mod tests {
                 ),
             ],
             renderers: vec![RendererInstance::sprite(DEFAULT_SPRITE_MATERIAL_ID)],
+            scene_outputs: Vec::new(),
             simulation_stage_types: BTreeMap::from([(
                 "solve".to_string(),
                 StageTypeId::new("org.example::stage/solver"),

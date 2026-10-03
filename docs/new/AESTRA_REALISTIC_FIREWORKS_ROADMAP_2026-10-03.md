@@ -69,10 +69,11 @@ native show/receiver acceptance. F7B1 persists generic light bindings through so
 compiler and artifact v6 and resolves them automatically in Bevy. A fresh code review
 of this snapshot confirms that these bindings are intentionally **representative event
 lights**, not lights continuously emitted by every particle. F7B2 now has editor
-authoring controls (manual visual acceptance remains open). F7C/F7D are added below for a generic, bounded direct-particle
-lighting path; lit smoke remains open**.
-The next engine step is a measured F7C/F7D
-particle-light prototype, not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
+authoring controls (manual visual acceptance remains open). **F7C now implements the material-free
+particle scene-output model, compiled plans and deterministic CPU/reference candidates, persisted in
+artifact v7. GPU selection/realization and lit smoke remain open.**
+The next engine step is the measured F7D GPU candidate-selection
+prototype, not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
 precede a production-shell claim, not merely F9 polish.
@@ -3772,6 +3773,53 @@ the saved F7B1 sources without editing serialized data.
 
 ### F7C — generic particle scene-output model
 
+**Implemented (2026-10-03): source/core + compiler + artifact + CPU/reference contract.**
+
+- `Emitter::scene_outputs` is a default-empty, material-free list of typed `SceneOutputInstance`s.
+  The first built-in is `aestra.scene_output.particle_point_light`; enabled light-only emitters compile
+  without a renderer or dummy material. Existing representative `EffectAsset::point_lights` is unchanged.
+- `ParticlePointLightProperties` supports particle RGB, constant linear RGB or a shared gradient
+  parameter sampled at particle age; normalized-age intensity/range curves, radius, selection policy,
+  priority and explicit named quality limits. `high` is the fallback for an unlisted custom tier;
+  zero disables candidate evaluation. These authored limits are not global admission guarantees.
+- Compilation retains scene-output-only exposed gradient reads, folds non-exposed gradients, resolves
+  the quality cap and stores a separate backend-neutral plan on each compiled emitter region. No host
+  event route, material, simulation instruction or checkpoint data is added.
+- Authored v4 round-trips the additive list and emitter duplication rekeys owned output/curve IDs while
+  retaining parameter references. Semantic diffs report scene-output-only changes at the emitter.
+  **Artifact v7** explicitly persists plans and validates their IDs, curve envelopes and gradient slots;
+  older artifacts must be recompiled, not silently stripped of lighting behavior.
+- `CompiledEffect::particle_light_candidates(sample, parameters)` is an allocation-free, read-only
+  reference iterator. Invalid/expired samples, zero caps/lumens and invalid live colors fail closed.
+  Position remains in the supplied sample's coordinate space; adapters must transform it exactly once.
+  Identity includes emitter, region, output ID and stable spawn ordinal, not input vector order.
+  Hosts still add root instance/epoch and child occurrence path when merging multiple presentations.
+- Ten end-to-end particle-light contracts plus an authoring diff test pass, including material-free
+  source/artifact round-trips, gradient-only live parameters, quality caps, malformed data, duplicate
+  IDs, reorder/region identities, 4,096 generic ember candidates, and unchanged compiled simulation,
+  particle results, timeline events and history identity during candidate evaluation.
+  Core/runtime/compiler/artifact/authoring suites, workspace all-target check and warnings-as-errors
+  Clippy pass.
+
+**Boundary:** candidates are not selected lights. The reference iterator intentionally does not apply
+top-K or instantiate Bevy lights, and does not append particles to a host event queue. It accepts only
+alive `ParticleSample`s (that type has no alive flag). GPU candidate compaction/selection, measured
+counters, multi-instance admission and visible native particle lighting belong to F7D/F7E; no AAA
+scene-lighting performance or visual-acceptance claim follows from F7C.
+
+Minimal authored API (no material required):
+
+```rust
+let mut emitter = Emitter::basic_sprite("Embers", 4.0);
+emitter.renderers.clear();
+emitter.scene_outputs.push(SceneOutputInstance::particle_point_light(
+    ParticlePointLightProperties::new(2_000.0, 12.0),
+));
+effect.emitters.push(emitter);
+// Compile normally, then evaluate candidates from the alive presentation samples.
+// A candidate stream is a reference input to selection, not a Bevy light spawn loop.
+```
+
 **Goal:** add a material-free particle-backed presentation sink without distorting the current
 `RendererInstance` contract.
 
@@ -4050,7 +4098,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-03):** F7A/F7B1 and F7B2 authoring controls are implemented; F7B2's manual UI/visual gate remains open. Next build an intentionally small F7C/F7D prototype and benchmark it before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls and F7C's source/compiler/artifact/CPU contract are implemented; F7B2's manual UI/visual gate remains open. Next build an intentionally small F7D GPU selection prototype and benchmark it before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4464,15 +4512,15 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7C   material-free particle scene-output data model + CPU/reference lowering
-2. F7D   GPU candidate compaction/top-K with profiling counters
-3. F7E   bounded Bevy realization and visual/performance measurement
-4. F7F   quality tiers; shadows remain off by default
-5. F8.3  make smoke actually consume scene lighting
+1. F7D   GPU candidate compaction/top-K with profiling counters
+2. F7E   bounded Bevy realization and visual/performance measurement
+3. F7F   quality tiers; shadows remain off by default
+4. F8.3  make smoke actually consume scene lighting
 ```
 
 F7B2 editor controls are implemented; complete their manual UI/visual acceptance alongside source
 authoring, without treating them as evidence of continuous particle lights or editor viewport lighting.
+F7C's material-free plans and CPU reference are implemented; GPU selection and realization remain open.
 
 Do not begin with deep backend-specific clustered-light injection. First prove that the generic model,
 selection policy, visual contribution and selected-light budgets are correct. Escalate from bounded

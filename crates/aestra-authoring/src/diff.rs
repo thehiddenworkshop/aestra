@@ -541,6 +541,15 @@ fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
     }
     diff_modules(before, after, changes);
     diff_renderers(before, after, changes);
+    if before.scene_outputs != after.scene_outputs {
+        modified(
+            changes,
+            target,
+            "emitter.scene_outputs",
+            format!("{:?}", before.scene_outputs),
+            format!("{:?}", after.scene_outputs),
+        );
+    }
 }
 
 fn diff_modules(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticChange>) {
