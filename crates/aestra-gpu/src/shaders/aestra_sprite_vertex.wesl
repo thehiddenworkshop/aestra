@@ -72,6 +72,7 @@ struct SpriteVertexData {
     particle_normalized_age: f32,
     ribbon_direction: vec3<f32>,
     sampling_coverage: f32,
+    particle_random: f32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -94,6 +95,12 @@ fn hash01(index: u32, channel: u32) -> f32 {
     result *= 0x846ca68bu;
     result ^= result >> 16u;
     return f32(result) / 4294967295.0;
+}
+
+// Stable presentation stream: emitter + spawn ordinal + render seed, never a
+// physical storage slot or compaction index. Independent from simulation RNG.
+fn aestra_particle_random(particle: Particle) -> f32 {
+    return hash01(particle.particle_index, 16u + particle_emitter(particle));
 }
 
 fn flipbook_frame(renderer: Renderer, normalized_age: f32, particle_index: u32) -> u32 {
@@ -215,5 +222,6 @@ fn aestra_sprite_vertex(
     output.textured = renderer.textured;
     output.effect_time = globals.time;
     output.particle_normalized_age = particle.normalized_age;
+    output.particle_random = hash01(particles[particle_index].particle_index, 16u + particle_emitter(particle));
     return output;
 }

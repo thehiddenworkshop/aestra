@@ -587,7 +587,10 @@ impl MaterialCompiler {
         self.compile_with_functions(program, &crate::MaterialFunctionLibrary::default())
     }
 
-    pub(crate) fn compile_expanded(
+    /// Lowers a runtime program whose authoring-level function calls have already
+    /// been expanded by project compilation. Semantic analysis still validates
+    /// the graph and custom-call signatures; this does not resolve project calls.
+    pub fn compile_expanded(
         &self,
         program: &MaterialProgram,
     ) -> Result<MaterialIrProgram, MaterialCompileError> {

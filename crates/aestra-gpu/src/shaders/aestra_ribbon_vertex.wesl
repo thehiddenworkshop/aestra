@@ -54,6 +54,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     output.softness = renderer.softness;
     output.textured = renderer.textured | 2u;
     output.effect_time = globals.time;
+    output.particle_random = aestra_particle_random(particles[start]);
     if (renderer.attribute_flags.x & 32u) == 0u { output.particle_normalized_age = particles[slot].normalized_age; }
     output.sampling_coverage = 1.0;
     return output;

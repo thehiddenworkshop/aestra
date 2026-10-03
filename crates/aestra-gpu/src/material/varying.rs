@@ -24,12 +24,19 @@ pub enum MaterialVarying {
     Bitangent,
     RibbonUv,
     RibbonDirection,
+    ParticleRandom,
 }
 
 impl MaterialVarying {
     // Name, WGSL type, interpolation attribute, shared vertex-data expression.
     fn fields(self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self {
+            Self::ParticleRandom => (
+                "particle_random",
+                "f32",
+                "@interpolate(flat) ",
+                "sprite.particle_random",
+            ),
             Self::RibbonUv => ("ribbon_uv", "vec2<f32>", "", "sprite.uv"),
             Self::RibbonDirection => (
                 "ribbon_direction",
@@ -136,6 +143,10 @@ impl MaterialVaryingLayout {
             (
                 MaterialInput::ParticleNormalizedAge,
                 MaterialVarying::ParticleNormalizedAge,
+            ),
+            (
+                MaterialInput::ParticleRandom,
+                MaterialVarying::ParticleRandom,
             ),
         ] {
             if reads(input)

@@ -564,6 +564,7 @@ fn build_reflection(
                 | MaterialInput::ParticleColor
                 | MaterialInput::ParticleOpacity
                 | MaterialInput::ParticleNormalizedAge
+                | MaterialInput::ParticleRandom
                 | MaterialInput::EffectTime
                 | MaterialInput::SceneDepth
                 | MaterialInput::PixelDepth
@@ -1315,6 +1316,7 @@ fn input_expression(
         MaterialInput::ParticleOpacity if varyings.has_color() => Some("input.particle_color.a"),
         MaterialInput::ParticleOpacity => Some("input.particle_opacity"),
         MaterialInput::ParticleNormalizedAge => Some("input.particle_normalized_age"),
+        MaterialInput::ParticleRandom => Some("input.particle_random"),
         MaterialInput::EffectTime => Some("input.effect_time"),
         MaterialInput::SceneDepth => Some("aestra_scene_depth(input)"),
         MaterialInput::PixelDepth => Some("aestra_pixel_depth(input)"),

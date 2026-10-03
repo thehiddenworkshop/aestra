@@ -82,6 +82,7 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     output.textured = r.textured | 6u;
     output.effect_time = globals.time;
     output.particle_normalized_age = particles[slot].normalized_age;
+    output.particle_random = aestra_particle_random(particles[base]);
     // Bodies expand in one dimension; round caps expand in two.
     output.sampling_coverage = sampling.y * select(1.0, sampling.y, cap);
     return output;

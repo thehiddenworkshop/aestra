@@ -1,0 +1,19 @@
+(
+    id: "a3574a00-0000-4000-8000-0000000fbf00",
+    schema_version: 1,
+    name: "Periodic Gate (Custom WESL)",
+    inputs: [
+        (id: "a3574a00-0000-4000-8000-0000000fbf01", name: "Phase", value_type: Float),
+        (id: "a3574a00-0000-4000-8000-0000000fbf02", name: "Duty", value_type: Float),
+    ],
+    outputs: [
+        (id: "a3574a00-0000-4000-8000-0000000fbf03", name: "Gate", value_type: Float,
+         expression: "a3574a00-0000-4000-8000-0000000fbf04"),
+    ],
+    expressions: [],
+    custom_wesl: Some((
+        evaluation_domain: Fragment,
+        source: "fn periodic_gate(phase: f32, duty: f32) -> f32 {\n    return select(0.0, 1.0, fract(phase) < clamp(duty, 0.0, 1.0));\n}\n",
+        entry_points: {"a3574a00-0000-4000-8000-0000000fbf03": "periodic_gate"},
+    )),
+)

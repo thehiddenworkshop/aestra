@@ -211,6 +211,242 @@ fn assert_temporal_sampling(
     }
 }
 
+#[test]
+fn strobe_material_has_true_off_intervals_and_stable_per_particle_phase() {
+    use aestra_compiler::MaterialFunctionLibrary;
+    use aestra_core::material::MaterialValue;
+    use aestra_core::material::{
+        MaterialEvaluationDomain, MaterialExpressionKind, MaterialFunction, MaterialInput,
+    };
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::PRIMARY;
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
+        Ok(adapter) if adapter.limits().max_storage_buffers_per_shader_stage >= 6 => adapter,
+        _ => {
+            assert!(
+                std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none(),
+                "native sprite-capable adapter required"
+            );
+            eprintln!("Skipping strobe conformance: no native adapter");
+            return;
+        }
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .unwrap();
+    let mut effect = EffectAsset::new("Strobe raster", 3.0);
+    effect.emitters.push(Emitter::basic_sprite("Stars", 3.0));
+    let artifact = GpuEffectArtifact::from_instance(&aestra_runtime::EffectInstance::new(
+        Arc::new(EffectCompiler::default().compile(&effect).unwrap()),
+    ))
+    .unwrap();
+    let mut renderer = artifact.renderers[0];
+    renderer.blend_mode = aestra_gpu::GpuBlend::Additive as u32;
+    renderer.tint = Vec4::ONE;
+    let case = RasterCase {
+        pixels: 4.0,
+        floor: 0.0,
+        phase: [0.0; 2],
+        rotation: 0.0,
+        translation_pixels: [0.0; 2],
+        trail: None,
+    };
+    let compile_program = |p: &MaterialProgram| {
+        MaterialShaderCompiler
+            .compile(
+                &MaterialCompiler.compile(p).unwrap(),
+                &MaterialBackendCapabilities::portable_minimum(),
+            )
+            .unwrap()
+    };
+    let base_program = MaterialProgram::additive_sprite("Random reference");
+    let mut random_program = base_program.clone();
+    let random_id = aestra_core::MaterialExpressionId::new();
+    let alpha_id = aestra_core::MaterialExpressionId::new();
+    random_program.expressions.extend([
+        aestra_core::material::MaterialExpression {
+            id: random_id,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleRandom),
+        },
+        aestra_core::material::MaterialExpression {
+            id: alpha_id,
+            kind: MaterialExpressionKind::Multiply(random_program.outputs.alpha, random_id),
+        },
+    ]);
+    random_program.outputs.alpha = alpha_id;
+    let baseline = compile_program(&base_program);
+    let random = compile_program(&random_program);
+    let render = |source: &str, identity| {
+        raster_identity_case(
+            &device,
+            &queue,
+            source,
+            MATERIAL_FRAGMENT_ENTRY_POINT,
+            renderer,
+            case,
+            false,
+            identity,
+        )
+    };
+    // Independent integer reference for the production presentation hash.
+    let random_reference = |ordinal: u32, seed: u32, emitter: u32| {
+        let mut value =
+            ordinal.wrapping_mul(0x9e37_79b9) ^ (16 + emitter).wrapping_mul(0x85eb_ca6b) ^ seed;
+        value ^= value >> 16;
+        value = value.wrapping_mul(0x7feb_352d);
+        value ^= value >> 15;
+        value = value.wrapping_mul(0x846c_a68b);
+        value ^= value >> 16;
+        value as f32 / u32::MAX as f32
+    };
+    let seed = 0xf1e0_0123;
+    let identity = IdentityCase {
+        seed,
+        ..Default::default()
+    };
+    let base_energy = cell_energy(&render(&baseline.shader.wgsl, identity));
+    let random_bytes = render(&random.shader.wgsl, identity);
+    for (i, (got, base)) in cell_energy(&random_bytes)
+        .iter()
+        .zip(&base_energy)
+        .enumerate()
+    {
+        assert!(
+            (*got / base - random_reference(i as u32, seed, 0)).abs() < 1e-5,
+            "particle {i}: got {got}, base {base}, ratio {}, expected {}",
+            got / base,
+            random_reference(i as u32, seed, 0)
+        );
+    }
+    assert_eq!(
+        random_bytes,
+        render(
+            &random.shader.wgsl,
+            IdentityCase {
+                reverse_slots: true,
+                ..identity
+            }
+        )
+    );
+    for changed in [
+        IdentityCase {
+            seed: seed + 1,
+            ..identity
+        },
+        IdentityCase {
+            ordinal_offset: 16,
+            ..identity
+        },
+        IdentityCase {
+            emitter: 1,
+            ..identity
+        },
+    ] {
+        assert_ne!(random_bytes, render(&random.shader.wgsl, changed));
+    }
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/test/materials/periodic_gate.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let mut strobe = MaterialProgram::from_ron(include_str!(
+        "../../../assets/test/materials/fireworks_strobe_star.aestra.material.ron"
+    ))
+    .unwrap();
+    // Bake defaults only for this bounded raster harness; the actual asset
+    // retains live effect-bound controls and is captured through Bevy below.
+    for parameter in &mut strobe.parameters {
+        parameter.evaluation_domain = MaterialEvaluationDomain::ShaderStatic;
+    }
+    let compile_strobe = |p: &MaterialProgram| {
+        let ir = MaterialCompiler
+            .compile_with_functions(p, &MaterialFunctionLibrary::new([function.clone()]))
+            .unwrap();
+        MaterialShaderCompiler
+            .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+            .unwrap()
+    };
+    let compiled = compile_strobe(&strobe);
+    let mut patterns = Vec::new();
+    let mut images = Vec::new();
+    let mut on_counts = [0; 16];
+    for tick in 0..20 {
+        let age = tick as f32 / 180.0;
+        let bytes = render(&compiled.shader.wgsl, IdentityCase { age, ..identity });
+        assert_eq!(
+            bytes,
+            render(
+                &compiled.shader.wgsl,
+                IdentityCase {
+                    age,
+                    reverse_slots: true,
+                    ..identity
+                }
+            )
+        );
+        let energies = cell_energy(&bytes);
+        let mut pattern = Vec::new();
+        for (i, energy) in energies.iter().enumerate() {
+            let phase = age * 18.0 + random_reference(i as u32, seed, 0);
+            let expected = phase - phase.floor() < 0.18;
+            assert_eq!(*energy > 0.0, expected, "tick {tick} particle {i}");
+            on_counts[i] += u32::from(expected);
+            pattern.push(expected);
+            if !expected {
+                for y in i / 4 * 8..i / 4 * 8 + 8 {
+                    for x in i % 4 * 8..i % 4 * 8 + 8 {
+                        let at = (y * 32 + x) * 16;
+                        assert!(
+                            bytes[at..at + 16].iter().all(|b| *b == 0),
+                            "off cell must have exact zero RGB and alpha"
+                        );
+                    }
+                }
+            }
+        }
+        patterns.push(pattern);
+        images.push(bytes);
+    }
+    // Repeated and out-of-order ages represent seek/restart presentation:
+    // no mutable clock, cached gate or accumulated phase may influence it.
+    for tick in [12, 0, 19, 3, 0] {
+        assert_eq!(
+            images[tick],
+            render(
+                &compiled.shader.wgsl,
+                IdentityCase {
+                    age: tick as f32 / 180.0,
+                    ..identity
+                }
+            )
+        );
+    }
+    assert!(
+        on_counts.iter().all(|n| (2..=4).contains(n)),
+        "every star flashes and spends most time off"
+    );
+    assert!(
+        patterns
+            .iter()
+            .any(|p| p.iter().any(|b| *b) && p.iter().any(|b| !b)),
+        "phases must not flash in lockstep"
+    );
+    for duty in [0.0, 1.0] {
+        let mut endpoint = strobe.clone();
+        endpoint
+            .parameters
+            .iter_mut()
+            .find(|p| p.name == "Duty")
+            .unwrap()
+            .default = Some(MaterialValue::Float(duty));
+        let source = compile_strobe(&endpoint);
+        let energy = cell_energy(&render(&source.shader.wgsl, identity));
+        assert!(energy.iter().all(|e| (*e > 0.0) == (duty == 1.0)));
+    }
+}
+
 fn assert_viewport_clipping(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -585,9 +821,41 @@ fn raster_case_with_culling(
     queue: &wgpu::Queue,
     source: &str,
     fragment: &str,
+    renderer: GpuRenderer,
+    case: RasterCase,
+    culling: bool,
+) -> Vec<u8> {
+    raster_identity_case(
+        device,
+        queue,
+        source,
+        fragment,
+        renderer,
+        case,
+        culling,
+        IdentityCase::default(),
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+struct IdentityCase {
+    age: f32,
+    seed: u32,
+    ordinal_offset: u32,
+    emitter: u32,
+    reverse_slots: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raster_identity_case(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &str,
+    fragment: &str,
     mut renderer: GpuRenderer,
     case: RasterCase,
     culling: bool,
+    identity: IdentityCase,
 ) -> Vec<u8> {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sprite sampling raster"),
@@ -695,6 +963,7 @@ fn raster_case_with_culling(
         }],
     });
     renderer.attribute_flags.y = case.floor.to_bits();
+    renderer.emitter_index = identity.emitter;
     let mut particles = (0..16)
         .map(|i| {
             let x = 4.0
@@ -710,9 +979,9 @@ fn raster_case_with_culling(
                 position: Vec3::new(x / 16.0 - 1.0, 1.0 - y / 16.0, 0.5),
                 size: case.pixels / 16.0,
                 rotation: case.rotation,
-                packed_emitter_alive: 1,
-                particle_index: i,
-                ..Default::default()
+                packed_emitter_alive: identity.emitter << 16 | 1,
+                particle_index: i + identity.ordinal_offset,
+                normalized_age: identity.age,
             }
         })
         .collect::<Vec<_>>();
@@ -766,12 +1035,19 @@ fn raster_case_with_culling(
         }
         instance_count = 16 * if trail.caps { 18 } else { 2 };
     }
+    let mut indices = (0..16_u32).collect::<Vec<_>>();
+    if identity.reverse_slots {
+        assert!(case.trail.is_none());
+        particles.reverse();
+        indices.reverse();
+    }
     let data = [
         storage(&vec![renderer]),
         storage(&particles),
-        storage(&(0..16_u32).collect::<Vec<_>>()),
+        storage(&indices),
         storage(&GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
+            seed: identity.seed,
             ..Default::default()
         }),
         storage(&GpuRenderParams::default()),

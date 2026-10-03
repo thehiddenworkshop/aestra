@@ -143,6 +143,7 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
         None,
         Some(MaterialInput::ParticleOpacity),
         Some(MaterialInput::ParticleNormalizedAge),
+        Some(MaterialInput::ParticleRandom),
         Some(MaterialInput::EffectTime),
         Some(MaterialInput::SceneDepth),
         Some(MaterialInput::PixelDepth),

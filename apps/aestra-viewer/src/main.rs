@@ -4,6 +4,7 @@ mod fireworks_f3;
 mod fireworks_f4;
 mod fireworks_f5;
 mod fireworks_hero;
+mod fireworks_strobe;
 mod gpu_bench;
 mod photographic;
 mod preview_report;
@@ -70,7 +71,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
-        eprintln!("F5 secondary shells: f5-multi-break | f5-crackle | f5-crossette. --fireworks-cue-check fresh-output.json validates generic host output delivery with --backend gpu --history playback-only (no audio playback).");
+        eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe. --fireworks-cue-check fresh-output.json validates generic host output delivery for the first three with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -144,6 +145,7 @@ fn main() {
             Some(FireworksProbe::MultiBreak) => "f5-multi-break",
             Some(FireworksProbe::Crackle) => "f5-crackle",
             Some(FireworksProbe::Crossette) => "f5-crossette",
+            Some(FireworksProbe::Strobe) => "f5-strobe",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -321,6 +323,7 @@ enum FireworksProbe {
     MultiBreak,
     Crackle,
     Crossette,
+    Strobe,
     Raster(fireworks_f4::Probe),
 }
 
@@ -339,6 +342,7 @@ impl FireworksProbe {
             "f5-multi-break" => Some(Self::MultiBreak),
             "f5-crackle" => Some(Self::Crackle),
             "f5-crossette" => Some(Self::Crossette),
+            "f5-strobe" => Some(Self::Strobe),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -411,6 +415,7 @@ impl ViewerConfig {
                         | FireworksProbe::MultiBreak
                         | FireworksProbe::Crackle
                         | FireworksProbe::Crossette
+                        | FireworksProbe::Strobe
                 )
             ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
@@ -925,6 +930,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             Some(FireworksProbe::MultiBreak) => fireworks_f5::effect(),
             Some(FireworksProbe::Crackle) => fireworks_f5::crackle_effect(),
             Some(FireworksProbe::Crossette) => fireworks_f5::crossette_effect(),
+            Some(FireworksProbe::Strobe) => fireworks_strobe::effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -960,6 +966,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             let programs = migrate_viewer_materials(
                 effect,
                 resolved.material_programs.values().cloned().collect(),
+                resolved.material_functions.values().cloned().collect(),
             )
             .map_err(|error| PreparationFailure {
                 message: format!("could not migrate viewer materials: {error}"),
@@ -1081,6 +1088,7 @@ fn setup(
                         | FireworksProbe::MultiBreak
                         | FireworksProbe::Crackle
                         | FireworksProbe::Crossette
+                        | FireworksProbe::Strobe
                 )
             ) {
                 fireworks_hero::camera(config.fireworks_camera)
@@ -1227,8 +1235,10 @@ fn load_viewer_material_programs(
 fn migrate_viewer_materials(
     effect: &mut EffectAsset,
     programs: Vec<MaterialProgram>,
+    functions: Vec<aestra_bevy::material::MaterialFunction>,
 ) -> Result<Vec<MaterialProgram>, String> {
-    let mut document = MaterialAuthoringDocument::new(effect.clone(), programs);
+    let mut document =
+        MaterialAuthoringDocument::new(effect.clone(), programs).with_material_functions(functions);
     migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
     *effect = document
         .effect
@@ -2390,7 +2400,7 @@ mod tests {
         let mut effect = EffectAsset::load_ron(&path).unwrap();
         let programs = load_viewer_material_programs(&effect, Some(&path)).unwrap();
         assert_eq!(programs.len(), 1);
-        let programs = migrate_viewer_materials(&mut effect, programs).unwrap();
+        let programs = migrate_viewer_materials(&mut effect, programs, Vec::new()).unwrap();
         let compiled = EffectCompiler::default()
             .compile_with_material_programs(
                 &effect,
@@ -2412,7 +2422,7 @@ mod tests {
     fn semantic_viewer_mode_builds_live_bindings_without_rewriting_the_source() {
         let original = EffectAsset::from_ron(SAMPLE_SOURCE).unwrap();
         let mut migrated = original.clone();
-        let programs = migrate_viewer_materials(&mut migrated, Vec::new()).unwrap();
+        let programs = migrate_viewer_materials(&mut migrated, Vec::new(), Vec::new()).unwrap();
         let programs = programs
             .into_iter()
             .map(|program| (program.id, program))

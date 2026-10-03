@@ -2,7 +2,7 @@
 # Capture evidence only: never automatically approve artistic/golden references.
 [CmdletBinding()]
 param(
-    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break', 'crackle', 'crossette')]
+    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break', 'crackle', 'crossette', 'strobe')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Shell = @('peony', 'chrysanthemum', 'pistil', 'willow'),
     [ValidateSet('close', 'audience', 'wide')]
@@ -36,6 +36,8 @@ $cases = @(
             @(45, 80, 110, 130, 145, 160, 210, 420)
         } elseif ($shellName -eq 'crossette') {
             @(45, 80, 110, 130, 145, 165, 210, 420)
+        } elseif ($shellName -eq 'strobe') {
+            @(45, 80, 110, 111, 112, 150, 210, 420)
         } else {
             @(45, 80, 110, 150, 210, 300, 390, 420)
         }
@@ -50,7 +52,7 @@ $cases = @(
                     response = $responseName
                     frames = $frames
                     arguments = @(
-                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -in @('multi-break', 'crackle', 'crossette')) { "f5-$shellName" } else { "f3-$shellName" }),
+                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -in @('multi-break', 'crackle', 'crossette', 'strobe')) { "f5-$shellName" } else { "f3-$shellName" }),
                         '--camera', $cameraName, '--semantic-materials',
                         '--backend', 'gpu', '--history', 'playback-only',
                         '--tier', 'high', '--seed', '0xf1e0000000000001',
@@ -102,7 +104,7 @@ function Assert-Capture($case, $report, $directory) {
         }
     }
     $stars = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Main stars') })
-    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } elseif ($case.shell -eq 'crackle') { 96 } elseif ($case.shell -eq 'crossette') { 32 } else { 256 }
+    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } elseif ($case.shell -eq 'crackle') { 96 } elseif ($case.shell -eq 'crossette') { 32 } elseif ($case.shell -eq 'strobe') { 192 } else { 256 }
     if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne $mainCount) {
         throw "$($case.name): missing the expected $mainCount-star main cohort"
     }
@@ -171,7 +173,9 @@ try {
     $dirty = @(& git status --porcelain)
     $sourcePaths = @('apps/aestra-viewer/src/main.rs', 'apps/aestra-viewer/src/fireworks_f3.rs',
                      'apps/aestra-viewer/src/fireworks_f0.rs', 'apps/aestra-viewer/src/fireworks_hero.rs',
-                     'apps/aestra-viewer/src/fireworks_f5.rs') +
+                     'apps/aestra-viewer/src/fireworks_f5.rs',
+                     'apps/aestra-viewer/src/fireworks_strobe.rs',
+                     'assets/test/materials/periodic_gate.aestra.material-function.ron') +
         @(Get-ChildItem assets/test/effects/fireworks_*.aestra.ron,
                        assets/test/materials/fireworks_*.aestra.material.ron | ForEach-Object FullName)
     $sourceHashes = @($sourcePaths | ForEach-Object {

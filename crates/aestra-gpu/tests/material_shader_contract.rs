@@ -1356,6 +1356,82 @@ fn unsupported_inputs_report_their_semantic_expression() {
 }
 
 #[test]
+fn particle_random_is_a_flat_seeded_identity_varying_in_all_particle_domains() {
+    use aestra_core::material::MaterialDomain;
+    for domain in [
+        MaterialDomain::Sprite,
+        MaterialDomain::Mesh,
+        MaterialDomain::Ribbon,
+    ] {
+        let mut program = aestra_core::material::MaterialProgram::additive_sprite("Random phase");
+        program.domain = domain;
+        program
+            .expressions
+            .iter_mut()
+            .find(|e| e.id == program.outputs.alpha)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(MaterialInput::ParticleRandom);
+        let compiled = compile(&program);
+        assert_eq!(
+            compiled.reflection.required_particle_inputs,
+            vec![MaterialInput::ParticleRandom]
+        );
+        assert!(
+            compiled
+                .shader
+                .wesl
+                .contains("@interpolate(flat) particle_random: f32")
+        );
+        assert!(compiled.shader.wesl.contains("sprite.particle_random"));
+        assert!(
+            compiled
+                .shader
+                .wesl
+                .contains("hash01(particle.particle_index, 16u + particle_emitter(particle))")
+        );
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+        assert_portable_shader_targets(&compiled.multisampled_shader.wgsl);
+    }
+}
+
+#[test]
+fn saved_strobe_material_resolves_a_generic_gate_and_required_inputs() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/test/materials/periodic_gate.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
+        "../../../assets/test/materials/fireworks_strobe_star.aestra.material.ron"
+    ))
+    .unwrap();
+    let ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::new([function]))
+        .unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    for input in [
+        MaterialInput::ParticleNormalizedAge,
+        MaterialInput::ParticleRandom,
+    ] {
+        assert!(
+            compiled
+                .reflection
+                .required_particle_inputs
+                .contains(&input)
+        );
+    }
+    assert!(
+        compiled
+            .shader
+            .wesl
+            .contains("fract(phase) < clamp(duty, 0.0, 1.0)")
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    assert_portable_shader_targets(&compiled.multisampled_shader.wgsl);
+}
+
+#[test]
 fn effect_time_is_reflected_as_a_scene_input() {
     let mut program = two_texture_flame_program();
     let alpha = program.outputs.alpha;

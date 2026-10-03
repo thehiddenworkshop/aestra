@@ -241,6 +241,25 @@ not measured zero. Asynchronous counts are observations, not frame-aligned certi
 them and requested-time ranges before comparing timings. Do not sum pass percentiles into a
 whole-frame budget or infer real-time catch-up throughput from the fixed-step probes.
 
+## Per-particle material phase
+
+`MaterialInput::ParticleRandom` is a stable native presentation value: a hash of the folded
+render seed, emitter index and spawn ordinal, never physical storage or compacted draw index.
+It is independent of simulation random channels. Sprite/mesh use their particle identity;
+trails use their owner's identity across the history, ribbons use the segment's first endpoint
+(flat interpolation). No particle-buffer ABI or bind-group change is required. Unused reads
+are removed from the material varying interface. Changing the effect seed changes phases;
+slot reuse receives the new spawn ordinal rather than inheriting a previous particle's phase.
+
+The editable `assets/test/effects/fireworks_strobe.aestra.ron` uses a generic custom WESL
+Periodic Gate with `ParticleNormalizedAge * cycles_per_life + ParticleRandom`. It gates both
+RGB and alpha to zero off-duty; effect-bound radiance/cycles/duty are ordinary live material
+values. Three-second life, 18 cycles and 0.18 duty give 6 Hz. Lifetime edits change frequency;
+there is no mutable host timer or flash sound route. Load through the normal resolved-project
+compiler so its material-function library is expanded before runtime binding. The renderer
+accepts these compiler-expanded custom calls without needing the authoring library again.
+Audio assets, per-flash sound policies, voice budgets and mixing remain host responsibilities.
+
 ## Where to look
 
 | I want… | Read |

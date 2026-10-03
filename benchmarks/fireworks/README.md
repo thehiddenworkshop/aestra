@@ -7,7 +7,8 @@ This is the baseline for [the realistic-fireworks roadmap](../../docs/new/AESTRA
 Later bounded secondary-shell evidence: [F5A multi-break](secondary-shell-2026-10-03.md)
 and [F5B particle-driven host cues](host-cues-2026-10-03.md), followed by
 [F5C delayed crackle](crackle-2026-10-03.md) and
-[F5D four-arm crossette](crossette-2026-10-03.md). These do not certify finale scale.
+[F5D four-arm crossette](crossette-2026-10-03.md) and
+[F5E phased strobe](strobe-2026-10-03.md). These do not certify finale scale.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 

@@ -143,12 +143,25 @@ pub enum MaterialParameterSource {
 }
 
 /// Compiles one engine-neutral program for the portable runtime material backend.
+/// Accepts compiler-expanded custom WESL calls from a resolved effect; unexpanded
+/// project function references must be resolved by `EffectCompiler` first.
 pub fn compile_material_program(
     program: &aestra_core::material::MaterialProgram,
 ) -> Result<Arc<CompiledMaterialProgram>, MaterialBindingError> {
-    let ir = MaterialCompiler
-        .compile(program)
-        .map_err(|error| MaterialBindingError::ProgramCompilation(error.to_string()))?;
+    let ir = if program.expressions.iter().any(|expression| {
+        matches!(
+            expression.kind,
+            aestra_core::material::MaterialExpressionKind::CustomWeslCall { .. }
+        )
+    }) {
+        // EffectCompiler has already resolved the library and expanded calls.
+        // Re-expanding a runtime graph treats these compiler-produced calls as
+        // forbidden authoring nodes and loses the validated custom function.
+        MaterialCompiler.compile_expanded(program)
+    } else {
+        MaterialCompiler.compile(program)
+    }
+    .map_err(|error| MaterialBindingError::ProgramCompilation(error.to_string()))?;
     MaterialShaderCompiler
         .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
         .map(Arc::new)

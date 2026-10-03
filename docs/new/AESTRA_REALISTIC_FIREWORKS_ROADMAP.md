@@ -58,9 +58,10 @@ The main gaps have changed. They are no longer "Aestra needs a stateful particle
 
 Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are implemented;
 F4 artistic acceptance remains open. **F5A validates a bounded two-generation death-event
-shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C adds
-a bounded delayed-carrier crackle chain and four-arm crossette. Next is bounded strobe
-authoring (F5E)**, not
+shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C/D add
+bounded delayed-carrier crackle and four-arm crossette; F5E adds independently phased
+strobe stars with exact off intervals. Next is tier-specific secondary-shell budgeting
+and overlapping playback validation (F5F)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3011,12 +3012,51 @@ At least one shell uses two generations of particle-driven spawning.
   dim/sparse at audience distance; artistic/moving-footage acceptance remains open.
   Evidence/reproduction: `benchmarks/fireworks/crossette-2026-10-03.md`.
 
-F5 is **in progress**, not complete. Next is F5E: author bounded strobe stars with real
-on/off radiance and phase variation using generic material/appearance controls; add semantics
-only if the authored workload demonstrates a real gap. Sound implementation remains host-owned.
-Strobe authoring, parent-oriented crossettes, tier-specific count policies, moving-footage and
-artistic approval, heavy overlapping/finale event load and target-tier resource gates remain
-open. Do not infer those from this intentionally bounded multi-break fixture.
+### F5E implemented — bounded independently phased strobe (2026-10-03)
+
+- Ordinary editable `assets/test/effects/fireworks_strobe.aestra.ron`, viewer probe
+  `f5-strobe`. Rocket death requests 192 sprite-only main stars, one flash and 48 smoke
+  particles. Main lifetime is fixed at three seconds; exposed **18 cycles per life** and
+  **0.18 duty** give six flashes/second, with seeded independent phase offsets. Generic
+  `periodic_gate.aestra.material-function.ron` gates both hot-core RGB and alpha to exact
+  zero outside the on interval. No main-star trails bridge the off interval, no mutable
+  host timer, no new simulation trigger or fireworks API. Lifetime edits change Hertz;
+  normalized-age timing is deliberate, not a new absolute-particle-age input.
+- The existing declared `ParticleRandom` material input now reaches native particle
+  presentation as a flat varying. Its hash uses render seed, emitter index and stable
+  spawn ordinal, not physical/compaction slot. It is a separate presentation stream, not
+  a promise to match simulation RNG. Sprite/mesh use the particle, trails their owner,
+  ribbons the segment's first endpoint. Particle storage ABI and bind groups are unchanged;
+  unreachable random reads consume no new varying. Runtime rendering now lowers already
+  compiler-expanded custom calls, instead of rejecting them as authoring nodes. Viewer
+  legacy-material migration retains the project's function library.
+- Five emitters, total capacity 306, seven-second once playback. Normal effect-bound
+  radiance, cycles and duty controls remain live material values. Smoke remains unlit.
+  Strobe flashes are appearance changes, **not** particle transitions or sound outputs;
+  sound playback/mixing remains host-owned. The periodic function is reusable outside
+  fireworks and has no per-frame CPU clock or material rebuild.
+- Required native raster test independently verifies the identity hash, exact zero
+  off-cell RGB/alpha, mixed phases, every star flashing, duty endpoints 0/1, seed/emitter/
+  ordinal changes, physical-slot reorder and repeated/out-of-order ages. Portable shaders
+  validate SPIR-V/HLSL and single/MSAA variants; native pipeline linkage covers Random.
+  Viewer: 71 passed / six exporters ignored; full aestra-gpu suite and compiler function
+  contracts pass. Native sampling/pipeline suites pass; warnings-as-errors Clippy passes.
+- Native uninterrupted GPU / playback-only admits demand = accepted **192 / 1 / 48**,
+  zero source overflow, omissions/rejections, evictions/truncation and checkpoint-capture
+  bytes. RTX 4070 SUPER/Vulkan, high tier, 960×540, manual 60 Hz, authored floors. Three
+  camera cases / 24 PNGs pass 192-star cohort and frame-420 cleanup checks. Consecutive
+  frames 110/111/112 supplement lifecycle stills, not moving-footage acceptance. Stills
+  are sparse/dim at audience distance. Evidence: `benchmarks/fireworks/strobe-2026-10-03.md`.
+
+F5 is **in progress**, not complete. Next is **F5F: tier-specific secondary-shell count and
+capacity policies, then a bounded overlapping volley in playback-only**. Preserve recognizable
+multi-break/crackle/crossette/strobe behavior at each tier; budget source capture, link expansion,
+live children and retained histories together, and measure demand/admission/overflow/memory
+before timing. Existing generic tiers do not automatically scale death-link fan-out. Add generic
+semantics only if the authored workload demonstrates a real gap; don't bypass limits with
+duplicated links. Parent-oriented crossettes, moving-footage/artistic approval, heavy finale
+load, nested spatial audio and target-tier resource gates remain open. No full-show readiness
+claim follows from these intentionally bounded fixtures.
 
 ---
 
