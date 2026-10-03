@@ -1322,7 +1322,7 @@ fn expand_events(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// ring, slot `tick % PARTICLE_OUTPUT_RING_TICKS`, read back every frame, so a frame's live ticks
 /// (at most a few) are all still there when it arrives.
 pub const PARTICLE_OUTPUT_RING_TICKS: u32 = 32;
-/// Words of one tick's record: `[tick + 1 (0 while empty), event count, records written, 0]`, then
+/// Words of one tick's record: `[tick + 1 (0 while empty), event count, records written, epoch]`, then
 /// up to `MAX_OUTPUTS_PER_TICK` 4-word records `[ordinal, position xyz]`, lowest ordinals first.
 pub const PARTICLE_OUTPUT_SLOT_WORDS: u32 = 4 + 4 * aestra_core::MAX_OUTPUTS_PER_TICK;
 /// Words of one route's ring.
@@ -1333,6 +1333,8 @@ pub const PARTICLE_OUTPUT_RING_WORDS: u32 = PARTICLE_OUTPUT_RING_TICKS * PARTICL
 pub struct ParticleOutputRecord {
     /// The tick reached.
     pub tick: u64,
+    /// Playback observation sequence that produced this record.
+    pub epoch: u32,
     /// The source's events of the route's trigger that tick.
     pub count: u32,
     /// The lowest-ordinal ones, `(ordinal, position)`, in ordinal order.
@@ -1343,7 +1345,11 @@ pub struct ParticleOutputRecord {
 pub fn read_particle_output_slot(slot: &[u32]) -> Option<ParticleOutputRecord> {
     let tick = u64::from(*slot.first()?).checked_sub(1)?;
     let count = *slot.get(1)?;
+    let epoch = *slot.get(3)?;
     let written = (*slot.get(2)?).min(aestra_core::MAX_OUTPUTS_PER_TICK) as usize;
+    if slot.len() < 4 + written * 4 {
+        return None;
+    }
     let first = (0..written)
         .map(|record| {
             let at = 4 + record * 4;
@@ -1354,13 +1360,18 @@ pub fn read_particle_output_slot(slot: &[u32]) -> Option<ParticleOutputRecord> {
             )
         })
         .collect();
-    Some(ParticleOutputRecord { tick, count, first })
+    Some(ParticleOutputRecord {
+        tick,
+        epoch,
+        count,
+        first,
+    })
 }
 
 /// A particle output route's per-tick aggregation (event system E3): counts the source's events of
 /// the route's trigger in the tick, and writes the lowest-ordinal ones — at most `limit` — into the
 /// tick's slot of the route's ring in `counters` ([`PARTICLE_OUTPUT_SLOT_WORDS`]), the tick word
-/// last. `route` is `[trigger bit, limit, slot word, tick + 1, event capacity]`. One thread: a
+/// last. `route` is `[trigger bit, limit, slot word, tick + 1, event capacity, epoch]`. One thread: a
 /// tick's events are at most `PARTICLE_EVENT_CAPACITY`, and the selection is repeated minimums, so
 /// it needs no local array (which D3D's FXC could not index dynamically) and no sort.
 pub const PARTICLE_OUTPUT_WGSL: &str = r#"
@@ -1405,6 +1416,7 @@ fn aggregate_particle_outputs() {
     }
     counters[slot + 1u] = count;
     counters[slot + 2u] = written;
+    counters[slot + 3u] = route[5];
     counters[slot] = route[3];
 }
 "#;
@@ -3101,6 +3113,27 @@ fn appearance<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn particle_output_records_require_a_complete_payload_and_retain_epoch() {
+        assert!(super::read_particle_output_slot(&[]).is_none());
+        assert!(super::read_particle_output_slot(&[0, 0, 0, 0]).is_none());
+        assert!(super::read_particle_output_slot(&[13, 1, 1, 7]).is_none());
+        let record = super::read_particle_output_slot(&[
+            13,
+            1,
+            1,
+            7,
+            42,
+            1.0f32.to_bits(),
+            2.0f32.to_bits(),
+            3.0f32.to_bits(),
+        ])
+        .unwrap();
+        assert_eq!(record.tick, 12);
+        assert_eq!(record.epoch, 7);
+        assert_eq!(record.first, vec![(42, [1.0, 2.0, 3.0])]);
+    }
+
     use super::*;
     use aestra_compiler::EffectCompiler;
     use aestra_core::{

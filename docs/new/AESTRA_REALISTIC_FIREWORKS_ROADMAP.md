@@ -57,8 +57,9 @@ The main gaps have changed. They are no longer "Aestra needs a stateful particle
 9. **A reusable library of actual firework effects and a show-level authoring workflow.**
 
 Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are implemented;
-F4 artistic acceptance remains open. **F5A now validates a bounded two-generation death-event
-shell in forward, playback-only execution. Next is F5B generic host-cue validation**, not
+F4 artistic acceptance remains open. **F5A validates a bounded two-generation death-event
+shell; F5B validates particle-driven host cues and seek/restart delivery epochs. Next is
+bounded crackle authoring (F5C)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -2922,10 +2923,36 @@ At least one shell uses two generations of particle-driven spawning.
   conformance suite (28 passed, serial) and warnings-as-errors Clippy pass. Reproduction/limitations:
   `benchmarks/fireworks/secondary-shell-2026-10-03.md`.
 
-F5 is **in progress**, not complete. F5B should validate bounded generic launch/main-break/
-secondary-break outputs through the existing host API: actual particle payloads, forward
-playback delivery and restart/seek epoch policy without duplicate host playback. Sound
-implementation remains host-owned. Crossette/crackle/strobe authoring, moving-footage and
+### F5B implemented — generic particle-driven host cues (2026-10-03)
+
+- The saved multi-break asset exports three ordinary particle routes: rocket `OnSpawn`
+  → `launch`, rocket `OnDeath` → `main_break`, main-star `OnDeath` → `secondary_break`.
+  `FirstPerTick` carries one representative effect-local position plus source-particle count.
+  Host-owned sound identifiers are selected from received messages, not a separate timer.
+  No audio files, playback or spatial mixing were added to Aestra.
+- Native GPU output records reuse their header padding word for the playback epoch.
+  Route high-water marks reject stale epochs, duplicate/out-of-order readbacks and ticks
+  through a seek's reconstruction boundary. Checkpoint restores preserve a fresh delivery
+  epoch rather than restoring an old one. `AestraOutputEvent.playback_epoch` qualifies native
+  particle-route and timeline messages; `None` explicitly leaves legacy/stage outputs
+  unqualified. The ring remains bounded to 32 ticks; no lossless gameplay-bus claim.
+- `--fireworks-cue-check` consumes the actual Bevy messages on native GPU / playback-only,
+  warms at zero, plays the full shell, seeks to frame 160, resumes, then restarts. Initial
+  and restarted streams each deliver one launch, one main break and 21 secondary packets
+  accounting for all 64 parent deaths; resumed seek delivers 16 packets / 55 remaining deaths.
+  Representative positions, counts and ticks reproduce across restart. Reconstructed past
+  cues are silent. Root fixture validation does not certify nested spatial-audio routing,
+  heavy overlapping output traffic, deliberate readback stalls or legacy output producers.
+- Forward admission remains demand = accepted **64 / 1 / 48 / 512**, with zero source
+  overflow, omission/rejection, trail eviction/truncation and checkpoint-capture bytes.
+  Required-GPU conformance passes (28 serial tests); epoch/ABI/delivery and host-consumer
+  regression tests and warnings-as-errors Clippy pass. Evidence and reproduction:
+  `benchmarks/fireworks/host-cues-2026-10-03.md`.
+
+F5 is **in progress**, not complete. Next is F5C: author and validate a bounded crackle shell
+using the existing second-generation event mechanism; introduce a new trigger only if a
+measured authoring need requires it. Sound implementation remains host-owned.
+Crossette/crackle/strobe authoring, moving-footage and
 artistic approval, heavy overlapping/finale event load and target-tier resource gates remain
 open. Do not infer those from this intentionally bounded multi-break fixture.
 

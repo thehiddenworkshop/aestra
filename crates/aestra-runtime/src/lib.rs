@@ -1803,6 +1803,7 @@ pub struct EffectInstance {
     overridden: BTreeSet<ParameterSlot>,
     choreography_started: bool,
     history_epoch: u32,
+    history_epoch_start_time: f32,
     history_revision: u64,
     history_policy: PlaybackHistoryPolicy,
     host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
@@ -1833,6 +1834,7 @@ impl EffectInstance {
             overridden: BTreeSet::new(),
             choreography_started: false,
             history_epoch: 0,
+            history_epoch_start_time: 0.0,
             history_revision: 0,
             history_policy: PlaybackHistoryPolicy::default(),
         }
@@ -1951,11 +1953,19 @@ impl EffectInstance {
     pub fn seek(&mut self, time: f32) {
         self.mark_history_discontinuity();
         self.set_playback_time(time);
+        self.history_epoch_start_time = self.time;
     }
 
     /// Discontinuity token consumed by history-based presentation (for example trails).
     pub fn history_epoch(&self) -> u32 {
         self.history_epoch
+    }
+
+    /// Time of the latest seek/restart/context discontinuity. Particle-output
+    /// delivery suppresses reconstruction through this boundary, then resumes
+    /// for subsequent live ticks. This is not the moving playback time.
+    pub fn history_epoch_start_time(&self) -> f32 {
+        self.history_epoch_start_time
     }
 
     /// Discard observed history and any reusable checkpoints after a context edit.
@@ -2009,13 +2019,19 @@ impl EffectInstance {
 
     /// Start a new observation sequence without invalidating compatible checkpoints.
     pub fn mark_history_discontinuity(&mut self) {
+        self.mark_history_discontinuity_at(self.time);
+    }
+
+    /// Begin an observation sequence at an explicit seek destination.
+    pub fn mark_history_discontinuity_at(&mut self, time: f32) {
         self.history_epoch = self.history_epoch.wrapping_add(1);
+        self.history_epoch_start_time = time.max(0.0);
     }
 
     /// Synchronize normal playback to an external clock without treating every frame as a seek.
     pub fn set_playback_time(&mut self, time: f32) {
         if time < self.time {
-            self.mark_history_discontinuity();
+            self.mark_history_discontinuity_at(time);
         }
         self.time = if self.effect.playback_mode.is_continuous() {
             time.max(0.0)
@@ -2029,6 +2045,7 @@ impl EffectInstance {
     pub fn restart(&mut self) {
         self.mark_history_discontinuity();
         self.time = 0.0;
+        self.history_epoch_start_time = 0.0;
         self.choreography_started = false;
         // A restart is a new spawn: `SnapshotOnSpawn` bindings latch again (host bindings HB3).
         self.relatch_spawn_bindings();

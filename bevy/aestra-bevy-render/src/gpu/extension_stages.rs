@@ -117,6 +117,10 @@ pub struct AestraOutputEvent {
     pub effect: Entity,
     /// Empty for the root; otherwise the clips from the root to the effect that raised it.
     pub clip_path: Vec<aestra_core::EffectClipId>,
+    /// Observation identity for native GPU particle routes and timeline cues. Hosts may
+    /// reject queued events after their player starts a different history epoch.
+    /// `None` means an unqualified legacy/stage output, not epoch zero.
+    pub playback_epoch: Option<u32>,
     pub event: aestra_runtime::EffectOutputEvent,
 }
 
@@ -126,8 +130,14 @@ impl AestraOutputEvent {
         Self {
             effect,
             clip_path: Vec::new(),
+            playback_epoch: None,
             event,
         }
+    }
+
+    pub fn in_epoch(mut self, epoch: u32) -> Self {
+        self.playback_epoch = Some(epoch);
+        self
     }
 }
 

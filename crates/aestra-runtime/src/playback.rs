@@ -154,10 +154,12 @@ impl PlaybackDriver {
             self.disable_checkpoints();
         }
         self.instance.mark_history_discontinuity();
+        let delivery_epoch = self.instance.history_epoch();
         let target = target_frame.min(self.clock.maximum_frame(duration));
         if seek_mode == SimulationSeekMode::StatelessDirect {
             self.clock.seek_frame(target, duration);
             self.instance.set_playback_time(self.clock.time(duration));
+            self.instance.history_epoch_start_time = self.instance.time();
             return SeekPlan {
                 target_frame: target,
                 origin: SeekOrigin::Direct,
@@ -201,6 +203,9 @@ impl PlaybackDriver {
             }
         }
         self.instance.set_playback_time(self.instance.time());
+        // A checkpoint restores simulation state, not a past delivery identity.
+        self.instance.history_epoch = delivery_epoch;
+        self.instance.history_epoch_start_time = self.instance.time();
         plan
     }
 

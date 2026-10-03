@@ -1592,6 +1592,7 @@ pub struct ParticleOutputSlot<'a> {
     pub counters: &'a wgpu::Buffer,
     pub ring: u32,
     pub tick: u32,
+    pub epoch: u32,
 }
 
 /// Persistent counter words for a link's captured child demand and list overflow.
@@ -1693,6 +1694,7 @@ impl EventGatherPipeline {
             counters,
             ring,
             tick,
+            epoch,
         } = slot;
         let slot = ring
             + (tick % aestra_gpu::PARTICLE_OUTPUT_RING_TICKS)
@@ -1705,6 +1707,7 @@ impl EventGatherPipeline {
                 slot,
                 tick + 1,
                 aestra_runtime::PARTICLE_EVENT_CAPACITY,
+                epoch,
             ]),
             usage: wgpu::BufferUsages::STORAGE,
         });

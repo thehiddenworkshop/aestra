@@ -70,7 +70,8 @@ cargo run --locked -p aestra-viewer -- --fireworks-f0 --fireworks-f0-probe f5-mu
 pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -Shell multi-break -Response authored -OutputDirectory target/fireworks-f5/multi-break-review-new
 ```
 
-Next: **F5B generic host-cue validation** for actual launch/main/secondary particle events,
-bounded delivery and restart/seek epoch handling. Audio assets/playback/mixing stay host-side.
+Follow-up implemented: [F5B generic host-cue validation](host-cues-2026-10-03.md) for actual
+launch/main/secondary particle events, bounded delivery and restart/seek epoch handling.
+Audio assets/playback/mixing stay host-side. Next: bounded crackle authoring (F5C).
 Remaining F5 shell styles, heavy overlapping load, F4 artistic approval and F7/F8 light/smoke
 integration stay open.

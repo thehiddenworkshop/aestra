@@ -3354,6 +3354,7 @@ fn advance_production_linked(
                     counters: &rings,
                     ring: index as u32 * aestra_gpu::PARTICLE_OUTPUT_RING_WORDS,
                     tick: tick + 1,
+                    epoch: 7,
                 },
                 route,
             );
@@ -3371,6 +3372,7 @@ fn advance_production_linked(
                 let record = &words[slot..slot + aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS as usize];
                 let read = aestra_gpu::read_particle_output_slot(record)
                     .ok_or("every tick writes its record")?;
+                assert_eq!(read.epoch, 7, "GPU records retain their playback epoch");
                 raised.extend(route.raise(read.count, &read.first, read.tick));
             }
         }

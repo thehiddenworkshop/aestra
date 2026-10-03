@@ -61,7 +61,14 @@ fn playback_driver_seek_scrub_and_advance() {
     cached.seek_frame(90, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
     assert_eq!(cached.frame(), 90);
     assert!(cached.checkpoints().unwrap().len() >= 2);
-    cached.seek_frame(45, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
+    let epoch = cached.instance.history_epoch();
+    let plan = cached.seek_frame(45, 4.0, SimulationSeekMode::CheckpointRestore, &ctx);
+    assert!(matches!(
+        plan.origin,
+        aestra_runtime::SeekOrigin::Checkpoint { .. }
+    ));
+    assert_eq!(cached.instance.history_epoch(), epoch + 1);
+    assert!((cached.instance.history_epoch_start_time() - 0.75).abs() < 0.00001);
     assert_eq!(cached.frame(), 45);
 
     // Cache-less restart-replay reaches the same state.

@@ -427,7 +427,7 @@ impl EffectPlayer {
     /// wrapped to the authored effect duration.
     pub fn seek_simulation_time(&mut self, time: f32) {
         self.silence_choreography_events();
-        self.driver.instance.mark_history_discontinuity();
+        self.driver.instance.mark_history_discontinuity_at(time);
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
             self.driver.clock.seek_elapsed_seconds(time, duration);
@@ -458,7 +458,9 @@ impl EffectPlayer {
             // Stateless positioning is continuous-aware here (see sync_instance_time),
             // which the shared driver does not do — keep it in the player.
             let target = frame.min(self.driver.clock.maximum_frame(duration));
-            self.driver.instance.mark_history_discontinuity();
+            self.driver
+                .instance
+                .mark_history_discontinuity_at(target as f32 / self.tick_rate() as f32);
             self.driver.clock.seek_frame(target, duration);
             self.sync_instance_time();
             return;
@@ -777,12 +779,14 @@ fn dispatch_choreography_events(
     root: Entity,
     player: &mut EffectPlayer,
 ) {
+    let playback_epoch = player.instance().history_epoch();
     if player.project().is_some() {
         player.choreography_events.clear();
         for event in player.drain_project_choreography_events() {
             outputs.write(AestraOutputEvent {
                 effect: root,
                 clip_path: event.path.clone(),
+                playback_epoch: Some(playback_epoch),
                 event: EffectOutputEvent::from_cue(
                     &event.event,
                     trace_tick(event.root_time as f32),
@@ -801,10 +805,10 @@ fn dispatch_choreography_events(
         let continuous = player.effect().playback_mode.is_continuous();
         for event in player.drain_choreography_events() {
             let tick = aestra_runtime::cue_crossing_tick(event.time, now, duration, continuous);
-            outputs.write(AestraOutputEvent::root(
-                root,
-                EffectOutputEvent::from_cue(&event, tick),
-            ));
+            outputs.write(
+                AestraOutputEvent::root(root, EffectOutputEvent::from_cue(&event, tick))
+                    .in_epoch(playback_epoch),
+            );
             commands.trigger(AestraChoreographyEvent {
                 player: root,
                 clip_path: Vec::new(),
@@ -1178,5 +1182,37 @@ mod tests {
         player.seek_frame(30);
         assert_eq!(player.frame(), 30);
         assert_eq!(player.elapsed(), 0.5);
+    }
+
+    #[test]
+    fn seeks_restore_simulation_but_never_a_past_delivery_epoch() {
+        for mode in [
+            SimulationSeekMode::StatelessDirect,
+            SimulationSeekMode::RestartReplay,
+            SimulationSeekMode::CheckpointRestore,
+        ] {
+            let mut effect = EffectAsset::new("Cue epochs", 2.0);
+            effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+            let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
+            compiled.seek_mode = mode;
+            let mut player = EffectPlayer::from_compiled(Arc::new(compiled));
+            player.enable_scrub_cache(aestra_runtime::CheckpointPolicy {
+                cadence_frames: 1,
+                ..Default::default()
+            });
+            player.advance_clock(1.0);
+            let epoch = player.instance().history_epoch();
+            player.seek_frame(30);
+            assert!(player.instance().history_epoch() > epoch, "{mode:?}");
+            assert!((player.instance().history_epoch_start_time() - 0.5).abs() < 0.00001);
+            let epoch = player.instance().history_epoch();
+            player.seek_frame(30);
+            assert!(player.instance().history_epoch() > epoch, "{mode:?}");
+            assert!((player.instance().history_epoch_start_time() - 0.5).abs() < 0.00001);
+            player.seek_simulation_time(0.75);
+            assert!((player.instance().history_epoch_start_time() - 0.75).abs() < 0.00001);
+            player.restart();
+            assert_eq!(player.instance().history_epoch_start_time(), 0.0);
+        }
     }
 }

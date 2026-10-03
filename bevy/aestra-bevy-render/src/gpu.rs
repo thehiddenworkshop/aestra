@@ -5,6 +5,7 @@ mod extension_stages;
 mod geometry_statistics;
 mod mesh_inputs;
 mod paged_trails;
+mod particle_outputs;
 mod particle_statistics;
 mod physics;
 mod preparation_timing;
@@ -152,6 +153,7 @@ pub(crate) struct GpuEffectBuffers {
     routed: bool,
     /// Its particle output routes, each with the `counters` word its ring of tick records starts at.
     particle_outputs: Vec<(aestra_runtime::CompiledParticleOutput, u32)>,
+    output_suppress_through: u64,
     /// The host's recorded input events, updated each frame (event system E2–E3).
     host_events: Arc<HostEventHistory>,
     /// The host's physics colliders around the effect this frame, packed (host bindings HB10).
@@ -340,6 +342,8 @@ impl HostEventHistory {
 pub(super) struct RouteWiring<'a> {
     pub bursts: &'a [aestra_runtime::InputSpawnBurst],
     pub outputs: &'a [(aestra_runtime::CompiledParticleOutput, u32)],
+    pub output_epoch: u32,
+    pub output_suppress_through: u64,
 }
 
 /// A stateful emitter's host input per tick under a binding trace (host bindings HB8).
@@ -1289,6 +1293,9 @@ pub(crate) fn prepare_gpu_effects(
                 event_links: player.effect().event_links.clone(),
                 routed: !player.effect().event_routes.is_empty(),
                 particle_outputs,
+                output_suppress_through: aestra_runtime::trace_tick(
+                    player.instance.history_epoch_start_time(),
+                ),
                 host_events: Arc::new(HostEventHistory::of(&player.instance)),
                 physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },
@@ -1332,6 +1339,7 @@ pub(crate) fn prepare_gpu_effects(
                         GpuArrivalReadback {
                             effect: entity,
                             seen: BTreeMap::new(),
+                            particle_delivery: default(),
                         },
                     ))
                     .observe(receive_homing_arrivals);
@@ -2092,6 +2100,8 @@ fn sync_gpu_render_transforms(
             }
         }
         gpu.history_epoch = player.instance.history_epoch();
+        gpu.output_suppress_through =
+            aestra_runtime::trace_tick(player.instance.history_epoch_start_time());
         if gpu.has_trails {
             let seed = player.instance.seed();
             let revision = player.instance.history_revision();
@@ -2288,6 +2298,7 @@ impl GpuEventLinkStatistics {
 struct GpuArrivalReadback {
     effect: Entity,
     seen: BTreeMap<u32, u32>,
+    particle_delivery: particle_outputs::Delivery,
 }
 
 fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
@@ -2308,14 +2319,14 @@ fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
 fn receive_homing_arrivals(
     event: On<ReadbackComplete>,
     mut readbacks: Query<&mut GpuArrivalReadback>,
-    effects: Query<&GpuEffectBuffers>,
+    effects: Query<(&GpuEffectBuffers, &PresentedEffect)>,
     mut link_statistics: Query<&mut GpuEventLinkStatistics>,
     mut events: MessageWriter<AestraOutputEvent>,
 ) {
     let Ok(mut readback) = readbacks.get_mut(event.event_target()) else {
         return;
     };
-    let Ok(gpu) = effects.get(readback.effect) else {
+    let Ok((gpu, presented)) = effects.get(readback.effect) else {
         return;
     };
     let words: Vec<u32> = event.to_shader_type();
@@ -2423,7 +2434,7 @@ fn receive_homing_arrivals(
     }
     // Particle output routes (event system E3): each ring slot holding a tick not heard yet raises
     // its outputs, in tick order.
-    let mut raised = Vec::new();
+    let mut records = Vec::new();
     for (route, ring) in &gpu.particle_outputs {
         for slot in 0..aestra_gpu::PARTICLE_OUTPUT_RING_TICKS {
             let start = ring + slot * aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS;
@@ -2435,15 +2446,23 @@ fn receive_homing_arrivals(
             let Some(read) = aestra_gpu::read_particle_output_slot(record) else {
                 continue;
             };
-            if readback.seen.insert(start, record[0]) == Some(record[0]) {
-                continue;
-            }
-            raised.extend(route.raise(read.count, &read.first, read.tick));
+            records.push((route, *ring, read));
         }
     }
-    raised.sort_by_key(|event| event.tick);
-    for event in raised {
-        events.write(AestraOutputEvent::root(effect, event));
+    // Sort before updating route high-water marks: ring slot order wraps every
+    // 32 ticks, and asynchronous readbacks can arrive out of order.
+    records.sort_by_key(|(_, _, record)| record.tick);
+    for (route, ring, record) in records {
+        if readback.particle_delivery.accept(
+            ring,
+            &record,
+            presented.instance.history_epoch(),
+            aestra_runtime::trace_tick(presented.instance.history_epoch_start_time()),
+        ) {
+            for event in route.raise(record.count, &record.first, record.tick) {
+                events.write(AestraOutputEvent::root(effect, event).in_epoch(record.epoch));
+            }
+        }
     }
 }
 
@@ -3857,6 +3876,9 @@ fn run_coupled_stateful(
         if live {
             let reached = persistent_states[0].last_tick + 1;
             for (route, ring) in routes.outputs {
+                if u64::from(reached) <= routes.output_suppress_through {
+                    continue;
+                }
                 if let Some(source) = dispatch_of(route.source) {
                     coupling.gatherer.encode_output(
                         device.wgpu_device(),
@@ -3866,6 +3888,7 @@ fn run_coupled_stateful(
                             counters: render.counters,
                             ring: *ring,
                             tick: reached,
+                            epoch: routes.output_epoch,
                         },
                         route,
                     );
@@ -4368,6 +4391,8 @@ fn run_simulation(
                     effect.routed.then_some(RouteWiring {
                         bursts: &effect.host_events.bursts,
                         outputs: &effect.particle_outputs,
+                        output_epoch: effect.history_epoch,
+                        output_suppress_through: effect.output_suppress_through,
                     }),
                     &StatefulRenderBuffers {
                         particles,
@@ -4764,6 +4789,8 @@ fn run_simulation(
                     effect.routed.then_some(RouteWiring {
                         bursts: &effect.host_events.bursts,
                         outputs: &effect.particle_outputs,
+                        output_epoch: effect.history_epoch,
+                        output_suppress_through: effect.output_suppress_through,
                     }),
                     &StatefulRenderBuffers {
                         particles,
@@ -5232,6 +5259,7 @@ mod tests {
                     event_links: Vec::new(),
                     routed: false,
                     particle_outputs: Vec::new(),
+                    output_suppress_through: 0,
                     host_events: Default::default(),
                     physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
                 },
@@ -6353,6 +6381,7 @@ mod coupled_tests {
         let wired = RouteWiring {
             bursts: &bursts,
             outputs: &[],
+            ..Default::default()
         };
         let history = [(30, 1), (70, 2)];
         for state in &mut fresh.states {

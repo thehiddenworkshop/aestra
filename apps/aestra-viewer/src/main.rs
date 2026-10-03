@@ -1,3 +1,4 @@
+mod fireworks_cues;
 mod fireworks_f0;
 mod fireworks_f3;
 mod fireworks_f4;
@@ -69,6 +70,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
+        eprintln!("F5 secondary shell: f5-multi-break. --fireworks-cue-check fresh-output.json validates generic host output delivery with --backend gpu --history playback-only (no audio playback).");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -116,7 +118,13 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
-    let probe_bench_step = config.probe_bench_step();
+    let fireworks_cue_check = config.fireworks_cue_check.clone();
+    let probe_bench_step = config.probe_bench_step().or_else(|| {
+        config
+            .fireworks_cue_check
+            .as_ref()
+            .map(|_| Duration::from_secs_f64(1.0 / 60.0))
+    });
     let gpu_bench_presentation = gpu_bench::BenchPresentation::from_config(&config);
     let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
@@ -202,6 +210,13 @@ fn main() {
         // Raster-cost and bounded event-chain probes, not real-time catch-up throughput benchmarks.
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step));
     }
+    if let Some(path) = fireworks_cue_check {
+        app.insert_resource(fireworks_cues::Check::new(path))
+            .add_systems(
+                Update,
+                fireworks_cues::drive.before(aestra_bevy::AestraSet::Playback),
+            );
+    }
     if let Some(capture) = capture {
         app.insert_resource(capture)
             .init_resource::<CaptureRenderReadiness>()
@@ -263,6 +278,7 @@ struct ViewerConfig {
     preview_seed: Option<u64>,
     diagnostics: bool,
     gpu_bench: Option<PathBuf>,
+    fireworks_cue_check: Option<PathBuf>,
     history_policy: aestra_bevy::PlaybackHistoryPolicy,
     /// View through a 3-D camera framing the effect's simulation domains (fluid F3): volumes need
     /// one. Otherwise the viewer is 2-D.
@@ -404,6 +420,7 @@ impl ViewerConfig {
         let mut preview_seed = None;
         let mut diagnostics = false;
         let mut gpu_bench = None;
+        let mut fireworks_cue_check = None;
         let mut history_policy = aestra_bevy::PlaybackHistoryPolicy::default();
         let mut view_3d = false;
         let mut tier = aestra_bevy::QualityTier::default();
@@ -474,6 +491,12 @@ impl ViewerConfig {
                         .get_or_insert_with(photographic::PhotographicPreview::default)
                         .bloom_intensity =
                         photographic::bounded_number(&value, "--bloom", 0.0, 1.0)?;
+                }
+                "--fireworks-cue-check" => {
+                    fireworks_cue_check = Some(PathBuf::from(
+                        args.next()
+                            .ok_or("--fireworks-cue-check requires an output JSON path")?,
+                    ));
                 }
                 "--gpu-bench" => {
                     gpu_bench = Some(PathBuf::from(
@@ -651,6 +674,20 @@ impl ViewerConfig {
         {
             return Err("--trail-min-pixels requires native GPU presentation (auto or gpu)".into());
         }
+        if let Some(path) = &fireworks_cue_check {
+            if fireworks_probe != Some(FireworksProbe::MultiBreak)
+                || !fireworks_f0
+                || gpu_bench.is_some()
+                || capture_mode.is_some()
+                || history_policy != aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly
+                || presentation != PresentationMode::Gpu
+            {
+                return Err("--fireworks-cue-check requires f5-multi-break, --backend gpu and --history playback-only, without capture/benchmark modes".into());
+            }
+            if path.exists() {
+                return Err("--fireworks-cue-check requires a fresh report path".into());
+            }
+        }
         Ok(Self {
             effect_path,
             fireworks_f0,
@@ -666,6 +703,7 @@ impl ViewerConfig {
             preview_seed,
             diagnostics,
             gpu_bench,
+            fireworks_cue_check,
             history_policy,
             view_3d,
             tier,
@@ -999,6 +1037,9 @@ fn setup(
         player.set_render_mode(aestra_bevy::EffectRenderMode::Wireframe);
     }
     player.set_seed(config.resolved_seed());
+    if config.fireworks_cue_check.is_some() {
+        player.playing = false;
+    }
     let presentation = PresentedEffect::new(player.effect().clone());
     if editor_viewport_smoke {
         spawn_editor_viewport_smoke_scene(&mut commands, config.photographic);
@@ -1275,13 +1316,14 @@ fn editor_preview_camera_transform() -> Transform {
 
 fn viewer_controls(
     benchmark: Option<Res<gpu_bench::GpuBenchPlan>>,
+    cue_check: Option<Res<fireworks_cues::Check>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut players: Query<&mut EffectPlayer>,
     mut commands: Commands,
     mut screenshot_index: Local<u32>,
 ) {
     // Benchmark setup must not silently change via play/seek/seed/wireframe hotkeys.
-    if benchmark.is_some() {
+    if benchmark.is_some() || cue_check.is_some() {
         return;
     }
     if keys.just_pressed(KeyCode::Space) {
@@ -2273,6 +2315,7 @@ mod tests {
             preview_seed: None,
             diagnostics: false,
             gpu_bench: None,
+            fireworks_cue_check: None,
             history_policy: aestra_bevy::PlaybackHistoryPolicy::default(),
             view_3d: false,
             tier: aestra_bevy::QualityTier::default(),

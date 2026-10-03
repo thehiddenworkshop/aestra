@@ -127,9 +127,28 @@ mod tests {
             link.inherit_velocity = inherit;
             shell.events.push(link);
         }
+        shell.event_outputs.clear();
+        shell.particle_outputs.clear();
+        for (i, name, emitter, trigger) in [
+            (0, "launch", 0, EventTrigger::OnSpawn),
+            (1, "main_break", 0, EventTrigger::OnDeath),
+            (2, "secondary_break", 1, EventTrigger::OnDeath),
+        ] {
+            let mut definition = aestra_bevy::EventDefinition::new(name);
+            definition.id = aestra_bevy::EventDefinitionId::from_u128(BASE + 900 + i);
+            let mut route = aestra_bevy::ParticleOutputRoute::new(
+                shell.emitters[emitter].id,
+                trigger,
+                definition.id,
+            );
+            route.id = aestra_bevy::EventRouteId::from_u128(BASE + 910 + i);
+            // One representative position/count per tick, not 512 audio calls.
+            shell.event_outputs.push(definition);
+            shell.particle_outputs.push(route);
+        }
         shell.metadata.insert(
             "status".into(),
-            "F5A bounded two-generation prototype; artistic acceptance pending".into(),
+            "F5 bounded two-generation prototype with generic host cues; artistic acceptance pending".into(),
         );
         shell.metadata.insert("notes".into(), "One rocket death feeds 64 stars; their deaths each feed eight short-lived secondary sparks at the real parent position, with 25% inherited velocity. Reuses hero materials and unlit smoke. Not crackle, strobe or an AAA-density certification.".into());
         shell
@@ -153,6 +172,13 @@ mod tests {
         let artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
         assert_eq!(artifact.emitters.len(), 6);
         assert_eq!(shell.events.len(), 4);
+        assert_eq!(shell.particle_outputs.len(), 3);
+        assert!(
+            shell
+                .particle_outputs
+                .iter()
+                .all(|route| route.aggregation == aestra_bevy::EventAggregation::FirstPerTick)
+        );
         let link = &shell.events[3];
         assert_eq!(link.source, shell.emitters[1].id);
         assert_eq!(link.target, shell.emitters[5].id);

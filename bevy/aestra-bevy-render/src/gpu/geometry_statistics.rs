@@ -362,6 +362,7 @@ mod tests {
                 event_links: Vec::new(),
                 routed: false,
                 particle_outputs: Vec::new(),
+                output_suppress_through: 0,
                 host_events: Default::default(),
                 physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
             },

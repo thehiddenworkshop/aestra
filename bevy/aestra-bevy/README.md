@@ -64,6 +64,36 @@ and then correct the instance to a slightly lower exact frame time: that correct
 is deliberately treated as a backward discontinuity by `set_playback_time`.
 External repositioning must use the seek contract, not the forward-advance API.
 
+## Particle-driven host cues
+
+Author ordinary `EventDefinition` outputs and `ParticleOutputRoute` routes (`OnSpawn`,
+`OnDeath`, `OnCollision`), then consume `MessageReader<AestraOutputEvent>` every update.
+The saved `fireworks_multi_break.aestra.ron` fixture exports `launch`, `main_break`,
+and `secondary_break`; they come from actual particle transitions, not audio timers.
+The native host consumer/check is `apps/aestra-viewer/src/fireworks_cues.rs`.
+
+Native GPU particle-route and timeline-cue messages carry `playback_epoch: Some(epoch)`.
+For a root player, reject queued messages whose epoch no longer equals
+`player.instance().history_epoch()`. A seek silences particle reconstruction through its
+destination; forward live ticks resume delivery. Restart starts a fresh epoch and permits
+new launch/break cues. Checkpoint restore restores simulation, not an old delivery identity.
+Old/out-of-order GPU ring readbacks cannot replay already-delivered route ticks. Legacy
+homing/finished/stage outputs remain `None`: they are **unqualified**, not epoch zero, and
+must not be assumed to have this delivery guarantee. Nested spatial-audio routing is not
+certified by the root fixture check.
+
+`FirstPerTick` coalesces one packet per route/tick: `event.value` is the representative
+particle's **effect-local position** (three floats), `event.magnitude` is the matching source
+particle count, and `event.tick` is the simulation tick. Apply host placement before spatial
+audio; choose voices, delays, pooling and mixing in the host. It is not one packet per child
+spawn or one voice per spark. `EachEvent` has different packet/count semantics. GPU messages
+arrive asynchronously; ticks identify occurrence time, not arrival-frame time.
+
+The route ring holds **32 simulation ticks**, with at most 16 stored positions per tick for
+`EachEvent`. Readback stalls can lose older observations; coalescing does not make this a
+lossless gameplay-authority bus. Keep consumers and host voice budgets bounded. Sound files,
+playback and scene acoustics are never owned by Aestra.
+
 ## Photographic preview profile
 
 Hosts can opt an effect camera into the same fixed profile used by the editor and viewer:

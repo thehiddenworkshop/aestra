@@ -296,6 +296,7 @@ fn event_trail_scene_with_pool(
         }],
         routed: false,
         particle_outputs: Vec::new(),
+        output_suppress_through: 0,
         host_events: default(),
         physics: aestra_gpu::pack_physics_scene(&Default::default()).into(),
     };

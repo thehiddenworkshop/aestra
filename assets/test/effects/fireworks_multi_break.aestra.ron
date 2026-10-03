@@ -197,6 +197,20 @@
             exposed: true,
         ),
     ],
+    event_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f8384",
+            name: "launch",
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f8385",
+            name: "main_break",
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f8386",
+            name: "secondary_break",
+        ),
+    ],
     emitters: [
         (
             id: "a3574a00-0000-4000-8000-0000000f8064",
@@ -1163,9 +1177,32 @@
             inherit_velocity: 0.25,
         ),
     ],
+    particle_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f838e",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
+            trigger: OnSpawn,
+            output: "a3574a00-0000-4000-8000-0000000f8384",
+            aggregation: FirstPerTick,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f838f",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
+            trigger: OnDeath,
+            output: "a3574a00-0000-4000-8000-0000000f8385",
+            aggregation: FirstPerTick,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000f8390",
+            source: "a3574a00-0000-4000-8000-0000000f80c8",
+            trigger: OnDeath,
+            output: "a3574a00-0000-4000-8000-0000000f8386",
+            aggregation: FirstPerTick,
+        ),
+    ],
     metadata: {
         "notes": "One rocket death feeds 64 stars; their deaths each feed eight short-lived secondary sparks at the real parent position, with 25% inherited velocity. Reuses hero materials and unlit smoke. Not crackle, strobe or an AAA-density certification.",
         "preview_seed": "17428930557923819521",
-        "status": "F5A bounded two-generation prototype; artistic acceptance pending",
+        "status": "F5 bounded two-generation prototype with generic host cues; artistic acceptance pending",
     },
 )
