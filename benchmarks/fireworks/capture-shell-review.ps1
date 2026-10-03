@@ -2,7 +2,7 @@
 # Capture evidence only: never automatically approve artistic/golden references.
 [CmdletBinding()]
 param(
-    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break')]
+    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break', 'crackle')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Shell = @('peony', 'chrysanthemum', 'pistil', 'willow'),
     [ValidateSet('close', 'audience', 'wide')]
@@ -32,6 +32,8 @@ $cases = @(
             @(45, 80, 110, 150, 210, 270, 360, 480)
         } elseif ($shellName -eq 'multi-break') {
             @(45, 80, 110, 150, 180, 210, 270, 420)
+        } elseif ($shellName -eq 'crackle') {
+            @(45, 80, 110, 130, 145, 160, 210, 420)
         } else {
             @(45, 80, 110, 150, 210, 300, 390, 420)
         }
@@ -46,7 +48,7 @@ $cases = @(
                     response = $responseName
                     frames = $frames
                     arguments = @(
-                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -eq 'multi-break') { 'f5-multi-break' } else { "f3-$shellName" }),
+                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -eq 'multi-break' -or $shellName -eq 'crackle') { "f5-$shellName" } else { "f3-$shellName" }),
                         '--camera', $cameraName, '--semantic-materials',
                         '--backend', 'gpu', '--history', 'playback-only',
                         '--tier', 'high', '--seed', '0xf1e0000000000001',
@@ -98,7 +100,7 @@ function Assert-Capture($case, $report, $directory) {
         }
     }
     $stars = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Main stars') })
-    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } else { 256 }
+    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } elseif ($case.shell -eq 'crackle') { 96 } else { 256 }
     if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne $mainCount) {
         throw "$($case.name): missing the expected $mainCount-star main cohort"
     }
@@ -124,6 +126,17 @@ function Assert-Capture($case, $report, $directory) {
         if ($secondary.Count -ne 1 -or $secondary[0].peak_particles -le 0 -or
             $secondary[0].peak_particles -gt 512 -or $smoke.Count -ne 1 -or $smoke[0].peak_particles -ne 48) {
             throw "$($case.name): missing or over-budget secondary/smoke cohort"
+        }
+    }
+    if ($case.shell -eq 'crackle') {
+        foreach ($expected in @(@('Burning carriers', 96), @('Crackle sparks', 1152), @('Burst smoke', 48))) {
+            $cohort = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ ' + $expected[0]) })
+            # Brief staggered flashes need not all be live at once; total admission
+            # is verified by the uninterrupted event-link report, not seeking stills.
+            if ($cohort.Count -ne 1 -or $cohort[0].peak_particles -le 0 -or
+                $cohort[0].peak_particles -gt $expected[1]) {
+                throw "$($case.name): missing or over-budget $($expected[0]) cohort"
+            }
         }
     }
     foreach ($file in @('contact-sheet.png', 'capture-manifest.md') + @($report.capture.frames.image)) {

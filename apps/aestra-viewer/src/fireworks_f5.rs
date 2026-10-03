@@ -1,4 +1,4 @@
-//! Editable, bounded secondary shell: rocket death -> stars -> secondary sparks.
+//! Editable bounded secondary shells: multi-break and delayed burning-carrier crackle.
 use aestra_bevy::EffectAsset;
 
 pub fn effect() -> EffectAsset {
@@ -6,6 +6,13 @@ pub fn effect() -> EffectAsset {
         "../../../assets/test/effects/fireworks_multi_break.aestra.ron"
     ))
     .expect("checked-in multi-break shell must parse")
+}
+
+pub fn crackle_effect() -> EffectAsset {
+    EffectAsset::from_ron(include_str!(
+        "../../../assets/test/effects/fireworks_crackle.aestra.ron"
+    ))
+    .expect("checked-in crackle shell must parse")
 }
 
 #[cfg(test)]
@@ -20,28 +27,56 @@ mod tests {
     const BASE: u128 = 0xa3574a00_0000_4000_8000_0000000f8000;
 
     fn build() -> EffectAsset {
+        build_variant(false)
+    }
+
+    fn build_variant(crackle: bool) -> EffectAsset {
+        let base = if crackle { BASE + 0x1000 } else { BASE };
         let mut shell = super::super::fireworks_hero::effect();
-        shell.id = EffectId::from_u128(BASE);
-        shell.name = "Fireworks Multi-break".into();
+        shell.id = EffectId::from_u128(base);
+        shell.name = if crackle {
+            "Fireworks Crackle"
+        } else {
+            "Fireworks Multi-break"
+        }
+        .into();
         shell.duration = 7.0;
         shell.emitters.truncate(5);
-        shell.emitters[1].max_particles = 64;
+        let parents = if crackle { 96 } else { 64 };
+        shell.emitters[1].max_particles = parents;
         if let ModuleParameters::Initialize {
             lifetime, speed, ..
         } = &mut shell.emitters[1].modules[2].parameters
         {
-            *lifetime = ScalarRange::new(1.2, 1.6);
+            *lifetime = if crackle {
+                ScalarRange::new(0.75, 1.05)
+            } else {
+                ScalarRange::new(1.2, 1.6)
+            };
             *speed = ScalarRange::new(18.0, 22.0);
         }
         let mut secondary = shell.emitters[1].clone();
-        secondary.name = "Secondary sparks".into();
-        secondary.max_particles = 512;
+        secondary.name = if crackle {
+            "Crackle sparks"
+        } else {
+            "Secondary sparks"
+        }
+        .into();
+        secondary.max_particles = parents * if crackle { 12 } else { 8 };
         if let ModuleParameters::Initialize {
             lifetime, speed, ..
         } = &mut secondary.modules[2].parameters
         {
-            *lifetime = ScalarRange::new(0.45, 0.85);
-            *speed = ScalarRange::new(3.0, 6.0);
+            *lifetime = if crackle {
+                ScalarRange::new(0.08, 0.20)
+            } else {
+                ScalarRange::new(0.45, 0.85)
+            };
+            *speed = if crackle {
+                ScalarRange::new(4.0, 8.0)
+            } else {
+                ScalarRange::new(3.0, 6.0)
+            };
         }
         if let ModuleParameters::Motion { drag, .. } = &mut secondary.modules[3].parameters {
             *drag = 0.6;
@@ -55,13 +90,60 @@ mod tests {
                 ColorKey::new(1.0, [0.12, 0.015, 0.002, 1.0]),
             ]),
         };
+        if crackle {
+            // A dark, slowly drifting burning carrier adds a real seeded delay
+            // before each impulsive pop. No age trigger or independent timer.
+            let mut carrier = secondary.clone();
+            carrier.name = "Burning carriers".into();
+            carrier.max_particles = parents;
+            if let ModuleParameters::Initialize {
+                lifetime, speed, ..
+            } = &mut carrier.modules[2].parameters
+            {
+                *lifetime = ScalarRange::new(0.12, 0.35);
+                *speed = ScalarRange::new(0.8, 1.8);
+            }
+            carrier.modules[4].parameters = ModuleParameters::Appearance {
+                size: Curve::new(vec![CurveKey::new(0.0, 0.10), CurveKey::new(1.0, 0.03)]),
+                opacity: Curve::new(vec![CurveKey::new(0.0, 0.25), CurveKey::new(1.0, 0.05)]),
+                color: Gradient::new(vec![
+                    ColorKey::new(0.0, [0.5, 0.1, 0.005, 1.0]),
+                    ColorKey::new(1.0, [0.1, 0.01, 0.001, 1.0]),
+                ]),
+            };
+            carrier
+                .renderers
+                .retain(|r| matches!(r.properties, RendererProperties::Sprite));
+            secondary
+                .renderers
+                .retain(|r| matches!(r.properties, RendererProperties::Sprite));
+            // Bright, brief cooling, no long secondary trails masquerading as crackle.
+            secondary.modules[4].parameters = ModuleParameters::Appearance {
+                size: Curve::new(vec![
+                    CurveKey::new(0.0, 0.48),
+                    CurveKey::new(0.15, 0.28),
+                    CurveKey::new(1.0, 0.02),
+                ]),
+                opacity: Curve::new(vec![
+                    CurveKey::new(0.0, 1.0),
+                    CurveKey::new(0.2, 0.9),
+                    CurveKey::new(1.0, 0.0),
+                ]),
+                color: Gradient::new(vec![
+                    ColorKey::new(0.0, [1.0, 0.98, 0.8, 1.0]),
+                    ColorKey::new(0.25, [1.0, 0.5, 0.03, 1.0]),
+                    ColorKey::new(1.0, [0.12, 0.01, 0.001, 1.0]),
+                ]),
+            };
+            shell.emitters.push(carrier);
+        }
         shell.emitters.push(secondary);
         // Reuse the hero's material programs, but give this effect's local
         // parameters/emitters their own stable identities and color controls.
         shell.parameters.truncate(2);
         for (i, parameter) in shell.parameters.iter_mut().enumerate() {
             let old = parameter.id;
-            parameter.id = ParameterId::from_u128(BASE + 50 + i as u128);
+            parameter.id = ParameterId::from_u128(base + 50 + i as u128);
             for material in &mut shell.material_instances {
                 for value in material.values.values_mut() {
                     if *value == aestra_bevy::material::MaterialParameterValue::EffectParameter(old)
@@ -77,7 +159,7 @@ mod tests {
             if i != 3 {
                 emitter.duration = shell.duration;
             }
-            super::super::fireworks_f0::fix_emitter_ids(emitter, BASE + 100 + i as u128 * 100);
+            super::super::fireworks_f0::fix_emitter_ids(emitter, base + 100 + i as u128 * 100);
             for module in &mut emitter.modules {
                 module.bindings.clear();
             }
@@ -85,8 +167,8 @@ mod tests {
             else {
                 unreachable!()
             };
-            color.id = GradientId::from_u128(BASE + 800 + i as u128);
-            let id = ParameterId::from_u128(BASE + 60 + i as u128);
+            color.id = GradientId::from_u128(base + 800 + i as u128);
+            let id = ParameterId::from_u128(base + 60 + i as u128);
             shell.parameters.push(EffectParameter {
                 id,
                 name: format!("{} color", emitter.name),
@@ -111,18 +193,28 @@ mod tests {
             }
         }
         shell.events.clear();
-        for (i, source, target, count, inherit) in [
-            (0, 0, 1, 64, 0.02),
+        let mut links = vec![
+            (0, 0, 1, parents, 0.02),
             (1, 0, 2, 1, 0.02),
             (2, 0, 4, 48, 0.02),
-            (3, 1, 5, 8, 0.25),
-        ] {
+            (
+                3,
+                1,
+                5,
+                if crackle { 1 } else { 8 },
+                if crackle { 0.85 } else { 0.25 },
+            ),
+        ];
+        if crackle {
+            links.push((4, 5, 6, 12, 0.15));
+        }
+        for (i, source, target, count, inherit) in links {
             let mut link = EventLink::new(
                 shell.emitters[source].id,
                 EventTrigger::OnDeath,
                 shell.emitters[target].id,
             );
-            link.id = EventId::from_u128(BASE + 850 + i);
+            link.id = EventId::from_u128(base + 850 + i);
             link.count = count;
             link.inherit_velocity = inherit;
             shell.events.push(link);
@@ -132,16 +224,25 @@ mod tests {
         for (i, name, emitter, trigger) in [
             (0, "launch", 0, EventTrigger::OnSpawn),
             (1, "main_break", 0, EventTrigger::OnDeath),
-            (2, "secondary_break", 1, EventTrigger::OnDeath),
+            (
+                2,
+                if crackle {
+                    "crackle"
+                } else {
+                    "secondary_break"
+                },
+                if crackle { 5 } else { 1 },
+                EventTrigger::OnDeath,
+            ),
         ] {
             let mut definition = aestra_bevy::EventDefinition::new(name);
-            definition.id = aestra_bevy::EventDefinitionId::from_u128(BASE + 900 + i);
+            definition.id = aestra_bevy::EventDefinitionId::from_u128(base + 900 + i);
             let mut route = aestra_bevy::ParticleOutputRoute::new(
                 shell.emitters[emitter].id,
                 trigger,
                 definition.id,
             );
-            route.id = aestra_bevy::EventRouteId::from_u128(BASE + 910 + i);
+            route.id = aestra_bevy::EventRouteId::from_u128(base + 910 + i);
             // One representative position/count per tick, not 512 audio calls.
             shell.event_outputs.push(definition);
             shell.particle_outputs.push(route);
@@ -151,6 +252,10 @@ mod tests {
             "F5 bounded two-generation prototype with generic host cues; artistic acceptance pending".into(),
         );
         shell.metadata.insert("notes".into(), "One rocket death feeds 64 stars; their deaths each feed eight short-lived secondary sparks at the real parent position, with 25% inherited velocity. Reuses hero materials and unlit smoke. Not crackle, strobe or an AAA-density certification.".into());
+        if crackle {
+            shell.metadata.insert("status".into(), "F5C bounded delayed-carrier crackle prototype; artistic and finale-scale acceptance pending".into());
+            shell.metadata.insert("notes".into(), "One rocket feeds 96 stars; their deaths spawn one burning carrier each. Seeded carrier lifetimes delay 12 brief sprite-only sparks per real death (1152 total). Reuses HDR hero materials and unlit smoke; no audio timer or new trigger. Not AAA-density certification.".into());
+        }
         shell
     }
 
@@ -261,11 +366,126 @@ mod tests {
     }
 
     #[test]
+    fn crackle_is_an_editable_three_generation_chain_with_bounded_impulsive_sparks() {
+        let shell = crackle_effect();
+        assert_eq!(
+            shell.to_pretty_ron().unwrap(),
+            build_variant(true).to_pretty_ron().unwrap()
+        );
+        let index = aestra_project::ProjectAssetIndex::scan(super::super::viewer_asset_root(None));
+        let project = index.resolve_effect_project(&shell).unwrap();
+        let compiled = aestra_bevy::EffectCompiler::default()
+            .compile_resolved_project(&project)
+            .unwrap();
+        let instance =
+            aestra_bevy::EffectInstance::with_seed(compiled.root, super::super::fireworks_f0::SEED)
+                .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
+        assert_eq!(
+            aestra_gpu::GpuEffectArtifact::from_instance(&instance)
+                .unwrap()
+                .emitters
+                .len(),
+            7
+        );
+        assert_eq!(
+            shell.emitters.iter().map(|e| e.max_particles).sum::<u32>(),
+            1458
+        );
+        assert_eq!(shell.events.len(), 5);
+        for (link, source, target, count) in
+            [(&shell.events[3], 1, 5, 1), (&shell.events[4], 5, 6, 12)]
+        {
+            assert_eq!(
+                (link.source, link.target, link.count, link.trigger),
+                (
+                    shell.emitters[source].id,
+                    shell.emitters[target].id,
+                    count,
+                    EventTrigger::OnDeath
+                )
+            );
+        }
+        for &i in &[1, 2, 4, 5, 6] {
+            assert!(matches!(
+                shell.emitters[i].modules[0].parameters,
+                ModuleParameters::Emission {
+                    spawn_rate: 0.0,
+                    burst_count: 0
+                }
+            ));
+        }
+        for &i in &[5, 6] {
+            assert_eq!(shell.emitters[i].renderers.len(), 1);
+            assert!(matches!(
+                shell.emitters[i].renderers[0].properties,
+                RendererProperties::Sprite
+            ));
+        }
+        assert!(matches!(shell.emitters[5].modules[2].parameters,
+            ModuleParameters::Initialize { lifetime, .. } if lifetime.min == 0.12 && lifetime.max == 0.35));
+        assert!(matches!(shell.emitters[6].modules[2].parameters,
+            ModuleParameters::Initialize { lifetime, .. } if lifetime.max <= 0.20));
+        let cue = shell
+            .particle_outputs
+            .iter()
+            .find(|r| r.source == shell.emitters[5].id)
+            .unwrap();
+        assert_eq!(cue.trigger, EventTrigger::OnDeath);
+        assert!(
+            shell
+                .event_outputs
+                .iter()
+                .any(|o| o.id == cue.output && o.name == "crackle")
+        );
+    }
+
+    #[test]
+    fn crackle_cli_compiles_live_playback_and_accepts_the_host_cue_check() {
+        let config = super::super::ViewerConfig::from_iter(
+            [
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f5-crackle",
+                "--backend",
+                "gpu",
+                "--history",
+                "playback-only",
+                "--fireworks-cue-check",
+                "unused-crackle-cues.json",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::prepare_viewer(&config)
+                .unwrap_or_else(|e| panic!("{}", e.message))
+                .compiled
+                .name,
+            "Fireworks Crackle"
+        );
+        let mut benchmark = config;
+        benchmark.fireworks_cue_check = None;
+        assert!(benchmark.probe_bench_step().is_none());
+        benchmark.gpu_bench = Some("unused.json".into());
+        assert!(benchmark.probe_bench_step().is_some());
+    }
+
+    #[test]
     #[ignore = "prints fixture source for a reviewed apply_patch update"]
     fn export_multi_break_fixture() {
         println!(
             "F5_FIXTURE={}",
             serde_json::to_string(&build().to_pretty_ron().unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "prints fixture source for a reviewed apply_patch update"]
+    fn export_crackle_fixture() {
+        println!(
+            "F5_CRACKLE={}",
+            serde_json::to_string(&build_variant(true).to_pretty_ron().unwrap()).unwrap()
         );
     }
 }

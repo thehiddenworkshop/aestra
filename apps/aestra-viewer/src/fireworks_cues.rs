@@ -28,6 +28,8 @@ pub struct Check {
     settled: u32,
     epochs: Vec<u32>,
     seek_tick: u64,
+    parent_count: u32,
+    secondary_kind: &'static str,
     cues: Vec<Cue>,
     seen: BTreeSet<(u32, String, u64)>,
     stale_ignored: u32,
@@ -44,6 +46,8 @@ impl Check {
             settled: 0,
             epochs: Vec::new(),
             seek_tick: 160,
+            parent_count: 64,
+            secondary_kind: "secondary_break",
             cues: Vec::new(),
             seen: BTreeSet::new(),
             stale_ignored: 0,
@@ -51,11 +55,18 @@ impl Check {
         }
     }
 
+    pub fn with_crackle(mut self) -> Self {
+        self.parent_count = 96;
+        self.secondary_kind = "crackle";
+        self
+    }
+
     fn hear(&mut self, output: &AestraOutputEvent, epoch: u32) -> Result<(), String> {
         let (emitter, sound) = match output.event.kind.as_str() {
             "launch" => (0, "host/firework_launch"),
             "main_break" => (0, "host/firework_main_break"),
             "secondary_break" => (1, "host/firework_secondary_break"),
+            "crackle" => (5, "host/firework_crackle"),
             _ => return Ok(()),
         };
         if output.playback_epoch != Some(epoch) {
@@ -72,7 +83,7 @@ impl Check {
             || !event.magnitude.is_finite()
             || event.magnitude < 1.0
             || event.magnitude.fract() != 0.0
-            || event.magnitude > 64.0
+            || event.magnitude > self.parent_count as f32
         {
             return Err("invalid particle cue origin/position/count".into());
         }
@@ -109,8 +120,8 @@ impl Check {
             if [
                 total("launch"),
                 total("main_break"),
-                total("secondary_break"),
-            ] != [1, 1, 64]
+                total(self.secondary_kind),
+            ] != [1, 1, self.parent_count]
             {
                 return Err(format!(
                     "run {run}: missing or repeated launch/main/secondary demand"
@@ -121,8 +132,8 @@ impl Check {
         let count = seek.iter().map(|cue| cue.particle_count).sum::<u32>();
         if seek
             .iter()
-            .any(|cue| cue.kind != "secondary_break" || cue.tick <= self.seek_tick)
-            || !(1..64).contains(&count)
+            .any(|cue| cue.kind != self.secondary_kind || cue.tick <= self.seek_tick)
+            || !(1..self.parent_count).contains(&count)
         {
             return Err("seek must resume only the remaining secondary breaks".into());
         }
@@ -131,7 +142,7 @@ impl Check {
         let remaining: Vec<_> = original
             .iter()
             .copied()
-            .filter(|cue| cue.kind == "secondary_break" && cue.tick > self.seek_tick)
+            .filter(|cue| cue.kind == self.secondary_kind && cue.tick > self.seek_tick)
             .collect();
         if remaining.len() != seek.len()
             || remaining.iter().zip(&seek).any(|(a, b)| !same_cue(a, b))
@@ -154,6 +165,7 @@ impl Check {
             "error": result.as_ref().err(), "history_policy": "playback-only", "fixed_tick_rate": 60,
             "epochs": self.epochs, "stale_host_messages_ignored": self.stale_ignored, "cues": self.cues,
             "seek_suppressed_through_tick": self.seek_tick, "run": self.run, "waiting": self.waiting,
+            "secondary_kind": self.secondary_kind, "expected_parent_count": self.parent_count,
             "scope": "Native GPU root fixture. FirstPerTick coalesces one representative local-space position and particle count per route/tick. Host sound identifiers are bindings only; no audio assets or playback. 32-tick readback ring, not a lossless gameplay bus." });
         let written = (|| -> Result<(), String> {
             if let Some(parent) = self.output.parent().filter(|p| !p.as_os_str().is_empty()) {

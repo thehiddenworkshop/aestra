@@ -72,6 +72,14 @@ The saved `fireworks_multi_break.aestra.ron` fixture exports `launch`, `main_bre
 and `secondary_break`; they come from actual particle transitions, not audio timers.
 The native host consumer/check is `apps/aestra-viewer/src/fireworks_cues.rs`.
 
+`fireworks_crackle.aestra.ron` adds a burning-carrier delay before short spark clusters:
+96 main-star deaths → 96 carriers → 12 sparks per carrier death. Its `crackle` route observes
+carrier `OnDeath`; the same viewer host check validates all 96 pops, seeking and restart.
+Event-routed births do not themselves emit `OnSpawn` under the current simulation contract.
+Use link admission telemetry or subsequent actual transitions for those particles; do not
+assume an `OnSpawn` observer sees every event-created child. This is a bounded high-tier fixture,
+not finale-scale, acoustic or artistic certification.
+
 Native GPU particle-route and timeline-cue messages carry `playback_epoch: Some(epoch)`.
 For a root player, reject queued messages whose epoch no longer equals
 `player.instance().history_epoch()`. A seek silences particle reconstruction through its

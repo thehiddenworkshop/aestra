@@ -58,8 +58,8 @@ The main gaps have changed. They are no longer "Aestra needs a stateful particle
 
 Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are implemented;
 F4 artistic acceptance remains open. **F5A validates a bounded two-generation death-event
-shell; F5B validates particle-driven host cues and seek/restart delivery epochs. Next is
-bounded crackle authoring (F5C)**, not
+shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C adds
+a bounded delayed-carrier crackle chain. Next is bounded crossette authoring (F5D)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -2949,10 +2949,39 @@ At least one shell uses two generations of particle-driven spawning.
   regression tests and warnings-as-errors Clippy pass. Evidence and reproduction:
   `benchmarks/fireworks/host-cues-2026-10-03.md`.
 
-F5 is **in progress**, not complete. Next is F5C: author and validate a bounded crackle shell
-using the existing second-generation event mechanism; introduce a new trigger only if a
-measured authoring need requires it. Sound implementation remains host-owned.
-Crossette/crackle/strobe authoring, moving-footage and
+### F5C implemented — bounded delayed-carrier crackle (2026-10-03)
+
+- Ordinary editable asset `assets/test/effects/fireworks_crackle.aestra.ron`, viewer probe
+  `f5-crackle`. Rocket death feeds 96 main stars; each real main-star death spawns one
+  burning carrier with 85% inherited velocity. Carrier lifetime 0.12–0.35 seconds provides
+  seeded delay; its real death requests 12 short-lived sparks (1,152 total), with 15%
+  inherited velocity. This is three particle-driven spawning generations, without timed
+  fake crackle, new triggers or duplicated links to bypass engine limits.
+- Main stars live 0.75–1.05 seconds; spark lifetime 0.08–0.20 seconds and bright-to-gold cooling
+  make impulsive pops rather than persistent secondary tails. Carriers and sparks are
+  sprite-only; main and launch histories retain the existing hero trail policy. Seven emitters,
+  capacity 1,458, exposed color/radiance parameters, reused HDR hero materials and unlit smoke.
+- Native forward / playback-only evidence admits demand = accepted **96 / 1 / 48 / 96 / 1,152**;
+  source overflow, omissions/rejections, trail evictions/truncation and all checkpoint-capture
+  bytes are zero. RTX 4070 SUPER/Vulkan, 960×540, high tier, fixed 60 Hz, authored floors.
+  This lifecycle/idle-tail run proves admission, not finale throughput.
+- Native host check binds `crackle` from carrier `OnDeath`, not a sound timer: initial and
+  restarted runs each deliver 27 packets representing 96 pops, ticks 134–164. Seek to frame
+  160 resumes five packets / eight remaining pops with no reconstruction playback; payloads
+  match the original/restarted streams. Sounds, spatial voices and assets remain host-owned.
+- GPU compute regression compares three-generation state and output payloads against CPU at
+  intermediate/final ticks, verifies 96 carriers and all 1,152 spark retirements, and eventual
+  empty state. Routed births deliberately do not produce `OnSpawn` in the current contract;
+  birth admission comes from link counters, not that output route. Full required-GPU suite
+  passes (29 serial tests), viewer passes (67 / four exporters ignored), Clippy passes.
+- Three camera cases / 24 exact-frame PNGs pass cohort and endpoint checks. Stills show the
+  red main burst followed by brief warm dots and smoke; human/moving-footage artistic
+  acceptance remains open. Evidence/reproduction: `benchmarks/fireworks/crackle-2026-10-03.md`.
+
+F5 is **in progress**, not complete. Next is F5D: author a bounded crossette and validate
+its characteristic four-way split, using generic velocity/event controls; add semantics
+only if the authored workload demonstrates a real gap. Sound implementation remains host-owned.
+Crossette/strobe authoring, crackle tier-specific count policies, moving-footage and
 artistic approval, heavy overlapping/finale event load and target-tier resource gates remain
 open. Do not infer those from this intentionally bounded multi-break fixture.
 
