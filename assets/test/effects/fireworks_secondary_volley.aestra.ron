@@ -365,7 +365,7 @@
                         max_points: 64,
                         max_trails: 4,
                         sampling: Distance,
-                        sample_distance: 0.25,
+                        sample_distance: 0.3,
                         curve_tolerance: 0.01,
                         uv_mode: Stretch,
                         tile_length: 1.0,

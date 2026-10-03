@@ -5,6 +5,7 @@ mod fireworks_f3;
 mod fireworks_f4;
 mod fireworks_f5;
 mod fireworks_hero;
+mod fireworks_show;
 mod fireworks_strobe;
 mod gpu_bench;
 mod photographic;
@@ -73,6 +74,7 @@ fn main() {
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host output delivery for the first three with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
+        eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -132,6 +134,11 @@ fn main() {
             .map(|_| Duration::from_secs_f64(1.0 / 60.0))
     });
     let gpu_bench_presentation = gpu_bench::BenchPresentation::from_config(&config);
+    let gpu_bench_frames = if config.fireworks_probe == Some(FireworksProbe::Show) {
+        fireworks_show::BENCH_FRAMES
+    } else {
+        gpu_bench::DEFAULT_GPU_BENCH_FRAMES
+    };
     let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
         match config.fireworks_probe {
@@ -151,6 +158,7 @@ fn main() {
             Some(FireworksProbe::Crossette) => "f5-crossette",
             Some(FireworksProbe::Strobe) => "f5-strobe",
             Some(FireworksProbe::SecondaryVolley) => "f5-secondary-volley",
+            Some(FireworksProbe::Show) => "f6-show",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -212,7 +220,7 @@ fn main() {
                 drive_capture
                     .after(update_hud)
                     .before(aestra_bevy::AestraSet::Playback),
-                gpu_bench::drive_gpu_bench,
+                gpu_bench::drive_gpu_bench.after(aestra_bevy::AestraSet::Profile),
             ),
         );
     if let Some(step) = probe_bench_step {
@@ -248,7 +256,7 @@ fn main() {
                 output,
                 gpu_bench_effect,
                 gpu_bench::DEFAULT_GPU_BENCH_WARMUP,
-                gpu_bench::DEFAULT_GPU_BENCH_FRAMES,
+                gpu_bench_frames,
             )
             .with_history_policy(history_policy)
             .with_presentation(gpu_bench_presentation),
@@ -330,6 +338,7 @@ enum FireworksProbe {
     Crossette,
     Strobe,
     SecondaryVolley,
+    Show,
     Raster(fireworks_f4::Probe),
 }
 
@@ -350,6 +359,7 @@ impl FireworksProbe {
             "f5-crossette" => Some(Self::Crossette),
             "f5-strobe" => Some(Self::Strobe),
             "f5-secondary-volley" => Some(Self::SecondaryVolley),
+            "f6-show" => Some(Self::Show),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -424,6 +434,7 @@ impl ViewerConfig {
                         | FireworksProbe::Crossette
                         | FireworksProbe::Strobe
                         | FireworksProbe::SecondaryVolley
+                        | FireworksProbe::Show
                 )
             ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
@@ -468,10 +479,10 @@ impl ViewerConfig {
                 "--fireworks-f0" => fireworks_f0 = true,
                 "--fireworks-f0-probe" => {
                     let value = args.next().ok_or(
-                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell or f4 raster/hero probe",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell, f4 raster/hero or f6-show probe",
                     )?;
                     fireworks_probe = Some(FireworksProbe::parse(&value).ok_or(
-                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell or f4 raster/hero probe",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell, f4 raster/hero or f6-show probe",
                     )?);
                 }
                 "--camera" => {
@@ -940,6 +951,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             Some(FireworksProbe::Crossette) => fireworks_f5::crossette_effect(),
             Some(FireworksProbe::Strobe) => fireworks_strobe::effect(),
             Some(FireworksProbe::SecondaryVolley) => fireworks_budgets::volley_effect(),
+            Some(FireworksProbe::Show) => fireworks_show::effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -1090,7 +1102,9 @@ fn setup(
 
     if config.view_3d {
         let camera_transform = if config.fireworks_f0 {
-            if matches!(
+            if config.fireworks_probe == Some(FireworksProbe::Show) {
+                fireworks_show::camera(config.fireworks_camera)
+            } else if matches!(
                 config.fireworks_probe,
                 Some(
                     FireworksProbe::ReferenceHero

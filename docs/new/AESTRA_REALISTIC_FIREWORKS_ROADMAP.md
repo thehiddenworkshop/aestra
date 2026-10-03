@@ -61,8 +61,9 @@ F4 artistic acceptance remains open. **F5A validates a bounded two-generation de
 shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C/D add
 bounded delayed-carrier crackle and four-arm crossette; F5E adds independently phased
 strobe stars with exact off intervals. F5F adds explicit tier-specific secondary-shell
-budgets and measured overlapping forward playback. Next is a bounded reusable show
-composition (F6A)**, not
+budgets and measured overlapping forward playback. F6A adds a bounded 26-second reusable
+show with per-clip admission/cleanup reporting across all three tiers. Next is nested
+spatial host-cue validation (F6B)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3087,8 +3088,8 @@ At least one shell uses two generations of particle-driven spawning.
 
 F5's bounded technical fixtures and tier mechanisms are implemented, but **artistic and
 production-density acceptance remain open**. Low is sparse/dim at audience distance;
-mechanism tests do not replace reference-footage review. Next is **F6A: a bounded 20–30-second
-show built from reusable EffectClips**, with multi-site placement/seeds and tier/admission
+mechanism tests do not replace reference-footage review. **F6A below implements a bounded
+26-second show built from reusable EffectClips**, with multi-site placement/seeds and tier/admission
 telemetry. Parent-oriented crossettes, nested spatial audio, lit/persistent smoke, heavy finale
 load and target-hardware gates remain open. No full-show readiness claim follows from F5F.
 
@@ -3128,6 +3129,57 @@ During actual authoring, document friction around:
 - preview camera workflow.
 
 The show should feed requirements back into Aestra's timeline UX.
+
+### F6A implemented — bounded reusable composition (2026-10-03)
+
+- Saved v4 `assets/test/effects/fireworks_show.aestra.ron`: 26 seconds, 13 clips reusing
+  four F5 shell assets, no local emitters or host-timed particle births. Single/paired
+  launches, three-site fan, alternating exposed star-color gradients, per-clip transforms
+  and layered heights, then a restrained closing section. Clips run their full seven-second
+  lifecycle; the last ends at 24 seconds with a two-second quiet tail.
+- Existing project resolution, compiler tier selection, clip scheduler and
+  `EffectPlayer::from_project` suffice. Repeated sources share compiled assets but retain
+  separate live particle/trail pools and stable clip-path-derived seeds. Peak active clip
+  pools are six; conservative concurrent particle capacities high/medium/low are
+  **4,460 / 1,980 / 964**. Neither 13 total shells nor six active clip windows is a claim
+  about simultaneously bursting shells, Test B density or a 20–40-shell finale.
+- Viewer `f6-show` supports ordinary wall-clock interactive playback and opt-in 30-second
+  manual-60-Hz benchmarks (120 warm-up + 1,680 measured frames). Reports retain root/path/
+  source/seed/policy identity after transient owners disappear. Per-child profiles and
+  event readbacks are collected through the existing public project API; concurrent
+  project peaks are observed totals, never sums of unrelated per-owner peaks.
+- Native RTX 4070 SUPER/Vulkan, 960×540, fast transparency, semantic materials,
+  HDR/exposure 0, playback-only: all 13 clips admit expected high/medium/low totals
+  **8,413 / 3,317 / 1,217** linked births. Source overflow, expansion omission, destination
+  rejection, trail eviction/truncation and checkpoint-capture bytes are measured zero.
+  Final observations show zero live particles/occupied histories in each child and project,
+  with zero remaining child entities. Peak concurrent estimated buffers:
+  **9,430,016 / 3,835,520 / 1,492,544 bytes**, not full VRAM.
+- The initial show exposed a truncated rocket history under 1.2× clip scaling. Reusable
+  F5 launch trails now use 0.30 rather than 0.25 world-unit distance spacing, retaining the
+  portable 64-point cap, 0.35-second retention and original owner counts. A scale-aware
+  fixture regression locks headroom for this show's maximum scale, not arbitrary host
+  transforms. Later larger/moving placements still need workload-specific sampling gates.
+- Tests cover resolution, artifact compatibility, serialization, independent seeds,
+  packed overrides, clock/lifecycle boundaries, exact tier capacities, transient-owner
+  reporting and concurrent peaks. Read-only `validate-show.ps1` rejects missing/fallback/
+  incomplete/dropped/backward/checkpoint observations. Native high/low lifecycle captures
+  are inspection evidence, not approved goldens or moving-footage acceptance.
+- The composition was authored as a saved fixture, **not through a completed manual editor
+  UX review**. Locating/reusing clips, overrides, grouping, patterns, multi-selection,
+  timeline navigation and preview cameras still require the review above. Audience views
+  remain sparse/small; art direction, radiance/smoke balance and photographic footprint
+  need iteration. No AAA or target-hardware speed/finale certification is implied.
+
+Evidence and reproduction: `benchmarks/fireworks/show-composition-2026-10-03.md`.
+
+**Next — F6B: nested spatial host-cue acceptance.** Exercise real launch/break/secondary
+outputs from repeated, transformed clips through the generic host stream: root and stable
+clip identity, distinct inherited seeds, event positions under clip + root placement,
+epochs/restart/seek suppression and bounded delivery without duplicate or missing cues.
+This validates the API needed by the flagship host; audio files/playback, skybox, scene
+lighting and host choreography integration remain host-owned. Manual editor authoring and
+artistic acceptance remain separate F6 gates.
 
 ---
 

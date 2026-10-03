@@ -14,11 +14,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use aestra_bevy::{
-    EffectProfiler, EffectRuntimeStatus, GpuCapabilities, PresentedEffect, ProfileValue,
+    EffectClipInstance, EffectProfiler, EffectRuntimeStatus, GpuCapabilities, PresentedEffect,
+    ProfileValue,
     gpu::{GpuEventLinkStatistics, GpuParticleStatistics, GpuSimulationFrame, GpuSimulationTiming},
 };
 use bevy::app::AppExit;
 use bevy::diagnostic::{DiagnosticMeasurement, DiagnosticsStore};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use serde::Serialize;
 
@@ -47,6 +49,45 @@ pub struct GpuBenchPlan {
     adapter: Option<BenchAdapter>,
     effect_backends: BTreeMap<String, BTreeSet<String>>,
     physical_window_sizes: BTreeSet<[u32; 2]>,
+    instances: BTreeMap<String, BenchInstance>,
+    peak_active_clip_instances: usize,
+    active_clip_instances_at_end: usize,
+    project_work: BTreeMap<String, WorkStats>,
+}
+
+/// Stable authored identity for transient ECS owners, retained after clips expire.
+#[derive(Serialize)]
+struct BenchInstance {
+    root: String,
+    clip_path: Vec<String>,
+    source_effect: String,
+    name: String,
+    seed: String,
+    particle_capacity: usize,
+    history_policy: &'static str,
+}
+
+impl BenchInstance {
+    fn observed(
+        entity: Entity,
+        presented: &PresentedEffect,
+        clip: Option<&EffectClipInstance>,
+    ) -> Self {
+        Self {
+            root: clip.map_or(entity, |clip| clip.root).to_string(),
+            clip_path: clip.map_or_else(Vec::new, |clip| {
+                clip.path.iter().map(ToString::to_string).collect()
+            }),
+            source_effect: presented.instance.effect().source.to_string(),
+            name: presented.instance.effect().name.clone(),
+            seed: format!("0x{:016x}", presented.instance.seed()),
+            particle_capacity: presented.instance.effect().max_particles,
+            history_policy: match presented.instance.history_policy() {
+                aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly => "playback-only",
+                aestra_bevy::PlaybackHistoryPolicy::ReplayEnabled => "replay-enabled",
+            },
+        }
+    }
 }
 
 /// Requested viewer setup, not a claim that an unsupported policy was applied by a fallback.
@@ -144,6 +185,10 @@ impl GpuBenchPlan {
             adapter: None,
             effect_backends: BTreeMap::new(),
             physical_window_sizes: BTreeSet::new(),
+            instances: BTreeMap::new(),
+            peak_active_clip_instances: 0,
+            active_clip_instances_at_end: 0,
+            project_work: BTreeMap::new(),
         }
     }
 
@@ -168,6 +213,10 @@ impl GpuBenchPlan {
             adapter: self.adapter.as_ref(),
             effect_backends: &self.effect_backends,
             physical_window_sizes: &self.physical_window_sizes,
+            instances: &self.instances,
+            peak_active_clip_instances: self.peak_active_clip_instances,
+            active_clip_instances_at_end: self.active_clip_instances_at_end,
+            project_work: &self.project_work,
             effect: self.effect.clone(),
             history_policy: match self.history_policy {
                 aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly => "playback-only",
@@ -332,6 +381,12 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 
 #[derive(Serialize)]
 struct GpuBenchReport<'a> {
+    instances: &'a BTreeMap<String, BenchInstance>,
+    /// ECS presentations, not simultaneously alive particle cohorts.
+    peak_active_clip_instances: usize,
+    active_clip_instances_at_end: usize,
+    /// Concurrent active project totals; never a sum of separate owners' peaks.
+    project_work: &'a BTreeMap<String, WorkStats>,
     presentation: Option<&'a BenchPresentation>,
     adapter: Option<&'a BenchAdapter>,
     effect_backends: &'a BTreeMap<String, BTreeSet<String>>,
@@ -354,6 +409,10 @@ struct GpuBenchReport<'a> {
 
 #[derive(Default, Serialize)]
 struct WorkStats {
+    /// Last asynchronous measured observation before an owner disappears.
+    /// Not a frame-aligned guarantee of cleanup at clip end.
+    last_live_particles: Option<u32>,
+    last_occupied_trails: Option<u32>,
     min_live_particles: Option<u32>,
     peak_live_particles: Option<u32>,
     min_occupied_trails: Option<u32>,
@@ -362,6 +421,7 @@ struct WorkStats {
     max_trail_evictions: Option<u32>,
     max_truncated_trails: Option<u32>,
     estimated_buffer_memory_bytes: Option<u64>,
+    peak_estimated_buffer_memory_bytes: Option<u64>,
     event_readback_samples: Option<u64>,
     source_event_overflow: Option<u64>,
     links: Option<Vec<LinkStats>>,
@@ -377,7 +437,14 @@ struct LinkStats {
 
 impl WorkStats {
     fn record(&mut self, profiler: &EffectProfiler, events: Option<&GpuEventLinkStatistics>) {
-        let profile = &profiler.0;
+        self.record_profile(&profiler.0, events);
+    }
+
+    fn record_profile(
+        &mut self,
+        profile: &aestra_bevy::EffectProfile,
+        events: Option<&GpuEventLinkStatistics>,
+    ) {
         fn peak(target: &mut Option<u32>, value: ProfileValue<u32>) {
             if let ProfileValue::Measured(value) = value {
                 *target = Some(target.unwrap_or(0).max(value));
@@ -392,12 +459,25 @@ impl WorkStats {
         // peaks, these are asynchronous host observations, not per-frame certificates.
         minimum(&mut self.min_live_particles, profile.alive_particles);
         minimum(&mut self.min_occupied_trails, profile.occupied_trails);
+        if let ProfileValue::Measured(value) = profile.alive_particles {
+            self.last_live_particles = Some(value);
+        }
+        if let ProfileValue::Measured(value) = profile.occupied_trails {
+            self.last_occupied_trails = Some(value);
+        }
         peak(&mut self.peak_live_particles, profile.alive_particles);
         peak(&mut self.peak_occupied_trails, profile.occupied_trails);
         peak(&mut self.peak_retired_trails, profile.retired_trails);
         peak(&mut self.max_trail_evictions, profile.trail_evictions);
         peak(&mut self.max_truncated_trails, profile.truncated_trails);
         self.estimated_buffer_memory_bytes = profile.buffer_memory_bytes.value();
+        if let Some(bytes) = self.estimated_buffer_memory_bytes {
+            self.peak_estimated_buffer_memory_bytes = Some(
+                self.peak_estimated_buffer_memory_bytes
+                    .unwrap_or(0)
+                    .max(bytes),
+            );
+        }
         if let Some(events) = events.filter(|events| events.readback_samples > 0) {
             self.event_readback_samples = Some(events.readback_samples);
             self.source_event_overflow = Some(events.source_overflow);
@@ -419,15 +499,45 @@ impl WorkStats {
 
 /// Samples Aestra's GPU diagnostics each frame and exits once the capture is done.
 /// A no-op unless a [`GpuBenchPlan`] resource is present.
+#[derive(SystemParam)]
+#[allow(clippy::type_complexity)]
+pub struct BenchEffects<'w, 's> {
+    roots: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static EffectProfiler,
+            Option<&'static GpuEventLinkStatistics>,
+            Option<&'static EffectRuntimeStatus>,
+        ),
+    >,
+    instances: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static PresentedEffect,
+            Option<&'static EffectClipInstance>,
+        ),
+    >,
+    children: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static EffectClipInstance,
+            Option<&'static GpuEventLinkStatistics>,
+            Option<&'static EffectRuntimeStatus>,
+        ),
+    >,
+    projects: Query<'w, 's, (Entity, &'static aestra_bevy::ProjectProfiler)>,
+}
+
 pub fn drive_gpu_bench(
     plan: Option<ResMut<GpuBenchPlan>>,
     diagnostics: Res<DiagnosticsStore>,
-    effects: Query<(
-        Entity,
-        &EffectProfiler,
-        Option<&GpuEventLinkStatistics>,
-        Option<&EffectRuntimeStatus>,
-    )>,
+    effects: BenchEffects,
     capabilities: Option<Res<GpuCapabilities>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     timings: Query<(
@@ -445,6 +555,18 @@ pub fn drive_gpu_bench(
         return;
     }
     let measured = plan.warmup_remaining == 0;
+    // Capture identity during warm-up too: short-lived children must not vanish
+    // from the report merely because their ECS owner was destroyed before measurement.
+    let mut active_clips = 0;
+    for (entity, presented, clip) in &effects.instances {
+        active_clips += usize::from(clip.is_some());
+        plan.instances.insert(
+            entity.to_string(),
+            BenchInstance::observed(entity, presented, clip),
+        );
+    }
+    plan.peak_active_clip_instances = plan.peak_active_clip_instances.max(active_clips);
+    plan.active_clip_instances_at_end = active_clips;
     for (owner, effect, context, timing) in &timings {
         if let Some(frame) = timing.frame_sample(&effect.instance, context) {
             plan.record_simulation(owner, frame, measured);
@@ -491,7 +613,7 @@ pub fn drive_gpu_bench(
         plan.physical_window_sizes
             .insert([window.physical_width(), window.physical_height()]);
     }
-    for (entity, profiler, events, runtime) in &effects {
+    for (entity, profiler, events, runtime) in &effects.roots {
         if let Some(runtime) = runtime {
             plan.effect_backends
                 .entry(entity.to_string())
@@ -502,6 +624,34 @@ pub fn drive_gpu_bench(
             .entry(entity.to_string())
             .or_default()
             .record(profiler, events);
+    }
+    // EffectProfiler is intentionally root-only. Child observations come from
+    // the public project profile; do not accidentally benchmark only the empty carrier.
+    for (entity, clip, events, runtime) in &effects.children {
+        if let Some(runtime) = runtime {
+            plan.effect_backends
+                .entry(entity.to_string())
+                .or_default()
+                .insert(runtime.active.to_string());
+        }
+        if let Ok((_, project)) = effects.projects.get(clip.root)
+            && let Some(entry) = project
+                .0
+                .instances
+                .iter()
+                .find(|entry| entry.path == clip.path)
+        {
+            plan.work
+                .entry(entity.to_string())
+                .or_default()
+                .record_profile(&entry.profile, events);
+        }
+    }
+    for (root, project) in &effects.projects {
+        plan.project_work
+            .entry(root.to_string())
+            .or_default()
+            .record_profile(&project.0.total, None);
     }
     plan.remaining -= 1;
     if plan.remaining == 0 {
@@ -524,6 +674,70 @@ pub fn drive_gpu_bench(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn benchmark_retains_instance_identity_after_warmup_owner_despawns() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("instances.json");
+        let compiled = aestra_bevy::EffectCompiler::default()
+            .compile(&aestra_bevy::EffectAsset::new("transient", 1.0))
+            .unwrap();
+        let source = compiled.source.to_string();
+        let mut presented = PresentedEffect::new(compiled.into());
+        presented.instance.set_seed(42);
+        presented.set_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
+        let mut app = App::new();
+        app.add_message::<AppExit>()
+            .init_resource::<DiagnosticsStore>()
+            .insert_resource(GpuBenchPlan::new(output.clone(), "fixture".into(), 1, 1))
+            .add_systems(Update, drive_gpu_bench);
+        let entity = app.world_mut().spawn(presented).id();
+        app.update(); // identity is recorded even before the measured window
+        app.world_mut().despawn(entity);
+        app.update();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        let identity = &report["instances"][entity.to_string()];
+        assert_eq!(identity["root"], entity.to_string());
+        assert_eq!(identity["source_effect"], source);
+        assert_eq!(identity["clip_path"], serde_json::json!([]));
+        assert_eq!(identity["seed"], "0x000000000000002a");
+        assert_eq!(identity["history_policy"], "playback-only");
+        assert_eq!(report["active_clip_instances_at_end"], 0);
+        assert!(report["work"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn project_peaks_use_concurrent_snapshots_and_cleanup_not_sums_of_owner_peaks() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("project.json");
+        let mut app = App::new();
+        app.add_message::<AppExit>()
+            .init_resource::<DiagnosticsStore>()
+            .insert_resource(GpuBenchPlan::new(output.clone(), "fixture".into(), 0, 3))
+            .add_systems(Update, drive_gpu_bench);
+        let root = app
+            .world_mut()
+            .spawn(aestra_bevy::ProjectProfiler::default())
+            .id();
+        for (live, memory) in [(100, 2000), (80, 3000), (0, 8)] {
+            let mut project = app
+                .world_mut()
+                .get_mut::<aestra_bevy::ProjectProfiler>(root)
+                .unwrap();
+            project.0.total.alive_particles = ProfileValue::Measured(live);
+            project.0.total.buffer_memory_bytes = ProfileValue::Estimated(memory);
+            app.update();
+        }
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        let work = &report["project_work"][root.to_string()];
+        assert_eq!(work["peak_live_particles"], 100);
+        assert_eq!(work["last_live_particles"], 0);
+        assert_eq!(work["peak_estimated_buffer_memory_bytes"], 3000);
+        assert_eq!(work["estimated_buffer_memory_bytes"], 8);
+        assert!(work["links"].is_null()); // Never invent project-wide admission.
+    }
 
     #[test]
     fn benchmark_records_requested_presentation_and_actual_fallback_and_window_sizes() {
@@ -712,6 +926,7 @@ mod tests {
         assert_eq!(work.peak_live_particles, None);
         assert_eq!(work.min_live_particles, None);
         assert_eq!(work.min_occupied_trails, None);
+        assert_eq!(work.last_live_particles, None);
         assert!(work.links.is_none());
         profile.0.alive_particles = ProfileValue::Measured(7200);
         profile.0.occupied_trails = ProfileValue::Measured(10400);
@@ -731,6 +946,7 @@ mod tests {
         let json = serde_json::to_value(&work).unwrap();
         assert_eq!(json["peak_live_particles"], 7200);
         assert_eq!(json["min_live_particles"], 0);
+        assert_eq!(json["last_live_particles"], 0);
         assert_eq!(json["min_occupied_trails"], 10400);
         assert_eq!(json["peak_occupied_trails"], 10400);
         assert_eq!(json["peak_retired_trails"], 3200);

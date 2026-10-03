@@ -23,6 +23,22 @@ pub fn crossette_effect() -> EffectAsset {
 }
 
 #[cfg(test)]
+pub(crate) fn scaled_launch_headroom(effect: &mut EffectAsset) {
+    for renderer in &mut effect.emitters[0].renderers {
+        if let aestra_bevy::RendererProperties::Trail {
+            sample_distance, ..
+        } = &mut renderer.properties
+        {
+            // World-distance sampling: 1.2 * 42 units/s * 0.35s / 0.25
+            // needs more than 64 records even though the unscaled shell fits.
+            // Keep the portable 64-point bound; 0.30-unit spacing leaves room
+            // for this scaled launch without changing lifetime or owner pools.
+            *sample_distance = 0.30;
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use aestra_bevy::{
@@ -170,6 +186,7 @@ mod tests {
     fn build_variant(crackle: bool) -> EffectAsset {
         let base = if crackle { BASE + 0x1000 } else { BASE };
         let mut shell = super::super::fireworks_hero::effect();
+        scaled_launch_headroom(&mut shell);
         shell.id = EffectId::from_u128(base);
         shell.name = if crackle {
             "Fireworks Crackle"

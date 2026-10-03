@@ -91,6 +91,7 @@ mod tests {
 
     fn build() -> EffectAsset {
         let mut shell = super::super::fireworks_hero::effect();
+        super::super::fireworks_f5::scaled_launch_headroom(&mut shell);
         shell.id = EffectId::from_u128(BASE);
         shell.name = "Fireworks Strobe".into();
         shell.duration = 7.0;
