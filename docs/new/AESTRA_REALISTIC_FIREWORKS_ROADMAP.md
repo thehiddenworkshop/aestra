@@ -56,7 +56,13 @@ The main gaps have changed. They are no longer "Aestra needs a stateful particle
 8. **A generic host-facing cue API** so the example host can bind real particle events to spatial sound and show control.
 9. **A reusable library of actual firework effects and a show-level authoring workflow.**
 
-The current sequence is **F2 distribution validation, then F3 shell prototypes**. Pause unmeasured F1B micro-optimization; return to scalability work when the authored hero/finale workload exposes a measured blocker. Do not lower the hero-shell target or work around the engine with duplicated links or emitters. F1/F1B's open performance/resource gates still precede a production-shell claim, not merely F9 polish.
+Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are implemented;
+F4 artistic acceptance remains open. **F5A now validates a bounded two-generation death-event
+shell in forward, playback-only execution. Next is F5B generic host-cue validation**, not
+more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
+workloads expose a measured blocker. Do not lower the hero-shell target or work around the
+engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
+precede a production-shell claim, not merely F9 polish.
 
 ---
 
@@ -2808,9 +2814,9 @@ alone do not justify more open-ended culling optimization.
   burst-driven lighting or trajectory-linked volumetrics. No artistic/golden approval, live
   timing or production-density certification follows from this static run.
 
-F4 remains **in progress**. Next runtime slice is F5's bounded generic two-generation
-particle-event chain and host-cue validation, emphasizing forward playback without replay
-history. F7/F8 retain transient-light/lit-smoke integration. Scene, audio assets/mixing, sky,
+F4 remains **in progress**. F5A below implements the bounded generic two-generation
+particle-event chain in forward playback without replay history; next is F5B host-cue
+validation. F7/F8 retain transient-light/lit-smoke integration. Scene, audio assets/mixing, sky,
 reflections and choreography stay host-side; no firework-specific runtime API is introduced.
 
 ### HDR material / host convention
@@ -2884,6 +2890,44 @@ Expose the selected particle/effect cues through the generic host-facing contrac
 ### Deliverable
 
 At least one shell uses two generations of particle-driven spawning.
+
+### F5A implemented — bounded multi-break chain (2026-10-03)
+
+- Ordinary editable asset `assets/test/effects/fireworks_multi_break.aestra.ron`, selected by
+  viewer probe `f5-multi-break`. One rocket's `OnDeath` requests 64 main stars, one flash and
+  48 smoke particles. Each main star's real `OnDeath` requests eight secondary sparks:
+  **512 total**, at the parent death position, with 25% inherited velocity. There is no timed
+  fake secondary burst, new trigger, duplicated event-link workaround or fireworks API.
+- Six emitters, total particle capacity 690. Secondary speed 3–6, lifetime 0.45–0.85 seconds;
+  main lifetimes 1.2–1.6 seconds stagger the breaks. Secondary histories retain 0.35 seconds
+  at 60 Hz with 64 points and 512 owners. Hero materials, exposed color/radiance controls and
+  unlit smoke are reused. Seven-second once playback covers smoke/history cleanup.
+- Production GPU compute conformance covers a simultaneous 64-parent / 512-child death
+  wave, translated launch origin, CPU/GPU positions by ordinal, parent death origins,
+  velocity inheritance, link-order independence and eventual empty state. A required-GPU
+  run passed, advancing forward without checkpoints, seeks or restarts.
+- Uninterrupted native renderer evidence: `target/fireworks-f5/f5a-multi-break-live.json`.
+  RTX 4070 SUPER/Vulkan, 960×540, high tier, HDR/Tony/exposure 0/bloom 0.15, stable ordering,
+  seed `0xf1e0000000000001`, **playback-only**. All four links report demand = accepted
+  **64 / 1 / 48 / 512**; omitted/rejected and source overflow are zero. Observed trail
+  evictions/truncation are zero. All 600 recorded simulation samples have zero coupled
+  checkpoint-capture bytes. F5 bench mode records fixed 60 Hz ticks to cover the full lifecycle
+  independent of render speed; interactive mode remains wall-clock driven. This finite shell /
+  idle-tail run is admission evidence, **not finale throughput certification**.
+- Review runner accepts `-Shell multi-break`. Three authored-floor camera cases / 24 PNGs
+  under `target/fireworks-f5/f5a-multi-break-review` pass native-backend, cohort and cleanup
+  checks. At frame 420, measured live particles, occupied/retired histories, evictions and
+  truncation are zero. Stills are separate from uninterrupted admission proof. Full viewer
+  tests (63 passed / three fixture exporters ignored), the full required-GPU stateful
+  conformance suite (28 passed, serial) and warnings-as-errors Clippy pass. Reproduction/limitations:
+  `benchmarks/fireworks/secondary-shell-2026-10-03.md`.
+
+F5 is **in progress**, not complete. F5B should validate bounded generic launch/main-break/
+secondary-break outputs through the existing host API: actual particle payloads, forward
+playback delivery and restart/seek epoch policy without duplicate host playback. Sound
+implementation remains host-owned. Crossette/crackle/strobe authoring, moving-footage and
+artistic approval, heavy overlapping/finale event load and target-tier resource gates remain
+open. Do not infer those from this intentionally bounded multi-break fixture.
 
 ---
 

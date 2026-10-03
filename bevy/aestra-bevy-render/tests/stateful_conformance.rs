@@ -3417,6 +3417,167 @@ fn advance_production_linked(
 }
 
 #[test]
+fn gpu_two_generation_death_chain_preserves_parent_positions_and_velocity() {
+    use aestra_core::{EventTrigger, VelocityDistribution};
+    use aestra_runtime::{CompiledEventLink, InputSpawnBurst, ParticleEvent};
+    let Some(harness) = require_harness() else {
+        return;
+    };
+    // One externally launched rocket, then 64 parents, then 8 sparks per
+    // parent. Only ordinary death events spawn the two subsequent generations.
+    let rocket = StatefulConfig {
+        gravity: [0.0, -9.0, 0.0],
+        spawn_per_tick: 0,
+        speed: (24.0, 24.0),
+        lifetime: (0.5, 0.5),
+        direction: [0.0, 1.0, 0.0],
+        spread: 0.0,
+        velocity_distribution: VelocityDistribution::LegacyCone,
+        drag: 0.0,
+        shape: SpawnShape::Point,
+        turbulence: 0.0,
+        placement: SpawnPlacement::IDENTITY,
+        colliders: [Collider::NONE; MAX_COLLIDERS],
+        collider_count: 0,
+        capacity: 1,
+        homing: None,
+    };
+    let configs = [
+        rocket,
+        StatefulConfig {
+            speed: (18.0, 22.0),
+            velocity_distribution: VelocityDistribution::Sphere,
+            drag: 0.45,
+            capacity: 64,
+            ..rocket
+        },
+        StatefulConfig {
+            speed: (3.0, 6.0),
+            lifetime: (1.0, 1.0),
+            velocity_distribution: VelocityDistribution::Sphere,
+            drag: 0.6,
+            capacity: 512,
+            ..rocket
+        },
+    ];
+    let links = [
+        CompiledEventLink {
+            source: 0,
+            trigger: EventTrigger::OnDeath,
+            target: 1,
+            count: 64,
+            inherit: 0.02,
+        },
+        CompiledEventLink {
+            source: 1,
+            trigger: EventTrigger::OnDeath,
+            target: 2,
+            count: 8,
+            inherit: 0.25,
+        },
+    ];
+    let bursts = [InputSpawnBurst {
+        tick: 0,
+        route: 0,
+        target: 0,
+        count: 1,
+        events: vec![ParticleEvent {
+            ordinal: 0,
+            position: [12.0, 4.0, -8.0],
+            velocity: [0.0; 3],
+        }],
+    }];
+    let seed = 0xf1e0_0000_0000_0001;
+    let ticks = 65;
+    let mut sims: Vec<_> = configs
+        .iter()
+        .enumerate()
+        .map(|(i, config)| {
+            StatefulSimulation::new(*config, seed ^ (i as u64).wrapping_mul(0x9E37_79B9))
+        })
+        .collect();
+    let mut deaths = [0; 2];
+    let mut parent_positions = Vec::new();
+    for tick in 0..ticks {
+        for sim in &mut sims {
+            sim.advance_tick();
+        }
+        for (i, link) in links.iter().enumerate() {
+            let events = sims[link.source].events(link.trigger).to_vec();
+            deaths[i] += events.len();
+            let before = sims[link.target].live_count();
+            sims[link.target].spawn_from_events(&events, link.count, link.inherit);
+            assert_eq!(
+                sims[link.target].live_count() - before,
+                events.len() * link.count as usize
+            );
+            if i == 1 && !events.is_empty() {
+                parent_positions.extend(events.iter().map(|event| event.position));
+                // At birth there is no integration yet; every child must be at
+                // one real parent's final position, not the authored origin.
+                for (_, position) in sims[2].alive_particles() {
+                    assert!(events.iter().any(|event| event.position == position));
+                }
+            }
+        }
+        for burst in bursts.iter().filter(|burst| burst.tick == u64::from(tick)) {
+            sims[burst.target].spawn_from_events(&burst.events, burst.count, 0.0);
+        }
+    }
+    assert_eq!(deaths, [1, 64]);
+    assert_eq!(parent_positions.len(), 64);
+    assert!(parent_positions.iter().any(|p| (p[0] - 12.0).abs() > 1.0));
+    assert!(parent_positions.iter().all(|p| p[1] > 4.0));
+    let gpu = advance_production_linked(&harness, &configs, &links, &bursts, &[], seed, ticks)
+        .unwrap()
+        .0;
+    assert_eq!(gpu.iter().map(Vec::len).collect::<Vec<_>>(), [0, 0, 512]);
+    for (sim, particles) in sims.iter().zip(&gpu) {
+        assert_same_particles(&sim.alive_particles(), particles);
+    }
+    // Death events are produced before routing: link declaration order must
+    // not delay a second-generation birth by a tick.
+    let reversed = [links[1], links[0]];
+    let reordered =
+        advance_production_linked(&harness, &configs, &reversed, &bursts, &[], seed, ticks)
+            .unwrap()
+            .0;
+    assert_same_particles(&gpu[2], &reordered[2]);
+    let mut no_inheritance = links;
+    no_inheritance[1].inherit = 0.0;
+    let independent = advance_production_linked(
+        &harness,
+        &configs,
+        &no_inheritance,
+        &bursts,
+        &[],
+        seed,
+        ticks,
+    )
+    .unwrap()
+    .0;
+    assert!(
+        gpu[2].iter().any(|(ordinal, position)| {
+            let other = independent[2]
+                .iter()
+                .find(|(id, _)| id == ordinal)
+                .unwrap()
+                .1;
+            position
+                .iter()
+                .zip(other)
+                .any(|(a, b)| (a - b).abs() > 0.01)
+        }),
+        "inherited parent velocity must change subsequent spark motion"
+    );
+    // No checkpoints/restarts/seeks anywhere in this helper's forward loop.
+    let finished = advance_production_linked(&harness, &configs, &links, &bursts, &[], seed, 180)
+        .unwrap()
+        .0;
+    assert!(finished.iter().all(Vec::is_empty));
+}
+
+#[test]
 fn gpu_event_links_spawn_sub_emitters_like_the_cpu_reference() {
     // A fountain bouncing on the ground feeds three sub-emitters: a splash per bounce (OnCollision,
     // two particles, inheriting some velocity), a puff per death (OnDeath, three, capped by a small

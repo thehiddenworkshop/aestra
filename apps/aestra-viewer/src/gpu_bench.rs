@@ -108,9 +108,7 @@ impl BenchPresentation {
                 Some(crate::FireworksProbe::Raster(probe)) => Some(probe.setup()),
                 _ => None,
             },
-            fixed_simulation_step_seconds: config
-                .raster_bench_step()
-                .map(|step| step.as_secs_f64()),
+            fixed_simulation_step_seconds: config.probe_bench_step().map(|step| step.as_secs_f64()),
             response: crate::photographic::CaptureResponse::new(
                 config.photographic,
                 config.sprite_minimum_pixels,

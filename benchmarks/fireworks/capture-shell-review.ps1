@@ -2,7 +2,7 @@
 # Capture evidence only: never automatically approve artistic/golden references.
 [CmdletBinding()]
 param(
-    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero')]
+    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Shell = @('peony', 'chrysanthemum', 'pistil', 'willow'),
     [ValidateSet('close', 'audience', 'wide')]
@@ -30,6 +30,8 @@ $cases = @(
             @(45, 80, 110, 150, 240, 330, 450, 540)
         } elseif ($shellName -eq 'reference-hero') {
             @(45, 80, 110, 150, 210, 270, 360, 480)
+        } elseif ($shellName -eq 'multi-break') {
+            @(45, 80, 110, 150, 180, 210, 270, 420)
         } else {
             @(45, 80, 110, 150, 210, 300, 390, 420)
         }
@@ -44,7 +46,7 @@ $cases = @(
                     response = $responseName
                     frames = $frames
                     arguments = @(
-                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } else { "f3-$shellName" }),
+                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -eq 'multi-break') { 'f5-multi-break' } else { "f3-$shellName" }),
                         '--camera', $cameraName, '--semantic-materials',
                         '--backend', 'gpu', '--history', 'playback-only',
                         '--tier', 'high', '--seed', '0xf1e0000000000001',
@@ -96,7 +98,7 @@ function Assert-Capture($case, $report, $directory) {
         }
     }
     $stars = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Main stars') })
-    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } else { 256 }
+    $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } else { 256 }
     if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne $mainCount) {
         throw "$($case.name): missing the expected $mainCount-star main cohort"
     }
@@ -112,6 +114,16 @@ function Assert-Capture($case, $report, $directory) {
             if ($cohort.Count -ne 1 -or $cohort[0].peak_particles -ne $expected[1]) {
                 throw "$($case.name): missing the expected $($expected[0]) cohort"
             }
+        }
+    }
+    if ($case.shell -eq 'multi-break') {
+        $secondary = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Secondary sparks') })
+        $smoke = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Burst smoke') })
+        # Staggered parent deaths and spark lifetimes need not give a peak of
+        # 512. Total admission is checked separately in uninterrupted playback.
+        if ($secondary.Count -ne 1 -or $secondary[0].peak_particles -le 0 -or
+            $secondary[0].peak_particles -gt 512 -or $smoke.Count -ne 1 -or $smoke[0].peak_particles -ne 48) {
+            throw "$($case.name): missing or over-budget secondary/smoke cohort"
         }
     }
     foreach ($file in @('contact-sheet.png', 'capture-manifest.md') + @($report.capture.frames.image)) {
@@ -135,7 +147,8 @@ try {
     $revision = (& git rev-parse HEAD)
     $dirty = @(& git status --porcelain)
     $sourcePaths = @('apps/aestra-viewer/src/main.rs', 'apps/aestra-viewer/src/fireworks_f3.rs',
-                     'apps/aestra-viewer/src/fireworks_f0.rs', 'apps/aestra-viewer/src/fireworks_hero.rs') +
+                     'apps/aestra-viewer/src/fireworks_f0.rs', 'apps/aestra-viewer/src/fireworks_hero.rs',
+                     'apps/aestra-viewer/src/fireworks_f5.rs') +
         @(Get-ChildItem assets/test/effects/fireworks_*.aestra.ron,
                        assets/test/materials/fireworks_*.aestra.material.ron | ForEach-Object FullName)
     $sourceHashes = @($sourcePaths | ForEach-Object {

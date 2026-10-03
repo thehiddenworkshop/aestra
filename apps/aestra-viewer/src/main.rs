@@ -1,6 +1,7 @@
 mod fireworks_f0;
 mod fireworks_f3;
 mod fireworks_f4;
+mod fireworks_f5;
 mod fireworks_hero;
 mod gpu_bench;
 mod photographic;
@@ -115,7 +116,7 @@ fn main() {
     let log_diagnostics = config.diagnostics;
     let asset_root = prepared.asset_root.to_string_lossy().into_owned();
     let gpu_bench_output = config.gpu_bench.clone();
-    let raster_bench_step = config.raster_bench_step();
+    let probe_bench_step = config.probe_bench_step();
     let gpu_bench_presentation = gpu_bench::BenchPresentation::from_config(&config);
     let history_policy = config.history_policy;
     let gpu_bench_effect = if config.fireworks_f0 {
@@ -131,6 +132,7 @@ fn main() {
             Some(FireworksProbe::Velocity(probe)) => probe.name(),
             Some(FireworksProbe::Shell(probe)) => probe.name(),
             Some(FireworksProbe::ReferenceHero) => "f4-reference-hero",
+            Some(FireworksProbe::MultiBreak) => "f5-multi-break",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -195,9 +197,9 @@ fn main() {
                 gpu_bench::drive_gpu_bench,
             ),
         );
-    if let Some(step) = raster_bench_step {
+    if let Some(step) = probe_bench_step {
         // Same live workload at the same simulation frame regardless of GPU/host speed.
-        // These are raster-cost probes, not real-time catch-up throughput benchmarks.
+        // Raster-cost and bounded event-chain probes, not real-time catch-up throughput benchmarks.
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step));
     }
     if let Some(capture) = capture {
@@ -292,6 +294,7 @@ enum FireworksProbe {
     Velocity(velocity_f2::Probe),
     Shell(fireworks_f3::Probe),
     ReferenceHero,
+    MultiBreak,
     Raster(fireworks_f4::Probe),
 }
 
@@ -307,6 +310,7 @@ impl FireworksProbe {
             "event-trail-volley" => Some(Self::EventTrailVolley),
             "event-trail-sparse" => Some(Self::EventTrailSparse),
             "f4-reference-hero" => Some(Self::ReferenceHero),
+            "f5-multi-break" => Some(Self::MultiBreak),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -370,9 +374,12 @@ impl CaptureMode {
 }
 
 impl ViewerConfig {
-    fn raster_bench_step(&self) -> Option<Duration> {
+    fn probe_bench_step(&self) -> Option<Duration> {
         (self.gpu_bench.is_some()
-            && matches!(self.fireworks_probe, Some(FireworksProbe::Raster(_))))
+            && matches!(
+                self.fireworks_probe,
+                Some(FireworksProbe::Raster(_) | FireworksProbe::MultiBreak)
+            ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
     }
 
@@ -414,10 +421,10 @@ impl ViewerConfig {
                 "--fireworks-f0" => fireworks_f0 = true,
                 "--fireworks-f0-probe" => {
                     let value = args.next().ok_or(
-                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3 shell or f4 raster probe",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell or f4 raster/hero probe",
                     )?;
                     fireworks_probe = Some(FireworksProbe::parse(&value).ok_or(
-                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3 shell or f4 raster probe",
+                        "--fireworks-f0-probe requires an event/trail, f2 distribution, f3/f5 shell or f4 raster/hero probe",
                     )?);
                 }
                 "--camera" => {
@@ -854,6 +861,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             Some(FireworksProbe::Velocity(probe)) => velocity_f2::effect(probe),
             Some(FireworksProbe::Shell(probe)) => fireworks_f3::effect(probe),
             Some(FireworksProbe::ReferenceHero) => fireworks_hero::effect(),
+            Some(FireworksProbe::MultiBreak) => fireworks_f5::effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -1000,7 +1008,10 @@ fn setup(
 
     if config.view_3d {
         let camera_transform = if config.fireworks_f0 {
-            if config.fireworks_probe == Some(FireworksProbe::ReferenceHero) {
+            if matches!(
+                config.fireworks_probe,
+                Some(FireworksProbe::ReferenceHero | FireworksProbe::MultiBreak)
+            ) {
                 fireworks_hero::camera(config.fireworks_camera)
             } else {
                 config.fireworks_camera.transform()
@@ -2107,7 +2118,7 @@ mod tests {
     }
 
     #[test]
-    fn only_raster_benchmarks_use_a_fixed_and_recorded_simulation_step() {
+    fn raster_benchmarks_use_a_fixed_and_recorded_simulation_step() {
         for probe in fireworks_f4::Probe::ALL {
             let mut config = ViewerConfig::from_iter(
                 [
@@ -2121,16 +2132,16 @@ mod tests {
                 .map(str::to_owned),
             )
             .unwrap();
-            let step = config.raster_bench_step().unwrap().as_secs_f64();
+            let step = config.probe_bench_step().unwrap().as_secs_f64();
             assert!((step - 1.0 / 60.0).abs() < 1e-9);
             let presentation =
                 serde_json::to_value(gpu_bench::BenchPresentation::from_config(&config)).unwrap();
             assert_eq!(presentation["fixed_simulation_step_seconds"], step);
             config.gpu_bench = None;
-            assert!(config.raster_bench_step().is_none());
+            assert!(config.probe_bench_step().is_none());
             config.gpu_bench = Some(PathBuf::from("unused-report.json"));
             config.fireworks_probe = Some(FireworksProbe::EventTrailVolley);
-            assert!(config.raster_bench_step().is_none());
+            assert!(config.probe_bench_step().is_none());
         }
     }
 

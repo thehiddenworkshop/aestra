@@ -82,6 +82,18 @@ The runner still defaults to the original four-shell/24-case matrix. Selecting
 whole-shell camera presets; their positions are not interchangeable with F0's baseline
 detail/distance cameras. See [reference choices and findings](reference-hero-2026-10-02.md).
 
+## F5A — secondary particle-driven shell
+
+The editable `fireworks_multi_break.aestra.ron` fixture uses two death-event generations:
+one rocket → 64 main stars → eight secondary sparks each. Use viewer probe `f5-multi-break`
+or the review runner's `-Shell multi-break`. The runner checks bounded observed cohorts and
+cleanup; total admitted work is verified separately in uninterrupted playback-only mode.
+F5 bench mode records fixed 60 Hz ticks to cover the seven-second lifecycle, not to certify
+real-time finale throughput. Interactive mode still uses wall-clock time.
+
+See [implementation, GPU admission evidence and reproduction](secondary-shell-2026-10-03.md).
+Host cues, other secondary-shell styles and artistic acceptance remain open.
+
 ## First measured baseline — 2026-09-29
 
 Worktree based on roadmap commit `3fa3805`, plus the uncommitted F0 fixture/viewer changes. The [machine-readable baseline](baseline-2026-09-29.json) records the run settings and values. Windows, NVIDIA GeForce RTX 4070 SUPER, Vulkan, driver reported as NVIDIA; 960 × 540, GPU backend, high tier, default seed `0xf1e0000000000001`, audience camera. The viewer reported a physical capacity of 4,194,240 particles and an effective configured budget of 262,144. The effect's compiled capacity is 6,208 particles. Three runs each used 120 warm-up and 600 measured frames; values below are milliseconds from the available GPU timestamp diagnostics:
