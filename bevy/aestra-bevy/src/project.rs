@@ -1,4 +1,4 @@
-use super::{EffectPlayer, EffectRenderMode, PresentedEffect};
+use super::{EffectOutputContext, EffectPlayer, EffectRenderMode, PresentedEffect};
 use aestra_core::EffectClipId;
 use aestra_runtime::ScheduledEffectInstance;
 use bevy::{camera::visibility::RenderLayers, prelude::*};
@@ -31,6 +31,13 @@ fn configure(
         .set_inherited_host_transform(scheduled.inherited.clone());
     presented.instance.set_playback_time(scheduled.time);
     presented.set_render_mode(mode);
+}
+
+fn output_boundary(scheduled: &ScheduledEffectInstance, player: &EffectPlayer) -> f32 {
+    scheduled
+        .source_start_time
+        .max(player.instance().history_epoch_start_time() - scheduled.inherited.root_time_at(0.0))
+        .max(0.0)
 }
 
 pub(super) fn sync_project_instances(
@@ -79,13 +86,14 @@ pub(super) fn sync_project_instances(
             commands.entity(entity).despawn();
             continue;
         }
+        let discontinuity = child.epoch != player.instance().history_epoch()
+            || child.revision != player.instance().history_revision();
         if child.revision != player.instance().history_revision() {
             presented.instance.invalidate_history();
-        } else if child.epoch != player.instance().history_epoch() {
-            presented.instance.mark_history_discontinuity();
         }
         child.epoch = player.instance().history_epoch();
         child.revision = player.instance().history_revision();
+        let old_epoch = presented.instance.history_epoch();
         if child.overrides != scheduled.parameter_overrides {
             for old in &child.overrides {
                 let _ = presented.instance.clear_parameter(old.source);
@@ -101,6 +109,23 @@ pub(super) fn sync_project_instances(
             player.render_mode(),
             player.history_policy(),
         );
+        if discontinuity {
+            // Configure first: a forward seek's suppression boundary is the new
+            // source time, not the previously presented child's time.
+            presented
+                .instance
+                .mark_history_discontinuity_at(scheduled.time);
+        } else if old_epoch != presented.instance.history_epoch() {
+            // A new occurrence can reconstruct while the root keeps advancing.
+            presented
+                .instance
+                .mark_history_discontinuity_at(output_boundary(scheduled, player));
+        }
+        commands.entity(entity).insert(EffectOutputContext {
+            root: child.root,
+            clip_path: child.path.clone(),
+            playback_epoch: child.epoch,
+        });
         if layers != desired_layers.as_ref() {
             if let Some(layers) = desired_layers {
                 commands.entity(entity).insert(layers.clone());
@@ -121,10 +146,21 @@ pub(super) fn sync_project_instances(
             player.render_mode(),
             player.history_policy(),
         );
+        // A child first created inside a seek must not announce reconstructed
+        // events. Normal entry also silences authored source-offset preroll.
+        let boundary = output_boundary(&scheduled, player);
+        if boundary > 0.0 {
+            presented.instance.mark_history_discontinuity_at(boundary);
+        }
         let mut entity = commands.spawn((
             ChildOf(root),
             Transform::IDENTITY,
             Visibility::Inherited,
+            EffectOutputContext {
+                root,
+                clip_path: path.clone(),
+                playback_epoch: player.instance().history_epoch(),
+            },
             EffectClipInstance {
                 root,
                 path,
@@ -208,6 +244,58 @@ mod tests {
     }
 
     #[test]
+    fn normal_clip_entry_silences_ancestor_preroll_but_not_future_live_cues() {
+        let project = fixture();
+        let mut app = App::new();
+        app.add_systems(Update, sync_project_instances);
+        let mut player = EffectPlayer::from_project(project.clone());
+        player.playing = false;
+        let root = app.world_mut().spawn(player).id();
+        app.update();
+        assert!(snapshots(&mut app, root).is_empty());
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .advance_clock(0.5);
+        app.update();
+        let initial = snapshots(&mut app, root);
+        let scheduled = project.instances(0.5, 0);
+        assert_eq!(initial.len(), 2);
+        for (_, path, instance) in &initial {
+            let source = scheduled.iter().find(|s| s.path == *path).unwrap();
+            assert_eq!(
+                instance.history_epoch_start_time(),
+                source.source_start_time
+            );
+            assert_eq!(source.time, source.source_start_time);
+        }
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .advance_clock(0.1);
+        app.update();
+        for (entity, _, old) in initial {
+            let now = &app.world().get::<PresentedEffect>(entity).unwrap().instance;
+            assert_eq!(
+                now.history_epoch_start_time(),
+                old.history_epoch_start_time()
+            );
+            assert_eq!(now.history_epoch(), old.history_epoch());
+            assert!(now.time() > now.history_epoch_start_time());
+        }
+        // Forward seek with surviving entities must suppress through the new
+        // source time, not the old time or the original source-offset boundary.
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .seek_simulation_time(2.0);
+        app.update();
+        for (_, _, instance) in snapshots(&mut app, root) {
+            assert_eq!(instance.history_epoch_start_time(), instance.time());
+        }
+    }
+
+    #[test]
     fn nested_children_follow_one_clock_seek_seed_and_parameter_contract() {
         let project = fixture();
         let mut app = App::new();
@@ -250,7 +338,7 @@ mod tests {
                         Some(&RuntimeValue::Scalar(20.0))
                     );
                 }
-                if let Some(old) = previous.insert(path, entity) {
+                if let Some(old) = previous.insert(path.clone(), entity) {
                     assert_eq!(old, entity, "seeks must reuse presentations");
                 }
                 assert_eq!(app.world().get::<ChildOf>(entity).unwrap().parent(), root);
@@ -267,6 +355,20 @@ mod tests {
                 );
                 assert!(app.world().get::<EffectPlayer>(entity).is_none());
                 let epoch = instance.history_epoch();
+                assert_eq!(instance.history_epoch_start_time(), scheduled.time);
+                assert_eq!(
+                    app.world().get::<EffectOutputContext>(entity).unwrap(),
+                    &EffectOutputContext {
+                        root,
+                        clip_path: path.clone(),
+                        playback_epoch: app
+                            .world()
+                            .get::<EffectPlayer>(root)
+                            .unwrap()
+                            .instance()
+                            .history_epoch()
+                    }
+                );
                 let revision = instance.history_revision();
                 app.update();
                 let paused = &app.world().get::<PresentedEffect>(entity).unwrap().instance;

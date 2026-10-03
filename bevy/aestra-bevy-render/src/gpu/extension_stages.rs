@@ -113,7 +113,7 @@ impl AestraEffectOutputs {
 /// `aestra_runtime::EVENT_IMPACT` and its siblings.
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct AestraOutputEvent {
-    /// The effect that raised it: the root player for a cue of a nested clip.
+    /// Root player for nested timeline cues and native particle outputs.
     pub effect: Entity,
     /// Empty for the root; otherwise the clips from the root to the effect that raised it.
     pub clip_path: Vec<aestra_core::EffectClipId>,
@@ -121,6 +121,9 @@ pub struct AestraOutputEvent {
     /// reject queued events after their player starts a different history epoch.
     /// `None` means an unqualified legacy/stage output, not epoch zero.
     pub playback_epoch: Option<u32>,
+    /// Spatial and source context for native particle routes only. Other output
+    /// payloads retain their own semantics (e.g. a homing target is already world-space).
+    pub particle: Option<ParticleOutputContext>,
     pub event: aestra_runtime::EffectOutputEvent,
 }
 
@@ -131,6 +134,7 @@ impl AestraOutputEvent {
             effect,
             clip_path: Vec::new(),
             playback_epoch: None,
+            particle: None,
             event,
         }
     }

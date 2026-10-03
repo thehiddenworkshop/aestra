@@ -62,8 +62,9 @@ shell; F5B validates particle-driven host cues and seek/restart delivery epochs;
 bounded delayed-carrier crackle and four-arm crossette; F5E adds independently phased
 strobe stars with exact off intervals. F5F adds explicit tier-specific secondary-shell
 budgets and measured overlapping forward playback. F6A adds a bounded 26-second reusable
-show with per-clip admission/cleanup reporting across all three tiers. Next is nested
-spatial host-cue validation (F6B)**, not
+show with per-clip admission/cleanup reporting across all three tiers. F6B validates
+nested spatial particle cues at all three tiers, including seek/restart suppression**.
+The next engine milestone is F7's generic transient-light outputs, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3173,13 +3174,44 @@ The show should feed requirements back into Aestra's timeline UX.
 
 Evidence and reproduction: `benchmarks/fireworks/show-composition-2026-10-03.md`.
 
-**Next — F6B: nested spatial host-cue acceptance.** Exercise real launch/break/secondary
-outputs from repeated, transformed clips through the generic host stream: root and stable
-clip identity, distinct inherited seeds, event positions under clip + root placement,
-epochs/restart/seek suppression and bounded delivery without duplicate or missing cues.
-This validates the API needed by the flagship host; audio files/playback, skybox, scene
-lighting and host choreography integration remain host-owned. Manual editor authoring and
-artistic acceptance remain separate F6 gates.
+### F6B implemented — nested spatial particle host cues (2026-10-03)
+
+- Native particle messages now identify the **root player + stable clip path + root
+  playback epoch**, not a transient child entity/private GPU epoch. The child GPU record
+  is still validated before routing. Typed `ParticleOutputContext` adds source effect ID,
+  inherited seed, root-clock occurrence time and optional world position; existing local
+  XYZ payloads and source ticks are unchanged. No fireworks-specific runtime concept or
+  audio dependency was added.
+- World positions compose full affine clip/ancestor/leaf authored transforms at the
+  **event tick**, including nonuniform scale/shear. ECS root placement is sampled at
+  **delivery time**, not from recorded pose history. Missing/nonfinite positions remain
+  unavailable. Historical moving-ECS-root placement and velocity packets remain open;
+  this is not the full lossless/per-particle contract described in section 19.
+- Fixed the suppression boundary for surviving children on a forward seek and children
+  newly created inside a seek. Source-offset/ancestor preroll is silent; normal live
+  advancement preserves epochs/boundaries. Unit coverage includes two levels of ancestry,
+  historical motion, independent root placement, source offsets, forward/backward seeks,
+  stale epochs, duplicate reads and invalid/missing spatial metadata.
+- Added ordinary `launch`/`main_break` routes to the strobe source and its fixture builder.
+  Material flashes remain appearance, not one sound event per flash. All **13** show
+  clips now export their actual launch and main break, rather than certifying only the
+  11 previously audible clips.
+- Native RTX 4070 SUPER/Vulkan checks at **high/medium/low**, fixed 60 Hz and
+  `PlaybackOnly`, run full forward playback, an 18-second seek and a restart. Every full
+  pass receives 13 launches + 13 main breaks, plus respectively **704/352/176** secondary
+  particle transitions. Resumed streams receive exactly the original cues strictly after
+  the seek boundary (**193/97/49** total transitions, including the remaining main break).
+  Restarted streams match original clip/seed/kind/tick/count/local/world position, with
+  three distinct root epochs and no duplicates or missing selected cues. Clip presentations
+  are gone after the quiet tail. This certifies bounded FirstPerTick delivery on this setup,
+  not arbitrary readback stalls or performance/finale scale.
+
+Evidence/reproduction: `benchmarks/fireworks/spatial-host-cues-2026-10-03.md`.
+
+**Next engine work: F7 — generic transient-light output semantics and a bounded Bevy
+adapter.** Audio playback/mixing/assets, skybox and host scene/choreography integration
+remain host-owned. Manual editor authoring and artistic acceptance remain separate open
+F6 gates; F6 is not marked production/AAA-complete by this API check.
 
 ---
 

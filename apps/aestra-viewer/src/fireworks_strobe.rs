@@ -201,6 +201,21 @@ mod tests {
             link.inherit_velocity = 0.02;
             shell.events.push(link);
         }
+        shell.event_outputs.clear();
+        shell.particle_outputs.clear();
+        for (i, name, trigger) in [
+            (0, "launch", EventTrigger::OnSpawn),
+            (1, "main_break", EventTrigger::OnDeath),
+        ] {
+            let mut definition = aestra_bevy::EventDefinition::new(name);
+            definition.id = aestra_bevy::EventDefinitionId::from_u128(BASE + 900 + i);
+            let mut route =
+                aestra_bevy::ParticleOutputRoute::new(shell.emitters[0].id, trigger, definition.id);
+            route.id = aestra_bevy::EventRouteId::from_u128(BASE + 910 + i);
+            route.aggregation = aestra_bevy::EventAggregation::FirstPerTick;
+            shell.event_outputs.push(definition);
+            shell.particle_outputs.push(route);
+        }
         shell.metadata.insert("status".into(), "F5E bounded per-particle strobe prototype; artistic and finale-scale acceptance pending".into());
         shell.metadata.insert("notes".into(), "192 sprite-only stars, 3 seconds, 18 cycles per life (6 Hz), 18% duty. Stable ParticleRandom phase and generic Periodic Gate WESL function gate RGB and alpha; exact off intervals, no luminous trails or host timers. Unlit smoke. Normalized-age timing means lifetime edits change Hertz. Flashes are appearance, not sound event triggers.".into());
         super::super::fireworks_budgets::author_profiles(&mut shell);

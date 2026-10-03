@@ -198,6 +198,16 @@
             exposed: true,
         ),
     ],
+    event_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb384",
+            name: "launch",
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb385",
+            name: "main_break",
+        ),
+    ],
     emitters: [
         (
             id: "a3574a00-0000-4000-8000-0000000fb064",
@@ -999,6 +1009,22 @@
             },
         ),
     },
+    particle_outputs: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb38e",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnSpawn,
+            output: "a3574a00-0000-4000-8000-0000000fb384",
+            aggregation: FirstPerTick,
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-0000000fb38f",
+            source: "a3574a00-0000-4000-8000-0000000fb064",
+            trigger: OnDeath,
+            output: "a3574a00-0000-4000-8000-0000000fb385",
+            aggregation: FirstPerTick,
+        ),
+    ],
     metadata: {
         "notes": "192 sprite-only stars, 3 seconds, 18 cycles per life (6 Hz), 18% duty. Stable ParticleRandom phase and generic Periodic Gate WESL function gate RGB and alpha; exact off intervals, no luminous trails or host timers. Unlit smoke. Normalized-age timing means lifetime edits change Hertz. Flashes are appearance, not sound event triggers.",
         "preview_seed": "17428930557923819521",

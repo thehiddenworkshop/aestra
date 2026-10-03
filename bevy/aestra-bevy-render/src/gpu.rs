@@ -4,6 +4,7 @@ mod bounds;
 mod extension_stages;
 mod geometry_statistics;
 mod mesh_inputs;
+mod output_context;
 mod paged_trails;
 mod particle_outputs;
 mod particle_statistics;
@@ -82,6 +83,7 @@ pub use extension_stages::{
 };
 pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
 // AestraCatchupPacing is defined below, beside the pacer it configures.
+pub use output_context::{EffectOutputContext, ParticleOutputContext};
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
 pub use simulation_timing::{GpuSimulationFrame, GpuSimulationTiming, GpuSimulationWork};
@@ -2319,14 +2321,19 @@ fn event_link_counter_base(dispatches: &[StatefulDispatch]) -> Option<u32> {
 fn receive_homing_arrivals(
     event: On<ReadbackComplete>,
     mut readbacks: Query<&mut GpuArrivalReadback>,
-    effects: Query<(&GpuEffectBuffers, &PresentedEffect)>,
+    effects: Query<(
+        &GpuEffectBuffers,
+        &PresentedEffect,
+        Option<&EffectOutputContext>,
+        Option<&GlobalTransform>,
+    )>,
     mut link_statistics: Query<&mut GpuEventLinkStatistics>,
     mut events: MessageWriter<AestraOutputEvent>,
 ) {
     let Ok(mut readback) = readbacks.get_mut(event.event_target()) else {
         return;
     };
-    let Ok((gpu, presented)) = effects.get(readback.effect) else {
+    let Ok((gpu, presented, context, placement)) = effects.get(readback.effect) else {
         return;
     };
     let words: Vec<u32> = event.to_shader_type();
@@ -2460,7 +2467,9 @@ fn receive_homing_arrivals(
             aestra_runtime::trace_tick(presented.instance.history_epoch_start_time()),
         ) {
             for event in route.raise(record.count, &record.first, record.tick) {
-                events.write(AestraOutputEvent::root(effect, event).in_epoch(record.epoch));
+                events.write(output_context::particle_event(
+                    effect, presented, context, placement, event,
+                ));
             }
         }
     }

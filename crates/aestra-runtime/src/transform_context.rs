@@ -18,6 +18,12 @@ struct Ancestor {
 pub struct InheritedHostTransform(Vec<Ancestor>);
 
 impl InheritedHostTransform {
+    /// Map a leaf simulation time to the root clock of this clip occurrence.
+    /// Uses authored clock offsets, not rounded observation/readback times.
+    pub fn root_time_at(&self, time: f32) -> f32 {
+        time + self.0.first().map_or(0.0, |ancestor| ancestor.time_offset)
+    }
+
     /// Append a child placement and map its historical clock back to its parent.
     /// Obtain the offset from `CompiledEffectClip::map_instance_time` for the
     /// current clip occurrence, not by subtracting rounded per-frame clocks.
@@ -125,6 +131,7 @@ mod tests {
             inherited: Arc::new(inherited),
         };
         for t in [0.0, 0.25, 1.0, 4.0, 0.25] {
+            assert_eq!(context.inherited.root_time_at(t), t + 1.5);
             let expected = matrix(root.sample(t + 1.5))
                 * matrix(a)
                 * matrix(parent.sample(t - 0.5))

@@ -123,13 +123,36 @@ destination; forward live ticks resume delivery. Restart starts a fresh epoch an
 new launch/break cues. Checkpoint restore restores simulation, not an old delivery identity.
 Old/out-of-order GPU ring readbacks cannot replay already-delivered route ticks. Legacy
 homing/finished/stage outputs remain `None`: they are **unqualified**, not epoch zero, and
-must not be assumed to have this delivery guarantee. Nested spatial-audio routing is not
-certified by the root fixture check.
+must not be assumed to have this delivery guarantee.
+
+Project particle cues now address the **root player**, with a stable `clip_path` and the
+root player's epoch, not a temporary child entity or its private GPU epoch. `particle`
+contains the source effect ID, inherited seed, mapped root time and optional world position.
+`event.origin` identifies the source emitter; `event.tick` is still its source-local tick.
+Reject stale epochs against the root player, even if the child presentation no longer exists.
+FirstPerTick identity within a fixed source program is root + epoch + clip path + emitter +
+output kind + tick; it is not an identity for every particle in an EachEvent batch.
+
+For spatial sound use `output.particle.as_ref().and_then(|p| p.world_position)`, rather than
+applying the current clip transform to `event.value` again. Authored ancestor/leaf motion
+and clip placement are sampled at the event tick with full affine matrices (including
+nonuniform scale/shear). The ECS root's `GlobalTransform` is sampled at **delivery time**:
+arbitrarily moving host placement is not a recorded historical pose. Missing placement or
+nonfinite position yields `None`, not `[0, 0, 0]`. Velocity is not supplied by this packet.
+Source-offset preroll and a newly created child inside a seek are silent through their entry
+boundary; existing children silence reconstruction through the new source time on seek.
+Normal live advancement preserves the delivery epoch/boundary.
+
+The native `f6-show --fireworks-cue-check <fresh.json>` checker exercises repeated and
+transformed clips under a nonidentity static root placement, restart and an 18-second seek.
+It binds all shell launches/breaks and selected secondary transitions to host sound names,
+but plays no audio. Legacy child `finished`, homing and extension-stage notifications retain
+their previous entity/payload semantics; they are not certified by this particle-route gate.
 
 `FirstPerTick` coalesces one packet per route/tick: `event.value` is the representative
 particle's **effect-local position** (three floats), `event.magnitude` is the matching source
-particle count, and `event.tick` is the simulation tick. Apply host placement before spatial
-audio; choose voices, delays, pooling and mixing in the host. It is not one packet per child
+particle count, and `event.tick` is the simulation tick. Choose spatial voices, delays,
+pooling and mixing in the host. It is not one packet per child
 spawn or one voice per spark. `EachEvent` has different packet/count semantics. GPU messages
 arrive asynchronously; ticks identify occurrence time, not arrival-frame time.
 

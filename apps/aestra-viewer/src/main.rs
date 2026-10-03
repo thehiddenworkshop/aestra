@@ -6,6 +6,7 @@ mod fireworks_f4;
 mod fireworks_f5;
 mod fireworks_hero;
 mod fireworks_show;
+mod fireworks_spatial_cues;
 mod fireworks_strobe;
 mod gpu_bench;
 mod photographic;
@@ -73,7 +74,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
-        eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host output delivery for the first three with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
+        eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
@@ -127,6 +128,8 @@ fn main() {
     // The supported single-shell cue probes all use their first link for the
     // main cohort. The selected tier, not a high-only constant, sets demand.
     let cue_parent_count = prepared.compiled.event_links.first().map_or(0, |l| l.count);
+    let cue_project = prepared.project.clone();
+    let cue_seed = config.resolved_seed();
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -229,16 +232,29 @@ fn main() {
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step));
     }
     if let Some(path) = fireworks_cue_check {
-        let check = fireworks_cues::Check::new(path, cue_parent_count);
-        app.insert_resource(match cue_probe {
-            Some(FireworksProbe::Crackle) => check.with_crackle(),
-            Some(FireworksProbe::Crossette) => check.with_crossette(),
-            _ => check,
-        })
-        .add_systems(
-            Update,
-            fireworks_cues::drive.before(aestra_bevy::AestraSet::Playback),
-        );
+        if cue_probe == Some(FireworksProbe::Show) {
+            app.insert_resource(fireworks_spatial_cues::Check::new(
+                path,
+                cue_project,
+                cue_seed,
+            ))
+            .insert_resource(aestra_bevy::gpu::AestraCatchupPacing { paced: false })
+            .add_systems(
+                Update,
+                fireworks_spatial_cues::drive.before(aestra_bevy::AestraSet::Playback),
+            );
+        } else {
+            let check = fireworks_cues::Check::new(path, cue_parent_count);
+            app.insert_resource(match cue_probe {
+                Some(FireworksProbe::Crackle) => check.with_crackle(),
+                Some(FireworksProbe::Crossette) => check.with_crossette(),
+                _ => check,
+            })
+            .add_systems(
+                Update,
+                fireworks_cues::drive.before(aestra_bevy::AestraSet::Playback),
+            );
+        }
     }
     if let Some(capture) = capture {
         app.insert_resource(capture)
@@ -722,6 +738,7 @@ impl ViewerConfig {
                     FireworksProbe::MultiBreak
                         | FireworksProbe::Crackle
                         | FireworksProbe::Crossette
+                        | FireworksProbe::Show
                 )
             ) || !fireworks_f0
                 || gpu_bench.is_some()
@@ -729,7 +746,7 @@ impl ViewerConfig {
                 || history_policy != aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly
                 || presentation != PresentationMode::Gpu
             {
-                return Err("--fireworks-cue-check requires f5-multi-break, f5-crackle or f5-crossette, --backend gpu and --history playback-only, without capture/benchmark modes".into());
+                return Err("--fireworks-cue-check requires f5-multi-break, f5-crackle, f5-crossette or f6-show, --backend gpu and --history playback-only, without capture/benchmark modes".into());
             }
             if path.exists() {
                 return Err("--fireworks-cue-check requires a fresh report path".into());
@@ -1140,6 +1157,10 @@ fn setup(
         }
     }
     let mut effect = commands.spawn((player, presentation));
+    if config.fireworks_cue_check.is_some() && config.fireworks_probe == Some(FireworksProbe::Show)
+    {
+        effect.insert(fireworks_spatial_cues::placement());
+    }
     if let Some(FireworksProbe::Raster(probe)) = config.fireworks_probe {
         effect.insert(fireworks_f4::placement(probe, config.fireworks_camera));
     }

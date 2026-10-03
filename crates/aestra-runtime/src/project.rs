@@ -12,6 +12,10 @@ pub struct ScheduledEffectInstance {
     pub path: Vec<EffectClipId>,
     pub effect: Arc<CompiledEffect>,
     pub time: f32,
+    /// Earliest visible source time, including ancestor clip entry; earlier
+    /// simulation is silent preroll.
+    /// Zero for the root presentation.
+    pub source_start_time: f32,
     pub seed: u64,
     pub inherited: Arc<InheritedHostTransform>,
     pub parameter_overrides: Vec<CompiledParameterOverride>,
@@ -295,6 +299,7 @@ impl CompiledEffectProject {
             path: vec![],
             effect: self.root.clone(),
             time,
+            source_start_time: 0.0,
             seed,
             inherited: root_context.inherited,
             parameter_overrides: vec![],
@@ -331,6 +336,7 @@ impl CompiledEffectProject {
                     path,
                     effect: child.clone(),
                     time,
+                    source_start_time: clip.source_offset.max(parent.source_start_time - offset),
                     seed: clip.seed.resolve(parent.seed, clip.source_clip),
                     inherited: Arc::new(parent.inherited.for_child(
                         motion.clone(),
