@@ -22,6 +22,158 @@ fn test_effect() -> EffectAsset {
 }
 
 #[test]
+fn particle_budget_profiles_edit_delete_and_undo_without_stale_targets() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let profiles = BTreeMap::from([(
+        "low".into(),
+        aestra_core::ParticleBudgetProfile {
+            emitter_capacity: BTreeMap::from([(emitter, 8)]),
+            ..Default::default()
+        },
+    )]);
+    let outcome = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single("Budget", EffectCommand::SetParticleBudgets { profiles }),
+    )
+    .unwrap();
+    assert!(
+        outcome
+            .diff
+            .changes
+            .iter()
+            .any(|c| c.path == "effect.particle_budgets")
+    );
+    let original = effect.clone();
+    let deletion = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single("Delete", EffectCommand::RemoveEmitter { id: emitter }),
+    )
+    .unwrap();
+    assert!(effect.particle_budgets["low"].emitter_capacity.is_empty());
+    CommandExecutor::execute(&mut effect, &LockState::default(), &deletion.inverse).unwrap();
+    assert_eq!(effect, original);
+    CommandExecutor::execute(&mut effect, &LockState::default(), &outcome.inverse).unwrap();
+    assert!(effect.particle_budgets.is_empty());
+    let combined = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::new(
+            "Budget then delete",
+            vec![
+                EffectCommand::SetParticleBudgets {
+                    profiles: original.particle_budgets.clone(),
+                },
+                EffectCommand::RemoveEmitter { id: emitter },
+            ],
+        ),
+    )
+    .unwrap();
+    CommandExecutor::execute(&mut effect, &LockState::default(), &combined.inverse).unwrap();
+    assert!(effect.particle_budgets.is_empty());
+    assert_eq!(effect.emitters, original.emitters);
+    let invalid = BTreeMap::from([(
+        "low".into(),
+        aestra_core::ParticleBudgetProfile {
+            emitter_capacity: BTreeMap::from([(aestra_core::EmitterId::new(), 8)]),
+            ..Default::default()
+        },
+    )]);
+    assert!(
+        CommandExecutor::execute(
+            &mut effect,
+            &LockState::default(),
+            &EffectTransaction::single(
+                "Invalid",
+                EffectCommand::SetParticleBudgets { profiles: invalid }
+            )
+        )
+        .is_err()
+    );
+    assert!(effect.particle_budgets.is_empty());
+}
+
+#[test]
+fn particle_budget_event_and_trail_deletions_restore_all_profiles_on_undo() {
+    let mut effect = test_effect();
+    let parent = effect.emitters[0].id;
+    effect.emitters.push(Emitter::basic_sprite("Child", 2.0));
+    let child = effect.emitters[1].id;
+    let renderer = effect.emitters[1].renderers[0].id;
+    effect.emitters[1].renderers[0].renderer_type =
+        aestra_core::RendererTypeId::new(aestra_core::RENDERER_TRAIL);
+    effect.emitters[1].renderers[0].properties = aestra_core::RendererProperties::Trail {
+        max_points: 32,
+        max_trails: 64,
+        width: 0.1,
+        lifetime: 0.5,
+        sample_interval: 1.0 / 30.0,
+        sampling: Default::default(),
+        sample_distance: 0.01,
+        curve_tolerance: 0.01,
+        uv_mode: Default::default(),
+        tile_length: 1.0,
+        end_cap: Default::default(),
+    };
+    let mut link = EventLink::new(parent, EventTrigger::OnDeath, child);
+    link.count = 8;
+    let event = link.id;
+    effect.events.push(link);
+    effect.particle_budgets.insert(
+        "low".into(),
+        aestra_core::ParticleBudgetProfile {
+            emitter_capacity: BTreeMap::from([(child, 8)]),
+            event_count: BTreeMap::from([(event, 2)]),
+            trail_capacity: BTreeMap::from([(renderer, 8)]),
+        },
+    );
+    let original = effect.clone();
+    let deletion = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::new(
+            "Delete linked history",
+            vec![
+                EffectCommand::RemoveEvent { id: event },
+                EffectCommand::RemoveRenderer {
+                    emitter: child,
+                    renderer,
+                },
+            ],
+        ),
+    )
+    .unwrap();
+    assert!(effect.particle_budgets["low"].event_count.is_empty());
+    assert!(effect.particle_budgets["low"].trail_capacity.is_empty());
+    CommandExecutor::execute(&mut effect, &LockState::default(), &deletion.inverse).unwrap();
+    assert_eq!(effect, original);
+
+    // A new wrong-kind reference to an existing Sprite is an invalid edit,
+    // not a former Trail that deletion/type replacement should prune.
+    let invalid = BTreeMap::from([(
+        "low".into(),
+        aestra_core::ParticleBudgetProfile {
+            trail_capacity: BTreeMap::from([(effect.emitters[0].renderers[0].id, 1)]),
+            ..Default::default()
+        },
+    )]);
+    assert!(
+        CommandExecutor::execute(
+            &mut effect,
+            &LockState::default(),
+            &EffectTransaction::single(
+                "Wrong-kind budget",
+                EffectCommand::SetParticleBudgets { profiles: invalid }
+            )
+        )
+        .is_err()
+    );
+    assert_eq!(effect, original);
+}
+
+#[test]
 fn velocity_distribution_edits_validate_and_undo_atomically() {
     let mut effect = test_effect();
     let emitter = effect.emitters[0].id;

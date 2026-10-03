@@ -109,6 +109,14 @@ impl CommandExecutor {
             inverse_commands = command_inverse;
         }
 
+        let old_profiles = working.particle_budgets.clone();
+        working.prune_particle_budget_targets(&before);
+        if working.particle_budgets != old_profiles {
+            // Restore only after inverse commands have restored the targets.
+            inverse_commands.push(EffectCommand::SetParticleBudgets {
+                profiles: before.particle_budgets.clone(),
+            });
+        }
         let mut report = working.validation_report();
         report.diagnostics.retain(|diagnostic| {
             !matches!(
@@ -134,6 +142,10 @@ fn apply_command(
     command: &EffectCommand,
 ) -> Result<Vec<EffectCommand>, CommandError> {
     let inverse = match command {
+        EffectCommand::SetParticleBudgets { profiles } => {
+            let previous = std::mem::replace(&mut effect.particle_budgets, profiles.clone());
+            vec![EffectCommand::SetParticleBudgets { profiles: previous }]
+        }
         EffectCommand::SetEffectName { name } => {
             let previous = std::mem::replace(&mut effect.name, name.clone());
             vec![EffectCommand::SetEffectName { name: previous }]

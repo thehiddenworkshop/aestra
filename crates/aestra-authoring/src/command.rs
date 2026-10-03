@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EffectCommand {
+    SetParticleBudgets {
+        profiles: std::collections::BTreeMap<String, aestra_core::ParticleBudgetProfile>,
+    },
     SetEffectName {
         name: String,
     },

@@ -2,7 +2,7 @@
 # Capture evidence only: never automatically approve artistic/golden references.
 [CmdletBinding()]
 param(
-    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break', 'crackle', 'crossette', 'strobe')]
+    [ValidateSet('peony', 'chrysanthemum', 'pistil', 'willow', 'reference-hero', 'multi-break', 'crackle', 'crossette', 'strobe', 'secondary-volley')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Shell = @('peony', 'chrysanthemum', 'pistil', 'willow'),
     [ValidateSet('close', 'audience', 'wide')]
@@ -11,6 +11,8 @@ param(
     [ValidateSet('authored', 'sampled')]
     [ValidateNotNullOrEmpty()]
     [string[]]$Response = @('authored', 'sampled'),
+    [ValidateSet('high', 'medium', 'low')]
+    [string]$Tier = 'high',
     [string]$OutputDirectory,
     [switch]$PlanOnly
 )
@@ -38,6 +40,8 @@ $cases = @(
             @(45, 80, 110, 130, 145, 165, 210, 420)
         } elseif ($shellName -eq 'strobe') {
             @(45, 80, 110, 111, 112, 150, 210, 420)
+        } elseif ($shellName -eq 'secondary-volley') {
+            @(45, 80, 110, 130, 160, 210, 300, 540)
         } else {
             @(45, 80, 110, 150, 210, 300, 390, 420)
         }
@@ -45,17 +49,19 @@ $cases = @(
             foreach ($responseName in ($Response | Select-Object -Unique)) {
                 $floor = if ($responseName -eq 'sampled') { 2 } else { 0 }
                 $name = "$shellName-$cameraName-$responseName"
+                if ($Tier -ne 'high') { $name += "-$Tier" }
                 [pscustomobject]@{
                     name = $name
                     shell = $shellName
                     camera = $cameraName
                     response = $responseName
+                    tier = $Tier
                     frames = $frames
                     arguments = @(
-                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -in @('multi-break', 'crackle', 'crossette', 'strobe')) { "f5-$shellName" } else { "f3-$shellName" }),
+                        '--fireworks-f0', '--fireworks-f0-probe', $(if ($shellName -eq 'reference-hero') { 'f4-reference-hero' } elseif ($shellName -in @('multi-break', 'crackle', 'crossette', 'strobe', 'secondary-volley')) { "f5-$shellName" } else { "f3-$shellName" }),
                         '--camera', $cameraName, '--semantic-materials',
                         '--backend', 'gpu', '--history', 'playback-only',
-                        '--tier', 'high', '--seed', '0xf1e0000000000001',
+                        '--tier', $Tier, '--seed', '0xf1e0000000000001',
                         '--stable-transparency', '--hdr', '--exposure', '0',
                         '--tonemapping', 'tony', '--bloom', '0.15',
                         '--sprite-min-pixels', "$floor", '--trail-min-pixels', "$floor",
@@ -104,7 +110,11 @@ function Assert-Capture($case, $report, $directory) {
         }
     }
     $stars = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Main stars') })
+    $divisor = if ($case.tier -eq 'medium') { 2 } elseif ($case.tier -eq 'low') { 4 } else { 1 }
+    $multiFanout = if ($case.tier -eq 'medium') { 6 } elseif ($case.tier -eq 'low') { 4 } else { 8 }
+    $crackleFanout = if ($case.tier -eq 'medium') { 8 } elseif ($case.tier -eq 'low') { 4 } else { 12 }
     $mainCount = if ($case.shell -eq 'reference-hero') { 384 } elseif ($case.shell -eq 'multi-break') { 64 } elseif ($case.shell -eq 'crackle') { 96 } elseif ($case.shell -eq 'crossette') { 32 } elseif ($case.shell -eq 'strobe') { 192 } else { 256 }
+    if ($case.shell -in @('multi-break', 'crackle', 'crossette', 'strobe', 'secondary-volley')) { $mainCount /= $divisor }
     if ($stars.Count -ne 1 -or $stars[0].peak_particles -ne $mainCount) {
         throw "$($case.name): missing the expected $mainCount-star main cohort"
     }
@@ -122,18 +132,19 @@ function Assert-Capture($case, $report, $directory) {
             }
         }
     }
-    if ($case.shell -eq 'multi-break') {
+    if ($case.shell -in @('multi-break', 'secondary-volley')) {
         $secondary = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Secondary sparks') })
         $smoke = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ Burst smoke') })
         # Staggered parent deaths and spark lifetimes need not give a peak of
-        # 512. Total admission is checked separately in uninterrupted playback.
+        # the total budget. Admission is checked separately in uninterrupted playback.
+        $smokeCount = if ($case.shell -eq 'secondary-volley') { 192 / $divisor } else { 48 / $divisor }
         if ($secondary.Count -ne 1 -or $secondary[0].peak_particles -le 0 -or
-            $secondary[0].peak_particles -gt 512 -or $smoke.Count -ne 1 -or $smoke[0].peak_particles -ne 48) {
+            $secondary[0].peak_particles -gt ($mainCount * $multiFanout) -or $smoke.Count -ne 1 -or $smoke[0].peak_particles -ne $smokeCount) {
             throw "$($case.name): missing or over-budget secondary/smoke cohort"
         }
     }
     if ($case.shell -eq 'crackle') {
-        foreach ($expected in @(@('Burning carriers', 96), @('Crackle sparks', 1152), @('Burst smoke', 48))) {
+        foreach ($expected in @(@('Burning carriers', $mainCount), @('Crackle sparks', ($mainCount * $crackleFanout)), @('Burst smoke', (48 / $divisor)))) {
             $cohort = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ ' + $expected[0]) })
             # Brief staggered flashes need not all be live at once; total admission
             # is verified by the uninterrupted event-link report, not seeking stills.
@@ -146,8 +157,8 @@ function Assert-Capture($case, $report, $directory) {
     if ($case.shell -eq 'crossette') {
         foreach ($name in @('Crossette NE', 'Crossette NW', 'Crossette SW', 'Crossette SE')) {
             $cohort = @($report.metrics.emitters | Where-Object { $_.name.EndsWith('/ ' + $name) })
-            if ($cohort.Count -ne 1 -or $cohort[0].peak_particles -ne 32) {
-                throw "$($case.name): missing the expected 32-arm $name cohort"
+            if ($cohort.Count -ne 1 -or $cohort[0].peak_particles -ne $mainCount) {
+                throw "$($case.name): missing the expected $mainCount-arm $name cohort"
             }
         }
     }
@@ -175,6 +186,9 @@ try {
                      'apps/aestra-viewer/src/fireworks_f0.rs', 'apps/aestra-viewer/src/fireworks_hero.rs',
                      'apps/aestra-viewer/src/fireworks_f5.rs',
                      'apps/aestra-viewer/src/fireworks_strobe.rs',
+                     'apps/aestra-viewer/src/fireworks_budgets.rs',
+                     'crates/aestra-core/src/particle_budget.rs', 'crates/aestra-compiler/src/lib.rs',
+                     'benchmarks/fireworks/capture-shell-review.ps1',
                      'assets/test/materials/periodic_gate.aestra.material-function.ron') +
         @(Get-ChildItem assets/test/effects/fireworks_*.aestra.ron,
                        assets/test/materials/fireworks_*.aestra.material.ron | ForEach-Object FullName)

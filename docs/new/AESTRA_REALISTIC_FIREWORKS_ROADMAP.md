@@ -60,8 +60,9 @@ Implementation update (2026-10-03): F2/F3 prototypes and F4's reference hero are
 F4 artistic acceptance remains open. **F5A validates a bounded two-generation death-event
 shell; F5B validates particle-driven host cues and seek/restart delivery epochs; F5C/D add
 bounded delayed-carrier crackle and four-arm crossette; F5E adds independently phased
-strobe stars with exact off intervals. Next is tier-specific secondary-shell budgeting
-and overlapping playback validation (F5F)**, not
+strobe stars with exact off intervals. F5F adds explicit tier-specific secondary-shell
+budgets and measured overlapping forward playback. Next is a bounded reusable show
+composition (F6A)**, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3048,15 +3049,48 @@ At least one shell uses two generations of particle-driven spawning.
   frames 110/111/112 supplement lifecycle stills, not moving-footage acceptance. Stills
   are sparse/dim at audience distance. Evidence: `benchmarks/fireworks/strobe-2026-10-03.md`.
 
-F5 is **in progress**, not complete. Next is **F5F: tier-specific secondary-shell count and
-capacity policies, then a bounded overlapping volley in playback-only**. Preserve recognizable
-multi-break/crackle/crossette/strobe behavior at each tier; budget source capture, link expansion,
-live children and retained histories together, and measure demand/admission/overflow/memory
-before timing. Existing generic tiers do not automatically scale death-link fan-out. Add generic
-semantics only if the authored workload demonstrates a real gap; don't bypass limits with
-duplicated links. Parent-oriented crossettes, moving-footage/artistic approval, heavy finale
-load, nested spatial audio and target-tier resource gates remain open. No full-show readiness
-claim follows from these intentionally bounded fixtures.
+### F5F implemented — explicit tier profiles and overlapping playback (2026-10-03)
+
+- The real gap was unscaled death-link fan-out. Optional portable
+  `EffectAsset::particle_budgets` profiles specify exact emitter capacities, event-link counts
+  and trail-owner capacities by stable ID. Existing `EffectCompiler::with_tier` selects by
+  name on a copy, before migrations/lowering/resource checks; resolved dependencies use their
+  own matching profile. Missing profiles preserve legacy counts; high is authored. No implicit
+  multiplication, extra links, raised hard ceilings or firework-specific runtime API.
+- Core validation rejects missing/wrong-kind targets, zero/increased values and invalid/high
+  names. Flat/v4 round-trip is covered. `SetParticleBudgets` is transactional/diff-visible;
+  deleting emitters/events/renderers prunes stale entries and undo restores profiles exactly,
+  including combined edits/deletions. Dedicated editor profile UI is not implemented.
+- All four F5 singles now ship medium/low profiles. Main/smoke counts halve/quarter;
+  multi-break secondary fan-out is 8/6/4 and crackle 12/8/4. Count-1 carriers and all four
+  crossette arms survive; strobe timing/material controls, lifetime/motion and output routes
+  stay unchanged. Profiles do not scale emission modules or live host input counts. Hosts
+  still own admission; a smaller pool alone can reject births. Retired tails need storage.
+- The saved nine-second secondary volley uses four real rockets with seeded staggered deaths
+  in one source and shared target/history pools. Compiled high/medium/low capacity is
+  **2,760 / 1,256 / 632**. This is not full Test B or a finale.
+- RTX 4070 SUPER/Vulkan, 960×540, fast transparency, semantic materials, manual 60 Hz,
+  playback-only: all links admit main/flash/smoke/secondary **256/4/192/2,048** at high,
+  **128/4/96/768** at medium and **64/4/48/256** at low. All overflow/omission/rejection,
+  trail eviction/truncation and checkpoint-capture bytes are measured zero. Estimated
+  effect buffers **10,862,400 / 4,224,820 / 1,532,980 bytes**; not total VRAM. A read-only
+  validator gates future reports on work, not speed. Lifecycle matrix: nine cases/72 PNGs,
+  expected cohorts/four arms and full endpoint cleanup; visual approval remains open.
+- The native single-shell host checker reads the compiled tier count rather than high-only
+  constants. Low multi-break/crackle/crossette cue checks pass at 16/24/8 secondary parents,
+  including complete remaining live cues after seek, suppressed reconstruction, restart and
+  distinct epochs. No audio assets/playback or nested spatial-cue acceptance is implied.
+- Core/compiler/authoring/viewer tests pass, including legacy/high artifact equality and
+  tier-before-resource-check contracts; native stateful conformance 30 passed. Workspace
+  check and warnings-as-errors Clippy pass. Evidence/reproduction:
+  `benchmarks/fireworks/tier-volley-2026-10-03.md`.
+
+F5's bounded technical fixtures and tier mechanisms are implemented, but **artistic and
+production-density acceptance remain open**. Low is sparse/dim at audience distance;
+mechanism tests do not replace reference-footage review. Next is **F6A: a bounded 20–30-second
+show built from reusable EffectClips**, with multi-site placement/seeds and tier/admission
+telemetry. Parent-oriented crossettes, nested spatial audio, lit/persistent smoke, heavy finale
+load and target-hardware gates remain open. No full-show readiness claim follows from F5F.
 
 ---
 

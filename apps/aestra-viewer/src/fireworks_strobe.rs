@@ -202,6 +202,7 @@ mod tests {
         }
         shell.metadata.insert("status".into(), "F5E bounded per-particle strobe prototype; artistic and finale-scale acceptance pending".into());
         shell.metadata.insert("notes".into(), "192 sprite-only stars, 3 seconds, 18 cycles per life (6 Hz), 18% duty. Stable ParticleRandom phase and generic Periodic Gate WESL function gate RGB and alpha; exact off intervals, no luminous trails or host timers. Unlit smoke. Normalized-age timing means lifetime edits change Hertz. Flashes are appearance, not sound event triggers.".into());
+        super::super::fireworks_budgets::author_profiles(&mut shell);
         shell
     }
 

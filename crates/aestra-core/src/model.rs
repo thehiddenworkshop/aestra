@@ -89,6 +89,10 @@ pub struct EffectAsset {
     pub emitters: Vec<Emitter>,
     #[serde(default)]
     pub events: Vec<EventLink>,
+    /// Explicit non-high tier density profiles, applied by the compiler to a copy.
+    /// Absent profiles preserve legacy budgets; no automatic fan-out multiplication.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub particle_budgets: BTreeMap<String, crate::ParticleBudgetProfile>,
     /// Declared inputs spawning bursts of an emitter (event system E3), in the order they apply.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_spawns: Vec<crate::InputSpawnRoute>,
@@ -136,6 +140,7 @@ impl EffectAsset {
             simulation_stages: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
+            particle_budgets: BTreeMap::new(),
             input_spawns: Vec::new(),
             particle_outputs: Vec::new(),
             markers: Vec::new(),
@@ -150,6 +155,7 @@ impl EffectAsset {
 
     pub fn validation_report(&self) -> ValidationReport {
         let mut report = ValidationReport::default();
+        crate::particle_budget::validate_profiles(self, &mut report);
         if let Some(track) = &self.host_transform_track
             && let Err(error) = track.validate()
         {

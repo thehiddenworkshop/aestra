@@ -31,6 +31,15 @@ pub struct EffectDiff {
 impl EffectDiff {
     pub fn between(before: &EffectAsset, after: &EffectAsset) -> Self {
         let mut changes = Vec::new();
+        if before.particle_budgets != after.particle_budgets {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.particle_budgets",
+                format!("{:?}", before.particle_budgets),
+                format!("{:?}", after.particle_budgets),
+            );
+        }
         if before.name != after.name {
             modified(
                 &mut changes,

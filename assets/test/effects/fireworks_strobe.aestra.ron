@@ -977,6 +977,28 @@
             inherit_velocity: 0.02,
         ),
     ],
+    particle_budgets: {
+        "low": (
+            emitter_capacity: {
+                "a3574a00-0000-4000-8000-0000000fb0c8": 48,
+                "a3574a00-0000-4000-8000-0000000fb1f4": 12,
+            },
+            event_count: {
+                "a3574a00-0000-4000-8000-0000000fb352": 48,
+                "a3574a00-0000-4000-8000-0000000fb354": 12,
+            },
+        ),
+        "medium": (
+            emitter_capacity: {
+                "a3574a00-0000-4000-8000-0000000fb0c8": 96,
+                "a3574a00-0000-4000-8000-0000000fb1f4": 24,
+            },
+            event_count: {
+                "a3574a00-0000-4000-8000-0000000fb352": 96,
+                "a3574a00-0000-4000-8000-0000000fb354": 24,
+            },
+        ),
+    },
     metadata: {
         "notes": "192 sprite-only stars, 3 seconds, 18 cycles per life (6 Hz), 18% duty. Stable ParticleRandom phase and generic Periodic Gate WESL function gate RGB and alpha; exact off intervals, no luminous trails or host timers. Unlit smoke. Normalized-age timing means lifetime edits change Hertz. Flashes are appearance, not sound event triggers.",
         "preview_seed": "17428930557923819521",

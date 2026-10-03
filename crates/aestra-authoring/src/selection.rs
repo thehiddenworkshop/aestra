@@ -332,6 +332,7 @@ impl LockState {
 fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<SemanticTarget>) {
     match command {
         EffectCommand::SetEffectName { .. }
+        | EffectCommand::SetParticleBudgets { .. }
         | EffectCommand::SetEffectDuration { .. }
         | EffectCommand::SetEffectPlaybackMode { .. }
         | EffectCommand::SetHostTransformTrack { .. }

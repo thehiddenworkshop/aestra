@@ -8,7 +8,9 @@ Later bounded secondary-shell evidence: [F5A multi-break](secondary-shell-2026-1
 and [F5B particle-driven host cues](host-cues-2026-10-03.md), followed by
 [F5C delayed crackle](crackle-2026-10-03.md) and
 [F5D four-arm crossette](crossette-2026-10-03.md) and
-[F5E phased strobe](strobe-2026-10-03.md). These do not certify finale scale.
+[F5E phased strobe](strobe-2026-10-03.md) and
+[F5F explicit tier budgets / overlapping volley](tier-volley-2026-10-03.md).
+These do not certify finale scale.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 
@@ -41,7 +43,9 @@ pwsh -File benchmarks/fireworks/capture-shell-review.ps1 -Shell willow -Camera w
 
 The output folder must not exist; there is no overwrite/resume or automatic golden-reference
 approval. `-PlanOnly` prints the exact commands without building, launching or writing files.
-Camera/response/shell filters are deduplicated. Captures use high tier, seed
+Camera/response/shell filters are deduplicated. Captures default to high tier;
+`-Tier medium|low` selects explicit profiles for the F5 shells/secondary volley
+(older F3/F4 fixtures retain authored budgets). They use seed
 `0xf1e0000000000001`, GPU/playback-only history, opt-in stable transparency, 960×540,
 60 Hz, HDR/Tony/0-stop exposure/0.15 bloom. Stable ordering is for these small visual probes,
 **not** the fast unsorted live-performance path.

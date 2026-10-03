@@ -64,6 +64,33 @@ and then correct the instance to a slightly lower exact frame time: that correct
 is deliberately treated as a backward discontinuity by `set_playback_time`.
 External repositioning must use the seek contract, not the forward-advance API.
 
+## Explicit particle quality budgets
+
+Hosts select the compile-time tier with
+`EffectCompiler::default().with_tier(QualityTier::medium())`, including when using
+`compile_resolved_project`. Each effect/dependency selects its own optional
+`EffectAsset::particle_budgets["medium"]` profile. `ParticleBudgetProfile` maps stable
+emitter IDs to exact capacities, event-link IDs to exact counts, and trail-renderer
+IDs to exact owner capacities. Omitted targets, or a missing tier profile, keep
+authored values. High always remains authored. Existing assets need no migration.
+
+Ordinary event fan-out is **not** automatically multiplied by `QualityTier.particles`.
+Author demand and live/history capacities together: reducing a child pool alone can
+reject births, and retired trail owners still need storage. Profiles are validated
+against authored maxima and applied to a copy before lowering and resource checks.
+They cannot waive platform limits. Emission-module rates/bursts, live host input
+counts, lifetimes, velocities, material bindings and output routes are unchanged.
+Recompile/replace through the normal host workflow to change tiers; no live tier switch.
+
+The four F5 shell assets plus `fireworks_secondary_volley.aestra.ron` include medium/low
+profiles. Lower tiers keep every crossette arm, crackle's carrier delay and strobe
+timing while reducing density. These are bounded examples, not certified finale LODs.
+Profiles can be edited in RON or through the transactional `SetParticleBudgets`
+authoring command; deletion prunes dangling targets and undo restores them. A dedicated
+editor profile UI and automatic budget authoring for duplicated emitters are not provided.
+Lowering authored maxima below a profile requires adjusting the profile in the same
+transaction. Host-driven bursts remain the host's admission responsibility.
+
 ## Particle-driven host cues
 
 Author ordinary `EventDefinition` outputs and `ParticleOutputRoute` routes (`OnSpawn`,

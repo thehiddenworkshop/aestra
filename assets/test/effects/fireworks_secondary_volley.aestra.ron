@@ -1,15 +1,15 @@
 (
     format_version: 4,
-    id: "a3574a00-0000-4000-8000-0000000f9000",
-    name: "Fireworks Crackle",
-    duration: 7.0,
+    id: "a3574a00-0000-4000-8000-0000000fc000",
+    name: "Fireworks Secondary Volley",
+    duration: 9.0,
     playback_mode: Once,
     material_instances: [
         (
             id: "a3574a00-0000-4000-8000-0000000f7384",
             program: Project("a3574a00-0000-4000-8000-0000000f73e8"),
             values: {
-                "a3574a00-0000-4000-8000-0000000f7442": EffectParameter("a3574a00-0000-4000-8000-0000000f9032"),
+                "a3574a00-0000-4000-8000-0000000f7442": EffectParameter("a3574a00-0000-4000-8000-0000000f8032"),
             },
             render_state: (
                 blend: Additive,
@@ -22,7 +22,7 @@
             id: "a3574a00-0000-4000-8000-0000000f7385",
             program: Project("a3574a00-0000-4000-8000-0000000f744c"),
             values: {
-                "a3574a00-0000-4000-8000-0000000f74a6": EffectParameter("a3574a00-0000-4000-8000-0000000f9033"),
+                "a3574a00-0000-4000-8000-0000000f74a6": EffectParameter("a3574a00-0000-4000-8000-0000000f8033"),
             },
             render_state: (
                 blend: Additive,
@@ -45,22 +45,22 @@
     ],
     parameters: [
         (
-            id: "a3574a00-0000-4000-8000-0000000f9032",
+            id: "a3574a00-0000-4000-8000-0000000f8032",
             name: "Star radiance",
             default: Scalar(12.0),
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9033",
+            id: "a3574a00-0000-4000-8000-0000000f8033",
             name: "Trail radiance",
             default: Scalar(6.0),
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f903c",
+            id: "a3574a00-0000-4000-8000-0000000f803c",
             name: "Launch shell color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9320",
+                id: "a3574a00-0000-4000-8000-0000000f8320",
                 keys: [
                     (
                         time: 0.0,
@@ -79,10 +79,10 @@
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f903d",
+            id: "a3574a00-0000-4000-8000-0000000f803d",
             name: "Main stars color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9321",
+                id: "a3574a00-0000-4000-8000-0000000f8321",
                 keys: [
                     (
                         time: 0.0,
@@ -105,10 +105,10 @@
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f903e",
+            id: "a3574a00-0000-4000-8000-0000000f803e",
             name: "Burst flash color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9322",
+                id: "a3574a00-0000-4000-8000-0000000f8322",
                 keys: [
                     (
                         time: 0.0,
@@ -131,10 +131,10 @@
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f903f",
+            id: "a3574a00-0000-4000-8000-0000000f803f",
             name: "Launch smoke color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9323",
+                id: "a3574a00-0000-4000-8000-0000000f8323",
                 keys: [
                     (
                         time: 0.0,
@@ -153,10 +153,10 @@
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9040",
+            id: "a3574a00-0000-4000-8000-0000000f8040",
             name: "Burst smoke color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9324",
+                id: "a3574a00-0000-4000-8000-0000000f8324",
                 keys: [
                     (
                         time: 0.0,
@@ -175,40 +175,22 @@
             exposed: true,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9041",
-            name: "Burning carriers color",
+            id: "a3574a00-0000-4000-8000-0000000f8041",
+            name: "Secondary sparks color",
             default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9325",
+                id: "a3574a00-0000-4000-8000-0000000f8325",
                 keys: [
                     (
                         time: 0.0,
-                        color: (0.5, 0.1, 0.005, 1.0),
+                        color: (1.0, 0.95, 0.7, 1.0),
+                    ),
+                    (
+                        time: 0.3,
+                        color: (1.0, 0.55, 0.12, 1.0),
                     ),
                     (
                         time: 1.0,
-                        color: (0.1, 0.01, 0.001, 1.0),
-                    ),
-                ],
-            )),
-            exposed: true,
-        ),
-        (
-            id: "a3574a00-0000-4000-8000-0000000f9042",
-            name: "Crackle sparks color",
-            default: Gradient((
-                id: "a3574a00-0000-4000-8000-0000000f9326",
-                keys: [
-                    (
-                        time: 0.0,
-                        color: (1.0, 0.98, 0.8, 1.0),
-                    ),
-                    (
-                        time: 0.25,
-                        color: (1.0, 0.5, 0.03, 1.0),
-                    ),
-                    (
-                        time: 1.0,
-                        color: (0.12, 0.01, 0.001, 1.0),
+                        color: (0.12, 0.015, 0.002, 1.0),
                     ),
                 ],
             )),
@@ -217,21 +199,21 @@
     ],
     event_outputs: [
         (
-            id: "a3574a00-0000-4000-8000-0000000f9384",
+            id: "a3574a00-0000-4000-8000-0000000f8384",
             name: "launch",
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9385",
+            id: "a3574a00-0000-4000-8000-0000000f8385",
             name: "main_break",
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9386",
-            name: "crackle",
+            id: "a3574a00-0000-4000-8000-0000000f8386",
+            name: "secondary_break",
         ),
     ],
     emitters: [
         (
-            id: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f8064",
             name: "Launch shell",
             enabled: true,
             transform: (
@@ -240,19 +222,19 @@
                 scale: (1.0, 1.0, 1.0),
             ),
             start_time: 0.0,
-            duration: 7.0,
-            max_particles: 1,
+            duration: 9.0,
+            max_particles: 4,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f906e",
+                            id: "a3574a00-0000-4000-8000-0000000f806e",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
                                 spawn_rate: 0.0,
-                                burst_count: 1,
+                                burst_count: 4,
                             ),
                         ),
                     ],
@@ -260,7 +242,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f906f",
+                            id: "a3574a00-0000-4000-8000-0000000f806f",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -268,13 +250,13 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9070",
+                            id: "a3574a00-0000-4000-8000-0000000f8070",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
                                 lifetime: (
-                                    min: 1.3,
-                                    max: 1.3,
+                                    min: 0.8,
+                                    max: 1.4,
                                 ),
                                 speed: (
                                     min: 42.0,
@@ -294,7 +276,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9071",
+                            id: "a3574a00-0000-4000-8000-0000000f8071",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -304,12 +286,12 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9072",
+                            id: "a3574a00-0000-4000-8000-0000000f8072",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f908c",
+                                    id: "a3574a00-0000-4000-8000-0000000f808c",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -326,7 +308,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f908d",
+                                    id: "a3574a00-0000-4000-8000-0000000f808d",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -339,7 +321,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f908e",
+                                    id: "a3574a00-0000-4000-8000-0000000f808e",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -357,7 +339,7 @@
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f903c",
+                                "color": "a3574a00-0000-4000-8000-0000000f803c",
                             },
                         ),
                     ],
@@ -365,14 +347,14 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f90a0",
+                    id: "a3574a00-0000-4000-8000-0000000f80a0",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7384",
                     properties: Sprite,
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f90a1",
+                    id: "a3574a00-0000-4000-8000-0000000f80a1",
                     renderer_type: "aestra.renderer.trail",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7385",
@@ -381,7 +363,7 @@
                         sample_interval: 0.016666668,
                         lifetime: 0.35,
                         max_points: 64,
-                        max_trails: 1,
+                        max_trails: 4,
                         sampling: Distance,
                         sample_distance: 0.25,
                         curve_tolerance: 0.01,
@@ -394,7 +376,7 @@
             ],
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f90c8",
+            id: "a3574a00-0000-4000-8000-0000000f80c8",
             name: "Main stars",
             enabled: true,
             transform: (
@@ -403,14 +385,14 @@
                 scale: (1.0, 1.0, 1.0),
             ),
             start_time: 0.0,
-            duration: 7.0,
-            max_particles: 96,
+            duration: 9.0,
+            max_particles: 256,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f90d2",
+                            id: "a3574a00-0000-4000-8000-0000000f80d2",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -423,7 +405,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f90d3",
+                            id: "a3574a00-0000-4000-8000-0000000f80d3",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -431,13 +413,13 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f90d4",
+                            id: "a3574a00-0000-4000-8000-0000000f80d4",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
                                 lifetime: (
-                                    min: 0.75,
-                                    max: 1.05,
+                                    min: 1.2,
+                                    max: 1.6,
                                 ),
                                 speed: (
                                     min: 18.0,
@@ -457,7 +439,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f90d5",
+                            id: "a3574a00-0000-4000-8000-0000000f80d5",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -467,12 +449,12 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f90d6",
+                            id: "a3574a00-0000-4000-8000-0000000f80d6",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f90f0",
+                                    id: "a3574a00-0000-4000-8000-0000000f80f0",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -489,7 +471,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f90f1",
+                                    id: "a3574a00-0000-4000-8000-0000000f80f1",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -506,7 +488,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f90f2",
+                                    id: "a3574a00-0000-4000-8000-0000000f80f2",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -528,7 +510,7 @@
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f903d",
+                                "color": "a3574a00-0000-4000-8000-0000000f803d",
                             },
                         ),
                     ],
@@ -536,14 +518,14 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f9104",
+                    id: "a3574a00-0000-4000-8000-0000000f8104",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7384",
                     properties: Sprite,
                 ),
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f9105",
+                    id: "a3574a00-0000-4000-8000-0000000f8105",
                     renderer_type: "aestra.renderer.trail",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7385",
@@ -552,7 +534,7 @@
                         sample_interval: 0.016666668,
                         lifetime: 0.7,
                         max_points: 64,
-                        max_trails: 96,
+                        max_trails: 256,
                         sampling: Time,
                         sample_distance: 0.25,
                         curve_tolerance: 0.01,
@@ -565,7 +547,7 @@
             ],
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f912c",
+            id: "a3574a00-0000-4000-8000-0000000f812c",
             name: "Burst flash",
             enabled: true,
             transform: (
@@ -574,14 +556,14 @@
                 scale: (1.0, 1.0, 1.0),
             ),
             start_time: 0.0,
-            duration: 7.0,
-            max_particles: 1,
+            duration: 9.0,
+            max_particles: 4,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9136",
+                            id: "a3574a00-0000-4000-8000-0000000f8136",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -594,7 +576,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9137",
+                            id: "a3574a00-0000-4000-8000-0000000f8137",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -602,7 +584,7 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9138",
+                            id: "a3574a00-0000-4000-8000-0000000f8138",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -628,7 +610,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9139",
+                            id: "a3574a00-0000-4000-8000-0000000f8139",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -638,12 +620,12 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f913a",
+                            id: "a3574a00-0000-4000-8000-0000000f813a",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9154",
+                                    id: "a3574a00-0000-4000-8000-0000000f8154",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -656,7 +638,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9155",
+                                    id: "a3574a00-0000-4000-8000-0000000f8155",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -669,7 +651,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9156",
+                                    id: "a3574a00-0000-4000-8000-0000000f8156",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -691,7 +673,7 @@
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f903e",
+                                "color": "a3574a00-0000-4000-8000-0000000f803e",
                             },
                         ),
                     ],
@@ -699,7 +681,7 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f9168",
+                    id: "a3574a00-0000-4000-8000-0000000f8168",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7384",
@@ -708,7 +690,7 @@
             ],
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9190",
+            id: "a3574a00-0000-4000-8000-0000000f8190",
             name: "Launch smoke",
             enabled: true,
             transform: (
@@ -718,13 +700,13 @@
             ),
             start_time: 0.0,
             duration: 1.3,
-            max_particles: 64,
+            max_particles: 256,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f919a",
+                            id: "a3574a00-0000-4000-8000-0000000f819a",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -737,7 +719,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f919b",
+                            id: "a3574a00-0000-4000-8000-0000000f819b",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -745,7 +727,7 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f919c",
+                            id: "a3574a00-0000-4000-8000-0000000f819c",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -771,7 +753,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f919d",
+                            id: "a3574a00-0000-4000-8000-0000000f819d",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -781,12 +763,12 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f919e",
+                            id: "a3574a00-0000-4000-8000-0000000f819e",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f91b8",
+                                    id: "a3574a00-0000-4000-8000-0000000f81b8",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -803,7 +785,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f91b9",
+                                    id: "a3574a00-0000-4000-8000-0000000f81b9",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -820,7 +802,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f91ba",
+                                    id: "a3574a00-0000-4000-8000-0000000f81ba",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -838,7 +820,7 @@
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f903f",
+                                "color": "a3574a00-0000-4000-8000-0000000f803f",
                             },
                         ),
                     ],
@@ -846,7 +828,7 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f91cc",
+                    id: "a3574a00-0000-4000-8000-0000000f81cc",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7386",
@@ -855,7 +837,7 @@
             ],
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f91f4",
+            id: "a3574a00-0000-4000-8000-0000000f81f4",
             name: "Burst smoke",
             enabled: true,
             transform: (
@@ -864,14 +846,14 @@
                 scale: (1.0, 1.0, 1.0),
             ),
             start_time: 0.0,
-            duration: 7.0,
-            max_particles: 48,
+            duration: 9.0,
+            max_particles: 192,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f91fe",
+                            id: "a3574a00-0000-4000-8000-0000000f81fe",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -884,7 +866,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f91ff",
+                            id: "a3574a00-0000-4000-8000-0000000f81ff",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -892,7 +874,7 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9200",
+                            id: "a3574a00-0000-4000-8000-0000000f8200",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
@@ -918,7 +900,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9201",
+                            id: "a3574a00-0000-4000-8000-0000000f8201",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -928,12 +910,12 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9202",
+                            id: "a3574a00-0000-4000-8000-0000000f8202",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f921c",
+                                    id: "a3574a00-0000-4000-8000-0000000f821c",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -950,7 +932,7 @@
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f921d",
+                                    id: "a3574a00-0000-4000-8000-0000000f821d",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -967,7 +949,7 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f921e",
+                                    id: "a3574a00-0000-4000-8000-0000000f821e",
                                     keys: [
                                         (
                                             time: 0.0,
@@ -985,7 +967,7 @@
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f9040",
+                                "color": "a3574a00-0000-4000-8000-0000000f8040",
                             },
                         ),
                     ],
@@ -993,7 +975,7 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f9230",
+                    id: "a3574a00-0000-4000-8000-0000000f8230",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7386",
@@ -1002,8 +984,8 @@
             ],
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9258",
-            name: "Burning carriers",
+            id: "a3574a00-0000-4000-8000-0000000f8258",
+            name: "Secondary sparks",
             enabled: true,
             transform: (
                 translation: (0.0, 0.0, 0.0),
@@ -1011,14 +993,14 @@
                 scale: (1.0, 1.0, 1.0),
             ),
             start_time: 0.0,
-            duration: 7.0,
-            max_particles: 96,
+            duration: 9.0,
+            max_particles: 2048,
             domain: "aestra.domain.particles",
             lifecycle: (
                 emitter_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9262",
+                            id: "a3574a00-0000-4000-8000-0000000f8262",
                             module_type: "aestra.emission.rate",
                             enabled: true,
                             parameters: Emission(
@@ -1031,7 +1013,7 @@
                 particle_spawn: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9263",
+                            id: "a3574a00-0000-4000-8000-0000000f8263",
                             module_type: "aestra.spawn.shape",
                             enabled: true,
                             parameters: Shape(
@@ -1039,17 +1021,17 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9264",
+                            id: "a3574a00-0000-4000-8000-0000000f8264",
                             module_type: "aestra.spawn.initialize",
                             enabled: true,
                             parameters: Initialize(
                                 lifetime: (
-                                    min: 0.12,
-                                    max: 0.35,
+                                    min: 0.45,
+                                    max: 0.85,
                                 ),
                                 speed: (
-                                    min: 0.8,
-                                    max: 1.8,
+                                    min: 3.0,
+                                    max: 6.0,
                                 ),
                                 direction: (0.0, 1.0, 0.0),
                                 spread_degrees: 0.0,
@@ -1065,7 +1047,7 @@
                 particle_update: (
                     modules: [
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9265",
+                            id: "a3574a00-0000-4000-8000-0000000f8265",
                             module_type: "aestra.update.motion",
                             enabled: true,
                             parameters: Motion(
@@ -1075,172 +1057,29 @@
                             ),
                         ),
                         (
-                            id: "a3574a00-0000-4000-8000-0000000f9266",
+                            id: "a3574a00-0000-4000-8000-0000000f8266",
                             module_type: "aestra.update.appearance",
                             enabled: true,
                             parameters: Appearance(
                                 size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9280",
+                                    id: "a3574a00-0000-4000-8000-0000000f8280",
                                     keys: [
                                         (
                                             time: 0.0,
-                                            value: 0.1,
+                                            value: 0.32,
                                         ),
                                         (
                                             time: 1.0,
-                                            value: 0.03,
+                                            value: 0.04,
                                         ),
                                     ],
                                 ),
                                 opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9281",
-                                    keys: [
-                                        (
-                                            time: 0.0,
-                                            value: 0.25,
-                                        ),
-                                        (
-                                            time: 1.0,
-                                            value: 0.05,
-                                        ),
-                                    ],
-                                ),
-                                color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f9282",
-                                    keys: [
-                                        (
-                                            time: 0.0,
-                                            color: (0.5, 0.1, 0.005, 1.0),
-                                        ),
-                                        (
-                                            time: 1.0,
-                                            color: (0.1, 0.01, 0.001, 1.0),
-                                        ),
-                                    ],
-                                ),
-                            ),
-                            bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f9041",
-                            },
-                        ),
-                    ],
-                ),
-            ),
-            renderers: [
-                (
-                    id: "a3574a00-0000-4000-8000-0000000f9294",
-                    renderer_type: "aestra.renderer.sprite",
-                    enabled: true,
-                    material: "a3574a00-0000-4000-8000-0000000f7384",
-                    properties: Sprite,
-                ),
-            ],
-        ),
-        (
-            id: "a3574a00-0000-4000-8000-0000000f92bc",
-            name: "Crackle sparks",
-            enabled: true,
-            transform: (
-                translation: (0.0, 0.0, 0.0),
-                rotation: (0.0, 0.0, 0.0, 1.0),
-                scale: (1.0, 1.0, 1.0),
-            ),
-            start_time: 0.0,
-            duration: 7.0,
-            max_particles: 1152,
-            domain: "aestra.domain.particles",
-            lifecycle: (
-                emitter_update: (
-                    modules: [
-                        (
-                            id: "a3574a00-0000-4000-8000-0000000f92c6",
-                            module_type: "aestra.emission.rate",
-                            enabled: true,
-                            parameters: Emission(
-                                spawn_rate: 0.0,
-                                burst_count: 0,
-                            ),
-                        ),
-                    ],
-                ),
-                particle_spawn: (
-                    modules: [
-                        (
-                            id: "a3574a00-0000-4000-8000-0000000f92c7",
-                            module_type: "aestra.spawn.shape",
-                            enabled: true,
-                            parameters: Shape(
-                                shape: Point,
-                            ),
-                        ),
-                        (
-                            id: "a3574a00-0000-4000-8000-0000000f92c8",
-                            module_type: "aestra.spawn.initialize",
-                            enabled: true,
-                            parameters: Initialize(
-                                lifetime: (
-                                    min: 0.08,
-                                    max: 0.2,
-                                ),
-                                speed: (
-                                    min: 4.0,
-                                    max: 8.0,
-                                ),
-                                direction: (0.0, 1.0, 0.0),
-                                spread_degrees: 0.0,
-                                angular_velocity: (
-                                    min: 0.0,
-                                    max: 0.0,
-                                ),
-                                velocity_distribution: Sphere,
-                            ),
-                        ),
-                    ],
-                ),
-                particle_update: (
-                    modules: [
-                        (
-                            id: "a3574a00-0000-4000-8000-0000000f92c9",
-                            module_type: "aestra.update.motion",
-                            enabled: true,
-                            parameters: Motion(
-                                gravity: (0.0, -9.81, 0.0),
-                                drag: 0.6,
-                                turbulence: 0.0,
-                            ),
-                        ),
-                        (
-                            id: "a3574a00-0000-4000-8000-0000000f92ca",
-                            module_type: "aestra.update.appearance",
-                            enabled: true,
-                            parameters: Appearance(
-                                size: (
-                                    id: "a3574a00-0000-4000-8000-0000000f92e4",
-                                    keys: [
-                                        (
-                                            time: 0.0,
-                                            value: 0.48,
-                                        ),
-                                        (
-                                            time: 0.15,
-                                            value: 0.28,
-                                        ),
-                                        (
-                                            time: 1.0,
-                                            value: 0.02,
-                                        ),
-                                    ],
-                                ),
-                                opacity: (
-                                    id: "a3574a00-0000-4000-8000-0000000f92e5",
+                                    id: "a3574a00-0000-4000-8000-0000000f8281",
                                     keys: [
                                         (
                                             time: 0.0,
                                             value: 1.0,
-                                        ),
-                                        (
-                                            time: 0.2,
-                                            value: 0.9,
                                         ),
                                         (
                                             time: 1.0,
@@ -1249,25 +1088,25 @@
                                     ],
                                 ),
                                 color: (
-                                    id: "a3574a00-0000-4000-8000-0000000f92e6",
+                                    id: "a3574a00-0000-4000-8000-0000000f8282",
                                     keys: [
                                         (
                                             time: 0.0,
-                                            color: (1.0, 0.98, 0.8, 1.0),
+                                            color: (1.0, 0.95, 0.7, 1.0),
                                         ),
                                         (
-                                            time: 0.25,
-                                            color: (1.0, 0.5, 0.03, 1.0),
+                                            time: 0.3,
+                                            color: (1.0, 0.55, 0.12, 1.0),
                                         ),
                                         (
                                             time: 1.0,
-                                            color: (0.12, 0.01, 0.001, 1.0),
+                                            color: (0.12, 0.015, 0.002, 1.0),
                                         ),
                                     ],
                                 ),
                             ),
                             bindings: {
-                                "color": "a3574a00-0000-4000-8000-0000000f9042",
+                                "color": "a3574a00-0000-4000-8000-0000000f8041",
                             },
                         ),
                     ],
@@ -1275,117 +1114,129 @@
             ),
             renderers: [
                 (
-                    id: "a3574a00-0000-4000-8000-0000000f92f8",
+                    id: "a3574a00-0000-4000-8000-0000000f8294",
                     renderer_type: "aestra.renderer.sprite",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-0000000f7384",
                     properties: Sprite,
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-0000000f8295",
+                    renderer_type: "aestra.renderer.trail",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-0000000f7385",
+                    properties: Trail(
+                        width: 0.2,
+                        sample_interval: 0.016666668,
+                        lifetime: 0.35,
+                        max_points: 64,
+                        max_trails: 2048,
+                        sampling: Time,
+                        sample_distance: 0.25,
+                        curve_tolerance: 0.01,
+                        uv_mode: Stretch,
+                        tile_length: 1.0,
+                        end_cap: Flat,
+                    ),
+                    label: Some("Cooling spark history"),
                 ),
             ],
         ),
     ],
     events: [
         (
-            id: "a3574a00-0000-4000-8000-0000000f9352",
-            source: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f8352",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
             trigger: OnDeath,
-            target: "a3574a00-0000-4000-8000-0000000f90c8",
-            count: 96,
+            target: "a3574a00-0000-4000-8000-0000000f80c8",
+            count: 64,
             inherit_velocity: 0.02,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9353",
-            source: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f8353",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
             trigger: OnDeath,
-            target: "a3574a00-0000-4000-8000-0000000f912c",
+            target: "a3574a00-0000-4000-8000-0000000f812c",
             count: 1,
             inherit_velocity: 0.02,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9354",
-            source: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f8354",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
             trigger: OnDeath,
-            target: "a3574a00-0000-4000-8000-0000000f91f4",
+            target: "a3574a00-0000-4000-8000-0000000f81f4",
             count: 48,
             inherit_velocity: 0.02,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9355",
-            source: "a3574a00-0000-4000-8000-0000000f90c8",
+            id: "a3574a00-0000-4000-8000-0000000f8355",
+            source: "a3574a00-0000-4000-8000-0000000f80c8",
             trigger: OnDeath,
-            target: "a3574a00-0000-4000-8000-0000000f9258",
-            count: 1,
-            inherit_velocity: 0.85,
-        ),
-        (
-            id: "a3574a00-0000-4000-8000-0000000f9356",
-            source: "a3574a00-0000-4000-8000-0000000f9258",
-            trigger: OnDeath,
-            target: "a3574a00-0000-4000-8000-0000000f92bc",
-            count: 12,
-            inherit_velocity: 0.15,
+            target: "a3574a00-0000-4000-8000-0000000f8258",
+            count: 8,
+            inherit_velocity: 0.25,
         ),
     ],
     particle_budgets: {
         "low": (
             emitter_capacity: {
-                "a3574a00-0000-4000-8000-0000000f90c8": 24,
-                "a3574a00-0000-4000-8000-0000000f91f4": 12,
-                "a3574a00-0000-4000-8000-0000000f9258": 24,
-                "a3574a00-0000-4000-8000-0000000f92bc": 96,
+                "a3574a00-0000-4000-8000-0000000f80c8": 64,
+                "a3574a00-0000-4000-8000-0000000f81f4": 48,
+                "a3574a00-0000-4000-8000-0000000f8258": 256,
             },
             event_count: {
-                "a3574a00-0000-4000-8000-0000000f9352": 24,
-                "a3574a00-0000-4000-8000-0000000f9354": 12,
-                "a3574a00-0000-4000-8000-0000000f9356": 4,
+                "a3574a00-0000-4000-8000-0000000f8352": 16,
+                "a3574a00-0000-4000-8000-0000000f8354": 12,
+                "a3574a00-0000-4000-8000-0000000f8355": 4,
             },
             trail_capacity: {
-                "a3574a00-0000-4000-8000-0000000f9105": 24,
+                "a3574a00-0000-4000-8000-0000000f8105": 64,
+                "a3574a00-0000-4000-8000-0000000f8295": 256,
             },
         ),
         "medium": (
             emitter_capacity: {
-                "a3574a00-0000-4000-8000-0000000f90c8": 48,
-                "a3574a00-0000-4000-8000-0000000f91f4": 24,
-                "a3574a00-0000-4000-8000-0000000f9258": 48,
-                "a3574a00-0000-4000-8000-0000000f92bc": 384,
+                "a3574a00-0000-4000-8000-0000000f80c8": 128,
+                "a3574a00-0000-4000-8000-0000000f81f4": 96,
+                "a3574a00-0000-4000-8000-0000000f8258": 768,
             },
             event_count: {
-                "a3574a00-0000-4000-8000-0000000f9352": 48,
-                "a3574a00-0000-4000-8000-0000000f9354": 24,
-                "a3574a00-0000-4000-8000-0000000f9356": 8,
+                "a3574a00-0000-4000-8000-0000000f8352": 32,
+                "a3574a00-0000-4000-8000-0000000f8354": 24,
+                "a3574a00-0000-4000-8000-0000000f8355": 6,
             },
             trail_capacity: {
-                "a3574a00-0000-4000-8000-0000000f9105": 48,
+                "a3574a00-0000-4000-8000-0000000f8105": 128,
+                "a3574a00-0000-4000-8000-0000000f8295": 768,
             },
         ),
     },
     particle_outputs: [
         (
-            id: "a3574a00-0000-4000-8000-0000000f938e",
-            source: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f838e",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
             trigger: OnSpawn,
-            output: "a3574a00-0000-4000-8000-0000000f9384",
+            output: "a3574a00-0000-4000-8000-0000000f8384",
             aggregation: FirstPerTick,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f938f",
-            source: "a3574a00-0000-4000-8000-0000000f9064",
+            id: "a3574a00-0000-4000-8000-0000000f838f",
+            source: "a3574a00-0000-4000-8000-0000000f8064",
             trigger: OnDeath,
-            output: "a3574a00-0000-4000-8000-0000000f9385",
+            output: "a3574a00-0000-4000-8000-0000000f8385",
             aggregation: FirstPerTick,
         ),
         (
-            id: "a3574a00-0000-4000-8000-0000000f9390",
-            source: "a3574a00-0000-4000-8000-0000000f9258",
+            id: "a3574a00-0000-4000-8000-0000000f8390",
+            source: "a3574a00-0000-4000-8000-0000000f80c8",
             trigger: OnDeath,
-            output: "a3574a00-0000-4000-8000-0000000f9386",
+            output: "a3574a00-0000-4000-8000-0000000f8386",
             aggregation: FirstPerTick,
         ),
     ],
     metadata: {
-        "notes": "One rocket feeds 96 stars; their deaths spawn one burning carrier each. Seeded carrier lifetimes delay 12 brief sprite-only sparks per real death (1152 total). Reuses HDR hero materials and unlit smoke; no audio timer or new trigger. Not AAA-density certification.",
+        "notes": "Shared source/target pools; four real rocket deaths feed overlapping main and secondary cohorts. Explicit medium/low budgets reduce primary count and secondary fan-out together; histories reserve all births including retired owners. No replay history or host spawn timer.",
         "preview_seed": "17428930557923819521",
-        "status": "F5C bounded delayed-carrier crackle prototype; artistic and finale-scale acceptance pending",
+        "status": "F5F bounded four-rocket secondary volley; not finale or artistic certification",
     },
 )

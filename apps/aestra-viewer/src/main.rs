@@ -1,3 +1,4 @@
+mod fireworks_budgets;
 mod fireworks_cues;
 mod fireworks_f0;
 mod fireworks_f3;
@@ -71,7 +72,7 @@ fn main() {
         eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
-        eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe. --fireworks-cue-check fresh-output.json validates generic host output delivery for the first three with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
+        eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host output delivery for the first three with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -121,6 +122,9 @@ fn main() {
     let gpu_bench_output = config.gpu_bench.clone();
     let fireworks_cue_check = config.fireworks_cue_check.clone();
     let cue_probe = config.fireworks_probe;
+    // The supported single-shell cue probes all use their first link for the
+    // main cohort. The selected tier, not a high-only constant, sets demand.
+    let cue_parent_count = prepared.compiled.event_links.first().map_or(0, |l| l.count);
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -146,6 +150,7 @@ fn main() {
             Some(FireworksProbe::Crackle) => "f5-crackle",
             Some(FireworksProbe::Crossette) => "f5-crossette",
             Some(FireworksProbe::Strobe) => "f5-strobe",
+            Some(FireworksProbe::SecondaryVolley) => "f5-secondary-volley",
             Some(FireworksProbe::Raster(probe)) => probe.name(),
             None => "fireworks_f0",
         }
@@ -216,7 +221,7 @@ fn main() {
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step));
     }
     if let Some(path) = fireworks_cue_check {
-        let check = fireworks_cues::Check::new(path);
+        let check = fireworks_cues::Check::new(path, cue_parent_count);
         app.insert_resource(match cue_probe {
             Some(FireworksProbe::Crackle) => check.with_crackle(),
             Some(FireworksProbe::Crossette) => check.with_crossette(),
@@ -324,6 +329,7 @@ enum FireworksProbe {
     Crackle,
     Crossette,
     Strobe,
+    SecondaryVolley,
     Raster(fireworks_f4::Probe),
 }
 
@@ -343,6 +349,7 @@ impl FireworksProbe {
             "f5-crackle" => Some(Self::Crackle),
             "f5-crossette" => Some(Self::Crossette),
             "f5-strobe" => Some(Self::Strobe),
+            "f5-secondary-volley" => Some(Self::SecondaryVolley),
             _ => velocity_f2::Probe::parse(value)
                 .map(Self::Velocity)
                 .or_else(|| fireworks_f3::Probe::parse(value).map(Self::Shell))
@@ -416,6 +423,7 @@ impl ViewerConfig {
                         | FireworksProbe::Crackle
                         | FireworksProbe::Crossette
                         | FireworksProbe::Strobe
+                        | FireworksProbe::SecondaryVolley
                 )
             ))
         .then(|| Duration::from_secs_f64(1.0 / f64::from(DEFAULT_PLAYBACK_TICK_RATE)))
@@ -931,6 +939,7 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             Some(FireworksProbe::Crackle) => fireworks_f5::crackle_effect(),
             Some(FireworksProbe::Crossette) => fireworks_f5::crossette_effect(),
             Some(FireworksProbe::Strobe) => fireworks_strobe::effect(),
+            Some(FireworksProbe::SecondaryVolley) => fireworks_budgets::volley_effect(),
             Some(FireworksProbe::Raster(probe)) => {
                 fireworks_f4::effect(probe, config.fireworks_camera)
             }
@@ -1089,6 +1098,7 @@ fn setup(
                         | FireworksProbe::Crackle
                         | FireworksProbe::Crossette
                         | FireworksProbe::Strobe
+                        | FireworksProbe::SecondaryVolley
                 )
             ) {
                 fireworks_hero::camera(config.fireworks_camera)

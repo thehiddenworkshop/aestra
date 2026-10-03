@@ -301,6 +301,8 @@ pub struct AuthoredV4Document {
     pub emitters: Vec<V4Emitter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<EventLink>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub particle_budgets: BTreeMap<String, crate::ParticleBudgetProfile>,
     /// Inputs spawning bursts (event system E3); omitted when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_spawns: Vec<crate::InputSpawnRoute>,
@@ -479,6 +481,7 @@ impl AuthoredV4Document {
                 .collect(),
             emitters,
             events: effect.events.clone(),
+            particle_budgets: effect.particle_budgets.clone(),
             input_spawns: effect.input_spawns.clone(),
             particle_outputs: effect.particle_outputs.clone(),
             markers: effect.markers.clone(),
@@ -516,6 +519,7 @@ impl AuthoredV4Document {
                 .collect(),
             emitters: self.emitters.into_iter().map(emitter_from_v4).collect(),
             events: self.events,
+            particle_budgets: self.particle_budgets,
             input_spawns: self.input_spawns,
             particle_outputs: self.particle_outputs,
             markers: self.markers,

@@ -37,7 +37,7 @@ pub struct Check {
 }
 
 impl Check {
-    pub fn new(output: PathBuf) -> Self {
+    pub fn new(output: PathBuf, parent_count: u32) -> Self {
         Self {
             output,
             frames: 0,
@@ -46,7 +46,7 @@ impl Check {
             settled: 0,
             epochs: Vec::new(),
             seek_tick: 160,
-            parent_count: 64,
+            parent_count,
             secondary_kind: "secondary_break",
             cues: Vec::new(),
             seen: BTreeSet::new(),
@@ -56,13 +56,11 @@ impl Check {
     }
 
     pub fn with_crackle(mut self) -> Self {
-        self.parent_count = 96;
         self.secondary_kind = "crackle";
         self
     }
 
     pub fn with_crossette(mut self) -> Self {
-        self.parent_count = 32;
         self.secondary_kind = "crossette_split";
         self.seek_tick = 133;
         self
@@ -319,7 +317,7 @@ mod tests {
 
     #[test]
     fn host_rejects_stale_epochs_and_duplicate_cues() {
-        let mut check = Check::new("unused.json".into());
+        let mut check = Check::new("unused.json".into(), 64);
         check.waiting = false;
         let cue = AestraOutputEvent::root(
             Entity::PLACEHOLDER,

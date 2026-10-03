@@ -6,6 +6,10 @@
 //! chosen when compiling, never at run time: the runtime never switches algorithms behind an asset's
 //! back, so each tier's artifact simulates the same way on every run, and its checkpoints stay its
 //! own.
+//!
+//! Generic emitter/event/trail budgets are opt-in `EffectAsset::particle_budgets`
+//! profiles selected by `name`, not multiplied by `particles`. Missing profiles
+//! preserve authored counts; extension lowerers still use the relative scales.
 
 /// How far below its authored quality an effect is compiled. Every scale is in `(0, 1]`; the `high`
 /// tier is the authored effect itself.
@@ -18,7 +22,8 @@ pub struct QualityTier {
     pub iterations: f32,
     /// Presentation sampling (volume and surface march steps).
     pub presentation: f32,
-    /// Particle budgets and the particles asked for (liquid particles, secondary emission).
+    /// Extension particle scale (liquid particles, fluid secondary emission).
+    /// Ordinary emitter/event/trail pools use explicit authored profiles by `name`.
     pub particles: f32,
 }
 

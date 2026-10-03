@@ -112,8 +112,9 @@ impl EffectCompiler {
         }
     }
 
-    /// The same compiler, compiling for quality tier `tier` (fluid F12): each tier gives its own
-    /// deterministic artifact. The default is `high`, the authored effect.
+    /// Compile for `tier`: extensions use its scales and ordinary particle/event/trail
+    /// budgets use the matching authored profile by name. Absent profiles preserve
+    /// authored counts. The default is `high`, the authored effect.
     pub fn with_tier(mut self, tier: aestra_runtime::QualityTier) -> Self {
         self.tier = tier;
         self
@@ -526,6 +527,20 @@ impl EffectCompiler {
         material_programs: &BTreeMap<MaterialProgramId, MaterialProgram>,
         functions: &MaterialFunctionLibrary,
     ) -> Result<CompiledEffect, CompileError> {
+        // Validate profiles against the authored maxima, then budget a copy before
+        // all lowering, requirement and event-expansion resource checks.
+        // No matching profile means legacy behavior, not implicit fan-out scaling.
+        let budgeted;
+        let asset = if asset.particle_budgets.contains_key(&self.tier.name) {
+            asset
+                .particle_budget_validation_report()
+                .into_result()
+                .map_err(CompileError::Validation)?;
+            budgeted = asset.with_particle_budget_profile(&self.tier.name);
+            &budgeted
+        } else {
+            asset
+        };
         // Plugin payloads authored against an older schema compile through the plugin's migrations
         // (extensible-stages M11, §35) — on a copy, so compiling never rewrites the caller's document.
         let migrated;
