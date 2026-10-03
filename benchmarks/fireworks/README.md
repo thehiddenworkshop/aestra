@@ -16,6 +16,9 @@ F6B validates [nested spatial particle host cues](spatial-host-cues-2026-10-03.m
 all 13 launches/breaks, seek and restart at each tier.
 These do not certify finale scale.
 
+F7D1 adds [portable particle-light selection measurements](particle-light-selection-2026-10-03.md).
+They cover per-output GPU selection only, not live realization or full-show lighting acceptance.
+
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 
 ```powershell

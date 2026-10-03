@@ -71,9 +71,10 @@ of this snapshot confirms that these bindings are intentionally **representative
 lights**, not lights continuously emitted by every particle. F7B2 now has editor
 authoring controls (manual visual acceptance remains open). **F7C now implements the material-free
 particle scene-output model, compiled plans and deterministic CPU/reference candidates, persisted in
-artifact v7. GPU selection/realization and lit smoke remain open.**
-The next engine step is the measured F7D GPU candidate-selection
-prototype, not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
+artifact v7. F7D1 now has a measured portable per-output GPU selection prototype;
+global admission, live realization and lit smoke remain open.**
+The next engine step is F7D2's global multi-output admission and live GPU presentation wiring,
+not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
 precede a production-shell claim, not merely F9 polish.
@@ -3885,6 +3886,44 @@ changing particle state or output-event semantics.
 
 ### F7D — GPU particle-light candidate generation and top-K selection
 
+**F7D1 implemented (2026-10-03): portable per-output selection prototype, not live playback integration.**
+
+- `aestra-gpu::particle_lights` lowers compiled light plans and live gradient values into a separate
+  160-byte plan and variable 32-byte key table. All 32 authored curve keys and larger gradients survive;
+  there is no reuse/truncation to the simulation ABI's eight-key curve limit. Invalid live color values
+  fail lowering closed; adapters must disable the output rather than keep a stale previous plan.
+- Read-only evaluation consumes a contiguous source particle pool from the existing 48-byte ABI,
+  excluding dead particles, retired trail records, other emitters and invalid samples. Positions receive
+  one affine presentation transform; range/radius already use world units. Sprite alpha/size do not
+  scale lumens. No simulation state, particle data, host event stream or checkpoint is written.
+- Workgroup-local sorting compacts valid candidates into sorted 64-entry blocks. Hierarchical parallel
+  merge/rank passes retain at most K per run, with priority/lumens/stable identity keys and deterministic
+  ties, not quadratic all-particle comparisons or atomic append order. Final records are 48 bytes each.
+  Global counter atomics are aggregated per workgroup, not contended once per source particle.
+- `ParticleLightWorkPlan::for_output` honors the minimum of authored quality and host caps, schedules
+  reusable ping-pong buffers, checks u32 addressing/device storage/dispatch bounds and returns no work
+  for empty/zero-budget jobs. The source token maps back to the host's full occurrence identity;
+  cross-output tokens must preserve canonical identity order, not truncate UUIDs or use emitter indices.
+- Counters separately expose requested (alive/matching-emitter), valid candidate, selected and
+  budget-dropped counts. Invalid inputs are not reported as budget drops. Adapters must clear counters
+  before each job; scratch is fully overwritten and does not need per-frame clearing.
+- Three engine-neutral tests validate ABI/shader composition, complete key lowering/live override
+  rejection, device bounds and caps. Native GPU conformance matches the F7C CPU reference at block/run
+  boundaries through 65,536 slots, including live -> empty -> reordered-live reuse, stable ordinal ties,
+  all curve modes, static/live gradients, exact counts and unchanged particle input bytes.
+- [Measured evidence](../../benchmarks/fireworks/particle-light-selection-2026-10-03.md) covers three
+  sequential Vulkan runs on AMD Radeon integrated graphics. The initial selection-only baseline is
+  about 0.074 ms at 4,096 slots; the dense 262,144-slot probe needs 4.42-4.70 ms median (p95 up to
+  8.46 ms) and 24 MiB scratch
+  to retain 64 lights. This is a resource/performance observation, not a full-show/finale acceptance.
+
+**Next: F7D2.** Add canonical per-occurrence manifests, independently capped output runs and a final
+GPU global merge/admission cap with aggregate counters; wire these jobs to actual forward GPU
+presentation buffers. Validate hero/overlapping/F6 show inputs and global disable/lifecycle cleanup.
+The current prototype handles one output per job and does not install render-world systems or
+cross-output/instance admission. Do not mark F7D complete or begin one-entity-per-particle realization.
+F7E's bounded async selected-set realization/latency gate follows that integration.
+
 **Goal:** turn thousands of luminous particles into a small bounded selected-light set entirely on the
 presentation side.
 
@@ -4098,7 +4137,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls and F7C's source/compiler/artifact/CPU contract are implemented; F7B2's manual UI/visual gate remains open. Next build an intentionally small F7D GPU selection prototype and benchmark it before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract and F7D1's measured per-output GPU prototype are implemented; F7B2's manual UI/visual gate remains open. Next implement F7D2 global admission and live GPU presentation wiring, then measure F7E's bounded asynchronous realization before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4512,7 +4551,7 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7D   GPU candidate compaction/top-K with profiling counters
+1. F7D2  global multi-output admission + live GPU wiring + authored workload measurements
 2. F7E   bounded Bevy realization and visual/performance measurement
 3. F7F   quality tiers; shadows remain off by default
 4. F8.3  make smoke actually consume scene lighting
@@ -4520,7 +4559,8 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 
 F7B2 editor controls are implemented; complete their manual UI/visual acceptance alongside source
 authoring, without treating them as evidence of continuous particle lights or editor viewport lighting.
-F7C's material-free plans and CPU reference are implemented; GPU selection and realization remain open.
+F7C's material-free plans/CPU reference and F7D1's measured per-output GPU selection are implemented;
+global admission, live GPU wiring and selected-light realization remain open.
 
 Do not begin with deep backend-specific clustered-light injection. First prove that the generic model,
 selection policy, visual contribution and selected-light budgets are correct. Escalate from bounded
