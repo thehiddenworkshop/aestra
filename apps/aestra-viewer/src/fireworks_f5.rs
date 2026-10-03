@@ -179,6 +179,7 @@ mod tests {
         }
         shell.metadata.insert("status".into(), "F5D bounded four-arm crossette prototype; artistic and finale-scale acceptance pending".into());
         shell.metadata.insert("notes".into(), "One rocket feeds 32 stars. Each real star death feeds one child in each of four constant XY diagonal directions, sharing its birth position and 30% inherited velocity (128 arms total). Fixed effect-local plane, not parent-oriented; no random four-sample substitute or host timer. Reuses HDR materials, cooling trails and unlit smoke.".into());
+        super::super::fireworks_lights::tests::author_lights(&mut shell);
         super::super::fireworks_budgets::author_profiles(&mut shell);
         shell
     }
@@ -410,6 +411,7 @@ mod tests {
             shell.metadata.insert("status".into(), "F5C bounded delayed-carrier crackle prototype; artistic and finale-scale acceptance pending".into());
             shell.metadata.insert("notes".into(), "One rocket feeds 96 stars; their deaths spawn one burning carrier each. Seeded carrier lifetimes delay 12 brief sprite-only sparks per real death (1152 total). Reuses HDR hero materials and unlit smoke; no audio timer or new trigger. Not AAA-density certification.".into());
         }
+        super::super::fireworks_lights::tests::author_lights(&mut shell);
         super::super::fireworks_budgets::author_profiles(&mut shell);
         shell
     }

@@ -35,7 +35,9 @@ pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
 /// output: older versions are recompiled from source, never migrated. v5 adds
 /// explicit velocity distributions; older readers must not silently ignore
 /// the new mode and run a legacy cone instead.
-pub const CURRENT_ARTIFACT_VERSION: u32 = 5;
+/// v6 adds representative authored scene-light bindings; old readers must not
+/// silently ignore lighting behavior. Recompile v5 artifacts from source.
+pub const CURRENT_ARTIFACT_VERSION: u32 = 6;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -124,6 +126,8 @@ struct EffectV1 {
     /// Effect-scale event routes (event system E3, v4 additive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     event_routes: Vec<EventRouteV4>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    point_lights: Vec<PointLightV6>,
     /// Declared event inputs and outputs (event system E1, v4 additive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     event_inputs: Vec<aestra_core::EventDefinition>,
@@ -136,6 +140,107 @@ struct EffectV1 {
     /// The quality tier compiled for (fluid F12, additive): absent for `high`, the authored effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tier: Option<TierV4>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PointLightV6 {
+    source: aestra_core::EventRouteId,
+    route: u32,
+    pulse: aestra_core::PointLightPulse,
+    color_parameter: Option<(u32, f32)>,
+}
+
+impl PointLightV6 {
+    fn encode(
+        light: &aestra_runtime::CompiledPointLightBinding,
+        index: usize,
+    ) -> Result<Self, ArtifactError> {
+        let path = format!("effect.point_lights[{index}]");
+        Ok(Self {
+            source: light.source,
+            route: encode_u32(light.route, format!("{path}.route"))?,
+            pulse: light.pulse.clone(),
+            color_parameter: light
+                .color_parameter
+                .map(|(slot, age)| {
+                    Ok::<_, ArtifactError>((
+                        encode_u32(slot.0, format!("{path}.color_parameter"))?,
+                        age,
+                    ))
+                })
+                .transpose()?,
+        })
+    }
+    fn decode(
+        self,
+        index: usize,
+        routes: &[aestra_runtime::CompiledEventRoute],
+        parameters: &[CompiledParameter],
+    ) -> Result<aestra_runtime::CompiledPointLightBinding, ArtifactError> {
+        let path = format!("effect.point_lights[{index}]");
+        if self.source.is_nil() {
+            return invalid(
+                format!("{path}.source"),
+                "light binding identity cannot be nil",
+            );
+        }
+        let route = decode_usize(self.route.into(), format!("{path}.route"))?;
+        let Some(aestra_runtime::CompiledEventRoute::ParticleOutput(output)) = routes.get(route)
+        else {
+            return invalid(format!("{path}.route"), "missing particle output route");
+        };
+        if output.aggregation != aestra_core::EventAggregation::FirstPerTick
+            || routes
+                .iter()
+                .filter(|r| {
+                    matches!(r, aestra_runtime::CompiledEventRoute::ParticleOutput(r)
+                if r.source == output.source && r.output == output.output)
+                })
+                .count()
+                != 1
+        {
+            return invalid(
+                format!("{path}.route"),
+                "light route must be unambiguous and FirstPerTick",
+            );
+        }
+        if !self.pulse.is_valid() {
+            return invalid(format!("{path}.pulse"), "invalid point-light pulse");
+        }
+        let color_parameter = if let Some((slot, age)) = self.color_parameter {
+            let slot = decode_usize(slot.into(), format!("{path}.color_parameter"))?;
+            if !age.is_finite()
+                || !(0.0..=1.0).contains(&age)
+                || !parameters
+                    .get(slot)
+                    .is_some_and(|p| p.value_type == ValueType::Gradient)
+            {
+                return invalid(
+                    format!("{path}.color_parameter"),
+                    "requires a gradient slot and sample age in 0..1",
+                );
+            }
+            Some((ParameterSlot(slot), age))
+        } else {
+            None
+        };
+        let binding = aestra_runtime::CompiledPointLightBinding {
+            source: self.source,
+            route,
+            pulse: self.pulse,
+            color_parameter,
+        };
+        if binding
+            .resolve_with(|slot| parameters.get(slot.0).map(|p| &p.default))
+            .is_none()
+        {
+            return invalid(
+                format!("{path}.color_parameter"),
+                "invalid default light color",
+            );
+        }
+        Ok(binding)
+    }
 }
 
 /// A compiled particle event link (host bindings HB9b): emitter indices, checked on reload.
@@ -1002,6 +1107,12 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .collect(),
             event_inputs: effect.event_inputs.clone(),
             event_outputs: effect.event_outputs.clone(),
+            point_lights: effect
+                .point_lights
+                .iter()
+                .enumerate()
+                .map(|(i, light)| PointLightV6::encode(light, i))
+                .collect::<Result<_, _>>()?,
             requirements: RequirementsV1::encode(&effect.requirements)?,
             max_particles: encode_u64(effect.max_particles, "effect.max_particles")?,
             source_map: effect
@@ -1206,6 +1317,35 @@ impl TryFrom<EffectV1> for CompiledEffect {
             }
         }
 
+        let event_routes: Vec<_> = effect
+            .event_routes
+            .into_iter()
+            .enumerate()
+            .map(|(index, route)| {
+                route.decode(
+                    index,
+                    emitters.len(),
+                    &effect.event_inputs,
+                    &effect.event_outputs,
+                )
+            })
+            .collect::<Result<_, _>>()?;
+        let point_lights: Vec<_> = effect
+            .point_lights
+            .into_iter()
+            .enumerate()
+            .map(|(index, light)| light.decode(index, &event_routes, &parameters))
+            .collect::<Result<_, _>>()?;
+        let mut light_ids = BTreeSet::new();
+        let mut light_routes = BTreeSet::new();
+        for (index, light) in point_lights.iter().enumerate() {
+            if !light_ids.insert(light.source) || !light_routes.insert(light.route) {
+                return invalid(
+                    format!("effect.point_lights[{index}]"),
+                    "duplicate light identity or route",
+                );
+            }
+        }
         Ok(Self {
             source: effect.source,
             name: effect.name,
@@ -1248,17 +1388,8 @@ impl TryFrom<EffectV1> for CompiledEffect {
                     .map(|(index, link)| link.decode(index, count))
                     .collect::<Result<Vec<_>, _>>()?
             },
-            event_routes: {
-                let count = emitters.len();
-                effect
-                    .event_routes
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, route)| {
-                        route.decode(index, count, &effect.event_inputs, &effect.event_outputs)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-            },
+            event_routes,
+            point_lights,
             emitters,
             extension_stages,
             effect_clips,

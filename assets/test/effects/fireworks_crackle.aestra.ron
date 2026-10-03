@@ -1383,6 +1383,26 @@
             aggregation: FirstPerTick,
         ),
     ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f93a2",
+            route: "a3574a00-0000-4000-8000-0000000f938f",
+            pulse: (
+                linear_color: (1.0, 1.0, 1.0),
+                intensity_lumens: (
+                    id: "a3574a00-0000-4000-8000-0000000f93c0",
+                    keys: [(time: 0.0, value: 500000.0), (time: 0.2, value: 125000.0), (time: 1.0, value: 0.0)],
+                ),
+                range: (
+                    id: "a3574a00-0000-4000-8000-0000000f93c1",
+                    keys: [(time: 0.0, value: 80.0), (time: 1.0, value: 80.0)],
+                ),
+                radius: 0.1,
+                duration_seconds: 0.6,
+            ),
+            color_parameter: Some((parameter: "a3574a00-0000-4000-8000-0000000f903d", normalized_age: 0.5)),
+        ),
+    ],
     metadata: {
         "notes": "One rocket feeds 96 stars; their deaths spawn one burning carrier each. Seeded carrier lifetimes delay 12 brief sprite-only sparks per real death (1152 total). Reuses HDR hero materials and unlit smoke; no audio timer or new trigger. Not AAA-density certification.",
         "preview_seed": "17428930557923819521",

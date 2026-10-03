@@ -48,7 +48,8 @@ pub use interface::{
 pub use outputs::*;
 pub use physics::{MAX_PHYSICS_PROXIES, PhysicsProxy, PhysicsScene};
 pub use scene_outputs::{
-    MAX_LIGHT_CURVE_KEYS, PointLightPulse, PointLightSample, TransientPointLight,
+    CompiledPointLightBinding, LightBindingError, MAX_LIGHT_CURVE_KEYS, PointLightPulse,
+    PointLightSample, TransientPointLight,
 };
 pub use sdf::*;
 pub use staged::{
@@ -1273,6 +1274,7 @@ pub struct CompiledEffect {
     pub event_links: Vec<CompiledEventLink>,
     /// Effect-scale event routes (event system E3), in authored order.
     pub event_routes: Vec<CompiledEventRoute>,
+    pub point_lights: Vec<CompiledPointLightBinding>,
     /// Declared event inputs (event system E1), as authored: part of the public interface.
     pub event_inputs: Vec<aestra_core::EventDefinition>,
     /// Declared event outputs (event system E1), as authored.

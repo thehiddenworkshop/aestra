@@ -1745,6 +1745,26 @@
             aggregation: FirstPerTick,
         ),
     ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000fa3a2",
+            route: "a3574a00-0000-4000-8000-0000000fa38f",
+            pulse: (
+                linear_color: (1.0, 1.0, 1.0),
+                intensity_lumens: (
+                    id: "a3574a00-0000-4000-8000-0000000fa3c0",
+                    keys: [(time: 0.0, value: 500000.0), (time: 0.2, value: 125000.0), (time: 1.0, value: 0.0)],
+                ),
+                range: (
+                    id: "a3574a00-0000-4000-8000-0000000fa3c1",
+                    keys: [(time: 0.0, value: 80.0), (time: 1.0, value: 80.0)],
+                ),
+                radius: 0.1,
+                duration_seconds: 0.6,
+            ),
+            color_parameter: Some((parameter: "a3574a00-0000-4000-8000-0000000fa035", normalized_age: 0.5)),
+        ),
+    ],
     metadata: {
         "notes": "One rocket feeds 32 stars. Each real star death feeds one child in each of four constant XY diagonal directions, sharing its birth position and 30% inherited velocity (128 arms total). Fixed effect-local plane, not parent-oriented; no random four-sample substitute or host timer. Reuses HDR materials, cooling trails and unlit smoke.",
         "preview_seed": "17428930557923819521",

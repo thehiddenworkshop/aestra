@@ -1234,6 +1234,26 @@
             aggregation: FirstPerTick,
         ),
     ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f83a2",
+            route: "a3574a00-0000-4000-8000-0000000f838f",
+            pulse: (
+                linear_color: (1.0, 1.0, 1.0),
+                intensity_lumens: (
+                    id: "a3574a00-0000-4000-8000-0000000f83c0",
+                    keys: [(time: 0.0, value: 500000.0), (time: 0.2, value: 125000.0), (time: 1.0, value: 0.0)],
+                ),
+                range: (
+                    id: "a3574a00-0000-4000-8000-0000000f83c1",
+                    keys: [(time: 0.0, value: 80.0), (time: 1.0, value: 80.0)],
+                ),
+                radius: 0.1,
+                duration_seconds: 0.6,
+            ),
+            color_parameter: Some((parameter: "a3574a00-0000-4000-8000-0000000f803d", normalized_age: 0.5)),
+        ),
+    ],
     metadata: {
         "notes": "Shared source/target pools; four real rocket deaths feed overlapping main and secondary cohorts. Explicit medium/low budgets reduce primary count and secondary fan-out together; histories reserve all births including retired owners. No replay history or host spawn timer.",
         "preview_seed": "17428930557923819521",

@@ -77,7 +77,7 @@ fn main() {
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
-        eprintln!("F7A host lights: --transient-lights with f6-show and --backend gpu. One shadowless pulse per main_break, bounded to 8/4/2 lights for high/medium/low; not authored light outputs or lit smoke.");
+        eprintln!("Authored scene lights: --transient-lights with f6-show and --backend gpu. Saved representative pulses, bounded to 8/4/2 shadowless lights for high/medium/low; particle smoke remains unlit.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -132,10 +132,16 @@ fn main() {
     let cue_parent_count = prepared.compiled.event_links.first().map_or(0, |l| l.count);
     let cue_project = prepared.project.clone();
     let cue_seed = config.resolved_seed();
-    let light_binding = config.transient_lights.then(|| {
-        fireworks_lights::Bindings::new(&prepared.project, &config.tier)
-            .expect("checked-in show must expose its bound star colors")
-    });
+    let light_settings = config
+        .transient_lights
+        .then(|| aestra_bevy::TransientLightSettings {
+            max_lights: match config.tier.name.as_str() {
+                "high" => 8,
+                "medium" => 4,
+                _ => 2,
+            },
+            ..default()
+        });
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -232,16 +238,9 @@ fn main() {
                 gpu_bench::drive_gpu_bench.after(aestra_bevy::AestraSet::Profile),
             ),
         );
-    if let Some(binding) = light_binding {
-        app.insert_resource(binding.settings())
-            .insert_resource(binding)
-            .add_plugins(aestra_bevy::AestraTransientLightPlugin)
-            .add_systems(
-                Update,
-                fireworks_lights::bind
-                    .after(aestra_bevy::AestraSet::Playback)
-                    .before(aestra_bevy::AestraSet::SceneOutputs),
-            );
+    if let Some(settings) = light_settings {
+        app.insert_resource(settings)
+            .add_plugins(aestra_bevy::AestraTransientLightPlugin);
     }
     if let Some(step) = probe_bench_step {
         // Same live workload at the same simulation frame regardless of GPU/host speed.

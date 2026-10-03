@@ -1,86 +1,5 @@
-//! Example-host bindings. The runtime and adapter know nothing about fireworks.
-use aestra_bevy::{
-    AestraLightOutput, AestraOutputEvent, CompiledEffectProject, EffectClipId, PointLightPulse,
-    QualityTier, RuntimeValue, TransientLightSettings,
-};
+//! Viewer validation geometry and authored light-output acceptance.
 use bevy::prelude::*;
-use std::collections::BTreeMap;
-
-#[derive(Resource)]
-pub struct Bindings {
-    pulses: BTreeMap<EffectClipId, PointLightPulse>,
-    budget: usize,
-}
-
-impl Bindings {
-    pub fn new(project: &CompiledEffectProject, tier: &QualityTier) -> Result<Self, String> {
-        let mut pulses = BTreeMap::new();
-        for clip in &project.root.effect_clips {
-            let source = project
-                .effect(clip.source.id)
-                .ok_or("missing light source")?;
-            let parameter = source
-                .parameters
-                .iter()
-                .find(|p| p.name == "Main stars color")
-                .ok_or("missing bound star color")?;
-            // These example-host bindings respect each occurrence's exposed color override.
-            // Not an authored light-output schema, nor a lookup of transient child entities.
-            let color = clip
-                .parameter_overrides
-                .iter()
-                .find(|p| p.source == parameter.source)
-                .map_or(&parameter.default, |p| &p.value);
-            let RuntimeValue::Gradient(gradient) = color else {
-                return Err("bound star color must be a gradient".into());
-            };
-            let [r, g, b, _] = gradient.sample(0.5);
-            let pulse = PointLightPulse::flash([r, g, b], 500_000.0, 80.0, 0.6);
-            if !pulse.is_valid() {
-                return Err("invalid bound light pulse".into());
-            }
-            pulses.insert(clip.source_clip, pulse);
-        }
-        Ok(Self {
-            pulses,
-            budget: match tier.name.as_str() {
-                "high" => 8,
-                "medium" => 4,
-                _ => 2,
-            },
-        })
-    }
-
-    pub fn settings(&self) -> TransientLightSettings {
-        TransientLightSettings {
-            max_lights: self.budget,
-            ..default()
-        }
-    }
-
-    fn intent(&self, output: &AestraOutputEvent) -> Option<AestraLightOutput> {
-        if output.event.kind != "main_break" {
-            return None;
-        }
-        let [clip] = output.clip_path.as_slice() else {
-            return None;
-        };
-        AestraLightOutput::from_particle(output, self.pulses.get(clip)?.clone())
-    }
-}
-
-pub fn bind(
-    binding: Res<Bindings>,
-    mut outputs: MessageReader<AestraOutputEvent>,
-    mut lights: MessageWriter<AestraLightOutput>,
-) {
-    for output in outputs.read() {
-        if let Some(intent) = binding.intent(output) {
-            lights.write(intent);
-        }
-    }
-}
-
 /// Neutral diffuse cards near shell height make illumination distinct from bloom
 /// or emissive VFX. They are host validation geometry, not part of the saved show.
 pub fn spawn_receivers(
@@ -104,22 +23,42 @@ pub fn spawn_receivers(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    /// Fixture authoring only: saved assets carry this data; playback hosts do not.
+    pub(crate) fn author_lights(shell: &mut aestra_bevy::EffectAsset) {
+        let base = shell.id.as_uuid().as_u128();
+        let mut pulse = aestra_bevy::PointLightPulse::flash([1.0; 3], 500_000.0, 80.0, 0.6);
+        pulse.intensity_lumens.id = aestra_bevy::CurveId::from_u128(base + 960);
+        pulse.range.id = aestra_bevy::CurveId::from_u128(base + 961);
+        let mut binding = aestra_bevy::PointLightBinding::new(shell.particle_outputs[1].id, pulse);
+        binding.id = aestra_bevy::EventRouteId::from_u128(base + 930);
+        binding.color_parameter = Some(aestra_bevy::LightColorParameter {
+            parameter: shell
+                .parameters
+                .iter()
+                .find(|p| p.name == "Main stars color")
+                .unwrap()
+                .id,
+            normalized_age: 0.5,
+        });
+        shell.point_lights = vec![binding];
+    }
+
     #[test]
-    fn host_binding_respects_clip_colors_and_emits_one_pulse_not_one_per_star() {
+    fn saved_bindings_respect_each_clip_color_and_do_not_multiply_packet_magnitude() {
+        use aestra_bevy::{EffectOutputEvent, EventOrigin, QualityTier, RuntimeValue};
         let source = crate::fireworks_show::effect();
         let index = aestra_project::ProjectAssetIndex::scan(crate::viewer_asset_root(None));
         let resolved = index.resolve_effect_project(&source).unwrap();
-        for (tier, budget) in QualityTier::presets().into_iter().zip([8, 4, 2]) {
+        for tier in QualityTier::presets() {
             let project = aestra_bevy::EffectCompiler::default()
-                .with_tier(tier.clone())
+                .with_tier(tier)
                 .compile_resolved_project(&resolved)
                 .unwrap();
-            let binding = Bindings::new(&project, &tier).unwrap();
-            assert_eq!(binding.settings().max_lights, budget);
-            assert_eq!(binding.pulses.len(), 13);
             for clip in &project.root.effect_clips {
+                let source = project.effect(clip.source.id).unwrap();
+                assert_eq!(source.point_lights.len(), 1);
                 let color = clip
                     .parameter_overrides
                     .iter()
@@ -128,36 +67,28 @@ mod tests {
                         _ => None,
                     })
                     .unwrap();
-                let pulse = &binding.pulses[&clip.source_clip];
+                let event = EffectOutputEvent::new(
+                    "main_break",
+                    EventOrigin::Emitter(0),
+                    "",
+                    vec![0.0; 3],
+                    4096.0,
+                    80,
+                );
+                let (_, pulse) = project
+                    .point_light_for_output(&[clip.source_clip], clip.source.id, &event, &[])
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(pulse.linear_color, [color[0], color[1], color[2]]);
-                let mut output = AestraOutputEvent::root(
-                    Entity::PLACEHOLDER,
-                    aestra_bevy::EffectOutputEvent::new(
-                        "main_break",
-                        aestra_bevy::EventOrigin::Emitter(0),
-                        "",
-                        vec![0.0; 3],
-                        4096.0,
-                        64,
-                    ),
-                )
-                .in_epoch(3);
-                output.clip_path = vec![clip.source_clip];
-                output.particle = Some(aestra_bevy::ParticleOutputContext {
-                    source_effect: clip.source.id,
-                    seed: 7,
-                    root_time_seconds: clip.start_time + 64.0 / 60.0,
-                    world_position: Some([1.0, 2.0, 3.0]),
-                });
-                let intent = binding.intent(&output).unwrap();
-                assert_eq!(intent.light.world_position, [1.0, 2.0, 3.0]);
-                assert_eq!(intent.playback_epoch, 3);
-                assert_eq!(intent.light.pulse.intensity_lumens.sample(0.0), 500_000.0);
-                output.event.kind = "crackle".into();
-                assert!(binding.intent(&output).is_none());
-                output.event.kind = "main_break".into();
-                output.particle = None;
-                assert!(binding.intent(&output).is_none());
+                assert_eq!(pulse.intensity_lumens.sample(0.0), 500_000.0);
+                let mut unbound = event.clone();
+                unbound.kind = "crackle".into();
+                assert!(
+                    project
+                        .point_light_for_output(&[clip.source_clip], clip.source.id, &unbound, &[])
+                        .unwrap()
+                        .is_none()
+                );
             }
         }
     }
@@ -191,8 +122,11 @@ mod tests {
     #[test]
     #[ignore = "requires the documented native receivers-on/off-final captures"]
     fn native_receivers_respond_without_bloom_and_return_to_baseline() {
-        let directory =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fireworks-f7");
+        let directory = std::env::var_os("AESTRA_LIGHT_CAPTURE_ROOT")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fireworks-f7")
+            });
         let mut red_changes = Vec::new();
         for enabled in [false, true] {
             let name = if enabled {

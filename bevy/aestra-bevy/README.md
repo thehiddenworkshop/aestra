@@ -315,8 +315,34 @@ Audio assets, per-flash sound policies, voice budgets and mixing remain host res
 The engine-neutral `aestra_runtime::{PointLightPulse, TransientPointLight}` contract
 describes a world position, root-clock occurrence time, normalized linear RGB, lumens,
 range, radius and lifetime. Intensity and range curves sample normalized pulse age
-(at most 32 finite, ordered keys). This is a host-submitted scene intent, **not yet an
-authored renderer/output type**. Nothing in the core is named after fireworks.
+(at most 32 finite, ordered keys). Effects can persist `point_lights` bindings to stable
+`ParticleOutputRoute` IDs. Nothing in the core is named after fireworks.
+
+For automatic authored lights, install `AestraTransientLightPlugin` after `AestraPlugin`
+and configure `TransientLightSettings`. The host does not need to map output names,
+colors or envelopes. For example, before compiling an authored effect:
+
+```rust,no_run
+use aestra_core::{EffectAsset, PointLightBinding, PointLightPulse};
+fn author_light(effect: &mut EffectAsset) {
+    let route = effect.particle_outputs[0].id; // a validated FirstPerTick route
+    effect.point_lights.push(PointLightBinding::new(
+        route, PointLightPulse::flash([1.0, 0.2, 0.1], 50_000.0, 30.0, 0.5),
+    ));
+}
+```
+
+`LightColorParameter` optionally samples a gradient parameter at a fixed normalized
+age when emitted. Exposed parameters use root live values or the leaf clip's authored
+overrides/defaults; non-exposed defaults lower to literal colors. Root values are read
+at delivery, not snapshotted at the event tick. Nested sources resolve by stable clip
+path even after their temporary presentation has expired. Invalid sampled colors fail
+closed. Binding validation rejects missing routes, EachEvent aggregation, duplicate
+bindings and ambiguous output/emitter pairs (the native packet has no route ID).
+Source v4 gains an optional field; compiled artifacts are v6 and old versions must be
+recompiled. Editor controls are a subsequent slice; use source/API authoring for now.
+
+For a custom host mapping, disable automatic authored bindings:
 
 ```rust,no_run
 use aestra_bevy::{
@@ -336,7 +362,7 @@ fn bind_lights(mut cues: MessageReader<AestraOutputEvent>, mut lights: MessageWr
 }
 let mut app = App::new();
 app.add_plugins((DefaultPlugins, AestraPlugin, AestraTransientLightPlugin))
-    .insert_resource(TransientLightSettings { max_lights: 8, ..default() })
+    .insert_resource(TransientLightSettings { authored_bindings: false, max_lights: 8, ..default() })
     .add_systems(Update, bind_lights.after(AestraSet::Playback).before(AestraSet::SceneOutputs));
 ```
 
@@ -354,6 +380,9 @@ new intents are dropped, not queued or allowed to evict a live pulse; read
 `TransientLightStatistics` for accepted/duplicate/budget/invalid/stale/expired/disabled
 counts and active/allocated/peak occupancy. Bound the producer's message volume too:
 the adapter caps consumption, not allocations made by arbitrary host producers.
+Automatic binding inspection shares the requests/frame scan cap; excess source packets
+are discarded without a backlog. `source_packets_dropped` includes unbound cues, not
+only lost lights; `binding_invalid` counts unresolved/malformed authored light cues.
 
 Lights reuse entities, inherit the root's `RenderLayers`, and remain unparented at the
 already-transformed world position (no double root transform). Shadows/contact shadows
@@ -364,11 +393,12 @@ are dropped; there is no future scheduler or light-history reconstruction on see
 Host ECS motion after the event does not move that already-emitted pulse.
 
 Viewer opt-in: `--fireworks-f0 --fireworks-f0-probe f6-show --backend gpu --transient-lights`.
-The example host binds `main_break` to clip-overridden star colors and 8/4/2 high/medium/low
-budgets. Add `--history playback-only --fireworks-cue-check fresh-report.json` to validate
+The saved shell assets bind their representative particle routes to clip-overridden star
+colors; the viewer only installs the adapter and 8/4/2 high/medium/low budgets.
+Add `--history playback-only --fireworks-cue-check fresh-report.json` to validate
 admission and cleanup over full playback, seek and restart. These lights affect ordinary
 lit scene meshes; Aestra's current unlit particle smoke is **not** illuminated by them.
-Authored light-output bindings, lit smoke and production lighting budgets remain F7/F8 gates.
+Editor light controls, lit smoke and measured production lighting budgets remain F7/F8 gates.
 
 ## Where to look
 

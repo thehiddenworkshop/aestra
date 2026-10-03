@@ -57,6 +57,8 @@ impl AestraLightOutput {
 #[derive(Resource, Debug, Clone)]
 pub struct TransientLightSettings {
     pub enabled: bool,
+    /// Resolve authored bindings automatically. Disable when the host supplies its own mapping.
+    pub authored_bindings: bool,
     pub max_lights: usize,
     pub max_requests_per_frame: usize,
     pub max_lumens: f32,
@@ -66,6 +68,7 @@ impl Default for TransientLightSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            authored_bindings: true,
             max_lights: 16,
             max_requests_per_frame: 128,
             max_lumens: 1_000_000.0,
@@ -87,6 +90,10 @@ pub struct TransientLightStatistics {
     pub stale: u64,
     pub expired: u64,
     pub disabled: u64,
+    /// Authored binding packets not inspected due to the per-frame scan cap.
+    /// Includes unbound cues; this is not a count of known lost light intents.
+    pub source_packets_dropped: u64,
+    pub binding_invalid: u64,
 }
 
 /// Adapter-owned pooled entity. Hosts can inspect lights, not use it as a cue ID.
@@ -110,8 +117,66 @@ impl Plugin for AestraTransientLightPlugin {
             .init_resource::<TransientLightStatistics>()
             .init_resource::<Pool>()
             .configure_sets(Update, AestraSet::SceneOutputs.after(AestraSet::Playback))
-            .add_systems(Update, realize.in_set(AestraSet::SceneOutputs));
+            .add_systems(
+                Update,
+                (bind_authored, realize)
+                    .chain()
+                    .in_set(AestraSet::SceneOutputs),
+            );
     }
+}
+
+fn bind_authored(
+    settings: Res<TransientLightSettings>,
+    mut stats: ResMut<TransientLightStatistics>,
+    mut outputs: MessageReader<AestraOutputEvent>,
+    mut lights: MessageWriter<AestraLightOutput>,
+    roots: Query<&EffectPlayer>,
+) {
+    if !settings.authored_bindings {
+        outputs.clear();
+        return;
+    }
+    let limit = settings.max_requests_per_frame.min(MAX_REQUESTS_PER_FRAME);
+    stats.source_packets_dropped += outputs.len().saturating_sub(limit) as u64;
+    for output in outputs.read().take(limit) {
+        let Some(spatial) = &output.particle else {
+            continue;
+        };
+        let Ok(player) = roots.get(output.effect) else {
+            continue;
+        };
+        if output.playback_epoch != Some(player.instance().history_epoch()) {
+            continue;
+        }
+        let parameters = player.instance().parameter_values();
+        let resolved = if let Some(project) = player.project() {
+            project.point_light_for_output(
+                &output.clip_path,
+                spatial.source_effect,
+                &output.event,
+                parameters,
+            )
+        } else if output.clip_path.is_empty() && spatial.source_effect == player.effect().source {
+            player
+                .effect()
+                .point_light_for_output(&output.event, |slot| parameters.get(slot.0))
+        } else {
+            Err(aestra_runtime::LightBindingError::MissingSource)
+        };
+        match resolved {
+            Ok(Some((_, pulse))) => {
+                if let Some(intent) = AestraLightOutput::from_particle(output, pulse) {
+                    lights.write(intent);
+                } else {
+                    stats.binding_invalid += 1;
+                }
+            }
+            Ok(None) => {}
+            Err(_) => stats.binding_invalid += 1,
+        }
+    }
+    outputs.clear();
 }
 
 fn rendered(sample: PointLightSample, settings: &TransientLightSettings) -> PointLight {
@@ -274,6 +339,7 @@ mod tests {
 
     fn app() -> (App, Entity) {
         let mut app = App::new();
+        app.add_message::<AestraOutputEvent>();
         app.add_plugins(AestraTransientLightPlugin);
         let effect = Arc::new(
             EffectCompiler::default()
@@ -318,6 +384,167 @@ mod tests {
             .query_filtered::<Entity, With<TransientLightProxy>>()
             .iter(app.world())
             .collect()
+    }
+
+    fn authored_player(app: &mut App, root: Entity) -> crate::ParameterId {
+        let mut asset = EffectAsset::new("generic light", 4.0);
+        let emitter = crate::Emitter::basic_sprite("source", 4.0);
+        let output = crate::EventDefinition::new("not_firework_specific");
+        let route =
+            crate::ParticleOutputRoute::new(emitter.id, crate::EventTrigger::OnDeath, output.id);
+        let color = crate::ParameterId::new();
+        asset.parameters.push(crate::EffectParameter {
+            id: color,
+            name: "color".into(),
+            exposed: true,
+            default: crate::Value::Gradient(crate::Gradient::new(vec![crate::ColorKey::new(
+                0.0, [1.0; 4],
+            )])),
+        });
+        let mut binding = crate::PointLightBinding::new(
+            route.id,
+            PointLightPulse::flash([1.0; 3], 500_000.0, 80.0, 0.6),
+        );
+        binding.color_parameter = Some(crate::LightColorParameter {
+            parameter: color,
+            normalized_age: 0.5,
+        });
+        asset.emitters.push(emitter);
+        asset.event_outputs.push(output);
+        asset.particle_outputs.push(route);
+        asset.point_lights.push(binding);
+        let mut player = EffectPlayer::from_compiled(Arc::new(
+            EffectCompiler::default().compile(&asset).unwrap(),
+        ));
+        player.playing = false;
+        app.world_mut().entity_mut(root).insert(player);
+        color
+    }
+    fn cue(app: &App, root: Entity, tick: u64) -> AestraOutputEvent {
+        let player = app.world().get::<EffectPlayer>(root).unwrap();
+        AestraOutputEvent {
+            effect: root,
+            clip_path: vec![],
+            playback_epoch: Some(player.instance().history_epoch()),
+            particle: Some(crate::ParticleOutputContext {
+                source_effect: player.effect().source,
+                seed: 7,
+                root_time_seconds: player.instance().time(),
+                world_position: Some([4.0, 2.0, 1.0]),
+            }),
+            event: crate::EffectOutputEvent::new(
+                "not_firework_specific",
+                EventOrigin::Emitter(0),
+                "",
+                vec![0.0; 3],
+                4096.0,
+                tick,
+            ),
+        }
+    }
+
+    #[test]
+    fn automatic_binding_uses_live_color_world_position_and_one_pulse_per_packet() {
+        let (mut app, root) = app();
+        let parameter = authored_player(&mut app, root);
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .set_parameter(
+                parameter,
+                crate::Value::Gradient(crate::Gradient::new(vec![crate::ColorKey::new(
+                    0.0,
+                    [0.1, 0.8, 0.3, 1.0],
+                )])),
+            )
+            .unwrap();
+        let output = cue(&app, root, 80);
+        app.world_mut().write_message(output.clone());
+        app.world_mut().write_message(output.clone());
+        let mut legacy = output.clone();
+        legacy.particle = None;
+        app.world_mut().write_message(legacy);
+        let mut unbound = output;
+        unbound.event.kind = "unbound".into();
+        app.world_mut().write_message(unbound);
+        app.update();
+        let stats = app.world().resource::<TransientLightStatistics>();
+        assert_eq!(
+            (
+                stats.accepted,
+                stats.duplicate,
+                stats.active,
+                stats.binding_invalid
+            ),
+            (1, 1, 1, 0)
+        );
+        let entity = entities(&mut app)[0];
+        let light = app.world().get::<PointLight>(entity).unwrap();
+        assert_eq!(light.intensity, 500_000.0);
+        assert_eq!(light.color, Color::linear_rgb(0.1, 0.8, 0.3));
+        assert_eq!(
+            app.world().get::<Transform>(entity).unwrap().translation,
+            Vec3::new(4.0, 2.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn authored_mapping_is_optional_bounded_and_invalid_colors_fail_closed() {
+        let (mut app, root) = app();
+        let parameter = authored_player(&mut app, root);
+        app.world_mut()
+            .resource_mut::<TransientLightSettings>()
+            .authored_bindings = false;
+        let output = cue(&app, root, 1);
+        app.world_mut().write_message(output);
+        app.update();
+        assert_eq!(
+            app.world().resource::<TransientLightStatistics>().accepted,
+            0
+        );
+        {
+            let mut settings = app.world_mut().resource_mut::<TransientLightSettings>();
+            settings.authored_bindings = true;
+            settings.max_requests_per_frame = 2;
+        }
+        for tick in 2..12 {
+            let output = cue(&app, root, tick);
+            app.world_mut().write_message(output);
+        }
+        app.update();
+        assert_eq!(
+            app.world().resource::<TransientLightStatistics>().accepted,
+            2
+        );
+        assert_eq!(
+            app.world()
+                .resource::<TransientLightStatistics>()
+                .source_packets_dropped,
+            8
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<TransientLightStatistics>().accepted,
+            2,
+            "overflow is discarded, not queued"
+        );
+        app.world_mut()
+            .get_mut::<EffectPlayer>(root)
+            .unwrap()
+            .set_parameter(
+                parameter,
+                crate::Value::Gradient(crate::Gradient::new(vec![crate::ColorKey::new(
+                    0.0,
+                    [2.0, 0.0, 0.0, 1.0],
+                )])),
+            )
+            .unwrap();
+        let output = cue(&app, root, 20);
+        app.world_mut().write_message(output);
+        app.update();
+        let stats = app.world().resource::<TransientLightStatistics>();
+        assert_eq!(stats.binding_invalid, 1);
+        assert_eq!(stats.active, 0, "parameter edits invalidate the old epoch");
     }
 
     #[test]

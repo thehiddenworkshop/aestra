@@ -1,96 +1,7 @@
-//! Engine-neutral, representative scene-light intents. No host entities or audio.
-use aestra_core::{Curve, CurveKey};
-
-pub const MAX_LIGHT_CURVE_KEYS: usize = 32;
-
-/// One representative point-light pulse, not one light per particle.
-/// RGB is normalized linear color (0..1), intensity is lumens; radius/range use
-/// the host's world units. Put radiance scale in intensity, not RGB channels.
-/// Curves use normalized pulse age. Shadows are an adapter/host policy, off by default.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PointLightPulse {
-    pub linear_color: [f32; 3],
-    pub intensity_lumens: Curve,
-    pub range: Curve,
-    pub radius: f32,
-    pub duration_seconds: f32,
-}
-
-impl PointLightPulse {
-    /// Immediate flash with a rapid fade, independent of particle/trail lifetime.
-    pub fn flash(color: [f32; 3], lumens: f32, range: f32, duration: f32) -> Self {
-        Self {
-            linear_color: color,
-            intensity_lumens: Curve::new(vec![
-                CurveKey::new(0.0, lumens),
-                CurveKey::new(0.2, lumens * 0.25),
-                CurveKey::new(1.0, 0.0),
-            ]),
-            range: Curve::new(vec![CurveKey::new(0.0, range), CurveKey::new(1.0, range)]),
-            radius: 0.1,
-            duration_seconds: duration,
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.linear_color
-            .iter()
-            .all(|v| v.is_finite() && (0.0..=1.0).contains(v))
-            && self.radius.is_finite()
-            && self.radius >= 0.0
-            && self.duration_seconds.is_finite()
-            && self.duration_seconds > 0.0
-            && valid_curve(&self.intensity_lumens, false)
-            && valid_curve(&self.range, true)
-    }
-
-    /// Sample using occurrence time, never delivery-frame wall time. Future and
-    /// expired pulses are absent; adapters decide whether to queue future intents.
-    pub fn sample(&self, age_seconds: f32) -> Option<PointLightSample> {
-        if !self.is_valid()
-            || !age_seconds.is_finite()
-            || age_seconds < 0.0
-            || age_seconds >= self.duration_seconds
-        {
-            return None;
-        }
-        let age = age_seconds / self.duration_seconds;
-        Some(PointLightSample {
-            linear_color: self.linear_color,
-            intensity_lumens: self.intensity_lumens.sample(age),
-            range: self.range.sample(age),
-            radius: self.radius,
-        })
-    }
-}
-
-fn valid_curve(curve: &Curve, positive: bool) -> bool {
-    let valid_value =
-        |value: f32| value.is_finite() && if positive { value > 0.0 } else { value >= 0.0 };
-    !curve.keys.is_empty()
-        && curve.keys.len() <= MAX_LIGHT_CURVE_KEYS
-        && curve.keys.iter().all(|key| {
-            key.time.is_finite()
-                && (0.0..=1.0).contains(&key.time)
-                && key.value.is_finite()
-                && valid_value(curve.output_value(key.value))
-        })
-        && curve
-            .keys
-            .windows(2)
-            .all(|pair| pair[0].time < pair[1].time)
-        && curve.output_range.is_none_or(|range| {
-            valid_value(range.min) && valid_value(range.max) && range.min <= range.max
-        })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PointLightSample {
-    pub linear_color: [f32; 3],
-    pub intensity_lumens: f32,
-    pub range: f32,
-    pub radius: f32,
-}
+//! Engine-neutral scene-light realization and compiled bindings.
+#[cfg(test)]
+use aestra_core::CurveKey;
+pub use aestra_core::{MAX_LIGHT_CURVE_KEYS, PointLightPulse, PointLightSample};
 
 /// A scene-output intent at a fixed world-space event position and root-clock time.
 /// Hosts attach their instance/epoch/duplicate identity in the adapter envelope.
@@ -115,6 +26,116 @@ impl TransientPointLight {
                     .sample(root_time_seconds - self.root_time_seconds)
             })
             .flatten()
+    }
+}
+
+/// Compiled binding to one unambiguous FirstPerTick particle output route.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledPointLightBinding {
+    pub source: aestra_core::EventRouteId,
+    pub route: usize,
+    pub pulse: PointLightPulse,
+    pub color_parameter: Option<(crate::ParameterSlot, f32)>,
+}
+
+impl CompiledPointLightBinding {
+    /// Resolve occurrence color from the instance's actual parameter values.
+    /// Invalid live overrides fail closed; never silently use a different color.
+    pub fn resolve(&self, parameters: &[crate::RuntimeValue]) -> Option<PointLightPulse> {
+        self.resolve_with(|slot| parameters.get(slot.0))
+    }
+
+    pub fn resolve_with<'a>(
+        &self,
+        mut parameter: impl FnMut(crate::ParameterSlot) -> Option<&'a crate::RuntimeValue>,
+    ) -> Option<PointLightPulse> {
+        let mut pulse = self.pulse.clone();
+        if let Some((slot, age)) = self.color_parameter {
+            if !age.is_finite() || !(0.0..=1.0).contains(&age) {
+                return None;
+            }
+            let crate::RuntimeValue::Gradient(gradient) = parameter(slot)? else {
+                return None;
+            };
+            let [r, g, b, _] = gradient.sample(age);
+            pulse.linear_color = [r, g, b];
+        }
+        pulse.is_valid().then_some(pulse)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightBindingError {
+    MissingSource,
+    InvalidColor,
+}
+
+impl crate::CompiledEffect {
+    pub fn point_light_for_output<'a>(
+        &self,
+        event: &crate::EffectOutputEvent,
+        parameter: impl FnMut(crate::ParameterSlot) -> Option<&'a crate::RuntimeValue>,
+    ) -> Result<Option<(aestra_core::EventRouteId, PointLightPulse)>, LightBindingError> {
+        let crate::EventOrigin::Emitter(emitter) = event.origin else {
+            return Ok(None);
+        };
+        let Some(binding) = self.point_lights.iter().find(|binding| {
+            matches!(self.event_routes.get(binding.route), Some(crate::CompiledEventRoute::ParticleOutput(route))
+                if route.source == emitter && route.output == event.kind)
+        }) else { return Ok(None); };
+        binding
+            .resolve_with(parameter)
+            .map(|pulse| Some((binding.source, pulse)))
+            .ok_or(LightBindingError::InvalidColor)
+    }
+}
+
+impl crate::CompiledEffectProject {
+    /// Resolve by stable source/path even after a temporary child presentation has
+    /// expired. Only the final clip's own exposed overrides apply to its source.
+    /// Root live values are current delivery-time values, not historical snapshots.
+    pub fn point_light_for_output(
+        &self,
+        path: &[aestra_core::EffectClipId],
+        source: aestra_core::EffectId,
+        event: &crate::EffectOutputEvent,
+        root_parameters: &[crate::RuntimeValue],
+    ) -> Result<Option<(aestra_core::EventRouteId, PointLightPulse)>, LightBindingError> {
+        if path.len() > 63 {
+            return Err(LightBindingError::MissingSource);
+        }
+        let mut effect = &self.root;
+        let mut overrides: &[crate::CompiledParameterOverride] = &[];
+        for id in path {
+            let clip = effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.source_clip == *id)
+                .ok_or(LightBindingError::MissingSource)?;
+            overrides = &clip.parameter_overrides;
+            effect = self
+                .effect(clip.source.id)
+                .ok_or(LightBindingError::MissingSource)?;
+        }
+        if effect.source != source {
+            return Err(LightBindingError::MissingSource);
+        }
+        effect.point_light_for_output(event, |slot| {
+            if path.is_empty() {
+                root_parameters.get(slot.0)
+            } else {
+                overrides
+                    .iter()
+                    .find(|value| value.slot == slot)
+                    .map(|value| &value.value)
+                    .or_else(|| {
+                        effect
+                            .parameters
+                            .get(slot.0)
+                            .map(|parameter| &parameter.default)
+                    })
+            }
+        })
     }
 }
 

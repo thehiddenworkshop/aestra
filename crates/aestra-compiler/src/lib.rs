@@ -8,6 +8,7 @@ mod material_reflection;
 mod material_stack;
 mod module_stack;
 mod normal_map;
+mod scene_outputs;
 pub use normal_map::evaluate_normal_map;
 
 pub use aestra_extension::sdk::*;
@@ -708,6 +709,12 @@ impl EffectCompiler {
                 | MaterialParameterValue::RandomRange { .. } => None,
             })
         }));
+        referenced_parameters.extend(
+            asset
+                .point_lights
+                .iter()
+                .filter_map(|light| light.color_parameter.as_ref().map(|color| color.parameter)),
+        );
         let mut parameters = Vec::new();
         let mut parameter_slots = BTreeMap::new();
         for parameter in asset
@@ -1133,10 +1140,18 @@ impl EffectCompiler {
         let requirements = derive_effect_requirements(&emitters);
         let event_links = compile_event_links(asset, &emitters)?;
         let event_routes = compile_event_routes(asset, &emitters)?;
+        let point_lights = scene_outputs::compile(
+            asset,
+            &event_routes,
+            &emitters,
+            &parameter_slots,
+            &parameters,
+        );
 
         Ok(CompiledEffect {
             event_links,
             event_routes,
+            point_lights,
             event_inputs: asset.event_inputs.clone(),
             event_outputs: asset.event_outputs.clone(),
             source: asset.id,

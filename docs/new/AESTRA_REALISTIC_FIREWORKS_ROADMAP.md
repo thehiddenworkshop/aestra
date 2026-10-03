@@ -65,8 +65,10 @@ budgets and measured overlapping forward playback. F6A adds a bounded 26-second 
 show with per-clip admission/cleanup reporting across all three tiers. F6B validates
 nested spatial particle cues at all three tiers, including seek/restart suppression.
 F7A adds engine-neutral host-submitted light pulses, a bounded opt-in Bevy pool and
-native show/receiver acceptance. Authored light-output bindings and lit smoke remain open**.
-The next engine step is F7B's authored light-output integration, not
+native show/receiver acceptance. F7B1 persists generic light bindings through source,
+compiler and artifact v6 and resolves them automatically in Bevy; editor controls and
+lit smoke remain open**.
+The next engine step is F7B2's editor light controls, not
 more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3269,10 +3271,38 @@ Evidence and commands: `benchmarks/fireworks/transient-lights-2026-10-03.md`.
 Runtime/adapter/binding unit tests and native receiver check cover the first slice;
 these are API/render acceptance, not a lighting-cost/finale benchmark or AAA art approval.
 
-**Next: F7B — authored generic representative-light output bindings** (compiler/runtime
-contract, persisted configuration and editor integration), so effect authors need not
-hard-code route names/color/envelopes in each host. Keep the host's global disable and
-budget authority. Lit particle/volume smoke remains an explicit F7/F8 renderer gate;
+### F7B1 implemented — persisted bindings and automatic realization (2026-10-03)
+
+- `EffectAsset::point_lights` / `PointLightBinding` references a stable particle route
+  and owns normalized linear RGB, lumen/range curves, radius and independent pulse lifetime.
+  Optional `LightColorParameter` samples a gradient at a fixed authored normalized age.
+- Source v4 gains a default-empty field; authored-v4 conversions round-trip it. Compiled
+  artifacts bump to **v6**, persist route indices/parameter slots and validate envelopes,
+  reference/type bounds and duplicate identities on reload. Older artifacts are rejected
+  for recompilation rather than silently dropping light behavior.
+- The compiler retains parameters used only by lights. Exposed colors resolve against
+  root live values or final-clip overrides/defaults; non-exposed colors lower as literals.
+  Binding resolution uses stable source/clip paths, not temporary presentation entities.
+  Root parameter values are delivery-time values, not historical parameter snapshots.
+- `AestraTransientLightPlugin` automatically converts authored bindings into the existing
+  bounded pool. Hosts retain opt-in installation, global enable/budgets/clamps, and can
+  set `authored_bindings: false` for custom mappings. Source inspection is capped with
+  `source_packets_dropped`/`binding_invalid` telemetry; overflow is discarded, not queued.
+- One binding per **FirstPerTick** route. Missing routes, EachEvent routes and ambiguous
+  output/emitter pairs are rejected; packet identity does not yet carry route/trigger IDs.
+  Magnitude never multiplies light intensity. This is representative scene lighting,
+  not arbitrary per-particle lights or a new particle renderer.
+- Multi-break, crackle, crossette, strobe and secondary-volley sources now save the
+  bindings. The viewer's firework-specific runtime mapper is removed; it only installs
+  the generic plugin and quality budgets. Source/artifact, malformed-data, live-color,
+  nested-path and bounded automatic-admission regression tests accompany the change.
+
+Evidence: `benchmarks/fireworks/authored-lights-2026-10-03.md`.
+
+**Next: F7B2 — editor controls for representative light bindings** (route selection,
+color/gradient source, envelope/range/lifetime editing, undo/redo and validation feedback).
+Keep the host's global disable and budget authority.
+Lit particle/volume smoke remains an explicit F7/F8 renderer gate;
 do not mark F7 complete until that interaction and production lighting budgets are validated.
 
 ---

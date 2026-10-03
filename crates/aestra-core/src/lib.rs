@@ -14,6 +14,7 @@ mod migration;
 mod model;
 mod particle_budget;
 mod property_schema;
+mod scene_outputs;
 mod transform_curve;
 mod velocity;
 
@@ -30,6 +31,7 @@ pub use migration::*;
 pub use model::*;
 pub use particle_budget::*;
 pub use property_schema::*;
+pub use scene_outputs::*;
 pub use transform_curve::*;
 pub use velocity::*;
 

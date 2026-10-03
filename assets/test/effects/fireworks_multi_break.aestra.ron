@@ -1234,6 +1234,26 @@
             aggregation: FirstPerTick,
         ),
     ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-0000000f83a2",
+            route: "a3574a00-0000-4000-8000-0000000f838f",
+            pulse: (
+                linear_color: (1.0, 1.0, 1.0),
+                intensity_lumens: (
+                    id: "a3574a00-0000-4000-8000-0000000f83c0",
+                    keys: [(time: 0.0, value: 500000.0), (time: 0.2, value: 125000.0), (time: 1.0, value: 0.0)],
+                ),
+                range: (
+                    id: "a3574a00-0000-4000-8000-0000000f83c1",
+                    keys: [(time: 0.0, value: 80.0), (time: 1.0, value: 80.0)],
+                ),
+                radius: 0.1,
+                duration_seconds: 0.6,
+            ),
+            color_parameter: Some((parameter: "a3574a00-0000-4000-8000-0000000f803d", normalized_age: 0.5)),
+        ),
+    ],
     metadata: {
         "notes": "One rocket death feeds 64 stars; their deaths each feed eight short-lived secondary sparks at the real parent position, with 25% inherited velocity. Reuses hero materials and unlit smoke. Not crackle, strobe or an AAA-density certification.",
         "preview_seed": "17428930557923819521",

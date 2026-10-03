@@ -312,7 +312,8 @@ pub fn drive(
             "accepted": stats.accepted, "budget_dropped": stats.budget_dropped,
             "duplicate": stats.duplicate, "invalid": stats.invalid,
             "stale": stats.stale, "expired": stats.expired, "disabled": stats.disabled,
-            "scope": "Opt-in host main_break bindings, representative shadowless pooled lights. Not authored outputs or lit smoke."
+            "binding_invalid": stats.binding_invalid, "source_packets_dropped": stats.source_packets_dropped,
+            "scope": "Opt-in authored representative-light bindings, shadowless pooled lights. Not lit smoke."
         }));
     }
     if check.frames > 9000 {
@@ -402,6 +403,7 @@ pub fn drive(
                     || stats.allocated > settings.max_lights
                     || stats.peak_active > settings.max_lights
                     || stats.invalid + stats.stale + stats.duplicate + stats.disabled != 0
+                    || stats.binding_invalid + stats.source_packets_dropped != 0
                 {
                     return Err(format!(
                         "light admission/cleanup failed for {requested} burst cues: {stats:?}"

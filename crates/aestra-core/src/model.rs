@@ -99,6 +99,9 @@ pub struct EffectAsset {
     /// Particle events raising declared outputs (event system E3).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub particle_outputs: Vec<crate::ParticleOutputRoute>,
+    /// Representative scene lights triggered by stable particle-output routes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_lights: Vec<crate::PointLightBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EffectMarker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -143,6 +146,7 @@ impl EffectAsset {
             particle_budgets: BTreeMap::new(),
             input_spawns: Vec::new(),
             particle_outputs: Vec::new(),
+            point_lights: Vec::new(),
             markers: Vec::new(),
             choreography_events: Vec::new(),
             effect_clips: Vec::new(),
@@ -507,6 +511,7 @@ impl EffectAsset {
         }
         crate::event_routes::validate_input_spawns(self, &mut report, &mut semantic_ids);
         crate::event_routes::validate_particle_outputs(self, &mut report, &mut semantic_ids);
+        crate::scene_outputs::validate_bindings(self, &mut report, &mut semantic_ids);
         for (index, clip) in self.effect_clips.iter().enumerate() {
             let path = format!("effect.effect_clips[{index}]");
             register_id(

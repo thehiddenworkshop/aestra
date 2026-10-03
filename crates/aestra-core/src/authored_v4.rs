@@ -310,6 +310,8 @@ pub struct AuthoredV4Document {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub particle_outputs: Vec<crate::ParticleOutputRoute>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_lights: Vec<crate::PointLightBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EffectMarker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choreography_events: Vec<ChoreographyEvent>,
@@ -484,6 +486,7 @@ impl AuthoredV4Document {
             particle_budgets: effect.particle_budgets.clone(),
             input_spawns: effect.input_spawns.clone(),
             particle_outputs: effect.particle_outputs.clone(),
+            point_lights: effect.point_lights.clone(),
             markers: effect.markers.clone(),
             choreography_events: effect.choreography_events.clone(),
             effect_clips: effect.effect_clips.clone(),
@@ -522,6 +525,7 @@ impl AuthoredV4Document {
             particle_budgets: self.particle_budgets,
             input_spawns: self.input_spawns,
             particle_outputs: self.particle_outputs,
+            point_lights: self.point_lights,
             markers: self.markers,
             choreography_events: self.choreography_events,
             effect_clips: self.effect_clips,
