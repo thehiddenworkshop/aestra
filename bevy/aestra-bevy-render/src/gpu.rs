@@ -6,6 +6,7 @@ mod geometry_statistics;
 mod mesh_inputs;
 mod output_context;
 mod paged_trails;
+pub mod particle_lights;
 mod particle_outputs;
 mod particle_statistics;
 mod physics;
@@ -675,6 +676,7 @@ struct StatefulSimulationPipeline {
 
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
+    particle_lights::install(app);
     extension_stages::install(app);
     volume::install(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
@@ -810,10 +812,12 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
     commands.insert_resource(GpuFallbackTextures { white, missing });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
     sampling: Option<Res<crate::sampling::SpriteSampling>>,
     trail_sampling: Option<Res<crate::sampling::TrailRasterSampling>>,
+    light_settings: Res<particle_lights::AestraParticleLightSettings>,
     capabilities: Res<GpuCapabilities>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
@@ -1004,6 +1008,11 @@ pub(crate) fn prepare_gpu_effects(
                 &mut artifact.renderers,
                 &requirements,
             );
+            aestra_gpu::particle_attributes::retain_particle_light_attributes(
+                &mut artifact.emitters,
+                player.effect(),
+                light_settings.max_lights != 0,
+            );
         }
         let bounds = Aabb {
             center: Vec3A::ZERO,
@@ -1144,6 +1153,13 @@ pub(crate) fn prepare_gpu_effects(
             artifact.particles.len() as u32,
         )
         .expect("validated trail plan");
+        let light_pools = particle_lights::Pools(
+            artifact
+                .emitters
+                .iter()
+                .map(|emitter| (emitter.slot_offset, emitter.max_particles))
+                .collect(),
+        );
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let ribbon_renderers = artifact
             .renderers
@@ -1264,6 +1280,7 @@ pub(crate) fn prepare_gpu_effects(
             _padding: Vec2::ZERO,
         }));
         commands.entity(entity).insert((
+            light_pools,
             GpuEffectBuffers {
                 emitters: emitters.clone(),
                 renderers: renderers.clone(),
@@ -1612,6 +1629,7 @@ type PreparedDraws<'w, 's> = Query<
 fn update_gpu_inputs(
     sampling: Option<Res<crate::sampling::SpriteSampling>>,
     trail_sampling: Option<Res<crate::sampling::TrailRasterSampling>>,
+    light_settings: Res<particle_lights::AestraParticleLightSettings>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: PreparedGpuPlayers,
@@ -1776,6 +1794,11 @@ fn update_gpu_inputs(
                     &mut dynamics.emitters,
                     &mut dynamics.renderers,
                     &requirements,
+                );
+                aestra_gpu::particle_attributes::retain_particle_light_attributes(
+                    &mut dynamics.emitters,
+                    player.effect(),
+                    light_settings.max_lights != 0,
                 );
             }
             let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
@@ -4195,6 +4218,7 @@ type SimulationGpuResources<'w> = (
     Res<'w, AestraRenderSettings>,
 );
 
+#[allow(clippy::too_many_arguments)]
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
@@ -4209,7 +4233,9 @@ fn run_simulation(
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
     gpu_resources: SimulationGpuResources,
     state: SimulationState,
+    mut light_readiness: ResMut<particle_lights::PresentedOwners>,
 ) {
+    light_readiness.owners.clear();
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let Some(pipeline) = pipeline else {
         return;
@@ -4287,6 +4313,7 @@ fn run_simulation(
             .map(|h| h.1.checkpoints.bytes())
             .sum::<u64>();
     for (entity, main_entity, effect, bind_group, extracted_stages) in &effects {
+        let mut fully_presented = effect.stateful_dispatch.is_empty();
         let paged = if effect.trail_plan.paged() {
             let Some(pipelines) = paged_pipelines else {
                 continue;
@@ -4430,6 +4457,9 @@ fn run_simulation(
                     pacer.as_deref_mut(),
                     observer.as_mut(),
                 );
+                if stateful_work.is_some() && light_readiness.enabled {
+                    light_readiness.owners.insert(entity);
+                }
                 if let Some((batch, index)) = timing_batch.as_mut().zip(timing_index) {
                     let trail_observations = observer.as_ref().map_or(0, |o| o.observations);
                     batch.work(
@@ -4787,7 +4817,7 @@ fn run_simulation(
             {
                 let layout = pipeline_cache.get_bind_group_layout(&sp.layout);
                 let physics_buffer = physics_scene_buffer(&render_device, &effect.physics);
-                let _ = run_stateful_dispatches(
+                let work = run_stateful_dispatches(
                     &render_device,
                     render_context.command_encoder(),
                     (death_integrate, spawn, present, *order_present),
@@ -4828,7 +4858,11 @@ fn run_simulation(
                     pacer.as_deref_mut(),
                     None,
                 );
+                fully_presented = work.is_some();
             }
+        }
+        if fully_presented && light_readiness.enabled {
+            light_readiness.owners.insert(entity);
         }
     }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.

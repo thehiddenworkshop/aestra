@@ -141,6 +141,9 @@ pub fn estimate_particle_attributes(
         &mut dynamics.renderers,
         &requirements,
     );
+    // Static authoring estimates include authored scene-output consumers. The
+    // live adapter can omit these again when the host disables particle lights.
+    retain_particle_light_attributes(&mut dynamics.emitters, instance.effect(), true);
     let omitted = dynamics
         .emitters
         .iter()
@@ -166,5 +169,97 @@ pub fn prune_particle_attributes(
     for (renderer, required) in renderers.iter_mut().zip(requirements) {
         renderer.attribute_flags.x = GpuParticleAttributes::ALL.0 & !required.0;
         emitters[renderer.emitter_index as usize].omitted_attributes &= !required.0;
+    }
+}
+
+/// Scene outputs are presentation consumers too, even without a material or
+/// renderer. Keep only their actual inputs; disabled host policy adds none.
+pub fn retain_particle_light_attributes(
+    emitters: &mut [GpuEmitter],
+    effect: &aestra_runtime::CompiledEffect,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    for (gpu, emitter) in emitters.iter_mut().zip(&effect.emitters) {
+        if !emitter.enabled {
+            continue;
+        }
+        for output in &emitter.scene_outputs {
+            let aestra_runtime::SceneOutputPlanKind::ParticlePointLight(plan) = &output.kind;
+            if plan.max_lights == 0 {
+                continue;
+            }
+            let mut required =
+                GpuParticleAttributes::POSITION | GpuParticleAttributes::NORMALIZED_AGE;
+            if matches!(
+                plan.color,
+                aestra_runtime::ParticleLightColorPlan::ParticleColor
+            ) {
+                required |= GpuParticleAttributes::COLOR;
+            }
+            gpu.omitted_attributes &= !required;
+        }
+    }
+}
+
+#[cfg(test)]
+mod light_tests {
+    use super::*;
+    use aestra_core::*;
+    use aestra_runtime::EffectInstance;
+    use std::sync::Arc;
+
+    #[test]
+    fn light_only_consumers_preserve_age_and_color_without_sprite_attributes() {
+        let mut source = EffectAsset::new("lights", 3.0);
+        let mut emitter = Emitter::basic_sprite("light only", 3.0);
+        emitter.renderers.clear();
+        emitter
+            .scene_outputs
+            .push(SceneOutputInstance::particle_point_light(
+                ParticlePointLightProperties::new(10.0, 2.0),
+            ));
+        source.emitters.push(emitter);
+        let compiled = Arc::new(
+            aestra_compiler::EffectCompiler::default()
+                .compile(&source)
+                .unwrap(),
+        );
+        let mut gpu = crate::GpuEffectArtifact::dynamics_from_instance(&EffectInstance::new(
+            compiled.clone(),
+        ))
+        .unwrap();
+        prune_particle_attributes(&mut gpu.emitters, &mut gpu.renderers, &[]);
+        let all_omitted = gpu.emitters[0].omitted_attributes;
+        retain_particle_light_attributes(&mut gpu.emitters, &compiled, false);
+        assert_eq!(gpu.emitters[0].omitted_attributes, all_omitted);
+        retain_particle_light_attributes(&mut gpu.emitters, &compiled, true);
+        let required = GpuParticleAttributes::POSITION
+            | GpuParticleAttributes::NORMALIZED_AGE
+            | GpuParticleAttributes::COLOR;
+        assert_eq!(
+            gpu.emitters[0].omitted_attributes,
+            GpuParticleAttributes::ALL.0 & !required
+        );
+        let mut constant = (*compiled).clone();
+        let aestra_runtime::SceneOutputPlanKind::ParticlePointLight(plan) =
+            &mut constant.emitters[0].scene_outputs[0].kind;
+        plan.color = aestra_runtime::ParticleLightColorPlan::Constant([1.0; 3]);
+        gpu.emitters[0].omitted_attributes = all_omitted;
+        retain_particle_light_attributes(&mut gpu.emitters, &constant, true);
+        assert_ne!(
+            gpu.emitters[0].omitted_attributes & GpuParticleAttributes::COLOR,
+            0
+        );
+        assert_eq!(
+            gpu.emitters[0].omitted_attributes & GpuParticleAttributes::NORMALIZED_AGE,
+            0
+        );
+        constant.emitters[0].enabled = false;
+        gpu.emitters[0].omitted_attributes = all_omitted;
+        retain_particle_light_attributes(&mut gpu.emitters, &constant, true);
+        assert_eq!(gpu.emitters[0].omitted_attributes, all_omitted);
     }
 }

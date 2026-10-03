@@ -6,7 +6,8 @@
 //! retains at most K entries. Ping-pong buffers; no atomics determine ordering.
 //! Hosts must clear counters before evaluation, dispatch every merge in order,
 //! then `finish_lights`, and read back only final records/counters if needed.
-//! This does not install a render system or enforce a cross-output/global budget.
+//! Global admission merges already quality-capped output runs; no source records
+//! cross the CPU boundary. The Bevy adapter owns dispatch and occurrence manifests.
 use aestra_core::{CurveInterpolation, valid_light_rgb};
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, ParticleLightColorPlan, ParticlePointLightPlan, RuntimeValue,
@@ -14,7 +15,18 @@ use aestra_runtime::{
 use encase::ShaderType;
 use glam::{Mat4, UVec4, Vec3, Vec4};
 
-pub const PARTICLE_LIGHT_WESL: &str = include_str!("shaders/aestra_particle_lights.wesl");
+pub const PARTICLE_LIGHT_WESL: &str = concat!(
+    include_str!("shaders/aestra_light_order.wesl"),
+    include_str!("shaders/aestra_particle_lights.wesl"),
+    include_str!("shaders/aestra_light_merge.wesl")
+);
+pub const GLOBAL_PARTICLE_LIGHT_WESL: &str = concat!(
+    include_str!("shaders/aestra_light_order.wesl"),
+    include_str!("shaders/aestra_global_lights.wesl"),
+    include_str!("shaders/aestra_light_merge.wesl")
+);
+pub const GLOBAL_LIGHT_ENTRY_POINTS: &[&str] =
+    &["merge_lights", "sum_light_counts", "finish_lights"];
 pub const PARTICLE_LIGHT_ENTRY_POINTS: &[&str] =
     &["evaluate_lights", "merge_lights", "finish_lights"];
 pub const LIGHT_RECORD_BYTES: u64 = 48;
@@ -51,7 +63,7 @@ pub struct GpuParticleLightPlan {
     pub range: UVec4,
     /// gradient offset/count/source token/priority.
     pub gradient: UVec4,
-    /// emitter index, enabled, reserved, reserved.
+    /// emitter index, enabled, use GPU render globals transform, reserved.
     pub source: UVec4,
     pub _padding: Vec3,
     pub radius: f32,
@@ -246,6 +258,87 @@ pub struct ParticleLightWorkPlan {
     pub selected_capacity: u32,
 }
 
+/// Merge independently capped sorted output runs, padded to `input_width` by
+/// the adapter. Device limits apply to each scratch buffer and all dispatches.
+/// Counts must be summed separately (sum_light_counts), then finish_lights.
+#[derive(Debug, Clone)]
+pub struct GlobalLightWorkPlan {
+    pub input_width: u32,
+    pub input_runs: u32,
+    pub scratch_records: u32,
+    pub scratch_bytes_per_buffer: u64,
+    pub merges: Vec<GpuLightDispatch>,
+    pub finish: GpuLightDispatch,
+    pub selected_capacity: u32,
+}
+
+impl GlobalLightWorkPlan {
+    pub fn new(
+        width: u32,
+        runs: u32,
+        cap: u32,
+        max_storage_bytes: u64,
+        max_workgroups: u32,
+    ) -> Result<Option<Self>, ParticleLightError> {
+        if width == 0 || runs == 0 || cap == 0 {
+            return Ok(None);
+        }
+        if width > cap {
+            return Err(ParticleLightError::InvalidPlan);
+        }
+        let mut records = width
+            .checked_mul(runs)
+            .ok_or(ParticleLightError::Capacity)?;
+        if runs.div_ceil(64) > max_workgroups {
+            return Err(ParticleLightError::Capacity);
+        }
+        let mut current_width = width;
+        let mut current_runs = runs;
+        let mut merges = Vec::new();
+        while current_runs > 1 {
+            if current_runs
+                .checked_mul(current_width)
+                .ok_or(ParticleLightError::Capacity)?
+                .div_ceil(64)
+                > max_workgroups
+            {
+                return Err(ParticleLightError::Capacity);
+            }
+            let next_width = current_width
+                .checked_mul(2)
+                .ok_or(ParticleLightError::Capacity)?
+                .min(cap);
+            merges.push(GpuLightDispatch {
+                input: UVec4::new(0, 0, current_width, current_runs),
+                output: UVec4::new(next_width, cap, 0, 0),
+            });
+            current_runs = current_runs.div_ceil(2);
+            current_width = next_width;
+            records = records.max(
+                current_width
+                    .checked_mul(current_runs)
+                    .ok_or(ParticleLightError::Capacity)?,
+            );
+        }
+        let bytes = u64::from(records) * LIGHT_RECORD_BYTES;
+        if bytes > max_storage_bytes || u64::from(runs) * 16 > max_storage_bytes {
+            return Err(ParticleLightError::Capacity);
+        }
+        Ok(Some(Self {
+            input_width: width,
+            input_runs: runs,
+            scratch_records: records,
+            scratch_bytes_per_buffer: bytes,
+            merges,
+            finish: GpuLightDispatch {
+                input: UVec4::new(0, runs, current_width, 1),
+                output: UVec4::ZERO,
+            },
+            selected_capacity: current_width,
+        }))
+    }
+}
+
 impl ParticleLightWorkPlan {
     /// Preferred output-specific entry point: authored quality cap and host cap
     /// are independently honored. Disabled compiled emitters must be skipped by
@@ -356,6 +449,12 @@ mod tests {
             PARTICLE_LIGHT_ENTRY_POINTS,
         )
         .unwrap();
+        crate::shader::compile_wesl(
+            "package::global_lights",
+            GLOBAL_PARTICLE_LIGHT_WESL,
+            GLOBAL_LIGHT_ENTRY_POINTS,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -377,6 +476,34 @@ mod tests {
                 for merge in &job.merges {
                     assert!(merge.input.z * merge.input.w <= job.scratch_records);
                     assert!(merge.output.x * merge.input.w.div_ceil(2) <= job.scratch_records);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn global_runs_honor_caps_padding_and_device_bounds() {
+        assert!(
+            GlobalLightWorkPlan::new(64, 100, 0, 0, 0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(GlobalLightWorkPlan::new(65, 2, 64, u64::MAX, 65535).is_err());
+        assert!(GlobalLightWorkPlan::new(64, u32::MAX, 64, u64::MAX, u32::MAX).is_err());
+        assert!(GlobalLightWorkPlan::new(16, 100, 32, 100, 65535).is_err());
+        assert!(GlobalLightWorkPlan::new(16, 100, 32, u64::MAX, 1).is_err());
+        for runs in [1, 2, 3, 17, 65, 1025] {
+            for width in [1, 3, 64, 65] {
+                let work = GlobalLightWorkPlan::new(width, runs, 129, u64::MAX, 65535)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    work.selected_capacity,
+                    129.min(width * runs.next_power_of_two())
+                );
+                for d in &work.merges {
+                    assert!(d.input.z * d.input.w <= work.scratch_records);
+                    assert!(d.output.x * d.input.w.div_ceil(2) <= work.scratch_records);
                 }
             }
         }

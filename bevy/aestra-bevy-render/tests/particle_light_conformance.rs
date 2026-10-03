@@ -57,7 +57,7 @@ impl Harness {
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            entries: &(0..7)
+            entries: &(0..8)
                 .map(|binding| wgpu::BindGroupLayoutEntry {
                     binding,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -66,7 +66,7 @@ impl Harness {
                             wgpu::BufferBindingType::Uniform
                         } else {
                             wgpu::BufferBindingType::Storage {
-                                read_only: binding < 5,
+                                read_only: binding < 5 || binding == 7,
                             }
                         },
                         has_dynamic_offset: false,
@@ -117,6 +117,237 @@ impl Harness {
                 }) | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
             })
+    }
+
+    fn check_global(&self, width: u32, runs: u32, cap: u32) {
+        let limits = self.device.limits();
+        let work = GlobalLightWorkPlan::new(
+            width,
+            runs,
+            cap,
+            limits.max_storage_buffer_binding_size,
+            limits.max_compute_workgroups_per_dimension,
+        )
+        .unwrap()
+        .unwrap();
+        let code = shader::compile_wesl(
+            "package::global_lights",
+            GLOBAL_PARTICLE_LIGHT_WESL,
+            GLOBAL_LIGHT_ENTRY_POINTS,
+        )
+        .unwrap();
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("global light conformance"),
+                source: wgpu::ShaderSource::Wgsl(code.wgsl.into()),
+            });
+        let layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &(0..5)
+                    .map(|binding| wgpu::BindGroupLayoutEntry {
+                        binding,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: if binding == 2 {
+                                wgpu::BufferBindingType::Uniform
+                            } else {
+                                wgpu::BufferBindingType::Storage {
+                                    read_only: binding == 0 || binding == 3,
+                                }
+                            },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    })
+                    .collect::<Vec<_>>(),
+            });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
+        let pipelines: Vec<_> = GLOBAL_LIGHT_ENTRY_POINTS
+            .iter()
+            .map(|entry| {
+                self.device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some(entry),
+                        layout: Some(&pipeline_layout),
+                        module: &module,
+                        entry_point: Some(entry),
+                        compilation_options: Default::default(),
+                        cache: None,
+                    })
+            })
+            .collect();
+        let scratch = [0, 1].map(|_| {
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: work.scratch_bytes_per_buffer,
+                mapped_at_creation: false,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        let counts = self.buffer(&vec![0; runs as usize * 16], false);
+        let counters = self.buffer(&encode(&GpuLightCounters::default()), false);
+        let schedule: Vec<_> = work
+            .merges
+            .iter()
+            .copied()
+            .chain([work.finish, work.finish])
+            .collect();
+        let uniforms: Vec<_> = schedule
+            .iter()
+            .map(|d| self.buffer(&encode(d), true))
+            .collect();
+        let groups: Vec<_> = uniforms
+            .iter()
+            .enumerate()
+            .map(|(index, uniform)| {
+                let read = index.min(work.merges.len()) % 2;
+                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &layout,
+                    entries: &[
+                        &scratch[read],
+                        &scratch[1 - read],
+                        uniform,
+                        &counts,
+                        &counters,
+                    ]
+                    .iter()
+                    .enumerate()
+                    .map(|(binding, b)| wgpu::BindGroupEntry {
+                        binding: binding as u32,
+                        resource: b.as_entire_binding(),
+                    })
+                    .collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        let selected_bytes = u64::from(work.selected_capacity) * LIGHT_RECORD_BYTES;
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: selected_bytes + 16,
+            mapped_at_creation: false,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        });
+        // Sorted output runs carry canonical tokens independent of input/run order.
+        // Reuse scratch through live -> empty -> reversed runs; odd runs and unequal
+        // local counts must preserve priority/lumen/token/ordinal ordering and padding.
+        for frame in 0..3 {
+            let mut input = vec![GpuParticleLight::default(); work.scratch_records as usize];
+            let mut source_counts = vec![bevy::math::UVec4::ZERO; runs as usize];
+            let mut expected = Vec::new();
+            let mut requested = 0;
+            let mut candidates = 0;
+            for slot in 0..runs {
+                let token = if frame == 2 { runs - slot - 1 } else { slot };
+                let count = if frame == 1 { 0 } else { width - token % width };
+                for ordinal in 0..count {
+                    let record = GpuParticleLight {
+                        position_range: Vec4::new(token as f32, ordinal as f32, 0.0, 12.0),
+                        color_intensity: Vec4::new(0.8, 0.2, 0.1, 1000.0 - (ordinal / 2) as f32),
+                        priority: token % 3,
+                        source_token: token,
+                        particle_index: ordinal,
+                        ..Default::default()
+                    };
+                    input[(slot * width + ordinal) as usize] = record;
+                    expected.push(record);
+                }
+                // Include candidates dropped at the per-output quality cap, too.
+                let extra = if frame == 1 { 0 } else { 7 };
+                source_counts[slot as usize] =
+                    bevy::math::UVec4::new(count + extra + 4, count + extra, count, extra);
+                requested += count + extra + 4;
+                candidates += count + extra;
+            }
+            expected.sort_by(|a, b| {
+                b.priority
+                    .cmp(&a.priority)
+                    .then_with(|| b.color_intensity.w.total_cmp(&a.color_intensity.w))
+                    .then_with(|| a.source_token.cmp(&b.source_token))
+                    .then_with(|| a.particle_index.cmp(&b.particle_index))
+            });
+            expected.truncate(cap as usize);
+            self.queue.write_buffer(&scratch[0], 0, &encode(&input));
+            self.queue.write_buffer(&counts, 0, &encode(&source_counts));
+            let mut encoder = self.device.create_command_encoder(&Default::default());
+            encoder.clear_buffer(&counters, 0, None);
+            for (index, group) in groups.iter().enumerate() {
+                let merge_count = work.merges.len();
+                let (pipeline, workgroups) = if index < merge_count {
+                    let d = schedule[index];
+                    (0, (d.input.z * d.input.w).div_ceil(64))
+                } else if index == merge_count {
+                    (1, runs.div_ceil(64))
+                } else {
+                    (2, 1)
+                };
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_pipeline(&pipelines[pipeline]);
+                pass.set_bind_group(0, group, &[]);
+                pass.dispatch_workgroups(workgroups, 1, 1);
+            }
+            encoder.copy_buffer_to_buffer(
+                &scratch[work.merges.len() % 2],
+                0,
+                &readback,
+                0,
+                selected_bytes,
+            );
+            encoder.copy_buffer_to_buffer(&counters, 0, &readback, selected_bytes, 16);
+            self.queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            readback
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+            self.device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(std::time::Duration::from_secs(30)),
+                })
+                .unwrap();
+            receiver.recv().unwrap().unwrap();
+            let bytes = readback.slice(..).get_mapped_range();
+            if !expected.is_empty() {
+                assert_eq!(&bytes[..expected.len() * 48], encode(&expected));
+            }
+            let words: Vec<_> = bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|w| u32::from_le_bytes(*w))
+                .collect();
+            let offset = selected_bytes as usize / 4;
+            assert_eq!(
+                &words[offset..],
+                &[
+                    requested,
+                    candidates,
+                    expected.len() as u32,
+                    candidates - expected.len() as u32
+                ]
+            );
+            for record in words[expected.len() * 12..offset].as_chunks::<12>().0 {
+                assert_eq!(record[7], 0, "stale global record");
+            }
+            drop(bytes);
+            readback.unmap();
+        }
+        eprintln!(
+            "F7D2 global width={width} runs={runs} cap={cap} scratch_bytes={} passed live/empty/reordered",
+            work.scratch_bytes_per_buffer * 2
+        );
     }
 
     fn check(&self, count: u32, cap: u32, variant: u32, repeats: usize) {
@@ -259,6 +490,7 @@ impl Harness {
         let input = self.buffer(&particle_bytes, false);
         let plan_buffer = self.buffer(&encode(&gpu_plan), false);
         let key_buffer = self.buffer(&encode(&keys), false);
+        let globals = self.buffer(&encode(&aestra_gpu::GpuRenderGlobals::default()), false);
         let scratch = [0, 1].map(|_| {
             self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
@@ -299,6 +531,7 @@ impl Harness {
                         &scratch[read],
                         &scratch[write],
                         &counters,
+                        &globals,
                     ]
                     .iter()
                     .enumerate()
@@ -520,6 +753,16 @@ impl Harness {
             times.get(times.len() / 2),
             times.get((times.len() * 95 / 100).min(times.len().saturating_sub(1)))
         );
+    }
+}
+
+#[test]
+fn global_lights_merge_quality_capped_outputs_with_stable_priority_ties() {
+    let Some(gpu) = Harness::new() else {
+        return;
+    };
+    for (width, runs, cap) in [(1, 1, 1), (3, 5, 7), (65, 3, 129), (16, 65, 64)] {
+        gpu.check_global(width, runs, cap);
     }
 }
 

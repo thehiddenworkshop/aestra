@@ -72,8 +72,9 @@ lights**, not lights continuously emitted by every particle. F7B2 now has editor
 authoring controls (manual visual acceptance remains open). **F7C now implements the material-free
 particle scene-output model, compiled plans and deterministic CPU/reference candidates, persisted in
 artifact v7. F7D1 now has a measured portable per-output GPU selection prototype;
-global admission, live realization and lit smoke remain open.**
-The next engine step is F7D2's global multi-output admission and live GPU presentation wiring,
+F7D2A adds global admission and opt-in live GPU presentation wiring, validated against overlapping
+stateful launch-to-star event chains. Full-show selection timing, live realization and lit smoke remain open.**
+The next engine step is F7D2B's authored hero/F6 show selection and resource measurements,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -3917,12 +3918,43 @@ changing particle state or output-event semantics.
   8.46 ms) and 24 MiB scratch
   to retain 64 lights. This is a resource/performance observation, not a full-show/finale acceptance.
 
-**Next: F7D2.** Add canonical per-occurrence manifests, independently capped output runs and a final
-GPU global merge/admission cap with aggregate counters; wire these jobs to actual forward GPU
-presentation buffers. Validate hero/overlapping/F6 show inputs and global disable/lifecycle cleanup.
-The current prototype handles one output per job and does not install render-world systems or
-cross-output/instance admission. Do not mark F7D complete or begin one-entity-per-particle realization.
-F7E's bounded async selected-set realization/latency gate follows that integration.
+**F7D2A implemented (2026-10-03): global admission and live forward GPU integration.**
+
+- Portable global merge passes consume independently quality-capped sorted runs, enforce the host's
+  global cap across outputs/instances and aggregate requested/candidate/selected/dropped counters.
+  Priority, lumens, canonical occurrence token and spawn ordinal determine ordering; no append order
+  or CPU full-particle sorting/readback determines admission. Unequal/odd runs are zero-padded safely.
+- `AestraParticleLightSettings` is an opt-in host resource: `max_lights = 0` by default schedules no
+  selection jobs and releases light scratch. The default 64 MiB host GPU-buffer budget is adjustable;
+  checked aggregate counter/address/storage/dispatch limits reject unsupported frames explicitly,
+  never silently bypass global admission or introduce another fixed emitter/output-count limit.
+- Bevy collects compiled output plans and live parameters, reuses GPU scratch/bindings and uploads
+  only changed plan/key bytes. Selection runs after actual particle presentation; unpresented owners
+  contribute neither stale records nor counters. Jobs bind the same GPU render-transform buffer as
+  sprite rendering, including processed-time placement. Light consumers retain position/age/RGB
+  through material attribute pruning, including light-only emitters; constant/gradient lights do not
+  force otherwise unused particle RGB/size/opacity/rotation work.
+- Canonical frame manifests qualify root/owner entities and epochs, nested clip paths, source effect,
+  seed/revision, emitter, region and output. Tokens are **frame-local**: asynchronous consumers must
+  preserve the corresponding manifest and validate lifecycle epochs. Despawn, disable, invalid live
+  gradients and resource rejection cannot reuse an old selected set.
+- Native global conformance covers one through 65 input runs, quality/global caps, priority and stable
+  cross-output ties, live -> empty -> reordered runs and exact aggregate counters. A headless Bevy
+  playback-only probe verifies analytic placement/refresh and lifecycle handling. Two authored peony
+  launch-to-star event chains verify actual stateful event-born GPU presentation: **512 requested /
+  512 candidates / 48 selected / 464 budget-dropped**, with 32 per star output and 37,056 bytes of
+  selection ping-pong scratch. This probe deliberately omits flash/smoke/material/trail draws;
+  it is not the full hero/F6 workload or a performance/visual acceptance.
+- [Integration evidence and host API](../../benchmarks/fireworks/particle-light-live-integration-2026-10-03.md)
+  records the native checks and remaining limits. `GpuSelectedParticleLights` exposes GPU buffers and
+  the matching manifest **in the render world**, not realized scene lights or a main-world mailbox.
+  There is no production synchronous GPU wait, full-particle transfer or replay dependency.
+
+**Next: F7D2B.** Measure selection-enabled authored hero, overlapping shells and F6 show/finale
+inputs with material/trail presentation intact, reporting GPU selection/full-frame p50/p95/p99,
+requested/candidate/selected/dropped counts and total reserved selection bytes across tiers. Existing
+F7D1 selection-only timings do not certify this adapter/full show. Do not mark F7D complete yet.
+F7E's bounded async selected-set realization/latency gate follows; do not begin one entity per particle.
 
 **Goal:** turn thousands of luminous particles into a small bounded selected-light set entirely on the
 presentation side.
@@ -4137,7 +4169,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract and F7D1's measured per-output GPU prototype are implemented; F7B2's manual UI/visual gate remains open. Next implement F7D2 global admission and live GPU presentation wiring, then measure F7E's bounded asynchronous realization before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-03):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype and F7D2A's global admission/live GPU integration are implemented; F7B2's manual UI/visual gate remains open. Next measure F7D2B's authored hero/full-show selection costs and resource usage, then measure F7E's bounded asynchronous realization before committing to a deep Bevy render-pipeline integration. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4551,7 +4583,7 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7D2  global multi-output admission + live GPU wiring + authored workload measurements
+1. F7D2B authored hero/full-show selection measurements (F7D2A integration implemented)
 2. F7E   bounded Bevy realization and visual/performance measurement
 3. F7F   quality tiers; shadows remain off by default
 4. F8.3  make smoke actually consume scene lighting
@@ -4559,8 +4591,9 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 
 F7B2 editor controls are implemented; complete their manual UI/visual acceptance alongside source
 authoring, without treating them as evidence of continuous particle lights or editor viewport lighting.
-F7C's material-free plans/CPU reference and F7D1's measured per-output GPU selection are implemented;
-global admission, live GPU wiring and selected-light realization remain open.
+F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selection and F7D2A's
+global admission/live GPU wiring are implemented; full-show selection measurements and
+selected-light realization remain open.
 
 Do not begin with deep backend-specific clustered-light injection. First prove that the generic model,
 selection policy, visual contribution and selected-light budgets are correct. Escalate from bounded
