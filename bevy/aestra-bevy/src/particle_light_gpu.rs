@@ -14,6 +14,7 @@ use bevy::{
     prelude::*,
     render::{
         Extract, ExtractSchedule, MainWorld, Render, RenderApp, RenderSystems,
+        diagnostic::RecordDiagnostics,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::*,
@@ -74,6 +75,10 @@ pub struct ParticleLightGpuObservation {
     /// Current metadata bytes plus the logical reserved-light record bound.
     pub buffer_bytes: u64,
     pub rejection: Option<ParticleLightGpuRejection>,
+    /// Latest main-world slot maintenance and extraction authorization wall times.
+    /// These are independent CPU observations, not paired with GPU dispatches.
+    pub reserve_cpu_ms: f64,
+    pub authorize_cpu_ms: f64,
 }
 #[derive(Resource, Clone, Default, ExtractResource)]
 pub struct ParticleLightGpuStatistics(Arc<Mutex<ParticleLightGpuObservation>>);
@@ -194,6 +199,7 @@ fn placeholder(range: f32) -> PointLight {
     }
 }
 fn reserve_slots(world: &mut World) {
+    let started = std::time::Instant::now();
     let settings = world.resource::<ParticleLightGpuSettings>();
     let clamps = world.resource::<ParticleLightRealizationSettings>().clone();
     let mut cap = if *world.resource::<ParticleLightMode>() == ParticleLightMode::SameFrameGpu {
@@ -300,6 +306,12 @@ fn reserve_slots(world: &mut World) {
             }
         }
     });
+    world
+        .resource::<ParticleLightGpuStatistics>()
+        .0
+        .lock()
+        .unwrap()
+        .reserve_cpu_ms = started.elapsed().as_secs_f64() * 1000.0;
 }
 
 // Only qualified source metadata crosses extraction, never source particles or
@@ -312,6 +324,7 @@ fn authorize(
     mode: Extract<Res<ParticleLightMode>>,
     settings: Extract<Res<ParticleLightGpuSettings>>,
 ) {
+    let started = std::time::Instant::now();
     let mut result = Authorizations::default();
     let mut bytes = 0usize;
     if **mode == ParticleLightMode::SameFrameGpu
@@ -386,6 +399,11 @@ fn authorize(
         result.sources.clear();
     }
     commands.insert_resource(result);
+    main.resource::<ParticleLightGpuStatistics>()
+        .0
+        .lock()
+        .unwrap()
+        .authorize_cpu_ms = started.elapsed().as_secs_f64() * 1000.0;
 }
 
 fn init(
@@ -472,6 +490,17 @@ fn inject(
     mut state: ResMut<State>,
     statistics: Res<ParticleLightGpuStatistics>,
 ) {
+    let diagnostics = context.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
+    let span = (*mode == ParticleLightMode::SameFrameGpu
+        && settings.max_lights > 0
+        && selection.max_lights > 0)
+        .then(|| {
+            diagnostics.time_span(
+                context.command_encoder(),
+                "aestra::gpu::particle_light_inject",
+            )
+        });
     let mut stats = statistics.0.lock().unwrap();
     stats.rejection = None;
     stats.written_capacity = 0;
@@ -627,6 +656,7 @@ fn inject(
         pass.set_pipeline(compiled);
         pass.set_bind_group(0, &group, &[]);
         pass.dispatch_workgroups(cap.div_ceil(64), 1, 1);
+        drop(pass);
         stats.dispatches += 1;
         stats.sequence = frame.sequence;
         stats.written_capacity = cap.min(frame.selected_capacity);
@@ -638,6 +668,9 @@ fn inject(
     }
     if stats.written_capacity == 0 {
         state.buffers = None;
+    }
+    if let Some(span) = span {
+        span.end(context.command_encoder());
     }
 }
 
@@ -673,6 +706,7 @@ mod tests {
     #[test]
     fn reserved_pool_reuses_shrinks_recovers_and_preserves_host_lights() {
         let mut world = World::new();
+        world.init_resource::<ParticleLightGpuStatistics>();
         world.insert_resource(ParticleLightMode::SameFrameGpu);
         world.insert_resource(AestraParticleLightSettings {
             max_lights: 4,

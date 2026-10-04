@@ -79,7 +79,7 @@ fn main() {
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
         eprintln!("Authored scene lights: --transient-lights with f6-show and --backend gpu. Saved representative pulses, bounded to 8/4/2 shadowless lights for high/medium/low; particle smoke remains unlit.");
-        eprintln!("F7 benchmark: --particle-light-bench with f4-reference-hero, f5-secondary-volley or f6-show, --gpu-bench and --history playback-only. Adds explicit light-output fixture plans without changing normal materials/trails. Selection only unless --particle-light-realization opts into bounded async pooled lights; can combine realization with --transient-lights. Global caps 96/48/24 by tier; override with --particle-light-cap N (0 is baseline), --particle-light-memory-mib N (default 64). --headless-bench renders the same 960x540 scene offscreen without a window.");
+        eprintln!("F7 benchmark: --particle-light-bench with f4-reference-hero, f5-secondary-volley or f6-show, --gpu-bench and --history playback-only. Adds explicit light-output fixture plans without changing normal materials/trails. Selection only unless --particle-light-realization opts into pooled lights; --particle-light-mode async (default) or gpu (same-frame, default layers only). Can combine realization with --transient-lights. Global caps 96/48/24 by tier; override with --particle-light-cap N (0 is baseline), --particle-light-memory-mib N (default 64). --headless-bench renders the same 960x540 scene offscreen without a window.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -158,6 +158,9 @@ fn main() {
     });
     let headless = config.headless_bench;
     let particle_light_realization = config.particle_light_realization;
+    let particle_light_mode = config.particle_light_mode.unwrap_or_default();
+    let particle_light_gpu_cap = config.particle_light_gpu_cap;
+    let global_light_cap = particle_light_settings.as_ref().map_or(0, |s| s.max_lights);
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -279,7 +282,15 @@ fn main() {
         );
     }
     if particle_light_realization {
-        app.add_plugins(aestra_bevy::AestraParticleLightPlugin);
+        if particle_light_mode == aestra_bevy::ParticleLightMode::SameFrameGpu {
+            app.add_systems(Startup, particle_light_bench::prime_clusters);
+        }
+        app.insert_resource(particle_light_mode)
+            .insert_resource(aestra_bevy::ParticleLightGpuSettings {
+                max_lights: particle_light_gpu_cap.unwrap_or(global_light_cap),
+                ..default()
+            })
+            .add_plugins(aestra_bevy::AestraParticleLightPlugin);
     }
     if let Some(settings) = light_settings {
         app.insert_resource(settings)
@@ -380,6 +391,8 @@ struct ViewerConfig {
     transient_lights: bool,
     particle_light_bench: bool,
     particle_light_realization: bool,
+    particle_light_mode: Option<aestra_bevy::ParticleLightMode>,
+    particle_light_gpu_cap: Option<u32>,
     particle_light_cap: Option<u32>,
     particle_light_memory_mib: u32,
     headless_bench: bool,
@@ -547,6 +560,8 @@ impl ViewerConfig {
         let mut transient_lights = false;
         let mut particle_light_bench = false;
         let mut particle_light_realization = false;
+        let mut particle_light_mode = None;
+        let mut particle_light_gpu_cap = None;
         let mut particle_light_cap = None;
         let mut particle_light_memory_mib = 64;
         let mut headless_bench = false;
@@ -589,7 +604,22 @@ impl ViewerConfig {
                 "--transient-lights" => transient_lights = true,
                 "--particle-light-bench" => particle_light_bench = true,
                 "--particle-light-realization" => particle_light_realization = true,
+                "--particle-light-mode" => {
+                    particle_light_mode = Some(match args.next().as_deref() {
+                        Some("async") => aestra_bevy::ParticleLightMode::PortableAsync,
+                        Some("gpu") => aestra_bevy::ParticleLightMode::SameFrameGpu,
+                        _ => return Err("--particle-light-mode requires async or gpu".into()),
+                    });
+                }
                 "--headless-bench" => headless_bench = true,
+                "--particle-light-gpu-cap" => {
+                    particle_light_gpu_cap = Some(
+                        args.next()
+                            .ok_or("--particle-light-gpu-cap requires a count")?
+                            .parse::<u32>()
+                            .map_err(|_| "--particle-light-gpu-cap requires an unsigned count")?,
+                    );
+                }
                 "--particle-light-cap" => {
                     particle_light_cap = Some(
                         args.next()
@@ -858,6 +888,14 @@ impl ViewerConfig {
         if particle_light_realization && !particle_light_bench {
             return Err("--particle-light-realization requires --particle-light-bench".into());
         }
+        if particle_light_mode.is_some() && !particle_light_realization {
+            return Err("--particle-light-mode requires --particle-light-realization".into());
+        }
+        if particle_light_gpu_cap.is_some()
+            && particle_light_mode != Some(aestra_bevy::ParticleLightMode::SameFrameGpu)
+        {
+            return Err("--particle-light-gpu-cap requires --particle-light-mode gpu".into());
+        }
         if let Some(path) = &fireworks_cue_check {
             if !matches!(
                 fireworks_probe,
@@ -898,6 +936,8 @@ impl ViewerConfig {
             transient_lights,
             particle_light_bench,
             particle_light_realization,
+            particle_light_mode,
+            particle_light_gpu_cap,
             particle_light_cap,
             particle_light_memory_mib,
             headless_bench,
@@ -2503,6 +2543,78 @@ mod tests {
         )
         .unwrap();
         assert!(config.particle_light_realization && config.transient_lights);
+        assert!(config.particle_light_mode.is_none());
+        assert!(
+            ViewerConfig::from_iter(
+                ["--particle-light-gpu-cap", "0"]
+                    .into_iter()
+                    .map(str::to_owned)
+            )
+            .is_err()
+        );
+        let mut args = vec![
+            "--fireworks-f0",
+            "--fireworks-f0-probe",
+            "f6-show",
+            "--backend",
+            "gpu",
+            "--history",
+            "playback-only",
+            "--particle-light-bench",
+            "--gpu-bench",
+            "test.json",
+        ];
+        args.extend(["--particle-light-mode", "gpu"]);
+        assert!(ViewerConfig::from_iter(args.iter().map(|s| s.to_string())).is_err());
+        args.push("--particle-light-realization");
+        let gpu = ViewerConfig::from_iter(args.iter().map(|s| s.to_string())).unwrap();
+        assert_eq!(
+            gpu.particle_light_mode,
+            Some(aestra_bevy::ParticleLightMode::SameFrameGpu)
+        );
+        let report = serde_json::to_value(gpu_bench::BenchPresentation::from_config(&gpu)).unwrap();
+        assert_eq!(report["particle_light_mode"], "gpu");
+        assert_eq!(report["particle_light_gpu_cap"], 96);
+        assert_eq!(
+            report["particle_light_cluster_initial_capacities"],
+            serde_json::json!([4096, 524288])
+        );
+        let mut control_args = args.clone();
+        control_args.extend(["--particle-light-gpu-cap", "0"]);
+        let control = ViewerConfig::from_iter(control_args.iter().map(|s| s.to_string())).unwrap();
+        assert_eq!(
+            serde_json::to_value(gpu_bench::BenchPresentation::from_config(&control)).unwrap()["particle_light_gpu_cap"],
+            0
+        );
+        let mode_index = args
+            .iter()
+            .position(|s| *s == "--particle-light-mode")
+            .unwrap()
+            + 1;
+        args[mode_index] = "async";
+        let portable = ViewerConfig::from_iter(args.iter().map(|s| s.to_string())).unwrap();
+        assert_eq!(
+            portable.particle_light_mode,
+            Some(aestra_bevy::ParticleLightMode::PortableAsync)
+        );
+        assert_eq!(
+            serde_json::to_value(gpu_bench::BenchPresentation::from_config(&portable)).unwrap()["particle_light_mode"],
+            "async"
+        );
+        args.extend(["--particle-light-gpu-cap", "0"]);
+        assert!(ViewerConfig::from_iter(args.iter().map(|s| s.to_string())).is_err());
+        assert!(
+            ViewerConfig::from_iter(
+                ["--particle-light-mode", "invalid"]
+                    .into_iter()
+                    .map(str::to_owned)
+            )
+            .is_err()
+        );
+        assert!(
+            ViewerConfig::from_iter(["--particle-light-mode"].into_iter().map(str::to_owned))
+                .is_err()
+        );
     }
 
     #[test]
@@ -2665,6 +2777,8 @@ mod tests {
             transient_lights: false,
             particle_light_bench: false,
             particle_light_realization: false,
+            particle_light_mode: None,
+            particle_light_gpu_cap: None,
             particle_light_cap: None,
             particle_light_memory_mib: 64,
             headless_bench: false,

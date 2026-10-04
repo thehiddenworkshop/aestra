@@ -512,7 +512,18 @@ unused slots cannot retain yesterday's contribution. The reserved marker
 
 The [F7E4A native gate](../../benchmarks/fireworks/particle-light-gpu-adapter-2026-10-04.md)
 passes fast-star registration, pool/lifecycle/budget and independent host-light
-fixtures. Authored hero/volley/show profiling, non-default per-view layers,
+fixtures. The viewer now profiles authored hero/volley/show workloads with
+`--particle-light-bench --particle-light-realization --particle-light-mode gpu`
+(or `async`). `--particle-light-gpu-cap 0` disables only realization while
+retaining selection and independent representative flashes, unlike the global
+`--particle-light-cap 0`. Reports distinguish slot/capacity bounds from selected
+counts, and retain preparation/selection/injection/clustering/render-window costs.
+GPU benchmark hosts preallocate tiered native cluster lists: Bevy's defaults can
+overflow/grow on the current show and briefly corrupt lighting. These initial
+capacities can still grow; they are neither general host recommendations nor
+part of Aestra's adapter byte budget. See the
+[F7E4B1 workload study](../../benchmarks/fireworks/particle-light-gpu-workloads-2026-10-04.md).
+Authored final-image receiver/registration approval, non-default per-view layers,
 additional hardware and production-finale certification remain open.
 
 ## Where to look

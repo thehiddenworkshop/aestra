@@ -55,6 +55,7 @@ pub struct GpuBenchPlan {
     project_work: BTreeMap<String, WorkStats>,
     particle_lights: Vec<crate::particle_light_bench::Observation>,
     particle_light_pool: Vec<ParticleLightPoolObservation>,
+    particle_light_gpu: Vec<ParticleLightGpuObservation>,
     light_skipped_busy: u64,
     light_overwritten_results: u64,
 }
@@ -110,6 +111,11 @@ pub struct BenchPresentation {
     response: crate::photographic::CaptureResponse,
     particle_light_benchmark_fixture: bool,
     particle_light_realization: bool,
+    particle_light_mode: Option<&'static str>,
+    particle_light_gpu_cap: Option<u32>,
+    /// Requested initial [Z-slice, index-list] native cluster capacities; may
+    /// grow, not a renderer allocation measurement or hard memory limit.
+    particle_light_cluster_initial_capacities: Option<[usize; 2]>,
     representative_lights: bool,
     global_particle_light_cap: Option<u32>,
     particle_light_memory_mib: Option<u32>,
@@ -167,7 +173,29 @@ impl BenchPresentation {
             .with_trail_sampling(config.trail_minimum_pixels),
             particle_light_benchmark_fixture: config.particle_light_bench,
             particle_light_realization: config.particle_light_realization,
+            particle_light_mode: config.particle_light_realization.then_some(
+                match config.particle_light_mode.unwrap_or_default() {
+                    aestra_bevy::ParticleLightMode::PortableAsync => "async",
+                    aestra_bevy::ParticleLightMode::SameFrameGpu => "gpu",
+                },
+            ),
             representative_lights: config.transient_lights,
+            particle_light_cluster_initial_capacities: (config.particle_light_mode
+                == Some(aestra_bevy::ParticleLightMode::SameFrameGpu))
+            .then(|| crate::particle_light_bench::cluster_capacities(&config.tier.name)),
+            particle_light_gpu_cap: (config.particle_light_mode
+                == Some(aestra_bevy::ParticleLightMode::SameFrameGpu))
+            .then(|| {
+                config
+                    .particle_light_gpu_cap
+                    .unwrap_or(config.particle_light_cap.unwrap_or(
+                        match config.tier.name.as_str() {
+                            "high" => 96,
+                            "medium" => 48,
+                            _ => 24,
+                        },
+                    ))
+            }),
             global_particle_light_cap: config.particle_light_bench.then(|| {
                 config
                     .particle_light_cap
@@ -219,6 +247,7 @@ impl GpuBenchPlan {
             project_work: BTreeMap::new(),
             particle_lights: Vec::new(),
             particle_light_pool: Vec::new(),
+            particle_light_gpu: Vec::new(),
             light_skipped_busy: 0,
             light_overwritten_results: 0,
         }
@@ -243,6 +272,7 @@ impl GpuBenchPlan {
         let report = GpuBenchReport {
             particle_lights: &self.particle_lights,
             particle_light_pool: &self.particle_light_pool,
+            particle_light_gpu: &self.particle_light_gpu,
             light_skipped_busy: self.light_skipped_busy,
             light_overwritten_results: self.light_overwritten_results,
             presentation: self.presentation.as_ref(),
@@ -424,6 +454,9 @@ struct GpuBenchReport<'a> {
     /// Prior PostUpdate's main-world pool, not frame-paired with render counters
     /// or GPU diagnostics. Readback age/lag refer to the last newly accepted set.
     particle_light_pool: &'a [ParticleLightPoolObservation],
+    /// Latest shared render observation plus independent main/extraction CPU
+    /// timings. Bounds, NOT GPU active counts; not frame-paired with counters.
+    particle_light_gpu: &'a [ParticleLightGpuObservation],
     light_skipped_busy: u64,
     light_overwritten_results: u64,
     instances: &'a BTreeMap<String, BenchInstance>,
@@ -450,6 +483,36 @@ struct GpuBenchReport<'a> {
     simulation_frames: &'a BTreeMap<String, Vec<SimulationFrame>>,
     simulation_by_work: BTreeMap<String, BTreeMap<String, Stats>>,
     simulation_total: BTreeMap<String, Stats>,
+}
+
+#[derive(Serialize)]
+struct ParticleLightGpuObservation {
+    sample: usize,
+    dispatches: u64,
+    sequence: u64,
+    reserved_slots: u32,
+    written_capacity: u32,
+    invalid_sources: usize,
+    buffer_bytes: u64,
+    rejection: Option<String>,
+    reserve_cpu_ms: f64,
+    authorize_cpu_ms: f64,
+}
+impl ParticleLightGpuObservation {
+    fn new(sample: usize, s: aestra_bevy::ParticleLightGpuObservation) -> Self {
+        Self {
+            sample,
+            dispatches: s.dispatches,
+            sequence: s.sequence,
+            reserved_slots: s.reserved_slots,
+            written_capacity: s.written_capacity,
+            invalid_sources: s.invalid_sources,
+            buffer_bytes: s.buffer_bytes,
+            rejection: s.rejection.map(|e| format!("{e:?}")),
+            reserve_cpu_ms: s.reserve_cpu_ms,
+            authorize_cpu_ms: s.authorize_cpu_ms,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -609,6 +672,7 @@ impl WorkStats {
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)]
 pub struct BenchEffects<'w, 's> {
+    gpu: Option<Res<'w, aestra_bevy::ParticleLightGpuStatistics>>,
     pool: Option<Res<'w, aestra_bevy::ParticleLightStatistics>>,
     representative: Option<Res<'w, aestra_bevy::TransientLightStatistics>>,
     light_start: Option<Res<'w, crate::particle_light_bench::Start>>,
@@ -684,6 +748,11 @@ pub fn drive_gpu_bench(
             .extend(observations.into_iter().filter(|o| o.tick.measured));
     }
     let measured = plan.warmup_remaining == 0;
+    if measured && let Some(gpu) = &effects.gpu {
+        let sample = plan.frames - plan.remaining;
+        plan.particle_light_gpu
+            .push(ParticleLightGpuObservation::new(sample, gpu.snapshot()));
+    }
     if measured && let Some(pool) = &effects.pool {
         let sample = plan.frames - plan.remaining;
         plan.particle_light_pool
@@ -728,6 +797,8 @@ pub fn drive_gpu_bench(
             "aestra::gpu::simulate",
             "aestra::gpu::particle_lights",
             "aestra::gpu::particle_light_copy",
+            "aestra::gpu::particle_light_inject",
+            "cluster",
             "aestra::gpu::trail_history",
             "aestra::gpu::trail_particles",
             "aestra::gpu::trail_compaction",
@@ -827,6 +898,30 @@ pub fn publish_light_tick(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_report_preserves_bounds_and_rejections_without_inventing_active_counts() {
+        let observation = ParticleLightGpuObservation::new(
+            7,
+            aestra_bevy::ParticleLightGpuObservation {
+                sequence: 42,
+                reserved_slots: 48,
+                written_capacity: 0,
+                rejection: Some(aestra_bevy::ParticleLightGpuRejection::ManifestBudget),
+                reserve_cpu_ms: 0.01,
+                authorize_cpu_ms: 0.02,
+                ..default()
+            },
+        );
+        let report = serde_json::to_value(observation).unwrap();
+        assert_eq!(report["sample"], 7);
+        assert_eq!(report["sequence"], 42);
+        assert_eq!(report["reserved_slots"], 48);
+        assert_eq!(report["written_capacity"], 0);
+        assert_eq!(report["rejection"], "ManifestBudget");
+        assert_eq!(report["reserve_cpu_ms"], 0.01);
+        assert!(report.get("active").is_none());
+    }
 
     #[test]
     fn benchmark_retains_instance_identity_after_warmup_owner_despawns() {

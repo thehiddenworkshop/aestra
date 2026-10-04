@@ -196,6 +196,19 @@ fn unlit_capture(
 }
 
 fn directory(include_gpu: bool, production: bool) -> std::path::PathBuf {
+    // Separate regression evidence from earlier retained timing/capture hashes.
+    if production && let Some(path) = std::env::var_os("AESTRA_GPU_LIGHT_ADAPTER_REPORTS") {
+        let path = std::path::PathBuf::from(path);
+        return if path.is_absolute() {
+            path
+        } else {
+            // Cargo runs integration tests from the crate directory. Match the
+            // viewer's repository-relative report paths, not that private cwd.
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(path)
+        };
+    }
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if production {
         "../../target/fireworks-f7/particle-light-gpu-adapter"
     } else if include_gpu {

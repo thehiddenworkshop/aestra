@@ -1,0 +1,2453 @@
+{
+  "schema": 1,
+  "date": "2026-10-04",
+  "scope": "F7E4B1: one sequential unpaced fixed-60Hz run per matrix cell, fresh selection-only controls with identical host cluster preallocation/representative flashes. Independent asynchronous observations, not frame-paired timings or exact active GPU-light counts. Full frame means outer render-graph window, not whole app/game. Adapter bytes are logical records + metadata; selector budget is separate; cluster capacities are requested initial sizes, not measured total memory. Not final-image authored receiver/registration, perspective art or production finale certification.",
+  "paced_registration_regression": {
+    "schema": 1,
+    "date": "2026-10-04",
+    "scope": "F7E4A bounded native GPU adapter registration, three speeds and multi-root/lifecycle/budget/host-light native assertions. Default layers and GPU clustering only. Isolated fixtures, not authored hero/volley/show or production-finale certification; equivalent spatial offset, not scanout latency.",
+    "metadata": {
+      "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "driver": "NVIDIA",
+      "device_type": "DiscreteGpu",
+      "pipeline": "pipelined",
+      "history": "playback-only",
+      "cadence_hz": "60",
+      "target": "768x384",
+      "response": "HDR/Reinhard/EV0/no bloom/no ambient/no shadows",
+      "readback_cap": "1",
+      "slots": "3",
+      "light_range": "8",
+      "gpu_adapter": "bounded reserved slots, native Bevy GPU clustering, StandardMaterial"
+    },
+    "accepted": true,
+    "runs": [
+      {
+        "speed_m_s": 25,
+        "control_error_px": {
+          "samples": 10,
+          "mean": 0.01966658965564818,
+          "p50": 0.012828443753787156,
+          "p95": 0.04650339714402492,
+          "max": 0.04650339714402492
+        },
+        "measured_mode": "gpu",
+        "lag_frames": {
+          "samples": 10,
+          "mean": 0.0027512524505255652,
+          "p50": 0.0017301226101692933,
+          "p95": 0.0066325870311242825,
+          "max": 0.0066325870311242825
+        },
+        "lag_ms_at_60hz": 0.11054311718540472,
+        "lag_metres": {
+          "samples": 10,
+          "mean": 0.0011463551877189855,
+          "p50": 0.0007208844209038723,
+          "p95": 0.0027635779296351177,
+          "max": 0.0027635779296351177
+        },
+        "p95_limit_metres": 0.4166666666666667,
+        "accepted": true,
+        "phases": [
+          {
+            "mode": "control",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.664225423728812,
+              "p50": 16.6741,
+              "p95": 17.2263,
+              "max": 17.363599999999998
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 1.1395000000000006,
+              "p50": 1.1299000000000001,
+              "p95": 1.3565,
+              "max": 1.4817
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          },
+          {
+            "mode": "async",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.67012033898305,
+              "p50": 16.6749,
+              "p95": 17.137,
+              "max": 17.25
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 1.0861583333333333,
+              "p50": 1.0739,
+              "p95": 1.3429,
+              "max": 1.5958
+            },
+            "max_frame_lag": 2,
+            "last_accepted_age_ms": {
+              "samples": 60,
+              "mean": 31.222218333333323,
+              "p50": 31.310699999999997,
+              "p95": 31.651,
+              "max": 31.935100000000002
+            }
+          },
+          {
+            "mode": "gpu",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.66989322033898,
+              "p50": 16.6655,
+              "p95": 17.2625,
+              "max": 17.4039
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.987695,
+              "p50": 0.9563,
+              "p95": 1.2496,
+              "max": 1.3174000000000001
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          }
+        ],
+        "control_image_sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa",
+        "async_image_sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636",
+        "async_baseline_frames": {
+          "samples": 10,
+          "mean": 2.025390767156309,
+          "p50": 2.0225889288333927,
+          "p95": 2.0345679090881705,
+          "max": 2.0345679090881705
+        },
+        "gpu_image_sha256": "2533c9a802067cd0493b64ac72b8c62b831d69e5ac5738b6e9baf86f8c0ed869",
+        "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+        "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      },
+      {
+        "speed_m_s": 75,
+        "control_error_px": {
+          "samples": 10,
+          "mean": 0.04541539763135347,
+          "p50": 0.04998754342316829,
+          "p95": 0.06833906130809168,
+          "max": 0.06833906130809168
+        },
+        "measured_mode": "gpu",
+        "lag_frames": {
+          "samples": 10,
+          "mean": 0.006122144676524344,
+          "p50": 0.007157936167012258,
+          "p95": 0.009160631527207874,
+          "max": 0.009160631527207874
+        },
+        "lag_ms_at_60hz": 0.15267719212013123,
+        "lag_metres": {
+          "samples": 10,
+          "mean": 0.00765268084565543,
+          "p50": 0.008947420208765322,
+          "p95": 0.011450789409009843,
+          "max": 0.011450789409009843
+        },
+        "p95_limit_metres": 1.25,
+        "accepted": true,
+        "phases": [
+          {
+            "mode": "control",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.661676271186444,
+              "p50": 16.6574,
+              "p95": 17.0951,
+              "max": 17.246100000000002
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.8933733333333331,
+              "p50": 0.8413,
+              "p95": 1.2516,
+              "max": 1.3717
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          },
+          {
+            "mode": "async",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.659928813559322,
+              "p50": 16.6719,
+              "p95": 17.088800000000003,
+              "max": 17.4391
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.914175,
+              "p50": 0.8889,
+              "p95": 1.1334,
+              "max": 1.3185
+            },
+            "max_frame_lag": 2,
+            "last_accepted_age_ms": {
+              "samples": 60,
+              "mean": 31.272548333333322,
+              "p50": 31.258399999999998,
+              "p95": 31.6044,
+              "max": 31.8
+            }
+          },
+          {
+            "mode": "gpu",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.66775084745763,
+              "p50": 16.687,
+              "p95": 17.263199999999998,
+              "max": 17.4851
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.9291333333333335,
+              "p50": 0.8821,
+              "p95": 1.2994,
+              "max": 1.3951
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          }
+        ],
+        "control_image_sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb",
+        "async_image_sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790",
+        "async_baseline_frames": {
+          "samples": 10,
+          "mean": 2.0474730284636378,
+          "p50": 2.0460334717264983,
+          "p95": 2.0609057520001954,
+          "max": 2.0609057520001954
+        },
+        "gpu_image_sha256": "893f1831369b4a097b62027bc70b0c5b783c96c0bbb0308f40bd55f9e01dbcec",
+        "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+        "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      },
+      {
+        "speed_m_s": 150,
+        "control_error_px": {
+          "samples": 10,
+          "mean": 0.06443218158561877,
+          "p50": 0.04521572467393753,
+          "p95": 0.1112160036547607,
+          "max": 0.1112160036547607
+        },
+        "measured_mode": "gpu",
+        "lag_frames": {
+          "samples": 10,
+          "mean": 0.008536711376440253,
+          "p50": 0.005679191513905835,
+          "p95": 0.01498062546476886,
+          "max": 0.01498062546476886
+        },
+        "lag_ms_at_60hz": 0.249677091079481,
+        "lag_metres": {
+          "samples": 10,
+          "mean": 0.021341778441100634,
+          "p50": 0.014197978784764587,
+          "p95": 0.03745156366192215,
+          "max": 0.03745156366192215
+        },
+        "p95_limit_metres": 2,
+        "accepted": true,
+        "phases": [
+          {
+            "mode": "control",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.66588983050848,
+              "p50": 16.6113,
+              "p95": 17.151300000000003,
+              "max": 17.7381
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.8982249999999998,
+              "p50": 0.8442999999999999,
+              "p95": 1.1340000000000001,
+              "max": 1.2766
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          },
+          {
+            "mode": "async",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.673179661016952,
+              "p50": 16.6995,
+              "p95": 17.1937,
+              "max": 17.3658
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.938535,
+              "p50": 0.9108,
+              "p95": 1.1702,
+              "max": 1.204
+            },
+            "max_frame_lag": 2,
+            "last_accepted_age_ms": {
+              "samples": 60,
+              "mean": 31.407113333333346,
+              "p50": 31.344499999999996,
+              "p95": 31.8796,
+              "max": 32.101200000000006
+            }
+          },
+          {
+            "mode": "gpu",
+            "interval_ms": {
+              "samples": 59,
+              "mean": 16.67202033898305,
+              "p50": 16.6981,
+              "p95": 17.2021,
+              "max": 17.4434
+            },
+            "update_ms": {
+              "samples": 60,
+              "mean": 0.9084416666666669,
+              "p50": 0.855,
+              "p95": 1.1,
+              "max": 1.1807
+            },
+            "max_frame_lag": null,
+            "last_accepted_age_ms": null
+          }
+        ],
+        "control_image_sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12",
+        "async_image_sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe",
+        "async_baseline_frames": {
+          "samples": 10,
+          "mean": 2.039018819187546,
+          "p50": 2.0377440674375706,
+          "p95": 2.0520206838644666,
+          "max": 2.0520206838644666
+        },
+        "gpu_image_sha256": "7dbcb8489f63cd612a689cd2a2bd8bfa688c5b46eafd2175252d6ee40f9c9fbd",
+        "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+        "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      }
+    ],
+    "registration_sha256": "93fa6eba58ba9c64c73f215c74ef02c5e80035837be72367dcf45bccbcf4bd6b",
+    "telemetry_sha256": "54280881bd4e945ae4fc17098e95e527393fad78ef576b5c1af53818a36e1b6b",
+    "metadata_sha256": "2ff6ed0d5316002abf023b8da4878d9bbf6b153ecadba85d2244061cd3460c0b",
+    "lifecycle": [
+      {
+        "speed_m_s": "25",
+        "check": "global-disable",
+        "green_energy": "0"
+      },
+      {
+        "speed_m_s": "25",
+        "check": "owner-removal",
+        "green_energy": "0"
+      },
+      {
+        "speed_m_s": "75",
+        "check": "global-disable",
+        "green_energy": "0"
+      },
+      {
+        "speed_m_s": "75",
+        "check": "owner-removal",
+        "green_energy": "0"
+      },
+      {
+        "speed_m_s": "150",
+        "check": "global-disable",
+        "green_energy": "0"
+      },
+      {
+        "speed_m_s": "150",
+        "check": "owner-removal",
+        "green_energy": "0"
+      }
+    ],
+    "lifecycle_sha256": "1a5265e7f491da15a21e49a125f0237eddcb27f771e004babe39a535791a67be",
+    "contract_images": {
+      "multiple-roots": "05d44f83690b6b70567b92123f8eb64928d8cb6f4154010b1602ae5819baadcc",
+      "one-root-removed": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+      "hierarchy-hidden": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+      "layer-rejected": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+      "manifest-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+      "budget-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+      "budget-recovered": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+      "far-world-origin": "2cfde9980a165b8115e23220630c561d5fb269d938abb40a7391b26ba63d0fbf",
+      "all-roots-removed": "a11204302146a00185e0541d91807ffe1cfb9a2439fae5de4506a2dc666e8fcc"
+    }
+  },
+  "runs": [
+    {
+      "probe": "hero",
+      "tier": "high",
+      "global_cap": 96,
+      "cluster_initial_capacities": [
+        4096,
+        524288
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 96,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 51600,
+        "max_adapter_logical_bytes": 9328,
+        "max_reserved_slots": 96,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0124,
+          "p95": 0.0159,
+          "p99": 0.0198,
+          "max": 0.0239
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0031999999999999997,
+          "p95": 0.0042,
+          "p99": 0.0048,
+          "max": 0.0052
+        },
+        "selection_cpu_ms": {
+          "samples": 597,
+          "p50": 0.011300000000000001,
+          "p95": 0.0148,
+          "p99": 0.016,
+          "max": 0.0209,
+          "min": 0.0088,
+          "mean": 0.011695979899497468,
+          "stddev": 0.001569778629081054
+        },
+        "selection_gpu_ms": {
+          "samples": 597,
+          "p50": 0.200704,
+          "p95": 0.241664,
+          "p99": 0.258048,
+          "max": 0.273408,
+          "min": 0.147456,
+          "mean": 0.20396296147403672,
+          "stddev": 0.02268978624534587
+        },
+        "inject_cpu_ms": {
+          "samples": 597,
+          "p50": 0.021500000000000002,
+          "p95": 0.0296,
+          "p99": 0.0323,
+          "max": 0.037700000000000004,
+          "min": 0.0159,
+          "mean": 0.022391959798994977,
+          "stddev": 0.0037905952134309607
+        },
+        "inject_gpu_ms": {
+          "samples": 597,
+          "p50": 0.008192,
+          "p95": 0.01024,
+          "p99": 0.01536,
+          "max": 0.018432,
+          "min": 0.006144,
+          "mean": 0.008538479061976561,
+          "stddev": 0.001378340406562276
+        },
+        "clustering_cpu_ms": {
+          "samples": 597,
+          "p50": 0.0073,
+          "p95": 0.0098,
+          "p99": 0.0123,
+          "max": 0.0253,
+          "min": 0.0059,
+          "mean": 0.007537185929648226,
+          "stddev": 0.0014104506285157294
+        },
+        "clustering_gpu_ms": {
+          "samples": 597,
+          "p50": 0.080896,
+          "p95": 0.095232,
+          "p99": 0.106496,
+          "max": 0.23552,
+          "min": 0.05632,
+          "mean": 0.08101949748743718,
+          "stddev": 0.011818882534482551
+        },
+        "frame_cpu_ms": {
+          "samples": 597,
+          "p50": 1.4977,
+          "p95": 2.1104000000000003,
+          "p99": 2.4398000000000004,
+          "max": 4.8698,
+          "min": 1.1807,
+          "mean": 1.6367683417085432,
+          "stddev": 0.3430224241017101
+        },
+        "frame_gpu_ms": {
+          "samples": 597,
+          "p50": 1.260544,
+          "p95": 1.508352,
+          "p99": 1.544192,
+          "max": 2.164736,
+          "min": 0.93696,
+          "mean": 1.2332716381909539,
+          "stddev": 0.19851459537307836
+        },
+        "transparent_fragments": {
+          "samples": 597,
+          "p50": 0,
+          "p95": 36886,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11615.683417085427,
+          "stddev": 15520.097575586375
+        },
+        "raw_sha256": "1bc0a805c53e972ccd8e002366c5fa55dc10474ecc87c14c2666b5c974ba91d4"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 96,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 51600,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0026,
+          "p95": 0.0036,
+          "p99": 0.0040999999999999995,
+          "max": 0.0046
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.0003
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.011600000000000001,
+          "p95": 0.0152,
+          "p99": 0.0165,
+          "max": 0.0185,
+          "min": 0.0092,
+          "mean": 0.011923076923076918,
+          "stddev": 0.0015830950267270922
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.188416,
+          "p95": 0.226304,
+          "p99": 0.243712,
+          "max": 0.248832,
+          "min": 0.142336,
+          "mean": 0.18220179264214031,
+          "stddev": 0.024788634253848033
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.007,
+          "p95": 0.0094,
+          "p99": 0.0108,
+          "max": 0.024,
+          "min": 0.005699999999999999,
+          "mean": 0.007343979933110337,
+          "stddev": 0.0012229093331296125
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.0768,
+          "p95": 0.090112,
+          "p99": 0.094208,
+          "max": 0.104448,
+          "min": 0.055296,
+          "mean": 0.07389410033444821,
+          "stddev": 0.011253975492743483
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.4051,
+          "p95": 2.0816,
+          "p99": 2.4807,
+          "max": 3.0539,
+          "min": 1.1488,
+          "mean": 1.5552834448160537,
+          "stddev": 0.31693133258708295
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 1.042432,
+          "p95": 1.314816,
+          "p99": 1.3568,
+          "max": 1.581056,
+          "min": 0.827392,
+          "mean": 1.0338050568561876,
+          "stddev": 0.13186075792322408
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 36886,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11624.6254180602,
+          "stddev": 15544.355077306609
+        },
+        "raw_sha256": "ca4e66bfb6f63b34f66f5c2f86a12f3f8554bb1339e26e8f9cb966b614f09b23"
+      }
+    },
+    {
+      "probe": "hero",
+      "tier": "medium",
+      "global_cap": 48,
+      "cluster_initial_capacities": [
+        2048,
+        262144
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 48,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 27024,
+        "max_adapter_logical_bytes": 4720,
+        "max_reserved_slots": 48,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0078,
+          "p95": 0.0108,
+          "p99": 0.0126,
+          "max": 0.067
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.003,
+          "p95": 0.0039,
+          "p99": 0.0046,
+          "max": 0.0051
+        },
+        "selection_cpu_ms": {
+          "samples": 595,
+          "p50": 0.0111,
+          "p95": 0.0141,
+          "p99": 0.0166,
+          "max": 0.0203,
+          "min": 0.009000000000000001,
+          "mean": 0.011460336134453762,
+          "stddev": 0.0014071629081378028
+        },
+        "selection_gpu_ms": {
+          "samples": 595,
+          "p50": 0.17408,
+          "p95": 0.218112,
+          "p99": 0.2304,
+          "max": 0.236544,
+          "min": 0.144384,
+          "mean": 0.1728236638655461,
+          "stddev": 0.020407691958183913
+        },
+        "inject_cpu_ms": {
+          "samples": 595,
+          "p50": 0.019700000000000002,
+          "p95": 0.0258,
+          "p99": 0.0301,
+          "max": 0.0416,
+          "min": 0.015400000000000002,
+          "mean": 0.020779327731092416,
+          "stddev": 0.003248336544195669
+        },
+        "inject_gpu_ms": {
+          "samples": 595,
+          "p50": 0.007168,
+          "p95": 0.009216,
+          "p99": 0.01024,
+          "max": 0.01024,
+          "min": 0.006144,
+          "mean": 0.0076343932773110185,
+          "stddev": 0.0008391464730999879
+        },
+        "clustering_cpu_ms": {
+          "samples": 595,
+          "p50": 0.0068000000000000005,
+          "p95": 0.0089,
+          "p99": 0.0117,
+          "max": 0.0233,
+          "min": 0.005699999999999999,
+          "mean": 0.007077142857142836,
+          "stddev": 0.0011895265231762326
+        },
+        "clustering_gpu_ms": {
+          "samples": 595,
+          "p50": 0.069632,
+          "p95": 0.08192,
+          "p99": 0.088064,
+          "max": 0.090112,
+          "min": 0.055296,
+          "mean": 0.06855809075630245,
+          "stddev": 0.008321089690184795
+        },
+        "frame_cpu_ms": {
+          "samples": 595,
+          "p50": 1.3715000000000002,
+          "p95": 2.0273000000000003,
+          "p99": 2.2561999999999998,
+          "max": 2.9078,
+          "min": 1.1502000000000001,
+          "mean": 1.5191569747899152,
+          "stddev": 0.296660528167063
+        },
+        "frame_gpu_ms": {
+          "samples": 595,
+          "p50": 1.063936,
+          "p95": 1.301504,
+          "p99": 1.337344,
+          "max": 1.568768,
+          "min": 0.799744,
+          "mean": 1.0159852638655473,
+          "stddev": 0.14740613712150868
+        },
+        "transparent_fragments": {
+          "samples": 595,
+          "p50": 0,
+          "p95": 36886,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11654.463865546219,
+          "stddev": 15531.094013637923
+        },
+        "raw_sha256": "a0ce5a46c57ea431e64efb342b5615980c5a496260bb548ab814d9f8be5c10fc"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 48,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 27024,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0027,
+          "p95": 0.0037,
+          "p99": 0.0043,
+          "max": 0.0626
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.0003
+        },
+        "selection_cpu_ms": {
+          "samples": 597,
+          "p50": 0.011600000000000001,
+          "p95": 0.0143,
+          "p99": 0.0173,
+          "max": 0.0244,
+          "min": 0.0092,
+          "mean": 0.011910887772194283,
+          "stddev": 0.0015184290731053225
+        },
+        "selection_gpu_ms": {
+          "samples": 597,
+          "p50": 0.173056,
+          "p95": 0.214016,
+          "p99": 0.224256,
+          "max": 0.231424,
+          "min": 0.140288,
+          "mean": 0.16897715242881048,
+          "stddev": 0.021020536573576987
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 597,
+          "p50": 0.0072,
+          "p95": 0.0092,
+          "p99": 0.0109,
+          "max": 0.0194,
+          "min": 0.0058000000000000005,
+          "mean": 0.0074341708542713485,
+          "stddev": 0.0011547026523590098
+        },
+        "clustering_gpu_ms": {
+          "samples": 597,
+          "p50": 0.067584,
+          "p95": 0.08192,
+          "p99": 0.089088,
+          "max": 0.096256,
+          "min": 0.055296,
+          "mean": 0.06662174874371858,
+          "stddev": 0.00895568798325696
+        },
+        "frame_cpu_ms": {
+          "samples": 597,
+          "p50": 1.3297,
+          "p95": 1.9511,
+          "p99": 2.2344,
+          "max": 4.8419,
+          "min": 1.1142999999999998,
+          "mean": 1.4785443886097152,
+          "stddev": 0.31613583269390455
+        },
+        "frame_gpu_ms": {
+          "samples": 597,
+          "p50": 0.971776,
+          "p95": 1.251328,
+          "p99": 1.27488,
+          "max": 1.538048,
+          "min": 0.758784,
+          "mean": 0.9488586398659965,
+          "stddev": 0.1451539746290319
+        },
+        "transparent_fragments": {
+          "samples": 597,
+          "p50": 0,
+          "p95": 36873,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11613.319932998325,
+          "stddev": 15516.19934175958
+        },
+        "raw_sha256": "7b9eeb24d92f6954cb5f1e11fc3bf1000fb5ac7b5d3446d3f5943106d266cf0a"
+      }
+    },
+    {
+      "probe": "hero",
+      "tier": "low",
+      "global_cap": 24,
+      "cluster_initial_capacities": [
+        1024,
+        131072
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 24,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 14736,
+        "max_adapter_logical_bytes": 2416,
+        "max_reserved_slots": 24,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.006,
+          "p95": 0.0133,
+          "p99": 0.0528,
+          "max": 0.09380000000000001
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.003,
+          "p95": 0.0037,
+          "p99": 0.0042,
+          "max": 0.0047
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.011399999999999999,
+          "p95": 0.0149,
+          "p99": 0.0176,
+          "max": 0.0211,
+          "min": 0.009000000000000001,
+          "mean": 0.01182458193979932,
+          "stddev": 0.0016074183405531792
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.166912,
+          "p95": 0.210944,
+          "p99": 0.223232,
+          "max": 0.297984,
+          "min": 0.142336,
+          "mean": 0.16966549832775954,
+          "stddev": 0.019112114876853645
+        },
+        "inject_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0194,
+          "p95": 0.0268,
+          "p99": 0.0299,
+          "max": 0.038099999999999995,
+          "min": 0.015000000000000001,
+          "mean": 0.020652675585284292,
+          "stddev": 0.0032453441616461898
+        },
+        "inject_gpu_ms": {
+          "samples": 598,
+          "p50": 0.008192,
+          "p95": 0.01024,
+          "p99": 0.01024,
+          "max": 0.01024,
+          "min": 0.006144,
+          "mean": 0.00799678929765892,
+          "stddev": 0.0009787055913472139
+        },
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0069,
+          "p95": 0.0089,
+          "p99": 0.0106,
+          "max": 0.0126,
+          "min": 0.0059,
+          "mean": 0.007153010033444787,
+          "stddev": 0.000905399616071419
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.069632,
+          "p95": 0.08192,
+          "p99": 0.088064,
+          "max": 0.096256,
+          "min": 0.05632,
+          "mean": 0.07008064214046832,
+          "stddev": 0.007273538358773653
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.3613,
+          "p95": 1.9895,
+          "p99": 2.2032000000000003,
+          "max": 2.4589,
+          "min": 1.1522999999999999,
+          "mean": 1.4886349498327756,
+          "stddev": 0.2798327117304711
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 1.047552,
+          "p95": 1.288192,
+          "p99": 1.333248,
+          "max": 1.910784,
+          "min": 0.756736,
+          "mean": 0.9918844147157196,
+          "stddev": 0.16984373504318587
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 36886,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11602.91304347826,
+          "stddev": 15524.201212625976
+        },
+        "raw_sha256": "a20d40d9c763b441d837c3d8297b2a1756f36c0e2b9d8c875f1ec3e0258024f9"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 24,
+        "selected_observations": 597,
+        "max_source_runs": 5,
+        "max_selector_reserved_bytes": 14736,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0027,
+          "p95": 0.0044,
+          "p99": 0.0404,
+          "max": 0.0613
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.0003
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0115,
+          "p95": 0.0147,
+          "p99": 0.0174,
+          "max": 0.0195,
+          "min": 0.009099999999999999,
+          "mean": 0.011865719063545145,
+          "stddev": 0.0015087521925749741
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.161792,
+          "p95": 0.206848,
+          "p99": 0.219136,
+          "max": 0.231424,
+          "min": 0.136192,
+          "mean": 0.15957789966555166,
+          "stddev": 0.019709726675477768
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0069,
+          "p95": 0.0088,
+          "p99": 0.0102,
+          "max": 0.0438,
+          "min": 0.005699999999999999,
+          "mean": 0.007132608695652137,
+          "stddev": 0.00176273869582453
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.06656,
+          "p95": 0.079872,
+          "p99": 0.084992,
+          "max": 0.084992,
+          "min": 0.055296,
+          "mean": 0.0654777792642139,
+          "stddev": 0.007786633245661835
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.3315,
+          "p95": 1.905,
+          "p99": 2.2620999999999998,
+          "max": 3.1767000000000003,
+          "min": 1.0962999999999998,
+          "mean": 1.4597023411371237,
+          "stddev": 0.2951331666917082
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 0.86528,
+          "p95": 1.07008,
+          "p99": 1.23392,
+          "max": 1.542144,
+          "min": 0.731136,
+          "mean": 0.9102383946488299,
+          "stddev": 0.13507939168047556
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 36886,
+          "p99": 38373,
+          "max": 38847,
+          "min": 0,
+          "mean": 11604.466555183946,
+          "stddev": 15526.248197111649
+        },
+        "raw_sha256": "c80d78e361282f8a1d556b23ee635c1509f8bc94d7094dd5ed395239785f02f0"
+      }
+    },
+    {
+      "probe": "volley",
+      "tier": "high",
+      "global_cap": 96,
+      "cluster_initial_capacities": [
+        4096,
+        524288
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 64,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 125552,
+        "max_adapter_logical_bytes": 9312,
+        "max_reserved_slots": 96,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0123,
+          "p95": 0.0157,
+          "p99": 0.0198,
+          "max": 0.0208
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0031,
+          "p95": 0.0038,
+          "p99": 0.0043,
+          "max": 0.0268
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0108,
+          "p95": 0.0147,
+          "p99": 0.0158,
+          "max": 0.0194,
+          "min": 0.0088,
+          "mean": 0.011335785953177267,
+          "stddev": 0.0016223430455758856
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.171008,
+          "p95": 0.217088,
+          "p99": 0.224256,
+          "max": 0.232448,
+          "min": 0.130048,
+          "mean": 0.17199090301003336,
+          "stddev": 0.02444777382347324
+        },
+        "inject_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0209,
+          "p95": 0.0293,
+          "p99": 0.0326,
+          "max": 0.0354,
+          "min": 0.0158,
+          "mean": 0.022180769230769195,
+          "stddev": 0.003707853196664678
+        },
+        "inject_gpu_ms": {
+          "samples": 598,
+          "p50": 0.008192,
+          "p95": 0.01536,
+          "p99": 0.017408,
+          "max": 0.017408,
+          "min": 0.00512,
+          "mean": 0.008954006688963212,
+          "stddev": 0.002549139176616545
+        },
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0070999999999999995,
+          "p95": 0.0094,
+          "p99": 0.0106,
+          "max": 0.012,
+          "min": 0.005699999999999999,
+          "mean": 0.007345652173913023,
+          "stddev": 0.0010192492611106174
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.077824,
+          "p95": 0.093184,
+          "p99": 0.098304,
+          "max": 0.106496,
+          "min": 0.05632,
+          "mean": 0.07670410702341142,
+          "stddev": 0.011348427134925204
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.9031,
+          "p95": 2.2642,
+          "p99": 2.6542,
+          "max": 3.7972,
+          "min": 1.2927,
+          "mean": 1.8220991638795978,
+          "stddev": 0.3337363004580832
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 1.27488,
+          "p95": 1.55648,
+          "p99": 1.609728,
+          "max": 1.934336,
+          "min": 1.002496,
+          "mean": 1.2911869431438137,
+          "stddev": 0.14395680222786397
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 126210,
+          "p99": 134563,
+          "max": 136196,
+          "min": 0,
+          "mean": 30022.9364548495,
+          "stddev": 43888.09907454674
+        },
+        "raw_sha256": "89e63d63b924f2386a18d6ac893ee97f25e2022837ab8195e529f6dfbf358016"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 64,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 125552,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0027,
+          "p95": 0.0037,
+          "p99": 0.0042,
+          "max": 0.0044
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.00039999999999999996
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0107,
+          "p95": 0.0146,
+          "p99": 0.016,
+          "max": 0.0177,
+          "min": 0.0087,
+          "mean": 0.01124648829431439,
+          "stddev": 0.001530518757782203
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.191488,
+          "p95": 0.229376,
+          "p99": 0.247808,
+          "max": 0.257024,
+          "min": 0.132096,
+          "mean": 0.19304626086956533,
+          "stddev": 0.021085501147970018
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0072,
+          "p95": 0.0094,
+          "p99": 0.0107,
+          "max": 0.014199999999999999,
+          "min": 0.0058000000000000005,
+          "mean": 0.00740886287625416,
+          "stddev": 0.0010123840424584455
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.089088,
+          "p95": 0.1024,
+          "p99": 0.106496,
+          "max": 0.113664,
+          "min": 0.05632,
+          "mean": 0.0866410167224081,
+          "stddev": 0.0103884329723878
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.9097000000000002,
+          "p95": 2.2816,
+          "p99": 2.7332,
+          "max": 3.1151999999999997,
+          "min": 1.3008,
+          "mean": 1.8225911371237442,
+          "stddev": 0.3169200814059792
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 1.364992,
+          "p95": 1.647616,
+          "p99": 1.6896,
+          "max": 2.171904,
+          "min": 1.072128,
+          "mean": 1.3803211772575263,
+          "stddev": 0.16189797784960536
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 126210,
+          "p99": 134563,
+          "max": 136196,
+          "min": 0,
+          "mean": 29915.36789297659,
+          "stddev": 43882.72168252552
+        },
+        "raw_sha256": "21186260f37329dd5f1501968daafea67aee6b86474d4f8a7174e18f0ad3237e"
+      }
+    },
+    {
+      "probe": "volley",
+      "tier": "medium",
+      "global_cap": 48,
+      "cluster_initial_capacities": [
+        2048,
+        262144
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 32,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 30256,
+        "max_adapter_logical_bytes": 4704,
+        "max_reserved_slots": 48,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0079,
+          "p95": 0.010499999999999999,
+          "p99": 0.0123,
+          "max": 0.013900000000000001
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0029000000000000002,
+          "p95": 0.0037,
+          "p99": 0.0042,
+          "max": 0.0046
+        },
+        "selection_cpu_ms": {
+          "samples": 597,
+          "p50": 0.0099,
+          "p95": 0.012700000000000001,
+          "p99": 0.0152,
+          "max": 0.0189,
+          "min": 0.0084,
+          "mean": 0.010306700167504203,
+          "stddev": 0.0013582511660342775
+        },
+        "selection_gpu_ms": {
+          "samples": 597,
+          "p50": 0.144384,
+          "p95": 0.182272,
+          "p99": 0.190464,
+          "max": 0.19456,
+          "min": 0.114688,
+          "mean": 0.1421336013400339,
+          "stddev": 0.019220108775496247
+        },
+        "inject_cpu_ms": {
+          "samples": 597,
+          "p50": 0.0198,
+          "p95": 0.0261,
+          "p99": 0.0316,
+          "max": 0.0376,
+          "min": 0.0149,
+          "mean": 0.020944556113902862,
+          "stddev": 0.0032979905580350103
+        },
+        "inject_gpu_ms": {
+          "samples": 597,
+          "p50": 0.007168,
+          "p95": 0.009216,
+          "p99": 0.01024,
+          "max": 0.017408,
+          "min": 0.00512,
+          "mean": 0.007457876046901268,
+          "stddev": 0.0011097396097220493
+        },
+        "clustering_cpu_ms": {
+          "samples": 597,
+          "p50": 0.0069,
+          "p95": 0.009000000000000001,
+          "p99": 0.011,
+          "max": 0.018600000000000002,
+          "min": 0.0059,
+          "mean": 0.007197152428810689,
+          "stddev": 0.0010844454998256436
+        },
+        "clustering_gpu_ms": {
+          "samples": 597,
+          "p50": 0.069632,
+          "p95": 0.08192,
+          "p99": 0.089088,
+          "max": 0.094208,
+          "min": 0.05632,
+          "mean": 0.06880868341708549,
+          "stddev": 0.008839242537218258
+        },
+        "frame_cpu_ms": {
+          "samples": 597,
+          "p50": 1.3882,
+          "p95": 1.9350999999999998,
+          "p99": 2.1947,
+          "max": 3.4795999999999996,
+          "min": 1.1256,
+          "mean": 1.4878139028475723,
+          "stddev": 0.28242779909121574
+        },
+        "frame_gpu_ms": {
+          "samples": 597,
+          "p50": 0.927744,
+          "p95": 1.266688,
+          "p99": 1.28,
+          "max": 1.293312,
+          "min": 0.784384,
+          "mean": 0.9770383651591295,
+          "stddev": 0.13933323232134126
+        },
+        "transparent_fragments": {
+          "samples": 597,
+          "p50": 0,
+          "p95": 62996,
+          "p99": 69075,
+          "max": 70104,
+          "min": 0,
+          "mean": 15017.616415410384,
+          "stddev": 22149.375351937182
+        },
+        "raw_sha256": "4000f1fe2ba58f348569d302ba7a89e8e0dea821cc1b31fd7d89cfe888f0af43"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 32,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 30256,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0026,
+          "p95": 0.0037,
+          "p99": 0.0053,
+          "max": 0.1087
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.00039999999999999996
+        },
+        "selection_cpu_ms": {
+          "samples": 598,
+          "p50": 0.01,
+          "p95": 0.0132,
+          "p99": 0.0153,
+          "max": 0.0207,
+          "min": 0.0083,
+          "mean": 0.01043729096989965,
+          "stddev": 0.00139424186815216
+        },
+        "selection_gpu_ms": {
+          "samples": 598,
+          "p50": 0.142336,
+          "p95": 0.1792,
+          "p99": 0.187392,
+          "max": 0.19456,
+          "min": 0.114688,
+          "mean": 0.13875200000000004,
+          "stddev": 0.019532702879168723
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 598,
+          "p50": 0.0070999999999999995,
+          "p95": 0.0089,
+          "p99": 0.0108,
+          "max": 0.0201,
+          "min": 0.0058000000000000005,
+          "mean": 0.007306020066889607,
+          "stddev": 0.0011005154825610216
+        },
+        "clustering_gpu_ms": {
+          "samples": 598,
+          "p50": 0.068608,
+          "p95": 0.083968,
+          "p99": 0.091136,
+          "max": 0.098304,
+          "min": 0.055296,
+          "mean": 0.06834086956521736,
+          "stddev": 0.00930700144224029
+        },
+        "frame_cpu_ms": {
+          "samples": 598,
+          "p50": 1.3263,
+          "p95": 1.7788000000000002,
+          "p99": 2.0316,
+          "max": 2.1766,
+          "min": 1.0771000000000002,
+          "mean": 1.4046839464882934,
+          "stddev": 0.23821833176403234
+        },
+        "frame_gpu_ms": {
+          "samples": 598,
+          "p50": 0.837632,
+          "p95": 1.220608,
+          "p99": 1.246208,
+          "max": 1.253376,
+          "min": 0.739328,
+          "mean": 0.9171307023411374,
+          "stddev": 0.1460526699185702
+        },
+        "transparent_fragments": {
+          "samples": 598,
+          "p50": 0,
+          "p95": 62996,
+          "p99": 69075,
+          "max": 70104,
+          "min": 0,
+          "mean": 14996.938127090301,
+          "stddev": 22149.34520532378
+        },
+        "raw_sha256": "13e3c6715a2d8495225c4a7a4c0f0ee1afc533fd4475a055e79091f3408afe61"
+      }
+    },
+    {
+      "probe": "volley",
+      "tier": "low",
+      "global_cap": 24,
+      "cluster_initial_capacities": [
+        1024,
+        131072
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 16,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 9424,
+        "max_adapter_logical_bytes": 2400,
+        "max_reserved_slots": 24,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0059,
+          "p95": 0.0258,
+          "p99": 0.049,
+          "max": 0.08
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0028,
+          "p95": 0.0036,
+          "p99": 0.004,
+          "max": 0.0043
+        },
+        "selection_cpu_ms": {
+          "samples": 599,
+          "p50": 0.0083,
+          "p95": 0.0112,
+          "p99": 0.0133,
+          "max": 0.027,
+          "min": 0.0066,
+          "mean": 0.00868881469115193,
+          "stddev": 0.001530848651360899
+        },
+        "selection_gpu_ms": {
+          "samples": 599,
+          "p50": 0.129024,
+          "p95": 0.162816,
+          "p99": 0.171008,
+          "max": 0.180224,
+          "min": 0.100352,
+          "mean": 0.12970780634390636,
+          "stddev": 0.013642687399055256
+        },
+        "inject_cpu_ms": {
+          "samples": 599,
+          "p50": 0.0191,
+          "p95": 0.0261,
+          "p99": 0.0303,
+          "max": 0.043699999999999996,
+          "min": 0.0143,
+          "mean": 0.020307178631051782,
+          "stddev": 0.003334986573519206
+        },
+        "inject_gpu_ms": {
+          "samples": 599,
+          "p50": 0.007168,
+          "p95": 0.009216,
+          "p99": 0.01024,
+          "max": 0.011264,
+          "min": 0.006144,
+          "mean": 0.007713335559265518,
+          "stddev": 0.0009366025374242248
+        },
+        "clustering_cpu_ms": {
+          "samples": 599,
+          "p50": 0.007,
+          "p95": 0.0087,
+          "p99": 0.0102,
+          "max": 0.054400000000000004,
+          "min": 0.0059,
+          "mean": 0.007313355592654404,
+          "stddev": 0.0022467907571932367
+        },
+        "clustering_gpu_ms": {
+          "samples": 599,
+          "p50": 0.074752,
+          "p95": 0.091136,
+          "p99": 0.098304,
+          "max": 0.108544,
+          "min": 0.057344,
+          "mean": 0.07553837729549247,
+          "stddev": 0.007792796873378312
+        },
+        "frame_cpu_ms": {
+          "samples": 599,
+          "p50": 1.3507,
+          "p95": 1.8471,
+          "p99": 2.1752,
+          "max": 4.6782,
+          "min": 1.0621,
+          "mean": 1.4421445742904826,
+          "stddev": 0.2949346053543112
+        },
+        "frame_gpu_ms": {
+          "samples": 599,
+          "p50": 0.989184,
+          "p95": 1.2032,
+          "p99": 1.219584,
+          "max": 1.366016,
+          "min": 0.75264,
+          "mean": 0.9466290217028381,
+          "stddev": 0.14239544407484855
+        },
+        "transparent_fragments": {
+          "samples": 599,
+          "p50": 0,
+          "p95": 32422,
+          "p99": 34473,
+          "max": 35194,
+          "min": 0,
+          "mean": 7742.702838063439,
+          "stddev": 11386.71306270878
+        },
+        "raw_sha256": "80e387fc8cb0d0afcef653983d4cc0232e7e4ba21938212d08daf8b0fb530c32"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 16,
+        "selected_observations": 597,
+        "max_source_runs": 4,
+        "max_selector_reserved_bytes": 9424,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 0,
+        "reserve_cpu_ms": {
+          "samples": 600,
+          "p50": 0.0028,
+          "p95": 0.0069,
+          "p99": 0.027299999999999998,
+          "max": 0.1485
+        },
+        "authorize_cpu_ms": {
+          "samples": 600,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.00039999999999999996
+        },
+        "selection_cpu_ms": {
+          "samples": 599,
+          "p50": 0.0083,
+          "p95": 0.0103,
+          "p99": 0.0117,
+          "max": 0.0143,
+          "min": 0.0065,
+          "mean": 0.008583806343906526,
+          "stddev": 0.0009990587569772735
+        },
+        "selection_gpu_ms": {
+          "samples": 599,
+          "p50": 0.10752,
+          "p95": 0.15872,
+          "p99": 0.169984,
+          "max": 0.181248,
+          "min": 0.098304,
+          "mean": 0.11792069449081807,
+          "stddev": 0.019054817448048402
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 599,
+          "p50": 0.007,
+          "p95": 0.0085,
+          "p99": 0.0104,
+          "max": 0.0156,
+          "min": 0.0059,
+          "mean": 0.007190818030050049,
+          "stddev": 0.0008793299725414856
+        },
+        "clustering_gpu_ms": {
+          "samples": 599,
+          "p50": 0.067584,
+          "p95": 0.086016,
+          "p99": 0.094208,
+          "max": 0.096256,
+          "min": 0.055296,
+          "mean": 0.06759083806343895,
+          "stddev": 0.009189842739393222
+        },
+        "frame_cpu_ms": {
+          "samples": 599,
+          "p50": 1.2258,
+          "p95": 1.7786,
+          "p99": 2.1372999999999998,
+          "max": 2.7266999999999997,
+          "min": 1.0567,
+          "mean": 1.3454028380634393,
+          "stddev": 0.25868391875994245
+        },
+        "frame_gpu_ms": {
+          "samples": 599,
+          "p50": 0.76288,
+          "p95": 0.976896,
+          "p99": 1.149952,
+          "max": 1.176576,
+          "min": 0.703488,
+          "mean": 0.8102489749582641,
+          "stddev": 0.10305702076060191
+        },
+        "transparent_fragments": {
+          "samples": 599,
+          "p50": 0,
+          "p95": 32422,
+          "p99": 34473,
+          "max": 35194,
+          "min": 0,
+          "mean": 7742.702838063439,
+          "stddev": 11386.71306270878
+        },
+        "raw_sha256": "eecf921c3cf53f06a9c516e0db7da04d4faacad113f6a4c9c6187fc1b16d6712"
+      }
+    },
+    {
+      "probe": "show",
+      "tier": "high",
+      "global_cap": 96,
+      "cluster_initial_capacities": [
+        4096,
+        524288
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 96,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 314960,
+        "max_adapter_logical_bytes": 9744,
+        "max_reserved_slots": 96,
+        "max_representative_active": 3,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.0126,
+          "p95": 0.018000000000000002,
+          "p99": 0.026699999999999998,
+          "max": 0.0769
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.009300000000000001,
+          "p95": 0.015099999999999999,
+          "p99": 0.019899999999999998,
+          "max": 0.0838
+        },
+        "selection_cpu_ms": {
+          "samples": 1319,
+          "p50": 0.0326,
+          "p95": 0.048600000000000004,
+          "p99": 0.0583,
+          "max": 0.10900000000000001,
+          "min": 0.0079,
+          "mean": 0.03227634571645187,
+          "stddev": 0.010969138663644207
+        },
+        "selection_gpu_ms": {
+          "samples": 1319,
+          "p50": 0.804864,
+          "p95": 1.362944,
+          "p99": 1.499136,
+          "max": 1.589248,
+          "min": 0.108544,
+          "mean": 0.797354407884761,
+          "stddev": 0.3338617449642971
+        },
+        "inject_cpu_ms": {
+          "samples": 1661,
+          "p50": 0.0282,
+          "p95": 0.0368,
+          "p99": 0.0425,
+          "max": 0.07490000000000001,
+          "min": 0.0009,
+          "mean": 0.024040156532209474,
+          "stddev": 0.012420784070142193
+        },
+        "inject_gpu_ms": {
+          "samples": 1661,
+          "p50": 0.01024,
+          "p95": 0.02048,
+          "p99": 0.023552,
+          "max": 0.0256,
+          "min": 0.001024,
+          "mean": 0.010851564118001136,
+          "stddev": 0.006206541032528
+        },
+        "clustering_cpu_ms": {
+          "samples": 1661,
+          "p50": 0.0078,
+          "p95": 0.0109,
+          "p99": 0.0134,
+          "max": 0.08449999999999999,
+          "min": 0.005699999999999999,
+          "mean": 0.008290608067429277,
+          "stddev": 0.002798136634411476
+        },
+        "clustering_gpu_ms": {
+          "samples": 1661,
+          "p50": 0.104448,
+          "p95": 0.347136,
+          "p99": 0.359424,
+          "max": 0.370688,
+          "min": 0.05632,
+          "mean": 0.12752283202889866,
+          "stddev": 0.0763281819758047
+        },
+        "frame_cpu_ms": {
+          "samples": 1661,
+          "p50": 5.1725,
+          "p95": 11.4823,
+          "p99": 15.2506,
+          "max": 21.5232,
+          "min": 0.7231,
+          "mean": 5.2164774834437075,
+          "stddev": 3.595726078778106
+        },
+        "frame_gpu_ms": {
+          "samples": 1661,
+          "p50": 3.65568,
+          "p95": 7.953408,
+          "p99": 10.5472,
+          "max": 12.511232,
+          "min": 0.647168,
+          "mean": 3.8106646502107235,
+          "stddev": 2.2944081093440816
+        },
+        "transparent_fragments": {
+          "samples": 1661,
+          "p50": 43329,
+          "p95": 111908,
+          "p99": 150653,
+          "max": 159725,
+          "min": 0,
+          "mean": 44718.49066827213,
+          "stddev": 37122.81573491645
+        },
+        "raw_sha256": "fee47cfab2cd76e2b955a8e8c95a28d89ab7dba2c7f17563c7b3c611d70268c2"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 96,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 314960,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 3,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.0028,
+          "p95": 0.0039,
+          "p99": 0.0044,
+          "max": 0.0416
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.00039999999999999996,
+          "max": 0.0054
+        },
+        "selection_cpu_ms": {
+          "samples": 1320,
+          "p50": 0.030800000000000004,
+          "p95": 0.0448,
+          "p99": 0.0554,
+          "max": 0.06820000000000001,
+          "min": 0.007700000000000001,
+          "mean": 0.030229015151515118,
+          "stddev": 0.009935066405647171
+        },
+        "selection_gpu_ms": {
+          "samples": 1320,
+          "p50": 0.806912,
+          "p95": 1.245184,
+          "p99": 1.451008,
+          "max": 1.48992,
+          "min": 0.10752,
+          "mean": 0.7776411151515147,
+          "stddev": 0.33348066314598157
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 1670,
+          "p50": 0.0081,
+          "p95": 0.0109,
+          "p99": 0.012700000000000001,
+          "max": 0.0461,
+          "min": 0.006,
+          "mean": 0.008372994011976026,
+          "stddev": 0.0016278548446264282
+        },
+        "clustering_gpu_ms": {
+          "samples": 1670,
+          "p50": 0.099328,
+          "p95": 0.130048,
+          "p99": 0.13824,
+          "max": 0.533504,
+          "min": 0.055296,
+          "mean": 0.10031214371257549,
+          "stddev": 0.022027789314462327
+        },
+        "frame_cpu_ms": {
+          "samples": 1670,
+          "p50": 5.0698,
+          "p95": 11.5946,
+          "p99": 15.3617,
+          "max": 22.8869,
+          "min": 0.7087,
+          "mean": 5.081628083832341,
+          "stddev": 3.5651394742436238
+        },
+        "frame_gpu_ms": {
+          "samples": 1670,
+          "p50": 3.495936,
+          "p95": 7.97184,
+          "p99": 10.249216,
+          "max": 11.575296,
+          "min": 0.5376,
+          "mean": 3.4985321772455102,
+          "stddev": 2.4465577387756903
+        },
+        "transparent_fragments": {
+          "samples": 1670,
+          "p50": 43276,
+          "p95": 111908,
+          "p99": 150653,
+          "max": 159725,
+          "min": 0,
+          "mean": 44540.210179640715,
+          "stddev": 37180.80942096791
+        },
+        "raw_sha256": "7489b230d1d54f750c04413de7032767a11e5f76f1867f0dff117de778fe3a09"
+      }
+    },
+    {
+      "probe": "show",
+      "tier": "medium",
+      "global_cap": 48,
+      "cluster_initial_capacities": [
+        2048,
+        262144
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 48,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 111888,
+        "max_adapter_logical_bytes": 5136,
+        "max_reserved_slots": 48,
+        "max_representative_active": 3,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.008,
+          "p95": 0.0117,
+          "p99": 0.0366,
+          "max": 0.1015
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.0088,
+          "p95": 0.015000000000000001,
+          "p99": 0.0191,
+          "max": 0.0498
+        },
+        "selection_cpu_ms": {
+          "samples": 1319,
+          "p50": 0.0295,
+          "p95": 0.0449,
+          "p99": 0.0527,
+          "max": 0.07229999999999999,
+          "min": 0.0076,
+          "mean": 0.02947103866565585,
+          "stddev": 0.010002045040209257
+        },
+        "selection_gpu_ms": {
+          "samples": 1319,
+          "p50": 0.736256,
+          "p95": 1.08544,
+          "p99": 1.29024,
+          "max": 1.333248,
+          "min": 0.100352,
+          "mean": 0.7065553419257004,
+          "stddev": 0.29192510092376983
+        },
+        "inject_cpu_ms": {
+          "samples": 1672,
+          "p50": 0.0264,
+          "p95": 0.034999999999999996,
+          "p99": 0.0427,
+          "max": 0.07540000000000001,
+          "min": 0.0007999999999999999,
+          "mean": 0.022547188995215333,
+          "stddev": 0.012079748137472077
+        },
+        "inject_gpu_ms": {
+          "samples": 1672,
+          "p50": 0.01024,
+          "p95": 0.019456,
+          "p99": 0.022528,
+          "max": 0.0256,
+          "min": 0.001024,
+          "mean": 0.009943578947368333,
+          "stddev": 0.005872396435806247
+        },
+        "clustering_cpu_ms": {
+          "samples": 1672,
+          "p50": 0.0076,
+          "p95": 0.0107,
+          "p99": 0.0126,
+          "max": 0.054799999999999995,
+          "min": 0.0059,
+          "mean": 0.00797649521531097,
+          "stddev": 0.002039711353471245
+        },
+        "clustering_gpu_ms": {
+          "samples": 1672,
+          "p50": 0.1024,
+          "p95": 0.20992,
+          "p99": 0.218112,
+          "max": 0.243712,
+          "min": 0.05632,
+          "mean": 0.11080145454545512,
+          "stddev": 0.039424588936021306
+        },
+        "frame_cpu_ms": {
+          "samples": 1672,
+          "p50": 4.9606,
+          "p95": 12.068000000000001,
+          "p99": 14.6435,
+          "max": 21.8211,
+          "min": 0.6983999999999999,
+          "mean": 5.0477724282296625,
+          "stddev": 3.573570206293082
+        },
+        "frame_gpu_ms": {
+          "samples": 1672,
+          "p50": 3.17952,
+          "p95": 7.384064,
+          "p99": 9.33376,
+          "max": 10.520576,
+          "min": 0.610304,
+          "mean": 3.346155177033492,
+          "stddev": 2.17342660242319
+        },
+        "transparent_fragments": {
+          "samples": 1672,
+          "p50": 23394,
+          "p95": 55246,
+          "p99": 78320,
+          "max": 82762,
+          "min": 0,
+          "mean": 23470.930622009568,
+          "stddev": 19217.61823548142
+        },
+        "raw_sha256": "4dd4fdc9f3f2a44f22630c1fb6cd0b3a6e0391dd893c36eec2b7f85f30eb47f5"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 48,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 111888,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 3,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.0028,
+          "p95": 0.0042,
+          "p99": 0.0192,
+          "max": 0.0768
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.00039999999999999996,
+          "max": 0.0007
+        },
+        "selection_cpu_ms": {
+          "samples": 1320,
+          "p50": 0.0287,
+          "p95": 0.0428,
+          "p99": 0.051,
+          "max": 0.0925,
+          "min": 0.0076,
+          "mean": 0.027972424242424285,
+          "stddev": 0.009549792804448542
+        },
+        "selection_gpu_ms": {
+          "samples": 1320,
+          "p50": 0.694272,
+          "p95": 1.055744,
+          "p99": 1.238016,
+          "max": 1.317888,
+          "min": 0.100352,
+          "mean": 0.6805216969696972,
+          "stddev": 0.28221120232221586
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 1673,
+          "p50": 0.0079,
+          "p95": 0.0108,
+          "p99": 0.012700000000000001,
+          "max": 0.0157,
+          "min": 0.0056,
+          "mean": 0.008165212193664057,
+          "stddev": 0.001362668383113761
+        },
+        "clustering_gpu_ms": {
+          "samples": 1673,
+          "p50": 0.101376,
+          "p95": 0.134144,
+          "p99": 0.141312,
+          "max": 0.54272,
+          "min": 0.055296,
+          "mean": 0.10055949312612066,
+          "stddev": 0.023300657296462777
+        },
+        "frame_cpu_ms": {
+          "samples": 1673,
+          "p50": 4.769500000000001,
+          "p95": 11.589699999999999,
+          "p99": 14.6338,
+          "max": 20.5145,
+          "min": 0.6786,
+          "mean": 4.871491273161981,
+          "stddev": 3.4544107059870757
+        },
+        "frame_gpu_ms": {
+          "samples": 1673,
+          "p50": 3.070976,
+          "p95": 7.21408,
+          "p99": 9.281536,
+          "max": 10.37824,
+          "min": 0.566272,
+          "mean": 3.1759589527794394,
+          "stddev": 2.1704710312092037
+        },
+        "transparent_fragments": {
+          "samples": 1673,
+          "p50": 23399,
+          "p95": 54958,
+          "p99": 78320,
+          "max": 82762,
+          "min": 0,
+          "mean": 23445.193066347878,
+          "stddev": 19165.948347092537
+        },
+        "raw_sha256": "4392370728ce7b193a57aa87cb4253a8fbc3cdec0bd743af89c4825018600cd9"
+      }
+    },
+    {
+      "probe": "show",
+      "tier": "low",
+      "global_cap": 24,
+      "cluster_initial_capacities": [
+        1024,
+        131072
+      ],
+      "gpu": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 24,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 54064,
+        "max_adapter_logical_bytes": 2832,
+        "max_reserved_slots": 24,
+        "max_representative_active": 2,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.006,
+          "p95": 0.0118,
+          "p99": 0.0416,
+          "max": 0.1098
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.0087,
+          "p95": 0.0143,
+          "p99": 0.017499999999999998,
+          "max": 0.043300000000000005
+        },
+        "selection_cpu_ms": {
+          "samples": 1311,
+          "p50": 0.0252,
+          "p95": 0.037700000000000004,
+          "p99": 0.046,
+          "max": 0.07490000000000001,
+          "min": 0.007,
+          "mean": 0.02490434782608695,
+          "stddev": 0.008097968274416039
+        },
+        "selection_gpu_ms": {
+          "samples": 1311,
+          "p50": 0.571392,
+          "p95": 0.904192,
+          "p99": 1.074176,
+          "max": 1.13664,
+          "min": 0.090112,
+          "mean": 0.5731767749809304,
+          "stddev": 0.23327424461250248
+        },
+        "inject_cpu_ms": {
+          "samples": 1657,
+          "p50": 0.025400000000000002,
+          "p95": 0.0333,
+          "p99": 0.0386,
+          "max": 0.07279999999999999,
+          "min": 0.0007999999999999999,
+          "mean": 0.021568376584188285,
+          "stddev": 0.01123735856325616
+        },
+        "inject_gpu_ms": {
+          "samples": 1657,
+          "p50": 0.008192,
+          "p95": 0.016384,
+          "p99": 0.02048,
+          "max": 0.0256,
+          "min": 0.001024,
+          "mean": 0.008434867833434008,
+          "stddev": 0.004871132650499904
+        },
+        "clustering_cpu_ms": {
+          "samples": 1657,
+          "p50": 0.0073,
+          "p95": 0.0098,
+          "p99": 0.0112,
+          "max": 0.018000000000000002,
+          "min": 0.0058000000000000005,
+          "mean": 0.007549185274592616,
+          "stddev": 0.0011644402874056866
+        },
+        "clustering_gpu_ms": {
+          "samples": 1657,
+          "p50": 0.090112,
+          "p95": 0.181248,
+          "p99": 0.193536,
+          "max": 0.201728,
+          "min": 0.055296,
+          "mean": 0.09919822329511145,
+          "stddev": 0.03175964894407563
+        },
+        "frame_cpu_ms": {
+          "samples": 1657,
+          "p50": 4.6754999999999995,
+          "p95": 11.0098,
+          "p99": 13.775300000000001,
+          "max": 18.4469,
+          "min": 0.6693,
+          "mean": 4.626433433916714,
+          "stddev": 3.2488970566430244
+        },
+        "frame_gpu_ms": {
+          "samples": 1657,
+          "p50": 2.797568,
+          "p95": 6.26688,
+          "p99": 8.095744,
+          "max": 9.688064,
+          "min": 0.561152,
+          "mean": 2.8686497911889006,
+          "stddev": 1.8556715289389474
+        },
+        "transparent_fragments": {
+          "samples": 1657,
+          "p50": 12481,
+          "p95": 30407,
+          "p99": 39574,
+          "max": 40714,
+          "min": 0,
+          "mean": 13164.13095956548,
+          "stddev": 10397.910560864306
+        },
+        "raw_sha256": "762ce2316752cbc93a09a458332c6b1f9009250588ecd6069f16c4f1cec88978"
+      },
+      "control": {
+        "adapter": {
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "backend": "Vulkan",
+          "driver": "NVIDIA"
+        },
+        "selected_peak": 24,
+        "selected_observations": 1320,
+        "max_source_runs": 31,
+        "max_selector_reserved_bytes": 54064,
+        "max_adapter_logical_bytes": 0,
+        "max_reserved_slots": 0,
+        "max_representative_active": 2,
+        "reserve_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.003,
+          "p95": 0.0051,
+          "p99": 0.0347,
+          "max": 0.0624
+        },
+        "authorize_cpu_ms": {
+          "samples": 1680,
+          "p50": 0.00019999999999999998,
+          "p95": 0.0003,
+          "p99": 0.0003,
+          "max": 0.0005
+        },
+        "selection_cpu_ms": {
+          "samples": 1304,
+          "p50": 0.0242,
+          "p95": 0.036199999999999996,
+          "p99": 0.0439,
+          "max": 0.0516,
+          "min": 0.0067,
+          "mean": 0.024293941717791423,
+          "stddev": 0.007734203282419018
+        },
+        "selection_gpu_ms": {
+          "samples": 1304,
+          "p50": 0.550912,
+          "p95": 1.179648,
+          "p99": 1.2544,
+          "max": 1.294336,
+          "min": 0.091136,
+          "mean": 0.5794740613496931,
+          "stddev": 0.2628619997983426
+        },
+        "inject_cpu_ms": null,
+        "inject_gpu_ms": null,
+        "clustering_cpu_ms": {
+          "samples": 1649,
+          "p50": 0.0076,
+          "p95": 0.0101,
+          "p99": 0.0117,
+          "max": 0.019899999999999998,
+          "min": 0.0058000000000000005,
+          "mean": 0.007898362644026661,
+          "stddev": 0.0012265126498548695
+        },
+        "clustering_gpu_ms": {
+          "samples": 1649,
+          "p50": 0.089088,
+          "p95": 0.115712,
+          "p99": 0.123904,
+          "max": 0.137216,
+          "min": 0.055296,
+          "mean": 0.08850427653123201,
+          "stddev": 0.014469426137070694
+        },
+        "frame_cpu_ms": {
+          "samples": 1649,
+          "p50": 4.4209000000000005,
+          "p95": 9.9412,
+          "p99": 13.646099999999999,
+          "max": 22.811899999999998,
+          "min": 0.6718,
+          "mean": 4.5395149181322,
+          "stddev": 3.2283140214513617
+        },
+        "frame_gpu_ms": {
+          "samples": 1649,
+          "p50": 2.854912,
+          "p95": 6.427648,
+          "p99": 8.146944,
+          "max": 10.488832,
+          "min": 0.488448,
+          "mean": 2.796119869011519,
+          "stddev": 1.9508620585075258
+        },
+        "transparent_fragments": {
+          "samples": 1649,
+          "p50": 12468,
+          "p95": 30407,
+          "p99": 39574,
+          "max": 40714,
+          "min": 0,
+          "mean": 13157.948453608247,
+          "stddev": 10419.153770265062
+        },
+        "raw_sha256": "227876b7b073e44cf4de52bc7d8dd24689c234c8cb482ff07302f1ce2f11ea34"
+      }
+    }
+  ]
+}

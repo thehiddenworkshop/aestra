@@ -21,6 +21,29 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Host-only preallocation for the current 96/48/24-light workload matrix.
+/// These are initial capacities, not hard limits or a total GPU-memory budget.
+/// Bevy may still grow them for other scenes/cameras/caps. Shared by control and
+/// enabled runs to avoid first-burst overflow/growth skewing the comparison.
+pub fn cluster_capacities(tier: &str) -> [usize; 2] {
+    match tier {
+        "high" => [4096, 524_288],
+        "medium" => [2048, 262_144],
+        _ => [1024, 131_072],
+    }
+}
+
+pub fn prime_clusters(
+    config: Res<crate::ViewerConfig>,
+    mut clusters: ResMut<bevy::light::cluster::GlobalClusterSettings>,
+) {
+    if let Some(settings) = &mut clusters.gpu_clustering {
+        let [slices, indices] = cluster_capacities(&config.tier.name);
+        settings.initial_z_slice_list_capacity = slices;
+        settings.initial_index_list_capacity = indices;
+    }
+}
+
 /// Deliberately explicit benchmark fixture. Materials, renderer/history budgets,
 /// emission, events, transforms and show choreography are not altered.
 pub fn add_outputs(effect: &mut EffectAsset) {
@@ -280,6 +303,12 @@ fn copy_counts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cluster_preallocation_is_tiered_and_shared_with_disabled_adapter_controls() {
+        assert_eq!(cluster_capacities("high"), [4096, 524288]);
+        assert_eq!(cluster_capacities("medium"), [2048, 262144]);
+        assert_eq!(cluster_capacities("low"), [1024, 131072]);
+    }
     #[test]
     fn forward_benchmark_waits_for_shader_startup_without_a_seek() {
         let mut app = App::new();
