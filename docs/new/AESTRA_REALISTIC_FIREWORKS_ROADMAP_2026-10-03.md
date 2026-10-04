@@ -78,8 +78,9 @@ and F6 show with ordinary material/trail rendering intact across all tiers. Prod
 certification and lit smoke remain open. F7E1 implements bounded async realization; F7E2 measures
 its failed fast-star registration gate. F7E3 now passes a narrow one-slot same-frame GPU/PBR proof.**
 F7E4A now adds an opt-in bounded native GPU adapter with explicit default-layer restrictions.
-F7E4B1 now adds viewer profiling and authored-load cost/resource gates; the next engine step is
-F7E4B2's authored final-image receiver/registration gate and repeated cost/cluster-budget validation,
+F7E4B1 now adds viewer profiling and authored-load cost/resource gates; F7E4B2A passes matched
+authored high-tier diffuse receiver images with/without bloom. The next engine step is
+F7E4B2B's authored-load paced registration gate, then repeated cost/cluster-budget validation,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4161,10 +4162,26 @@ async proxy pool, shader/selection rejection or invalid sources in the measured 
 - [Method/reproduction](../../benchmarks/fireworks/particle-light-gpu-workloads-2026-10-04.md) and
   [raw-report hashes/distributions](../../benchmarks/fireworks/particle-light-gpu-workloads-2026-10-04.json).
 
-**Next: F7E4B2 — authored final-image receiver/registration and repeated cost gates.** Preserve F7E4A's
-isolated paced registration evidence; it does not prove authored perspective/bloom/high-density
-receiver response. Add matched authored receiver-on/off captures and paced moving-star registration,
-repeat work-matched cost runs, and qualify actual native cluster memory/growth/overflow behavior.
+**F7E4B2A implemented/measured — 2026-10-04: authored high-tier receiver images.** Forty native
+off/on/off-restored triplets (120 PNGs) exercise the normal hero, overlapping volley and show with
+the explicit light-output fixture, audience perspective/HDR and bloom both enabled and disabled.
+A fixed nonemissive diffuse wall proves ordinary surface response without increasing authored
+brightness/ranges. Before-birth/cleanup off/on controls match exactly; restoration has no pixels
+above the fixed three-channel-level floor (raw rounding differences remain reported). Native GPU
+presentation, population/overlap checks, cap bounds, zero selected-record transport/proxies and
+clean disable are asserted. The read-only validator recomputes differences from every saved image;
+a failed native rerun invalidates earlier acceptance. Requested and clamped actual frames are
+distinguished; asynchronous project profiles are not exact per-frame GPU counts.
+- [Method, measurements and reproduction](../../benchmarks/fireworks/particle-light-gpu-images-2026-10-04.md)
+  and [retained report/image hashes](../../benchmarks/fireworks/particle-light-gpu-images-2026-10-04.json).
+- This is the image slice, not complete F7E4B2, artistic acceptance or real-time spatial-lag proof.
+  The test wall can occlude rear particles and does not replace unobstructed hero reference review.
+
+**Next: F7E4B2B — paced moving-star registration under authored overlapping load.** Preserve
+F7E4A's isolated paced evidence; paused receiver triplets do not certify registration during live
+perspective/bloom/high-density playback. Separate analytic calibration tracers from natural authored
+star acceptance. Then repeat work-matched cost runs and qualify actual native cluster
+memory/growth/overflow behavior. Medium/low receiver-image gates remain open.
 Keep default-layer restrictions explicit; general per-view layers and multi-view acceptance remain
 required before a general adapter claim. Preserve portable async mode for tolerant workloads.
 Additional hardware/cadences, perspective/bloom art acceptance, editor lighting, lit smoke and
@@ -4317,7 +4334,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources. Next F7E4B2 authored final-image receiver/registration, repeated costs and native cluster allocation/overflow qualification, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom. Next F7E4B2B paced registration under authored overlap, then repeated costs and native cluster allocation/overflow qualification, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4731,7 +4748,8 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E4B2 authored final-image lighting/registration and repeated cost gates; F7E4B1 profiling measured
+1. F7E4B2B paced registration under authored overlap, then repeated cost/native cluster gates;
+   F7E4B2A passes high-tier receiver images with/without bloom; F7E4B1 profiling measured
 2. F7F   quality tiers; shadows remain off by default
 3. F8.3  make smoke actually consume scene lighting
 ```
@@ -4742,7 +4760,8 @@ F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selectio
 global admission/live GPU wiring and F7D2B's current authored hero/volley/show selection measurements
 are implemented. F7E1's bounded async realization is implemented; F7E2's paced receiver/HDR-star
 measurement fails the initial fast-star registration budget. F7E3 passes the isolated same-frame
-GPU/PBR proof; F7E4A adds bounded default-layer GPU realization; F7E4B1 measures authored-load costs.
+GPU/PBR proof; F7E4A adds bounded default-layer GPU realization; F7E4B1 measures authored-load costs;
+F7E4B2A passes matched high-tier authored receiver images with/without bloom.
 Authored final-image receiver/registration, general per-view
 layers/hardware and production-finale certification remain open.
 

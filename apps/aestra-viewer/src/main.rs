@@ -11,6 +11,8 @@ mod fireworks_spatial_cues;
 mod fireworks_strobe;
 mod gpu_bench;
 mod particle_light_bench;
+#[cfg(test)]
+mod particle_light_images;
 mod photographic;
 mod preview_report;
 mod velocity_f2;

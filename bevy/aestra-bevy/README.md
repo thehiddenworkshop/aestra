@@ -523,8 +523,13 @@ overflow/grow on the current show and briefly corrupt lighting. These initial
 capacities can still grow; they are neither general host recommendations nor
 part of Aestra's adapter byte budget. See the
 [F7E4B1 workload study](../../benchmarks/fireworks/particle-light-gpu-workloads-2026-10-04.md).
-Authored final-image receiver/registration approval, non-default per-view layers,
-additional hardware and production-finale certification remain open.
+The [F7E4B2A image gate](../../benchmarks/fireworks/particle-light-gpu-images-2026-10-04.md)
+now passes matched authored high-tier hero/volley/show diffuse receiver images with
+and without bloom, including disable restoration and endpoint controls. These are
+paused forward samples, not paced registration or artistic approval. Authored-load
+paced registration, repeated costs/native cluster allocation qualification,
+non-default per-view layers, additional hardware and production-finale certification
+remain open.
 
 ## Where to look
 
