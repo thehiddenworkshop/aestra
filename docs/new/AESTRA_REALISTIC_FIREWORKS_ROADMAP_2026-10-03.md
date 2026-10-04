@@ -75,8 +75,9 @@ artifact v7. F7D1 now has a measured portable per-output GPU selection prototype
 F7D2A adds global admission and opt-in live GPU presentation wiring, validated against overlapping
 stateful launch-to-star event chains. F7D2B now measures the current authored hero, overlapping volley
 and F6 show with ordinary material/trail rendering intact across all tiers. Production-finale
-certification, live selected-light realization and lit smoke remain open.**
-The next engine step is F7E's bounded asynchronous selected-light realization and latency/receiver gate,
+certification and lit smoke remain open. F7E1 implements bounded async realization; F7E2 measures
+its failed fast-star registration gate. F7E3 now passes a narrow one-slot same-frame GPU/PBR proof.**
+The next engine step is F7E4's bounded production GPU adapter and authored-load receiver/cost gates,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4096,13 +4097,33 @@ validated separately; a passing measurement test does not imply visual acceptanc
   `benchmarks/fireworks/validate-particle-light-latency.ps1` retain this gate. Without `-MeasureOnly`,
   the validator intentionally fails the current async adapter's flagship registration budget.
 
-**Next: F7E3 — narrow same-frame GPU lighting proof.** The measured visible lag now justifies a
-Bevy render-world prototype consuming the selected GPU records without the main-world round trip.
-First pass this same fast-star/PBR registration gate with one selected light; then integrate bounded
-clustered lighting and remeasure authored hero/volley/show cost, layers and lifecycle. Keep this
-adapter-specific and opt-in. Do not block on GPU readback, relax the gate or silently extrapolate.
-The portable async pool remains available for latency-tolerant workloads. Production-finale
-certification, additional hardware/cadences, editor lighting and lit smoke remain open.
+**F7E3 implemented/measured — 2026-10-04: narrow same-frame GPU proof passes.** A test-only bridge
+consumes the current selected record after `ParticleLightSelectionSet`, writing one reserved
+zero-lumen slot in Bevy's public clustered-light storage before native GPU clustering. The receiver
+is unchanged `StandardMaterial`; no CPU light-position readback, custom receiver shader, blocking
+GPU wait, extrapolation or replay is used. The original 60 Hz registration gate passes at all speeds:
+p95 world offset is 0.0028/0.0115/0.0375 m at 25/75/150 m/s, at most 0.015 equivalent frame.
+These are subpixel spatial residuals comparable to the synchronized control, not measured scanout
+latency. Two sequential native runs pass. The async comparison still has approximately two-frame lag.
+During the GPU phase proxy allocation and selected-light pending/staging counts are zero; readback
+submission does not advance. Global disable and owner removal leave zero green receiver energy
+with the reserved slot still alive, and re-enable restores its contribution.
+- [Method, result and reproduction](../../benchmarks/fireworks/particle-light-gpu-proof-2026-10-04.md),
+  [measurements](../../benchmarks/fireworks/particle-light-gpu-proof-2026-10-04.json) and the existing
+  registration validator's `-GpuProof` mode retain this gate. Normal CI runs the centroid regression;
+  the ignored native proof must be run explicitly and alone.
+- This is **not a shipping adapter**: one root/output, one slot, one camera, default layers and
+  storage/GPU clustering only. Other setups are rejected, not silently approved. Shader record layout
+  comes from Bevy's own WGSL import; the engine-neutral scene-output model is unchanged.
+
+**Next: F7E4 — bounded production GPU adapter.** Add explicit opt-in mode and configurable bounded
+reserved slots, stable current render-index mapping, zeroed unused entries, source identity/lifecycle,
+per-view layers and visibility, hardware/buffer/cluster limits and warmup/failure diagnostics. Cover
+coexisting host lights/representative flashes and multiple roots; do not turn proof restrictions into
+silent shipping limits or allocate per source particle. Preserve the portable async mode for tolerant
+workloads. Remeasure authored hero/volley/show final-image registration and CPU/GPU/byte costs at
+all tiers before production claims. Additional hardware/cadences, perspective/bloom art acceptance,
+editor lighting, lit smoke and production-finale certification remain open.
 
 #### Validation path
 
@@ -4251,7 +4272,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. Next implement and measure F7E's bounded asynchronous selected-light realization before committing to a deep Bevy render-pipeline integration. The current bounded-show measurements are not production-finale or visible selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow same-frame GPU proof, justifying F7E4 bounded production integration and authored-load receiver/cost gates. The current bounded-show measurements are not production-finale or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4665,7 +4686,7 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E3 same-frame selected GPU lighting proof; F7E2 measured async lag fails the fast-star gate
+1. F7E4 bounded production GPU lighting adapter; F7E3 passes the narrow same-frame proof
 2. F7F   quality tiers; shadows remain off by default
 3. F8.3  make smoke actually consume scene lighting
 ```
@@ -4675,10 +4696,10 @@ authoring, without treating them as evidence of continuous particle lights or ed
 F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selection, F7D2A's
 global admission/live GPU wiring and F7D2B's current authored hero/volley/show selection measurements
 are implemented. F7E1's bounded async realization is implemented; F7E2's paced receiver/HDR-star
-measurement fails the initial fast-star registration budget. Production-finale certification and
-same-frame GPU realization remain open.
+measurement fails the initial fast-star registration budget. F7E3 passes the isolated same-frame
+GPU/PBR proof; production GPU realization and finale certification remain open.
 
 The generic model, bounded selection and portable receiver contribution are now proven. F7E2's
-measured approximately two-frame visible lag justifies a narrow backend-specific GPU receiver proof,
-before committing to full clustered-light integration. Preserve the portable path and core/adapter
+measured approximately two-frame visible lag and F7E3's successful GPU receiver proof now justify
+bounded clustered-light integration and authored-load measurement. Preserve the portable path and core/adapter
 boundary; no blocking readback or unbounded source-particle transport.

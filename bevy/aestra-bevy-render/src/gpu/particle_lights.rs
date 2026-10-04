@@ -20,6 +20,12 @@ pub struct AestraParticleLightSettings {
     pub max_lights: u32,
     pub max_scratch_bytes: u64,
 }
+
+/// Render-graph scheduling point after selected GPU records are written and
+/// before camera rendering. GPU consumers must run after this set, retaining
+/// this frame's matching manifest; never use a buffer from an earlier frame.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ParticleLightSelectionSet;
 impl Default for AestraParticleLightSettings {
     fn default() -> Self {
         Self {
@@ -204,6 +210,7 @@ pub(super) fn install(app: &mut App) {
             .add_systems(
                 RenderGraph,
                 select
+                    .in_set(ParticleLightSelectionSet)
                     .after(super::run_simulation)
                     .before(RenderGraphSystems::Render),
             );

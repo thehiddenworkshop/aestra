@@ -71,7 +71,7 @@ observed. These resource checks supplement, not replace, F7E1 full-show profilin
 Run native GPU work alone, with no competing test, viewer or build workload:
 
 ```powershell
-cargo test --locked -p aestra-bevy --test particle_light_latency -- --ignored --nocapture
+cargo test --locked -p aestra-bevy --test particle_light_latency paced_fast_stars -- --ignored --nocapture
 ./benchmarks/fireworks/validate-particle-light-latency.ps1 -ReportsDirectory target/fireworks-f7/particle-light-latency -MeasureOnly
 ```
 

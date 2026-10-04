@@ -459,6 +459,15 @@ measured about two frames of final-image lag at 60 Hz (about five metres at
 150 m/s), failing its initial flagship registration budget. Use this portable
 path for latency-tolerant workloads; it is not approved for nearby fast stars.
 
+The [F7E3 same-frame proof](../../benchmarks/fireworks/particle-light-gpu-proof-2026-10-04.md)
+passes the same registration gate using one reserved native clustered-light slot
+on an unchanged `StandardMaterial` receiver, without selected-light position
+readback. It is test-only, not a shipping API: one source/output, one camera,
+default layers and GPU clustering. Bounded production integration and authored
+hero/volley/show profiling remain the next gate. Render-world consumers can order
+after `gpu::particle_lights::ParticleLightSelectionSet` and before camera rendering;
+always use the current frame's selected records and matching manifest.
+
 ## Where to look
 
 | I want… | Read |

@@ -1,0 +1,374 @@
+{
+  "schema": 1,
+  "date": "2026-10-04",
+  "scope": "F7E3 test-only one-slot same-frame GPU proof on unchanged StandardMaterial and native Bevy GPU clustering, three speeds, ten final-image observations per phase. Not a production adapter or full-show/hardware certification; screenshot ticks are labels, not display timestamps.",
+  "metadata": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "device_type": "DiscreteGpu",
+    "pipeline": "pipelined",
+    "history": "playback-only",
+    "cadence_hz": "60",
+    "target": "768x384",
+    "response": "HDR/Reinhard/EV0/no bloom/no ambient/no shadows",
+    "readback_cap": "1",
+    "slots": "3",
+    "light_range": "8",
+    "gpu_proof": "one reserved zero-lumen slot, native Bevy GPU clustering, StandardMaterial"
+  },
+  "accepted": true,
+  "runs": [
+    {
+      "speed_m_s": 25,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.01966658965564818,
+        "p50": 0.012828443753787156,
+        "p95": 0.04650339714402492,
+        "max": 0.04650339714402492
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.0027512524505255652,
+        "p50": 0.0017301226101692933,
+        "p95": 0.0066325870311242825,
+        "max": 0.0066325870311242825
+      },
+      "lag_ms_at_60hz": 0.11054311718540472,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.0011463551877189855,
+        "p50": 0.0007208844209038723,
+        "p95": 0.0027635779296351177,
+        "max": 0.0027635779296351177
+      },
+      "p95_limit_metres": 0.4166666666666667,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.66574576271186,
+            "p50": 16.6091,
+            "p95": 17.118399999999998,
+            "max": 17.3765
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.8965966666666668,
+            "p50": 0.8683000000000001,
+            "p95": 1.1253000000000002,
+            "max": 1.331
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.658984745762712,
+            "p50": 16.6399,
+            "p95": 17.156399999999998,
+            "max": 17.4531
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.9381816666666665,
+            "p50": 0.8973,
+            "p95": 1.1974,
+            "max": 1.4636
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.425345,
+            "p50": 31.4321,
+            "p95": 32.011900000000004,
+            "max": 32.1726
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.674106779661024,
+            "p50": 16.6865,
+            "p95": 17.191100000000002,
+            "max": 17.273400000000002
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.9452716666666665,
+            "p50": 0.9133,
+            "p95": 1.1931,
+            "max": 1.3908
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa",
+      "async_image_sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.025390767156309,
+        "p50": 2.0225889288333927,
+        "p95": 2.0345679090881705,
+        "max": 2.0345679090881705
+      },
+      "gpu_image_sha256": "2533c9a802067cd0493b64ac72b8c62b831d69e5ac5738b6e9baf86f8c0ed869",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    },
+    {
+      "speed_m_s": 75,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.04541539763135347,
+        "p50": 0.04998754342316829,
+        "p95": 0.06833906130809168,
+        "max": 0.06833906130809168
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.006122144676524344,
+        "p50": 0.007157936167012258,
+        "p95": 0.009160631527207874,
+        "max": 0.009160631527207874
+      },
+      "lag_ms_at_60hz": 0.15267719212013123,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.00765268084565543,
+        "p50": 0.008947420208765322,
+        "p95": 0.011450789409009843,
+        "max": 0.011450789409009843
+      },
+      "p95_limit_metres": 1.25,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.6774406779661,
+            "p50": 16.6689,
+            "p95": 17.1676,
+            "max": 17.4084
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.1228483333333332,
+            "p50": 1.1232,
+            "p95": 1.4154,
+            "max": 1.4526999999999999
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.67182711864407,
+            "p50": 16.6508,
+            "p95": 17.769299999999998,
+            "max": 19.0303
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.5468950000000001,
+            "p50": 1.4088,
+            "p95": 2.1913,
+            "max": 3.9769
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 30.292138333333337,
+            "p50": 30.4661,
+            "p95": 31.361,
+            "max": 32.258
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.6648406779661,
+            "p50": 16.625899999999998,
+            "p95": 17.1744,
+            "max": 17.3336
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0600266666666667,
+            "p50": 1.0587000000000002,
+            "p95": 1.2754999999999999,
+            "max": 1.4332
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb",
+      "async_image_sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.0474730284636378,
+        "p50": 2.0460334717264983,
+        "p95": 2.0609057520001954,
+        "max": 2.0609057520001954
+      },
+      "gpu_image_sha256": "893f1831369b4a097b62027bc70b0c5b783c96c0bbb0308f40bd55f9e01dbcec",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    },
+    {
+      "speed_m_s": 150,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.06443218158561877,
+        "p50": 0.04521572467393753,
+        "p95": 0.1112160036547607,
+        "max": 0.1112160036547607
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.008536711376440253,
+        "p50": 0.005679191513905835,
+        "p95": 0.01498062546476886,
+        "max": 0.01498062546476886
+      },
+      "lag_ms_at_60hz": 0.249677091079481,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.021341778441100634,
+        "p50": 0.014197978784764587,
+        "p95": 0.03745156366192215,
+        "max": 0.03745156366192215
+      },
+      "p95_limit_metres": 2,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.67015593220339,
+            "p50": 16.6216,
+            "p95": 17.2291,
+            "max": 17.5514
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.1286866666666668,
+            "p50": 1.1086,
+            "p95": 1.4166999999999998,
+            "max": 1.5832000000000002
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.659806779661018,
+            "p50": 16.6691,
+            "p95": 17.210199999999997,
+            "max": 17.346500000000002
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.051155,
+            "p50": 0.9947,
+            "p95": 1.3187,
+            "max": 1.6099
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.14683166666667,
+            "p50": 31.095299999999998,
+            "p95": 31.551299999999998,
+            "max": 31.789699999999996
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.667250847457627,
+            "p50": 16.6498,
+            "p95": 17.2023,
+            "max": 17.2701
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0727016666666669,
+            "p50": 1.0233,
+            "p95": 1.3655,
+            "max": 1.5018
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12",
+      "async_image_sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.039018819187546,
+        "p50": 2.0377440674375706,
+        "p95": 2.0520206838644666,
+        "max": 2.0520206838644666
+      },
+      "gpu_image_sha256": "7dbcb8489f63cd612a689cd2a2bd8bfa688c5b46eafd2175252d6ee40f9c9fbd",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    }
+  ],
+  "registration_sha256": "93fa6eba58ba9c64c73f215c74ef02c5e80035837be72367dcf45bccbcf4bd6b",
+  "telemetry_sha256": "bc29082ca24dd6a9c4ac2af4689130aaa5c439e5880403c6553b0df9712d266e",
+  "metadata_sha256": "4ce87611ca6693ba3960abe7f8966926a1a3529e8c1bd2c430df1ac5eb9ce46b",
+  "lifecycle": [
+    {
+      "speed_m_s": "25",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "25",
+      "check": "owner-removal",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "75",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "75",
+      "check": "owner-removal",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "150",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "150",
+      "check": "owner-removal",
+      "green_energy": "0"
+    }
+  ],
+  "lifecycle_sha256": "1a5265e7f491da15a21e49a125f0237eddcb27f771e004babe39a535791a67be"
+}

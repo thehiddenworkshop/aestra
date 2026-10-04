@@ -14,6 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "support/particle_light_gpu_proof.rs"]
+mod gpu_proof;
+
 const HZ: f64 = 60.0;
 const WIDTH: u32 = 768;
 const HEIGHT: u32 = 384;
@@ -37,7 +40,10 @@ fn control_position(
     players: Query<&EffectPlayer>,
     mut lights: Query<&mut Transform, With<ControlLight>>,
 ) {
-    let t = players.get(motion.owner).unwrap().instance().time();
+    let Ok(player) = players.get(motion.owner) else {
+        return;
+    };
+    let t = player.instance().time();
     for mut transform in &mut lights {
         transform.translation = Vec3::new(motion.speed * (t - 0.75), 1.0, 0.0);
     }
@@ -74,7 +80,7 @@ fn source(speed: f32, width: f32) -> Arc<CompiledEffect> {
     Arc::new(EffectCompiler::default().compile(&asset).unwrap())
 }
 
-fn headless() -> App {
+fn headless(include_gpu: bool) -> App {
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -101,6 +107,9 @@ fn headless() -> App {
         PostUpdate,
         control_position.before(bevy::transform::TransformSystems::Propagate),
     );
+    if include_gpu {
+        app.add_plugins(gpu_proof::ProofPlugin);
+    }
     let start = Instant::now();
     while app.plugins_state() != bevy::app::PluginsState::Ready {
         bevy::tasks::tick_global_task_pools_on_main_thread();
@@ -146,9 +155,52 @@ fn registration_pixels(pixels: impl IntoIterator<Item = (u32, [u8; 3])>) -> Opti
     (sums[0] > 200.0 && sums[1] > 200.0).then(|| (weighted[0] / sums[0], weighted[1] / sums[1]))
 }
 
-fn directory() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/fireworks-f7/particle-light-latency")
+fn green_energy(image: &Image) -> u64 {
+    image
+        .clone()
+        .try_into_dynamic()
+        .unwrap()
+        .to_rgb8()
+        .pixels()
+        .map(|p| p[1].saturating_sub(p[0].max(p[2])))
+        .filter(|v| *v > 3)
+        .map(u64::from)
+        .sum()
+}
+
+fn unlit_capture(
+    app: &mut App,
+    target: &Handle<Image>,
+    deadline: &mut Instant,
+    directory: &std::path::Path,
+    name: &str,
+) -> u64 {
+    for _ in 0..12 {
+        paced_update(app, deadline);
+    }
+    request(app, target, name.into());
+    for _ in 0..12 {
+        paced_update(app, deadline);
+    }
+    let captures = std::mem::take(&mut app.world_mut().resource_mut::<Captures>().0);
+    assert_eq!(captures.len(), 1, "missing lifecycle image");
+    let (_, image) = captures.into_iter().next().unwrap();
+    let energy = green_energy(&image);
+    assert!(energy <= 20, "stale GPU light survived {name}: {energy}");
+    image
+        .try_into_dynamic()
+        .unwrap()
+        .save(directory.join(format!("{name}.png")))
+        .unwrap();
+    energy
+}
+
+fn directory(include_gpu: bool) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if include_gpu {
+        "../../target/fireworks-f7/particle-light-gpu-proof"
+    } else {
+        "../../target/fireworks-f7/particle-light-latency"
+    })
 }
 
 // Deadline pacing is only in this explicit test. It does not poll/wait for GPU
@@ -170,7 +222,17 @@ fn paced_update(app: &mut App, deadline: &mut Instant) -> f64 {
 #[test]
 #[ignore = "native paced GPU/HDR receiver latency measurement; run explicitly, alone"]
 fn paced_fast_stars_measure_final_image_light_registration() {
-    let mut app = headless();
+    measure(false);
+}
+
+#[test]
+#[ignore = "native paced same-frame selected GPU light/PBR proof; run explicitly, alone"]
+fn same_frame_gpu_lights_register_with_fast_stars_on_standard_material() {
+    measure(true);
+}
+
+fn measure(include_gpu: bool) {
+    let mut app = headless(include_gpu);
     assert!(app.is_plugin_added::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>());
     let target = app
         .world_mut()
@@ -223,9 +285,11 @@ fn paced_fast_stars_measure_final_image_light_registration() {
         "speed_m_s,mode,request_tick,star_x_px,receiver_x_px,signed_offset_px,equivalent_frames\n",
     );
     let mut telemetry = String::from(
-        "speed_m_s,mode,tick,interval_ms,update_ms,active,allocated,sequence,frame_lag,accepted_age_ms,pending,staging_bytes,failed,expired\n",
+        "speed_m_s,mode,tick,interval_ms,update_ms,active,allocated,sequence,frame_lag,accepted_age_ms,pending,staging_bytes,failed,expired,proof_dispatches,proof_sequence,reserved_slots,readback_submitted\n",
     );
-    std::fs::create_dir_all(directory()).unwrap();
+    let mut lifecycle = String::from("speed_m_s,check,green_energy\n");
+    let directory = directory(include_gpu);
+    std::fs::create_dir_all(&directory).unwrap();
     for speed in [25.0_f32, 75.0, 150.0] {
         let width = speed * 1.7;
         app.world_mut()
@@ -246,10 +310,26 @@ fn paced_fast_stars_measure_final_image_light_registration() {
             .spawn((player, Transform::from_xyz(-speed * 0.75, 1.0, 0.0)))
             .id();
         app.insert_resource(Motion { owner, speed });
-        for mode in ["control", "async"] {
+        let mut control_bias = 0.0;
+        let modes: &[&str] = if include_gpu {
+            &["control", "async", "gpu"]
+        } else {
+            &["control", "async"]
+        };
+        for &mode in modes {
             app.world_mut()
                 .resource_mut::<AestraParticleLightSettings>()
+                .max_lights = u32::from(mode != "control");
+            app.world_mut()
+                .resource_mut::<ParticleLightReadbackSettings>()
                 .max_lights = u32::from(mode == "async");
+            if include_gpu {
+                *app.world_mut().resource_mut::<gpu_proof::ProofSettings>() =
+                    gpu_proof::ProofSettings {
+                        enabled: mode == "gpu",
+                        owner: Some(owner),
+                    };
+            }
             let control = (mode == "control").then(|| {
                 app.world_mut()
                     .spawn((
@@ -266,7 +346,26 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                     .id()
             });
             // Forward-only: each phase gets its own time interval; no seek/replay.
-            let start_time = if mode == "control" { 0.25 } else { 1.25 };
+            let gpu_slot = (mode == "gpu").then(|| {
+                app.world_mut()
+                    .spawn((
+                        gpu_proof::ProofSlot,
+                        PointLight {
+                            intensity: 0.0,
+                            range: 200.0,
+                            shadow_maps_enabled: false,
+                            contact_shadows_enabled: false,
+                            ..default()
+                        },
+                        Transform::from_xyz(0.0, 1.0, 0.0),
+                    ))
+                    .id()
+            });
+            let start_time = match mode {
+                "control" => 0.25,
+                "async" => 1.25,
+                _ => 2.25,
+            };
             // Shift the root for the second continuous interval, then settle paused.
             app.world_mut()
                 .get_mut::<Transform>(owner)
@@ -288,6 +387,16 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                 for _ in 0..12 {
                     paced_update(&mut app, &mut deadline);
                 }
+                if mode == "gpu" {
+                    let stats = app
+                        .world()
+                        .resource::<gpu_proof::ProofStatistics>()
+                        .0
+                        .lock()
+                        .unwrap()
+                        .clone();
+                    assert!(stats.rejection.is_none(), "{stats:?}");
+                }
                 let ready = app
                     .world_mut()
                     .resource_mut::<Captures>()
@@ -303,6 +412,16 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                 );
             }
             let mut last = Instant::now();
+            let proof_start = if include_gpu {
+                app.world()
+                    .resource::<gpu_proof::ProofStatistics>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .dispatches
+            } else {
+                0
+            };
             for tick in 1..=60 {
                 app.world_mut()
                     .get_mut::<EffectPlayer>(owner)
@@ -330,8 +449,29 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                         && stats.readback.staging_bytes <= 192
                 );
                 assert_eq!(stats.readback.failed, 0);
+                let mut proof_dispatches = 0;
+                let mut proof_sequence = 0;
+                if mode == "gpu" {
+                    assert_eq!(stats.active, 0);
+                    assert_eq!(stats.allocated, 0);
+                    assert_eq!(stats.readback.pending, 0);
+                    assert_eq!(stats.readback.staging_bytes, 0);
+                    let proof = app
+                        .world()
+                        .resource::<gpu_proof::ProofStatistics>()
+                        .0
+                        .lock()
+                        .unwrap()
+                        .clone();
+                    assert!(proof.rejection.is_none(), "{proof:?}");
+                    if tick >= 3 {
+                        assert!(proof.dispatches > proof_start, "{proof:?}");
+                    }
+                    proof_dispatches = proof.dispatches;
+                    proof_sequence = proof.sequence;
+                }
                 telemetry.push_str(&format!(
-                    "{speed},{mode},{tick},{interval_ms},{update_ms},{},{},{},{},{},{},{},{},{}\n",
+                    "{speed},{mode},{tick},{interval_ms},{update_ms},{},{},{},{},{},{},{},{},{},{proof_dispatches},{proof_sequence},{},{}\n",
                     stats.active,
                     stats.allocated,
                     stats.last_sequence,
@@ -340,7 +480,9 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                     stats.readback.pending,
                     stats.readback.staging_bytes,
                     stats.readback.failed,
-                    stats.expired
+                    stats.expired,
+                    usize::from(gpu_slot.is_some()),
+                    stats.readback.submitted,
                 ));
             }
             // Drain screenshot callbacks without assigning callback-time positions
@@ -350,10 +492,12 @@ fn paced_fast_stars_measure_final_image_light_registration() {
             }
             let captures = std::mem::take(&mut app.world_mut().resource_mut::<Captures>().0);
             assert_eq!(captures.len(), 10, "missing final-image samples");
+            let mut offsets = Vec::new();
             for (tick, image) in captures {
                 let (star, receiver) =
                     registration(&image).expect("missing HDR star or receiver response");
                 let offset = star - receiver;
+                offsets.push(offset);
                 let frames = offset / (f64::from(WIDTH) / f64::from(width) * f64::from(speed) / HZ);
                 report.push_str(&format!(
                     "{speed},{mode},{tick},{star},{receiver},{offset},{frames}\n"
@@ -361,18 +505,77 @@ fn paced_fast_stars_measure_final_image_light_registration() {
                 image
                     .try_into_dynamic()
                     .unwrap()
-                    .save(directory().join(format!("{speed}-{mode}-{tick}.png")))
+                    .save(directory.join(format!("{speed}-{mode}-{tick}.png")))
                     .unwrap();
+            }
+            if mode == "control" {
+                control_bias = offsets.iter().sum::<f64>() / offsets.len() as f64;
+                assert!(offsets.iter().all(|v| v.abs() <= 1.0));
+            } else if mode == "gpu" {
+                for offset in offsets {
+                    let metres =
+                        (offset - control_bias).abs() / (f64::from(WIDTH) / f64::from(width));
+                    assert!(
+                        metres <= (f64::from(speed) / HZ).min(2.0),
+                        "same-frame registration gate failed: {metres}m at {speed}m/s"
+                    );
+                }
+                // Keep the slot entity: every fail-closed path must clear the
+                // GPU override, not rely on despawning a lit object to hide it.
+                app.world_mut()
+                    .resource_mut::<AestraParticleLightSettings>()
+                    .max_lights = 0;
+                let off = unlit_capture(
+                    &mut app,
+                    &target,
+                    &mut deadline,
+                    &directory,
+                    &format!("{speed}-disabled"),
+                );
+                lifecycle.push_str(&format!("{speed},global-disable,{off}\n"));
+                app.world_mut()
+                    .resource_mut::<AestraParticleLightSettings>()
+                    .max_lights = 1;
+                for _ in 0..18 {
+                    paced_update(&mut app, &mut deadline);
+                }
+                request(&mut app, &target, "re-enabled".into());
+                for _ in 0..12 {
+                    paced_update(&mut app, &mut deadline);
+                }
+                let captures = std::mem::take(&mut app.world_mut().resource_mut::<Captures>().0);
+                assert_eq!(captures.len(), 1);
+                assert!(
+                    registration(&captures[0].1).is_some(),
+                    "GPU light failed to re-enable"
+                );
+                app.world_mut().despawn(owner);
+                let removed = unlit_capture(
+                    &mut app,
+                    &target,
+                    &mut deadline,
+                    &directory,
+                    &format!("{speed}-removed"),
+                );
+                lifecycle.push_str(&format!("{speed},owner-removal,{removed}\n"));
             }
             if let Some(entity) = control {
                 app.world_mut().despawn(entity);
             }
+            if let Some(entity) = gpu_slot {
+                app.world_mut().despawn(entity);
+            }
         }
-        app.world_mut().despawn(owner);
+        if app.world().entities().contains(owner) {
+            app.world_mut().despawn(owner);
+        }
     }
     // Raw test evidence is generated output, not source edits.
-    std::fs::write(directory().join("registration.csv"), report).unwrap();
-    std::fs::write(directory().join("telemetry.csv"), telemetry).unwrap();
+    std::fs::write(directory.join("registration.csv"), report).unwrap();
+    std::fs::write(directory.join("telemetry.csv"), telemetry).unwrap();
+    if include_gpu {
+        std::fs::write(directory.join("lifecycle.csv"), lifecycle).unwrap();
+    }
     let capabilities = app.world().resource::<GpuCapabilities>();
     let mut metadata = String::from("key,value\n");
     for (key, value) in [
@@ -394,8 +597,11 @@ fn paced_fast_stars_measure_final_image_light_registration() {
     ] {
         metadata.push_str(&format!("{key},\"{}\"\n", value.replace('"', "\"\"")));
     }
-    std::fs::write(directory().join("metadata.csv"), metadata).unwrap();
-    println!("F7E2 measurements: {}", directory().display());
+    if include_gpu {
+        metadata.push_str("gpu_proof,\"one reserved zero-lumen slot, native Bevy GPU clustering, StandardMaterial\"\n");
+    }
+    std::fs::write(directory.join("metadata.csv"), metadata).unwrap();
+    println!("F7E measurements: {}", directory.display());
 }
 
 #[test]
