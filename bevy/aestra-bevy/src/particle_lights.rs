@@ -8,14 +8,14 @@ pub use aestra_bevy_render::gpu::{
         ParticleLightReadbackSettings, ParticleLightReadbackStatistics, ParticleLightSnapshot,
         SelectedParticleLight,
     },
-    particle_lights::AestraParticleLightSettings,
+    particle_lights::{AestraParticleLightSettings, ParticleLightMode},
 };
 use bevy::{camera::visibility::RenderLayers, prelude::*, transform::TransformSystems};
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 /// Independent host safety clamps. Shadows remain off; disable the entire GPU
 /// selection/transport/realization path with `AestraParticleLightSettings.max_lights = 0`.
-#[derive(Resource, Clone, Debug)]
+#[derive(Resource, Clone, Debug, bevy::render::extract_resource::ExtractResource)]
 pub struct ParticleLightRealizationSettings {
     pub max_lumens: f32,
     pub max_range: f32,
@@ -64,7 +64,11 @@ struct Slot {
 struct Pool {
     slots: Vec<Slot>,
     snapshot: Option<Arc<ParticleLightSnapshot>>,
-    signature: Option<(ParticleLightReadbackSettings, AestraParticleLightSettings)>,
+    signature: Option<(
+        ParticleLightReadbackSettings,
+        AestraParticleLightSettings,
+        ParticleLightMode,
+    )>,
 }
 
 /// Add after `AestraPlugin`; additionally opt into a nonzero global selection
@@ -73,14 +77,16 @@ pub struct AestraParticleLightPlugin;
 impl Plugin for AestraParticleLightPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(AestraParticleLightReadbackPlugin)
+            .init_resource::<ParticleLightMode>()
             .init_resource::<ParticleLightRealizationSettings>()
             .init_resource::<ParticleLightStatistics>()
             .init_resource::<Pool>()
             .add_systems(PostUpdate, realize.before(TransformSystems::Propagate));
+        super::particle_light_gpu::install(app);
     }
 }
 
-fn source_layers(world: &World, source: &ParticleLightSource) -> Option<RenderLayers> {
+pub(super) fn source_layers(world: &World, source: &ParticleLightSource) -> Option<RenderLayers> {
     let owner = world.get::<PresentedEffect>(source.owner)?;
     let root = world.get::<PresentedEffect>(source.root)?;
     let runtime = world.get::<EffectRuntimeStatus>(source.owner)?;
@@ -148,13 +154,18 @@ fn realize(world: &mut World) {
     let settings = world.resource::<ParticleLightRealizationSettings>().clone();
     let transport = world.resource::<ParticleLightReadbackSettings>().clone();
     let selection = *world.resource::<AestraParticleLightSettings>();
-    let cap = selection.max_lights;
+    let mode = *world.resource::<ParticleLightMode>();
+    let cap = if mode == ParticleLightMode::PortableAsync {
+        selection.max_lights
+    } else {
+        0
+    };
     let frame = world.resource::<ParticleLightReadbackFrame>().0;
     let (generation, active, latest, readback) = world.resource::<ParticleLightReadback>().take();
     world.resource_scope(|world, mut pool: Mut<Pool>| {
         world.resource_scope(|world, mut stats: Mut<ParticleLightStatistics>| {
             stats.readback = readback;
-            let signature = (transport.clone(), selection);
+            let signature = (transport.clone(), selection, mode);
             if pool.signature.as_ref() != Some(&signature) {
                 pool.snapshot = None;
                 pool.signature = Some(signature);

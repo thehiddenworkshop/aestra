@@ -1,9 +1,10 @@
 #requires -Version 7.0
 # Read-only F7E2/F7E3 registration gate. Measurement success is NOT visual acceptance.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReportsDirectory, [switch]$MeasureOnly, [switch]$GpuProof)
+param([Parameter(Mandatory)][string]$ReportsDirectory, [switch]$MeasureOnly, [switch]$GpuProof, [switch]$GpuAdapter)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($GpuAdapter) { $GpuProof = $true }
 function Distribution($Values) {
     $sorted = @($Values | Sort-Object)
     if ($sorted.Count -eq 0) { throw 'Missing observations' }
@@ -30,7 +31,9 @@ if ($metadata.pipeline -ne 'pipelined' -or $metadata.history -ne 'playback-only'
     $metadata.backend -notin @('Vulkan','Dx12','Metal')) { throw 'Invalid native probe setup' }
 $modes = if ($GpuProof) { @('control','async','gpu') } else { @('control','async') }
 if ($registration.Count -ne 30*$modes.Count -or $telemetry.Count -ne 180*$modes.Count) { throw 'Missing samples' }
-if ($GpuProof -and $metadata.gpu_proof -ne 'one reserved zero-lumen slot, native Bevy GPU clustering, StandardMaterial') { throw 'Missing native GPU proof setup' }
+if ($GpuAdapter) {
+    if ($metadata.gpu_adapter -ne 'bounded reserved slots, native Bevy GPU clustering, StandardMaterial') { throw 'Missing bounded native GPU adapter setup' }
+} elseif ($GpuProof -and $metadata.gpu_proof -ne 'one reserved zero-lumen slot, native Bevy GPU clustering, StandardMaterial') { throw 'Missing native GPU proof setup' }
 $lifecycle = @()
 if ($GpuProof) {
     $lifecycle = @(Import-Csv -LiteralPath (Join-Path $ReportsDirectory 'lifecycle.csv'))
@@ -135,5 +138,12 @@ $result = [ordered]@{ schema = 1; date = '2026-10-04'; scope = $(if ($GpuProof) 
     metadata = $metadata; accepted = $accepted; runs = $runs
     registration_sha256 = Hash 'registration.csv'; telemetry_sha256 = Hash 'telemetry.csv'; metadata_sha256 = Hash 'metadata.csv' }
 if ($GpuProof) { $result.lifecycle = $lifecycle; $result.lifecycle_sha256 = Hash 'lifecycle.csv' }
+if ($GpuAdapter) {
+    $result.scope = 'F7E4A bounded native GPU adapter registration, three speeds and multi-root/lifecycle/budget/host-light native assertions. Default layers and GPU clustering only. Isolated fixtures, not authored hero/volley/show or production-finale certification; equivalent spatial offset, not scanout latency.'
+    $result.contract_images = [ordered]@{}
+    foreach ($name in @('multiple-roots','one-root-removed','hierarchy-hidden','layer-rejected','manifest-rejected','budget-rejected','budget-recovered','far-world-origin','all-roots-removed')) {
+        $result.contract_images[$name] = Hash "$name.png"
+    }
+}
 $result | ConvertTo-Json -Depth 9
 if (!$accepted -and !$MeasureOnly) { throw 'Flagship fast-star registration budget FAILED; measurements are valid but the measured path is not approved' }

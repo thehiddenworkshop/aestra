@@ -1,0 +1,385 @@
+{
+  "schema": 1,
+  "date": "2026-10-04",
+  "scope": "F7E4A bounded native GPU adapter registration, three speeds and multi-root/lifecycle/budget/host-light native assertions. Default layers and GPU clustering only. Isolated fixtures, not authored hero/volley/show or production-finale certification; equivalent spatial offset, not scanout latency.",
+  "metadata": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "device_type": "DiscreteGpu",
+    "pipeline": "pipelined",
+    "history": "playback-only",
+    "cadence_hz": "60",
+    "target": "768x384",
+    "response": "HDR/Reinhard/EV0/no bloom/no ambient/no shadows",
+    "readback_cap": "1",
+    "slots": "3",
+    "light_range": "8",
+    "gpu_adapter": "bounded reserved slots, native Bevy GPU clustering, StandardMaterial"
+  },
+  "accepted": true,
+  "runs": [
+    {
+      "speed_m_s": 25,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.01966658965564818,
+        "p50": 0.012828443753787156,
+        "p95": 0.04650339714402492,
+        "max": 0.04650339714402492
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.0027512524505255652,
+        "p50": 0.0017301226101692933,
+        "p95": 0.0066325870311242825,
+        "max": 0.0066325870311242825
+      },
+      "lag_ms_at_60hz": 0.11054311718540472,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.0011463551877189855,
+        "p50": 0.0007208844209038723,
+        "p95": 0.0027635779296351177,
+        "max": 0.0027635779296351177
+      },
+      "p95_limit_metres": 0.4166666666666667,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.664866101694916,
+            "p50": 16.6374,
+            "p95": 17.3314,
+            "max": 17.3351
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.99923,
+            "p50": 0.9592999999999999,
+            "p95": 1.2415,
+            "max": 1.3195999999999999
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.66367288135593,
+            "p50": 16.659299999999998,
+            "p95": 17.2301,
+            "max": 17.3589
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0735099999999997,
+            "p50": 1.0666,
+            "p95": 1.33,
+            "max": 1.4596
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.24108666666666,
+            "p50": 31.2091,
+            "p95": 31.8651,
+            "max": 32.0199
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.668937288135595,
+            "p50": 16.6506,
+            "p95": 17.338900000000002,
+            "max": 17.527
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0596333333333332,
+            "p50": 1.035,
+            "p95": 1.3307,
+            "max": 1.5
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa",
+      "async_image_sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.025390767156309,
+        "p50": 2.0225889288333927,
+        "p95": 2.0345679090881705,
+        "max": 2.0345679090881705
+      },
+      "gpu_image_sha256": "2533c9a802067cd0493b64ac72b8c62b831d69e5ac5738b6e9baf86f8c0ed869",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    },
+    {
+      "speed_m_s": 75,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.04541539763135347,
+        "p50": 0.04998754342316829,
+        "p95": 0.06833906130809168,
+        "max": 0.06833906130809168
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.006122144676524344,
+        "p50": 0.007157936167012258,
+        "p95": 0.009160631527207874,
+        "max": 0.009160631527207874
+      },
+      "lag_ms_at_60hz": 0.15267719212013123,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.00765268084565543,
+        "p50": 0.008947420208765322,
+        "p95": 0.011450789409009843,
+        "max": 0.011450789409009843
+      },
+      "p95_limit_metres": 1.25,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.666561016949153,
+            "p50": 16.6494,
+            "p95": 17.123099999999997,
+            "max": 17.1507
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0270233333333334,
+            "p50": 0.9874,
+            "p95": 1.282,
+            "max": 1.3578
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.669688135593226,
+            "p50": 16.6625,
+            "p95": 17.2423,
+            "max": 17.2748
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0009266666666667,
+            "p50": 0.9669,
+            "p95": 1.2631000000000001,
+            "max": 1.3848
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.19416,
+            "p50": 31.1782,
+            "p95": 31.628999999999998,
+            "max": 31.876500000000004
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.66848474576271,
+            "p50": 16.659899999999997,
+            "p95": 17.3429,
+            "max": 18.207
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0363916666666666,
+            "p50": 1.0168,
+            "p95": 1.2922,
+            "max": 1.3272
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb",
+      "async_image_sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.0474730284636378,
+        "p50": 2.0460334717264983,
+        "p95": 2.0609057520001954,
+        "max": 2.0609057520001954
+      },
+      "gpu_image_sha256": "893f1831369b4a097b62027bc70b0c5b783c96c0bbb0308f40bd55f9e01dbcec",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    },
+    {
+      "speed_m_s": 150,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.06443218158561877,
+        "p50": 0.04521572467393753,
+        "p95": 0.1112160036547607,
+        "max": 0.1112160036547607
+      },
+      "measured_mode": "gpu",
+      "lag_frames": {
+        "samples": 10,
+        "mean": 0.008536711376440253,
+        "p50": 0.005679191513905835,
+        "p95": 0.01498062546476886,
+        "max": 0.01498062546476886
+      },
+      "lag_ms_at_60hz": 0.249677091079481,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.021341778441100634,
+        "p50": 0.014197978784764587,
+        "p95": 0.03745156366192215,
+        "max": 0.03745156366192215
+      },
+      "p95_limit_metres": 2,
+      "accepted": true,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.665988135593224,
+            "p50": 16.6618,
+            "p95": 17.0541,
+            "max": 17.3777
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0853133333333334,
+            "p50": 1.0495,
+            "p95": 1.3268,
+            "max": 1.4268
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.6694406779661,
+            "p50": 16.6858,
+            "p95": 17.174,
+            "max": 17.228199999999998
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.9984933333333333,
+            "p50": 0.954,
+            "p95": 1.2367000000000001,
+            "max": 1.3343999999999998
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.307178333333336,
+            "p50": 31.249699999999997,
+            "p95": 31.8142,
+            "max": 32.137100000000004
+          }
+        },
+        {
+          "mode": "gpu",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.666167796610168,
+            "p50": 16.646,
+            "p95": 17.2323,
+            "max": 17.414099999999998
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0264083333333331,
+            "p50": 1.0005000000000002,
+            "p95": 1.2699,
+            "max": 1.5942
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        }
+      ],
+      "control_image_sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12",
+      "async_image_sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe",
+      "async_baseline_frames": {
+        "samples": 10,
+        "mean": 2.039018819187546,
+        "p50": 2.0377440674375706,
+        "p95": 2.0520206838644666,
+        "max": 2.0520206838644666
+      },
+      "gpu_image_sha256": "7dbcb8489f63cd612a689cd2a2bd8bfa688c5b46eafd2175252d6ee40f9c9fbd",
+      "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+      "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+    }
+  ],
+  "registration_sha256": "93fa6eba58ba9c64c73f215c74ef02c5e80035837be72367dcf45bccbcf4bd6b",
+  "telemetry_sha256": "b1cee5312988f2645d0e11e4055f6461b451ebc47d19cbefd6c3b8a511a750a4",
+  "metadata_sha256": "2ff6ed0d5316002abf023b8da4878d9bbf6b153ecadba85d2244061cd3460c0b",
+  "lifecycle": [
+    {
+      "speed_m_s": "25",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "25",
+      "check": "owner-removal",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "75",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "75",
+      "check": "owner-removal",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "150",
+      "check": "global-disable",
+      "green_energy": "0"
+    },
+    {
+      "speed_m_s": "150",
+      "check": "owner-removal",
+      "green_energy": "0"
+    }
+  ],
+  "lifecycle_sha256": "1a5265e7f491da15a21e49a125f0237eddcb27f771e004babe39a535791a67be",
+  "contract_images": {
+    "multiple-roots": "05d44f83690b6b70567b92123f8eb64928d8cb6f4154010b1602ae5819baadcc",
+    "one-root-removed": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+    "hierarchy-hidden": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+    "layer-rejected": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+    "manifest-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+    "budget-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+    "budget-recovered": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+    "far-world-origin": "2cfde9980a165b8115e23220630c561d5fb269d938abb40a7391b26ba63d0fbf",
+    "all-roots-removed": "a11204302146a00185e0541d91807ffe1cfb9a2439fae5de4506a2dc666e8fcc"
+  }
+}

@@ -80,7 +80,7 @@ fn source(speed: f32, width: f32) -> Arc<CompiledEffect> {
     Arc::new(EffectCompiler::default().compile(&asset).unwrap())
 }
 
-fn headless(include_gpu: bool) -> App {
+fn headless(include_gpu: bool, production: bool) -> App {
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -107,7 +107,7 @@ fn headless(include_gpu: bool) -> App {
         PostUpdate,
         control_position.before(bevy::transform::TransformSystems::Propagate),
     );
-    if include_gpu {
+    if include_gpu && !production {
         app.add_plugins(gpu_proof::ProofPlugin);
     }
     let start = Instant::now();
@@ -195,8 +195,10 @@ fn unlit_capture(
     energy
 }
 
-fn directory(include_gpu: bool) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if include_gpu {
+fn directory(include_gpu: bool, production: bool) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if production {
+        "../../target/fireworks-f7/particle-light-gpu-adapter"
+    } else if include_gpu {
         "../../target/fireworks-f7/particle-light-gpu-proof"
     } else {
         "../../target/fireworks-f7/particle-light-latency"
@@ -222,17 +224,47 @@ fn paced_update(app: &mut App, deadline: &mut Instant) -> f64 {
 #[test]
 #[ignore = "native paced GPU/HDR receiver latency measurement; run explicitly, alone"]
 fn paced_fast_stars_measure_final_image_light_registration() {
-    measure(false);
+    measure(false, false);
 }
 
 #[test]
 #[ignore = "native paced same-frame selected GPU light/PBR proof; run explicitly, alone"]
 fn same_frame_gpu_lights_register_with_fast_stars_on_standard_material() {
-    measure(true);
+    measure(true, false);
 }
 
-fn measure(include_gpu: bool) {
-    let mut app = headless(include_gpu);
+#[test]
+#[ignore = "native paced bounded GPU adapter/PBR registration; run explicitly, alone"]
+fn bounded_gpu_adapter_registers_without_selected_light_readback() {
+    measure(true, true);
+}
+
+fn observation(app: &App, production: bool) -> gpu_proof::Observation {
+    if production {
+        let stats = app
+            .world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot();
+        gpu_proof::Observation {
+            dispatches: stats.dispatches,
+            sequence: stats.sequence,
+            rejection: stats
+                .rejection
+                .filter(|r| *r != ParticleLightGpuRejection::PipelineLoading)
+                .map(|r| format!("{r:?}")),
+        }
+    } else {
+        app.world()
+            .resource::<gpu_proof::ProofStatistics>()
+            .0
+            .lock()
+            .unwrap()
+            .clone()
+    }
+}
+
+fn measure(include_gpu: bool, production: bool) {
+    let mut app = headless(include_gpu, production);
     assert!(app.is_plugin_added::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>());
     let target = app
         .world_mut()
@@ -288,7 +320,7 @@ fn measure(include_gpu: bool) {
         "speed_m_s,mode,tick,interval_ms,update_ms,active,allocated,sequence,frame_lag,accepted_age_ms,pending,staging_bytes,failed,expired,proof_dispatches,proof_sequence,reserved_slots,readback_submitted\n",
     );
     let mut lifecycle = String::from("speed_m_s,check,green_energy\n");
-    let directory = directory(include_gpu);
+    let directory = directory(include_gpu, production);
     std::fs::create_dir_all(&directory).unwrap();
     for speed in [25.0_f32, 75.0, 150.0] {
         let width = speed * 1.7;
@@ -322,8 +354,15 @@ fn measure(include_gpu: bool) {
                 .max_lights = u32::from(mode != "control");
             app.world_mut()
                 .resource_mut::<ParticleLightReadbackSettings>()
-                .max_lights = u32::from(mode == "async");
-            if include_gpu {
+                .max_lights = u32::from(mode == "async" || production);
+            if production {
+                *app.world_mut().resource_mut::<ParticleLightMode>() = if mode == "gpu" {
+                    ParticleLightMode::SameFrameGpu
+                } else {
+                    ParticleLightMode::PortableAsync
+                };
+            }
+            if include_gpu && !production {
                 *app.world_mut().resource_mut::<gpu_proof::ProofSettings>() =
                     gpu_proof::ProofSettings {
                         enabled: mode == "gpu",
@@ -346,7 +385,7 @@ fn measure(include_gpu: bool) {
                     .id()
             });
             // Forward-only: each phase gets its own time interval; no seek/replay.
-            let gpu_slot = (mode == "gpu").then(|| {
+            let gpu_slot = (mode == "gpu" && !production).then(|| {
                 app.world_mut()
                     .spawn((
                         gpu_proof::ProofSlot,
@@ -388,13 +427,7 @@ fn measure(include_gpu: bool) {
                     paced_update(&mut app, &mut deadline);
                 }
                 if mode == "gpu" {
-                    let stats = app
-                        .world()
-                        .resource::<gpu_proof::ProofStatistics>()
-                        .0
-                        .lock()
-                        .unwrap()
-                        .clone();
+                    let stats = observation(&app, production);
                     assert!(stats.rejection.is_none(), "{stats:?}");
                 }
                 let ready = app
@@ -413,12 +446,7 @@ fn measure(include_gpu: bool) {
             }
             let mut last = Instant::now();
             let proof_start = if include_gpu {
-                app.world()
-                    .resource::<gpu_proof::ProofStatistics>()
-                    .0
-                    .lock()
-                    .unwrap()
-                    .dispatches
+                observation(&app, production).dispatches
             } else {
                 0
             };
@@ -456,13 +484,7 @@ fn measure(include_gpu: bool) {
                     assert_eq!(stats.allocated, 0);
                     assert_eq!(stats.readback.pending, 0);
                     assert_eq!(stats.readback.staging_bytes, 0);
-                    let proof = app
-                        .world()
-                        .resource::<gpu_proof::ProofStatistics>()
-                        .0
-                        .lock()
-                        .unwrap()
-                        .clone();
+                    let proof = observation(&app, production);
                     assert!(proof.rejection.is_none(), "{proof:?}");
                     if tick >= 3 {
                         assert!(proof.dispatches > proof_start, "{proof:?}");
@@ -481,7 +503,7 @@ fn measure(include_gpu: bool) {
                     stats.readback.staging_bytes,
                     stats.readback.failed,
                     stats.expired,
-                    usize::from(gpu_slot.is_some()),
+                    if production { app.world().resource::<ParticleLightGpuStatistics>().snapshot().reserved_slots as usize } else { usize::from(gpu_slot.is_some()) },
                     stats.readback.submitted,
                 ));
             }
@@ -570,6 +592,9 @@ fn measure(include_gpu: bool) {
             app.world_mut().despawn(owner);
         }
     }
+    if production {
+        adapter_contract(&mut app, &target, &directory);
+    }
     // Raw test evidence is generated output, not source edits.
     std::fs::write(directory.join("registration.csv"), report).unwrap();
     std::fs::write(directory.join("telemetry.csv"), telemetry).unwrap();
@@ -597,11 +622,252 @@ fn measure(include_gpu: bool) {
     ] {
         metadata.push_str(&format!("{key},\"{}\"\n", value.replace('"', "\"\"")));
     }
-    if include_gpu {
+    if production {
+        metadata.push_str("gpu_adapter,\"bounded reserved slots, native Bevy GPU clustering, StandardMaterial\"\n");
+    } else if include_gpu {
         metadata.push_str("gpu_proof,\"one reserved zero-lumen slot, native Bevy GPU clustering, StandardMaterial\"\n");
     }
     std::fs::write(directory.join("metadata.csv"), metadata).unwrap();
     println!("F7E measurements: {}", directory.display());
+}
+
+fn channel_energy(image: &Image, channel: usize, half: Option<bool>) -> u64 {
+    image
+        .clone()
+        .try_into_dynamic()
+        .unwrap()
+        .to_rgb8()
+        .enumerate_pixels()
+        .filter(|(x, _, _)| half.is_none_or(|right| (*x >= WIDTH / 2) == right))
+        .map(|(_, _, p)| p[channel].saturating_sub(p[(channel + 1) % 3].max(p[(channel + 2) % 3])))
+        .filter(|v| *v > 3)
+        .map(u64::from)
+        .sum()
+}
+fn adapter_capture(
+    app: &mut App,
+    target: &Handle<Image>,
+    deadline: &mut Instant,
+    directory: &std::path::Path,
+    name: &str,
+) -> Image {
+    for _ in 0..24 {
+        paced_update(app, deadline);
+    }
+    request(app, target, name.into());
+    for _ in 0..12 {
+        paced_update(app, deadline);
+    }
+    let captures = std::mem::take(&mut app.world_mut().resource_mut::<Captures>().0);
+    assert_eq!(captures.len(), 1);
+    let (_, image) = captures.into_iter().next().unwrap();
+    image
+        .clone()
+        .try_into_dynamic()
+        .unwrap()
+        .save(directory.join(format!("{name}.png")))
+        .unwrap();
+    image
+}
+fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path::Path) {
+    *app.world_mut().resource_mut::<ParticleLightMode>() = ParticleLightMode::SameFrameGpu;
+    app.world_mut()
+        .resource_mut::<AestraParticleLightSettings>()
+        .max_lights = 4;
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_lights = 3;
+    // Two separate roots/artifacts, two selected records, three reserved slots.
+    let owners = [-50.0, 50.0].map(|x| {
+        let mut player = EffectPlayer::from_compiled(source(0.0, 255.0))
+            .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+        player.playing = false;
+        player.instance_mut().set_playback_time(0.25);
+        app.world_mut()
+            .spawn((player, Transform::from_xyz(x, 1.0, 0.0)))
+            .id()
+    });
+    let host = app
+        .world_mut()
+        .spawn((
+            PointLight {
+                color: Color::linear_rgb(0.0, 0.0, 1.0),
+                intensity: 40_000.0,
+                range: 8.0,
+                shadow_maps_enabled: false,
+                contact_shadows_enabled: false,
+                ..default()
+            },
+            Transform::from_xyz(100.0, 1.0, 0.0),
+        ))
+        .id();
+    let mut deadline = Instant::now();
+    let image = adapter_capture(app, target, &mut deadline, directory, "multiple-roots");
+    assert!(
+        channel_energy(&image, 1, Some(false)) > 200 && channel_energy(&image, 1, Some(true)) > 200
+    );
+    assert!(
+        channel_energy(&image, 2, None) > 200,
+        "host light was overwritten"
+    );
+    let stats = app
+        .world()
+        .resource::<ParticleLightGpuStatistics>()
+        .snapshot();
+    assert!(stats.rejection.is_none(), "{stats:?}");
+    assert_eq!(stats.reserved_slots, 3);
+    assert!(
+        stats.buffer_bytes
+            <= app
+                .world()
+                .resource::<ParticleLightGpuSettings>()
+                .max_buffer_bytes
+    );
+    assert_eq!(stats.invalid_sources, 0);
+    let before = app
+        .world_mut()
+        .query_filtered::<Entity, With<ParticleLightGpuSlot>>()
+        .iter(app.world())
+        .collect::<Vec<_>>();
+    for _ in 0..12 {
+        paced_update(app, &mut deadline);
+    }
+    let after = app
+        .world_mut()
+        .query_filtered::<Entity, With<ParticleLightGpuSlot>>()
+        .iter(app.world())
+        .collect::<Vec<_>>();
+    assert_eq!(before, after, "reserved pool churned on stable playback");
+    app.world_mut().despawn(owners[0]);
+    let image = adapter_capture(app, target, &mut deadline, directory, "one-root-removed");
+    assert_eq!(
+        channel_energy(&image, 1, Some(false)),
+        0,
+        "removed source retained its light"
+    );
+    assert!(channel_energy(&image, 1, Some(true)) > 200 && channel_energy(&image, 2, None) > 200);
+    let parent = app
+        .world_mut()
+        .spawn((Transform::IDENTITY, Visibility::Hidden))
+        .id();
+    app.world_mut()
+        .entity_mut(owners[1])
+        .insert(ChildOf(parent));
+    let image = adapter_capture(app, target, &mut deadline, directory, "hierarchy-hidden");
+    assert_eq!(
+        channel_energy(&image, 1, None),
+        0,
+        "hidden hierarchy retained a light"
+    );
+    assert!(channel_energy(&image, 2, None) > 200);
+    app.world_mut().entity_mut(owners[1]).remove::<ChildOf>();
+    app.world_mut().despawn(parent);
+    // Explicitly reject unsupported layers, no automatic async fallback.
+    app.world_mut()
+        .entity_mut(owners[1])
+        .insert(bevy::camera::visibility::RenderLayers::layer(7));
+    let image = adapter_capture(app, target, &mut deadline, directory, "layer-rejected");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert_eq!(
+        app.world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot()
+            .rejection,
+        Some(ParticleLightGpuRejection::NonDefaultLayers)
+    );
+    app.world_mut()
+        .entity_mut(owners[1])
+        .remove::<bevy::camera::visibility::RenderLayers>();
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_manifest_bytes = 0;
+    let image = adapter_capture(app, target, &mut deadline, directory, "manifest-rejected");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert_eq!(
+        app.world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot()
+            .rejection,
+        Some(ParticleLightGpuRejection::ManifestBudget)
+    );
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_manifest_bytes = 1024 * 1024;
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_buffer_bytes = 0;
+    let image = adapter_capture(app, target, &mut deadline, directory, "budget-rejected");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert_eq!(
+        app.world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot()
+            .rejection,
+        Some(ParticleLightGpuRejection::BufferBudget)
+    );
+    assert_eq!(
+        app.world_mut()
+            .query::<&ParticleLightGpuSlot>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_buffer_bytes = 1024 * 1024;
+    app.world_mut()
+        .resource_mut::<ParticleLightGpuSettings>()
+        .max_lights = 1;
+    let image = adapter_capture(app, target, &mut deadline, directory, "budget-recovered");
+    assert!(channel_energy(&image, 1, Some(true)) > 200);
+    assert_eq!(
+        app.world_mut()
+            .query::<&ParticleLightGpuSlot>()
+            .iter(app.world())
+            .count(),
+        1
+    );
+    let camera = app
+        .world_mut()
+        .query_filtered::<Entity, With<Camera3d>>()
+        .single(app.world())
+        .unwrap();
+    let receiver = app
+        .world_mut()
+        .query_filtered::<Entity, With<Mesh3d>>()
+        .single(app.world())
+        .unwrap();
+    for entity in [camera, receiver, owners[1], host] {
+        app.world_mut()
+            .get_mut::<Transform>(entity)
+            .unwrap()
+            .translation
+            .x += 10_000.0;
+    }
+    let image = adapter_capture(app, target, &mut deadline, directory, "far-world-origin");
+    assert!(
+        channel_energy(&image, 1, Some(true)) > 200,
+        "CPU placeholder culled a visible GPU light far from the origin"
+    );
+    assert!(channel_energy(&image, 2, None) > 200);
+    assert!(
+        app.world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot()
+            .rejection
+            .is_none()
+    );
+    app.world_mut().despawn(owners[1]);
+    let image = adapter_capture(app, target, &mut deadline, directory, "all-roots-removed");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert!(channel_energy(&image, 2, None) > 200);
+    let readback = &app.world().resource::<ParticleLightStatistics>().readback;
+    assert_eq!((readback.pending, readback.staging_bytes), (0, 0));
+    assert_eq!(
+        app.world().get::<PointLight>(host).unwrap().intensity,
+        40_000.0
+    );
+    app.world_mut().despawn(host);
 }
 
 #[test]

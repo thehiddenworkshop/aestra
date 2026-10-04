@@ -468,6 +468,53 @@ hero/volley/show profiling remain the next gate. Render-world consumers can orde
 after `gpu::particle_lights::ParticleLightSelectionSet` and before camera rendering;
 always use the current frame's selected records and matching manifest.
 
+### Same-frame native GPU mode (F7E4A)
+
+The canonical particle-light plugin now includes a bounded native adapter:
+
+```rust,no_run
+use aestra_bevy::*;
+use bevy::prelude::*;
+
+App::new()
+    .add_plugins((DefaultPlugins, AestraPlugin, AestraParticleLightPlugin))
+    .insert_resource(AestraParticleLightSettings { max_lights: 96, ..default() })
+    .insert_resource(ParticleLightGpuSettings { max_lights: 96, ..default() })
+    .insert_resource(ParticleLightMode::SameFrameGpu);
+```
+
+`PortableAsync` remains the default. `SameFrameGpu` automatically stops
+selected-light readback and removes the portable proxy pool; readback settings
+do not need to be rewritten. Changing mode/global cap reconciles the pools.
+The GPU pool reserves at most `min(global cap, GPU adapter cap)` zero-lumen
+shadowless entities, reused across frames rather than allocated per particle.
+Current-frame GPU selection writes their actual world-space light records before
+Bevy GPU clustering. Normal `StandardMaterial` receivers and independent host
+lights/representative flashes use the same native buffer without a custom shader.
+
+`ParticleLightGpuSettings` bounds mapping/token buffers and qualified source
+metadata. `max_buffer_bytes` includes the **logical** reserved Bevy light-record
+cost, not the renderer's allocation granularity, camera-cluster/pipeline memory
+or separately budgeted selection storage. It is not a total renderer-memory cap.
+The shared `ParticleLightRealizationSettings` supplies intensity/range clamps.
+`ParticleLightGpuStatistics::snapshot()` reports render dispatches, last sequence,
+reserved slots, written-capacity bounds, invalid sources, bytes and typed failures.
+It does not read back an exact active GPU light count. Main-world observations
+may trail the render world under pipelining.
+
+This first slice supports **default source/camera layers and native storage/GPU
+clustering only**. Other configurations fail closed with diagnostics, never an
+automatic delayed fallback. Pipeline warmup is reported as `PipelineLoading`.
+Source epochs, seed, artifact identity, enabled output, nested clip context and
+root/owner visibility are qualified at extraction; removed/invalid sources and
+unused slots cannot retain yesterday's contribution. The reserved marker
+`ParticleLightGpuSlot` is inspection-only; do not modify its components.
+
+The [F7E4A native gate](../../benchmarks/fireworks/particle-light-gpu-adapter-2026-10-04.md)
+passes fast-star registration, pool/lifecycle/budget and independent host-light
+fixtures. Authored hero/volley/show profiling, non-default per-view layers,
+additional hardware and production-finale certification remain open.
+
 ## Where to look
 
 | I want… | Read |

@@ -1,7 +1,7 @@
 //! Opt-in bounded asynchronous selected-light transport. No particle-buffer map,
 //! blocking device poll, event routing or scene-light entities in this layer.
 use super::particle_lights::{
-    AestraParticleLightSettings, GpuSelectedParticleLights, ParticleLightSource,
+    AestraParticleLightSettings, GpuSelectedParticleLights, ParticleLightMode, ParticleLightSource,
 };
 use bevy::{
     ecs::system::{SystemParam, SystemState},
@@ -141,7 +141,11 @@ struct Slot {
 #[derive(Resource, Default)]
 struct Staging {
     slots: Vec<Slot>,
-    signature: Option<(ParticleLightReadbackSettings, AestraParticleLightSettings)>,
+    signature: Option<(
+        ParticleLightReadbackSettings,
+        AestraParticleLightSettings,
+        ParticleLightMode,
+    )>,
     sequence: u64,
 }
 
@@ -198,6 +202,7 @@ struct CopyInputs<'w> {
     selected: Res<'w, GpuSelectedParticleLights>,
     settings: Res<'w, ParticleLightReadbackSettings>,
     selection: Res<'w, AestraParticleLightSettings>,
+    mode: Res<'w, ParticleLightMode>,
     frame: Res<'w, ParticleLightReadbackFrame>,
     device: Res<'w, RenderDevice>,
     mailbox: Res<'w, ParticleLightReadback>,
@@ -224,7 +229,7 @@ fn copy_frame(inputs: &mut CopyInputs, context: &mut RenderContext) {
     let staging = &mut inputs.staging;
     // Busy buffers remain alive until their callbacks unmap them. Do not resize
     // or orphan them on a host budget change; stop admission until they drain.
-    let signature = (settings.clone(), *selection);
+    let signature = (settings.clone(), *selection, *inputs.mode);
     if staging.signature.as_ref() != Some(&signature) {
         mailbox.invalidate(None);
         staging.signature = Some(signature);
@@ -239,10 +244,11 @@ fn copy_frame(inputs: &mut CopyInputs, context: &mut RenderContext) {
         shared.statistics.pending = pending;
         shared.statistics.staging_bytes = staging.slots.iter().map(|s| s.size).sum();
     }
-    let Some(set) = selected
-        .frame()
-        .filter(|_| selection.max_lights != 0 && settings.max_lights != 0)
-    else {
+    let Some(set) = selected.frame().filter(|_| {
+        selection.max_lights != 0
+            && settings.max_lights != 0
+            && *inputs.mode == ParticleLightMode::PortableAsync
+    }) else {
         mailbox.invalidate(selected.rejection.clone());
         if pending == 0 {
             staging.slots.clear();

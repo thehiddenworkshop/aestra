@@ -77,7 +77,8 @@ stateful launch-to-star event chains. F7D2B now measures the current authored he
 and F6 show with ordinary material/trail rendering intact across all tiers. Production-finale
 certification and lit smoke remain open. F7E1 implements bounded async realization; F7E2 measures
 its failed fast-star registration gate. F7E3 now passes a narrow one-slot same-frame GPU/PBR proof.**
-The next engine step is F7E4's bounded production GPU adapter and authored-load receiver/cost gates,
+F7E4A now adds an opt-in bounded native GPU adapter with explicit default-layer restrictions.
+The next engine step is F7E4B's authored-load receiver/cost gates and viewer profiling integration,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4116,14 +4117,38 @@ with the reserved slot still alive, and re-enable restores its contribution.
   storage/GPU clustering only. Other setups are rejected, not silently approved. Shader record layout
   comes from Bevy's own WGSL import; the engine-neutral scene-output model is unchanged.
 
-**Next: F7E4 — bounded production GPU adapter.** Add explicit opt-in mode and configurable bounded
-reserved slots, stable current render-index mapping, zeroed unused entries, source identity/lifecycle,
-per-view layers and visibility, hardware/buffer/cluster limits and warmup/failure diagnostics. Cover
-coexisting host lights/representative flashes and multiple roots; do not turn proof restrictions into
-silent shipping limits or allocate per source particle. Preserve the portable async mode for tolerant
-workloads. Remeasure authored hero/volley/show final-image registration and CPU/GPU/byte costs at
-all tiers before production claims. Additional hardware/cadences, perspective/bloom art acceptance,
-editor lighting, lit smoke and production-finale certification remain open.
+**F7E4A implemented/measured — 2026-10-04: bounded default-layer native adapter.** The canonical
+`AestraParticleLightPlugin` exposes `ParticleLightMode::{PortableAsync, SameFrameGpu}`; portable
+remains default. GPU mode automatically stops selected-position readback and removes async proxies,
+reserving/reusing at most `min(global cap, GPU adapter cap)` zero-lumen shadowless slots. Caps are
+configurable, not a new fixed 96-light ceiling. Stable current-frame Bevy indices, zeroed padding,
+qualified source tokens (epochs/artifact/output/clip context/visibility), device/metadata budgets and
+typed warmup/failure diagnostics replace the test-only bridge. Metadata buffers are reused at stable
+shape; unchanged placeholder lights are not dirtied each tick. CPU placeholder frustum culling is
+disabled because only GPU clustering knows the actual light positions.
+- The canonical adapter passes the same fast-star gate at all three speeds with the same subpixel
+  residuals as F7E3. Native fixtures cover multiple roots, stable slots, source removal, hidden
+  hierarchies, budget rejection/recovery/shrink, independent ordinary host lights and a camera/source/
+  receiver translated 10 km from the origin. Existing portable qualification/transport regressions pass.
+- `ParticleLightGpuSettings` explicitly caps buffers and qualified metadata; reported bytes include
+  logical reserved light records, not Bevy allocation granularity/camera-cluster storage or total
+  in-flight renderer memory. Statistics expose capacities/last dispatched sequence, not read-back
+  exact active GPU light counts. The engine-neutral model and independent representative pool are unchanged.
+- **Default source/camera layers and native GPU clustering/storage only.** Non-default layers and
+  unsupported configurations fail closed with diagnostics, never silently fall back or leak lights.
+  General per-view layer integration/multi-view acceptance remain open; this is a qualified first
+  integration slice, not general shipping/finale certification.
+- [API/contract, method and reproduction](../../benchmarks/fireworks/particle-light-gpu-adapter-2026-10-04.md),
+  [measurements](../../benchmarks/fireworks/particle-light-gpu-adapter-2026-10-04.json) and the registration
+  validator's `-GpuAdapter` mode retain the gate. Native probes must run explicitly and alone.
+
+**Next: F7E4B — authored-load integration and cost gates.** Expose the explicit mode in viewer
+profiling and remeasure hero/volley/full show at every tier, including independent representative
+flashes, final-image registration and selection/adapter/clustering/full-frame CPU/GPU/byte costs.
+Keep default-layer restrictions explicit; general per-view layers and multi-view acceptance remain
+required before a general adapter claim. Preserve portable async mode for tolerant workloads.
+Additional hardware/cadences, perspective/bloom art acceptance, editor lighting, lit smoke and
+production-finale certification remain open.
 
 #### Validation path
 
@@ -4272,7 +4297,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow same-frame GPU proof, justifying F7E4 bounded production integration and authored-load receiver/cost gates. The current bounded-show measurements are not production-finale or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-04):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter. Next F7E4B viewer integration and authored-load receiver/cost gates, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4686,7 +4711,7 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E4 bounded production GPU lighting adapter; F7E3 passes the narrow same-frame proof
+1. F7E4B viewer integration and authored-load lighting/cost gates; F7E4A default-layer adapter passes
 2. F7F   quality tiers; shadows remain off by default
 3. F8.3  make smoke actually consume scene lighting
 ```
@@ -4697,9 +4722,10 @@ F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selectio
 global admission/live GPU wiring and F7D2B's current authored hero/volley/show selection measurements
 are implemented. F7E1's bounded async realization is implemented; F7E2's paced receiver/HDR-star
 measurement fails the initial fast-star registration budget. F7E3 passes the isolated same-frame
-GPU/PBR proof; production GPU realization and finale certification remain open.
+GPU/PBR proof; F7E4A adds bounded default-layer GPU realization. Authored-load, general per-view
+layers/hardware and production-finale certification remain open.
 
 The generic model, bounded selection and portable receiver contribution are now proven. F7E2's
 measured approximately two-frame visible lag and F7E3's successful GPU receiver proof now justify
-bounded clustered-light integration and authored-load measurement. Preserve the portable path and core/adapter
+F7E4A's bounded integration and F7E4B authored-load measurement. Preserve the portable path and core/adapter
 boundary; no blocking readback or unbounded source-particle transport.

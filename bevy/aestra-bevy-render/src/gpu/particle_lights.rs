@@ -26,6 +26,15 @@ pub struct AestraParticleLightSettings {
 /// this frame's matching manifest; never use a buffer from an earlier frame.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParticleLightSelectionSet;
+
+/// Explicit host realization choice. Unsupported same-frame configurations
+/// fail closed; never silently fall back to delayed positional readback.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq, ExtractResource)]
+pub enum ParticleLightMode {
+    #[default]
+    PortableAsync,
+    SameFrameGpu,
+}
 impl Default for AestraParticleLightSettings {
     fn default() -> Self {
         Self {
@@ -196,8 +205,10 @@ pub(super) fn install(app: &mut App) {
         );
     }
     app.init_resource::<AestraParticleLightSettings>()
+        .init_resource::<ParticleLightMode>()
         .add_plugins((
             ExtractResourcePlugin::<AestraParticleLightSettings>::default(),
+            ExtractResourcePlugin::<ParticleLightMode>::default(),
             ExtractComponentPlugin::<Inputs>::default(),
         ))
         .add_systems(PostUpdate, collect.after(super::sync_gpu_render_transforms));
