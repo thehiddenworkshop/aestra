@@ -41,6 +41,7 @@ mod bindings;
 mod choreography_tests;
 mod input_events;
 mod lights;
+mod particle_lights;
 mod project;
 mod project_profile;
 mod world;
@@ -53,6 +54,10 @@ pub use input_events::AestraEventInput;
 pub use lights::{
     AestraLightOutput, AestraTransientLightPlugin, MAX_TRANSIENT_LIGHTS, TransientLightKey,
     TransientLightProxy, TransientLightSettings, TransientLightStatistics,
+};
+pub use particle_lights::{
+    AestraParticleLightPlugin, AestraParticleLightSettings, ParticleLightProxy,
+    ParticleLightReadbackSettings, ParticleLightRealizationSettings, ParticleLightStatistics,
 };
 pub use project::EffectClipInstance;
 pub use project_profile::ProjectProfiler;

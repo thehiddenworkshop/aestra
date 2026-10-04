@@ -45,6 +45,44 @@ pub struct ParticleLightSource {
     pub emitter: EmitterId,
     pub region: EmitterRegionId,
     pub output: SceneOutputId,
+    /// Keep the originating compiled artifact alive through async consumption.
+    /// An in-place replacement with the same authored IDs/seed/epoch is not the
+    /// same presentation. Pointer reuse cannot occur while this handle is held.
+    pub artifact: ParticleLightArtifact,
+}
+
+#[derive(Clone)]
+pub struct ParticleLightArtifact(pub Arc<aestra_runtime::CompiledEffect>);
+impl ParticleLightArtifact {
+    pub fn matches(&self, effect: &Arc<aestra_runtime::CompiledEffect>) -> bool {
+        Arc::ptr_eq(&self.0, effect)
+    }
+    fn address(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+}
+impl std::fmt::Debug for ParticleLightArtifact {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ParticleLightArtifact")
+            .field(&self.address())
+            .finish()
+    }
+}
+impl PartialEq for ParticleLightArtifact {
+    fn eq(&self, other: &Self) -> bool {
+        self.matches(&other.0)
+    }
+}
+impl Eq for ParticleLightArtifact {}
+impl PartialOrd for ParticleLightArtifact {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ParticleLightArtifact {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.address().cmp(&other.address())
+    }
 }
 
 /// Render-world selected buffers only, suitable for F7E's bounded async copy.
@@ -219,6 +257,7 @@ fn collect(
                             emitter: emitter.source,
                             region: emitter.region,
                             output: output.source,
+                            artifact: ParticleLightArtifact(player.effect().clone()),
                         },
                         emitter_index: index as u32,
                         offset,

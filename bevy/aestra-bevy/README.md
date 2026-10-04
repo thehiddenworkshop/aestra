@@ -400,6 +400,61 @@ admission and cleanup over full playback, seek and restart. These lights affect 
 lit scene meshes; Aestra's current unlit particle smoke is **not** illuminated by them.
 Editor light controls, lit smoke and measured production lighting budgets remain F7/F8 gates.
 
+## Selected particle lights (F7E portable baseline)
+
+This is separate from representative event flashes. Author a `particle_point_light`
+scene output on a particle emitter, then explicitly enable a globally capped GPU
+selection and its Bevy adapter:
+
+```rust,no_run
+use aestra_bevy::{AestraPlugin, AestraParticleLightPlugin, AestraParticleLightSettings,
+    ParticleLightReadbackSettings, ParticleLightRealizationSettings};
+use bevy::prelude::*;
+let mut app = App::new();
+app.add_plugins((DefaultPlugins, AestraPlugin, AestraParticleLightPlugin))
+    .insert_resource(AestraParticleLightSettings { max_lights: 48, ..default() })
+    .insert_resource(ParticleLightReadbackSettings { max_lights: 48, ..default() })
+    .insert_resource(ParticleLightRealizationSettings { max_lumens: 100_000.0, max_range: 30.0 });
+```
+
+The selector defaults to **zero**, so adding the adapter alone enables no lights.
+The realized prefix is bounded by the authored quality limits, the global selector
+cap and the transport cap. There is no fixed emitter/output ceiling or entity per
+source particle. Selector storage also has an independent host/device byte budget.
+GPU simulation works with `PlaybackHistoryPolicy::PlaybackOnly`; replay is not required.
+
+Transport defaults: up to 96 selected records, three reusable in-flight staging slots,
+1 MiB total GPU staging, 1 MiB estimated manifest payload per snapshot, 100 ms maximum
+age and eight main frames maximum lag. Only `48 * prefix_capacity + 16` bytes are copied;
+no source particle buffer is mapped and no current-frame GPU wait occurs. The one-result
+mailbox replaces superseded results and rejects out-of-order/invalidated callbacks.
+Each in-flight snapshot, the mailbox and the main pool retain bounded source manifests;
+referenced compiled artifacts are kept alive until those snapshots retire, not deep-copied.
+Busy slots drain before resizing after a budget change; no new over-budget work is admitted.
+
+The reusable, unparented `ParticleLightProxy` entities receive already-world-space
+positions and their source presentation's `RenderLayers`. Lumens/range are independently
+clamped (defaults 1,000,000 / 200), radius is clamped to range, and both shadow kinds
+stay off. Source removal, backend/visibility/context changes, seed/revision/restart,
+compiled-artifact replacement, configuration changes and result expiry clear held lights.
+Until a new set arrives, the previous valid set may be held **only within the age/lag
+limits**. This can cause visual lag on fast-moving sources; there is no extrapolation.
+Set `AestraParticleLightSettings.max_lights = 0` to clear entities and remove selection,
+copy and clustered scene-light work (idle coordinator systems remain installed).
+
+`ParticleLightStatistics` reports active/allocated/peak counts, prefix truncation,
+source rejection, expiry, accepted-update age/frame lag, pool CPU cost and readback
+busy/failure/stale/overwrite counters. Transport latency is not final display latency.
+GPU diagnostics expose `aestra::gpu::particle_light_copy`; the timestamp does not
+include map completion or the later main-world/cluster update.
+
+For measured authored fixtures, use the viewer's `--particle-light-bench
+--particle-light-realization --headless-bench --gpu-bench report.json` with the
+hero/volley/show probes, native GPU and playback-only. Add `--transient-lights` on
+the full show to measure independent representative flashes alongside selected stars.
+This baseline lights ordinary lit meshes, not current unlit Aestra particle/volume smoke.
+Production finale certification and perceptual fast-star lag acceptance remain separate gates.
+
 ## Where to look
 
 | I want… | Read |

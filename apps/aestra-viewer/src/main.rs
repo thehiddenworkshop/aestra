@@ -79,7 +79,7 @@ fn main() {
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
         eprintln!("F6 reusable show: f6-show. Thirteen clips over 26 seconds; --gpu-bench records 120 warm-up + 1680 measured frames at 60 Hz, including cleanup. Not production finale certification.");
         eprintln!("Authored scene lights: --transient-lights with f6-show and --backend gpu. Saved representative pulses, bounded to 8/4/2 shadowless lights for high/medium/low; particle smoke remains unlit.");
-        eprintln!("F7 selection-only benchmark: --particle-light-bench with f4-reference-hero, f5-secondary-volley or f6-show, --gpu-bench and --history playback-only. Adds light-output fixture plans without changing normal materials/trails; no visible particle lights. Global caps 96/48/24 by tier; override with --particle-light-cap N (0 is baseline), --particle-light-memory-mib N (default 64). --headless-bench renders the same 960x540 scene offscreen without a window.");
+        eprintln!("F7 benchmark: --particle-light-bench with f4-reference-hero, f5-secondary-volley or f6-show, --gpu-bench and --history playback-only. Adds explicit light-output fixture plans without changing normal materials/trails. Selection only unless --particle-light-realization opts into bounded async pooled lights; can combine realization with --transient-lights. Global caps 96/48/24 by tier; override with --particle-light-cap N (0 is baseline), --particle-light-memory-mib N (default 64). --headless-bench renders the same 960x540 scene offscreen without a window.");
         eprintln!("F4 raster stress: f4-sprite-fill | f4-sprite-offscreen | f4-trail-fill | f4-trail-offscreen (with --fireworks-f0 --fireworks-f0-probe; 65,536 stationary sprites or 8,192 moving eight-point trails, quarter-pixel widths at 960x540, not shell certification).");
         eprintln!("Photographic preview (opt-in HDR): --hdr [--exposure -8..8] [--tonemapping tony|aces|reinhard] [--bloom 0..1]. Any photographic option enables HDR. Exposure is fixed relative stops; 0 bloom disables glow.");
         eprintln!("Native GPU additive sprites: --sprite-min-pixels 0..8 (default 0; try 2). Expands tiny quads with inverse-area alpha attenuation; does not enable HDR.");
@@ -157,6 +157,7 @@ fn main() {
         }
     });
     let headless = config.headless_bench;
+    let particle_light_realization = config.particle_light_realization;
     let probe_bench_step = config.probe_bench_step().or_else(|| {
         config
             .fireworks_cue_check
@@ -277,6 +278,9 @@ fn main() {
             gpu_bench::publish_light_tick.before(gpu_bench::drive_gpu_bench),
         );
     }
+    if particle_light_realization {
+        app.add_plugins(aestra_bevy::AestraParticleLightPlugin);
+    }
     if let Some(settings) = light_settings {
         app.insert_resource(settings)
             .add_plugins(aestra_bevy::AestraTransientLightPlugin);
@@ -375,6 +379,7 @@ struct ViewerConfig {
     fireworks_cue_check: Option<PathBuf>,
     transient_lights: bool,
     particle_light_bench: bool,
+    particle_light_realization: bool,
     particle_light_cap: Option<u32>,
     particle_light_memory_mib: u32,
     headless_bench: bool,
@@ -541,6 +546,7 @@ impl ViewerConfig {
         let mut fireworks_cue_check = None;
         let mut transient_lights = false;
         let mut particle_light_bench = false;
+        let mut particle_light_realization = false;
         let mut particle_light_cap = None;
         let mut particle_light_memory_mib = 64;
         let mut headless_bench = false;
@@ -582,6 +588,7 @@ impl ViewerConfig {
                 "--view3d" => view_3d = true,
                 "--transient-lights" => transient_lights = true,
                 "--particle-light-bench" => particle_light_bench = true,
+                "--particle-light-realization" => particle_light_realization = true,
                 "--headless-bench" => headless_bench = true,
                 "--particle-light-cap" => {
                     particle_light_cap = Some(
@@ -834,7 +841,7 @@ impl ViewerConfig {
             && (gpu_bench.is_none()
                 || capture_mode.is_some()
                 || fireworks_cue_check.is_some()
-                || transient_lights
+                || (transient_lights && !particle_light_realization)
                 || presentation != PresentationMode::Gpu
                 || history_policy != aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly
                 || !matches!(
@@ -846,7 +853,10 @@ impl ViewerConfig {
                     )
                 ))
         {
-            return Err("--particle-light-bench requires a hero/secondary-volley/show GPU benchmark with --history playback-only and no capture/cue-check/transient-lights".into());
+            return Err("--particle-light-bench requires a hero/secondary-volley/show GPU benchmark with --history playback-only and no capture/cue-check; transient-lights also requires --particle-light-realization".into());
+        }
+        if particle_light_realization && !particle_light_bench {
+            return Err("--particle-light-realization requires --particle-light-bench".into());
         }
         if let Some(path) = &fireworks_cue_check {
             if !matches!(
@@ -887,6 +897,7 @@ impl ViewerConfig {
             fireworks_cue_check,
             transient_lights,
             particle_light_bench,
+            particle_light_realization,
             particle_light_cap,
             particle_light_memory_mib,
             headless_bench,
@@ -2469,6 +2480,32 @@ mod tests {
     }
 
     #[test]
+    fn particle_light_realization_is_explicit_and_can_coexist_with_authored_flashes() {
+        assert!(ViewerConfig::from_iter(vec!["--particle-light-realization".into()]).is_err());
+        let config = ViewerConfig::from_iter(
+            [
+                "--fireworks-f0",
+                "--fireworks-f0-probe",
+                "f6-show",
+                "--backend",
+                "gpu",
+                "--history",
+                "playback-only",
+                "--particle-light-bench",
+                "--particle-light-realization",
+                "--transient-lights",
+                "--headless-bench",
+                "--gpu-bench",
+                "test.json",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert!(config.particle_light_realization && config.transient_lights);
+    }
+
+    #[test]
     fn raster_benchmarks_use_a_fixed_and_recorded_simulation_step() {
         for probe in fireworks_f4::Probe::ALL {
             let mut config = ViewerConfig::from_iter(
@@ -2627,6 +2664,7 @@ mod tests {
             fireworks_cue_check: None,
             transient_lights: false,
             particle_light_bench: false,
+            particle_light_realization: false,
             particle_light_cap: None,
             particle_light_memory_mib: 64,
             headless_bench: false,

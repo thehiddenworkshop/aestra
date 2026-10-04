@@ -54,6 +54,7 @@ pub struct GpuBenchPlan {
     active_clip_instances_at_end: usize,
     project_work: BTreeMap<String, WorkStats>,
     particle_lights: Vec<crate::particle_light_bench::Observation>,
+    particle_light_pool: Vec<ParticleLightPoolObservation>,
     light_skipped_busy: u64,
     light_overwritten_results: u64,
 }
@@ -108,6 +109,8 @@ pub struct BenchPresentation {
     fixed_simulation_step_seconds: Option<f64>,
     response: crate::photographic::CaptureResponse,
     particle_light_benchmark_fixture: bool,
+    particle_light_realization: bool,
+    representative_lights: bool,
     global_particle_light_cap: Option<u32>,
     particle_light_memory_mib: Option<u32>,
     headless_target: Option<[u32; 2]>,
@@ -163,6 +166,8 @@ impl BenchPresentation {
             )
             .with_trail_sampling(config.trail_minimum_pixels),
             particle_light_benchmark_fixture: config.particle_light_bench,
+            particle_light_realization: config.particle_light_realization,
+            representative_lights: config.transient_lights,
             global_particle_light_cap: config.particle_light_bench.then(|| {
                 config
                     .particle_light_cap
@@ -213,6 +218,7 @@ impl GpuBenchPlan {
             active_clip_instances_at_end: 0,
             project_work: BTreeMap::new(),
             particle_lights: Vec::new(),
+            particle_light_pool: Vec::new(),
             light_skipped_busy: 0,
             light_overwritten_results: 0,
         }
@@ -236,6 +242,7 @@ impl GpuBenchPlan {
             .collect();
         let report = GpuBenchReport {
             particle_lights: &self.particle_lights,
+            particle_light_pool: &self.particle_light_pool,
             light_skipped_busy: self.light_skipped_busy,
             light_overwritten_results: self.light_overwritten_results,
             presentation: self.presentation.as_ref(),
@@ -414,6 +421,9 @@ struct GpuBenchReport<'a> {
     /// records are mapped. Timings are independent fresh render diagnostics, not
     /// frame-paired with these counters; final in-flight results may be absent.
     particle_lights: &'a [crate::particle_light_bench::Observation],
+    /// Prior PostUpdate's main-world pool, not frame-paired with render counters
+    /// or GPU diagnostics. Readback age/lag refer to the last newly accepted set.
+    particle_light_pool: &'a [ParticleLightPoolObservation],
     light_skipped_busy: u64,
     light_overwritten_results: u64,
     instances: &'a BTreeMap<String, BenchInstance>,
@@ -440,6 +450,68 @@ struct GpuBenchReport<'a> {
     simulation_frames: &'a BTreeMap<String, Vec<SimulationFrame>>,
     simulation_by_work: BTreeMap<String, BTreeMap<String, Stats>>,
     simulation_total: BTreeMap<String, Stats>,
+}
+
+#[derive(Serialize)]
+struct ParticleLightPoolObservation {
+    sample: usize,
+    active: usize,
+    allocated: usize,
+    sequence: u64,
+    accepted_updates: u64,
+    copied_bytes: u64,
+    update_age_ms: f64,
+    frame_lag: u64,
+    pool_update_ms: f64,
+    pending: usize,
+    staging_bytes: u64,
+    submitted: u64,
+    completed: u64,
+    skipped_busy: u64,
+    stale_callbacks: u64,
+    overwritten: u64,
+    failed: u64,
+    rejected: u64,
+    rejection: Option<String>,
+    stale_sources: u64,
+    discarded_packets: u64,
+    expired: u64,
+    representative_active: usize,
+    representative_allocated: usize,
+}
+impl ParticleLightPoolObservation {
+    fn new(
+        sample: usize,
+        s: &aestra_bevy::ParticleLightStatistics,
+        representative: Option<&aestra_bevy::TransientLightStatistics>,
+    ) -> Self {
+        Self {
+            sample,
+            active: s.active,
+            allocated: s.allocated,
+            sequence: s.last_sequence,
+            accepted_updates: s.updates,
+            copied_bytes: s.copied_bytes,
+            update_age_ms: s.update_age_seconds * 1000.0,
+            frame_lag: s.frame_lag,
+            pool_update_ms: s.pool_update_ms,
+            pending: s.readback.pending,
+            staging_bytes: s.readback.staging_bytes,
+            submitted: s.readback.submitted,
+            completed: s.readback.completed,
+            skipped_busy: s.readback.skipped_busy,
+            stale_callbacks: s.readback.stale_callbacks,
+            overwritten: s.readback.overwritten,
+            failed: s.readback.failed,
+            rejected: s.readback.rejected,
+            rejection: s.readback.rejection.clone(),
+            stale_sources: s.stale_sources,
+            discarded_packets: s.discarded_packets,
+            expired: s.expired,
+            representative_active: representative.map_or(0, |r| r.active),
+            representative_allocated: representative.map_or(0, |r| r.allocated),
+        }
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -537,6 +609,8 @@ impl WorkStats {
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)]
 pub struct BenchEffects<'w, 's> {
+    pool: Option<Res<'w, aestra_bevy::ParticleLightStatistics>>,
+    representative: Option<Res<'w, aestra_bevy::TransientLightStatistics>>,
     light_start: Option<Res<'w, crate::particle_light_bench::Start>>,
     lights: Option<Res<'w, crate::particle_light_bench::Mailbox>>,
     roots: Query<
@@ -610,6 +684,15 @@ pub fn drive_gpu_bench(
             .extend(observations.into_iter().filter(|o| o.tick.measured));
     }
     let measured = plan.warmup_remaining == 0;
+    if measured && let Some(pool) = &effects.pool {
+        let sample = plan.frames - plan.remaining;
+        plan.particle_light_pool
+            .push(ParticleLightPoolObservation::new(
+                sample,
+                pool,
+                effects.representative.as_deref(),
+            ));
+    }
     // Capture identity during warm-up too: short-lived children must not vanish
     // from the report merely because their ECS owner was destroyed before measurement.
     let mut active_clips = 0;
@@ -644,6 +727,7 @@ pub fn drive_gpu_bench(
         let included = [
             "aestra::gpu::simulate",
             "aestra::gpu::particle_lights",
+            "aestra::gpu::particle_light_copy",
             "aestra::gpu::trail_history",
             "aestra::gpu::trail_particles",
             "aestra::gpu::trail_compaction",

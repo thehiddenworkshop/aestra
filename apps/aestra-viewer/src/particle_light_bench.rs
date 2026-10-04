@@ -164,6 +164,7 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
                         .after(begin_diagnostics_frame),
                     end_frame
                         .after(RenderGraphSystems::Render)
+                        .after(aestra_bevy::gpu::particle_light_readback::ParticleLightReadbackSet::Copy)
                         .before(resolve_encoder)
                         .before(RenderGraphSystems::Submit),
                 ),

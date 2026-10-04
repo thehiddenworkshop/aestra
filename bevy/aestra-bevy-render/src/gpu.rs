@@ -6,6 +6,7 @@ mod geometry_statistics;
 mod mesh_inputs;
 mod output_context;
 mod paged_trails;
+pub mod particle_light_readback;
 pub mod particle_lights;
 mod particle_outputs;
 mod particle_statistics;

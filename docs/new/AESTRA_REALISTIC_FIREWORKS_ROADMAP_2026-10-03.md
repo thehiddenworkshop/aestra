@@ -3984,8 +3984,8 @@ changing particle state or output-event semantics.
   `benchmarks/fireworks/validate-particle-lights.ps1` capture this gate. Selected buffers remain
   render-world data, not realized lights or an editor viewport-lighting implementation.
 
-**Next: F7E.** Implement bounded async selected-record realization and measure update latency,
-stale-epoch handling, pool cost and moving-star receiver response. No one-entity-per-particle path.
+**F7E portable realization baseline is now implemented below.** It preserves bounded GPU selection
+and playback-only operation; fast-star perceptual/display-lag acceptance remains an explicit next gate.
 F7D's production-finale resource/performance certification remains open; selection measurements
 alone do not complete F7's visible-lighting or lit-smoke gates.
 
@@ -4054,6 +4054,40 @@ radius + stable identity/flags as required
 ### F7E — Bevy realization of selected particle lights
 
 **Goal:** make the bounded selected set illuminate ordinary Bevy scene geometry.
+
+**F7E1 implemented — 2026-10-04: opt-in portable baseline, not final perceptual/finale certification.**
+
+- `AestraParticleLightPlugin` realizes only the capped GPU-selected prefix, using bounded asynchronous
+  staging, a one-result mailbox and a reusable shadowless `PointLight` pool. Defaults: three slots,
+  1 MiB staging, 1 MiB estimated manifest payload per snapshot, 100 ms / eight frames maximum age.
+  No source-particle map, per-star entity allocation, CPU event fanout, replay dependency or GPU wait.
+- Frame-local source tokens retain their matching manifest and originating compiled artifact.
+  Current root/owner epochs, seed, revision, artifact, backend, clip context, enabled output and layers
+  are checked before realization. Configuration-qualified packets cannot revive old-budget lights
+  while a pipelined render world catches up. Out-of-order completions and expired results fail closed.
+- Host caps/clamps remain independent of authored quality: global selection, transport-prefix count,
+  selection/staging/manifest byte budgets, result age/lag, lumens and range. Radius is clamped to range;
+  both shadow types remain off. Zero global cap removes selected jobs, copies and pooled entities;
+  mapped slots drain safely. Idle coordinator systems remain installed.
+- The generic native receiver probe uses light-only moving particles (no rendered sprites, bloom,
+  ambient light or flashes in its images). It verifies world positions without double transforms,
+  a moving receiver response, prefix cap, separate flash coexistence, restart, disable/re-enable,
+  byte-budget rejection/recovery, pool resizing and owner removal. Unit tests also cover artifact
+  replacement, seed/revision/backend changes, age/frame expiry, layers, clamps and deleted proxies.
+- Full authored F6 show, high/medium/low: caps 96/48/24 hold across all thirteen clips; staging stays
+  bounded, flash and particle pools coexist, all event admissions remain intact, and final active
+  lights/pending maps/staging bytes return to zero. Empty scene pools keep capped idle proxy entities
+  for reuse; explicit global disable removes them. Copy diagnostics are separately instrumented.
+- [Profiling and reproduction](../../benchmarks/fireworks/particle-light-realization-2026-10-04.md),
+  [measurements](../../benchmarks/fireworks/particle-light-realization-2026-10-04.json) and
+  `benchmarks/fireworks/validate-particle-light-realization.ps1` record the baseline gate.
+
+**Next: F7E2 — paced fast-star/display-lag acceptance.** The current set can lag by three main frames;
+the slow generic receiver probe and unpaced show do not approve the visual lag of fast fireworks.
+Measure continuously moving stars at real-time cadence, including receiver/HDR-star spatial offset,
+before approving the async pool for flagship quality or choosing a render-world clustered integration.
+Production-finale certification, editor light controls and lit smoke remain open. No direct GPU
+clustered-light rewrite is justified solely by this first baseline measurement.
 
 #### Validation path
 

@@ -1,0 +1,281 @@
+{
+  "date": "2026-10-04",
+  "scope": "F7E portable baseline; unpaced fixed 60Hz full show, one sequential run per tier. Prior-main-world pool observations, accepted-set readback latency and independent GPU timings; no frame-paired subtraction or final-display/production certification.",
+  "runs": [
+    {
+      "tier": "high",
+      "cap": 96,
+      "adapter": {
+        "name": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "driver": "NVIDIA"
+      },
+      "observations": 1680,
+      "accepted_sets": 1298,
+      "max_active": 96,
+      "max_allocated": 96,
+      "max_staging_bytes": 13872,
+      "max_frame_lag": 3,
+      "update_age_ms": {
+        "samples": 1298,
+        "p50": 11.9299,
+        "p95": 19.805300000000003,
+        "p99": 27.6489,
+        "max": 79.8733,
+        "mean": 12.450679506933731
+      },
+      "pool_update_ms": {
+        "samples": 1680,
+        "p50": 0.0286,
+        "p95": 0.0719,
+        "p99": 0.0965,
+        "max": 0.1838,
+        "mean": 0.03623547619047619
+      },
+      "active_pool_update_ms": {
+        "samples": 1021,
+        "p50": 0.0439,
+        "p95": 0.0784,
+        "p99": 0.1052,
+        "max": 0.1838,
+        "mean": 0.04565798237022525
+      },
+      "selection_gpu_ms": {
+        "samples": 1304,
+        "p50": 0.690176,
+        "p95": 1.185792,
+        "p99": 1.481728,
+        "max": 1.547264,
+        "min": 0.109568,
+        "mean": 0.6848196319018399,
+        "stddev": 0.2787376987882226
+      },
+      "copy_gpu_ms": {
+        "samples": 1304,
+        "p50": 0.007168,
+        "p95": 0.009216,
+        "p99": 0.009216,
+        "max": 0.022528,
+        "min": 0.004096,
+        "mean": 0.007158576687116588,
+        "stddev": 0.0011349518780950547
+      },
+      "frame_gpu_ms": {
+        "samples": 1647,
+        "p50": 2.966528,
+        "p95": 6.669312,
+        "p99": 8.508416,
+        "max": 11.32032,
+        "min": 0.606208,
+        "mean": 3.0441859963570095,
+        "stddev": 1.982423416139149
+      },
+      "max_representative_active": 3,
+      "coexistence_samples": 201,
+      "stale_sources": 0,
+      "expired": 0,
+      "stale_callbacks": 1,
+      "skipped_busy": 0,
+      "overwritten": 26,
+      "failed": 0,
+      "rejected": 0,
+      "final_active": 0,
+      "final_allocated": 96,
+      "final_staging_bytes": 0,
+      "raw_sha256": "5162c418be10c2b5e90a044fb387f1e60f53ee9e7aeb72c28938ddd3b2a65a54"
+    },
+    {
+      "tier": "medium",
+      "cap": 48,
+      "adapter": {
+        "name": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "driver": "NVIDIA"
+      },
+      "observations": 1680,
+      "accepted_sets": 1306,
+      "max_active": 48,
+      "max_allocated": 48,
+      "max_staging_bytes": 6960,
+      "max_frame_lag": 3,
+      "update_age_ms": {
+        "samples": 1306,
+        "p50": 12.0253,
+        "p95": 20.9388,
+        "p99": 26.674500000000002,
+        "max": 82.3964,
+        "mean": 12.607648774885131
+      },
+      "pool_update_ms": {
+        "samples": 1680,
+        "p50": 0.0192,
+        "p95": 0.039400000000000004,
+        "p99": 0.05450000000000001,
+        "max": 0.1137,
+        "mean": 0.022437261904761883
+      },
+      "active_pool_update_ms": {
+        "samples": 1022,
+        "p50": 0.0276,
+        "p95": 0.0423,
+        "p99": 0.0606,
+        "max": 0.1137,
+        "mean": 0.02802407045009788
+      },
+      "selection_gpu_ms": {
+        "samples": 1313,
+        "p50": 0.663552,
+        "p95": 0.997376,
+        "p99": 1.168384,
+        "max": 1.243136,
+        "min": 0.100352,
+        "mean": 0.6470018827113475,
+        "stddev": 0.262496400523408
+      },
+      "copy_gpu_ms": {
+        "samples": 1313,
+        "p50": 0.007168,
+        "p95": 0.009216,
+        "p99": 0.01024,
+        "max": 0.017408,
+        "min": 0.004096,
+        "mean": 0.006923113480578841,
+        "stddev": 0.0011865400416516975
+      },
+      "frame_gpu_ms": {
+        "samples": 1663,
+        "p50": 2.922496,
+        "p95": 6.825984,
+        "p99": 8.63744,
+        "max": 10.057728,
+        "min": 0.579584,
+        "mean": 3.02202473601924,
+        "stddev": 2.0286732572843666
+      },
+      "max_representative_active": 3,
+      "coexistence_samples": 201,
+      "stale_sources": 0,
+      "expired": 0,
+      "stale_callbacks": 1,
+      "skipped_busy": 0,
+      "overwritten": 23,
+      "failed": 0,
+      "rejected": 0,
+      "final_active": 0,
+      "final_allocated": 48,
+      "final_staging_bytes": 0,
+      "raw_sha256": "869a09b9de5091aa2baf394695ef39e185a196059ea05c3daeb790524acd3b55"
+    },
+    {
+      "tier": "low",
+      "cap": 24,
+      "adapter": {
+        "name": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "driver": "NVIDIA"
+      },
+      "observations": 1680,
+      "accepted_sets": 1296,
+      "max_active": 24,
+      "max_allocated": 24,
+      "max_staging_bytes": 3504,
+      "max_frame_lag": 3,
+      "update_age_ms": {
+        "samples": 1296,
+        "p50": 11.377699999999999,
+        "p95": 19.358,
+        "p99": 27.0171,
+        "max": 77.3722,
+        "mean": 11.997706327160495
+      },
+      "pool_update_ms": {
+        "samples": 1680,
+        "p50": 0.013900000000000001,
+        "p95": 0.0257,
+        "p99": 0.0414,
+        "max": 0.1351,
+        "mean": 0.015222023809523795
+      },
+      "active_pool_update_ms": {
+        "samples": 1020,
+        "p50": 0.017499999999999998,
+        "p95": 0.027399999999999997,
+        "p99": 0.0393,
+        "max": 0.095,
+        "mean": 0.01844627450980394
+      },
+      "selection_gpu_ms": {
+        "samples": 1303,
+        "p50": 0.57856,
+        "p95": 1.06496,
+        "p99": 1.316864,
+        "max": 1.379328,
+        "min": 0.090112,
+        "mean": 0.5935042701458174,
+        "stddev": 0.25998752337977454
+      },
+      "copy_gpu_ms": {
+        "samples": 1303,
+        "p50": 0.007168,
+        "p95": 0.008192,
+        "p99": 0.01024,
+        "max": 0.016384,
+        "min": 0.004096,
+        "mean": 0.006836359171143514,
+        "stddev": 0.0010881341871014
+      },
+      "frame_gpu_ms": {
+        "samples": 1656,
+        "p50": 2.95936,
+        "p95": 6.565888,
+        "p99": 8.078336,
+        "max": 11.116544,
+        "min": 0.52736,
+        "mean": 2.8801484057971005,
+        "stddev": 1.9836551600479062
+      },
+      "max_representative_active": 2,
+      "coexistence_samples": 201,
+      "stale_sources": 0,
+      "expired": 0,
+      "stale_callbacks": 1,
+      "skipped_busy": 0,
+      "overwritten": 30,
+      "failed": 0,
+      "rejected": 0,
+      "final_active": 0,
+      "final_allocated": 24,
+      "final_staging_bytes": 0,
+      "raw_sha256": "5399b9afacdf40e282ffd53cf2d08e26967c5e8626c198849c6158ce920dc583"
+    }
+  ],
+  "disabled_raw_sha256": "f9ec5d06b66adf311717411d3f387d0700eba0e84d1a89f5bae1fc27977078f1",
+  "receiver": {
+    "scope": "Generic light-only native headless Bevy receiver; 256x256, 40000 lumens, range 8, no rendered sprites, ambient light, bloom or flashes in on/off images. Root (-2,1,0), speed (2,0,0); forward sample times 0.5 and 1.5 seconds. Global cap 2, prefix cap 1. Image response is whole-image mean RGB8 and luminance-weighted x centroid, not radiometric lux.",
+    "on": [
+      19.577840169270832,
+      107.10352882187283
+    ],
+    "moved": [
+      19.578150431315105,
+      147.89655075663362
+    ],
+    "off": [
+      0.54046630859375,
+      127.5057124035385
+    ],
+    "allocated": 1,
+    "copied_bytes": 64,
+    "max_age_ms": 15.0961,
+    "max_frame_lag": 2,
+    "max_pool_update_ms": 0.0898,
+    "failed": 0,
+    "lifecycle_passed": true,
+    "png_sha256": {
+      "on-left.png": "0ff27442d7daa91407674d56b40f7f2e2031be36ec814fe45576f0c74080e75c",
+      "on-right.png": "564a56d4f3398699f7f322a76783d13b3bb58c450e0b332da9508c2a32588f98",
+      "off.png": "43d6aea62804018d48b98f599cb3894808d41b9e8458a608eeada9dcaebad022"
+    }
+  },
+  "code_base_commit": "0a12cfe9"
+}
