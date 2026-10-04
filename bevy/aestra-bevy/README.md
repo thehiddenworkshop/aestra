@@ -454,6 +454,10 @@ hero/volley/show probes, native GPU and playback-only. Add `--transient-lights` 
 the full show to measure independent representative flashes alongside selected stars.
 This baseline lights ordinary lit meshes, not current unlit Aestra particle/volume smoke.
 Production finale certification and perceptual fast-star lag acceptance remain separate gates.
+The [paced F7E2 probe](../../benchmarks/fireworks/particle-light-latency-2026-10-04.md)
+measured about two frames of final-image lag at 60 Hz (about five metres at
+150 m/s), failing its initial flagship registration budget. Use this portable
+path for latency-tolerant workloads; it is not approved for nearby fast stars.
 
 ## Where to look
 

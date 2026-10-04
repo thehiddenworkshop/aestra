@@ -4082,12 +4082,27 @@ radius + stable identity/flags as required
   [measurements](../../benchmarks/fireworks/particle-light-realization-2026-10-04.json) and
   `benchmarks/fireworks/validate-particle-light-realization.ps1` record the baseline gate.
 
-**Next: F7E2 — paced fast-star/display-lag acceptance.** The current set can lag by three main frames;
-the slow generic receiver probe and unpaced show do not approve the visual lag of fast fireworks.
-Measure continuously moving stars at real-time cadence, including receiver/HDR-star spatial offset,
-before approving the async pool for flagship quality or choosing a render-world clustered integration.
-Production-finale certification, editor light controls and lit smoke remain open. No direct GPU
-clustered-light rewrite is justified solely by this first baseline measurement.
+**F7E2 measured — 2026-10-04: flagship fast-star registration gate failed.** A paced 60 Hz native
+probe keeps Bevy pipelining enabled and measures a red HDR GPU star and green PBR receiver spot
+within the same final image. A synchronized test-only control registers within 0.112 pixel. At
+25/75/150 m/s, the async path's p95 offset is 0.848/2.576/5.130 metres (approximately two frames,
+34 ms). The explicit initial budget is at most one 60 Hz frame and one-quarter of light range;
+all three speeds fail. This is an isolated one-star/one-light measurement, not full-show cost,
+monitor scanout latency, production-finale certification or human approval of the artwork.
+Cadence, native backend, source motion, valid image signals and bounded transport/liveness are
+validated separately; a passing measurement test does not imply visual acceptance.
+- [Method, result and reproduction](../../benchmarks/fireworks/particle-light-latency-2026-10-04.md),
+  [measurements](../../benchmarks/fireworks/particle-light-latency-2026-10-04.json) and
+  `benchmarks/fireworks/validate-particle-light-latency.ps1` retain this gate. Without `-MeasureOnly`,
+  the validator intentionally fails the current async adapter's flagship registration budget.
+
+**Next: F7E3 — narrow same-frame GPU lighting proof.** The measured visible lag now justifies a
+Bevy render-world prototype consuming the selected GPU records without the main-world round trip.
+First pass this same fast-star/PBR registration gate with one selected light; then integrate bounded
+clustered lighting and remeasure authored hero/volley/show cost, layers and lifecycle. Keep this
+adapter-specific and opt-in. Do not block on GPU readback, relax the gate or silently extrapolate.
+The portable async pool remains available for latency-tolerant workloads. Production-finale
+certification, additional hardware/cadences, editor lighting and lit smoke remain open.
 
 #### Validation path
 
@@ -4650,7 +4665,7 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E   bounded async Bevy selected-light realization and latency/receiver measurement
+1. F7E3 same-frame selected GPU lighting proof; F7E2 measured async lag fails the fast-star gate
 2. F7F   quality tiers; shadows remain off by default
 3. F8.3  make smoke actually consume scene lighting
 ```
@@ -4659,9 +4674,11 @@ F7B2 editor controls are implemented; complete their manual UI/visual acceptance
 authoring, without treating them as evidence of continuous particle lights or editor viewport lighting.
 F7C's material-free plans/CPU reference, F7D1's measured per-output GPU selection, F7D2A's
 global admission/live GPU wiring and F7D2B's current authored hero/volley/show selection measurements
-are implemented. Production-finale certification and selected-light realization remain open.
+are implemented. F7E1's bounded async realization is implemented; F7E2's paced receiver/HDR-star
+measurement fails the initial fast-star registration budget. Production-finale certification and
+same-frame GPU realization remain open.
 
-Do not begin with deep backend-specific clustered-light injection. First prove that the generic model,
-selection policy, visual contribution and selected-light budgets are correct. Escalate from bounded
-async selected-set readback/pooling to direct GPU backend integration only if measured latency/cost
-requires it.
+The generic model, bounded selection and portable receiver contribution are now proven. F7E2's
+measured approximately two-frame visible lag justifies a narrow backend-specific GPU receiver proof,
+before committing to full clustered-light integration. Preserve the portable path and core/adapter
+boundary; no blocking readback or unbounded source-particle transport.

@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "date": "2026-10-04",
+  "scope": "F7E2 isolated paced final-image registration, three speeds, ten paired image observations per phase. Screenshot request ticks are labels, not callback/display timestamps. No monitor scanout measurement or full-show load certification.",
+  "metadata": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "driver": "NVIDIA",
+    "device_type": "DiscreteGpu",
+    "pipeline": "pipelined",
+    "history": "playback-only",
+    "cadence_hz": "60",
+    "target": "768x384",
+    "response": "HDR/Reinhard/EV0/no bloom/no ambient/no shadows",
+    "readback_cap": "1",
+    "slots": "3",
+    "light_range": "8"
+  },
+  "accepted": false,
+  "runs": [
+    {
+      "speed_m_s": 25,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.01966658965564818,
+        "p50": 0.012828443753787156,
+        "p95": 0.04650339714402492,
+        "max": 0.04650339714402492
+      },
+      "lag_frames": {
+        "samples": 10,
+        "mean": 2.025390767156309,
+        "p50": 2.0225889288333927,
+        "p95": 2.0345679090881705,
+        "max": 2.0345679090881705
+      },
+      "lag_ms_at_60hz": 33.90946515146951,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 0.8439128196484621,
+        "p50": 0.8427453870139137,
+        "p95": 0.8477366287867377,
+        "max": 0.8477366287867377
+      },
+      "p95_limit_metres": 0.4166666666666667,
+      "accepted": false,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.672652542372884,
+            "p50": 16.628899999999998,
+            "p95": 17.315,
+            "max": 17.4683
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0064649999999997,
+            "p50": 0.9762,
+            "p95": 1.2488,
+            "max": 1.3612
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.672344067796608,
+            "p50": 16.6113,
+            "p95": 17.2171,
+            "max": 17.284999999999997
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 0.9663566666666663,
+            "p50": 0.9330999999999999,
+            "p95": 1.1607,
+            "max": 1.3051
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.353898333333337,
+            "p50": 31.332800000000002,
+            "p95": 31.952599999999997,
+            "max": 32.058
+          }
+        }
+      ],
+      "control_image_sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa",
+      "async_image_sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636"
+    },
+    {
+      "speed_m_s": 75,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.04541539763135347,
+        "p50": 0.04998754342316829,
+        "p95": 0.06833906130809168,
+        "max": 0.06833906130809168
+      },
+      "lag_frames": {
+        "samples": 10,
+        "mean": 2.0474730284636378,
+        "p50": 2.0460334717264983,
+        "p95": 2.0609057520001954,
+        "max": 2.0609057520001954
+      },
+      "lag_ms_at_60hz": 34.34842920000325,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 2.559341285579547,
+        "p50": 2.5575418396581227,
+        "p95": 2.5761321900002443,
+        "max": 2.5761321900002443
+      },
+      "p95_limit_metres": 1.25,
+      "accepted": false,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.66537966101695,
+            "p50": 16.7325,
+            "p95": 17.090700000000002,
+            "max": 17.125999999999998
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.056668333333333,
+            "p50": 1.0153,
+            "p95": 1.3442,
+            "max": 1.4368
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.66889661016949,
+            "p50": 16.6374,
+            "p95": 17.0715,
+            "max": 17.5246
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.035131666666667,
+            "p50": 1.0067,
+            "p95": 1.274,
+            "max": 1.5074
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.202626666666674,
+            "p50": 31.1872,
+            "p95": 31.685299999999998,
+            "max": 32.0814
+          }
+        }
+      ],
+      "control_image_sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb",
+      "async_image_sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790"
+    },
+    {
+      "speed_m_s": 150,
+      "control_error_px": {
+        "samples": 10,
+        "mean": 0.06443218158561877,
+        "p50": 0.04521572467393753,
+        "p95": 0.1112160036547607,
+        "max": 0.1112160036547607
+      },
+      "lag_frames": {
+        "samples": 10,
+        "mean": 2.039018819187546,
+        "p50": 2.0377440674375706,
+        "p95": 2.0520206838644666,
+        "max": 2.0520206838644666
+      },
+      "lag_ms_at_60hz": 34.200344731074445,
+      "lag_metres": {
+        "samples": 10,
+        "mean": 5.097547047968865,
+        "p50": 5.094360168593926,
+        "p95": 5.130051709661166,
+        "max": 5.130051709661166
+      },
+      "p95_limit_metres": 2,
+      "accepted": false,
+      "phases": [
+        {
+          "mode": "control",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.668762711864403,
+            "p50": 16.628,
+            "p95": 17.260399999999997,
+            "max": 17.3259
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.015465,
+            "p50": 0.9642999999999999,
+            "p95": 1.2687,
+            "max": 1.4725000000000001
+          },
+          "max_frame_lag": null,
+          "last_accepted_age_ms": null
+        },
+        {
+          "mode": "async",
+          "interval_ms": {
+            "samples": 59,
+            "mean": 16.662359322033893,
+            "p50": 16.6566,
+            "p95": 17.132499999999997,
+            "max": 17.2846
+          },
+          "update_ms": {
+            "samples": 60,
+            "mean": 1.0805166666666666,
+            "p50": 1.0764,
+            "p95": 1.295,
+            "max": 1.5099
+          },
+          "max_frame_lag": 2,
+          "last_accepted_age_ms": {
+            "samples": 60,
+            "mean": 31.199871666666677,
+            "p50": 31.1603,
+            "p95": 31.6602,
+            "max": 31.884999999999998
+          }
+        }
+      ],
+      "control_image_sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12",
+      "async_image_sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe"
+    }
+  ],
+  "registration_sha256": "d6c6317018011d63df7f78d79fdfc7dedb37e103d1382e442ae7df89b2baa95f",
+  "telemetry_sha256": "e3926d87efef4062f052d5f16d7ecb9f5fd493eaa1e5f2f96fa32b0829c6b07c",
+  "metadata_sha256": "0e0af5bd955f373c2f9271fa7a7293b7188f6c7f063a2d87116e2e6a728b855f",
+  "base_commit": "2f16d41f"
+}
