@@ -1,0 +1,822 @@
+{
+  "schema_version": 1,
+  "milestone": "F7E4B2B",
+  "date": "2026-10-05",
+  "base_commit": "5c4045e4",
+  "accepted": true,
+  "scope": "Synthetic diagnostic tracer under high-tier authored overlapping show load, not natural authored-star art approval, display latency, repeated work-matched costs, cluster memory or finale certification. Representative flashes disabled; fixed foreground receiver occludes background ROI. Native forward externally clocked playback-only; unpaced warmup, paced measurements. Asynchronous population observations are not frame-aligned GPU certificates.",
+  "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+  "backend": "Vulkan",
+  "tier": "high",
+  "mode": "same_frame_gpu",
+  "history": "playback_only",
+  "pipelined": true,
+  "seed_hex": "0xf1e0_0000_0000_0001",
+  "target": [
+    960,
+    540
+  ],
+  "camera": "show_audience_perspective",
+  "hdr": true,
+  "tonemapping": "tony",
+  "exposure_stops": 0,
+  "global_cap": 96,
+  "calibration_output_cap": 1,
+  "calibration_priority": 4294967295,
+  "representative_flash_cap": 0,
+  "diagnostic_light": {
+    "lumens": 40000,
+    "range_m": 8,
+    "radius_m": 0.1,
+    "color_linear_rgb": [
+      0,
+      1,
+      0
+    ]
+  },
+  "delayed_control_ticks": 3,
+  "receiver": {
+    "center": [
+      0,
+      38,
+      90
+    ],
+    "size": [
+      220,
+      24,
+      1
+    ],
+    "base_color_srgb": [
+      0.7,
+      0.7,
+      0.7
+    ],
+    "metallic": 0,
+    "roughness": 1
+  },
+  "roi": [
+    12,
+    192,
+    948,
+    345
+  ],
+  "pixels_per_horizontal_metre": 7.35992431640625,
+  "cluster_initial_capacities": [
+    4096,
+    524288
+  ],
+  "actual_native_cluster_memory_measured": false,
+  "selected_record_readback_submissions": 0,
+  "portable_proxy_allocations": 0,
+  "requested_hz": 60,
+  "cadence_interval_p95_gate_ms": 25,
+  "spatial_gate": "Every GPU image residual <= min(speed_m_s / 60, 2 metres); delayed control p95 > that gate. Position-dependent analytic control bias, same-image centroids, noise floor >3/channel; both masses >200. Every one of 72 GPU phase observations >=500 authored particles and >=2 source instances; all phase peaks meet those minima.",
+  "request_ticks": [
+    12,
+    16,
+    20,
+    24,
+    28,
+    32,
+    36,
+    40,
+    44,
+    48
+  ],
+  "image_count": 180,
+  "phase_count": 18,
+  "report_path": "target/fireworks-f7/gpu-authored-registration-2026-10-05-run3/report.json",
+  "report_sha256": "ae5271c521446c9c82d6205a62dbb316710717c6084d4d2de0c60f5ab7fb2546",
+  "image_manifest_format": "Sort basenames ascending; join basename SPACE lowercase-SHA256 records with LF, no trailing LF; SHA256 of UTF8 without BOM",
+  "image_manifest_sha256": "1b3d8a6ea15443125a6251fb5295ec324e81db4193870bd445eebe896423d804",
+  "attempt_history": {
+    "initial_harness": "First complete native run passed all gates; not separately retained as a finalized report.",
+    "intermediate_failure": {
+      "status": "failed_incomplete",
+      "phase": "25 m/s, bloom 0.15, analytic control",
+      "provenance": "Native test assertion output from attempt 2; printed intervals rounded here to four decimal places. Earlier harness aborted before writing a full report; no accepted flag or full run hash is claimed.",
+      "gate_ms": 25,
+      "percentile_definition": "nearest-rank ceil(0.95*N)-1, sorted ascending",
+      "p95_interval_ms": 25.1734,
+      "interval_ms": [
+        18.2624,
+        16.4476,
+        16.4977,
+        17.2003,
+        20.2173,
+        12.9589,
+        16.871,
+        16.3012,
+        16.4163,
+        16.7931,
+        16.8411,
+        17.0572,
+        25.6726,
+        17.2793,
+        15.9642,
+        11.0358,
+        14.9099,
+        15.8932,
+        16.1271,
+        25.1734,
+        16.0918,
+        18.3506,
+        15.8692,
+        10.3874,
+        15.1443,
+        15.2949,
+        17.0169,
+        22.4348,
+        16.0376,
+        15.6567,
+        12.1215,
+        16.9299,
+        16.1081,
+        16.7781,
+        32.8369,
+        18.1504,
+        16.7723,
+        16.6827,
+        16.7507,
+        16.5797,
+        18.3235,
+        15.1102,
+        25.2297,
+        15.9244,
+        15.8577,
+        10.0659,
+        16.6331,
+        16.2501,
+        16.5229,
+        23.8725,
+        17.1699,
+        15.2403,
+        18.2171,
+        10.2272,
+        15.1337,
+        16.8886,
+        16.6762,
+        21.9902,
+        16.7025,
+        15.2402
+      ],
+      "completed_spatial_checks": {
+        "speed_m_s": 25,
+        "bloom_intensity": 0,
+        "gpu_spatial_p95_metres": 0,
+        "delayed_control_spatial_p95_metres": 1.2466643034015132
+      }
+    },
+    "retained_run": "Third run, complete native output with full raw observations/timings; every PNG and the stronger sustained GPU-load predicate validated read-only. Not repeated cadence/cost certification."
+  },
+  "groups": [
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.695673333333332,
+        "p95": 18.553299999999997,
+        "max": 19.2346
+      },
+      "update_ms": {
+        "mean": 1.5119833333333332,
+        "p95": 3.2329,
+        "max": 3.8594
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        1086,
+        1158
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.68946666666666,
+        "p95": 17.6825,
+        "max": 18.461499999999997
+      },
+      "update_ms": {
+        "mean": 1.447493333333333,
+        "p95": 2.303,
+        "max": 2.7369
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        1190,
+        1262
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": 0,
+      "spatial_max_metres": 0
+    },
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.688810000000004,
+        "p95": 17.1877,
+        "max": 18.0606
+      },
+      "update_ms": {
+        "mean": 1.208275,
+        "p95": 1.5398,
+        "max": 1.6188
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        1294,
+        1366
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": 1.2466643034015132,
+      "spatial_max_metres": 1.2466643034015132
+    },
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.752396666666666,
+        "p95": 22.6983,
+        "max": 24.669
+      },
+      "update_ms": {
+        "mean": 3.841586666666667,
+        "p95": 9.3034,
+        "max": 12.5097
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        2434,
+        2506
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.688486666666666,
+        "p95": 22.2137,
+        "max": 27.2242
+      },
+      "update_ms": {
+        "mean": 3.6231916666666657,
+        "p95": 9.196,
+        "max": 12.1601
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        2538,
+        2610
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": 0.006065853420581256,
+      "spatial_max_metres": 0.006065853420581256
+    },
+    {
+      "speed_m_s": 25,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.69062333333334,
+        "p95": 17.0305,
+        "max": 18.1144
+      },
+      "update_ms": {
+        "mean": 1.1943249999999999,
+        "p95": 1.4378,
+        "max": 1.5605
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        2642,
+        2714
+      ],
+      "spatial_gate_metres": 0.4166666666666667,
+      "spatial_p95_metres": 1.2808242914406296,
+      "spatial_max_metres": 1.2808242914406296
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.753541666666663,
+        "p95": 22.2079,
+        "max": 25.7954
+      },
+      "update_ms": {
+        "mean": 4.031955000000001,
+        "p95": 9.8956,
+        "max": 10.6939
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        3782,
+        3854
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.69067666666667,
+        "p95": 17.485400000000002,
+        "max": 22.2049
+      },
+      "update_ms": {
+        "mean": 1.5032933333333334,
+        "p95": 2.0334,
+        "max": 6.8457
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        3886,
+        3958
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": 0.0002978166702143353,
+      "spatial_max_metres": 0.0002978166702143353
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.694830000000003,
+        "p95": 17.3295,
+        "max": 18.251199999999997
+      },
+      "update_ms": {
+        "mean": 1.199688333333333,
+        "p95": 1.5117,
+        "max": 1.5743
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        3990,
+        4062
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": 3.7070613593687023,
+      "spatial_max_metres": 3.7070613593687023
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.828670000000002,
+        "p95": 22.9061,
+        "max": 25.9768
+      },
+      "update_ms": {
+        "mean": 6.1481016666666655,
+        "p95": 13.1324,
+        "max": 14.0316
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        5130,
+        5202
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.68971833333333,
+        "p95": 17.5279,
+        "max": 18.1021
+      },
+      "update_ms": {
+        "mean": 1.3857966666666668,
+        "p95": 2.1026000000000002,
+        "max": 2.5574999999999997
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        5234,
+        5306
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": 0.0051371011394204975,
+      "spatial_max_metres": 0.0051371011394204975
+    },
+    {
+      "speed_m_s": 75,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.706151666666674,
+        "p95": 17.4325,
+        "max": 17.8603
+      },
+      "update_ms": {
+        "mean": 1.1790366666666672,
+        "p95": 1.4943,
+        "max": 1.7365
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        5338,
+        5410
+      ],
+      "spatial_gate_metres": 1.25,
+      "spatial_p95_metres": 3.8116690595849305,
+      "spatial_max_metres": 3.8116690595849305
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.695653333333333,
+        "p95": 17.6934,
+        "max": 18.2973
+      },
+      "update_ms": {
+        "mean": 1.4502133333333336,
+        "p95": 2.2208,
+        "max": 2.9919000000000002
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        6478,
+        6550
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.692596666666667,
+        "p95": 17.378500000000003,
+        "max": 18.0285
+      },
+      "update_ms": {
+        "mean": 1.3275983333333332,
+        "p95": 1.7347000000000001,
+        "max": 2.4286
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        6582,
+        6654
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": 0.00002161741089770262,
+      "spatial_max_metres": 0.00002161741089770262
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.693055000000005,
+        "p95": 17.157,
+        "max": 18.2427
+      },
+      "update_ms": {
+        "mean": 1.2140233333333335,
+        "p95": 1.4305999999999999,
+        "max": 1.6315
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        6686,
+        6758
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": 7.391792696740673,
+      "spatial_max_metres": 7.391792696740673
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "control",
+      "show_frames": [
+        1021,
+        1092
+      ],
+      "observed_authored_live_range": [
+        123,
+        630
+      ],
+      "observed_active_source_range": [
+        6,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.694943333333335,
+        "p95": 18.4892,
+        "max": 19.597199999999997
+      },
+      "update_ms": {
+        "mean": 1.4877466666666668,
+        "p95": 2.7031,
+        "max": 4.2659
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        7826,
+        7898
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": null,
+      "spatial_max_metres": null
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "gpu",
+      "show_frames": [
+        1093,
+        1164
+      ],
+      "observed_authored_live_range": [
+        550,
+        1121
+      ],
+      "observed_active_source_range": [
+        4,
+        6
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.685773333333334,
+        "p95": 17.8365,
+        "max": 18.288800000000002
+      },
+      "update_ms": {
+        "mean": 1.3823449999999997,
+        "p95": 2.0874,
+        "max": 3.1357999999999997
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        7930,
+        8002
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": 0.00558919408773177,
+      "spatial_max_metres": 0.00558919408773177
+    },
+    {
+      "speed_m_s": 150,
+      "bloom_intensity": 0.15000000596046448,
+      "mode": "delayed-control",
+      "show_frames": [
+        1165,
+        1236
+      ],
+      "observed_authored_live_range": [
+        170,
+        762
+      ],
+      "observed_active_source_range": [
+        4,
+        4
+      ],
+      "unavailable_live_observations": 0,
+      "interval_ms": {
+        "mean": 16.68882666666667,
+        "p95": 17.1587,
+        "max": 17.9299
+      },
+      "update_ms": {
+        "mean": 1.172171666666667,
+        "p95": 1.5665,
+        "max": 1.6267
+      },
+      "deadline_misses": 0,
+      "adapter_dispatches": [
+        8034,
+        8106
+      ],
+      "spatial_gate_metres": 2,
+      "spatial_p95_metres": 7.452810245813954,
+      "spatial_max_metres": 7.452810245813954
+    }
+  ]
+}

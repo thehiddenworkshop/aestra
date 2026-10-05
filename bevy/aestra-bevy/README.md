@@ -526,8 +526,14 @@ part of Aestra's adapter byte budget. See the
 The [F7E4B2A image gate](../../benchmarks/fireworks/particle-light-gpu-images-2026-10-04.md)
 now passes matched authored high-tier hero/volley/show diffuse receiver images with
 and without bloom, including disable restoration and endpoint controls. These are
-paused forward samples, not paced registration or artistic approval. Authored-load
-paced registration, repeated costs/native cluster allocation qualification,
+paused forward samples, not paced registration or artistic approval. The
+[F7E4B2B registration gate](../../benchmarks/fireworks/particle-light-gpu-registration-2026-10-05.md)
+passes a separate 25/75/150 m/s calibration tracer under high-tier authored show
+overlap, with perspective/HDR/bloom and deliberately delayed negative controls.
+Same-image centroids establish spatial registration, not display latency or natural
+authored-star art approval; representative flashes are disabled for color isolation.
+The earlier control-phase cadence miss remains recorded, not a universal 60 Hz claim.
+Repeated work-matched costs/actual native cluster allocation-growth-overflow qualification,
 non-default per-view layers, additional hardware and production-finale certification
 remain open.
 

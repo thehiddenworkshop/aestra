@@ -10,6 +10,8 @@ use aestra_bevy::{
 use bevy::{app::PluginsState, camera::RenderTarget, post_process::bloom::Bloom};
 use serde::{Deserialize, Serialize};
 
+mod registration;
+
 const CAP: u32 = 96;
 const WALL_Z: f32 = -2.0;
 const WALL_CENTER_Y: f32 = 35.0;
