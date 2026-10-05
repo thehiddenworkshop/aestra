@@ -1,5 +1,5 @@
 #requires -Version 7.0
-# Narrow high-tier authored fixture gate, layered on unchanged allocation gates.
+# Narrow tiered authored fixture gate, layered on unchanged allocation gates.
 [CmdletBinding()]
 param([Parameter(Mandatory,ParameterSetName='Reports')][string]$ReportsDirectory,
     [Parameter(Mandatory,ParameterSetName='SelfTest')][switch]$SelfTest)
@@ -53,9 +53,11 @@ $manifest = Get-Content -LiteralPath "$directory/manifest.json" -Raw | ConvertFr
 $rows = @()
 foreach ($run in $manifest.runs) {
     $report = Get-Content -LiteralPath "$directory/$($run.pair)/$($run.stem).json" -Raw | ConvertFrom-Json
-    if ($report.presentation.quality_tier -ne 'high' -or
-        ($report.presentation.particle_light_cluster_initial_capacities -join ',') -ne '4096,524288' -or
-        ($report.presentation.headless_target -join ',') -ne '960,540') { throw 'Private gate requires the unchanged high-tier fixture' }
+    $capacities = switch ($run.tier) { high {@(4096,524288)}; medium {@(2048,262144)}; low {@(1024,131072)}; default {throw 'Unknown private fixture tier'} }
+    if ($report.presentation.quality_tier -ne $run.tier -or
+        ($report.presentation.particle_light_cluster_initial_capacities -join ',') -ne ($capacities -join ',') -or
+        ($report.presentation.headless_target -join ',') -ne '960,540') { throw 'Private gate requires the fixed preset-tier fixture' }
+    $zBytes = 12L*$capacities[0]
     $samples = @($report.cluster_buffers | Where-Object { $_.tick.measured -and $null -ne $_.allocation_sample })
     if ($samples.Count -eq 0) { throw 'Missing measured private samples' }
     if ($report.cluster_main.Count -eq 0) { throw 'Missing native grid observations' }
@@ -69,15 +71,15 @@ foreach ($run in $manifest.runs) {
         if ($sample.views.Count -ne 1 -or $sample.views[0].main_entity -ne $report.cluster_main[0].views[0].main_entity) {
             throw 'Private allocation gate requires the same single render-world view'
         }
-        $censuses += PrivateCensus $sample.allocation_sample.report 49152 117504
+        $censuses += PrivateCensus $sample.allocation_sample.report $zBytes 117504
     }
-    $rows += [ordered]@{pair=$run.pair; probe=$run.probe; mode=$run.mode; samples=$samples.Count;
-        z_slice_count=1; z_slice_bytes=49152; scratchpad_count=1; scratchpad_bytes=117504;
+    $rows += [ordered]@{pair=$run.pair; probe=$run.probe; tier=$run.tier; mode=$run.mode; samples=$samples.Count;
+        z_slice_count=1; z_slice_bytes=$zBytes; scratchpad_count=1; scratchpad_bytes=117504;
         metadata_count=1; metadata_bytes=48;
         staging_count_min=($censuses.staging_count | Measure-Object -Minimum).Minimum;
         staging_count_max=($censuses.staging_count | Measure-Object -Maximum).Maximum;
         report_sha256=$run.report_sha256; log_sha256=$run.log_sha256}
 }
 [ordered]@{schema=1; milestone='F7E4B3B2C'; accepted=$true;
-    scope='Measured named private live allocations in the unchanged single-view high-tier hero/volley/show matrix. Existing workload/retirement/hash/public no-churn gates unchanged. Snapshot counts/bytes are not exact allocation generation IDs, full driver free history, total VRAM, hard limits on arbitrary overload or timing evidence.';
+    scope='Measured named private live allocations in the single-view tiered hero/volley/show matrix at preset preallocations. Existing workload/retirement/hash/public no-churn gates unchanged. Snapshot counts/bytes are not exact allocation generation IDs, full driver free history, total VRAM, hard limits on arbitrary overload or timing evidence.';
     binary_sha256=$manifest.binary_sha256; rows=$rows} | ConvertTo-Json -Depth 8

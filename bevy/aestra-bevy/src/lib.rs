@@ -40,6 +40,7 @@ mod bindings;
 #[cfg(test)]
 mod choreography_tests;
 mod input_events;
+mod lighting_quality;
 mod lights;
 mod particle_light_gpu;
 mod particle_lights;
@@ -52,6 +53,7 @@ pub use bindings::{
     spatial_snapshot,
 };
 pub use input_events::AestraEventInput;
+pub use lighting_quality::{LightQualityBudget, LightingQualityError, LightingQualityPolicy};
 pub use lights::{
     AestraLightOutput, AestraTransientLightPlugin, MAX_TRANSIENT_LIGHTS, TransientLightKey,
     TransientLightProxy, TransientLightSettings, TransientLightStatistics,

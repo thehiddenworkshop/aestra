@@ -21,6 +21,37 @@ host, but the pipeline is the same everywhere.
 Runtime control — play/pause, `seek`, `set_parameter`, choreography events —
 all goes through the `EffectPlayer` handle.
 
+## Host lighting quality
+
+Lighting remains opt-in: install `AestraTransientLightPlugin` for representative
+pulses and `AestraParticleLightPlugin` for selected-particle realization. Choose
+`ParticleLightMode` separately; quality never switches a host to positional readback.
+An explicit policy works during setup or before the next update when changing quality:
+
+```rust,no_run
+use aestra_bevy::LightingQualityPolicy;
+use bevy::prelude::*;
+let mut app = App::new(); // Install your rendering/Aestra/lighting plugins separately.
+let mut lighting = LightingQualityPolicy::preset("medium").unwrap();
+lighting.particle.max_range = 80.0;
+lighting.apply(app.world_mut()).unwrap();
+// The host can keep representative flashes without selected-particle lighting.
+lighting.particle.enabled = false;
+lighting.apply(app.world_mut()).unwrap();
+```
+
+The example-host high/medium/low caps are 8/4/2 representative lights and
+96/48/24 selected lights. These are configurable ceilings, not device-independent
+performance guarantees. Both families have independent enabled/count/range/lumen
+controls; shadows stay off. This is a global policy, not automatic per-effect distance LOD.
+Applying a policy preserves byte, request and age/lag
+budgets, authored binding mode, playback and history. Invalid policies change
+nothing. GPU/async transport settings converge through ordinary pipelined updates,
+not a synchronous GPU wait. No plugin or representative intent is created by applying
+the policy, but a nonzero particle budget explicitly opts the selector into work for
+authored particle-light outputs. External clients still need the pinned Bevy PBR
+patch described in `vendor/bevy_pbr/AESTRA_PATCH.md` for the qualified native path.
+
 ## Live playback or replay history
 
 Game hosts that only advance effects can opt out of automatic checkpoint work:

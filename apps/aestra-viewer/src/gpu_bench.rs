@@ -108,6 +108,7 @@ pub struct BenchPresentation {
     transparent_order: &'static str,
     max_gpu_particles: u32,
     quality_tier: String,
+    lighting_policy: BenchLightingPolicy,
     legacy_material_migration: bool,
     raster_probe: Option<crate::fireworks_f4::RasterProbeSetup>,
     fixed_simulation_step_seconds: Option<f64>,
@@ -125,6 +126,37 @@ pub struct BenchPresentation {
     global_particle_light_cap: Option<u32>,
     particle_light_memory_mib: Option<u32>,
     headless_target: Option<[u32; 2]>,
+}
+
+/// Requested host policy. It does not imply illuminated counts or override the
+/// separate adapter/control cap recorded alongside it.
+#[derive(Serialize)]
+struct BenchLightingPolicy {
+    representative_enabled: bool,
+    representative_cap: u32,
+    particle_enabled: bool,
+    particle_cap: u32,
+    representative_max_lumens: f32,
+    representative_max_range: f32,
+    particle_max_lumens: f32,
+    particle_max_range: f32,
+    shadows: bool,
+}
+
+impl From<aestra_bevy::LightingQualityPolicy> for BenchLightingPolicy {
+    fn from(policy: aestra_bevy::LightingQualityPolicy) -> Self {
+        Self {
+            representative_enabled: policy.representative.enabled,
+            representative_cap: policy.representative.max_lights,
+            particle_enabled: policy.particle.enabled,
+            particle_cap: policy.particle.max_lights,
+            representative_max_lumens: policy.representative.max_lumens,
+            representative_max_range: policy.representative.max_range,
+            particle_max_lumens: policy.particle.max_lumens,
+            particle_max_range: policy.particle.max_range,
+            shadows: false,
+        }
+    }
 }
 
 impl BenchPresentation {
@@ -165,6 +197,7 @@ impl BenchPresentation {
             },
             max_gpu_particles: config.max_gpu_particles,
             quality_tier: config.tier.name.clone(),
+            lighting_policy: config.lighting_policy().into(),
             legacy_material_migration: config.semantic_materials,
             raster_probe: match config.fireworks_probe {
                 Some(crate::FireworksProbe::Raster(probe)) => Some(probe.setup()),
@@ -197,23 +230,11 @@ impl BenchPresentation {
             .then(|| {
                 config
                     .particle_light_gpu_cap
-                    .unwrap_or(config.particle_light_cap.unwrap_or(
-                        match config.tier.name.as_str() {
-                            "high" => 96,
-                            "medium" => 48,
-                            _ => 24,
-                        },
-                    ))
+                    .unwrap_or(config.lighting_policy().particle.max_lights)
             }),
-            global_particle_light_cap: config.particle_light_bench.then(|| {
-                config
-                    .particle_light_cap
-                    .unwrap_or(match config.tier.name.as_str() {
-                        "high" => 96,
-                        "medium" => 48,
-                        _ => 24,
-                    })
-            }),
+            global_particle_light_cap: config
+                .particle_light_bench
+                .then(|| config.lighting_policy().particle.max_lights),
             particle_light_memory_mib: config
                 .particle_light_bench
                 .then_some(config.particle_light_memory_mib),

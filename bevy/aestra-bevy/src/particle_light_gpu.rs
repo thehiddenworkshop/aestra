@@ -741,6 +741,47 @@ fn inject(
 mod tests {
     use super::*;
     #[test]
+    fn quality_policy_shrinks_disables_and_recovers_the_native_pool() {
+        let mut world = World::new();
+        world.init_resource::<ParticleLightGpuStatistics>();
+        world.init_resource::<Slots>();
+        world.insert_resource(ParticleLightMode::SameFrameGpu);
+        let host = world
+            .spawn(PointLight {
+                intensity: 123.0,
+                ..default()
+            })
+            .id();
+        let mut policy = crate::LightingQualityPolicy::preset("high").unwrap();
+        policy.apply(&mut world).unwrap();
+        reserve_slots(&mut world);
+        let original = world.resource::<Slots>().0.clone();
+        assert_eq!(original.len(), 96);
+        policy = crate::LightingQualityPolicy::preset("low").unwrap();
+        policy.apply(&mut world).unwrap();
+        reserve_slots(&mut world);
+        assert_eq!(world.resource::<Slots>().0, original[..24]);
+        assert!(
+            original[24..]
+                .iter()
+                .all(|e| !world.entities().contains(*e))
+        );
+        policy.particle.enabled = false;
+        policy.apply(&mut world).unwrap();
+        reserve_slots(&mut world);
+        assert!(world.resource::<Slots>().0.is_empty());
+        assert!(original.iter().all(|e| !world.entities().contains(*e)));
+        policy.particle.enabled = true;
+        policy.apply(&mut world).unwrap();
+        reserve_slots(&mut world);
+        assert_eq!(world.resource::<Slots>().0.len(), 24);
+        assert_eq!(world.get::<PointLight>(host).unwrap().intensity, 123.0);
+        for &entity in &world.resource::<Slots>().0 {
+            let light = world.get::<PointLight>(entity).unwrap();
+            assert!(!light.shadow_maps_enabled && !light.contact_shadows_enabled);
+        }
+    }
+    #[test]
     fn caps_are_configurable_and_invalid_budgets_fail_closed() {
         let mut settings = ParticleLightGpuSettings {
             max_lights: 1024,

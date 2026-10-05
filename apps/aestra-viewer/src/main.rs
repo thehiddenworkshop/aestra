@@ -137,25 +137,17 @@ fn main() {
     let cue_parent_count = prepared.compiled.event_links.first().map_or(0, |l| l.count);
     let cue_project = prepared.project.clone();
     let cue_seed = config.resolved_seed();
+    let lighting_policy = config.lighting_policy();
+    let lighting_policy_enabled = config.transient_lights || config.particle_light_bench;
     let light_settings = config
         .transient_lights
         .then(|| aestra_bevy::TransientLightSettings {
-            max_lights: match config.tier.name.as_str() {
-                "high" => 8,
-                "medium" => 4,
-                _ => 2,
-            },
+            max_lights: lighting_policy.representative.max_lights as usize,
             ..default()
         });
     let particle_light_settings = config.particle_light_bench.then(|| {
         aestra_bevy::gpu::particle_lights::AestraParticleLightSettings {
-            max_lights: config
-                .particle_light_cap
-                .unwrap_or(match config.tier.name.as_str() {
-                    "high" => 96,
-                    "medium" => 48,
-                    _ => 24,
-                }),
+            max_lights: lighting_policy.particle.max_lights,
             max_scratch_bytes: u64::from(config.particle_light_memory_mib) * 1024 * 1024,
         }
     });
@@ -299,6 +291,16 @@ fn main() {
     if let Some(settings) = light_settings {
         app.insert_resource(settings)
             .add_plugins(aestra_bevy::AestraTransientLightPlugin);
+    }
+    // One explicit host policy configures both realization paths without changing
+    // the existing memory budgets or opting an unrelated viewer into lighting.
+    if lighting_policy_enabled {
+        lighting_policy.apply(app.world_mut()).unwrap();
+        if let Some(cap) = particle_light_gpu_cap {
+            app.world_mut()
+                .resource_mut::<aestra_bevy::ParticleLightGpuSettings>()
+                .max_lights = cap;
+        }
     }
     if let Some(step) = probe_bench_step {
         // Same live workload at the same simulation frame regardless of GPU/host speed.
@@ -522,6 +524,17 @@ impl CaptureMode {
 }
 
 impl ViewerConfig {
+    fn lighting_policy(&self) -> aestra_bevy::LightingQualityPolicy {
+        let mut policy = aestra_bevy::LightingQualityPolicy::preset(&self.tier.name)
+            .expect("viewer quality tiers are validated presets");
+        policy.representative.enabled = self.transient_lights;
+        policy.particle.enabled = self.particle_light_bench;
+        if let Some(cap) = self.particle_light_cap {
+            policy.particle.max_lights = cap;
+        }
+        policy
+    }
+
     fn probe_bench_step(&self) -> Option<Duration> {
         (self.gpu_bench.is_some()
             && matches!(
@@ -2637,6 +2650,24 @@ mod tests {
         let report = serde_json::to_value(gpu_bench::BenchPresentation::from_config(&gpu)).unwrap();
         assert_eq!(report["particle_light_mode"], "gpu");
         assert_eq!(report["particle_light_gpu_cap"], 96);
+        assert_eq!(report["lighting_policy"]["particle_cap"], 96);
+        assert_eq!(report["lighting_policy"]["shadows"], false);
+        for (tier, representative, particle) in [("medium", 4, 48), ("low", 2, 24)] {
+            let mut tier_args = args.clone();
+            tier_args.extend(["--tier", tier]);
+            let tier_config =
+                ViewerConfig::from_iter(tier_args.iter().map(|s| s.to_string())).unwrap();
+            let tier_report =
+                serde_json::to_value(gpu_bench::BenchPresentation::from_config(&tier_config))
+                    .unwrap();
+            assert_eq!(
+                tier_report["lighting_policy"]["representative_cap"],
+                representative
+            );
+            assert_eq!(tier_report["lighting_policy"]["particle_cap"], particle);
+            assert_eq!(tier_report["global_particle_light_cap"], particle);
+            assert_eq!(tier_report["particle_light_gpu_cap"], particle);
+        }
         assert_eq!(
             report["particle_light_cluster_initial_capacities"],
             serde_json::json!([4096, 524288])

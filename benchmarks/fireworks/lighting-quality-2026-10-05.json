@@ -1,0 +1,791 @@
+{
+  "schema": 1,
+  "date": "2026-10-05",
+  "milestone": "F7F1",
+  "base_commit": "e53cc097",
+  "implementation_validated": true,
+  "overall_qualification_accepted": false,
+  "status": "partial_low_full_show_receiver_visibility_failed",
+  "host_contract": {
+    "scope": "explicit global policy, not automatic per-effect LOD",
+    "presets": {
+      "high": {
+        "representative": 8,
+        "particle": 96
+      },
+      "medium": {
+        "representative": 4,
+        "particle": 48
+      },
+      "low": {
+        "representative": 2,
+        "particle": 24
+      }
+    },
+    "preset_max_lumens": 1000000,
+    "preset_max_range": 200,
+    "shadows": false,
+    "independent_enabled_count_and_clamps": true,
+    "authored_per_output_limits_preserved": true,
+    "safety_budgets_preserved": true,
+    "plugins_installed": false,
+    "playback_or_history_reset": false,
+    "transport_or_backend_switched": false
+  },
+  "ordinary_costs": {
+    "accepted": true,
+    "native_processes": 36,
+    "repetitions": 3,
+    "allocator_instrumented": false,
+    "binary_sha256": "382294451d5df74d7045019f0cac6396e3cc0aa772088460a08f053cc971c882",
+    "adapter": {
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "driver": "NVIDIA"
+    },
+    "cells": [
+      {
+        "tier": "medium",
+        "probe": "hero",
+        "gpu_render_p95_ms": [
+          1.806336,
+          1.847296,
+          1.856512
+        ],
+        "control_render_p95_ms": [
+          1.800192,
+          1.885184,
+          1.864704
+        ],
+        "gpu_clustering_p95_ms": [
+          0.131072,
+          0.130048,
+          0.13312
+        ],
+        "gpu_inject_p95_ms": [
+          0.013312,
+          0.012288,
+          0.017408
+        ],
+        "render_run_mean_differences_ms": [
+          0.0390126127268966,
+          0.023924674457429296,
+          0.012426962484856974
+        ],
+        "retirement": null
+      },
+      {
+        "tier": "medium",
+        "probe": "volley",
+        "gpu_render_p95_ms": [
+          1.916928,
+          2.060288,
+          1.983488
+        ],
+        "control_render_p95_ms": [
+          2.014208,
+          2.076672,
+          1.933312
+        ],
+        "gpu_clustering_p95_ms": [
+          0.130048,
+          0.132096,
+          0.130048
+        ],
+        "gpu_inject_p95_ms": [
+          0.012288,
+          0.012288,
+          0.01536
+        ],
+        "render_run_mean_differences_ms": [
+          0.07729830100334434,
+          0.09129498497495492,
+          0.08621114220735504
+        ],
+        "retirement": null
+      },
+      {
+        "tier": "medium",
+        "probe": "show",
+        "gpu_render_p95_ms": [
+          8.230912,
+          7.702528,
+          7.476224
+        ],
+        "control_render_p95_ms": [
+          8.10496,
+          8.318976,
+          8.457216
+        ],
+        "gpu_clustering_p95_ms": [
+          0.14848,
+          0.145408,
+          0.14848
+        ],
+        "gpu_inject_p95_ms": [
+          0.019456,
+          0.02048,
+          0.02048
+        ],
+        "render_run_mean_differences_ms": [
+          0.0839716708408127,
+          -0.01860743023447231,
+          0.0011396803388437071
+        ],
+        "retirement": [
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          }
+        ]
+      },
+      {
+        "tier": "low",
+        "probe": "hero",
+        "gpu_render_p95_ms": [
+          1.789952,
+          1.94048,
+          1.938432
+        ],
+        "control_render_p95_ms": [
+          1.782784,
+          1.79712,
+          1.842176
+        ],
+        "gpu_clustering_p95_ms": [
+          0.126976,
+          0.129024,
+          0.126976
+        ],
+        "gpu_inject_p95_ms": [
+          0.01536,
+          0.016384,
+          0.016384
+        ],
+        "render_run_mean_differences_ms": [
+          0.038848747913188264,
+          0.044242419104303154,
+          0.09518242404006472
+        ],
+        "retirement": null
+      },
+      {
+        "tier": "low",
+        "probe": "volley",
+        "gpu_render_p95_ms": [
+          1.54624,
+          1.52576,
+          1.529856
+        ],
+        "control_render_p95_ms": [
+          1.540096,
+          1.536,
+          1.52064
+        ],
+        "gpu_clustering_p95_ms": [
+          0.128,
+          0.132096,
+          0.129024
+        ],
+        "gpu_inject_p95_ms": [
+          0.012288,
+          0.016384,
+          0.016384
+        ],
+        "render_run_mean_differences_ms": [
+          0.013046581939801127,
+          0.035544876957694926,
+          0.07569723076923318
+        ],
+        "retirement": null
+      },
+      {
+        "tier": "low",
+        "probe": "show",
+        "gpu_render_p95_ms": [
+          8.014848,
+          8.530944,
+          7.964672
+        ],
+        "control_render_p95_ms": [
+          7.65952,
+          7.993344,
+          8.083456
+        ],
+        "gpu_clustering_p95_ms": [
+          0.149504,
+          0.147456,
+          0.140288
+        ],
+        "gpu_inject_p95_ms": [
+          0.019456,
+          0.021504,
+          0.018432
+        ],
+        "render_run_mean_differences_ms": [
+          0.10213222590282012,
+          0.06861031964527431,
+          -0.11418537413319196
+        ],
+        "retirement": [
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          }
+        ]
+      }
+    ],
+    "scope": "Unpaced fixed-60-Hz outer render-graph distributions, not paired-frame causality, whole-game timing, cross-tier lighting isolation, production finale or provisional 4-ms VFX certification."
+  },
+  "separate_allocations": {
+    "accepted": true,
+    "native_processes": 36,
+    "binary_sha256": "382294451d5df74d7045019f0cac6396e3cc0aa772088460a08f053cc971c882",
+    "allocator_instrumented": true,
+    "timing_evidence": false,
+    "grid": [
+      17,
+      9,
+      24
+    ],
+    "views": 1,
+    "z_slice_bytes": {
+      "medium": 24576,
+      "low": 12288
+    },
+    "scratchpad_bytes": 117504,
+    "metadata_bytes": 48,
+    "staging_bytes_each": 48,
+    "staging_count_min": 2,
+    "staging_count_max": 4,
+    "staging_slots_ceiling": 8,
+    "scope": "Sampled live counts/sizes and public no-churn/retirement. Not private generation IDs, driver free history, total VRAM or arbitrary-overload hard bounds."
+  },
+  "image_attempts": [
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-2026-10-05",
+      "native_image_generator_exit_code": 101,
+      "medium_accepted": true,
+      "low_accepted": false,
+      "protocol": "original sparse",
+      "historical_binary_sha256": null,
+      "complete_failed_low_report": false
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-expanded-2026-10-05",
+      "native_image_generator_exit_code": 101,
+      "medium_accepted": true,
+      "low_accepted": false,
+      "protocol": "original plus show frames 85/110/150 for both tiers",
+      "historical_binary_sha256": null,
+      "complete_failed_low_report": true
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-final-2026-10-05",
+      "native_image_generator_exit_code": 101,
+      "medium_accepted": true,
+      "low_accepted": false,
+      "protocol": "original plus show frames 85/110/150 for both tiers",
+      "historical_binary_sha256": "fa339a94608ef00fa6dc10de5c0e01e6eae017a1b9a64391dc3afe7d0b717bb4",
+      "complete_failed_low_report": true
+    }
+  ],
+  "final_receiver_results": [
+    {
+      "tier": "medium",
+      "accepted": true,
+      "samples": 46,
+      "image_count": 138,
+      "global_cap": 48,
+      "representative_cap": 4,
+      "responses": [
+        {
+          "workload": "hero",
+          "bloom": 0,
+          "best_energy_frame": 85,
+          "positive_pixels": 1397,
+          "positive_energy": 16692,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "hero",
+          "bloom": 0.15,
+          "best_energy_frame": 85,
+          "positive_pixels": 1031,
+          "positive_energy": 6033,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "volley",
+          "bloom": 0,
+          "best_energy_frame": 85,
+          "positive_pixels": 338,
+          "positive_energy": 2377,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "volley",
+          "bloom": 0.15,
+          "best_energy_frame": 85,
+          "positive_pixels": 245,
+          "positive_energy": 1098,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "show",
+          "bloom": 0,
+          "best_energy_frame": 1110,
+          "positive_pixels": 391,
+          "positive_energy": 5157,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "show",
+          "bloom": 0.15,
+          "best_energy_frame": 1110,
+          "positive_pixels": 356,
+          "positive_energy": 3811,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        }
+      ]
+    },
+    {
+      "tier": "low",
+      "accepted": false,
+      "samples": 46,
+      "image_count": 138,
+      "global_cap": 24,
+      "representative_cap": 2,
+      "responses": [
+        {
+          "workload": "hero",
+          "bloom": 0,
+          "best_energy_frame": 85,
+          "positive_pixels": 861,
+          "positive_energy": 7989,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "hero",
+          "bloom": 0.15,
+          "best_energy_frame": 85,
+          "positive_pixels": 296,
+          "positive_energy": 1279,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "volley",
+          "bloom": 0,
+          "best_energy_frame": 85,
+          "positive_pixels": 306,
+          "positive_energy": 2609,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "volley",
+          "bloom": 0.15,
+          "best_energy_frame": 85,
+          "positive_pixels": 208,
+          "positive_energy": 1036,
+          "visibility_passed": true,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "show",
+          "bloom": 0,
+          "best_energy_frame": 180,
+          "positive_pixels": 152,
+          "positive_energy": 790,
+          "visibility_passed": false,
+          "restored_significant_pixels_max": 0
+        },
+        {
+          "workload": "show",
+          "bloom": 0.15,
+          "best_energy_frame": 1110,
+          "positive_pixels": 32,
+          "positive_energy": 335,
+          "visibility_passed": false,
+          "restored_significant_pixels_max": 0
+        }
+      ]
+    }
+  ],
+  "receiver_thresholds": {
+    "positive_pixels_min": 100,
+    "positive_channel_delta_exclusive_min": 3,
+    "positive_energy_min": 1000,
+    "required": "at least one active sample per workload/bloom",
+    "bloom_intensities": [
+      0,
+      0.15
+    ],
+    "restored_significant_pixels": 0
+  },
+  "live_host_switch": {
+    "accepted": true,
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "compiled_tier": "high",
+    "epoch": 1,
+    "frame": 85,
+    "history": "playback_only",
+    "milestone": "F7F",
+    "observations": [
+      {
+        "cap": 0,
+        "epoch": 1,
+        "frame": 85,
+        "image": "off.png",
+        "label": "off",
+        "selected_capacity_bound": 0
+      },
+      {
+        "cap": 96,
+        "epoch": 1,
+        "frame": 85,
+        "image": "high.png",
+        "label": "high",
+        "selected_capacity_bound": 96
+      },
+      {
+        "cap": 48,
+        "epoch": 1,
+        "frame": 85,
+        "image": "medium.png",
+        "label": "medium",
+        "selected_capacity_bound": 48
+      },
+      {
+        "cap": 24,
+        "epoch": 1,
+        "frame": 85,
+        "image": "low.png",
+        "label": "low",
+        "selected_capacity_bound": 24
+      },
+      {
+        "cap": 0,
+        "epoch": 1,
+        "frame": 85,
+        "image": "disabled.png",
+        "label": "disabled",
+        "selected_capacity_bound": 0
+      },
+      {
+        "cap": 96,
+        "epoch": 1,
+        "frame": 85,
+        "image": "recovered.png",
+        "label": "recovered",
+        "selected_capacity_bound": 96
+      },
+      {
+        "cap": 0,
+        "epoch": 1,
+        "frame": 85,
+        "image": "restored.png",
+        "label": "restored",
+        "selected_capacity_bound": 0
+      }
+    ],
+    "receiver_differences": [
+      {
+        "maximum_channel_delta": 18,
+        "positive_energy": 14360,
+        "positive_pixels": 1726,
+        "receiver_pixels": 149145,
+        "restored_changed_pixels": 0,
+        "restored_maximum_channel_delta": 0,
+        "restored_significant_pixels": 0
+      },
+      {
+        "maximum_channel_delta": 10,
+        "positive_energy": 6307,
+        "positive_pixels": 1053,
+        "receiver_pixels": 149145,
+        "restored_changed_pixels": 0,
+        "restored_maximum_channel_delta": 0,
+        "restored_significant_pixels": 0
+      },
+      {
+        "maximum_channel_delta": 6,
+        "positive_energy": 1522,
+        "positive_pixels": 342,
+        "receiver_pixels": 149145,
+        "restored_changed_pixels": 0,
+        "restored_maximum_channel_delta": 0,
+        "restored_significant_pixels": 0
+      },
+      {
+        "maximum_channel_delta": 18,
+        "positive_energy": 14360,
+        "positive_pixels": 1726,
+        "receiver_pixels": 149145,
+        "restored_changed_pixels": 0,
+        "restored_maximum_channel_delta": 0,
+        "restored_significant_pixels": 0
+      }
+    ],
+    "schema": 1,
+    "scope": "Paused native host policy transitions; unchanged compiled Arc, frame/epoch/seed/history and observed live particles/trails. Representative budget stays high. Not pacing, art, total memory or arbitrary overload certification.",
+    "seed": "0xf1e0000000000001",
+    "shadows": false,
+    "target": [
+      960,
+      540
+    ]
+  },
+  "raw_provenance": [
+    {
+      "path": "target/fireworks-f7/lighting-quality-costs-2026-10-05",
+      "files": 74,
+      "pngs": 0,
+      "tree_sha256": "c55c68a31d4d66a301886d28ac4c18c4a2b3a110f62beac0da76a565c77b4b6a",
+      "protocol": "SHA256 of UTF8 relative_path:sha256 lines, PowerShell Sort-Object FullName order, LF separators, no final LF",
+      "metadata": [
+        {
+          "path": "manifest.json",
+          "sha256": "01d438e910defc668ab51370265583ee104958ea41ed5007688e0a20bcd5eb3c"
+        }
+      ]
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-allocations-2026-10-05",
+      "files": 74,
+      "pngs": 0,
+      "tree_sha256": "e60ca5867aa41457df798e5eb07887a2be596d5508e1aaa5e62c1d77fe06a28f",
+      "protocol": "SHA256 of UTF8 relative_path:sha256 lines, PowerShell Sort-Object FullName order, LF separators, no final LF",
+      "metadata": [
+        {
+          "path": "manifest.json",
+          "sha256": "3c95c1f70dc73f8bc6fcb86d625b2897de5177a24855ba745f4e871dd22821fb"
+        }
+      ]
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-2026-10-05",
+      "files": 243,
+      "pngs": 240,
+      "tree_sha256": "08e01c002b0050663a6391241022b7fffbe29f25136361a41db29fa487430d01",
+      "protocol": "SHA256 of UTF8 relative_path:sha256 lines, PowerShell Sort-Object FullName order, LF separators, no final LF",
+      "metadata": [
+        {
+          "path": "low/report.json",
+          "sha256": "76529de5f90caba2426a5458530676e09454b3c157928ab4f44264db84634f9a"
+        },
+        {
+          "path": "medium/report.json",
+          "sha256": "50e2939cbae1aa0a44b9dd9fe57dd60ddf348f924e5e6e49f525a5af060c8f41"
+        },
+        {
+          "path": "native-images.log",
+          "sha256": "30019b8e0c00d01a453f0e96b54a21672c2166392795441af2013b0b36527110"
+        }
+      ]
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-expanded-2026-10-05",
+      "files": 288,
+      "pngs": 283,
+      "tree_sha256": "5f5c137a5cea199c9bbb25f83124f66c09a5048d863cb76caec510884d6b8455",
+      "protocol": "SHA256 of UTF8 relative_path:sha256 lines, PowerShell Sort-Object FullName order, LF separators, no final LF",
+      "metadata": [
+        {
+          "path": "host-switch/report.json",
+          "sha256": "d8e2184939467ca720f0c4dbddb9cdd14c27a530be5a2687db101a5a8a2eefea"
+        },
+        {
+          "path": "low/report.json",
+          "sha256": "5eacb703f4695d5937a32946491502608ab3dfb9350f44bcdc808d1a6b638bed"
+        },
+        {
+          "path": "medium/report.json",
+          "sha256": "d5755ad24d6eaa473838bc408fd837b1ac574b126387319c6b2fe156e7abceaa"
+        },
+        {
+          "path": "native-host-switch.log",
+          "sha256": "bb276fefec6558269aba22d542c83f85888d3410599bce4f02960ca4db5e473c"
+        },
+        {
+          "path": "native-images.log",
+          "sha256": "0b4ab980acb40851be499a00c2aac67e744805f9a2864274462b9a5e5eb4aa9c"
+        }
+      ]
+    },
+    {
+      "path": "target/fireworks-f7/lighting-quality-images-final-2026-10-05",
+      "files": 290,
+      "pngs": 283,
+      "tree_sha256": "bdb17991b81b1e0d3c0da2b48c0dc36036ad125f446426399b3a2ca27de2950c",
+      "protocol": "SHA256 of UTF8 relative_path:sha256 lines, PowerShell Sort-Object FullName order, LF separators, no final LF",
+      "metadata": [
+        {
+          "path": "host-switch/report.json",
+          "sha256": "d8e2184939467ca720f0c4dbddb9cdd14c27a530be5a2687db101a5a8a2eefea"
+        },
+        {
+          "path": "input-manifest.json",
+          "sha256": "ff15f561c8857b9a848b765c0f486b48275a8e040691d29efd17715bbd91a15a"
+        },
+        {
+          "path": "low/report.json",
+          "sha256": "6b98642583443ab3a8433559e5973b608e0d8fe4fe88440f2954c3757e809755"
+        },
+        {
+          "path": "medium/report.json",
+          "sha256": "0eec1e6a90f9ef025040f4c179cd04e88898df4ca9e1b3336eee2313341bfac5"
+        },
+        {
+          "path": "native-host-switch.log",
+          "sha256": "09364b74f7f0b467a3c3465972b4dc95efee57bcee3e4b84850ad8c7e998bffe"
+        },
+        {
+          "path": "native-images.log",
+          "sha256": "c6dfcb02270916304cfca0933fcb1ca2a1a5056ab0969ca2cec7e38742655ea2"
+        },
+        {
+          "path": "retained-integrity.log",
+          "sha256": "039b8e15d0fc4de33668b6361e8482ceeaf7a92469eb26bbd6fe7c44d8fbda50"
+        }
+      ]
+    }
+  ],
+  "final_image_input_provenance": {
+    "sources": [
+      {
+        "path": "Cargo.toml",
+        "sha256": "0b4b47d5b24111d2cd017b1c73a94dc0ec748379519042513840c2301d1d4f1a"
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "bfc8ef5e09b5d4a9d8c98c721883b2c0bc5ed854a30455adbf2c1c03f55b2ca2"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/lighting_quality.rs",
+        "sha256": "416385e78ca721a716705228cc837552a383a6a8ad5d09d7b31e14c2e010f12a"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/lib.rs",
+        "sha256": "211926a89749bd795ecc307fd1e5cff201d890121571cfada2671f1f47151bda"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/lights.rs",
+        "sha256": "9f0139540849939daffd81472ec786c72a1b0d4ee2786c028477fbcc590028b2"
+      },
+      {
+        "path": "bevy/aestra-bevy/src/particle_light_gpu.rs",
+        "sha256": "d4834649f5a5d5defe4d8699a7305446ccc43bf391e297c0701a28e12527865a"
+      },
+      {
+        "path": "apps/aestra-viewer/src/main.rs",
+        "sha256": "a991162f5c96e0f787113c6e2dd9f750f74a48da0f7763e25097535fb832f39b"
+      },
+      {
+        "path": "apps/aestra-viewer/src/gpu_bench.rs",
+        "sha256": "c3705b444054f5f4d91ce1dacf8619d2899c6ec8d60d397ec811719c87cf051c"
+      },
+      {
+        "path": "apps/aestra-viewer/src/particle_light_images.rs",
+        "sha256": "63732495b74680a3a74a6a955a3960e769a61dd1443652b7c8c5c641b07e9e13"
+      },
+      {
+        "path": "benchmarks/fireworks/validate-lighting-quality.ps1",
+        "sha256": "2294f8c192ffa743e56241c431d53972ba48026e2d585f1149bbececfbef0323"
+      },
+      {
+        "path": "benchmarks/fireworks/validate-cluster-private-allocations.ps1",
+        "sha256": "5e0d6ea9854fcc8e829f52aa817f22cf40285df602ab9d589c8e0ed407738ca1"
+      },
+      {
+        "path": "benchmarks/fireworks/run-particle-light-costs.ps1",
+        "sha256": "58203ae6de212d82e2e11ddb2efcd7b34ae8ee47a787b7598ecbc0a71b8a345c"
+      }
+    ],
+    "test_binary": {
+      "path": "target/debug/deps/aestra_viewer-3a1f7617c2e8a9d5.exe",
+      "sha256": "fa339a94608ef00fa6dc10de5c0e01e6eae017a1b9a64391dc3afe7d0b717bb4"
+    }
+  },
+  "final_image_provenance_verification": {
+    "sources_unchanged": true,
+    "test_binary_unchanged": true,
+    "report_log_hashes": [
+      {
+        "path": "target/fireworks-f7/lighting-quality-costs-2026-10-05",
+        "verified_report_log_hashes": 72,
+        "manifest_accepted": true
+      },
+      {
+        "path": "target/fireworks-f7/lighting-quality-allocations-2026-10-05",
+        "verified_report_log_hashes": 72,
+        "manifest_accepted": true
+      }
+    ],
+    "limitations": "Production matrices pin executable/assets across each run; source snapshot was captured before final image tests, not retroactively claimed as a pre-cost-build snapshot. Earlier image binary hashes were not recorded."
+  },
+  "validation": {
+    "bevy_unit": {
+      "passed": 60
+    },
+    "viewer_unit": {
+      "passed": 95,
+      "ignored": 15
+    },
+    "bevy_doctests": {
+      "passed": 2
+    },
+    "scoped_clippy_all_targets": "passed -D warnings",
+    "workspace_all_targets": "passed",
+    "fmt": "passed",
+    "policy_gate_self_test": "passed",
+    "private_gate_self_test": "passed",
+    "policy_cost_gate": "passed",
+    "allocation_gate": "passed",
+    "native_live_host_test": "passed",
+    "retained_png_report_integrity": "passed; confirms medium accepted and low correctly rejected, not low image acceptance",
+    "native_tier_image_test": "failed unchanged low-show visibility in all three retained attempts"
+  },
+  "next": {
+    "milestone": "F7F2",
+    "work": "Explicitly choose/qualify low-tier authored lighting: representative-only or useful selected-star contribution within a stated budget. Fresh matched costs and receiver controls for any profile change; do not weaken thresholds or silently raise authored bounds.",
+    "then": "F8.3 lit smoke"
+  }
+}

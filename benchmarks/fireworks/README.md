@@ -35,8 +35,12 @@ F7E4B3B2C now [qualifies bounded private lifetimes and oversized recovery](clust
 completed/failed staging ownership is retired, metadata pools are bounded, and GPU/CPU switching
 releases unused private state. Native generation/completed-submission checkpoints and all 18
 authored private-count gates pass; 107 paced images remain identical. Exact driver free history,
-arbitrary-overload hard limits and total VRAM are not certified. Next: F7F quality policy and
-medium/low cost/image gates, then F8.3 lit smoke.
+arbitrary-overload hard limits and total VRAM are not certified.
+F7F1 adds [explicit host lighting quality and repeated medium/low qualification](lighting-quality-2026-10-05.md):
+all 36 ordinary cost/control runs, 36 separate allocator runs and independent live host policy switching pass. Medium
+receiver images and low hero/volley pass; low full-show visibility fails the unchanged threshold
+in three retained attempts, including early-burst samples and a provenance-qualified reproduction. Next: F7F2's explicit low-tier authored
+lighting choice/qualification, then F8.3 lit smoke. F7F is not marked fully complete.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 

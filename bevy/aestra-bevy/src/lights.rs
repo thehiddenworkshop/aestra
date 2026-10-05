@@ -379,6 +379,50 @@ mod tests {
     fn send(app: &mut App, request: AestraLightOutput) {
         app.world_mut().write_message(request);
     }
+
+    #[test]
+    fn host_quality_changes_shrink_disable_and_reenable_shadowless_flashes() {
+        let (mut app, root) = app();
+        let mut policy = crate::LightingQualityPolicy::preset("high").unwrap();
+        policy.apply(app.world_mut()).unwrap();
+        for tick in 0..8 {
+            let light = request(&app, root, tick);
+            send(&mut app, light);
+        }
+        app.update();
+        assert_eq!(app.world().resource::<TransientLightStatistics>().active, 8);
+        policy = crate::LightingQualityPolicy::preset("low").unwrap();
+        policy.representative.max_lumens = 100.0;
+        policy.representative.max_range = 5.0;
+        policy.apply(app.world_mut()).unwrap();
+        app.update();
+        assert_eq!(
+            app.world().resource::<TransientLightStatistics>().allocated,
+            2
+        );
+        for entity in entities(&mut app) {
+            let light = app.world().get::<PointLight>(entity).unwrap();
+            assert_eq!((light.intensity, light.range), (100.0, 5.0));
+            assert!(!light.shadow_maps_enabled && !light.contact_shadows_enabled);
+        }
+        policy.representative.enabled = false;
+        policy.apply(app.world_mut()).unwrap();
+        app.update();
+        assert_eq!(app.world().resource::<TransientLightStatistics>().active, 0);
+        for entity in entities(&mut app) {
+            assert_eq!(
+                app.world().get::<PointLight>(entity).unwrap().intensity,
+                0.0
+            );
+        }
+        policy.representative.enabled = true;
+        policy.apply(app.world_mut()).unwrap();
+        let light = request(&app, root, 100);
+        send(&mut app, light);
+        app.update();
+        assert_eq!(app.world().resource::<TransientLightStatistics>().active, 1);
+        assert_eq!(app.world().get::<EffectPlayer>(root).unwrap().frame(), 0);
+    }
     fn entities(app: &mut App) -> Vec<Entity> {
         app.world_mut()
             .query_filtered::<Entity, With<TransientLightProxy>>()
