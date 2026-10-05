@@ -533,9 +533,17 @@ overlap, with perspective/HDR/bloom and deliberately delayed negative controls.
 Same-image centroids establish spatial registration, not display latency or natural
 authored-star art approval; representative flashes are disabled for color isolation.
 The earlier control-phase cadence miss remains recorded, not a universal 60 Hz claim.
-Repeated work-matched costs/actual native cluster allocation-growth-overflow qualification,
-non-default per-view layers, additional hardware and production-finale certification
-remain open.
+The [F7E4B3A repeated-cost gate](../../benchmarks/fireworks/particle-light-gpu-costs-2026-10-05.md)
+passes three high-tier authored on/off pairs per hero/volley/show. It observes public native
+physical index/offsets-counts buffers and asynchronous index demand without new GPU readbacks.
+The benchmark-only adaptive-grid target now matches its initial index capacity on both sides;
+the earlier grid oscillation and a separate abnormal native shutdown exit remain recorded.
+Stable public sizes are not total resident-memory or allocation-churn certification: private
+Z-slice/scratchpad/staging and old in-flight allocations remain unmeasured. Show cleanup still
+acknowledges substantial native index demand despite zero writable selected capacity, so
+inactive-slot work retirement is the next playback follow-up. Private/in-flight native budgets,
+medium/low repeated costs, non-default per-view layers, additional hardware and
+production-finale certification remain open.
 
 ## Where to look
 

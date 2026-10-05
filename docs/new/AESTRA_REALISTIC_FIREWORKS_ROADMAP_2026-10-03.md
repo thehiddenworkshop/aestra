@@ -81,8 +81,11 @@ F7E4A now adds an opt-in bounded native GPU adapter with explicit default-layer 
 F7E4B1 now adds viewer profiling and authored-load cost/resource gates; F7E4B2A passes matched
 authored high-tier diffuse receiver images with/without bloom. F7E4B2B now passes a paced
 synthetic registration tracer under high-tier authored overlap (including a delayed negative
-control); an earlier cadence miss remains recorded. Next is repeated work-matched cost and
-actual native cluster allocation/growth/overflow qualification,
+control); an earlier cadence miss remains recorded. F7E4B3A now passes three high-tier
+work-matched on/off cost repetitions with public physical cluster-buffer sizes and asynchronous
+native index demand. The benchmark's independent adaptive-grid target now matches preallocation;
+the failed grid attempt and an abnormal native exit remain recorded. Next is inactive-slot work
+retirement and private/in-flight native allocation/churn/overflow qualification,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4202,8 +4205,45 @@ fail that spatial gate as intended. The GPU phases observe 550–1121 authored p
 - [Method/results/reproduction](../../benchmarks/fireworks/particle-light-gpu-registration-2026-10-05.md)
   and [retained hashes, phase summaries and failed attempt](../../benchmarks/fireworks/particle-light-gpu-registration-2026-10-05.json).
 
-**Next: repeated work-matched cost runs and actual native cluster allocation/growth/overflow
-qualification.** Preserve F7E4A's isolated registration and B2B's distinction between synthetic
+**F7E4B3A implemented/measured — 2026-10-05: repeated high-tier costs and public native
+cluster observability.** Three alternating adapter-on/off pairs per hero, volley and full show
+retain normal authored work, selection cap 96, adapter caps 96/0 and independent show flashes.
+All eighteen native processes succeed and every show retains the thirteen-clip **8,413-child**
+admission/cleanup gate. Authored paths/source IDs/seeds/capacities/event totals match per pair;
+executable and asset inputs remain unchanged. Independent distributions are not frame-paired
+subtractions, phase-percentile sums, statistical-significance or whole-game budget claims.
+
+- Read-only public native buffer bindings expose physical global light storage and per-view
+  index/offsets-counts sizes without new GPU copies/maps. Public main-world cluster observations
+  expose grid dimensions and asynchronous native index-demand acknowledgments, not same-frame
+  buffer/timing counts. A bounded mailbox detects missing/lost render observations; null stays
+  unavailable, never fake zero. Native resize/corruption/error logs remain a separate gate.
+- The first complete matrix failed on **2304/117504-byte** offsets/counts oscillation. Locked
+  Bevy's independent adaptive-grid target remained **16384**, despite GPU preallocation 524288.
+  Benchmark-only policy now aligns both targets for enabled/control runs, leaves CPU fallback
+  unchanged and preserves authored work. The rerun keeps grid **17×9×24**, index list **2,097,152**
+  bytes and offsets/counts **117,504** bytes. Peak acknowledged show index demand **352,512**
+  stays below 524288. No public measured-list size changes/lost observations/native resize warnings.
+- Render-GPU run-mean overhead spans **+0.038–0.070 ms hero / +0.070–0.200 ms volley /
+  +0.098–0.214 ms show**. CPU differences/tail latency vary; no universal budget is certified.
+  Show clustering p95 is **0.312–0.331 ms enabled / 0.126–0.130 ms control**.
+- Both the failed grid attempt and an intermediate **0xc0000409** native shutdown exit are
+  retained as unaccepted; the latter's cause is not established or certified fixed. The fresh
+  eighteen-process matrix passes; a null-root-links validator parser fix is regression-tested
+  and revalidates unchanged native reports rather than substituting timings.
+- Show cleanup still acknowledges **346,176** indices at the last main-world sample despite
+  zero writable selected capacity. Main-world zero-lumen/max-range placeholders and skipped
+  empty-frame injection suggest avoidable idle clustering work; asynchronous observations do not
+  establish exact same-frame causality. This is a concrete playback follow-up, not replay tuning.
+- **Private Z-slice/scratchpad/metadata/staging, old in-flight allocations, creation/churn,
+  textures and allocator overhead remain unmeasured.** Stable public sizes are not a resident-memory
+  bound or complete overflow certificate. Only high tier/one GPU/default view is retained here;
+  medium/low repeated-cost gates remain open.
+- [Method/results/reproduction](../../benchmarks/fireworks/particle-light-gpu-costs-2026-10-05.md)
+  and [all nine pairs, source/raw hashes and failed attempts](../../benchmarks/fireworks/particle-light-gpu-costs-2026-10-05.json).
+
+**Next: F7E4B3B inactive-slot work retirement and private/in-flight native allocation/churn/overflow
+qualification, then medium/low repeated costs.** Preserve F7E4A's isolated registration and B2B's distinction between synthetic
 calibration and natural authored-star acceptance. Medium/low receiver-image gates remain open.
 Keep default-layer restrictions explicit; general per-view layers and multi-view acceptance remain
 required before a general adapter claim. Preserve portable async mode for tolerant workloads.
@@ -4357,7 +4397,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). Next repeated work-matched costs and actual native cluster allocation/growth/overflow qualification, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. Next F7E4B3B inactive-slot work retirement and private/in-flight native allocation/churn/overflow qualification, then medium/low repeated costs, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4771,7 +4811,8 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E4B repeated work-matched cost / actual native cluster allocation-growth-overflow gates;
+1. F7E4B3B inactive-slot work retirement / private and in-flight native allocation-churn-overflow;
+   B3A repeated high-tier costs/public buffers/demand pass; medium/low cost gates remain open
    B2B synthetic paced registration under high-tier authored overlap passes; B2A images pass
 2. F7F   quality tiers; shadows remain off by default
 3. F8.3  make smoke actually consume scene lighting
@@ -4786,7 +4827,9 @@ measurement fails the initial fast-star registration budget. F7E3 passes the iso
 GPU/PBR proof; F7E4A adds bounded default-layer GPU realization; F7E4B1 measures authored-load costs;
 F7E4B2A passes matched high-tier authored receiver images with/without bloom; F7E4B2B passes
 synthetic paced registration under high-tier authored overlap with delayed negative controls.
-Repeated work-matched costs/native cluster budgets, medium/low receiver images, natural-star
+F7E4B3A passes repeated high-tier work-matched costs/public native cluster-buffer and async-demand
+gates. Inactive-slot work retirement, private/in-flight native cluster budgets, medium/low
+repeated costs/receiver images, natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.
 
 The generic model, bounded selection and portable receiver contribution are now proven. F7E2's

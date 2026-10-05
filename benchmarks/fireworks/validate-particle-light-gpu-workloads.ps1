@@ -1,11 +1,14 @@
 #requires -Version 7.0
 # Read-only F7E4B1 authored-load resource/cost gate, not artistic/finale acceptance.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReportsDirectory)
+param([Parameter(Mandatory)][string]$ReportsDirectory,
+    [ValidateSet('high','medium','low')][string[]]$Tiers = @('high','medium','low'))
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($Tiers.Count -eq 0 -or @($Tiers | Sort-Object -Unique).Count -ne $Tiers.Count) { throw 'Choose nonempty unique tiers' }
+$Tiers = @(@('high','medium','low') | Where-Object { $_ -in $Tiers })
 foreach ($mode in @('gpu','control')) {
-    & "$PSScriptRoot/validate-show.ps1" -ReportsDirectory $ReportsDirectory -ReportPrefix "show-$mode" | Out-Null
+    & "$PSScriptRoot/validate-show.ps1" -ReportsDirectory $ReportsDirectory -ReportPrefix "show-$mode" -Tiers $Tiers | Out-Null
 }
 function Maximum($Samples, [string]$Property) {
     if ($Samples.Count -eq 0) { throw "Missing observations: $Property" }
@@ -28,7 +31,7 @@ function Distribution($Values) {
 }
 $runs = @()
 foreach ($probe in @('hero','volley','show')) {
-    foreach ($tier in @('high','medium','low')) {
+    foreach ($tier in $Tiers) {
         $cap = switch ($tier) {high {96}; medium {48}; low {24}}
         $cluster = switch ($tier) {high {@(4096,524288)}; medium {@(2048,262144)}; low {@(1024,131072)}}
         $frames = if ($probe -eq 'show') {1680} else {600}

@@ -21,6 +21,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+pub mod clusters;
+
 /// Host-only preallocation for the current 96/48/24-light workload matrix.
 /// These are initial capacities, not hard limits or a total GPU-memory budget.
 /// Bevy may still grow them for other scenes/cameras/caps. Shared by control and
@@ -37,10 +39,18 @@ pub fn prime_clusters(
     config: Res<crate::ViewerConfig>,
     mut clusters: ResMut<bevy::light::cluster::GlobalClusterSettings>,
 ) {
+    configure_clusters(&config.tier.name, &mut clusters);
+}
+
+fn configure_clusters(tier: &str, clusters: &mut bevy::light::cluster::GlobalClusterSettings) {
     if let Some(settings) = &mut clusters.gpu_clustering {
-        let [slices, indices] = cluster_capacities(&config.tier.name);
+        let [slices, indices] = cluster_capacities(tier);
         settings.initial_z_slice_list_capacity = slices;
         settings.initial_index_list_capacity = indices;
+        // Bevy's independent default adaptive-grid target otherwise remains
+        // at MAX_INDICES even after GPU storage preallocation was increased.
+        // Align the host target for both adapter-on and adapter-off controls.
+        clusters.view_cluster_bindings_max_indices = indices;
     }
 }
 
@@ -162,6 +172,7 @@ struct Slots(Vec<Slot>);
 
 pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
     let mailbox = Mailbox::default();
+    let clusters = clusters::Mailbox::default();
     app.insert_resource(settings)
         .insert_resource(Start {
             ready: false,
@@ -171,12 +182,14 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
         // Measurement uses exact forward playback, not editor catch-up pacing.
         .insert_resource(aestra_bevy::gpu::AestraCatchupPacing { paced: false })
         .insert_resource(mailbox.clone())
+        .insert_resource(clusters.clone())
         .init_resource::<Tick>()
         .add_plugins(ExtractResourcePlugin::<Tick>::default())
         .add_systems(Update, start.before(aestra_bevy::AestraSet::Playback));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render
             .insert_resource(mailbox)
+            .insert_resource(clusters)
             .init_resource::<Slots>()
             .add_systems(ExtractSchedule, crate::publish_capture_render_readiness)
             .add_systems(
@@ -192,7 +205,7 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
                         .before(RenderGraphSystems::Submit),
                 ),
             )
-            .add_systems(Render, copy_counts.in_set(RenderSystems::Cleanup));
+            .add_systems(Render, (copy_counts, clusters::observe).in_set(RenderSystems::Cleanup));
     }
 }
 // Bevy diagnostic spans are thread-local. Exclusive systems run on the schedule
@@ -308,6 +321,37 @@ mod tests {
         assert_eq!(cluster_capacities("high"), [4096, 524288]);
         assert_eq!(cluster_capacities("medium"), [2048, 262144]);
         assert_eq!(cluster_capacities("low"), [1024, 131072]);
+    }
+    #[test]
+    fn native_adaptive_target_matches_preallocation_without_changing_cpu_fallback() {
+        use bevy::light::cluster::{GlobalClusterGpuSettings, GlobalClusterSettings};
+        let mut settings = GlobalClusterSettings {
+            supports_storage_buffers: true,
+            clustered_decals_are_usable: false,
+            gpu_clustering: Some(GlobalClusterGpuSettings {
+                initial_z_slice_list_capacity: 1,
+                initial_index_list_capacity: 1,
+            }),
+            max_uniform_buffer_clusterable_objects: 204,
+            view_cluster_bindings_max_indices: 16_384,
+        };
+        for tier in ["high", "medium", "low"] {
+            configure_clusters(tier, &mut settings);
+            let expected = cluster_capacities(tier);
+            let gpu = settings.gpu_clustering.unwrap();
+            assert_eq!(
+                [
+                    gpu.initial_z_slice_list_capacity,
+                    gpu.initial_index_list_capacity
+                ],
+                expected
+            );
+            assert_eq!(settings.view_cluster_bindings_max_indices, expected[1]);
+        }
+        settings.gpu_clustering = None;
+        settings.view_cluster_bindings_max_indices = 16_384;
+        configure_clusters("high", &mut settings);
+        assert_eq!(settings.view_cluster_bindings_max_indices, 16_384);
     }
     #[test]
     fn forward_benchmark_waits_for_shader_startup_without_a_seek() {

@@ -1,13 +1,16 @@
 #requires -Version 7.0
 # Read-only per-clip admission gate. Missing observations fail, never become zero.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReportsDirectory, [string]$ReportPrefix = 'f6a-show', [string]$ReportSuffix = '')
+param([Parameter(Mandatory)][string]$ReportsDirectory, [string]$ReportPrefix = 'f6a-show', [string]$ReportSuffix = '',
+    [ValidateSet('high','medium','low')][string[]]$Tiers = @('high','medium','low'))
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($Tiers.Count -eq 0 -or @($Tiers | Sort-Object -Unique).Count -ne $Tiers.Count) { throw 'Choose nonempty unique tiers' }
+$Tiers = @(@('high','medium','low') | Where-Object { $_ -in $Tiers })
 $sources = @('f8000', 'f9000', 'fa000', 'fb000', 'f8000', 'f8000', 'f8000',
     'fa000', 'f9000', 'f8000', 'f9000', 'fb000', 'fa000')
 $previousMemory = [long]::MaxValue
-foreach ($tier in @('high', 'medium', 'low')) {
+foreach ($tier in $Tiers) {
     $report = Get-Content -LiteralPath (Join-Path $ReportsDirectory "$ReportPrefix-$tier$ReportSuffix.json") -Raw | ConvertFrom-Json
     if ($report.effect -ne 'f6-show' -or $report.history_policy -ne 'playback-only' -or
         $report.presentation.quality_tier -ne $tier -or $report.presentation.transparent_order -ne 'fast' -or

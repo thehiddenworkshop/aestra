@@ -58,6 +58,9 @@ pub struct GpuBenchPlan {
     particle_light_gpu: Vec<ParticleLightGpuObservation>,
     light_skipped_busy: u64,
     light_overwritten_results: u64,
+    cluster_buffers: Vec<crate::particle_light_bench::clusters::Observation>,
+    cluster_overwritten_results: u64,
+    cluster_main: Vec<crate::particle_light_bench::clusters::MainObservation>,
 }
 
 /// Stable authored identity for transient ECS owners, retained after clips expire.
@@ -116,6 +119,7 @@ pub struct BenchPresentation {
     /// Requested initial [Z-slice, index-list] native cluster capacities; may
     /// grow, not a renderer allocation measurement or hard memory limit.
     particle_light_cluster_initial_capacities: Option<[usize; 2]>,
+    particle_light_cluster_adaptive_index_target: Option<usize>,
     representative_lights: bool,
     global_particle_light_cap: Option<u32>,
     particle_light_memory_mib: Option<u32>,
@@ -183,6 +187,9 @@ impl BenchPresentation {
             particle_light_cluster_initial_capacities: (config.particle_light_mode
                 == Some(aestra_bevy::ParticleLightMode::SameFrameGpu))
             .then(|| crate::particle_light_bench::cluster_capacities(&config.tier.name)),
+            particle_light_cluster_adaptive_index_target: (config.particle_light_mode
+                == Some(aestra_bevy::ParticleLightMode::SameFrameGpu))
+            .then(|| crate::particle_light_bench::cluster_capacities(&config.tier.name)[1]),
             particle_light_gpu_cap: (config.particle_light_mode
                 == Some(aestra_bevy::ParticleLightMode::SameFrameGpu))
             .then(|| {
@@ -250,6 +257,9 @@ impl GpuBenchPlan {
             particle_light_gpu: Vec::new(),
             light_skipped_busy: 0,
             light_overwritten_results: 0,
+            cluster_buffers: Vec::new(),
+            cluster_overwritten_results: 0,
+            cluster_main: Vec::new(),
         }
     }
 
@@ -273,6 +283,10 @@ impl GpuBenchPlan {
             particle_lights: &self.particle_lights,
             particle_light_pool: &self.particle_light_pool,
             particle_light_gpu: &self.particle_light_gpu,
+            cluster_buffers: &self.cluster_buffers,
+            cluster_buffers_scope: crate::particle_light_bench::clusters::SCOPE,
+            cluster_overwritten_results: self.cluster_overwritten_results,
+            cluster_main: &self.cluster_main,
             light_skipped_busy: self.light_skipped_busy,
             light_overwritten_results: self.light_overwritten_results,
             presentation: self.presentation.as_ref(),
@@ -447,6 +461,10 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 
 #[derive(Serialize)]
 struct GpuBenchReport<'a> {
+    cluster_buffers: &'a [crate::particle_light_bench::clusters::Observation],
+    cluster_buffers_scope: &'static str,
+    cluster_overwritten_results: u64,
+    cluster_main: &'a [crate::particle_light_bench::clusters::MainObservation],
     /// Counter copies tagged with the originating render frame. No source/selected
     /// records are mapped. Timings are independent fresh render diagnostics, not
     /// frame-paired with these counters; final in-flight results may be absent.
@@ -672,6 +690,18 @@ impl WorkStats {
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)]
 pub struct BenchEffects<'w, 's> {
+    clusters: Option<Res<'w, crate::particle_light_bench::clusters::Mailbox>>,
+    cluster_settings: Option<Res<'w, bevy::light::cluster::GlobalClusterSettings>>,
+    cluster_views: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Camera,
+            &'static bevy::light::cluster::Clusters,
+        ),
+        With<Camera3d>,
+    >,
     gpu: Option<Res<'w, aestra_bevy::ParticleLightGpuStatistics>>,
     pool: Option<Res<'w, aestra_bevy::ParticleLightStatistics>>,
     representative: Option<Res<'w, aestra_bevy::TransientLightStatistics>>,
@@ -729,6 +759,11 @@ pub fn drive_gpu_bench(
     if plan.remaining == 0 {
         return;
     }
+    if let Some(clusters) = &effects.clusters {
+        let (observations, overwritten) = clusters.take();
+        plan.cluster_buffers.extend(observations);
+        plan.cluster_overwritten_results = overwritten;
+    }
     if effects
         .light_start
         .as_ref()
@@ -748,6 +783,32 @@ pub fn drive_gpu_bench(
             .extend(observations.into_iter().filter(|o| o.tick.measured));
     }
     let measured = plan.warmup_remaining == 0;
+    if measured
+        && effects.clusters.is_some()
+        && let Some(settings) = &effects.cluster_settings
+    {
+        let sample = plan.frames - plan.remaining;
+        let mut views = effects
+            .cluster_views
+            .iter()
+            .filter(|(_, camera, _)| camera.is_active)
+            .map(
+                |(entity, _, clusters)| crate::particle_light_bench::clusters::MainView {
+                    main_entity: entity.to_string(),
+                    dimensions: clusters.dimensions.to_array(),
+                    last_native_index_demand: clusters.last_frame_total_cluster_index_count,
+                },
+            )
+            .collect::<Vec<_>>();
+        views.sort_by(|a, b| a.main_entity.cmp(&b.main_entity));
+        plan.cluster_main
+            .push(crate::particle_light_bench::clusters::MainObservation {
+                sample,
+                gpu_clustering_enabled: settings.gpu_clustering.is_some(),
+                adaptive_index_target: settings.view_cluster_bindings_max_indices,
+                views,
+            });
+    }
     if measured && let Some(gpu) = &effects.gpu {
         let sample = plan.frames - plan.remaining;
         plan.particle_light_gpu
