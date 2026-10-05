@@ -1,0 +1,1651 @@
+{
+  "schema": 1,
+  "milestone": "F7E4B3B2C",
+  "date": "2026-10-05",
+  "base_commit": "60a4b79a",
+  "accepted": true,
+  "scope": "Bounded native owning-generation/lifecycle and feasible overflow recovery fixture, plus named private backend live allocations in the unchanged high-tier authored matrix. Not exact driver free instants, full create/free traces, total VRAM, enforced arbitrary-overload budgets, ordinary timing improvements or general Aestra multi-view/layer/finale certification.",
+  "source_inputs": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "0b4b47d5b24111d2cd017b1c73a94dc0ec748379519042513840c2301d1d4f1a"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "bfc8ef5e09b5d4a9d8c98c721883b2c0bc5ed854a30455adbf2c1c03f55b2ca2"
+    },
+    {
+      "path": "vendor/bevy_pbr/Cargo.toml",
+      "sha256": "9767ee44cf00d034b1d262a3151c4592a884297c058b4fee5cf79acba1128eed"
+    },
+    {
+      "path": "vendor/bevy_pbr/.gitattributes",
+      "sha256": "3094ebc22f8da0d45848b30fe0a20fbd0bf8097ca86d04e01b2780c33dad7ce8"
+    },
+    {
+      "path": "vendor/bevy_pbr/src/cluster/gpu.rs",
+      "sha256": "81746cc4b01457f41f4103c0a2f3fa28641e215e73bb83b864fa4165cdf581b5"
+    },
+    {
+      "path": "vendor/bevy_pbr/src/cluster/mod.rs",
+      "sha256": "b1dbe0697fdd265dc8f309fd3ea2f0b0f3160885f98dcf9935d5ab0c59a7db97"
+    },
+    {
+      "path": "vendor/bevy_pbr/AESTRA_PATCH.md",
+      "sha256": "cc3867bb9fd1750da7a04c665c66c0a7eb1e695a5521821d02da03a08ed414db"
+    },
+    {
+      "path": "vendor/bevy_pbr/UPSTREAM_SHA256.json",
+      "sha256": "42789244e4e64b6dc84844f59008e2916782fe0c12ad49b48dea2374ed0d75be"
+    },
+    {
+      "path": "bevy/aestra-bevy/tests/cluster_buffer_reuse.rs",
+      "sha256": "b7914c4d06ea84cfa437c034eb2ff29cac476f6e98e79ab00743232fe18406d4"
+    },
+    {
+      "path": "bevy/aestra-bevy/tests/particle_light_latency.rs",
+      "sha256": "0b235037a636413cd6adcdacf9f17b1391f2e2a3a814a6e1fc1c9e73c237895e"
+    },
+    {
+      "path": "benchmarks/fireworks/run-cluster-lifetimes.ps1",
+      "sha256": "3b936ad1b478426c28565668365309dafdd4cdd41632439313dddba6a5b71d07"
+    },
+    {
+      "path": "benchmarks/fireworks/run-particle-light-costs.ps1",
+      "sha256": "58203ae6de212d82e2e11ddb2efcd7b34ae8ee47a787b7598ecbc0a71b8a345c"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-cluster-private-allocations.ps1",
+      "sha256": "2af6b3e22eaaeddda1adb4d3a5cb90765a1ba8a867ad170a63720435f15bd935"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-particle-light-allocations.ps1",
+      "sha256": "144fca638cdc6cde01242a49d1526f10738bdcad23db9944f14330e96a41a4ec"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-particle-light-costs.ps1",
+      "sha256": "99d40a0dccd25342c162db9bc0c36f29af3131b896e2f4c30d5d05a2202c01ff"
+    }
+  ],
+  "dependency": {
+    "package": "bevy_pbr",
+    "version": "0.19.1",
+    "published_files": 150,
+    "modified_published_files": [
+      "src/cluster/gpu.rs",
+      "src/cluster/mod.rs"
+    ],
+    "unchanged_imported_files": 148,
+    "patch_is_transitive": false,
+    "newline_conversion_disabled_in_vendor_directory": true
+  },
+  "implementation": {
+    "completed_pending_reference_retired": true,
+    "failed_completion_discarded": true,
+    "duplicate_completion_ignored": true,
+    "max_metadata_staging_buffers_per_view": 8,
+    "metadata_staging_bytes_each": 48,
+    "pool_saturation": "Skip optional native adaptive metadata feedback only; cluster passes still run. Completed slots resume feedback.",
+    "gpu_to_cpu_private_cleanup": true,
+    "selected_particle_readback_added": false,
+    "blocking_gpu_wait_added": false,
+    "diagnostics": "Doc-hidden workspace-only read-only native IDs/bytes and weak readback probes; no retained/cloned GPU handles. Not a stable Aestra host API."
+  },
+  "raw_inputs": [
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-census-2026-10-05/manifest.json",
+      "sha256": "79e9a5a109961a8dd775eef30d102ef56b4bc12e3f419663f7b837423fd5e844"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-census-2026-10-05/summary.json",
+      "sha256": "18b1af2ff93fe7aac845d6a2075a9cbc6afb982ac31a692808b63f7572e13a17"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-census-2026-10-05/private-summary.json",
+      "sha256": "349d1a262f4576d58785ac63c697c98a6066b42af1e668b2fe3ccd955155ee61"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-lifetime-2026-10-05-run2/manifest.json",
+      "sha256": "c8391a211b5e0e43622fa10398bd1c8d094e0e9a7a98873a7789d623c1eb9294"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-lifetime-2026-10-05-run2/build.log",
+      "sha256": "f6c59a5762597d118996e8f3d1cd2eb293b542eb9a1ccd2b20ffe5579b10eaf4"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-lifetime-2026-10-05-run2/native_cluster_buffers_reuse_grow_reset_and_retire_per_view.log",
+      "sha256": "27ae9065f570d6c7757c99f7de74f892b0d98c93f07f7cc74a10fc2b4ee5ded2"
+    },
+    {
+      "path": "target/fireworks-f7/gpu-cluster-private-lifetime-2026-10-05-run2/native_private_generations_overflow_recover_and_retire.log",
+      "sha256": "bcc6757ca26424b0caa7b78567f5a0646ded21eda098f22e6d2bed0873eff7d7"
+    }
+  ],
+  "native_lifetime": {
+    "directory": "target/fireworks-f7/gpu-cluster-private-lifetime-2026-10-05-run2",
+    "binary_sha256": "e25a6265e1375b9aacbcd29df94296979483a4cdb71cac596f62507156e16bbb",
+    "source_inputs_unchanged": true,
+    "processes": [
+      {
+        "test": "native_cluster_buffers_reuse_grow_reset_and_retire_per_view",
+        "exit_code": 0,
+        "log_sha256": "27ae9065f570d6c7757c99f7de74f892b0d98c93f07f7cc74a10fc2b4ee5ded2",
+        "passed": true
+      },
+      {
+        "test": "native_private_generations_overflow_recover_and_retire",
+        "exit_code": 0,
+        "log_sha256": "bcc6757ca26424b0caa7b78567f5a0646ded21eda098f22e6d2bed0873eff7d7",
+        "passed": true
+      }
+    ],
+    "adapter_backend": "Native GPU required; adapter/backend not separately logged by this fixture.",
+    "pipelined": false,
+    "windows": 10,
+    "settling_updates_each": 24,
+    "twelve_update_windows": 9,
+    "recovered_steady_updates": 240,
+    "overflow": {
+      "lights": 64,
+      "clusters": 128,
+      "initial_z_slice_capacity": 32,
+      "initial_index_capacity": 64,
+      "recovered_z_slice_capacity": 512,
+      "recovered_index_capacity": 8192,
+      "recovered_index_demand": 8192,
+      "empty_index_demand": 1,
+      "expected_resize_warnings": 2,
+      "transient_lighting_corruption_possible": true,
+      "arbitrary_input_hard_memory_bound": false
+    },
+    "observed_staging_pool_peak_per_view": 2,
+    "generation_records": [
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 23,
+            "bytes": 384
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 32,
+        "index_capacity": 64
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 240,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "429v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 41,
+            "bytes": 384
+          },
+          {
+            "native_generation": 43,
+            "bytes": 512
+          },
+          {
+            "native_generation": 42,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 16,
+        "z_slice_capacity": 32,
+        "index_capacity": 64
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "429v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 48,
+            "bytes": 384
+          },
+          {
+            "native_generation": 50,
+            "bytes": 512
+          },
+          {
+            "native_generation": 49,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 16,
+        "z_slice_capacity": 32,
+        "index_capacity": 64
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 34,
+            "bytes": 6144
+          },
+          {
+            "native_generation": 25,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 24,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 512,
+        "index_capacity": 8192
+      },
+      {
+        "view": "356v0",
+        "steady_updates": 12,
+        "buffers": [
+          {
+            "native_generation": 128,
+            "bytes": 384
+          },
+          {
+            "native_generation": 130,
+            "bytes": 4096
+          },
+          {
+            "native_generation": 129,
+            "bytes": 48
+          }
+        ],
+        "scratchpad_logical_length": 128,
+        "z_slice_capacity": 32,
+        "index_capacity": 64
+      }
+    ],
+    "completed_submission_checkpoints": [
+      {
+        "phase": "baseline",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 384
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 55865056,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "overflow-recovered",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 6144
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 55945920,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "lights-removed",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 6144
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 55940880,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "two-views",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 2,
+            "bytes": 6528
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 2,
+            "bytes": 4608
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 2,
+            "bytes": 96
+          }
+        ],
+        "staging_allocations": 4,
+        "sampled_device_allocated_bytes": 63109584,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "second-inactive",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 6144
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 63107696,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "second-despawned",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 6144
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 60155712,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "cpu-mode",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 0,
+            "bytes": 0
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 0,
+            "bytes": 0
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 0,
+            "bytes": 0
+          }
+        ],
+        "staging_allocations": 0,
+        "sampled_device_allocated_bytes": 60079744,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "gpu-resumed",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 1,
+            "bytes": 384
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 1,
+            "bytes": 4096
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 1,
+            "bytes": 48
+          }
+        ],
+        "staging_allocations": 2,
+        "sampled_device_allocated_bytes": 60084928,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      },
+      {
+        "phase": "all-views-removed",
+        "allocations": [
+          {
+            "name": "clustering Z slice buffer",
+            "count": 0,
+            "bytes": 0
+          },
+          {
+            "name": "clustering scratchpad buffer",
+            "count": 0,
+            "bytes": 0
+          },
+          {
+            "name": "clustering Z slicing metadata buffer",
+            "count": 0,
+            "bytes": 0
+          }
+        ],
+        "staging_allocations": 0,
+        "sampled_device_allocated_bytes": 57440608,
+        "sampled_device_reserved_bytes": 268435456,
+        "submitted_work_completed": true
+      }
+    ],
+    "weak_readback_owners_retired": 4,
+    "final_named_cluster_and_staging_allocations": 0,
+    "completion_protocol": "Test-only asynchronous Queue::on_submitted_work_done callbacks driven by ordinary app updates, no PollType::Wait. Census after checkpoints establishes settled live named allocations, not exact driver free times."
+  },
+  "native_matrix": {
+    "directory": "target/fireworks-f7/gpu-cluster-private-census-2026-10-05",
+    "binary_sha256": "3e9b121c8471bc7f67310519c6b97a78cea37101e12701678c84dffc26b4f47b",
+    "processes": 18,
+    "native_exit_codes": [
+      0
+    ],
+    "accepted_public_gate": true,
+    "accepted_private_gate": true,
+    "asset_inputs": 96,
+    "asset_inputs_unchanged": true,
+    "tier": "high",
+    "resolution": [
+      960,
+      540
+    ],
+    "grid": [
+      17,
+      9,
+      24
+    ],
+    "history": "playback-only",
+    "initial_capacities": [
+      4096,
+      524288
+    ],
+    "adapter_caps": [
+      96,
+      0
+    ],
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER / Vulkan (recorded by authored reports)",
+    "show_admitted_children_each": 8413,
+    "thresholds_relaxed": false,
+    "private_scope": "Measured named private live allocations in the unchanged single-view high-tier hero/volley/show matrix. Existing workload/retirement/hash/public no-churn gates unchanged. Snapshot counts/bytes are not exact allocation generation IDs, full driver free history, total VRAM, hard limits on arbitrary overload or timing evidence.",
+    "private_rows": [
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "10ec20d4c6ec41b25d337a6de4260a5882363b1f3590370d29e04eb475c6ff0f",
+        "log_sha256": "18f0e9e73c2ecb2256982299b7f1e336db664e7c8dc759b77743bad1ea7c7e78"
+      },
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "3d8c8cd355fe90667e6ddd2b6a1c4217e0d4d028ba3d01bfa27f0e82a7852ecf",
+        "log_sha256": "8de086c828f9632dd4d60e562949f690fde6bd3821a4c7bbb2e8cdbc94d07f4e"
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "ebdbd9c6694a5fec0be8c05a6ad8d2d605f7f4ba9fd53a02dddf1b3b6883f4c0",
+        "log_sha256": "c5f04967dc21947b34a1e5ef28e7feebc670878071d78f37aa6ff92bf09f6a9f"
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "2082a67bce83e3a2deccd3bfe58d69d3ea9f2defcd30f90b26815c9c3e6798d7",
+        "log_sha256": "8cf69929586aaed22e1b9a73e96918129f9fd2c5704d3a0e050866b82867d497"
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "5e79597e34bed8d72c1477a0d742a93af9bbd812c9aa6e901a15b553f6a014ed",
+        "log_sha256": "de8f2da6a365a753d0a8458c166f1fda34cf803241da3e0a0acfde2a3a1befda"
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "6672a2f135fc5d03d548c71c01134da60c3c8772d4b5a73da258ba0d140b12c4",
+        "log_sha256": "2b7f88dc97d8536ae195dea581b4667239b6c9f13c6a646ea1b82537d2de18df"
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "6f4b818f10804ff1c48aa522f35743d8954a667b5024725121a7ccbad3d359d0",
+        "log_sha256": "72185186a3e7199fd2a663ceb446016b03d9894ee68740c1d5dfeaf3e570f82a"
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "64687cee6a92a4ab6282ad5a7a76e4c19823d0bb9e9c2e7ce15a950394268fae",
+        "log_sha256": "fba75f0578e494c5f3822f2c6b8f99f0e59cd032cd82b746739004f718b09e5e"
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "fe0cd4b5d2f4e1ebe9aae72636d957a971cf799980cf343ecb4983f6d80cb748",
+        "log_sha256": "b1add9ad285bc32ac958775ed137e0f96782753b2a7b7ae31621d5029c9a4bb5"
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "0cef51e9fb94b7b537720b5527c86ea66eff9b45b759ce886c77345148bce7a8",
+        "log_sha256": "a9af22df8757d0fdb96ec434fab664da81d6ac16e99820f3a17fcba0fa9a43d2"
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "01997dffe58a2e1fd6c2847d675f049f49a97e603838b4d36922af0d8a2e0336",
+        "log_sha256": "2987fce5be5c9ab45e00226d2417e3cca133852a98101d915d3b5a65e5df4de8"
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "9fe127459ca31b18c7e967911223f578b069ad80cd399bc05f49eba7c2029d75",
+        "log_sha256": "46c70c8dedf44dcdb4765cb44181b47d5c919a3daf00348b43001c98ae7916c0"
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "68994c9eec18b22848607dc9352906dfaf7d69c1dead82148375401967f70383",
+        "log_sha256": "012d4085f0c6ea7141258b9e9fb52a4bb9173e0cc90da6ad90f00a5c84e8138b"
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "fb35a9f4f236f59cd7a7fb1aa3954d320e6a5d4a145d6f7ee508dff0482f3c1d",
+        "log_sha256": "73b2839c3e49b47d13a8836a60d81a612fcb30c68130f5b5256c3f42fe873c06"
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "e30997c86d7e03f5f517faecc0fc61a1af74485cc0d58d1fe251b66f57a052d5",
+        "log_sha256": "ad2e59fbac4d4b725d3b53bdc825ea2395c4030d2a1efde50a4823024528234b"
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "a6aa9d97eaae2982a28b8b10f9c186438f3055668045deb07c436255b69f70cd",
+        "log_sha256": "60fc970470d137ef344cccff2f1451e2de240e62d19ef45e71b96ab18b06fcbe"
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "222c3add773023d441bc614d08e368f467359eda84348ed07da3084525220fbc",
+        "log_sha256": "83426fe72777623f184d51f22840e7565b86c38b3f51eafe3c8a7e85635c6e48"
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 49152,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "2c7284a173f56dffd3950e8fcb78e6e4e9dac7c6f1ba8483b057836204470fa1",
+        "log_sha256": "5917a9ce7a5626e2d32b13290465ee349ddd1a1371fe148aa90ded2bd47e7d30"
+      }
+    ],
+    "public_rows": [
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 114461504,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 118679312,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 127120432,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 123018672,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "gpu",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 128088528,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "control",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 127851168,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 118622688,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 114460176,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 127087328,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 123032800,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "control",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 130656576,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "gpu",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 130355264,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 120912368,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 114442752,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "control",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 127120368,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "gpu",
+        "observations": 598,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 0,
+        "allocated_peak": 127087312,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "gpu",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 127584912,
+        "reserved_peak": 268435456
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "control",
+        "observations": 1678,
+        "index_replacements": 0,
+        "offset_replacements": 0,
+        "global_light_replacements": 2,
+        "allocated_peak": 129109744,
+        "reserved_peak": 268435456
+      }
+    ]
+  },
+  "paced_registration": {
+    "directory": "target/fireworks-f7/gpu-cluster-private-registration-2026-10-05",
+    "harness_exit_code": 0,
+    "binary_sha256": "3a0b0603b62d05857a8770b921a2063d3c970e1b45ef272199ae2ccb1b6b8b48",
+    "pipelined": true,
+    "history": "playback-only",
+    "gpu_final_image_offsets": [
+      {
+        "speed_m_s": 150,
+        "samples": 10,
+        "absolute_equivalent_frames_p95": 0.01498062546476886
+      },
+      {
+        "speed_m_s": 25,
+        "samples": 10,
+        "absolute_equivalent_frames_p95": 0.006632587031123904
+      },
+      {
+        "speed_m_s": 75,
+        "samples": 10,
+        "absolute_equivalent_frames_p95": 0.009151091271915046
+      }
+    ],
+    "gpu_readback_windows": [
+      {
+        "speed_m_s": 150,
+        "counter_min": 336,
+        "counter_max": 336,
+        "additional_submissions": 0,
+        "pending": 0,
+        "staging_bytes": 0
+      },
+      {
+        "speed_m_s": 25,
+        "counter_min": 108,
+        "counter_max": 108,
+        "additional_submissions": 0,
+        "pending": 0,
+        "staging_bytes": 0
+      },
+      {
+        "speed_m_s": 75,
+        "counter_min": 222,
+        "counter_max": 222,
+        "additional_submissions": 0,
+        "pending": 0,
+        "staging_bytes": 0
+      }
+    ],
+    "readback_scope": "Submission counters are cumulative across earlier portable async history. No additional selected-light submissions during measured GPU windows; not a zero lifetime counter.",
+    "comparison_directory": "target/fireworks-f7/gpu-cluster-reuse-registration-2026-10-05",
+    "pngs_compared": 107,
+    "identical_sha256": 107,
+    "raw_files": [
+      {
+        "name": "150-async-12.png",
+        "sha256": "1749d8e79487d85a6768fca946bf86fff6d7b86b9fc26c265b270af33fb1f617"
+      },
+      {
+        "name": "150-async-16.png",
+        "sha256": "db9bc306bff5b133216cc3e3e2a7d3faff7ade178de1af09d43c84148de45107"
+      },
+      {
+        "name": "150-async-20.png",
+        "sha256": "dba8159199d25f52cb04858b28afeadebd5b8b78c5434e038ac46b019cb31f98"
+      },
+      {
+        "name": "150-async-24.png",
+        "sha256": "a754188bb2c9dbf944d6c5057a0e1c608ee06b4f18fbce8b2f184b00a1b3399a"
+      },
+      {
+        "name": "150-async-28.png",
+        "sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe"
+      },
+      {
+        "name": "150-async-32.png",
+        "sha256": "a03d8582d8b99fe5e00ca9f4b6e8da4454cfd54ead7a830ac8e6c6934db23815"
+      },
+      {
+        "name": "150-async-36.png",
+        "sha256": "7cc722f58c2eaf756af4d4379b599747f3d0a23b95f90d8463e6e538ba900d4b"
+      },
+      {
+        "name": "150-async-40.png",
+        "sha256": "dcba5a7a966382d17ea68da7b340ff27baf5b9fa8c97b2108f73939acbc62ba9"
+      },
+      {
+        "name": "150-async-44.png",
+        "sha256": "92f3c2b29079ca8d4780a653fd2e2103b0fce8b14bd0773b5405c2c2a4a157bb"
+      },
+      {
+        "name": "150-async-48.png",
+        "sha256": "27e1eda1b4dd6c16218d44fc1d8f18f4c49f4635340472a1edb9326017fd2bf0"
+      },
+      {
+        "name": "150-control-12.png",
+        "sha256": "abe3566ead09df56825ebd60ad67640f0f227ccca89ae30dbb2d71e0ddf88fcc"
+      },
+      {
+        "name": "150-control-16.png",
+        "sha256": "106cdba6fa35c5b4f8f7a2306538d238a5866145ac88ee68b1525da317d278b4"
+      },
+      {
+        "name": "150-control-20.png",
+        "sha256": "55d2e9a1488887575d002399201d7ea1af4b558e2803e2180d21dc65efedda18"
+      },
+      {
+        "name": "150-control-24.png",
+        "sha256": "67f2f1de9d4652ddec6b3ae40fbf1f4bf6ad0d5bf6ce6fae33a10746db1cffee"
+      },
+      {
+        "name": "150-control-28.png",
+        "sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12"
+      },
+      {
+        "name": "150-control-32.png",
+        "sha256": "1ab0d7ca03268d2602700e7bcacde73620e6d39b4e1ced011dcfd9040f56ebbd"
+      },
+      {
+        "name": "150-control-36.png",
+        "sha256": "dc2512d9f9e8313245e1495984dde1efc76bae86db535690fb24df624a1bb456"
+      },
+      {
+        "name": "150-control-40.png",
+        "sha256": "82465c55c6f512b1be01b45481329d0294e3b881f88be716133ee553c8ffddb4"
+      },
+      {
+        "name": "150-control-44.png",
+        "sha256": "c64fe0716b1ae0f2a2d97a80d5d6a6922ef0dc30c7cac8ad2ebd37948541ada4"
+      },
+      {
+        "name": "150-control-48.png",
+        "sha256": "185f4ade0ab6b6d417744dbfa61b57accd98dba4b374f2cde0722c4aa6dd483f"
+      },
+      {
+        "name": "150-disabled.png",
+        "sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7"
+      },
+      {
+        "name": "150-gpu-12.png",
+        "sha256": "fa6f191e57a7b0f3dba52f7335fdb478c9ba6842719872c3b275489cc81324f2"
+      },
+      {
+        "name": "150-gpu-16.png",
+        "sha256": "f944457f5dd489617adeec50aa73a5a890ff82b22385b724e3cf67d971b71f32"
+      },
+      {
+        "name": "150-gpu-20.png",
+        "sha256": "e4da82882ce3287d4e244ef9dc38108e44bb588bd8ee71244972cf17bdf1b756"
+      },
+      {
+        "name": "150-gpu-24.png",
+        "sha256": "9b1efdc19bda40be9ff849d81fef10c90275b96ac2f5cbfcdd2699105d488329"
+      },
+      {
+        "name": "150-gpu-28.png",
+        "sha256": "7dbcb8489f63cd612a689cd2a2bd8bfa688c5b46eafd2175252d6ee40f9c9fbd"
+      },
+      {
+        "name": "150-gpu-32.png",
+        "sha256": "ee39c0a83826e9b7b52e378a9dd51404a9851116ac51f94bd02c46e099f3ae1a"
+      },
+      {
+        "name": "150-gpu-36.png",
+        "sha256": "d4272c4d89620bcecf03f6cd5def49725ff12aca7db4c3df850ff9b82cdb346e"
+      },
+      {
+        "name": "150-gpu-40.png",
+        "sha256": "6928c2385e4552ee202649292cc7b0ca7922a2b9e3b38b0a84231967ec268290"
+      },
+      {
+        "name": "150-gpu-44.png",
+        "sha256": "7db7cb522976aaa4490a56561afd2cafc73bcfa05b855c920c66adc0c9a53f0b"
+      },
+      {
+        "name": "150-gpu-48.png",
+        "sha256": "f214ce2c6577b3620082f66860df57292b631b030db36846342a4e6f6f29315e"
+      },
+      {
+        "name": "150-removed.png",
+        "sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      },
+      {
+        "name": "25-async-12.png",
+        "sha256": "141d96a68ba0a60290d616387d7c190f5a27316571f7700fe680c5a1f707734f"
+      },
+      {
+        "name": "25-async-16.png",
+        "sha256": "7b95da6d31f40db7f14fbb6d8503ebf4cf74bdbad082c4675cb718aaab60d2e9"
+      },
+      {
+        "name": "25-async-20.png",
+        "sha256": "bb00936758f44f6e1882f70883c1d15a9c94eca81cf7d5d345c32a5669203df7"
+      },
+      {
+        "name": "25-async-24.png",
+        "sha256": "c2043964396690963c810d92844df27cf49ef6196ad7b8572a79597af9ebb9e4"
+      },
+      {
+        "name": "25-async-28.png",
+        "sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636"
+      },
+      {
+        "name": "25-async-32.png",
+        "sha256": "577fdc6195d23bb2ba8d5c09176dc51b05315e8b3069ecf484b61c0e6acc371b"
+      },
+      {
+        "name": "25-async-36.png",
+        "sha256": "67f314c4a192c8ff51826de812f2129ba168234a208eb4eb5e70692b8007eb97"
+      },
+      {
+        "name": "25-async-40.png",
+        "sha256": "3eb87a1b088c7c26ce579ebfdec6b39985882f8d2d7b8dd5c9396847b894ec43"
+      },
+      {
+        "name": "25-async-44.png",
+        "sha256": "966f91aab1faa1e9cb30a9162f263ab6fecc3207f762d1e1929453c19481860d"
+      },
+      {
+        "name": "25-async-48.png",
+        "sha256": "50cd2ffe111a989002af4eae560e92c5ecd4c7f584d4e3bfd17b6dd5978c4fae"
+      },
+      {
+        "name": "25-control-12.png",
+        "sha256": "72f665d7ef743a83ce20054a7a979b5b1bac498cccfa11db314a461950bbf49c"
+      },
+      {
+        "name": "25-control-16.png",
+        "sha256": "38148ce8fd73423fdac6b752136f9d497fc7e45b1756f35eb30855c9a1454fc1"
+      },
+      {
+        "name": "25-control-20.png",
+        "sha256": "c8041e0395d6967d80abcfaed18d779a3bf91e5621e3481fbf770e75b5363cfa"
+      },
+      {
+        "name": "25-control-24.png",
+        "sha256": "824dd1bda95f409bc733bc025951902cbec88d6a2f2d2f1e894023cd4704f592"
+      },
+      {
+        "name": "25-control-28.png",
+        "sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa"
+      },
+      {
+        "name": "25-control-32.png",
+        "sha256": "db7aa84a2581b566baab1fc95612b27e90b7d95335772b858a3892470e0f6a2e"
+      },
+      {
+        "name": "25-control-36.png",
+        "sha256": "2e0d5809377335299d86fa5bac3cece435137e80a24ac3c1ca54b6ae30fa772e"
+      },
+      {
+        "name": "25-control-40.png",
+        "sha256": "649d62569fabaa91875fd92feac8ccebcf037559ac4a6295487ad3d0c0123e16"
+      },
+      {
+        "name": "25-control-44.png",
+        "sha256": "febcb25ae780f276b56aef850951fc1f51f1834f634fb58379139f828b86b99e"
+      },
+      {
+        "name": "25-control-48.png",
+        "sha256": "27502627a686b43b7515195c1aa34bb586fa8f96bc5b92ca88d8366cb443cc36"
+      },
+      {
+        "name": "25-disabled.png",
+        "sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7"
+      },
+      {
+        "name": "25-gpu-12.png",
+        "sha256": "4b719c2df70719fe58655284ff924543cd583e9b06184a993c0876fc26743bb9"
+      },
+      {
+        "name": "25-gpu-16.png",
+        "sha256": "cb085527864100e4dbfc049893b757b1802e4d7ca17278b0b8ec21ac2b636235"
+      },
+      {
+        "name": "25-gpu-20.png",
+        "sha256": "ef7dd27c75a91693d6188e80912b19ffb88c54b2e27aed4a9b829c7ef8511fcb"
+      },
+      {
+        "name": "25-gpu-24.png",
+        "sha256": "cfcd4c8bb732e5e19e8c7cfe2e1473b175f6062d31886be46ac7668c8678bf1d"
+      },
+      {
+        "name": "25-gpu-28.png",
+        "sha256": "2533c9a802067cd0493b64ac72b8c62b831d69e5ac5738b6e9baf86f8c0ed869"
+      },
+      {
+        "name": "25-gpu-32.png",
+        "sha256": "3a37892906e6248d91c41dc62bec3f5ab088cff28ad377a038e93db561dc635f"
+      },
+      {
+        "name": "25-gpu-36.png",
+        "sha256": "f0c2db697b2dde0025e9274093fa5171ad4f863ded6b2f11c6b69e026fc4ad34"
+      },
+      {
+        "name": "25-gpu-40.png",
+        "sha256": "4b6554a2f9cf32b396d619bcc0c1d14bab9b9390d929b0a6b58d2491fe3af74d"
+      },
+      {
+        "name": "25-gpu-44.png",
+        "sha256": "0c001a32eb3a7a737b81c6d345176b351f44c0a0467f849016729faf057f19dd"
+      },
+      {
+        "name": "25-gpu-48.png",
+        "sha256": "5ea781322dcd363351c21f7691c3dd1e783b1f7529bc281cc31f55d944e61e36"
+      },
+      {
+        "name": "25-removed.png",
+        "sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      },
+      {
+        "name": "75-async-12.png",
+        "sha256": "fc95ea54efe696472a87aa5f1c388ada0f844db8a180b568af3a9a03f7885477"
+      },
+      {
+        "name": "75-async-16.png",
+        "sha256": "fc2bf5edf5bcf8cdc3b686db1746ec38beca82abd10eeab1bebef7efb526e62f"
+      },
+      {
+        "name": "75-async-20.png",
+        "sha256": "9adb9db42466161568fd8b3a8f53cad7f99384dba540b5cc80a5193f5a8e458a"
+      },
+      {
+        "name": "75-async-24.png",
+        "sha256": "525b561418cab9ccc839b734af271d7ad8a78bd7367e4e6d5cd696a2f9f1557b"
+      },
+      {
+        "name": "75-async-28.png",
+        "sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790"
+      },
+      {
+        "name": "75-async-32.png",
+        "sha256": "53a5ddc07400ab53f8e3724df5ab8651af65ba67876c5c4f9c0b53c8a4a59a13"
+      },
+      {
+        "name": "75-async-36.png",
+        "sha256": "1230cb28d2e7eb664e5be297b431adb1e64b0f28cc3d07f812e8bc74f76a90a8"
+      },
+      {
+        "name": "75-async-40.png",
+        "sha256": "aaef2d8a7b55ec8bef76dfe71a51338f6f8f5bd785ff087095185c62be6a27cf"
+      },
+      {
+        "name": "75-async-44.png",
+        "sha256": "d2474a3cb47dd8692cbfe0c0c0f2e011cbc44655dcda14bced36eb1fd326b868"
+      },
+      {
+        "name": "75-async-48.png",
+        "sha256": "0a2f46a952f1d7226fb2cd34af0d2e508e4d3df1681f0a358a7d3f6c43215bfb"
+      },
+      {
+        "name": "75-control-12.png",
+        "sha256": "92ee75ecdd24cab6f7b8b639e230d9774fa0617447a72a25155f26460112b99e"
+      },
+      {
+        "name": "75-control-16.png",
+        "sha256": "b72a5cf9dea84be01964c22c7cb8609751d64bd6500bf19c7683b7ec535b1a9a"
+      },
+      {
+        "name": "75-control-20.png",
+        "sha256": "c259b3cc95eb1dcfcf5f2e9112a4dd7a7adfa291741e5835ac1f0cbd6ac1f5f0"
+      },
+      {
+        "name": "75-control-24.png",
+        "sha256": "f6ccc22f18fdd9d1ac847a9b1fa6d379e372ec77ed88dd424ab6f2a277740ba0"
+      },
+      {
+        "name": "75-control-28.png",
+        "sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb"
+      },
+      {
+        "name": "75-control-32.png",
+        "sha256": "c8e07ce767a43d354b053d60d98e4af763cc4c6ec36ced614cdc79ccdbdafde2"
+      },
+      {
+        "name": "75-control-36.png",
+        "sha256": "bde951f95aae36b573dd27c6137bdba0e6183d427c58d0c55dfa93ffbbc66a8f"
+      },
+      {
+        "name": "75-control-40.png",
+        "sha256": "4b0b5c6ebc2b7e8746415c76d2f43ea472bf9a9bbd4bf476175193c3eb340fb9"
+      },
+      {
+        "name": "75-control-44.png",
+        "sha256": "eff0eeea939de7f23646ff8ee77a2cf89ffb5a64a5958f1babe84f7b923b8e96"
+      },
+      {
+        "name": "75-control-48.png",
+        "sha256": "60a278a26a1e4ec7cf67c69dfdbb5481d2f7b6626c55b6e7ff9fdd8ce8c46b1d"
+      },
+      {
+        "name": "75-disabled.png",
+        "sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7"
+      },
+      {
+        "name": "75-gpu-12.png",
+        "sha256": "538c952528fa9ad7d1f6067f4972429fe85a02bf288fcc8a8f665d6f8896aa12"
+      },
+      {
+        "name": "75-gpu-16.png",
+        "sha256": "b56c9b068e623fbbb089a2e354d180be979a18ab9ed723025c83f196d64fd4ec"
+      },
+      {
+        "name": "75-gpu-20.png",
+        "sha256": "903f641514822102ff1bb5821e32cacfd24cb6d3db9d9ffaf21e3969aeda55a5"
+      },
+      {
+        "name": "75-gpu-24.png",
+        "sha256": "70491804da2cdeffea3b0558985d26520d4ded41e8542e9bbc07637a858ab7ab"
+      },
+      {
+        "name": "75-gpu-28.png",
+        "sha256": "893f1831369b4a097b62027bc70b0c5b783c96c0bbb0308f40bd55f9e01dbcec"
+      },
+      {
+        "name": "75-gpu-32.png",
+        "sha256": "dc04874e8a383c234bda5a0ff0ce682468a60a24cc14b78b4868f5e1f701cea6"
+      },
+      {
+        "name": "75-gpu-36.png",
+        "sha256": "eafddcca5f6097550448452ef7255bd5723f3fe85d525e2299a33468a78dd6f2"
+      },
+      {
+        "name": "75-gpu-40.png",
+        "sha256": "6fd95f6bd6d1d34a1525731b815f0afe47360cad2e05d143ebc29b0e0fd6d9be"
+      },
+      {
+        "name": "75-gpu-44.png",
+        "sha256": "aaf746884c109265286559707ea06adb06386c35cae9bcb2d5977bd8df840a2a"
+      },
+      {
+        "name": "75-gpu-48.png",
+        "sha256": "29b13dccd827b91750f5dd260591349a812a315122f6bc5c118f4123a40fb258"
+      },
+      {
+        "name": "75-removed.png",
+        "sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+      },
+      {
+        "name": "all-roots-removed.png",
+        "sha256": "a11204302146a00185e0541d91807ffe1cfb9a2439fae5de4506a2dc666e8fcc"
+      },
+      {
+        "name": "budget-recovered.png",
+        "sha256": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817"
+      },
+      {
+        "name": "budget-rejected.png",
+        "sha256": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39"
+      },
+      {
+        "name": "cluster-retirement.csv",
+        "sha256": "2d831841f8cd10968648b76a7ebde5b4108072f4f16c4d44515f0a470eeac7d9"
+      },
+      {
+        "name": "empty-selection.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      },
+      {
+        "name": "far-world-origin.png",
+        "sha256": "2cfde9980a165b8115e23220630c561d5fb269d938abb40a7391b26ba63d0fbf"
+      },
+      {
+        "name": "hierarchy-hidden.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      },
+      {
+        "name": "host-only-baseline.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      },
+      {
+        "name": "layer-rejected.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      },
+      {
+        "name": "lifecycle.csv",
+        "sha256": "1a5265e7f491da15a21e49a125f0237eddcb27f771e004babe39a535791a67be"
+      },
+      {
+        "name": "manifest-rejected.png",
+        "sha256": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39"
+      },
+      {
+        "name": "metadata.csv",
+        "sha256": "2ff6ed0d5316002abf023b8da4878d9bbf6b153ecadba85d2244061cd3460c0b"
+      },
+      {
+        "name": "multiple-roots.png",
+        "sha256": "05d44f83690b6b70567b92123f8eb64928d8cb6f4154010b1602ae5819baadcc"
+      },
+      {
+        "name": "one-root-removed.png",
+        "sha256": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817"
+      },
+      {
+        "name": "registration.csv",
+        "sha256": "93fa6eba58ba9c64c73f215c74ef02c5e80035837be72367dcf45bccbcf4bd6b"
+      },
+      {
+        "name": "telemetry.csv",
+        "sha256": "8d257550560f4e3e15aebb4f26eb26accc260dda4f42d7292b5680f46eca401d"
+      }
+    ]
+  },
+  "verification": {
+    "dependency_unit_tests": 4,
+    "staging_ledger_reuse_cycles": 20000,
+    "failure_coverage": "Deterministic staging ledger success/failure/duplicate completion, not injected native device loss or failed map.",
+    "aestra_bevy_unit_tests": 55,
+    "viewer_unit_tests": 95,
+    "viewer_ignored": 12,
+    "all_targets_clippy": [
+      "aestra-viewer",
+      "aestra-bevy",
+      "bevy_pbr"
+    ],
+    "workspace_all_targets_check": true,
+    "workspace_format_check": true,
+    "modified_vendor_gpu_format_check": true,
+    "allocation_cost_and_private_validator_positive_negative_controls": true
+  },
+  "next": "F7F host-controlled lighting quality policy, with medium/low repeated costs and receiver-image gates; then F8.3 lit smoke.",
+  "remaining": [
+    "Exact backend/driver allocation/free history, total VRAM and hard bounds on arbitrary overload",
+    "Injected native device-loss/map failure recovery qualification",
+    "General Aestra particle-light multiple views and layers",
+    "Medium/low repeated costs and receiver images",
+    "Additional hardware/cadences, natural-star art and production-finale certification",
+    "Editor viewport lighting and lit particle/volume smoke"
+  ]
+}

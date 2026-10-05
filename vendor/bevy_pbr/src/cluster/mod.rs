@@ -26,6 +26,10 @@ use crate::{MeshPipeline, RenderViewLightProbes};
 
 pub(crate) mod gpu;
 
+// Workspace-only read-only qualification hook; not an Aestra host API.
+#[doc(hidden)]
+pub use gpu::{aestra_cluster_diagnostics, AestraClusterDiagnostics, AestraClusterReadbackProbe, AestraClusterReadbackSnapshot};
+
 // NOTE: this must be kept in sync with the same constants in
 // `mesh_view_types.wgsl`.
 pub const MAX_UNIFORM_BUFFER_CLUSTERABLE_OBJECTS: usize = 204;

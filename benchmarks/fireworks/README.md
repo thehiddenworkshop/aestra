@@ -31,7 +31,12 @@ F7E4B3B2B now [reuses native per-view containers before allocation](particle-lig
 all 18 fresh high-tier runs pass the unchanged no-churn/workload/retirement gates, and 107 paced
 registration images match the previous accepted run. A pinned root Cargo patch supplies the
 localized Bevy fix; external consumers need their own patch or a fixed upstream version.
-Private/in-flight/oversized-overflow qualification remains next, not a total-memory certification.
+F7E4B3B2C now [qualifies bounded private lifetimes and oversized recovery](cluster-private-lifetime-2026-10-05.md):
+completed/failed staging ownership is retired, metadata pools are bounded, and GPU/CPU switching
+releases unused private state. Native generation/completed-submission checkpoints and all 18
+authored private-count gates pass; 107 paced images remain identical. Exact driver free history,
+arbitrary-overload hard limits and total VRAM are not certified. Next: F7F quality policy and
+medium/low cost/image gates, then F8.3 lit smoke.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 

@@ -47,7 +47,7 @@
 //!
 //! [Hillis-Steele scan]: https://en.wikipedia.org/wiki/Prefix_sum#Algorithm_1:_Shorter_span,_more_parallel
 
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use std::sync::Mutex;
 
 use bevy_app::{App, Plugin};
@@ -81,10 +81,10 @@ use bevy_render::{
     extract_resource::{ExtractResource, ExtractResourcePlugin},
     render_resource::{
         BindGroup, BindGroupEntry, BindGroupLayoutEntries, Buffer, BufferBindingType,
-        BufferDescriptor, BufferInitDescriptor, BufferUsages, ColorTargetState, ColorWrites,
-        CommandEncoder, ComputePassDescriptor, ComputePipeline, Extent3d, IndexFormat, LoadOp,
-        MapMode, Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-        RenderPipeline, ShaderStages, ShaderType, SpecializedComputePipeline,
+        BufferDescriptor, BufferId, BufferInitDescriptor, BufferUsages, ColorTargetState,
+        ColorWrites, CommandEncoder, ComputePassDescriptor, ComputePipeline, Extent3d, IndexFormat,
+        LoadOp, MapMode, Operations, PipelineCache, RenderPassColorAttachment,
+        RenderPassDescriptor, RenderPipeline, ShaderStages, ShaderType, SpecializedComputePipeline,
         SpecializedComputePipelines, SpecializedRenderPipeline, SpecializedRenderPipelines,
         StorageBuffer, StoreOp, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         UninitBufferVec, VertexAttribute, VertexStepMode, binding_types,
@@ -116,6 +116,10 @@ use crate::{
 const ALLOCATION_WORKGROUP_SIZE: u32 = 256;
 /// The workgroup size of the `cluster_z_slice.wgsl` shader.
 const Z_SLICING_WORKGROUP_SIZE: u32 = 64;
+
+// Bound native metadata copies, not particle transport. When all slots are in
+// flight, clustering still runs; only its optional adaptive feedback is skipped.
+const MAX_METADATA_STAGING_BUFFERS: usize = 8;
 
 /// A plugin that enables GPU clustering of lights and other objects.
 pub struct GpuClusteringPlugin;
@@ -172,6 +176,12 @@ impl Plugin for GpuClusteringPlugin {
             )
             .add_systems(
                 Render,
+                retire_inactive_gpu_clustering
+                    .after(upload_view_gpu_clustering_buffers)
+                    .in_set(RenderSystems::PrepareResources),
+            )
+            .add_systems(
+                Render,
                 prepare_clustering_bind_groups
                     .in_set(RenderSystems::PrepareBindGroups)
                     .run_if(gpu_clustering_is_enabled),
@@ -184,6 +194,31 @@ impl Plugin for GpuClusteringPlugin {
                     .run_if(gpu_clustering_is_enabled),
             );
     }
+}
+
+// This must also run when GPU clustering is disabled: otherwise the per-view
+// readback map (including free staging buffers) keeps removed views alive while
+// CPU clustering runs. Never remove the CPU's public ViewClusterBindings here.
+fn retire_inactive_gpu_clustering(
+    mut commands: Commands,
+    views: Query<
+        (Entity, &MainEntity, Option<&ExtractedClusterConfig>),
+        With<ViewGpuClusteringBuffers>,
+    >,
+    settings: Res<GlobalClusterSettings>,
+    mut readbacks: ResMut<RenderViewClusteringReadbackData>,
+) {
+    let mut active = MainEntityHashSet::default();
+    for (entity, main, config) in &views {
+        if settings.gpu_clustering.is_some() && config.is_some() {
+            active.insert(*main);
+        } else {
+            commands
+                .entity(entity)
+                .remove::<(ViewGpuClusteringBuffers, ViewClusteringBindGroups)>();
+        }
+    }
+    readbacks.views.retain(|entity, _| active.contains(entity));
 }
 
 /// The texture that we bind when performing the raster passes.
@@ -308,12 +343,16 @@ impl ViewGpuClusteringBuffers {
         cluster_metadata_buffer.add_usages(BufferUsages::COPY_SRC | BufferUsages::INDIRECT);
         cluster_metadata_buffer.set_label(Some("clustering Z slicing metadata buffer"));
 
+        let mut z_slices_buffer =
+            UninitBufferVec::new(BufferUsages::STORAGE | BufferUsages::COPY_DST);
+        z_slices_buffer.set_label(Some("clustering Z slice buffer"));
+        let mut scratchpad_offsets_and_counts_buffer =
+            UninitBufferVec::new(BufferUsages::STORAGE | BufferUsages::COPY_DST);
+        scratchpad_offsets_and_counts_buffer.set_label(Some("clustering scratchpad buffer"));
         ViewGpuClusteringBuffers {
             cluster_metadata_buffer,
-            z_slices_buffer: UninitBufferVec::new(BufferUsages::STORAGE | BufferUsages::COPY_DST),
-            scratchpad_offsets_and_counts_buffer: UninitBufferVec::new(
-                BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            ),
+            z_slices_buffer,
+            scratchpad_offsets_and_counts_buffer,
         }
     }
 }
@@ -342,13 +381,49 @@ struct ViewClusteringReadbackData {
     /// can grow based on the results of GPU readback.
     max_index_list_capacity: usize,
     /// Buffers corresponding to GPU readback operations in progress.
-    metadata_staging_pending_buffers: Vec<Buffer>,
-    /// Buffers corresponding to GPU readback operations that are finished.
-    ///
-    /// These buffers are ready for reuse.
-    metadata_staging_free_buffers: Vec<Buffer>,
+    staging: MetadataStagingPool<Buffer>,
     /// Statistics about GPU clustering that the GPU calculated last frame.
     last_frame_statistics: Option<ViewClusteringLastFrameStatistics>,
+}
+
+// The generic ledger allows deterministic cap/completion/failure regressions
+// without a GPU. Entries are owning handles in production, not just counters.
+struct MetadataStagingPool<T> {
+    pending: Vec<T>,
+    free: Vec<T>,
+}
+
+impl<T: Clone> MetadataStagingPool<T> {
+    fn new() -> Self {
+        Self {
+            pending: vec![],
+            free: vec![],
+        }
+    }
+
+    fn acquire(&mut self, create: impl FnOnce() -> T) -> Option<T> {
+        if self.pending.len() >= MAX_METADATA_STAGING_BUFFERS {
+            return None;
+        }
+        let buffer = self.free.pop().unwrap_or_else(create);
+        self.pending.push(buffer.clone());
+        Some(buffer)
+    }
+
+    fn complete(&mut self, buffer: T, same: impl Fn(&T, &T) -> bool, recycle: bool) {
+        // Remove the owning in-flight reference on EVERY terminal path.
+        // Unknown/duplicate callbacks cannot introduce a duplicate free slot.
+        if let Some(index) = self
+            .pending
+            .iter()
+            .position(|pending| same(pending, &buffer))
+        {
+            self.pending.swap_remove(index);
+            if recycle {
+                self.free.push(buffer);
+            }
+        }
+    }
 }
 
 /// Statistics about GPU clustering that the GPU calculated last frame.
@@ -373,24 +448,20 @@ impl ViewClusteringReadbackData {
         ViewClusteringReadbackData {
             z_slice_list_capacity: settings.initial_z_slice_list_capacity,
             max_index_list_capacity: settings.initial_index_list_capacity,
-            metadata_staging_pending_buffers: vec![],
-            metadata_staging_free_buffers: vec![],
+            staging: MetadataStagingPool::new(),
             last_frame_statistics: None,
         }
     }
 
-    fn get_or_create_staging_buffer(&mut self, render_device: &RenderDevice) -> Buffer {
-        let staging_buffer = self.metadata_staging_free_buffers.pop().unwrap_or_else(|| {
+    fn get_or_create_staging_buffer(&mut self, render_device: &RenderDevice) -> Option<Buffer> {
+        self.staging.acquire(|| {
             render_device.create_buffer(&BufferDescriptor {
                 label: Some("clustering metadata staging buffer"),
                 size: ClusterMetadata::min_size().into(),
                 usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             })
-        });
-        self.metadata_staging_pending_buffers
-            .push(staging_buffer.clone());
-        staging_buffer
+        })
     }
 
     /// Updates this [`ViewClusteringReadbackData`] with new information from
@@ -437,6 +508,75 @@ impl ViewClusteringReadbackData {
             )),
         });
     }
+}
+
+/// Workspace-only snapshot of owning handles, not backend allocations or fences.
+/// Missing resources and poisoned locks are unknown, never zero. No GPU handles
+/// are cloned or retained by the snapshot. Call explicitly in qualification tools.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct AestraClusterDiagnostics {
+    pub view: Entity,
+    /// Z slices, scratchpad, metadata: native generation IDs and physical bytes.
+    pub private_buffers: [Option<(BufferId, u64)>; 3],
+    pub scratchpad_logical_length: usize,
+    pub readback: Option<AestraClusterReadbackProbe>,
+}
+
+/// A weak probe does not keep retired readback state or its buffers alive.
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct AestraClusterReadbackProbe(Weak<Mutex<ViewClusteringReadbackData>>);
+
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct AestraClusterReadbackSnapshot {
+    pub pending: Vec<BufferId>,
+    pub free: Vec<BufferId>,
+    pub z_slice_capacity: usize,
+    pub index_capacity: usize,
+}
+
+impl AestraClusterReadbackProbe {
+    /// Pending/free native generations and adaptive capacities, if still alive.
+    /// Upgrade is temporary; the returned values contain no owning GPU handles.
+    pub fn snapshot(&self) -> Option<AestraClusterReadbackSnapshot> {
+        let owner = self.0.upgrade()?;
+        let state = owner.lock().ok()?;
+        Some(AestraClusterReadbackSnapshot {
+            pending: state.staging.pending.iter().map(Buffer::id).collect(),
+            free: state.staging.free.iter().map(Buffer::id).collect(),
+            z_slice_capacity: state.z_slice_list_capacity,
+            index_capacity: state.max_index_list_capacity,
+        })
+    }
+}
+
+/// Read-only, opt-in native lifetime qualification. Does not poll, map, wait or
+/// cache handles. This is a workspace patch hook, not a stable upstream API.
+#[doc(hidden)]
+pub fn aestra_cluster_diagnostics(world: &mut World) -> Vec<AestraClusterDiagnostics> {
+    let mut views = world.query::<(&MainEntity, &ViewGpuClusteringBuffers)>();
+    let readbacks = world.resource::<RenderViewClusteringReadbackData>();
+    views
+        .iter(world)
+        .map(|(entity, buffers)| {
+            let descriptor = |buffer: Option<&Buffer>| buffer.map(|b| (b.id(), b.size()));
+            AestraClusterDiagnostics {
+                view: entity.id(),
+                private_buffers: [
+                    descriptor(buffers.z_slices_buffer.buffer()),
+                    descriptor(buffers.scratchpad_offsets_and_counts_buffer.buffer()),
+                    descriptor(buffers.cluster_metadata_buffer.buffer()),
+                ],
+                scratchpad_logical_length: buffers.scratchpad_offsets_and_counts_buffer.len(),
+                readback: readbacks
+                    .views
+                    .get(entity)
+                    .map(|owner| AestraClusterReadbackProbe(Arc::downgrade(owner))),
+            }
+        })
+        .collect()
 }
 
 /// Decodes a u32 produced by `f32_bits_to_sortable_u32` (in
@@ -943,17 +1083,20 @@ fn cluster_on_gpu(
         true,
     );
 
-    // Schedule a readback of the readback data.
-    schedule_readback_staging(
-        command_encoder,
-        view_gpu_clustering_buffers,
-        &staging_buffer,
-    );
-    schedule_readback_buffer_map(
-        command_encoder,
-        view_clustering_readback_data.clone(),
-        &staging_buffer,
-    );
+    // A saturated feedback pool must not stop cluster rendering or allocate
+    // unbounded staging buffers. A later completed slot resumes adaptive sizing.
+    if let Some(staging_buffer) = staging_buffer {
+        schedule_readback_staging(
+            command_encoder,
+            view_gpu_clustering_buffers,
+            &staging_buffer,
+        );
+        schedule_readback_buffer_map(
+            command_encoder,
+            view_clustering_readback_data.clone(),
+            &staging_buffer,
+        );
+    }
 
     command_encoder.pop_debug_group();
     time_span.end(render_context.command_encoder());
@@ -1148,34 +1291,43 @@ fn cluster_on_gpu(
     ) {
         let captured_staging_buffer = staging_buffer.clone();
         command_encoder.map_buffer_on_submit(staging_buffer, MapMode::Read, .., move |result| {
+            let mut view_clustering_readback_data = view_clustering_readback_data.lock().unwrap();
             if result.is_err() {
+                view_clustering_readback_data.staging.complete(
+                    captured_staging_buffer,
+                    |a, b| a.id() == b.id(),
+                    false,
+                );
                 return;
             };
-
-            let mut view_clustering_readback_data = view_clustering_readback_data.lock().unwrap();
-
-            {
+            let metadata = {
                 // Use `encase` to populate a `ClusterMetadata`.
                 let buffer_view = captured_staging_buffer.slice(..).get_mapped_range();
-                let Ok(mut buffer_reader) =
-                    Reader::new::<ClusterMetadata>(buffer_view[..].to_vec(), 0)
-                else {
-                    return;
-                };
-                let gpu_clustering_metadata = ClusterMetadata::create_from(&mut buffer_reader);
-
-                // Update readback data.
-                view_clustering_readback_data.update_from_metadata(&gpu_clustering_metadata);
-            }
+                Reader::new::<ClusterMetadata>(buffer_view[..].to_vec(), 0)
+                    .ok()
+                    .map(|mut reader| ClusterMetadata::create_from(&mut reader))
+            };
 
             // `wgpu` will error if we didn't drop the buffer view at this
             // point, which is why we use a separate block above.
             captured_staging_buffer.unmap();
 
+            let Some(metadata) = metadata else {
+                view_clustering_readback_data.staging.complete(
+                    captured_staging_buffer,
+                    |a, b| a.id() == b.id(),
+                    false,
+                );
+                return;
+            };
+            view_clustering_readback_data.update_from_metadata(&metadata);
+
             // Recycle the staging buffer.
-            view_clustering_readback_data
-                .metadata_staging_free_buffers
-                .push(captured_staging_buffer);
+            view_clustering_readback_data.staging.complete(
+                captured_staging_buffer,
+                |a, b| a.id() == b.id(),
+                true,
+            );
         });
     }
 }
@@ -1790,6 +1942,65 @@ impl ExtractResource<GpuClusteringPlugin> for GlobalClusterSettings {
 #[cfg(test)]
 mod aestra_reuse_tests {
     use super::*;
+
+    #[test]
+    fn staging_pool_bounds_inflight_reuses_completions_and_discards_failures() {
+        let mut pool = MetadataStagingPool::<usize>::new();
+        for id in 0..MAX_METADATA_STAGING_BUFFERS {
+            assert_eq!(pool.acquire(|| id), Some(id));
+        }
+        assert_eq!(pool.acquire(|| panic!("Saturated pool allocated")), None);
+        // Out-of-order successful callbacks can be immediately reused.
+        pool.complete(3, |a, b| a == b, true);
+        assert_eq!(
+            pool.acquire(|| panic!("Completed slot not reused")),
+            Some(3)
+        );
+        // Failed maps/decodes release the pending owner, but are never recycled.
+        pool.complete(5, |a, b| a == b, false);
+        assert_eq!(pool.acquire(|| 8), Some(8));
+        for id in [0, 1, 2, 3, 4, 6, 7, 8] {
+            pool.complete(id, |a, b| a == b, true);
+        }
+        assert!(pool.pending.is_empty());
+        assert_eq!(pool.free.len(), 8);
+        // A duplicate/unknown completion cannot grow the free list.
+        pool.complete(8, |a, b| a == b, true);
+        assert_eq!(pool.free.len(), 8);
+        for _ in 0..20_000 {
+            let id = pool.acquire(|| panic!("Steady pool allocated")).unwrap();
+            pool.complete(id, |a, b| a == b, true);
+            assert!(pool.pending.is_empty());
+            assert_eq!(pool.free.len(), 8);
+        }
+    }
+
+    #[test]
+    fn oversized_feedback_grows_both_capacities_without_shrinking() {
+        let mut state = ViewClusteringReadbackData::new(&GlobalClusterGpuSettings {
+            initial_z_slice_list_capacity: 32,
+            initial_index_list_capacity: 64,
+        });
+        let mut metadata = ClusterMetadata::default();
+        metadata.indirect_draw_params.instance_count = 257;
+        metadata.index_list_capacity = 4097;
+        state.update_from_metadata(&metadata);
+        assert_eq!(state.z_slice_list_capacity, 512);
+        assert_eq!(state.max_index_list_capacity, 8192);
+        metadata.indirect_draw_params.instance_count = 1;
+        metadata.index_list_capacity = 1;
+        state.update_from_metadata(&metadata);
+        assert_eq!(state.z_slice_list_capacity, 512);
+        assert_eq!(state.max_index_list_capacity, 8192);
+        assert_eq!(
+            state
+                .last_frame_statistics
+                .as_ref()
+                .unwrap()
+                .index_list_size,
+            1
+        );
+    }
 
     #[test]
     fn repeated_reset_does_not_accumulate_counts_or_retain_old_contents() {

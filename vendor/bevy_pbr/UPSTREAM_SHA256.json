@@ -3,7 +3,8 @@
   "version": "0.19.1",
   "registry_checksum": "244ae7d618b51a59c913c36b0564a295cd85ea91a5e777b542bb7bdb846a23d6",
   "intentional_modifications": [
-    "src/cluster/gpu.rs"
+    "src/cluster/gpu.rs",
+    "src/cluster/mod.rs"
   ],
   "files": [
     {
