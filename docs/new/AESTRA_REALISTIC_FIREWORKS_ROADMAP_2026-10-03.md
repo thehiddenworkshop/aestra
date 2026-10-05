@@ -90,8 +90,10 @@ index instead of 346176, preserving 8413-child admission and reusable slots. Emp
 selections still incur bounded pointlike work. F7E4B3B2A adds opt-in backend allocator snapshots
 and public handle fingerprints: all 18 high-tier native runs pass work/retirement checks, but
 the no-churn gate fails because locked Bevy replaces both same-sized per-view lists on every
-measured observation, including control. Next is B3B2B native buffer-container reuse before
-allocation, then private/in-flight allocation/churn/overflow qualification,
+measured observation, including control. B3B2B now reuses native per-view containers before
+allocation through a pinned vendored Bevy PBR patch: eighteen fresh high-tier on/off runs pass
+the unchanged no-churn/workload/retirement gates, preserving all 107 paced registration images.
+Next is B3B2C private/in-flight allocation-generation/retirement and oversized-overflow qualification,
 not more unmeasured F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4315,8 +4317,47 @@ This is an explicitly rejected allocation qualification, not a production alloca
   [Method, results and scope](../../benchmarks/fireworks/particle-light-gpu-allocations-2026-10-05.md)
   and [source/raw hashes and all eighteen cells](../../benchmarks/fireworks/particle-light-gpu-allocations-2026-10-05.json).
 
-**Next: F7E4B3B2B native per-view buffer-container reuse before allocation, then
-private/in-flight native allocation/churn/overflow qualification,
+**F7E4B3B2B implemented/measured — 2026-10-05: native per-view container reuse.**
+This passes the public-list reuse slice, not full private/in-flight/finale qualification.
+
+- A reproducible root Cargo patch vendors published Bevy PBR **0.19.1**, retaining licenses,
+  shaders/LUTs and a 150-file upstream hash manifest. Only `src/cluster/gpu.rs` is intentionally
+  modified. Native preparation reuses owning components **before** reserve/upload, clears logical
+  lists/counts, refreshes metadata and resets scratchpad length without capacity accumulation.
+  Physical buffers retain high-water capacity and preserve native adaptive growth. Inactive
+  containers and referring bind groups are removed; readback-map pruning/despawn stay intact.
+  No registry edits, changed shaders, cloned-handle cache, particle readback or GPU waits are added.
+- Two dependency unit tests and an explicit native regression pass twelve settled twelve-update
+  identity windows, checking reuse, offsets growth **512 → 4096 bytes**, shrink retention,
+  independent owning views, inactive/reactivated/removed cameras, CPU/GPU mode recovery and
+  light/camera retirement. Native demand **16 active → 1 measured empty baseline** is preserved;
+  the initial fixture's incorrect zero-demand expectation remains an unaccepted attempt.
+  This generic dependency view test does not qualify Aestra particle-light multi-view/layers.
+- The paced pipelined adapter/PBR regression passes **25/75/150 m/s**, fixed native retirement/
+  rejection windows and +10 km controls. All **107 PNGs match B3B1 byte-for-byte**. GPU-mode
+  windows add no selected-light submissions (the cumulative counter includes earlier portable
+  async history); pending/staging bytes are zero. This is synthetic registration preservation, not
+  natural-star art or full-show selected-light acceptance.
+- All **18** fresh high-tier native processes exit **0**; unchanged accounting/hash/workload/
+  resource/log/no-churn and show-retirement gates accept all three hero/volley/show on/off pairs.
+  Both public cluster-list handles have **zero replacements** in each **598 hero/volley / 1678
+  show** measured observations, versus B3B2A's every-observation changes. List sizes remain
+  **2097152 / 117504 bytes**, grid **17×9×24**. Each show preserves **8,413-child** admission and
+  its final sixty-sample acknowledgment window matches control at **one native index**.
+- Named measured snapshots contain **one metadata / 2–3 staging** allocations (48 / 96–144 bytes),
+  below the unchanged sampled ceiling. Whole-device allocated peaks span **114441872–130603680
+  bytes**, reserved blocks **268435456 bytes**. Unlabeled private Z/scratch, exact generations/
+  submission retirement, oversized overflow and hard budgets remain unqualified. Instrumented
+  timings are not ordinary cost-improvement evidence; the earlier B3A shutdown is not claimed fixed.
+- Viewer **95 / 12 ignored**, Aestra Bevy **55**, dependency **two** tests; all-targets Clippy,
+  workspace all-targets/format checks and allocator/cost validator controls pass.
+  [Method/results/reproduction](../../benchmarks/fireworks/particle-light-gpu-cluster-reuse-2026-10-05.md)
+  and [source/raw hashes and all eighteen rows](../../benchmarks/fireworks/particle-light-gpu-cluster-reuse-2026-10-05.json).
+  Cargo patches are not transitive: external consumers need an equivalent root patch or a fixed
+  upstream version; publishing Aestra alone does not ship this override.
+
+**Next: F7E4B3B2C private/in-flight native allocation-generation/retirement and
+deliberately oversized overflow qualification,
 then medium/low repeated costs.** Preserve F7E4A's isolated registration and B2B's distinction between synthetic
 calibration and natural authored-star acceptance. Medium/low receiver-image gates remain open.
 Keep default-layer restrictions explicit; general per-view layers and multi-view acceptance remain
@@ -4471,7 +4512,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. Next F7E4B3B2B reuses native per-view buffer containers before allocation, then private/in-flight/overflow qualification and medium/low repeated costs, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. Next F7E4B3B2C private/in-flight allocation generations/retirement and oversized overflow qualification, then medium/low repeated costs, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -4885,9 +4926,9 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7E4B3B2B native per-view container reuse before allocation;
-   B3B2A allocation observability implemented; no-churn qualification FAILED in all 18 cells
-   rerun no-churn, private/in-flight allocation and deliberately oversized overflow gates
+1. F7E4B3B2C private/in-flight native allocation generations/retirement and oversized overflow;
+   B3B2A failed no-churn in all 18 cells; B3B2B native container reuse passes all 18 unchanged gates
+   public-list reuse and 107 matching paced images do not certify complete private/fence budgets
    B3B1 idle work retirement passes; B3A repeated high-tier costs/public buffers/demand pass
    exact per-slot liveness and medium/low cost gates remain open
    B2B synthetic paced registration under high-tier authored overlap passes; B2A images pass
@@ -4907,7 +4948,8 @@ synthetic paced registration under high-tier authored overlap with delayed negat
 F7E4B3A passes repeated high-tier work-matched costs/public native cluster-buffer and async-demand
 gates. F7E4B3B1 passes idle-work retirement with reusable slots and unchanged authored admission;
 F7E4B3B2A measures every-observation native list replacement in all 18 high-tier on/off runs,
-so no-churn qualification fails. B3B2B must reuse native per-view containers before allocation;
+so its no-churn qualification fails. B3B2B now reuses native per-view containers before allocation,
+passing all eighteen unchanged reuse/workload/retirement gates and preserving 107 paced images;
 private/in-flight native cluster budgets, exact per-slot liveness, medium/low
 repeated costs/receiver images, natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.

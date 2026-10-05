@@ -1,0 +1,610 @@
+{
+  "package": "bevy_pbr",
+  "version": "0.19.1",
+  "registry_checksum": "244ae7d618b51a59c913c36b0564a295cd85ea91a5e777b542bb7bdb846a23d6",
+  "intentional_modifications": [
+    "src/cluster/gpu.rs"
+  ],
+  "files": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "9767ee44cf00d034b1d262a3151c4592a884297c058b4fee5cf79acba1128eed"
+    },
+    {
+      "path": "LICENSE-APACHE",
+      "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+    },
+    {
+      "path": "LICENSE-MIT",
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ccaaf07764c61f9a85c5b5b5f120dd100597810791cfc6b73094d72d6c33f4a6"
+    },
+    {
+      "path": "src/atmosphere/aerial_view_lut.wgsl",
+      "sha256": "ed2d84939c88edbff03026593488c9ae5e2e0667d7c989d5c6a51118637fb107"
+    },
+    {
+      "path": "src/atmosphere/bindings.wgsl",
+      "sha256": "75e3cd2243e14d9eaae1b016a520e3226f627267ff0ba4a323e54db0fae0a234"
+    },
+    {
+      "path": "src/atmosphere/bruneton_functions.wgsl",
+      "sha256": "fac6c544fcb9768715c9291d4ccb4aec5a66c16587f1943f54ea8ee86ad6e82a"
+    },
+    {
+      "path": "src/atmosphere/environment.rs",
+      "sha256": "6f4b26d1a700d1e15f6bcb7fd6bd576786e0e3f813a7a86241b4adc94360c18a"
+    },
+    {
+      "path": "src/atmosphere/environment.wgsl",
+      "sha256": "f1ce3792ad4563b2f03cad356deafd12e20620757bfe7dd1c5113fdded00bad6"
+    },
+    {
+      "path": "src/atmosphere/functions.wgsl",
+      "sha256": "558d1462df4177f68474f7650c5484f739cec0b1d75547cfa7c6308933bb63c0"
+    },
+    {
+      "path": "src/atmosphere/mod.rs",
+      "sha256": "d86f9f8f951061d87e6759454fb5f92746d65057245b89ffa664483797d6bb8e"
+    },
+    {
+      "path": "src/atmosphere/multiscattering_lut.wgsl",
+      "sha256": "b5d73e046bba75d3653c7f526f400484465649e391f0207d3554dea9c4305166"
+    },
+    {
+      "path": "src/atmosphere/node.rs",
+      "sha256": "2d019ffd2580068f8180055dd1c74721b131f49166bfa682f00dbab87cdadfc7"
+    },
+    {
+      "path": "src/atmosphere/render_sky.wgsl",
+      "sha256": "844b8562aa1fb819a18c0c88aefd79cdca26e59bc664d065d9369917aa81ccd3"
+    },
+    {
+      "path": "src/atmosphere/resources.rs",
+      "sha256": "bdd7aeb5d1af08e606b14c7899e07adc3babafed8d85b189c56eb3fd10257654"
+    },
+    {
+      "path": "src/atmosphere/sky_view_lut.wgsl",
+      "sha256": "9e821f593acc2321957ea44ecdcc9c0e7a5945eda17ac22ffca78b2125008398"
+    },
+    {
+      "path": "src/atmosphere/transmittance_lut.wgsl",
+      "sha256": "02b16b5d65f7e1184a528eb479228ee44d9aa5324f13bc9b866b110387e6d90a"
+    },
+    {
+      "path": "src/atmosphere/types.wgsl",
+      "sha256": "562830c8932a771732c3bb328b6c38cc656fe527884fb8f27f1dacd95c669e75"
+    },
+    {
+      "path": "src/bluenoise/stbn.ktx2",
+      "sha256": "8b7f0244828e3729868f2060e10f184663a3ca87b58e733cb7cf7aa86b168117"
+    },
+    {
+      "path": "src/cluster/cluster_allocate.wgsl",
+      "sha256": "87fa55fb6ab6c5a1e4b0cf55603657ec4007f199b9fc8fab0fec3349d51ffc4b"
+    },
+    {
+      "path": "src/cluster/cluster_raster.wgsl",
+      "sha256": "7c83d1b18b609c009400afa532673792b68b0895505442e862770d186e2a6971"
+    },
+    {
+      "path": "src/cluster/cluster_z_slice.wgsl",
+      "sha256": "26f309073de758cd12a9a5d18605d77654385d24825025d504237565f6c98048"
+    },
+    {
+      "path": "src/cluster/cluster.wgsl",
+      "sha256": "9f1013eaa8dcf6efe9fd8ebaaf5df61080e62ee746d345c9653b5f57e1914558"
+    },
+    {
+      "path": "src/cluster/gpu.rs",
+      "sha256": "0db47d27ee58a25206221d318a9bb0b070471dc433a1f8d1c7fc966de9783839"
+    },
+    {
+      "path": "src/cluster/mod.rs",
+      "sha256": "4c5515275c42f4dedabd1347882114486dc9ad891738c5393079912181a15cab"
+    },
+    {
+      "path": "src/contact_shadows.rs",
+      "sha256": "390aca0f7d3c6c5b6770e8cec15aeedbc2374855834ab63cdd8ac57522b431a3"
+    },
+    {
+      "path": "src/decal/clustered.rs",
+      "sha256": "2f7df97e14ca757a7cb2b9880b569a2e7bfbd5f37f886ca78cffe5f3fe451ea4"
+    },
+    {
+      "path": "src/decal/clustered.wgsl",
+      "sha256": "970b837d2d784f6d7c4215b60c21c24c8a49fd7e146614905ea0274524d1d75c"
+    },
+    {
+      "path": "src/decal/forward_decal.wgsl",
+      "sha256": "2fc2dd9d1edcd1e40f4a3bc944fad7cba3838033c45565e7c6382d2e126d5934"
+    },
+    {
+      "path": "src/decal/forward.rs",
+      "sha256": "36a1ee0c8e146cfb3af588baf7afe793a919eebcad35ef3d2c45a0da72ff5a3f"
+    },
+    {
+      "path": "src/decal/mod.rs",
+      "sha256": "aeaf97af926241a1563b2f1a0c68d21213623d949f5cfb70293320c1024709cc"
+    },
+    {
+      "path": "src/deferred/deferred_lighting.wgsl",
+      "sha256": "9974f266a5d2f3ec48f1e48081c2e030ff702e8c0590d99d089995a358df0c8e"
+    },
+    {
+      "path": "src/deferred/mod.rs",
+      "sha256": "24ac25a5f67a2db80264493fb08a61bc1835f42a3561430ff6000af4a5ee21a8"
+    },
+    {
+      "path": "src/deferred/pbr_deferred_functions.wgsl",
+      "sha256": "673b3f40de73595b833d2a0a6f644b361ddcd7dd0e125aa8a5cc1c1953ce8a7c"
+    },
+    {
+      "path": "src/deferred/pbr_deferred_types.wgsl",
+      "sha256": "84f7c8e16d69cad0215696f3e6a49f6383300f1835a4719b6b5dfba0312b8fa4"
+    },
+    {
+      "path": "src/diagnostic.rs",
+      "sha256": "190aab1da4af1eee3320af3b3a3fc6d1a642cb23a0669bd119be1560c4db3adb"
+    },
+    {
+      "path": "src/environment_map/dfg.ktx2",
+      "sha256": "3090e8136a63be266b635f4f3700c5b3daf93a1a9d288699577c1e0c7d194415"
+    },
+    {
+      "path": "src/extended_material.rs",
+      "sha256": "6affea4375615f7017206b10ffdd7adc76ea5cd7d81b467e0bf55d838f8ec971"
+    },
+    {
+      "path": "src/fog.rs",
+      "sha256": "53d4a496ef9aace27dd3d136717503e76e8efc80f9c646b720955d255d50fe65"
+    },
+    {
+      "path": "src/gltf.rs",
+      "sha256": "8fc874543c7068754f357cb0d40ce2a776f9a57db1937ec37392203b7eb2a872"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "a6b9b00445234b801216c1180a96a0de635fcb6072b0a9534d975fe818f57c2a"
+    },
+    {
+      "path": "src/light_probe/copy.wgsl",
+      "sha256": "ba9155cbd1b2236a43fb6bb6f8970d54c9c9b0caa545c19f541d3b4ffb06452e"
+    },
+    {
+      "path": "src/light_probe/environment_filter.wgsl",
+      "sha256": "a6e9463f4f132e720d514526124e861221f332a7e818394feb1cdf6c7ac03088"
+    },
+    {
+      "path": "src/light_probe/environment_map.rs",
+      "sha256": "a8b7326c67ce4bdf777b320727f65abc630c99bee6534c19367cb013b0782de8"
+    },
+    {
+      "path": "src/light_probe/environment_map.wgsl",
+      "sha256": "852e55e24dc97f36e8c843b3dcf37f1b3f41fe1a475f8bc8e7fd608b89bc5c61"
+    },
+    {
+      "path": "src/light_probe/generate.rs",
+      "sha256": "c41beaf47b8d3114ada841701036769141649a9f0dd92307d4865db44bc5ffa3"
+    },
+    {
+      "path": "src/light_probe/irradiance_volume.rs",
+      "sha256": "277e2d17f94b00852fef2b12bac089b6f80178f48dfc63461925b73ae4fde0fe"
+    },
+    {
+      "path": "src/light_probe/irradiance_volume.wgsl",
+      "sha256": "ef97cf74e1421bd463c717ae134ed35e316c74f2fa2f510ebf5d922f38e6b12a"
+    },
+    {
+      "path": "src/light_probe/light_probe.wgsl",
+      "sha256": "9316be4b5f861b57df4768c0a681abcf336e58544b76124fb229c3c0d4253678"
+    },
+    {
+      "path": "src/light_probe/mod.rs",
+      "sha256": "762e76897ee172a9cd306ca1b8d9f5f443340d2e9247afbce7753f25dffe7d8d"
+    },
+    {
+      "path": "src/lightmap/lightmap.wgsl",
+      "sha256": "84ff9e7575090a052721878b8fed77df3d2706a491e8723eba9a9be517e6c10e"
+    },
+    {
+      "path": "src/lightmap/mod.rs",
+      "sha256": "5f401feb8ccd18ad4e17e72f16c47558fc0bf69780be6244f2e6063b9a6c0cc8"
+    },
+    {
+      "path": "src/ltc/ltc.ktx2",
+      "sha256": "9387e608cb925af0fa56739d0cc0cb674bddc226e45fe7f2065df722587d06e8"
+    },
+    {
+      "path": "src/material_bind_groups.rs",
+      "sha256": "9dddf910b8e639e773b3da7c8cfa7ccf81b7f45fd09355e2049dd363eb078015"
+    },
+    {
+      "path": "src/material.rs",
+      "sha256": "020481706afc5eb01fe1fa6cb5ff7dd104c906eb985e24fe2aad7ddd13ebc209"
+    },
+    {
+      "path": "src/medium.rs",
+      "sha256": "93e3113fd09bf21806b90d20d9de6846878344969cb625ad4ada7e515dbf1618"
+    },
+    {
+      "path": "src/mesh_material.rs",
+      "sha256": "3094b2418e3f0bcc1fca6f8ca6f46130564e40e8f92a5c42d02d5aad2282da3a"
+    },
+    {
+      "path": "src/meshlet/asset.rs",
+      "sha256": "8447ddc64c45d87522c83da1400c9b620f992a91111e0cc77fa7f93eddad7a92"
+    },
+    {
+      "path": "src/meshlet/clear_visibility_buffer.wgsl",
+      "sha256": "241447a8e2ff549f0422f6bc56e82badbee091370449ae437e1f556220a7d7fa"
+    },
+    {
+      "path": "src/meshlet/cull_bvh.wgsl",
+      "sha256": "febd6ee1c4bf397db49bbcd4c9d798d08bff8a050dcbd98b7f78d8cd031af684"
+    },
+    {
+      "path": "src/meshlet/cull_clusters.wgsl",
+      "sha256": "ffbfaabd13b8ac096de336338b994b154d4a86156096853a6a716fe76e3f5ea1"
+    },
+    {
+      "path": "src/meshlet/cull_instances.wgsl",
+      "sha256": "ad65dece063f6190d1bb4ff1c145e4b9d83ae95d462ce176d66dc9b81bf77ce6"
+    },
+    {
+      "path": "src/meshlet/dummy_visibility_buffer_resolve.wgsl",
+      "sha256": "24cb63cdff55cd7b4d6c29a867ed1e3f398ce334619dfbc7cbfe808eea2a2ae2"
+    },
+    {
+      "path": "src/meshlet/fill_counts.wgsl",
+      "sha256": "f715506d3c3c916c1c2430f0e757203def3b02756be2a295174af74b878449a6"
+    },
+    {
+      "path": "src/meshlet/from_mesh.rs",
+      "sha256": "a7253d45c819cdc8aaf014a1a60152bf25cedff8f9cac38e6e347ff598dfc68b"
+    },
+    {
+      "path": "src/meshlet/instance_manager.rs",
+      "sha256": "c8978295a70a46fc70cfbc4a51e266cabd6d03d3c9a0eba287230b1e5c931f5e"
+    },
+    {
+      "path": "src/meshlet/material_pipeline_prepare.rs",
+      "sha256": "1d3938ff6770520fa9e8fb7f0c6c43031e25a3a384cbd7f1c826910e886079e3"
+    },
+    {
+      "path": "src/meshlet/material_shade_nodes.rs",
+      "sha256": "4a11497281e38ad0edaec1da101a58874d75a6ad6208a4c7c08304891469713f"
+    },
+    {
+      "path": "src/meshlet/meshlet_bindings.wgsl",
+      "sha256": "7405cc0ef9f698df797b37eb4b4283700313c86254b0777a23bb16a1d81c54e2"
+    },
+    {
+      "path": "src/meshlet/meshlet_cull_shared.wgsl",
+      "sha256": "5a7309b416a6584f2e45ca530593b0e8b3cb60c0c78e20b79508d5a38a4389a4"
+    },
+    {
+      "path": "src/meshlet/meshlet_mesh_manager.rs",
+      "sha256": "a0e32d934008140051c92c502768f539e6254ae1cf357b6bbaf144c12013a775"
+    },
+    {
+      "path": "src/meshlet/meshlet_mesh_material.wgsl",
+      "sha256": "ef584fbee5f890f408be72f216c1102f95503db7c2f753bf57ebdcf73389d16a"
+    },
+    {
+      "path": "src/meshlet/meshlet_preview.png",
+      "sha256": "ddb499393c1d0e41dcc52c24d0179d9e8d86bc7680d9ee10faee56ca676f7fa1"
+    },
+    {
+      "path": "src/meshlet/mod.rs",
+      "sha256": "6d8b5930b8a63fc5eeb7d8dd4a1b09de27531d4d54989987fd3ba68c79e15c8e"
+    },
+    {
+      "path": "src/meshlet/persistent_buffer_impls.rs",
+      "sha256": "27fe04948c33876e62773cd1d3b5eb178251cf08fac23d5f405ae2f38f38e695"
+    },
+    {
+      "path": "src/meshlet/persistent_buffer.rs",
+      "sha256": "355ea09b678d6cb22b3fe1bf596799637a315d2319c0e1d25a4ce4fb2de3e8fc"
+    },
+    {
+      "path": "src/meshlet/pipelines.rs",
+      "sha256": "4448ccab427ede803aaa121159035a5ec62f1fa8c28dd39e0d9dba44eca3bd75"
+    },
+    {
+      "path": "src/meshlet/remap_1d_to_2d_dispatch.wgsl",
+      "sha256": "441fd6144c2557e3d570a544b7d31ca389557891c1d63ca350374717baa259b2"
+    },
+    {
+      "path": "src/meshlet/resolve_render_targets.wgsl",
+      "sha256": "9bfc1f3c59c66a8b49fb976f714d2e4c37a60fa1cb672e0861ebc208ff76b2dc"
+    },
+    {
+      "path": "src/meshlet/resource_manager.rs",
+      "sha256": "a2b0efc73025b0a4e4b124476f8f469488a8667ceaa2cc04d2dad47ebde94e87"
+    },
+    {
+      "path": "src/meshlet/visibility_buffer_hardware_raster.wgsl",
+      "sha256": "94b8d82e85632c387e14010af2ebbf9f9e865b4584c0d81973153be76863428c"
+    },
+    {
+      "path": "src/meshlet/visibility_buffer_raster_node.rs",
+      "sha256": "66e180b425ab96c81c00d620b8f303fd393ff2413c9325d10a689c27e781c383"
+    },
+    {
+      "path": "src/meshlet/visibility_buffer_resolve.wgsl",
+      "sha256": "337bb136411ecf0fd55da0d92e85a3b82c9c2acb6ce9cb9a4779ffdc4450a8bc"
+    },
+    {
+      "path": "src/meshlet/visibility_buffer_software_raster.wgsl",
+      "sha256": "b6860b775337e36fbb39e851379d9905404c3035edfc8a21c6690fbad28076a7"
+    },
+    {
+      "path": "src/parallax.rs",
+      "sha256": "2ff0d29bab214014e6336c7fa46a43156f0452dcc66ba60725336a9a16e7f7be"
+    },
+    {
+      "path": "src/pbr_material.rs",
+      "sha256": "3cbb3b4986fb560bbc0c88e1318b27603c61e019452336eede264809fc23c001"
+    },
+    {
+      "path": "src/prepass/mod.rs",
+      "sha256": "00659cddcebf825df9b337c5689ba4a9c9567db15e626a10579cac69b062b62f"
+    },
+    {
+      "path": "src/prepass/prepass_bindings.rs",
+      "sha256": "e8e427e0a8c5899ece5402e7a29c8353711b424c3f50f06cb832f8ccc0c9ccbf"
+    },
+    {
+      "path": "src/prepass/prepass_bindings.wgsl",
+      "sha256": "15fe592a9ff48e54fbecee7d8cb522c8a555d8cecf14ffb273d2f8764721b521"
+    },
+    {
+      "path": "src/prepass/prepass_io.wgsl",
+      "sha256": "e9ff07deb27f60e0e3048ee086bf31c5ebbe74b819bdab6d40e1298b27e7b73e"
+    },
+    {
+      "path": "src/prepass/prepass_utils.wgsl",
+      "sha256": "9d8f9a71215c92159be526d92881b4bd78a4e913cdaa566afeb21fa75b561843"
+    },
+    {
+      "path": "src/prepass/prepass.wgsl",
+      "sha256": "dded1a650019d178151f35758c17ea464c01895c8256a10fbbda0e88ce80d40b"
+    },
+    {
+      "path": "src/render/build_indirect_params.wgsl",
+      "sha256": "0e8412b7df808833724b4e9de6d555161508724c994cfba22ba67ac480f6b65a"
+    },
+    {
+      "path": "src/render/clustered_forward.wgsl",
+      "sha256": "87f3996606665f21b35196bb7b3eed8bb8223ccc6d6862b723370498f6863e3b"
+    },
+    {
+      "path": "src/render/fog.rs",
+      "sha256": "c721287ae024619f01a5e5a88d5b52a1670e7ba45ff6ca3caac7c206bba269b2"
+    },
+    {
+      "path": "src/render/fog.wgsl",
+      "sha256": "54413b49947dc0060e30f4ca47f61391642a67d963ead00e1037d1a8b61f96f2"
+    },
+    {
+      "path": "src/render/forward_io.wgsl",
+      "sha256": "e140ef1063bf097432fc6866749e3fc2b3893dddcdb24ac1240de0f8fdd0ca8a"
+    },
+    {
+      "path": "src/render/gpu_preprocess.rs",
+      "sha256": "864a0b799c20da0d72054d2750a5e6e0bbdf08a1061ab08e7dee4c64df661e0f"
+    },
+    {
+      "path": "src/render/light.rs",
+      "sha256": "0610cac755df1211a719390a2f851599c9a7e6062de7e7e0d3e4d24ad763c6a7"
+    },
+    {
+      "path": "src/render/mesh_bindings.rs",
+      "sha256": "ab4fde174c1c9f4d8358d47ff242b5f09ffa346e8cb5a7ac739e78475cdd1e7a"
+    },
+    {
+      "path": "src/render/mesh_bindings.wgsl",
+      "sha256": "aa3204b02c72f8465f01ee8bc57dc476bbf6198c2957a03bb5ae55edd331423a"
+    },
+    {
+      "path": "src/render/mesh_functions.wgsl",
+      "sha256": "f565e17f08b753541e6b2eca65bdea080ece1329564918a8eaa35508b2e3b64b"
+    },
+    {
+      "path": "src/render/mesh_preprocess.wgsl",
+      "sha256": "865e4776cbccd4e72edf00d424e929d2b54631411e044894efea1ca596e6fe9e"
+    },
+    {
+      "path": "src/render/mesh_types.wgsl",
+      "sha256": "d570fc5988e837d3031bcc7c2fa69dac7a4faf8d2cdc0a5aaf786c689bdababd"
+    },
+    {
+      "path": "src/render/mesh_view_bindings.rs",
+      "sha256": "0c9d05c0e05f869d337a15a929536ba893f12d567bf6c8029c90b28645ec3943"
+    },
+    {
+      "path": "src/render/mesh_view_bindings.wgsl",
+      "sha256": "a204a5887edf571ee14e2c35c2c2f389a32a697954c6e3065b62ba238fcc463e"
+    },
+    {
+      "path": "src/render/mesh_view_types.wgsl",
+      "sha256": "fb42641fa57dd678d965788e312d2ce2fd8d3be176149d0cea96a6f60a586b0f"
+    },
+    {
+      "path": "src/render/mesh.rs",
+      "sha256": "cbff0dce6bc230b273b73a531d8c52dae05fb852a00af0c2cd8c79dc57d4ef3a"
+    },
+    {
+      "path": "src/render/mesh.wgsl",
+      "sha256": "1476ef7367647936a0a80e311bdf2e283ca547718276309476728dacd59db900"
+    },
+    {
+      "path": "src/render/mod.rs",
+      "sha256": "812e393b7ec87849021a1e73f24c346e198cf5c49992297f2744aa0c05423563"
+    },
+    {
+      "path": "src/render/morph.rs",
+      "sha256": "e71df41c8763cbdd40b16c0f8e65c5ac79757a2bf4ea2b2282449349780eb565"
+    },
+    {
+      "path": "src/render/morph.wgsl",
+      "sha256": "7621070bd5ab9bf3ead9fa78d21283bd8913ca043642c99ed82a0dfed8c9776c"
+    },
+    {
+      "path": "src/render/occlusion_culling.wgsl",
+      "sha256": "f2fb771b3f9dd35d8157103fce03176329d5122d5cf6041e2387c3fe3cc8b564"
+    },
+    {
+      "path": "src/render/parallax_mapping.wgsl",
+      "sha256": "8a94331a30994467c65c96512082eea494e8e56d65ed7f90e4fce029870a19d1"
+    },
+    {
+      "path": "src/render/pbr_ambient.wgsl",
+      "sha256": "6eec8f2bb63e70f4d604df8336e5d88df3a2616a8a111c9d801d0a9b0266d5bb"
+    },
+    {
+      "path": "src/render/pbr_bindings.wgsl",
+      "sha256": "470c6249ef396b48a1548abe0851743f507b6aad1082eb6526147d24a47d4f56"
+    },
+    {
+      "path": "src/render/pbr_fragment.wgsl",
+      "sha256": "850cd9fc0b4ea4d118b6cf575512c173f799abd54ff4337a00b5b01eb3f07550"
+    },
+    {
+      "path": "src/render/pbr_functions.wgsl",
+      "sha256": "13a5344ef4e0fa967e05978489d0909dd0c1862cf7a989ce0882dbc8de9a55dd"
+    },
+    {
+      "path": "src/render/pbr_lighting.wgsl",
+      "sha256": "ec609c97f380d1d18d180763ffffb253a1349a4ab4739435bccf7ca829f4c8b2"
+    },
+    {
+      "path": "src/render/pbr_prepass_functions.wgsl",
+      "sha256": "ba746ecdca0046e0871b5b13172f05d7eb0f0bdaf0febdb891283536ab2540c2"
+    },
+    {
+      "path": "src/render/pbr_prepass.wgsl",
+      "sha256": "22874194824dd1826ee328cc0c53fcf2afca355109d073dfd3419d46e63ad548"
+    },
+    {
+      "path": "src/render/pbr_types.wgsl",
+      "sha256": "7a14ad7b6cadf1438ecee533290739a2a489ae72dcadc4ef85ea1e100c04f654"
+    },
+    {
+      "path": "src/render/pbr.wgsl",
+      "sha256": "c1224225e5a49e9f37de7387d9c8840806e273326a2db8c2ff111c7897111515"
+    },
+    {
+      "path": "src/render/reset_indirect_batch_sets.wgsl",
+      "sha256": "f7392702fa07f1de5122f00b7328f043a0818b86f83542ba76599aa25e429c68"
+    },
+    {
+      "path": "src/render/rgb9e5.wgsl",
+      "sha256": "ff66ee626f6d34621d0bb62c7fe7a03026fab229365f2d03c9a0bd5f8004b0d8"
+    },
+    {
+      "path": "src/render/shadow_sampling.wgsl",
+      "sha256": "82f4d4f618a11359dc941b5c66963079801fa6bc570ee5534a281b36ae610f3c"
+    },
+    {
+      "path": "src/render/shadows.wgsl",
+      "sha256": "08e15b2b5a50a5c21cb1d34d5114dd6b835a93a31f27694f75d2ea880407e3c2"
+    },
+    {
+      "path": "src/render/skin.rs",
+      "sha256": "a06e7ab397f3865d1ae2619fe0046cf2850cc54e9d70f9aa38878851f018a949"
+    },
+    {
+      "path": "src/render/skinning.wgsl",
+      "sha256": "67683dfd95b30f338a616c51e7367b75f8b67a33a59d8b88971ead6c9e883104"
+    },
+    {
+      "path": "src/render/unpack_bins.wgsl",
+      "sha256": "11b30a15faf2865ff8f59046f003c217038af0813785124e55bc17b3130e6bad"
+    },
+    {
+      "path": "src/render/utils.wgsl",
+      "sha256": "9977722b6dc27d2b529f2a4ec1c444cd7d896e6c3dcbc6f9d8a9b385a6551fad"
+    },
+    {
+      "path": "src/render/view_transformations.wgsl",
+      "sha256": "82555584e068250626992da2b0bdf86427cb992e92f17771ce074b62834ac8c9"
+    },
+    {
+      "path": "src/render/wireframe.wgsl",
+      "sha256": "86cb85118cabf54d8c601bcda98a7bf2d09974ccb6cd67c4b850e36e1caab5e5"
+    },
+    {
+      "path": "src/ssao/mod.rs",
+      "sha256": "3de2535372b600142aaf135736e279ce0683f0e8daaa606dfb71dedc046a3895"
+    },
+    {
+      "path": "src/ssao/preprocess_depth.wgsl",
+      "sha256": "7de08820a80fa1bca954c55906dcb65dfec30bb07efa17d740de2487eab4edf9"
+    },
+    {
+      "path": "src/ssao/spatial_denoise.wgsl",
+      "sha256": "b8f75f49238ef82fb6dc1ec44344366b0c6ed65e257f9461235042b4114d0c72"
+    },
+    {
+      "path": "src/ssao/ssao_utils.wgsl",
+      "sha256": "d439322ba372dd1fc0f072e153da669b40e88195cddda727e65365ffa6e8cf5d"
+    },
+    {
+      "path": "src/ssao/ssao.wgsl",
+      "sha256": "69aa96b1570de91386681b12e459eaafcdc34ed73bb3a6daf98b77873e14ef18"
+    },
+    {
+      "path": "src/ssr/mod.rs",
+      "sha256": "4c4e358d62f8fe94b14674653816ad957c06ac1b3fcf0880bfc869e6eb5db9cb"
+    },
+    {
+      "path": "src/ssr/raymarch.wgsl",
+      "sha256": "05ed85d974b5bca0153eeb5ce487487c8e6bca744a4f5fd810f59a25fa2f14fc"
+    },
+    {
+      "path": "src/ssr/ssr.wgsl",
+      "sha256": "df112162a9302fcad97aa1430a13ee2c306637fa4d93fe439822992167a869a9"
+    },
+    {
+      "path": "src/transmission/mod.rs",
+      "sha256": "4394ad9ba8414da4783371908c72b86054d7e4df3b95ea4a476aca36b196e22a"
+    },
+    {
+      "path": "src/transmission/node.rs",
+      "sha256": "5eb43c7cb7782d0d98bb8009ffec1e01153585f6420caa72aad5f6ac26abee4a"
+    },
+    {
+      "path": "src/transmission/phase.rs",
+      "sha256": "907a8299d00920dd14387c01c6b8d1f7b7df49d49808f30f5da2211f4662bbfe"
+    },
+    {
+      "path": "src/transmission/texture.rs",
+      "sha256": "65c4d5477b3df09fa6acf994de250811e78b4d68769aa92cf9d4733ab9a6dec4"
+    },
+    {
+      "path": "src/transmission/transmission.wgsl",
+      "sha256": "09b28f72d55fae0963858f2aad83fef2876f5a100739a09cecd484cb40159442"
+    },
+    {
+      "path": "src/volumetric_fog/mod.rs",
+      "sha256": "48fc015e317bdfc6c4930c6825cb346a69d5f9786b59f54e138a6855d57c0904"
+    },
+    {
+      "path": "src/volumetric_fog/render.rs",
+      "sha256": "ead6eeef34967ae3ed4642871093eade2797a935c62a59b6aa211b8005fc5bf1"
+    },
+    {
+      "path": "src/volumetric_fog/volumetric_fog.wgsl",
+      "sha256": "5b24c063ff8b41475b99970d0e6e4d9bf50c41ab785a9d39e27e0bfda634cad9"
+    },
+    {
+      "path": "src/wireframe.rs",
+      "sha256": "95a3a02002e30fa58729f1dc7e67d1ff9bc5d71ecb96748f8a3ed529bf0e95c8"
+    }
+  ]
+}

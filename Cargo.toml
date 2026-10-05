@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["vendor/bevy_input_focus"]
+exclude = ["vendor/bevy_input_focus", "vendor/bevy_pbr"]
 members = [
     "apps/aestra-bench",
     "apps/aestra-editor",
@@ -58,3 +58,5 @@ opt-level = 3
 [patch.crates-io]
 # Bevy 0.19.1 dispatches keyboard events with end-of-frame modifiers; see vendor README.
 bevy_input_focus = { path = "vendor/bevy_input_focus" }
+# Bevy 0.19.1 recreates GPU cluster buffers every frame; see vendor patch notes.
+bevy_pbr = { path = "vendor/bevy_pbr" }

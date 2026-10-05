@@ -27,7 +27,11 @@ F7E4B3B2A adds [opt-in native allocation snapshots and a no-churn gate](particle
 All 18 high-tier native runs pass workload/cleanup checks, but **allocation qualification fails**:
 locked Bevy recreates same-sized per-view cluster lists on every measured observation, including
 control. This is valid failed-gate evidence, not total VRAM or a cost-improvement claim.
-Next is native container reuse before allocation, followed by private/in-flight qualification.
+F7E4B3B2B now [reuses native per-view containers before allocation](particle-light-gpu-cluster-reuse-2026-10-05.md):
+all 18 fresh high-tier runs pass the unchanged no-churn/workload/retirement gates, and 107 paced
+registration images match the previous accepted run. A pinned root Cargo patch supplies the
+localized Bevy fix; external consumers need their own patch or a fixed upstream version.
+Private/in-flight/oversized-overflow qualification remains next, not a total-memory certification.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 
