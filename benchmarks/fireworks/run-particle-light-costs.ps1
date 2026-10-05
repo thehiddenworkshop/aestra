@@ -4,7 +4,8 @@
 param([Parameter(Mandatory)][string]$ReportsDirectory,
     [string]$ViewerBinary = 'target/debug/aestra-viewer.exe',
     [ValidateRange(3,8)][int]$Repetitions = 3,
-    [ValidateSet('high','medium','low')][string[]]$Tiers = @('high'))
+    [ValidateSet('high','medium','low')][string[]]$Tiers = @('high'),
+    [switch]$RequireRetirement)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Tiers.Count -eq 0 -or @($Tiers | Sort-Object -Unique).Count -ne $Tiers.Count) { throw 'Choose nonempty unique tiers' }
@@ -69,7 +70,7 @@ if ((ConvertTo-Json -InputObject $inputs -Depth 5 -Compress) -ne
 $manifest.inputs_unchanged = $true
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$directory/manifest.json" -Encoding utf8NoBOM
 # Read-only validator performs workload/resource/log/observable-growth gates first.
-$summary = & "$PSScriptRoot/validate-particle-light-costs.ps1" -ReportsDirectory $directory
+$summary = & "$PSScriptRoot/validate-particle-light-costs.ps1" -ReportsDirectory $directory -RequireRetirement:$RequireRetirement
 $summary | Set-Content -LiteralPath "$directory/summary.json" -Encoding utf8NoBOM
 $manifest.accepted = $true
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$directory/manifest.json" -Encoding utf8NoBOM

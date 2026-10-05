@@ -50,11 +50,14 @@ fn control_position(
 }
 
 fn source(speed: f32, width: f32) -> Arc<CompiledEffect> {
+    source_with_burst(speed, width, 1)
+}
+fn source_with_burst(speed: f32, width: f32, burst: u32) -> Arc<CompiledEffect> {
     let mut asset = EffectAsset::new("paced light registration", 10.0);
     let mut emitter = Emitter::basic_sprite("fast star", 10.0);
     emitter.max_particles = 1;
     emitter.modules = vec![
-        ModuleInstance::emission(0.0, 1),
+        ModuleInstance::emission(0.0, burst),
         ModuleInstance::shape(EmitterShape::Point),
         ModuleInstance::initialize(
             ScalarRange::new(10.0, 10.0),
@@ -690,16 +693,6 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
     app.world_mut()
         .resource_mut::<ParticleLightGpuSettings>()
         .max_lights = 3;
-    // Two separate roots/artifacts, two selected records, three reserved slots.
-    let owners = [-50.0, 50.0].map(|x| {
-        let mut player = EffectPlayer::from_compiled(source(0.0, 255.0))
-            .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
-        player.playing = false;
-        player.instance_mut().set_playback_time(0.25);
-        app.world_mut()
-            .spawn((player, Transform::from_xyz(x, 1.0, 0.0)))
-            .id()
-    });
     let host = app
         .world_mut()
         .spawn((
@@ -715,6 +708,29 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
         ))
         .id();
     let mut deadline = Instant::now();
+    let mut retirement =
+        String::from("phase,sample,native_async_index_demand,visible_slots,allocated_slots\n");
+    let image = adapter_capture(app, target, &mut deadline, directory, "host-only-baseline");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert!(channel_energy(&image, 2, None) > 200);
+    let baseline = cluster_window(app, &mut deadline, "host-only", &mut retirement, 0);
+    assert_eq!(baseline.0, baseline.1, "host-only demand did not settle");
+    let idle_pool = app
+        .world_mut()
+        .query_filtered::<Entity, With<ParticleLightGpuSlot>>()
+        .iter(app.world())
+        .collect::<Vec<_>>();
+    assert_eq!(idle_pool.len(), 3);
+    // Two separate roots/artifacts, two selected records, three reserved slots.
+    let owners = [-50.0, 50.0].map(|x| {
+        let mut player = EffectPlayer::from_compiled(source(0.0, 255.0))
+            .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+        player.playing = false;
+        player.instance_mut().set_playback_time(0.25);
+        app.world_mut()
+            .spawn((player, Transform::from_xyz(x, 1.0, 0.0)))
+            .id()
+    });
     let image = adapter_capture(app, target, &mut deadline, directory, "multiple-roots");
     assert!(
         channel_energy(&image, 1, Some(false)) > 200 && channel_energy(&image, 1, Some(true)) > 200
@@ -742,6 +758,8 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
         .query_filtered::<Entity, With<ParticleLightGpuSlot>>()
         .iter(app.world())
         .collect::<Vec<_>>();
+    assert_eq!(before, idle_pool, "waking the idle pool churned entities");
+    cluster_window(app, &mut deadline, "active", &mut retirement, 3);
     for _ in 0..12 {
         paced_update(app, &mut deadline);
     }
@@ -773,6 +791,11 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
         "hidden hierarchy retained a light"
     );
     assert!(channel_energy(&image, 2, None) > 200);
+    assert_eq!(
+        cluster_window(app, &mut deadline, "hierarchy-hidden", &mut retirement, 0),
+        baseline,
+        "hidden pool retained native cluster demand"
+    );
     app.world_mut().entity_mut(owners[1]).remove::<ChildOf>();
     app.world_mut().despawn(parent);
     // Explicitly reject unsupported layers, no automatic async fallback.
@@ -787,6 +810,11 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
             .snapshot()
             .rejection,
         Some(ParticleLightGpuRejection::NonDefaultLayers)
+    );
+    let rejected = cluster_window(app, &mut deadline, "layer-rejected", &mut retirement, 3);
+    assert!(
+        rejected.1 <= baseline.1 + 3 * 8,
+        "fallback broadcast across the view"
     );
     app.world_mut()
         .entity_mut(owners[1])
@@ -803,9 +831,38 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
             .rejection,
         Some(ParticleLightGpuRejection::ManifestBudget)
     );
+    let rejected = cluster_window(app, &mut deadline, "manifest-rejected", &mut retirement, 3);
+    assert!(
+        rejected.1 <= baseline.1 + 3 * 8,
+        "fallback broadcast across the view"
+    );
     app.world_mut()
         .resource_mut::<ParticleLightGpuSettings>()
         .max_manifest_bytes = 1024 * 1024;
+    app.world_mut()
+        .entity_mut(owners[1])
+        .insert(Visibility::Hidden);
+    let mut empty = EffectPlayer::from_compiled(source_with_burst(0.0, 255.0, 0))
+        .with_history_policy(PlaybackHistoryPolicy::PlaybackOnly);
+    empty.playing = false;
+    empty.instance_mut().set_playback_time(0.25);
+    let empty = app.world_mut().spawn((empty, Transform::IDENTITY)).id();
+    let image = adapter_capture(app, target, &mut deadline, directory, "empty-selection");
+    assert_eq!(channel_energy(&image, 1, None), 0);
+    assert!(channel_energy(&image, 2, None) > 200);
+    let empty_demand = cluster_window(app, &mut deadline, "empty-selection", &mut retirement, 3);
+    assert!(empty_demand.1 <= baseline.1 + 3 * 8);
+    assert!(
+        app.world()
+            .resource::<ParticleLightGpuStatistics>()
+            .snapshot()
+            .rejection
+            .is_none()
+    );
+    app.world_mut().despawn(empty);
+    app.world_mut()
+        .entity_mut(owners[1])
+        .insert(Visibility::Inherited);
     app.world_mut()
         .resource_mut::<ParticleLightGpuSettings>()
         .max_buffer_bytes = 0;
@@ -874,6 +931,11 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
     let image = adapter_capture(app, target, &mut deadline, directory, "all-roots-removed");
     assert_eq!(channel_energy(&image, 1, None), 0);
     assert!(channel_energy(&image, 2, None) > 200);
+    assert_eq!(
+        cluster_window(app, &mut deadline, "all-roots-removed", &mut retirement, 0),
+        baseline,
+        "retired pool retained native cluster demand"
+    );
     let readback = &app.world().resource::<ParticleLightStatistics>().readback;
     assert_eq!((readback.pending, readback.staging_bytes), (0, 0));
     assert_eq!(
@@ -881,6 +943,50 @@ fn adapter_contract(app: &mut App, target: &Handle<Image>, directory: &std::path
         40_000.0
     );
     app.world_mut().despawn(host);
+    std::fs::write(directory.join("cluster-retirement.csv"), retirement).unwrap();
+}
+
+// Fixed paced observation window after the ordinary capture/drain. Never wait
+// until a desired counter appears: these are Bevy's asynchronous acknowledgments,
+// not same-frame demand or a complete native allocation measurement.
+fn cluster_window(
+    app: &mut App,
+    deadline: &mut Instant,
+    phase: &str,
+    csv: &mut String,
+    expected_visible: usize,
+) -> (usize, usize) {
+    use bevy::light::cluster::Clusters;
+    let mut bounds = (usize::MAX, 0);
+    for sample in 0..12 {
+        paced_update(app, deadline);
+        let demand = app
+            .world_mut()
+            .query_filtered::<&Clusters, With<Camera3d>>()
+            .single(app.world())
+            .unwrap()
+            .last_frame_total_cluster_index_count
+            .expect("native cluster acknowledgment unavailable");
+        let mut slots = app
+            .world_mut()
+            .query_filtered::<(&PointLight, &Visibility), With<ParticleLightGpuSlot>>();
+        let allocated = slots.iter(app.world()).count();
+        let visible = slots
+            .iter(app.world())
+            .filter(|(_, visibility)| **visibility == Visibility::Visible)
+            .count();
+        assert_eq!(visible, expected_visible, "{phase}");
+        for (light, _) in slots.iter(app.world()) {
+            assert_eq!(light.intensity, 0.0);
+            assert!(light.range > 0.0 && (1.0 / light.range.powi(2)).is_finite());
+        }
+        bounds.0 = bounds.0.min(demand);
+        bounds.1 = bounds.1.max(demand);
+        csv.push_str(&format!(
+            "{phase},{sample},{demand},{visible},{allocated}\n"
+        ));
+    }
+    bounds
 }
 
 #[test]

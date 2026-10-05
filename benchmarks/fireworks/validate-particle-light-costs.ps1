@@ -2,7 +2,8 @@
 # Read-only F7E4B3A run-level matched-cost/public-allocation evidence gate.
 [CmdletBinding()]
 param([Parameter(Mandatory,ParameterSetName='Reports')][string]$ReportsDirectory,
-    [Parameter(Mandatory,ParameterSetName='SelfTest')][switch]$SelfTest)
+    [Parameter(Mandatory,ParameterSetName='SelfTest')][switch]$SelfTest,
+    [switch]$RequireRetirement)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -97,6 +98,27 @@ function Clusters($Report) {
         native_async_index_demand_at_last_main_sample=$Report.cluster_main[-1].views[0].last_native_index_demand
         public_list_growth=$false; private_z_slice_bytes=$null; private_staging_bytes=$null}
 }
+function Retirement($Gpu, $Control) {
+    # A fixed final 60-sample window, after ordinary authored show cleanup. The
+    # acknowledged native counter is asynchronous; do not pair it with dispatches
+    # or wait for an expected value. Unknowns and transient residuals fail the gate.
+    $counts = @{}
+    foreach ($mode in @('gpu','control')) {
+        $report = if ($mode -eq 'gpu') { $Gpu } else { $Control }
+        if ($report.cluster_main.Count -lt 60 -or $report.particle_light_gpu.Count -lt 60) { throw 'Short retirement window' }
+        $counts[$mode] = @($report.cluster_main | Select-Object -Last 60 | ForEach-Object {
+            if ($_.views.Count -ne 1 -or $null -eq $_.views[0].last_native_index_demand) { throw 'Unknown retirement demand' }
+            $_.views[0].last_native_index_demand
+        })
+        if (@($counts[$mode] | Sort-Object -Unique).Count -ne 1 -or
+            @($report.particle_light_gpu | Select-Object -Last 60 | Where-Object {
+                $_.written_capacity -ne 0 -or $null -ne $_.rejection -or $_.invalid_sources -ne 0
+            }).Count -ne 0) { throw 'Show retirement window did not settle cleanly' }
+    }
+    if ($counts.gpu[0] -ne $counts.control[0]) { throw 'Inactive GPU slots retained cluster demand above control' }
+    [ordered]@{samples=60; gpu_native_async_index_demand=$counts.gpu[0]; control_native_async_index_demand=$counts.control[0]
+        scope='Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement.'}
+}
 if ($SelfTest) {
     function Fixture {
         $view = [pscustomobject]@{main_entity='camera'; z_slice_bytes=$null; index_bytes=256; offsets_counts_bytes=32}
@@ -147,6 +169,26 @@ if ($SelfTest) {
     $empty.work.root.links = @()
     if (!(WorkSignature $unobserved).Contains('"links":null') -or
         (WorkSignature $unobserved) -eq (WorkSignature $empty)) { throw 'Null root links became fake zero/empty observations' }
+    function RetiredFixture {
+        [pscustomobject]@{cluster_main=@(0..59 | ForEach-Object { [pscustomobject]@{views=@([pscustomobject]@{last_native_index_demand=1})} })
+            particle_light_gpu=@(0..59 | ForEach-Object { [pscustomobject]@{written_capacity=0; rejection=$null; invalid_sources=0} })}
+    }
+    Retirement (RetiredFixture) (RetiredFixture) | Out-Null
+    foreach ($failure in @('residual','unknown','unstable','short','active','rejected','invalid')) {
+        $gpu = RetiredFixture
+        switch ($failure) {
+            residual { foreach ($s in $gpu.cluster_main) { $s.views[0].last_native_index_demand = 96 } }
+            unknown { $gpu.cluster_main[-1].views[0].last_native_index_demand = $null }
+            unstable { $gpu.cluster_main[-1].views[0].last_native_index_demand = 2 }
+            short { $gpu.cluster_main = @($gpu.cluster_main | Select-Object -Last 59) }
+            active { $gpu.particle_light_gpu[-1].written_capacity = 1 }
+            rejected { $gpu.particle_light_gpu[-1].rejection = 'rejected' }
+            invalid { $gpu.particle_light_gpu[-1].invalid_sources = 1 }
+        }
+        $rejected = $false
+        try { Retirement $gpu (RetiredFixture) | Out-Null } catch { $rejected = $true }
+        if (!$rejected) { throw "Retirement negative control accepted: $failure" }
+    }
     'Public-allocation/work-signature positive and negative controls passed'
     return
 }
@@ -200,6 +242,9 @@ for ($repeat = 1; $repeat -le $manifest.repetitions; $repeat++) {
                 }
             }
             if ((WorkSignature $reports.gpu) -ne (WorkSignature $reports.control)) { throw "$pair/$probe/$tier authored work differs" }
+            if ($RequireRetirement -and $probe -eq 'show') {
+                $summary.retirement = Retirement $reports.gpu $reports.control
+            }
             foreach ($key in @('render_gpu_ms','render_cpu_ms','selection_gpu_ms','selection_cpu_ms','clustering_gpu_ms','clustering_cpu_ms')) {
                 $summary["${key}_run_mean_difference"] = $summary.gpu[$key].mean - $summary.control[$key].mean
             }
@@ -208,6 +253,6 @@ for ($repeat = 1; $repeat -le $manifest.repetitions; $repeat++) {
         }
     }
 }
-[ordered]@{schema=1; milestone='F7E4B3A'; accepted=$true
+[ordered]@{schema=1; milestone=if ($RequireRetirement) { 'F7E4B3B1' } else { 'F7E4B3A' }; accepted=$true
     scope='Repeated alternating run-level on/off pairs, matched authored identity/compiled capacity/seeds/event admission. Independent timing distributions, not frame-paired subtraction or statistical significance. Outer render graph, not whole app/game. Public physical native buffer sizes/no resize-warning gate and public asynchronous native index-demand acknowledgments, not paired with timing/buffer frames. Private Z-slice demand/allocations/staging and in-flight memory remain unmeasured. One GPU/headless target/default layers, not finale certification.'
     binary_sha256=$manifest.binary_sha256; rows=$rows} | ConvertTo-Json -Depth 16

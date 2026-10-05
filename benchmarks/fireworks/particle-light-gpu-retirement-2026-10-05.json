@@ -1,0 +1,2989 @@
+{
+  "schema": 1,
+  "milestone": "F7E4B3B1",
+  "date": "2026-10-05",
+  "base_commit": "c016d028",
+  "accepted": true,
+  "scope": "Reusable native GPU-light pool work retirement, conservative source presence and finite zero-lumen fallback. Default layers, one RTX 4070 SUPER/Vulkan, high tier only. Fixed asynchronous native index-demand windows, not same-frame counts, total renderer memory retirement, general per-view support or finale certification.",
+  "source_inputs": [
+    {
+      "path": "bevy/aestra-bevy/src/particle_light_gpu.rs",
+      "sha256": "20e361e4aae3bf996c275b727823b4a2a21cccc26d65a85e810a32520ac5c838"
+    },
+    {
+      "path": "bevy/aestra-bevy/src/particle_light_gpu.wgsl",
+      "sha256": "9de75958df83b84c24ea5981dfaacd2c19d2f31671db2b132b530f3f540c994c"
+    },
+    {
+      "path": "bevy/aestra-bevy/tests/particle_light_latency.rs",
+      "sha256": "0b235037a636413cd6adcdacf9f17b1391f2e2a3a814a6e1fc1c9e73c237895e"
+    },
+    {
+      "path": "benchmarks/fireworks/run-particle-light-costs.ps1",
+      "sha256": "7c2bdf587ab3bd8635af246e9eb2fb10aa9c3e3fb2b29ff6566290d89ed6646a"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-particle-light-costs.ps1",
+      "sha256": "99d40a0dccd25342c162db9bc0c36f29af3131b896e2f4c30d5d05a2202c01ff"
+    }
+  ],
+  "native_regression": {
+    "directory": "target/fireworks-f7/gpu-retirement-registration-2026-10-05-run2",
+    "harness_exit_code": 0,
+    "expanded_fixture_passed": true,
+    "cluster_retirement_sha256": "2d831841f8cd10968648b76a7ebde5b4108072f4f16c4d44515f0a470eeac7d9",
+    "phases": [
+      {
+        "phase": "active",
+        "samples": 12,
+        "native_async_index_demand_min": 51,
+        "native_async_index_demand_max": 51,
+        "visible_slots": [
+          "3"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      },
+      {
+        "phase": "all-roots-removed",
+        "samples": 12,
+        "native_async_index_demand_min": 20,
+        "native_async_index_demand_max": 20,
+        "visible_slots": [
+          "0"
+        ],
+        "allocated_slots": [
+          "1"
+        ]
+      },
+      {
+        "phase": "empty-selection",
+        "samples": 12,
+        "native_async_index_demand_min": 23,
+        "native_async_index_demand_max": 23,
+        "visible_slots": [
+          "3"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      },
+      {
+        "phase": "hierarchy-hidden",
+        "samples": 12,
+        "native_async_index_demand_min": 20,
+        "native_async_index_demand_max": 20,
+        "visible_slots": [
+          "0"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      },
+      {
+        "phase": "host-only",
+        "samples": 12,
+        "native_async_index_demand_min": 20,
+        "native_async_index_demand_max": 20,
+        "visible_slots": [
+          "0"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      },
+      {
+        "phase": "layer-rejected",
+        "samples": 12,
+        "native_async_index_demand_min": 26,
+        "native_async_index_demand_max": 26,
+        "visible_slots": [
+          "3"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      },
+      {
+        "phase": "manifest-rejected",
+        "samples": 12,
+        "native_async_index_demand_min": 26,
+        "native_async_index_demand_max": 26,
+        "visible_slots": [
+          "3"
+        ],
+        "allocated_slots": [
+          "3"
+        ]
+      }
+    ],
+    "extra_images": [
+      {
+        "file": "host-only-baseline.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      },
+      {
+        "file": "empty-selection.png",
+        "sha256": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe"
+      }
+    ],
+    "registration": {
+      "schema": 1,
+      "date": "2026-10-04",
+      "scope": "F7E4A bounded native GPU adapter registration, three speeds and multi-root/lifecycle/budget/host-light native assertions. Default layers and GPU clustering only. Isolated fixtures, not authored hero/volley/show or production-finale certification; equivalent spatial offset, not scanout latency.",
+      "metadata": {
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "driver": "NVIDIA",
+        "device_type": "DiscreteGpu",
+        "pipeline": "pipelined",
+        "history": "playback-only",
+        "cadence_hz": "60",
+        "target": "768x384",
+        "response": "HDR/Reinhard/EV0/no bloom/no ambient/no shadows",
+        "readback_cap": "1",
+        "slots": "3",
+        "light_range": "8",
+        "gpu_adapter": "bounded reserved slots, native Bevy GPU clustering, StandardMaterial"
+      },
+      "accepted": true,
+      "runs": [
+        {
+          "speed_m_s": 25,
+          "control_error_px": {
+            "samples": 10,
+            "mean": 0.01966658965564818,
+            "p50": 0.012828443753787156,
+            "p95": 0.04650339714402492,
+            "max": 0.04650339714402492
+          },
+          "measured_mode": "gpu",
+          "lag_frames": {
+            "samples": 10,
+            "mean": 0.0027512524505255652,
+            "p50": 0.0017301226101692933,
+            "p95": 0.0066325870311242825,
+            "max": 0.0066325870311242825
+          },
+          "lag_ms_at_60hz": 0.11054311718540472,
+          "lag_metres": {
+            "samples": 10,
+            "mean": 0.0011463551877189855,
+            "p50": 0.0007208844209038723,
+            "p95": 0.0027635779296351177,
+            "max": 0.0027635779296351177
+          },
+          "p95_limit_metres": 0.4166666666666667,
+          "accepted": true,
+          "phases": [
+            {
+              "mode": "control",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.6623813559322,
+                "p50": 16.6029,
+                "p95": 17.1203,
+                "max": 17.764499999999998
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9775433333333332,
+                "p50": 0.9734999999999999,
+                "p95": 1.2319,
+                "max": 1.2895
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            },
+            {
+              "mode": "async",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.67042372881356,
+                "p50": 16.6549,
+                "p95": 17.125999999999998,
+                "max": 17.368000000000002
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.89593,
+                "p50": 0.8335,
+                "p95": 1.1795,
+                "max": 1.3932
+              },
+              "max_frame_lag": 2,
+              "last_accepted_age_ms": {
+                "samples": 60,
+                "mean": 31.476965000000003,
+                "p50": 31.467399999999998,
+                "p95": 31.8714,
+                "max": 32.2603
+              }
+            },
+            {
+              "mode": "gpu",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.669600000000003,
+                "p50": 16.6186,
+                "p95": 17.1218,
+                "max": 17.2622
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9395433333333334,
+                "p50": 0.9285,
+                "p95": 1.1552,
+                "max": 1.2358
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            }
+          ],
+          "control_image_sha256": "2de2b25e3a5701ecd7dcf6e91a13ac8c5409801cc2c4892825bd2069cd17f4aa",
+          "async_image_sha256": "4bb3adad2053c70f2b9a0cc21eb833590c2544405048a4b5d9fc7deca2eb8636",
+          "async_baseline_frames": {
+            "samples": 10,
+            "mean": 2.025390767156309,
+            "p50": 2.0225889288333927,
+            "p95": 2.0345679090881705,
+            "max": 2.0345679090881705
+          },
+          "gpu_image_sha256": "2533c9a802067cd0493b64ac72b8c62b831d69e5ac5738b6e9baf86f8c0ed869",
+          "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+          "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+        },
+        {
+          "speed_m_s": 75,
+          "control_error_px": {
+            "samples": 10,
+            "mean": 0.04541539763135347,
+            "p50": 0.04998754342316829,
+            "p95": 0.06833906130809168,
+            "max": 0.06833906130809168
+          },
+          "measured_mode": "gpu",
+          "lag_frames": {
+            "samples": 10,
+            "mean": 0.006122144676524344,
+            "p50": 0.007157936167012258,
+            "p95": 0.009160631527207874,
+            "max": 0.009160631527207874
+          },
+          "lag_ms_at_60hz": 0.15267719212013123,
+          "lag_metres": {
+            "samples": 10,
+            "mean": 0.00765268084565543,
+            "p50": 0.008947420208765322,
+            "p95": 0.011450789409009843,
+            "max": 0.011450789409009843
+          },
+          "p95_limit_metres": 1.25,
+          "accepted": true,
+          "phases": [
+            {
+              "mode": "control",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.67012881355932,
+                "p50": 16.6578,
+                "p95": 17.2333,
+                "max": 17.3463
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9305049999999997,
+                "p50": 0.9154,
+                "p95": 1.1498000000000002,
+                "max": 1.2892
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            },
+            {
+              "mode": "async",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.67046610169492,
+                "p50": 16.6344,
+                "p95": 17.424,
+                "max": 17.627299999999998
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.888785,
+                "p50": 0.8257,
+                "p95": 1.1236,
+                "max": 1.309
+              },
+              "max_frame_lag": 2,
+              "last_accepted_age_ms": {
+                "samples": 60,
+                "mean": 31.441156666666664,
+                "p50": 31.4141,
+                "p95": 31.9618,
+                "max": 32.2774
+              }
+            },
+            {
+              "mode": "gpu",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.6683593220339,
+                "p50": 16.6485,
+                "p95": 17.228199999999998,
+                "max": 17.3976
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9363666666666666,
+                "p50": 0.9326,
+                "p95": 1.2079,
+                "max": 1.2431
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            }
+          ],
+          "control_image_sha256": "d5a965d7fe88ca4cf49e7f26d1533ed01442c2d7f518c8d64e6375cab0ca16cb",
+          "async_image_sha256": "50632790e70c83e9e64c7f5b04f19a16924b1005ecc54d24482f474925efb790",
+          "async_baseline_frames": {
+            "samples": 10,
+            "mean": 2.0474730284636378,
+            "p50": 2.0460334717264983,
+            "p95": 2.0609057520001954,
+            "max": 2.0609057520001954
+          },
+          "gpu_image_sha256": "893f1831369b4a097b62027bc70b0c5b783c96c0bbb0308f40bd55f9e01dbcec",
+          "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+          "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+        },
+        {
+          "speed_m_s": 150,
+          "control_error_px": {
+            "samples": 10,
+            "mean": 0.06443218158561877,
+            "p50": 0.04521572467393753,
+            "p95": 0.1112160036547607,
+            "max": 0.1112160036547607
+          },
+          "measured_mode": "gpu",
+          "lag_frames": {
+            "samples": 10,
+            "mean": 0.008536711376440253,
+            "p50": 0.005679191513905835,
+            "p95": 0.01498062546476886,
+            "max": 0.01498062546476886
+          },
+          "lag_ms_at_60hz": 0.249677091079481,
+          "lag_metres": {
+            "samples": 10,
+            "mean": 0.021341778441100634,
+            "p50": 0.014197978784764587,
+            "p95": 0.03745156366192215,
+            "max": 0.03745156366192215
+          },
+          "p95_limit_metres": 2,
+          "accepted": true,
+          "phases": [
+            {
+              "mode": "control",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.66803050847458,
+                "p50": 16.655099999999997,
+                "p95": 17.2471,
+                "max": 17.3064
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.8985383333333333,
+                "p50": 0.8469,
+                "p95": 1.2506,
+                "max": 1.2793999999999999
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            },
+            {
+              "mode": "async",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.663261016949157,
+                "p50": 16.6347,
+                "p95": 17.122600000000002,
+                "max": 17.2686
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9357883333333334,
+                "p50": 0.9197,
+                "p95": 1.1559000000000001,
+                "max": 1.2618
+              },
+              "max_frame_lag": 2,
+              "last_accepted_age_ms": {
+                "samples": 60,
+                "mean": 31.303085000000003,
+                "p50": 31.291399999999996,
+                "p95": 31.7116,
+                "max": 31.910099999999996
+              }
+            },
+            {
+              "mode": "gpu",
+              "interval_ms": {
+                "samples": 59,
+                "mean": 16.654832203389834,
+                "p50": 16.6493,
+                "p95": 17.1626,
+                "max": 17.3839
+              },
+              "update_ms": {
+                "samples": 60,
+                "mean": 0.9503266666666667,
+                "p50": 0.9575,
+                "p95": 1.1289,
+                "max": 1.2692999999999999
+              },
+              "max_frame_lag": null,
+              "last_accepted_age_ms": null
+            }
+          ],
+          "control_image_sha256": "cc5b50012160fafbf53f110ba179ee1c816b25413d448fa71127a52dcf81ef12",
+          "async_image_sha256": "b7df170b81b8cb80d0c963d379c61722f77c913abeb6d81784d61a39e92f9dbe",
+          "async_baseline_frames": {
+            "samples": 10,
+            "mean": 2.039018819187546,
+            "p50": 2.0377440674375706,
+            "p95": 2.0520206838644666,
+            "max": 2.0520206838644666
+          },
+          "gpu_image_sha256": "7dbcb8489f63cd612a689cd2a2bd8bfa688c5b46eafd2175252d6ee40f9c9fbd",
+          "disabled_image_sha256": "6d3a2c5fa6cc35e0810afed3cddbd931ea093e7537e70e9e63b6739dde4ef1e7",
+          "removed_image_sha256": "94ff071049a58f5d9ed08a450b17485800f80a1d67773cbffceadba0385fe5e2"
+        }
+      ],
+      "registration_sha256": "93fa6eba58ba9c64c73f215c74ef02c5e80035837be72367dcf45bccbcf4bd6b",
+      "telemetry_sha256": "c6dd35bdd934f2f522ef26a166bce92a9485a37a5579a49c91a039a556ac4729",
+      "metadata_sha256": "2ff6ed0d5316002abf023b8da4878d9bbf6b153ecadba85d2244061cd3460c0b",
+      "lifecycle": [
+        {
+          "speed_m_s": "25",
+          "check": "global-disable",
+          "green_energy": "0"
+        },
+        {
+          "speed_m_s": "25",
+          "check": "owner-removal",
+          "green_energy": "0"
+        },
+        {
+          "speed_m_s": "75",
+          "check": "global-disable",
+          "green_energy": "0"
+        },
+        {
+          "speed_m_s": "75",
+          "check": "owner-removal",
+          "green_energy": "0"
+        },
+        {
+          "speed_m_s": "150",
+          "check": "global-disable",
+          "green_energy": "0"
+        },
+        {
+          "speed_m_s": "150",
+          "check": "owner-removal",
+          "green_energy": "0"
+        }
+      ],
+      "lifecycle_sha256": "1a5265e7f491da15a21e49a125f0237eddcb27f771e004babe39a535791a67be",
+      "contract_images": {
+        "multiple-roots": "05d44f83690b6b70567b92123f8eb64928d8cb6f4154010b1602ae5819baadcc",
+        "one-root-removed": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+        "hierarchy-hidden": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+        "layer-rejected": "cdbfdd7ee1c6569bb26f206d275152c719c7aa3069a0009eb2d51cfdc377dcfe",
+        "manifest-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+        "budget-rejected": "77a5075f716c9374ca2ef061c3264bc4ca9bda74a15c9f7cf041a52b4f32ea39",
+        "budget-recovered": "1d5a9b74a3e2eff39f8d5d4418dc2bbc39ba641b60fc40c80dece0a71e799817",
+        "far-world-origin": "2cfde9980a165b8115e23220630c561d5fb269d938abb40a7391b26ba63d0fbf",
+        "all-roots-removed": "a11204302146a00185e0541d91807ffe1cfb9a2439fae5de4506a2dc666e8fcc"
+      }
+    }
+  },
+  "repeated_costs": {
+    "directory": "target/fireworks-f7/gpu-retirement-costs-2026-10-05",
+    "manifest_sha256": "ac214f2bebf6c350da7f81efa96b40f17491e175218dc7a74e6595b230f96be3",
+    "summary_sha256": "9377cd61d4246cc82f15d42bde12335599774dfda97025feea97f0f554c2076b",
+    "manifest": {
+      "schema": 1,
+      "accepted": true,
+      "repetitions": 3,
+      "tiers": [
+        "high"
+      ],
+      "runs": [
+        {
+          "pair": "pair01",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "hero-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "a1a821180a5fd877f2132f9c0bee9ee017934e5e35ceecefc8cc4897f5f68f9f",
+          "log_sha256": "d34802132c858356c756336fd1886b696a0d4b1bac05026a3a43272bb26ebc8b"
+        },
+        {
+          "pair": "pair01",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "control",
+          "stem": "hero-control-high",
+          "exit_code": 0,
+          "report_sha256": "8f66fa6d74860c37c75efff0915046da15a1f1f58ed575a5d097d96323e2b34d",
+          "log_sha256": "04a51ee422e9f2de85f855dd4f32aa3238c5fc12a529ddfc3674e99940926a87"
+        },
+        {
+          "pair": "pair01",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "control",
+          "stem": "volley-control-high",
+          "exit_code": 0,
+          "report_sha256": "fa1e1109c41888d1cd3cab1d3f4e72ed17e1d49e5fb3d56419d7cb4da62c3221",
+          "log_sha256": "1b43514b4208cd394f49e54662be80027c1de72ee4ab441275438586021afc8b"
+        },
+        {
+          "pair": "pair01",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "volley-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "ce12714ea9954179ae98a04023ad2e5fc0ccc95869dbef1158227725b720290b",
+          "log_sha256": "4907485ee22bd3907da933481b4baf1f4b31e38cfa397200fb082dbe30a0528a"
+        },
+        {
+          "pair": "pair01",
+          "probe": "show",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "show-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "5c38f597a12e6b165ceb47a266643dee29b6a1aa8071089e3c364a8bf37f85d3",
+          "log_sha256": "10ae6dab60ca423d51167d927a4ec0fc26a2a2922a08d28550a467d0faa9f4d4"
+        },
+        {
+          "pair": "pair01",
+          "probe": "show",
+          "tier": "high",
+          "mode": "control",
+          "stem": "show-control-high",
+          "exit_code": 0,
+          "report_sha256": "f417ccc466e28272a1d549752ec5b3220a97df92bb5d2c159135cd0a4ba5c96d",
+          "log_sha256": "2c854cb803e9885d23be3c810d5979780a7560d1d62122360a41cb634b70facc"
+        },
+        {
+          "pair": "pair02",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "control",
+          "stem": "hero-control-high",
+          "exit_code": 0,
+          "report_sha256": "cb2c5e0d4b3e2113c04b37e8fb91fe36be443d93b3438edf3f128a8e6009f083",
+          "log_sha256": "c14d505521b7ad5eda04f030631f27a3eba0a156477087fd17f7813a2fd2279c"
+        },
+        {
+          "pair": "pair02",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "hero-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "734dc92826d9da469f687b24e51a7c79062e32fec8b7c9741889d6941478163f",
+          "log_sha256": "4e2ccce3a8d3552bc950f829e70d8f3fbff48d5b16031f09e24bbc1c93cdd9b8"
+        },
+        {
+          "pair": "pair02",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "volley-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "196b2967d9b8cf7617111a86d14221ea793a742151c6874bf4523341720e7358",
+          "log_sha256": "4955c05eb787f1d8aa4e8c6a434f16b01f85d4a01693ec70202fac3e60693674"
+        },
+        {
+          "pair": "pair02",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "control",
+          "stem": "volley-control-high",
+          "exit_code": 0,
+          "report_sha256": "f82268aa43232de61bb4c67aab0bbdac318e63c7e971842f768334a88eb21759",
+          "log_sha256": "3f96757022f80cb96daa3841af879255dd27f0771171a4fd8824bed013deb580"
+        },
+        {
+          "pair": "pair02",
+          "probe": "show",
+          "tier": "high",
+          "mode": "control",
+          "stem": "show-control-high",
+          "exit_code": 0,
+          "report_sha256": "0adda34df298b6e93ff6b7528bd465f072c054aec2db59ad9e343a6c4b680ff8",
+          "log_sha256": "5b9bfac9171baae4e21c7d38814fff1a545a1f1a15cb6c478365035e50edce23"
+        },
+        {
+          "pair": "pair02",
+          "probe": "show",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "show-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "817d7af624b1859bf5f029d74789e7752dcb1192f3d29850249c8041aa7a2b5e",
+          "log_sha256": "33af953cb804b00a3cc14281b57131bbdf45fd365e953885c0574ec0304612a4"
+        },
+        {
+          "pair": "pair03",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "hero-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "f4db22bf209ac16a96ab5287b35756af331dce66283d9793c90cef21c4adf094",
+          "log_sha256": "aa1f81dc0d784ffee1f3944ab067fa5e5b6e5ffd06b4306fcfde26e54379be7e"
+        },
+        {
+          "pair": "pair03",
+          "probe": "hero",
+          "tier": "high",
+          "mode": "control",
+          "stem": "hero-control-high",
+          "exit_code": 0,
+          "report_sha256": "c3a22302c8f52582624356600ab53d924a49d29458e83b8082ad9393b9fd50f9",
+          "log_sha256": "aa9fd49cece5a895f870ad42c89847d1d8f693a9aa5284dbeb5b67d0d7d532bc"
+        },
+        {
+          "pair": "pair03",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "control",
+          "stem": "volley-control-high",
+          "exit_code": 0,
+          "report_sha256": "8ba6812e619aec26417c523b261f868c54f06abce451fdc4f06599f204145053",
+          "log_sha256": "ae915fbed5e3cefaeaa5220d5dc9e2d3e17e29de7f29205332bf1ffe3f2a0a66"
+        },
+        {
+          "pair": "pair03",
+          "probe": "volley",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "volley-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "2d0d87ed752a08975aa9cbeb8293e7788e8c85232a1f50f60d700f095f4c1a92",
+          "log_sha256": "89d76775107786f1bae69abd60b80be797e849a2da98694fe7b0927f7e7d1445"
+        },
+        {
+          "pair": "pair03",
+          "probe": "show",
+          "tier": "high",
+          "mode": "gpu",
+          "stem": "show-gpu-high",
+          "exit_code": 0,
+          "report_sha256": "bd7d8e7140bee91a33a46af018d8a3b7dbe42ac51fa7cf417e547dbbfb9129a0",
+          "log_sha256": "68cce37fffe464305ebf9eb383eb5f46d0a9f116aeb4c690d84e83ee08d6a947"
+        },
+        {
+          "pair": "pair03",
+          "probe": "show",
+          "tier": "high",
+          "mode": "control",
+          "stem": "show-control-high",
+          "exit_code": 0,
+          "report_sha256": "0d77b0c0cf956d4a3741219aaefd16991aecfcce5501ad0e881abe1b689f5e8d",
+          "log_sha256": "06ece36a74eb886865e8de5c47617958dd770a25ec40727c90e3dde4f68a57eb"
+        }
+      ],
+      "failure": null,
+      "asset_inputs": [
+        {
+          "path": "assets\\icons\\bin.svg",
+          "sha256": "e52f82bcdae4f325d0d6566ade5b9c801ea3d180639aa06a17ca6536cf215157"
+        },
+        {
+          "path": "assets\\icons\\center-focus.svg",
+          "sha256": "9e3aac284aec4343238261b75862182b9984d3505797556bfe4dee4799a6c752"
+        },
+        {
+          "path": "assets\\icons\\chevron-down.svg",
+          "sha256": "27ebacfc78166048a56623d1b5bd6b8d0df2bb9d4de7709a998d006189bf29f2"
+        },
+        {
+          "path": "assets\\icons\\chevron-left.svg",
+          "sha256": "f3529be0a650fd8844234a1211277fd55f14319b2150789aa0d87264f6bfff16"
+        },
+        {
+          "path": "assets\\icons\\chevron-right.svg",
+          "sha256": "fec165b5f7f0ad1b63f709dba5304b00679fbd5daa34bdaec8a629284fb7ad8a"
+        },
+        {
+          "path": "assets\\icons\\close.svg",
+          "sha256": "50abc0f310f633c5375b2f7f2049344607cd7fdd474aa0a96f1797d7e6aeb989"
+        },
+        {
+          "path": "assets\\icons\\drag-vertical.svg",
+          "sha256": "8803665449af9c1cca82e6afbf1266d44c3795d75c1a3e8b4e9d8449165546e9"
+        },
+        {
+          "path": "assets\\icons\\event.svg",
+          "sha256": "0de7bd6b2abb322fd24b13191fbb526dfe67139cce428b8a11480ed01ad47dac"
+        },
+        {
+          "path": "assets\\icons\\file.svg",
+          "sha256": "e08d0bb1f2a1b308bd0d3939c27122de0997fb57042621ad94958f15bf8d2a9a"
+        },
+        {
+          "path": "assets\\icons\\folder-plus.svg",
+          "sha256": "be95a026c7d1cd28f09251cbeac00bfe5a78949b48c30bf30f4084ada554d569"
+        },
+        {
+          "path": "assets\\icons\\folder.svg",
+          "sha256": "ae0758f9e63c169925757cc0fb35e0051934d99bbad80cac42e39218ee89cab4"
+        },
+        {
+          "path": "assets\\icons\\frame-all.svg",
+          "sha256": "7f4b0b9706ddaf6c505b937e0e3caebdf2ce15191e21813a60bb8c240ccaa159"
+        },
+        {
+          "path": "assets\\icons\\frame-selection.svg",
+          "sha256": "319c5d0a30cf6a8098d7c30bee182f19954e0c1392e7ee39e78a113b64bcc039"
+        },
+        {
+          "path": "assets\\icons\\fullscreen-alt.svg",
+          "sha256": "21d6a956701b8259289d0256cabc192b3dd72572fa67a8c332f7172bd4f69c83"
+        },
+        {
+          "path": "assets\\icons\\fullscreen-exit-alt.svg",
+          "sha256": "33b14b2c44b93140e7ec34e4ec2aae68764b597554fa17a7f2394bd67024e2bc"
+        },
+        {
+          "path": "assets\\icons\\graph-align.svg",
+          "sha256": "f6ed723b7601b9306069aba008b54d58e3d5eabb8fcdfd5b447794e6937abee6"
+        },
+        {
+          "path": "assets\\icons\\grid.svg",
+          "sha256": "81fecb898414b48a2aa0e9edc39859fa01bb77a12193810435e2d62a6970d8d4"
+        },
+        {
+          "path": "assets\\icons\\hide.svg",
+          "sha256": "e5d6375c72304f469f0f1d08907138ebea7ad52956646918d7bbf6127ae5d912"
+        },
+        {
+          "path": "assets\\icons\\image.svg",
+          "sha256": "cceee8651bba72f696887ec1a74f046d711be769c27865f9207978ac55f0de94"
+        },
+        {
+          "path": "assets\\icons\\infinite.svg",
+          "sha256": "d2d7bb05491a396b5f805469d8d1a7e22315a7b0c4b22615014505f6206d3c4d"
+        },
+        {
+          "path": "assets\\icons\\info.svg",
+          "sha256": "88f4320e22997a0d0eb839a645f944e41f142d3ecbc6fe0d213348670deac6a6"
+        },
+        {
+          "path": "assets\\icons\\list.svg",
+          "sha256": "832c9a97b41831e0d6e66a252d52c94aab124a39649e133ae58c0f48e1e6b440"
+        },
+        {
+          "path": "assets\\icons\\loop.svg",
+          "sha256": "b718fe4fb47a75824790aaaf3cb25fdcf6b348dbfa75bd8cec2d7ff1a1e6ed14"
+        },
+        {
+          "path": "assets\\icons\\marker.svg",
+          "sha256": "03d3f523e07e4914b8eec7868398c5350c306eee36ffbdbe8a5b70e66d0518a1"
+        },
+        {
+          "path": "assets\\icons\\merge.svg",
+          "sha256": "1bfdbacdb7147fa7865c058bcfbc5a9def70976760552c593443e892d8bd6fc6"
+        },
+        {
+          "path": "assets\\icons\\minus.svg",
+          "sha256": "3e83372c0fb57e8293aeeef33808e90eb153a824af26ab3cd210917912938672"
+        },
+        {
+          "path": "assets\\icons\\move.svg",
+          "sha256": "44376f5d035d787b82a866e4cbaaf0589ae54ccfc9ee24073971a2daf5066b22"
+        },
+        {
+          "path": "assets\\icons\\number-step-left.svg",
+          "sha256": "dd05176a1ff6d04479869d4b37c71d2b2cb46cbc92291e381cd65428d785d42e"
+        },
+        {
+          "path": "assets\\icons\\number-step-right.svg",
+          "sha256": "7372050a1cf32314e0fd66cbc67a4445c859bb49b9201cc07a5f77e5f6469d76"
+        },
+        {
+          "path": "assets\\icons\\pause.svg",
+          "sha256": "c4a4180ef7dea959723144822da002ae71b3b3fc70577d8362c4e7d29b9359af"
+        },
+        {
+          "path": "assets\\icons\\pin.svg",
+          "sha256": "e6f51c1a23e22618efeaf5bf34dbae5535fe2e245ba5afd631dc034332f23d0e"
+        },
+        {
+          "path": "assets\\icons\\play.svg",
+          "sha256": "d36ddbfce360683cf7b9e9d5ea93b0d5ba27c57fdae2803e1d0d872221a5c386"
+        },
+        {
+          "path": "assets\\icons\\plus.svg",
+          "sha256": "da681d36f18d1b161a552dc342792a1efac81857a865099aa0b03cd5a09d299a"
+        },
+        {
+          "path": "assets\\icons\\random.svg",
+          "sha256": "6d320332feac823106dfd2c7d1b302013ed59287a6835533f6117e961b06e5e3"
+        },
+        {
+          "path": "assets\\icons\\rotate.svg",
+          "sha256": "62305b252d2a283354483da73f36b176e0295314448069d077702b72cb0b4b17"
+        },
+        {
+          "path": "assets\\icons\\scale.svg",
+          "sha256": "8ea271816034fd8cd834b8b0ec31afaa69fdec65777d42c5da4bec56e35233e0"
+        },
+        {
+          "path": "assets\\icons\\show.svg",
+          "sha256": "224b58ad52e853925b1f5f07ea35992aba557dd84a7112b7d622f4a54ddb3253"
+        },
+        {
+          "path": "assets\\icons\\solid.svg",
+          "sha256": "b8545f6a680b33cc34b69ba25eb284dc575b80b960a5fe98ba8a1fd1aba62ba9"
+        },
+        {
+          "path": "assets\\icons\\source-constant.svg",
+          "sha256": "56fccf25d001e000ddfff5ac2775eb2c4c63a73bd23e5245cafa4a51b187ce78"
+        },
+        {
+          "path": "assets\\icons\\source-curve.svg",
+          "sha256": "a5cec6a2c38e137a844e384bb341657487ff4c450acb278373ceb5be05a142ab"
+        },
+        {
+          "path": "assets\\icons\\source-gradient.svg",
+          "sha256": "3dbc8470348e4af8347362a0d8c223fbbd4d3d4c295472a07c9dd970f3b6b9a2"
+        },
+        {
+          "path": "assets\\icons\\source-host-binding.svg",
+          "sha256": "29ea63aaf37c48cb6404f2a3d1a4798209bfed119c1d19c071732286fc624959"
+        },
+        {
+          "path": "assets\\icons\\source-random.svg",
+          "sha256": "a20fc94f49dfde7d8c24ca5b719ec81eb2a4d127f3eaf56938aa0267d3059b66"
+        },
+        {
+          "path": "assets\\icons\\split-h.svg",
+          "sha256": "a11b0fdc3664674499fa00ba5fbae48926cddf51bee02973525118d836be6000"
+        },
+        {
+          "path": "assets\\icons\\stop.svg",
+          "sha256": "1961de39f4f57bc22eba90b0cae73d1ee0b48859a110e4afb30f4b950aac2dbb"
+        },
+        {
+          "path": "assets\\icons\\wireframe.svg",
+          "sha256": "b18415f4e29f8ba6cd51a7451a9e59ae97524c1406c27d03f0a69d2985165155"
+        },
+        {
+          "path": "assets\\project\\icon.png",
+          "sha256": "285b49313f5313d357d3a76ddfb8257df1e56bfe50477e845fcabe351801b2b3"
+        },
+        {
+          "path": "assets\\project\\title.png",
+          "sha256": "cccd1dbc42d3c92bec4951bf2dc6a717341c4c568c711d017d2c8a07e7470c2d"
+        },
+        {
+          "path": "assets\\shaders\\preview_grid.wesl",
+          "sha256": "2dcb8dd4866dec31d393def8a5560755c4cef28f506c2e4de286ec8a789dd72c"
+        },
+        {
+          "path": "assets\\test\\effects\\ember_sigil.aestra.ron",
+          "sha256": "b69182e1ea95012a14843fecace0fab358d56036ff1becc3e79f52c0ea440305"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_chrysanthemum.aestra.ron",
+          "sha256": "b4223d30fd5870d3fcf7d48ab857785d2e625c734001156ec6e024dec9235c43"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_crackle.aestra.ron",
+          "sha256": "4414a563bbfc7c7a02447ad044eaf7da7189c6de24eed4ea88e57c7610c21d63"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_crossette.aestra.ron",
+          "sha256": "4e9a0e1baf488865215e84016c031e7992e4530de957fc49537225e181c68f56"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_multi_break.aestra.ron",
+          "sha256": "91cd5b6c696f37c988f59e33802ee99ad6c15c3a67d9692055d7f078d0aa7e78"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_peony.aestra.ron",
+          "sha256": "2d1cb90697e9227e2fd8fa03385653ccfca60927409b9e753692f32b779b0c32"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_pistil.aestra.ron",
+          "sha256": "eded6581e2e7791dabdcdefd8fcbbd3bc17e30d55e5875ae5ae12e7185ea5d49"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_reference_hero.aestra.ron",
+          "sha256": "89c5fdce6152f0beb789c16acf523261f5770257baa415e8b421be454b457092"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_secondary_volley.aestra.ron",
+          "sha256": "e32d3bc3293ac9b8226499822b1763135e55edf7530b69c5c0faab2d06036838"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_show.aestra.ron",
+          "sha256": "dd2bc77cc19aaa84cfcdccb24a5c1554b168f5ea664541ea4c28882e09a4c011"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_strobe.aestra.ron",
+          "sha256": "c8ca64f617abd86efa1273c991676d58db732a602d42abf8092e0eda7d19ca00"
+        },
+        {
+          "path": "assets\\test\\effects\\fireworks_willow.aestra.ron",
+          "sha256": "d4151b1932abded733f2be7f9a2ab571cf91fbb7fa7e3c857e2fb6a0dd762914"
+        },
+        {
+          "path": "assets\\test\\effects\\material_graph_lab.aestra.ron",
+          "sha256": "520f126073b5f991972606337d65d29c5210c6f744d29fcea5a96f1ad7bafbce"
+        },
+        {
+          "path": "assets\\test\\effects\\mesh_material_lab.aestra.ron",
+          "sha256": "d61809b5d46c326a059874eb8542add8bbcf6a80d47d0eda3140a73a3be475e2"
+        },
+        {
+          "path": "assets\\test\\effects\\moving_trail_lab.aestra.ron",
+          "sha256": "5dea976bb8b44fac187437a3e3d2a59d43ba6db7f51eb80992b423685f439dfe"
+        },
+        {
+          "path": "assets\\test\\effects\\nested_moving_trail_lab.aestra.ron",
+          "sha256": "55f895400bd3f2f5e2a80331f425334a8a8f16c375ad3f7265a8c5ce9f1a9c57"
+        },
+        {
+          "path": "assets\\test\\effects\\nested_trail_carrier.aestra.ron",
+          "sha256": "fd6fee08dde3da4f76885c8ef963a5df6003a3b202d4cb2d3c099d3df44f319b"
+        },
+        {
+          "path": "assets\\test\\effects\\plasma_burst.aestra.ron",
+          "sha256": "67e91d3eaf1e715faa5cce4a2fb652c8d4e2657eaf3148d91a6bd9134a6a3084"
+        },
+        {
+          "path": "assets\\test\\effects\\prism_bloom.aestra.ron",
+          "sha256": "64fe0a699cb80e39366da81990ba89d90e917b05e903b207e8e660a8d568edd7"
+        },
+        {
+          "path": "assets\\test\\effects\\ribbon_lab.aestra.ron",
+          "sha256": "e032180ff560c5b458f50516ffc2889ce639e12d693ae84559e43da8a9e2910b"
+        },
+        {
+          "path": "assets\\test\\effects\\trail_lab.aestra.ron",
+          "sha256": "ce22a3803e130a00b174022186ebb4058eba46603d409ea159aa1ead415bf714"
+        },
+        {
+          "path": "assets\\test\\materials\\additive_flame.aestra.material-preset.ron",
+          "sha256": "c9d476126706b209d0cda41625c4c00517226d2cbcad1332cd320abd4efce183"
+        },
+        {
+          "path": "assets\\test\\materials\\dissolve_edge.aestra.material-function.ron",
+          "sha256": "e4f0688cf06e9ea684a578b682cbf9d3d995a51ac941ca42458479525c21b119"
+        },
+        {
+          "path": "assets\\test\\materials\\energy_beam.aestra.material-preset.ron",
+          "sha256": "ba8ef19dd6816ab9dbfb7732bd047d362a9b18566b95cf2f75597b5832a408be"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_hero_star.aestra.material.ron",
+          "sha256": "5350e4c64bb017b8d14b947969e1e34ebf0de2ad504fe80314589c1ac79ea932"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_hero_trail.aestra.material.ron",
+          "sha256": "9beecd239e416dc39f25f6e659edb9c311b55b45aa0d329ebdef9175d5c26d24"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_smoke.aestra.material.ron",
+          "sha256": "e1a26e654787835d33afeffec767fb0829f8acb15a9268b081e341231b424140"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_star.aestra.material.ron",
+          "sha256": "950d8b2257ba202b3a5b495c4776b6a608aff0c85581e34e4b93a699db504bf9"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_strobe_star.aestra.material.ron",
+          "sha256": "be51c63c89fe9079b07b94787dbc746665b097efe0e314deaff4efa3e7a81608"
+        },
+        {
+          "path": "assets\\test\\materials\\fireworks_trail.aestra.material.ron",
+          "sha256": "01ba1d32efe6b032a6949661f9422ffafa2b40fc06aec6e1e209ba6b434b3492"
+        },
+        {
+          "path": "assets\\test\\materials\\ghost.aestra.material-preset.ron",
+          "sha256": "47c017a3b602e1ceb21735ad893d4a72e08635b30e8cc27742a9bab50b942b88"
+        },
+        {
+          "path": "assets\\test\\materials\\hologram.aestra.material-preset.ron",
+          "sha256": "e6fad64138ac4c1f883ab41258b37d7f1db0c32697dfd4b58553a81c15c5b663"
+        },
+        {
+          "path": "assets\\test\\materials\\impact_flash.aestra.material-preset.ron",
+          "sha256": "f82ff9d6f8f42d55ef2df9f77eb022ccc6ae6e579abf3351eb7349f7407f2aeb"
+        },
+        {
+          "path": "assets\\test\\materials\\magic_shield.aestra.material-preset.ron",
+          "sha256": "77cda3bc67599474926d0658b9d5a7f2b102add8a71815791c8b12856cd9dc08"
+        },
+        {
+          "path": "assets\\test\\materials\\material_graph_lab.aestra.material.ron",
+          "sha256": "f21033ca474c02f2ce0e5eee66d8b78a237ec111ef16cabf6464e7a7d6d120ab"
+        },
+        {
+          "path": "assets\\test\\materials\\mesh_material_lab.aestra.material.ron",
+          "sha256": "235c70f3be81b7c136d078cdf159b781cf2814387f64bef4f1ab12b5d52af3bd"
+        },
+        {
+          "path": "assets\\test\\materials\\periodic_gate.aestra.material-function.ron",
+          "sha256": "f08127ad7db9f26deb8f90e30ce9fe3a87f7c66407680ef32f252fb559fb0027"
+        },
+        {
+          "path": "assets\\test\\materials\\portal.aestra.material-preset.ron",
+          "sha256": "adfbfabe6cfba68e84bd3cd51c3fd640d3980b4109cb4fcc95182899e7d99a69"
+        },
+        {
+          "path": "assets\\test\\materials\\pulse_wave.aestra.material-function.ron",
+          "sha256": "ee32633bcd87f3669e67fa583697399c052ef7c2b6ba63bbc8da0d83a3cdccb2"
+        },
+        {
+          "path": "assets\\test\\materials\\ribbon_lab.aestra.material.ron",
+          "sha256": "637063e1a7e0d0bc7553f1ddd7195b7fa343b104cb1feb6aac816930a53f2b58"
+        },
+        {
+          "path": "assets\\test\\materials\\soft_smoke.aestra.material-preset.ron",
+          "sha256": "3a5095adaac7c80f80b50f6ba4d81da5e5410017d025676d659378cfe84d5ac0"
+        },
+        {
+          "path": "assets\\test\\materials\\trail_lab.aestra.material.ron",
+          "sha256": "2c3e9dac7e2c2e5d1e416d61e1e4cf907be589c84b9a5dee8b628848e1c14d78"
+        },
+        {
+          "path": "assets\\test\\meshes\\lab_cube.gltf",
+          "sha256": "8a69fbf7d535099b806942032bd5a2aa7b8926eb0ed5b02c8f0b2d721fb4a876"
+        },
+        {
+          "path": "assets\\test\\shaders\\preview_grid.wesl",
+          "sha256": "2dcb8dd4866dec31d393def8a5560755c4cef28f506c2e4de286ec8a789dd72c"
+        },
+        {
+          "path": "assets\\test\\textures\\ember_spark.png",
+          "sha256": "1d0605c1b0817f966f13a40b92c781ed9cc32648b798c0d5cca7d57d71ccc1d2"
+        },
+        {
+          "path": "assets\\test\\textures\\lab_normal.png",
+          "sha256": "56eb78a9f3cd5de55382c2d5e29cc3c51106531a026d80079eefe07fe13bcb7c"
+        },
+        {
+          "path": "assets\\test\\textures\\plasma_flipbook.png",
+          "sha256": "32285f31df1e48a110b75666a590e17b16271aae7bf73a6ac12dac321454e4b8"
+        }
+      ],
+      "inputs_unchanged": true,
+      "binary_sha256": "855ddb504be7ef02b382481c96f965c804b223198f75ede960efe2a7cffb93d3",
+      "scope": "Alternating run-level GPU adapter on/off pairs; identical authored setup and cluster preallocation. Unpaced forward playback-only. Not frame-paired timestamps, whole-app timings or total resident cluster memory."
+    },
+    "summary": {
+      "schema": 1,
+      "milestone": "F7E4B3B1",
+      "accepted": true,
+      "scope": "Repeated alternating run-level on/off pairs, matched authored identity/compiled capacity/seeds/event admission. Independent timing distributions, not frame-paired subtraction or statistical significance. Outer render graph, not whole app/game. Public physical native buffer sizes/no resize-warning gate and public asynchronous native index-demand acknowledgments, not paired with timing/buffer frames. Private Z-slice demand/allocations/staging and in-flight memory remain unmeasured. One GPU/headless target/default layers, not finale certification.",
+      "binary_sha256": "855ddb504be7ef02b382481c96f965c804b223198f75ede960efe2a7cffb93d3",
+      "rows": [
+        {
+          "pair": "pair01",
+          "probe": "hero",
+          "tier": "high",
+          "order": [
+            "gpu",
+            "control"
+          ],
+          "gpu": {
+            "report_sha256": "a1a821180a5fd877f2132f9c0bee9ee017934e5e35ceecefc8cc4897f5f68f9f",
+            "log_sha256": "d34802132c858356c756336fd1886b696a0d4b1bac05026a3a43272bb26ebc8b",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 925,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 600,
+              "p50": 1.88928,
+              "p95": 2.415616,
+              "p99": 2.477056,
+              "max": 3.492864,
+              "min": 1.339392,
+              "mean": 1.853702826666667,
+              "stddev": 0.39405549602245554
+            },
+            "render_cpu_ms": {
+              "samples": 600,
+              "p50": 1.484,
+              "p95": 2.0687,
+              "p99": 2.2449000000000003,
+              "max": 2.7590000000000003,
+              "min": 1.1865,
+              "mean": 1.6060529999999995,
+              "stddev": 0.300334096617417
+            },
+            "selection_gpu_ms": {
+              "samples": 600,
+              "p50": 0.272384,
+              "p95": 0.335872,
+              "p99": 0.365568,
+              "max": 0.371712,
+              "min": 0.242688,
+              "mean": 0.27756714666666726,
+              "stddev": 0.022933665122809217
+            },
+            "selection_cpu_ms": {
+              "samples": 600,
+              "p50": 0.011300000000000001,
+              "p95": 0.015000000000000001,
+              "p99": 0.0161,
+              "max": 0.0363,
+              "min": 0.0095,
+              "mean": 0.011842333333333314,
+              "stddev": 0.0018136632971848875
+            },
+            "clustering_gpu_ms": {
+              "samples": 600,
+              "p50": 0.119808,
+              "p95": 0.134144,
+              "p99": 0.14336,
+              "max": 0.147456,
+              "min": 0.096256,
+              "mean": 0.12045994666666685,
+              "stddev": 0.00833735506563618
+            },
+            "clustering_cpu_ms": {
+              "samples": 600,
+              "p50": 0.0069,
+              "p95": 0.0088,
+              "p99": 0.0104,
+              "max": 0.0162,
+              "min": 0.005699999999999999,
+              "mean": 0.00716299999999997,
+              "stddev": 0.0009768816031979842
+            },
+            "inject_gpu_ms": {
+              "samples": 600,
+              "p50": 0.011264,
+              "p95": 0.018432,
+              "p99": 0.019456,
+              "max": 0.02048,
+              "min": 0.008192,
+              "mean": 0.012154879999999991,
+              "stddev": 0.0030496925176592238
+            },
+            "inject_cpu_ms": {
+              "samples": 600,
+              "p50": 0.0218,
+              "p95": 0.0293,
+              "p99": 0.0332,
+              "max": 0.0543,
+              "min": 0.016399999999999998,
+              "mean": 0.022706000000000007,
+              "stddev": 0.003894457257864478
+            }
+          },
+          "control": {
+            "report_sha256": "8f66fa6d74860c37c75efff0915046da15a1f1f58ed575a5d097d96323e2b34d",
+            "log_sha256": "04a51ee422e9f2de85f855dd4f32aa3238c5fc12a529ddfc3674e99940926a87",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 594,
+              "p50": 1.723392,
+              "p95": 2.015232,
+              "p99": 2.14528,
+              "max": 2.910208,
+              "min": 1.200128,
+              "mean": 1.6446491582491587,
+              "stddev": 0.323824975399318
+            },
+            "render_cpu_ms": {
+              "samples": 594,
+              "p50": 1.3447,
+              "p95": 1.9819999999999998,
+              "p99": 2.276,
+              "max": 4.6567,
+              "min": 1.1311,
+              "mean": 1.4928326599326591,
+              "stddev": 0.3175817918094241
+            },
+            "selection_gpu_ms": {
+              "samples": 594,
+              "p50": 0.260096,
+              "p95": 0.326656,
+              "p99": 0.339968,
+              "max": 0.347136,
+              "min": 0.238592,
+              "mean": 0.2645023030303029,
+              "stddev": 0.021598993066123763
+            },
+            "selection_cpu_ms": {
+              "samples": 594,
+              "p50": 0.0111,
+              "p95": 0.0147,
+              "p99": 0.0168,
+              "max": 0.0194,
+              "min": 0.0092,
+              "mean": 0.011588888888888886,
+              "stddev": 0.0014739412491127802
+            },
+            "clustering_gpu_ms": {
+              "samples": 594,
+              "p50": 0.110592,
+              "p95": 0.131072,
+              "p99": 0.137216,
+              "max": 0.141312,
+              "min": 0.09216,
+              "mean": 0.11007827609427596,
+              "stddev": 0.010921737198150107
+            },
+            "clustering_cpu_ms": {
+              "samples": 594,
+              "p50": 0.0070999999999999995,
+              "p95": 0.0092,
+              "p99": 0.0117,
+              "max": 0.0195,
+              "min": 0.0056,
+              "mean": 0.0074030303030302854,
+              "stddev": 0.0012406787442994555
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "render_gpu_ms_run_mean_difference": 0.2090536684175084,
+          "render_cpu_ms_run_mean_difference": 0.11322034006734039,
+          "selection_gpu_ms_run_mean_difference": 0.013064843636364343,
+          "selection_cpu_ms_run_mean_difference": 0.0002534444444444277,
+          "clustering_gpu_ms_run_mean_difference": 0.01038167057239088,
+          "clustering_cpu_ms_run_mean_difference": -0.0002400303030303157,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair01",
+          "probe": "volley",
+          "tier": "high",
+          "order": [
+            "control",
+            "gpu"
+          ],
+          "control": {
+            "report_sha256": "fa1e1109c41888d1cd3cab1d3f4e72ed17e1d49e5fb3d56419d7cb4da62c3221",
+            "log_sha256": "1b43514b4208cd394f49e54662be80027c1de72ee4ab441275438586021afc8b",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 598,
+              "p50": 1.864704,
+              "p95": 2.195456,
+              "p99": 2.234368,
+              "max": 2.460672,
+              "min": 1.444864,
+              "mean": 1.8241224347826093,
+              "stddev": 0.2094929392704813
+            },
+            "render_cpu_ms": {
+              "samples": 598,
+              "p50": 1.8638000000000001,
+              "p95": 2.2862,
+              "p99": 2.5579,
+              "max": 4.6758,
+              "min": 1.2622,
+              "mean": 1.795149163879599,
+              "stddev": 0.3697632686921225
+            },
+            "selection_gpu_ms": {
+              "samples": 598,
+              "p50": 0.244736,
+              "p95": 0.303104,
+              "p99": 0.316416,
+              "max": 0.326656,
+              "min": 0.2048,
+              "mean": 0.24679598662207372,
+              "stddev": 0.022737681982550904
+            },
+            "selection_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0104,
+              "p95": 0.013900000000000001,
+              "p99": 0.016,
+              "max": 0.0193,
+              "min": 0.0084,
+              "mean": 0.010873076923076923,
+              "stddev": 0.0015252591963848042
+            },
+            "clustering_gpu_ms": {
+              "samples": 598,
+              "p50": 0.119808,
+              "p95": 0.136192,
+              "p99": 0.13824,
+              "max": 0.146432,
+              "min": 0.094208,
+              "mean": 0.11903229431438116,
+              "stddev": 0.011021011624366264
+            },
+            "clustering_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0070999999999999995,
+              "p95": 0.0092,
+              "p99": 0.011,
+              "max": 0.018099999999999998,
+              "min": 0.005699999999999999,
+              "mean": 0.007290133779264185,
+              "stddev": 0.0010816744956522637
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "gpu": {
+            "report_sha256": "ce12714ea9954179ae98a04023ad2e5fc0ccc95869dbef1158227725b720290b",
+            "log_sha256": "4907485ee22bd3907da933481b4baf1f4b31e38cfa397200fb082dbe30a0528a",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 701,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 598,
+              "p50": 2.034688,
+              "p95": 2.435072,
+              "p99": 2.482176,
+              "max": 2.878464,
+              "min": 1.606656,
+              "mean": 2.0214342207357836,
+              "stddev": 0.24185863191656679
+            },
+            "render_cpu_ms": {
+              "samples": 598,
+              "p50": 2.0558,
+              "p95": 2.5389000000000004,
+              "p99": 3.1042,
+              "max": 5.6691,
+              "min": 1.2969,
+              "mean": 1.9763379598662216,
+              "stddev": 0.4013156528943834
+            },
+            "selection_gpu_ms": {
+              "samples": 598,
+              "p50": 0.257024,
+              "p95": 0.305152,
+              "p99": 0.336896,
+              "max": 0.44544,
+              "min": 0.217088,
+              "mean": 0.25934426755852785,
+              "stddev": 0.02187133576982681
+            },
+            "selection_cpu_ms": {
+              "samples": 598,
+              "p50": 0.011,
+              "p95": 0.015400000000000002,
+              "p99": 0.017900000000000003,
+              "max": 0.0191,
+              "min": 0.0085,
+              "mean": 0.011624749163879596,
+              "stddev": 0.0018606530088534734
+            },
+            "clustering_gpu_ms": {
+              "samples": 598,
+              "p50": 0.12288,
+              "p95": 0.136192,
+              "p99": 0.140288,
+              "max": 0.142336,
+              "min": 0.100352,
+              "mean": 0.12266937792642175,
+              "stddev": 0.008049674751171403
+            },
+            "clustering_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0073,
+              "p95": 0.0102,
+              "p99": 0.0118,
+              "max": 0.09179999999999999,
+              "min": 0.005699999999999999,
+              "mean": 0.0078070234113712415,
+              "stddev": 0.003770407237763891
+            },
+            "inject_gpu_ms": {
+              "samples": 598,
+              "p50": 0.011264,
+              "p95": 0.018432,
+              "p99": 0.02048,
+              "max": 0.02048,
+              "min": 0.008192,
+              "mean": 0.013308575250836131,
+              "stddev": 0.0034306398035539288
+            },
+            "inject_cpu_ms": {
+              "samples": 598,
+              "p50": 0.023200000000000002,
+              "p95": 0.0313,
+              "p99": 0.0368,
+              "max": 0.050800000000000005,
+              "min": 0.0163,
+              "mean": 0.023631438127090277,
+              "stddev": 0.004168417038562212
+            }
+          },
+          "render_gpu_ms_run_mean_difference": 0.19731178595317433,
+          "render_cpu_ms_run_mean_difference": 0.18118879598662252,
+          "selection_gpu_ms_run_mean_difference": 0.012548280936454131,
+          "selection_cpu_ms_run_mean_difference": 0.000751672240802673,
+          "clustering_gpu_ms_run_mean_difference": 0.003637083612040598,
+          "clustering_cpu_ms_run_mean_difference": 0.0005168896321070563,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair01",
+          "probe": "show",
+          "tier": "high",
+          "order": [
+            "gpu",
+            "control"
+          ],
+          "gpu": {
+            "report_sha256": "5c38f597a12e6b165ceb47a266643dee29b6a1aa8071089e3c364a8bf37f85d3",
+            "log_sha256": "10ae6dab60ca423d51167d927a4ec0fc26a2a2922a08d28550a467d0faa9f4d4",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7760,
+              "global_light_bytes_max": 7920,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 2870,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1606,
+              "p50": 4.368384,
+              "p95": 9.506816,
+              "p99": 12.280832,
+              "max": 13.948928,
+              "min": 0.683008,
+              "mean": 4.396072169364888,
+              "stddev": 2.8868637085792836
+            },
+            "render_cpu_ms": {
+              "samples": 1606,
+              "p50": 4.828200000000001,
+              "p95": 11.6823,
+              "p99": 15.9851,
+              "max": 18.909100000000002,
+              "min": 0.7184999999999999,
+              "mean": 5.074929265255293,
+              "stddev": 3.5613195244541225
+            },
+            "selection_gpu_ms": {
+              "samples": 1253,
+              "p50": 1.12128,
+              "p95": 1.488896,
+              "p99": 1.567744,
+              "max": 1.80736,
+              "min": 0.186368,
+              "mean": 0.9918694461292895,
+              "stddev": 0.36351825668232934
+            },
+            "selection_cpu_ms": {
+              "samples": 1253,
+              "p50": 0.032100000000000004,
+              "p95": 0.0504,
+              "p99": 0.0626,
+              "max": 0.0758,
+              "min": 0.0079,
+              "mean": 0.031735275339185964,
+              "stddev": 0.011181892386460567
+            },
+            "clustering_gpu_ms": {
+              "samples": 1606,
+              "p50": 0.124928,
+              "p95": 0.152576,
+              "p99": 0.159744,
+              "max": 0.172032,
+              "min": 0.101376,
+              "mean": 0.12775324533001065,
+              "stddev": 0.012593178256642539
+            },
+            "clustering_cpu_ms": {
+              "samples": 1606,
+              "p50": 0.007700000000000001,
+              "p95": 0.0107,
+              "p99": 0.0126,
+              "max": 0.0234,
+              "min": 0.005699999999999999,
+              "mean": 0.008016998754669961,
+              "stddev": 0.0015919211382272283
+            },
+            "inject_gpu_ms": {
+              "samples": 1606,
+              "p50": 0.013312,
+              "p95": 0.022528,
+              "p99": 0.024576,
+              "max": 0.026624,
+              "min": 0.001024,
+              "mean": 0.012425085927770889,
+              "stddev": 0.006977099940727692
+            },
+            "inject_cpu_ms": {
+              "samples": 1606,
+              "p50": 0.0281,
+              "p95": 0.0373,
+              "p99": 0.0441,
+              "max": 0.08739999999999999,
+              "min": 0.0009,
+              "mean": 0.023705417185554186,
+              "stddev": 0.012871939972246593
+            }
+          },
+          "control": {
+            "report_sha256": "f417ccc466e28272a1d549752ec5b3220a97df92bb5d2c159135cd0a4ba5c96d",
+            "log_sha256": "2c854cb803e9885d23be3c810d5979780a7560d1d62122360a41cb634b70facc",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 240,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 1598,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1607,
+              "p50": 4.225024,
+              "p95": 9.248768,
+              "p99": 11.865088,
+              "max": 13.70624,
+              "min": 0.68096,
+              "mean": 4.283825941505913,
+              "stddev": 2.823096429717648
+            },
+            "render_cpu_ms": {
+              "samples": 1607,
+              "p50": 4.7391000000000005,
+              "p95": 11.2941,
+              "p99": 15.6177,
+              "max": 22.875300000000003,
+              "min": 0.6966,
+              "mean": 5.007161294337277,
+              "stddev": 3.552982761661306
+            },
+            "selection_gpu_ms": {
+              "samples": 1257,
+              "p50": 1.129472,
+              "p95": 1.494016,
+              "p99": 1.5872,
+              "max": 1.835008,
+              "min": 0.187392,
+              "mean": 0.9924930596658696,
+              "stddev": 0.36990054916849485
+            },
+            "selection_cpu_ms": {
+              "samples": 1257,
+              "p50": 0.032799999999999996,
+              "p95": 0.0493,
+              "p99": 0.0598,
+              "max": 0.1042,
+              "min": 0.007500000000000001,
+              "mean": 0.03204160700079552,
+              "stddev": 0.011512835835916899
+            },
+            "clustering_gpu_ms": {
+              "samples": 1607,
+              "p50": 0.12288,
+              "p95": 0.149504,
+              "p99": 0.157696,
+              "max": 0.171008,
+              "min": 0.100352,
+              "mean": 0.12555501680149214,
+              "stddev": 0.012706259947795414
+            },
+            "clustering_cpu_ms": {
+              "samples": 1607,
+              "p50": 0.0083,
+              "p95": 0.011600000000000001,
+              "p99": 0.013699999999999999,
+              "max": 0.0193,
+              "min": 0.0058000000000000005,
+              "mean": 0.008597697573117619,
+              "stddev": 0.0016553436844852192
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "retirement": {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          "render_gpu_ms_run_mean_difference": 0.11224622785897509,
+          "render_cpu_ms_run_mean_difference": 0.06776797091801612,
+          "selection_gpu_ms_run_mean_difference": -0.0006236135365801365,
+          "selection_cpu_ms_run_mean_difference": -0.00030633166160955877,
+          "clustering_gpu_ms_run_mean_difference": 0.0021982285285185033,
+          "clustering_cpu_ms_run_mean_difference": -0.0005806988184476579,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair02",
+          "probe": "hero",
+          "tier": "high",
+          "order": [
+            "control",
+            "gpu"
+          ],
+          "control": {
+            "report_sha256": "cb2c5e0d4b3e2113c04b37e8fb91fe36be443d93b3438edf3f128a8e6009f083",
+            "log_sha256": "c14d505521b7ad5eda04f030631f27a3eba0a156477087fd17f7813a2fd2279c",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 599,
+              "p50": 1.733632,
+              "p95": 2.243584,
+              "p99": 2.408448,
+              "max": 3.457024,
+              "min": 1.221632,
+              "mean": 1.7220825108514193,
+              "stddev": 0.3870135836074843
+            },
+            "render_cpu_ms": {
+              "samples": 599,
+              "p50": 1.6173,
+              "p95": 2.1406,
+              "p99": 2.4355,
+              "max": 2.8874,
+              "min": 1.2062,
+              "mean": 1.642435559265442,
+              "stddev": 0.3189613839663807
+            },
+            "selection_gpu_ms": {
+              "samples": 599,
+              "p50": 0.270336,
+              "p95": 0.329728,
+              "p99": 0.339968,
+              "max": 0.347136,
+              "min": 0.23552,
+              "mean": 0.2746234657762946,
+              "stddev": 0.02251506062735571
+            },
+            "selection_cpu_ms": {
+              "samples": 599,
+              "p50": 0.011,
+              "p95": 0.0148,
+              "p99": 0.0172,
+              "max": 0.0203,
+              "min": 0.0089,
+              "mean": 0.011517696160267116,
+              "stddev": 0.0016217081313461036
+            },
+            "clustering_gpu_ms": {
+              "samples": 599,
+              "p50": 0.114688,
+              "p95": 0.134144,
+              "p99": 0.139264,
+              "max": 0.14336,
+              "min": 0.09216,
+              "mean": 0.11563678130217046,
+              "stddev": 0.009817831292571695
+            },
+            "clustering_cpu_ms": {
+              "samples": 599,
+              "p50": 0.0072,
+              "p95": 0.0095,
+              "p99": 0.011300000000000001,
+              "max": 0.0213,
+              "min": 0.005699999999999999,
+              "mean": 0.007445409015025029,
+              "stddev": 0.0011691105552810847
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "gpu": {
+            "report_sha256": "734dc92826d9da469f687b24e51a7c79062e32fec8b7c9741889d6941478163f",
+            "log_sha256": "4e2ccce3a8d3552bc950f829e70d8f3fbff48d5b16031f09e24bbc1c93cdd9b8",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 925,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 599,
+              "p50": 1.892352,
+              "p95": 2.464768,
+              "p99": 2.536448,
+              "max": 3.552256,
+              "min": 1.349632,
+              "mean": 1.8860797863105199,
+              "stddev": 0.4110589344004808
+            },
+            "render_cpu_ms": {
+              "samples": 599,
+              "p50": 1.5761,
+              "p95": 2.281,
+              "p99": 2.6235999999999997,
+              "max": 2.7379000000000002,
+              "min": 1.2126000000000001,
+              "mean": 1.6964978297161932,
+              "stddev": 0.34110107752264507
+            },
+            "selection_gpu_ms": {
+              "samples": 599,
+              "p50": 0.278528,
+              "p95": 0.33792,
+              "p99": 0.355328,
+              "max": 0.367616,
+              "min": 0.256,
+              "mean": 0.2847472186978296,
+              "stddev": 0.021230849742420243
+            },
+            "selection_cpu_ms": {
+              "samples": 599,
+              "p50": 0.011300000000000001,
+              "p95": 0.0155,
+              "p99": 0.0195,
+              "max": 0.0359,
+              "min": 0.009300000000000001,
+              "mean": 0.011978797996661098,
+              "stddev": 0.0020656426013527934
+            },
+            "clustering_gpu_ms": {
+              "samples": 599,
+              "p50": 0.118784,
+              "p95": 0.13312,
+              "p99": 0.141312,
+              "max": 0.145408,
+              "min": 0.104448,
+              "mean": 0.12006271786310525,
+              "stddev": 0.006572390632276559
+            },
+            "clustering_cpu_ms": {
+              "samples": 599,
+              "p50": 0.0070999999999999995,
+              "p95": 0.009099999999999999,
+              "p99": 0.0112,
+              "max": 0.0209,
+              "min": 0.0058000000000000005,
+              "mean": 0.007264941569282102,
+              "stddev": 0.0011139903856064383
+            },
+            "inject_gpu_ms": {
+              "samples": 599,
+              "p50": 0.013312,
+              "p95": 0.019456,
+              "p99": 0.02048,
+              "max": 0.021504,
+              "min": 0.008192,
+              "mean": 0.014074444073455672,
+              "stddev": 0.0035703393229863773
+            },
+            "inject_cpu_ms": {
+              "samples": 599,
+              "p50": 0.0224,
+              "p95": 0.0298,
+              "p99": 0.0329,
+              "max": 0.0406,
+              "min": 0.016,
+              "mean": 0.022832554257095156,
+              "stddev": 0.0036225769501250105
+            }
+          },
+          "render_gpu_ms_run_mean_difference": 0.1639972754591006,
+          "render_cpu_ms_run_mean_difference": 0.05406227045075118,
+          "selection_gpu_ms_run_mean_difference": 0.010123752921535,
+          "selection_cpu_ms_run_mean_difference": 0.00046110183639398207,
+          "clustering_gpu_ms_run_mean_difference": 0.00442593656093479,
+          "clustering_cpu_ms_run_mean_difference": -0.00018046744574292707,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair02",
+          "probe": "volley",
+          "tier": "high",
+          "order": [
+            "gpu",
+            "control"
+          ],
+          "gpu": {
+            "report_sha256": "196b2967d9b8cf7617111a86d14221ea793a742151c6874bf4523341720e7358",
+            "log_sha256": "4955c05eb787f1d8aa4e8c6a434f16b01f85d4a01693ec70202fac3e60693674",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 701,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 599,
+              "p50": 2.033664,
+              "p95": 2.3552,
+              "p99": 2.399232,
+              "max": 2.85184,
+              "min": 1.625088,
+              "mean": 2.0157226310517533,
+              "stddev": 0.20815867461956694
+            },
+            "render_cpu_ms": {
+              "samples": 599,
+              "p50": 2.1022,
+              "p95": 2.7495000000000003,
+              "p99": 3.2938,
+              "max": 5.1507000000000005,
+              "min": 1.4296,
+              "mean": 2.0639589315525857,
+              "stddev": 0.40998559380553096
+            },
+            "selection_gpu_ms": {
+              "samples": 599,
+              "p50": 0.254976,
+              "p95": 0.304128,
+              "p99": 0.319488,
+              "max": 0.325632,
+              "min": 0.22528,
+              "mean": 0.25799158597662647,
+              "stddev": 0.01813032716990188
+            },
+            "selection_cpu_ms": {
+              "samples": 599,
+              "p50": 0.011300000000000001,
+              "p95": 0.0158,
+              "p99": 0.0183,
+              "max": 0.022099999999999998,
+              "min": 0.0083,
+              "mean": 0.01191652754590985,
+              "stddev": 0.0019509795396413898
+            },
+            "clustering_gpu_ms": {
+              "samples": 599,
+              "p50": 0.125952,
+              "p95": 0.139264,
+              "p99": 0.144384,
+              "max": 0.166912,
+              "min": 0.100352,
+              "mean": 0.1257605342237055,
+              "stddev": 0.00861193416826971
+            },
+            "clustering_cpu_ms": {
+              "samples": 599,
+              "p50": 0.007500000000000001,
+              "p95": 0.0104,
+              "p99": 0.0122,
+              "max": 0.018099999999999998,
+              "min": 0.0056,
+              "mean": 0.007788146911519206,
+              "stddev": 0.001340847813842467
+            },
+            "inject_gpu_ms": {
+              "samples": 599,
+              "p50": 0.011264,
+              "p95": 0.018432,
+              "p99": 0.02048,
+              "max": 0.021504,
+              "min": 0.008192,
+              "mean": 0.012643579298831411,
+              "stddev": 0.003386616070749171
+            },
+            "inject_cpu_ms": {
+              "samples": 599,
+              "p50": 0.0245,
+              "p95": 0.0322,
+              "p99": 0.0391,
+              "max": 0.0602,
+              "min": 0.017,
+              "mean": 0.02448113522537563,
+              "stddev": 0.004577231309154813
+            }
+          },
+          "control": {
+            "report_sha256": "f82268aa43232de61bb4c67aab0bbdac318e63c7e971842f768334a88eb21759",
+            "log_sha256": "3f96757022f80cb96daa3841af879255dd27f0771171a4fd8824bed013deb580",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 596,
+              "p50": 1.842176,
+              "p95": 2.217984,
+              "p99": 2.250752,
+              "max": 2.343936,
+              "min": 1.419264,
+              "mean": 1.822407302013423,
+              "stddev": 0.21957094507743372
+            },
+            "render_cpu_ms": {
+              "samples": 596,
+              "p50": 1.9369,
+              "p95": 2.3826,
+              "p99": 2.9477,
+              "max": 5.1812000000000005,
+              "min": 1.3608,
+              "mean": 1.8809246644295297,
+              "stddev": 0.36677455949901
+            },
+            "selection_gpu_ms": {
+              "samples": 596,
+              "p50": 0.244736,
+              "p95": 0.303104,
+              "p99": 0.314368,
+              "max": 0.42496,
+              "min": 0.212992,
+              "mean": 0.2475399731543621,
+              "stddev": 0.022814015211997194
+            },
+            "selection_cpu_ms": {
+              "samples": 596,
+              "p50": 0.0108,
+              "p95": 0.0145,
+              "p99": 0.017,
+              "max": 0.0209,
+              "min": 0.009099999999999999,
+              "mean": 0.011320805369127523,
+              "stddev": 0.0015457139341241862
+            },
+            "clustering_gpu_ms": {
+              "samples": 596,
+              "p50": 0.116736,
+              "p95": 0.134144,
+              "p99": 0.13824,
+              "max": 0.140288,
+              "min": 0.094208,
+              "mean": 0.11601782550335552,
+              "stddev": 0.010223564920038845
+            },
+            "clustering_cpu_ms": {
+              "samples": 596,
+              "p50": 0.0072,
+              "p95": 0.0097,
+              "p99": 0.013699999999999999,
+              "max": 0.0318,
+              "min": 0.005699999999999999,
+              "mean": 0.007597483221476512,
+              "stddev": 0.0015483517025162356
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "render_gpu_ms_run_mean_difference": 0.19331532903833026,
+          "render_cpu_ms_run_mean_difference": 0.18303426712305604,
+          "selection_gpu_ms_run_mean_difference": 0.010451612822264367,
+          "selection_cpu_ms_run_mean_difference": 0.0005957221767823265,
+          "clustering_gpu_ms_run_mean_difference": 0.00974270872034999,
+          "clustering_cpu_ms_run_mean_difference": 0.00019066369004269376,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair02",
+          "probe": "show",
+          "tier": "high",
+          "order": [
+            "control",
+            "gpu"
+          ],
+          "control": {
+            "report_sha256": "0adda34df298b6e93ff6b7528bd465f072c054aec2db59ad9e343a6c4b680ff8",
+            "log_sha256": "5b9bfac9171baae4e21c7d38814fff1a545a1f1a15cb6c478365035e50edce23",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 240,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 1598,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1605,
+              "p50": 4.216832,
+              "p95": 9.263104,
+              "p99": 11.896832,
+              "max": 14.038016,
+              "min": 0.67584,
+              "mean": 4.2692295376947,
+              "stddev": 2.820959193403911
+            },
+            "render_cpu_ms": {
+              "samples": 1605,
+              "p50": 4.7951,
+              "p95": 11.3958,
+              "p99": 15.270199999999999,
+              "max": 21.4907,
+              "min": 0.7009,
+              "mean": 4.970678816199379,
+              "stddev": 3.4923915618414023
+            },
+            "selection_gpu_ms": {
+              "samples": 1254,
+              "p50": 1.114112,
+              "p95": 1.462272,
+              "p99": 1.549312,
+              "max": 1.814528,
+              "min": 0.187392,
+              "mean": 0.9754155279106858,
+              "stddev": 0.3630776212517963
+            },
+            "selection_cpu_ms": {
+              "samples": 1254,
+              "p50": 0.0316,
+              "p95": 0.0485,
+              "p99": 0.0613,
+              "max": 0.1132,
+              "min": 0.0079,
+              "mean": 0.031674880382775134,
+              "stddev": 0.011163654241437877
+            },
+            "clustering_gpu_ms": {
+              "samples": 1605,
+              "p50": 0.124928,
+              "p95": 0.151552,
+              "p99": 0.161792,
+              "max": 0.183296,
+              "min": 0.100352,
+              "mean": 0.12765675264797327,
+              "stddev": 0.012932236878277768
+            },
+            "clustering_cpu_ms": {
+              "samples": 1605,
+              "p50": 0.0081,
+              "p95": 0.0117,
+              "p99": 0.0148,
+              "max": 0.019899999999999998,
+              "min": 0.0059,
+              "mean": 0.008569532710280409,
+              "stddev": 0.0017519370942654774
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "gpu": {
+            "report_sha256": "817d7af624b1859bf5f029d74789e7752dcb1192f3d29850249c8041aa7a2b5e",
+            "log_sha256": "33af953cb804b00a3cc14281b57131bbdf45fd365e953885c0574ec0304612a4",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7760,
+              "global_light_bytes_max": 7920,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 2870,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1611,
+              "p50": 4.3008,
+              "p95": 9.580544,
+              "p99": 11.503616,
+              "max": 14.102528,
+              "min": 0.681984,
+              "mean": 4.271755520794535,
+              "stddev": 2.7785408571392054
+            },
+            "render_cpu_ms": {
+              "samples": 1611,
+              "p50": 4.6997,
+              "p95": 11.513900000000001,
+              "p99": 15.069600000000001,
+              "max": 21.4581,
+              "min": 0.7144,
+              "mean": 4.927178150217263,
+              "stddev": 3.4546969710751574
+            },
+            "selection_gpu_ms": {
+              "samples": 1262,
+              "p50": 0.946176,
+              "p95": 1.394688,
+              "p99": 1.470464,
+              "max": 1.8176,
+              "min": 0.188416,
+              "mean": 0.9381641331220277,
+              "stddev": 0.3412404751322491
+            },
+            "selection_cpu_ms": {
+              "samples": 1262,
+              "p50": 0.0315,
+              "p95": 0.050899999999999994,
+              "p99": 0.061900000000000004,
+              "max": 0.1005,
+              "min": 0.0078,
+              "mean": 0.032232171156893835,
+              "stddev": 0.011944035301343445
+            },
+            "clustering_gpu_ms": {
+              "samples": 1611,
+              "p50": 0.126976,
+              "p95": 0.146432,
+              "p99": 0.154624,
+              "max": 0.280576,
+              "min": 0.09728,
+              "mean": 0.1274349248913699,
+              "stddev": 0.011049937760691348
+            },
+            "clustering_cpu_ms": {
+              "samples": 1611,
+              "p50": 0.0079,
+              "p95": 0.011399999999999999,
+              "p99": 0.013900000000000001,
+              "max": 0.018099999999999998,
+              "min": 0.0058000000000000005,
+              "mean": 0.008307635009310964,
+              "stddev": 0.001636326465377412
+            },
+            "inject_gpu_ms": {
+              "samples": 1611,
+              "p50": 0.013312,
+              "p95": 0.02048,
+              "p99": 0.023552,
+              "max": 0.027648,
+              "min": 0.001024,
+              "mean": 0.012193291123525863,
+              "stddev": 0.0066689185799301285
+            },
+            "inject_cpu_ms": {
+              "samples": 1611,
+              "p50": 0.028,
+              "p95": 0.0379,
+              "p99": 0.0467,
+              "max": 0.0909,
+              "min": 0.0007999999999999999,
+              "mean": 0.023709124767225292,
+              "stddev": 0.012886929266239085
+            }
+          },
+          "retirement": {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          "render_gpu_ms_run_mean_difference": 0.002525983099835649,
+          "render_cpu_ms_run_mean_difference": -0.04350066598211555,
+          "selection_gpu_ms_run_mean_difference": -0.03725139478865802,
+          "selection_cpu_ms_run_mean_difference": 0.0005572907741187016,
+          "clustering_gpu_ms_run_mean_difference": -0.00022182775660337106,
+          "clustering_cpu_ms_run_mean_difference": -0.00026189770096944447,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair03",
+          "probe": "hero",
+          "tier": "high",
+          "order": [
+            "gpu",
+            "control"
+          ],
+          "gpu": {
+            "report_sha256": "f4db22bf209ac16a96ab5287b35756af331dce66283d9793c90cef21c4adf094",
+            "log_sha256": "aa1f81dc0d784ffee1f3944ab067fa5e5b6e5ffd06b4306fcfde26e54379be7e",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 925,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 597,
+              "p50": 1.8944,
+              "p95": 2.46272,
+              "p99": 2.522112,
+              "max": 3.48672,
+              "min": 1.34656,
+              "mean": 1.8665135812395284,
+              "stddev": 0.40378919121914697
+            },
+            "render_cpu_ms": {
+              "samples": 597,
+              "p50": 1.6006,
+              "p95": 2.2338,
+              "p99": 2.6439,
+              "max": 5.714,
+              "min": 1.2271,
+              "mean": 1.7168485762144052,
+              "stddev": 0.3750533176418884
+            },
+            "selection_gpu_ms": {
+              "samples": 597,
+              "p50": 0.274432,
+              "p95": 0.33792,
+              "p99": 0.359424,
+              "max": 0.366592,
+              "min": 0.248832,
+              "mean": 0.27988990284757187,
+              "stddev": 0.02200094632159803
+            },
+            "selection_cpu_ms": {
+              "samples": 597,
+              "p50": 0.011399999999999999,
+              "p95": 0.0156,
+              "p99": 0.0185,
+              "max": 0.0205,
+              "min": 0.0095,
+              "mean": 0.011956448911222784,
+              "stddev": 0.0018062369480169422
+            },
+            "clustering_gpu_ms": {
+              "samples": 597,
+              "p50": 0.118784,
+              "p95": 0.137216,
+              "p99": 0.144384,
+              "max": 0.151552,
+              "min": 0.099328,
+              "mean": 0.11979256281407026,
+              "stddev": 0.007950102460375986
+            },
+            "clustering_cpu_ms": {
+              "samples": 597,
+              "p50": 0.0070999999999999995,
+              "p95": 0.0094,
+              "p99": 0.011300000000000001,
+              "max": 0.0276,
+              "min": 0.0058000000000000005,
+              "mean": 0.007398827470686747,
+              "stddev": 0.0014596121529023742
+            },
+            "inject_gpu_ms": {
+              "samples": 597,
+              "p50": 0.01536,
+              "p95": 0.019456,
+              "p99": 0.02048,
+              "max": 0.02048,
+              "min": 0.008192,
+              "mean": 0.014384026800669938,
+              "stddev": 0.0036112026401871164
+            },
+            "inject_cpu_ms": {
+              "samples": 597,
+              "p50": 0.022600000000000002,
+              "p95": 0.0303,
+              "p99": 0.038,
+              "max": 0.0475,
+              "min": 0.0168,
+              "mean": 0.02335762144053601,
+              "stddev": 0.00407655753186792
+            }
+          },
+          "control": {
+            "report_sha256": "c3a22302c8f52582624356600ab53d924a49d29458e83b8082ad9393b9fd50f9",
+            "log_sha256": "aa9fd49cece5a895f870ad42c89847d1d8f693a9aa5284dbeb5b67d0d7d532bc",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 599,
+              "p50": 1.742848,
+              "p95": 2.381824,
+              "p99": 2.425856,
+              "max": 3.414016,
+              "min": 1.217536,
+              "mean": 1.742253088480802,
+              "stddev": 0.4118567500232533
+            },
+            "render_cpu_ms": {
+              "samples": 599,
+              "p50": 1.8014000000000001,
+              "p95": 2.2413,
+              "p99": 2.5788,
+              "max": 2.8302,
+              "min": 1.2390999999999999,
+              "mean": 1.734431719532553,
+              "stddev": 0.3198353494327868
+            },
+            "selection_gpu_ms": {
+              "samples": 599,
+              "p50": 0.272384,
+              "p95": 0.331776,
+              "p99": 0.361472,
+              "max": 0.369664,
+              "min": 0.249856,
+              "mean": 0.2774869048414029,
+              "stddev": 0.02158471809316092
+            },
+            "selection_cpu_ms": {
+              "samples": 599,
+              "p50": 0.0121,
+              "p95": 0.0159,
+              "p99": 0.0187,
+              "max": 0.0419,
+              "min": 0.0096,
+              "mean": 0.012570951585976623,
+              "stddev": 0.0021659508692350093
+            },
+            "clustering_gpu_ms": {
+              "samples": 599,
+              "p50": 0.116736,
+              "p95": 0.134144,
+              "p99": 0.141312,
+              "max": 0.147456,
+              "min": 0.098304,
+              "mean": 0.11763007679465766,
+              "stddev": 0.008509414631045499
+            },
+            "clustering_cpu_ms": {
+              "samples": 599,
+              "p50": 0.007500000000000001,
+              "p95": 0.0099,
+              "p99": 0.0111,
+              "max": 0.0206,
+              "min": 0.0058000000000000005,
+              "mean": 0.007747746243739581,
+              "stddev": 0.0013350385671112785
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "render_gpu_ms_run_mean_difference": 0.1242604927587263,
+          "render_cpu_ms_run_mean_difference": -0.017583143318147698,
+          "selection_gpu_ms_run_mean_difference": 0.0024029980061689438,
+          "selection_cpu_ms_run_mean_difference": -0.000614502674753839,
+          "clustering_gpu_ms_run_mean_difference": 0.0021624860194126017,
+          "clustering_cpu_ms_run_mean_difference": -0.00034891877305283456,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair03",
+          "probe": "volley",
+          "tier": "high",
+          "order": [
+            "control",
+            "gpu"
+          ],
+          "control": {
+            "report_sha256": "8ba6812e619aec26417c523b261f868c54f06abce451fdc4f06599f204145053",
+            "log_sha256": "ae915fbed5e3cefaeaa5220d5dc9e2d3e17e29de7f29205332bf1ffe3f2a0a66",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 80,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 1,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 596,
+              "p50": 1.851392,
+              "p95": 2.251776,
+              "p99": 2.301952,
+              "max": 2.427904,
+              "min": 1.4592,
+              "mean": 1.8544880536912751,
+              "stddev": 0.20096103490200046
+            },
+            "render_cpu_ms": {
+              "samples": 596,
+              "p50": 2.0398,
+              "p95": 2.4984,
+              "p99": 2.9193000000000002,
+              "max": 5.4128,
+              "min": 1.4085,
+              "mean": 1.9638968120805371,
+              "stddev": 0.385012316816716
+            },
+            "selection_gpu_ms": {
+              "samples": 596,
+              "p50": 0.25088,
+              "p95": 0.305152,
+              "p99": 0.31744,
+              "max": 0.336896,
+              "min": 0.21504,
+              "mean": 0.2532544429530197,
+              "stddev": 0.022998362071640882
+            },
+            "selection_cpu_ms": {
+              "samples": 596,
+              "p50": 0.0109,
+              "p95": 0.0152,
+              "p99": 0.017499999999999998,
+              "max": 0.0282,
+              "min": 0.009000000000000001,
+              "mean": 0.011562751677852355,
+              "stddev": 0.0019493472867543064
+            },
+            "clustering_gpu_ms": {
+              "samples": 596,
+              "p50": 0.119808,
+              "p95": 0.139264,
+              "p99": 0.144384,
+              "max": 0.1536,
+              "min": 0.094208,
+              "mean": 0.12023237583892617,
+              "stddev": 0.012295059155773912
+            },
+            "clustering_cpu_ms": {
+              "samples": 596,
+              "p50": 0.0074,
+              "p95": 0.0098,
+              "p99": 0.011399999999999999,
+              "max": 0.0122,
+              "min": 0.0059,
+              "mean": 0.00766728187919464,
+              "stddev": 0.0011454403307971158
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "gpu": {
+            "report_sha256": "2d0d87ed752a08975aa9cbeb8293e7788e8c85232a1f50f60d700f095f4c1a92",
+            "log_sha256": "89d76775107786f1bae69abd60b80be797e849a2da98694fe7b0927f7e7d1445",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 598,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7680,
+              "global_light_bytes_max": 7680,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 600,
+              "native_async_index_demand_max": 701,
+              "native_async_index_demand_at_last_main_sample": 96,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 598,
+              "p50": 2.054144,
+              "p95": 2.527232,
+              "p99": 2.658304,
+              "max": 3.019776,
+              "min": 1.7152,
+              "mean": 2.073611986622071,
+              "stddev": 0.2541509473580016
+            },
+            "render_cpu_ms": {
+              "samples": 598,
+              "p50": 2.1235,
+              "p95": 2.6752,
+              "p99": 3.5825,
+              "max": 4.9439,
+              "min": 1.466,
+              "mean": 2.0776168896321057,
+              "stddev": 0.41186109085413314
+            },
+            "selection_gpu_ms": {
+              "samples": 598,
+              "p50": 0.265216,
+              "p95": 0.313344,
+              "p99": 0.330752,
+              "max": 0.36864,
+              "min": 0.226304,
+              "mean": 0.26644034782608667,
+              "stddev": 0.0205477027807158
+            },
+            "selection_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0109,
+              "p95": 0.0152,
+              "p99": 0.0189,
+              "max": 0.0672,
+              "min": 0.009000000000000001,
+              "mean": 0.011636956521739123,
+              "stddev": 0.003026967217624133
+            },
+            "clustering_gpu_ms": {
+              "samples": 598,
+              "p50": 0.128,
+              "p95": 0.142336,
+              "p99": 0.147456,
+              "max": 0.1792,
+              "min": 0.10752,
+              "mean": 0.12865412709030086,
+              "stddev": 0.008424784098177535
+            },
+            "clustering_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0070999999999999995,
+              "p95": 0.0096,
+              "p99": 0.011399999999999999,
+              "max": 0.034,
+              "min": 0.0059,
+              "mean": 0.0074219063545150335,
+              "stddev": 0.0015113965206839462
+            },
+            "inject_gpu_ms": {
+              "samples": 598,
+              "p50": 0.011264,
+              "p95": 0.019456,
+              "p99": 0.02048,
+              "max": 0.021504,
+              "min": 0.008192,
+              "mean": 0.012964387959866234,
+              "stddev": 0.0034235010434696235
+            },
+            "inject_cpu_ms": {
+              "samples": 598,
+              "p50": 0.0231,
+              "p95": 0.031099999999999996,
+              "p99": 0.0432,
+              "max": 0.0931,
+              "min": 0.016399999999999998,
+              "mean": 0.024009866220735806,
+              "stddev": 0.0058404127467446346
+            }
+          },
+          "render_gpu_ms_run_mean_difference": 0.21912393293079568,
+          "render_cpu_ms_run_mean_difference": 0.11372007755156854,
+          "selection_gpu_ms_run_mean_difference": 0.013185904873066978,
+          "selection_cpu_ms_run_mean_difference": 0.00007420484388676735,
+          "clustering_gpu_ms_run_mean_difference": 0.00842175125137469,
+          "clustering_cpu_ms_run_mean_difference": -0.0002453755246796061,
+          "work_signature_matched": true
+        },
+        {
+          "pair": "pair03",
+          "probe": "show",
+          "tier": "high",
+          "order": [
+            "gpu",
+            "control"
+          ],
+          "gpu": {
+            "report_sha256": "bd7d8e7140bee91a33a46af018d8a3b7dbe42ac51fa7cf417e547dbbfb9129a0",
+            "log_sha256": "68cce37fffe464305ebf9eb383eb5f46d0a9f116aeb4c690d84e83ee08d6a947",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 7760,
+              "global_light_bytes_max": 7920,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 2870,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1613,
+              "p50": 4.397056,
+              "p95": 9.653248,
+              "p99": 11.771904,
+              "max": 13.874176,
+              "min": 0.679936,
+              "mean": 4.311837361438315,
+              "stddev": 2.7911080760767857
+            },
+            "render_cpu_ms": {
+              "samples": 1613,
+              "p50": 5.0013000000000005,
+              "p95": 11.6935,
+              "p99": 15.248700000000001,
+              "max": 21.278,
+              "min": 0.7208,
+              "mean": 5.05442864228147,
+              "stddev": 3.5179366766230373
+            },
+            "selection_gpu_ms": {
+              "samples": 1265,
+              "p50": 0.934912,
+              "p95": 1.40288,
+              "p99": 1.465344,
+              "max": 1.788928,
+              "min": 0.186368,
+              "mean": 0.943572692490118,
+              "stddev": 0.3354084640032637
+            },
+            "selection_cpu_ms": {
+              "samples": 1265,
+              "p50": 0.0333,
+              "p95": 0.052,
+              "p99": 0.0648,
+              "max": 0.09509999999999999,
+              "min": 0.008199999999999999,
+              "mean": 0.03348110671936758,
+              "stddev": 0.011982770188227259
+            },
+            "clustering_gpu_ms": {
+              "samples": 1613,
+              "p50": 0.124928,
+              "p95": 0.147456,
+              "p99": 0.155648,
+              "max": 0.55296,
+              "min": 0.103424,
+              "mean": 0.1269664773713548,
+              "stddev": 0.014597012118414401
+            },
+            "clustering_cpu_ms": {
+              "samples": 1613,
+              "p50": 0.0083,
+              "p95": 0.012,
+              "p99": 0.0153,
+              "max": 0.0317,
+              "min": 0.0059,
+              "mean": 0.00874519528828273,
+              "stddev": 0.0020187980906015276
+            },
+            "inject_gpu_ms": {
+              "samples": 1613,
+              "p50": 0.012288,
+              "p95": 0.021504,
+              "p99": 0.024576,
+              "max": 0.026624,
+              "min": 0.001024,
+              "mean": 0.011250668319900858,
+              "stddev": 0.006250925334974758
+            },
+            "inject_cpu_ms": {
+              "samples": 1613,
+              "p50": 0.028399999999999998,
+              "p95": 0.037700000000000004,
+              "p99": 0.0477,
+              "max": 0.0881,
+              "min": 0.0009,
+              "mean": 0.024263112213267272,
+              "stddev": 0.01304937390988477
+            }
+          },
+          "control": {
+            "report_sha256": "0d77b0c0cf956d4a3741219aaefd16991aecfcce5501ad0e881abe1b689f5e8d",
+            "log_sha256": "06ece36a74eb886865e8de5c47617958dd770a25ec40727c90e3dde4f68a57eb",
+            "adapter": {
+              "name": "NVIDIA GeForce RTX 4070 SUPER",
+              "backend": "Vulkan",
+              "driver": "NVIDIA"
+            },
+            "clusters": {
+              "observations": 1678,
+              "index_bytes": 2097152,
+              "offsets_counts_bytes": 117504,
+              "global_light_bytes_min": 80,
+              "global_light_bytes_max": 240,
+              "adaptive_index_target": 524288,
+              "grid_dimensions": "17,9,24",
+              "native_async_index_demand_observations": 1680,
+              "native_async_index_demand_max": 1598,
+              "native_async_index_demand_at_last_main_sample": 1,
+              "public_list_growth": false,
+              "private_z_slice_bytes": null,
+              "private_staging_bytes": null
+            },
+            "render_gpu_ms": {
+              "samples": 1591,
+              "p50": 4.15744,
+              "p95": 9.286656,
+              "p99": 11.715584,
+              "max": 14.373888,
+              "min": 0.679936,
+              "mean": 4.249929533626654,
+              "stddev": 2.795122742632705
+            },
+            "render_cpu_ms": {
+              "samples": 1591,
+              "p50": 4.4241,
+              "p95": 11.1588,
+              "p99": 14.666699999999999,
+              "max": 27.4328,
+              "min": 0.7047000000000001,
+              "mean": 4.9069438717787515,
+              "stddev": 3.4754412167320927
+            },
+            "selection_gpu_ms": {
+              "samples": 1239,
+              "p50": 1.120256,
+              "p95": 1.491968,
+              "p99": 1.711104,
+              "max": 1.819648,
+              "min": 0.186368,
+              "mean": 0.9865888748991115,
+              "stddev": 0.3677116596175796
+            },
+            "selection_cpu_ms": {
+              "samples": 1239,
+              "p50": 0.031099999999999996,
+              "p95": 0.0453,
+              "p99": 0.054,
+              "max": 0.0968,
+              "min": 0.0078,
+              "mean": 0.03017586763518968,
+              "stddev": 0.009786388747404673
+            },
+            "clustering_gpu_ms": {
+              "samples": 1591,
+              "p50": 0.123904,
+              "p95": 0.149504,
+              "p99": 0.155648,
+              "max": 0.582656,
+              "min": 0.1024,
+              "mean": 0.12751471024512678,
+              "stddev": 0.019743666264582314
+            },
+            "clustering_cpu_ms": {
+              "samples": 1591,
+              "p50": 0.008199999999999999,
+              "p95": 0.0117,
+              "p99": 0.0141,
+              "max": 0.0396,
+              "min": 0.0059,
+              "mean": 0.008579132620993085,
+              "stddev": 0.0018369876694428547
+            },
+            "inject_gpu_ms": null,
+            "inject_cpu_ms": null
+          },
+          "retirement": {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          "render_gpu_ms_run_mean_difference": 0.0619078278116616,
+          "render_cpu_ms_run_mean_difference": 0.1474847705027189,
+          "selection_gpu_ms_run_mean_difference": -0.04301618240899352,
+          "selection_cpu_ms_run_mean_difference": 0.0033052390841779022,
+          "clustering_gpu_ms_run_mean_difference": -0.000548232873771981,
+          "clustering_cpu_ms_run_mean_difference": 0.00016606266728964522,
+          "work_signature_matched": true
+        }
+      ]
+    }
+  },
+  "remaining": [
+    "Empty selections with possible sources still reserve visible pointlike slots; no exact GPU liveness/readback claim.",
+    "Private Z-slice/scratchpad/metadata/staging, old in-flight allocations and allocation churn remain unmeasured. Public buffer capacity may remain allocated after work retirement.",
+    "No cross-session timing-improvement claim; matched run distributions only.",
+    "Medium/low repeated costs and receiver images, general per-view layers/hardware, natural-star art and production finale remain open."
+  ]
+}

@@ -89,7 +89,9 @@ impl ParticleLightGpuStatistics {
 }
 
 /// Reserved slot ordinal, not a source-particle identity. Do not edit its light,
-/// visibility, layers or transform. Slots stay zero-lumen in the main world.
+/// visibility, layers or transform. Slots stay zero-lumen in the main world,
+/// with a finite neutral range; the reusable pool is hidden when no possible GPU
+/// source remains. Only render-world injection supplies an active light's range.
 #[derive(Component, Clone, Copy, ExtractComponent)]
 pub struct ParticleLightGpuSlot(pub u32);
 #[derive(Resource, Default)]
@@ -189,14 +191,64 @@ fn slot_cap(
     }
     Ok(cap)
 }
-fn placeholder(range: f32) -> PointLight {
+// Bevy prepares inverse-square range even for zero-lumen lights. A zero range
+// would publish infinity; the host's max range would broadcast inactive slots
+// over the whole view when injection is absent/rejected. This finite 1 mm bound
+// is only a neutral CPU placeholder, never the authored GPU light's culling bound.
+const PLACEHOLDER_RANGE: f32 = 0.001;
+fn placeholder() -> PointLight {
     PointLight {
         intensity: 0.0,
-        range,
+        range: PLACEHOLDER_RANGE,
+        radius: 0.0,
         shadow_maps_enabled: false,
         contact_shadows_enabled: false,
         ..default()
     }
+}
+
+// Check current visibility declarations, not last frame's InheritedVisibility:
+// this runs before propagation. Visible explicitly overrides hidden ancestors,
+// matching Bevy's hierarchy semantics. The render authorization remains the
+// authoritative source/epoch/artifact/layer check; this is a conservative pool
+// presence test and never infers live particle counts or reads GPU positions.
+fn hidden(world: &World, mut entity: Entity) -> bool {
+    loop {
+        match world.get::<Visibility>(entity) {
+            Some(Visibility::Hidden) => return true,
+            Some(Visibility::Visible) => return false,
+            _ => {}
+        }
+        let Some(parent) = world.get::<ChildOf>(entity) else {
+            return false;
+        };
+        entity = parent.parent();
+    }
+}
+fn has_possible_source(world: &mut World) -> bool {
+    let mut sources = world.query::<(
+        Entity,
+        &PresentedEffect,
+        &crate::EffectRuntimeStatus,
+        Option<&EffectOutputContext>,
+    )>();
+    sources
+        .iter(world)
+        .any(|(owner, player, runtime, context)| {
+            let root = context.map_or(owner, |c| c.root);
+            runtime.active == crate::ActiveBackend::Gpu
+                && world.get::<PresentedEffect>(root).is_some()
+                && !hidden(world, owner)
+                && !hidden(world, root)
+                && player.effect().emitters.iter().any(|emitter| {
+                    emitter.enabled
+                        && emitter.scene_outputs.iter().any(|output| {
+                            let aestra_runtime::SceneOutputPlanKind::ParticlePointLight(plan) =
+                                &output.kind;
+                            plan.max_lights != 0
+                        })
+                })
+        })
 }
 fn reserve_slots(world: &mut World) {
     let started = std::time::Instant::now();
@@ -240,6 +292,11 @@ fn reserve_slots(world: &mut World) {
     {
         cap = 0;
     }
+    let visibility = if cap > 0 && has_possible_source(world) {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
     world.resource_scope(|world, mut slots: Mut<Slots>| {
         slots.0.retain(|e| {
             if world.get::<ParticleLightGpuSlot>(*e).is_some()
@@ -262,8 +319,9 @@ fn reserve_slots(world: &mut World) {
                 world
                     .spawn((
                         ParticleLightGpuSlot(0),
-                        placeholder(clamps.max_range),
+                        placeholder(),
                         Transform::IDENTITY,
+                        visibility,
                     ))
                     .id(),
             );
@@ -276,13 +334,12 @@ fn reserve_slots(world: &mut World) {
             }
             let light = world.get::<PointLight>(*entity).unwrap();
             if light.intensity != 0.0
-                || light.range != clamps.max_range
+                || light.range != PLACEHOLDER_RANGE
+                || light.radius != 0.0
                 || light.shadow_maps_enabled
                 || light.contact_shadows_enabled
             {
-                world
-                    .entity_mut(*entity)
-                    .insert(placeholder(clamps.max_range));
+                world.entity_mut(*entity).insert(placeholder());
             }
             if world.get::<Transform>(*entity) != Some(&Transform::IDENTITY) {
                 world.entity_mut(*entity).insert(Transform::IDENTITY);
@@ -290,8 +347,8 @@ fn reserve_slots(world: &mut World) {
             if world.get::<RenderLayers>(*entity) != Some(&RenderLayers::default()) {
                 world.entity_mut(*entity).insert(RenderLayers::default());
             }
-            if world.get::<Visibility>(*entity) != Some(&Visibility::Visible) {
-                world.entity_mut(*entity).insert(Visibility::Visible);
+            if world.get::<Visibility>(*entity) != Some(&visibility) {
+                world.entity_mut(*entity).insert(visibility);
             }
             // Placeholder position is unrelated to the GPU light. Only GPU
             // clustering may spatially cull it. Avoid dirtying unchanged lights
@@ -537,6 +594,12 @@ fn inject(
         if let Some(error) = &sources.rejection {
             return Err(error.clone());
         }
+        // Slots remain allocated but hidden when the source set disappears.
+        // There is no native destination mapping in that case. Do not let an
+        // older selection frame turn clean retirement into SlotUnavailable.
+        if sources.sources.is_empty() {
+            return Ok(());
+        }
         let Some(frame) = selected.frame() else {
             return match &selected.rejection {
                 Some(e) => Err(ParticleLightGpuRejection::Selection(e.clone())),
@@ -736,6 +799,10 @@ mod tests {
         for entity in &world.resource::<Slots>().0 {
             let light = world.get::<PointLight>(*entity).unwrap();
             assert_eq!(light.intensity, 0.0);
+            assert_eq!(light.range, PLACEHOLDER_RANGE);
+            assert_eq!(light.radius, 0.0);
+            assert!((1.0 / (light.range * light.range)).is_finite());
+            assert_eq!(world.get::<Visibility>(*entity), Some(&Visibility::Hidden));
             assert!(!light.shadow_maps_enabled && !light.contact_shadows_enabled);
         }
         world.resource_mut::<ParticleLightGpuSettings>().max_lights = 1;
@@ -765,5 +832,129 @@ mod tests {
                 .rejection,
             Some(ParticleLightGpuRejection::UnsupportedClustering)
         );
+    }
+    #[test]
+    fn possible_sources_wake_and_retire_the_same_pool_without_dirtying_neutral_lights() {
+        use crate::{ActiveBackend, EffectAsset, EffectCompiler, Emitter, PresentedEffect};
+        let mut world = World::new();
+        world.init_resource::<ParticleLightGpuStatistics>();
+        world.insert_resource(ParticleLightMode::SameFrameGpu);
+        world.insert_resource(AestraParticleLightSettings {
+            max_lights: 4,
+            ..default()
+        });
+        world.insert_resource(ParticleLightGpuSettings {
+            max_lights: 3,
+            ..default()
+        });
+        world.init_resource::<ParticleLightRealizationSettings>();
+        world.init_resource::<Slots>();
+        reserve_slots(&mut world);
+        let slots = world.resource::<Slots>().0.clone();
+        let mut asset = EffectAsset::new("possible source", 4.0);
+        let mut emitter = Emitter::basic_sprite("star", 4.0);
+        emitter
+            .scene_outputs
+            .push(crate::SceneOutputInstance::particle_point_light(
+                crate::ParticlePointLightProperties::new(1500.0, 12.0),
+            ));
+        asset.emitters.push(emitter);
+        let effect = Arc::new(EffectCompiler::default().compile(&asset).unwrap());
+        let owner = world
+            .spawn((
+                PresentedEffect::new(effect),
+                crate::EffectRuntimeStatus {
+                    active: ActiveBackend::Gpu,
+                    reason: "test".into(),
+                    compatibility: crate::CompatibilityReport::compatible(
+                        crate::CompatibilityTarget::NativeGpu,
+                    ),
+                },
+                Visibility::Inherited,
+            ))
+            .id();
+        let check = |world: &mut World, visible| {
+            reserve_slots(world);
+            assert_eq!(world.resource::<Slots>().0, slots);
+            for slot in &slots {
+                assert_eq!(world.get::<Visibility>(*slot), Some(&visible));
+                let light = world.get::<PointLight>(*slot).unwrap();
+                assert_eq!(
+                    (light.intensity, light.range, light.radius),
+                    (0.0, PLACEHOLDER_RANGE, 0.0)
+                );
+            }
+        };
+        check(&mut world, Visibility::Visible);
+        world.clear_trackers();
+        world
+            .resource_mut::<ParticleLightRealizationSettings>()
+            .max_range = 2000.0;
+        check(&mut world, Visibility::Visible);
+        for slot in &slots {
+            assert!(
+                !world
+                    .entity(*slot)
+                    .get_ref::<PointLight>()
+                    .unwrap()
+                    .is_changed()
+            );
+        }
+        let parent = world.spawn(Visibility::Hidden).id();
+        world.entity_mut(owner).insert(ChildOf(parent));
+        check(&mut world, Visibility::Hidden);
+        world.entity_mut(owner).insert(Visibility::Visible);
+        check(&mut world, Visibility::Visible); // explicit override, no stale inherited state
+        world
+            .get_mut::<crate::EffectRuntimeStatus>(owner)
+            .unwrap()
+            .active = ActiveBackend::CpuReference;
+        check(&mut world, Visibility::Hidden);
+        world
+            .get_mut::<crate::EffectRuntimeStatus>(owner)
+            .unwrap()
+            .active = ActiveBackend::Gpu;
+        check(&mut world, Visibility::Visible);
+        let root = world
+            .spawn((
+                PresentedEffect::new(Arc::new(
+                    EffectCompiler::default()
+                        .compile(&EffectAsset::new("composition", 4.0))
+                        .unwrap(),
+                )),
+                Visibility::Hidden,
+            ))
+            .id();
+        world.entity_mut(owner).insert(EffectOutputContext {
+            root,
+            clip_path: vec![],
+            playback_epoch: 0,
+        });
+        check(&mut world, Visibility::Hidden); // child Visible cannot override its routing root
+        world.entity_mut(root).insert(Visibility::Inherited);
+        check(&mut world, Visibility::Visible);
+        world.despawn(root);
+        check(&mut world, Visibility::Hidden); // stale routing cannot wake the pool
+        world.entity_mut(owner).remove::<EffectOutputContext>();
+        check(&mut world, Visibility::Visible);
+        world.despawn(owner);
+        check(&mut world, Visibility::Hidden);
+        // A composition root without particle-light outputs cannot wake the pool.
+        let empty = Arc::new(
+            EffectCompiler::default()
+                .compile(&EffectAsset::new("root", 4.0))
+                .unwrap(),
+        );
+        world.spawn((
+            PresentedEffect::new(empty),
+            crate::EffectRuntimeStatus {
+                active: ActiveBackend::Gpu,
+                reason: "test".into(),
+                compatibility: crate::CompatibilityReport::compatible(
+                    crate::CompatibilityTarget::NativeGpu,
+                ),
+            },
+        ));
+        check(&mut world, Visibility::Hidden);
     }
 }

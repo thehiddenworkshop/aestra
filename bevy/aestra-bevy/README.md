@@ -488,6 +488,10 @@ selected-light readback and removes the portable proxy pool; readback settings
 do not need to be rewritten. Changing mode/global cap reconciles the pools.
 The GPU pool reserves at most `min(global cap, GPU adapter cap)` zero-lumen
 shadowless entities, reused across frames rather than allocated per particle.
+The pool is hidden when no possible GPU light source remains, without deleting
+reusable slots. Visible CPU placeholders use a finite zero-lumen 1 mm range;
+only GPU injection supplies an active light's authored range/position. Empty
+selections with possible sources can still incur bounded pointlike cluster work.
 Current-frame GPU selection writes their actual world-space light records before
 Bevy GPU clustering. Normal `StandardMaterial` receivers and independent host
 lights/representative flashes use the same native buffer without a custom shader.
@@ -539,9 +543,13 @@ physical index/offsets-counts buffers and asynchronous index demand without new 
 The benchmark-only adaptive-grid target now matches its initial index capacity on both sides;
 the earlier grid oscillation and a separate abnormal native shutdown exit remain recorded.
 Stable public sizes are not total resident-memory or allocation-churn certification: private
-Z-slice/scratchpad/staging and old in-flight allocations remain unmeasured. Show cleanup still
-acknowledges substantial native index demand despite zero writable selected capacity, so
-inactive-slot work retirement is the next playback follow-up. Private/in-flight native budgets,
+Z-slice/scratchpad/staging and old in-flight allocations remain unmeasured. The
+[F7E4B3B1 retirement gate](../../benchmarks/fireworks/particle-light-gpu-retirement-2026-10-05.md)
+now passes reusable-pool idle/hidden/removal, finite empty/rejected fallbacks and
+far-origin registration. All three repeated high-tier show cleanup windows match
+the control at one acknowledged index (previously 346176), without changing the
+8413-child workload. This retires idle work, not native buffer high-water allocations
+or exact per-slot GPU liveness. Private/in-flight native budgets,
 medium/low repeated costs, non-default per-view layers, additional hardware and
 production-finale certification remain open.
 
