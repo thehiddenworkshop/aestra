@@ -56,6 +56,8 @@ fn configure_clusters(tier: &str, clusters: &mut bevy::light::cluster::GlobalClu
 
 /// Deliberately explicit benchmark fixture. Materials, renderer/history budgets,
 /// emission, events, transforms and show choreography are not altered.
+/// F7F2 deliberately lets a sparse low-tier output use the global 24-slot ceiling;
+/// this is a fixture authoring choice, not a host override of authored limits.
 pub fn add_outputs(effect: &mut EffectAsset) {
     use aestra_bevy::{
         Curve, CurveId, CurveKey, ParticlePointLightProperties, SceneOutputId, SceneOutputInstance,
@@ -78,7 +80,7 @@ pub fn add_outputs(effect: &mut EffectAsset) {
         light.max_lights_by_quality = [
             ("high".into(), 32),
             ("medium".into(), 16),
-            ("low".into(), 8),
+            ("low".into(), 24),
         ]
         .into();
         light.priority = u32::from(name.contains("flash"));
@@ -430,6 +432,14 @@ mod tests {
         assert_eq!(source.material_instances, fixture.material_instances);
         assert_eq!(source.effect_clips, fixture.effect_clips);
         assert!(fixture.emitters.iter().any(|e| !e.scene_outputs.is_empty()));
+        for output in fixture.emitters.iter().flat_map(|e| &e.scene_outputs) {
+            let aestra_bevy::SceneOutputProperties::ParticlePointLight(light) = &output.properties;
+            assert_eq!(light.max_lights_by_quality["high"], 32);
+            assert_eq!(light.max_lights_by_quality["medium"], 16);
+            assert_eq!(light.max_lights_by_quality["low"], 24);
+            assert_eq!(light.range_curve.sample(0.0), 12.0);
+            assert_eq!(light.intensity_curve.sample(0.0), 1500.0);
+        }
         for (before, after) in source.emitters.iter().zip(&fixture.emitters) {
             let mut restored = after.clone();
             restored.scene_outputs = before.scene_outputs.clone();

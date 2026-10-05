@@ -114,6 +114,7 @@ pub struct BenchPresentation {
     fixed_simulation_step_seconds: Option<f64>,
     response: crate::photographic::CaptureResponse,
     particle_light_benchmark_fixture: bool,
+    particle_light_fixture_profile: Option<&'static str>,
     particle_light_allocation_snapshots: bool,
     particle_light_realization: bool,
     particle_light_mode: Option<&'static str>,
@@ -210,6 +211,9 @@ impl BenchPresentation {
             )
             .with_trail_sampling(config.trail_minimum_pixels),
             particle_light_benchmark_fixture: config.particle_light_bench,
+            particle_light_fixture_profile: config
+                .particle_light_bench
+                .then_some("f7f2_low_output24_global24"),
             particle_light_allocation_snapshots: config.particle_light_allocations,
             particle_light_realization: config.particle_light_realization,
             particle_light_mode: config.particle_light_realization.then_some(

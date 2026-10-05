@@ -41,6 +41,11 @@ all 36 ordinary cost/control runs, 36 separate allocator runs and independent li
 receiver images and low hero/volley pass; low full-show visibility fails the unchanged threshold
 in three retained attempts, including early-burst samples and a provenance-qualified reproduction. Next: F7F2's explicit low-tier authored
 lighting choice/qualification, then F8.3 lit smoke. F7F is not marked fully complete.
+F7F2 now [qualifies the explicit low-tier output24/global24 fixture](low-tier-lighting-2026-10-05.md):
+all six receiver gates, 18 fresh ordinary cost/control runs and 18 separate allocation runs pass.
+Global caps/intensity/range and normal particle work remain unchanged; the authored per-output
+low cap changes from 8 to 24. Earlier rejected output-eight evidence is retained.
+Next: F8.3 smoke lighting, with general-adapter/art/finale qualification still open.
 
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 

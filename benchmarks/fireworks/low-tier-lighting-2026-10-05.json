@@ -1,0 +1,718 @@
+{
+  "schema": 1,
+  "date": "2026-10-05",
+  "milestone": "F7F2",
+  "base_commit": "7a183f72",
+  "accepted": true,
+  "qualification_scope": "Current opt-in authored low-tier fixture receiver/work/cost/cleanup and sampled native allocation gates; not generic adapter, AAA art, natural-star registration, arbitrary-load hard memory or finale performance certification.",
+  "profile": {
+    "id": "f7f2_low_output24_global24",
+    "explicit_authored_change": {
+      "low_per_output_before": 8,
+      "low_per_output_after": 24
+    },
+    "per_output_caps": {
+      "high": 32,
+      "medium": 16,
+      "low": 24
+    },
+    "global_caps": {
+      "high": 96,
+      "medium": 48,
+      "low": 24
+    },
+    "representative_caps": {
+      "high": 8,
+      "medium": 4,
+      "low": 2
+    },
+    "intensity_curve": [
+      [
+        0,
+        1500
+      ],
+      [
+        0.8,
+        600
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "range_m": 12,
+    "shadows": false,
+    "particle_materials_density_motion_events_history_transforms_unchanged": true,
+    "host_cannot_override_authored_limits": true
+  },
+  "historical_failures": {
+    "evidence": "lighting-quality-2026-10-05.json",
+    "retained_attempts": 3,
+    "previous_profile_accepted": false,
+    "unchanged_thresholds": true
+  },
+  "receiver": {
+    "accepted": true,
+    "fixture_profile": "f7f2_low_output24_global24",
+    "global_cap": 24,
+    "representative_cap": 2,
+    "samples": 46,
+    "pngs": 138,
+    "responses": [
+      {
+        "workload": "hero",
+        "bloom": 0,
+        "best_energy_frame": 85,
+        "positive_pixels": 865,
+        "positive_energy": 7944,
+        "restored_significant_pixels_max": 0
+      },
+      {
+        "workload": "hero",
+        "bloom": 0.15,
+        "best_energy_frame": 85,
+        "positive_pixels": 342,
+        "positive_energy": 1522,
+        "restored_significant_pixels_max": 0
+      },
+      {
+        "workload": "volley",
+        "bloom": 0,
+        "best_energy_frame": 85,
+        "positive_pixels": 540,
+        "positive_energy": 5796,
+        "restored_significant_pixels_max": 0
+      },
+      {
+        "workload": "volley",
+        "bloom": 0.15,
+        "best_energy_frame": 85,
+        "positive_pixels": 426,
+        "positive_energy": 2940,
+        "restored_significant_pixels_max": 0
+      },
+      {
+        "workload": "show",
+        "bloom": 0,
+        "best_energy_frame": 85,
+        "positive_pixels": 431,
+        "positive_energy": 2917,
+        "restored_significant_pixels_max": 0
+      },
+      {
+        "workload": "show",
+        "bloom": 0.15,
+        "best_energy_frame": 85,
+        "positive_pixels": 372,
+        "positive_energy": 1983,
+        "restored_significant_pixels_max": 0
+      }
+    ],
+    "source_and_binary_verification": true,
+    "inputs": {
+      "schema": 1,
+      "base_commit": "7a183f72",
+      "profile": "f7f2_low_output24_global24",
+      "global_cap": 24,
+      "low_per_output_cap": 24,
+      "lumens_start": 1500,
+      "range": 12,
+      "test_binary_sha256": "02d980e86da220a0ef713f06a6efc24c81b620fd3c03a0074623f3dfdc82c49b",
+      "sources": [
+        {
+          "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+          "sha256": "3d5a044d70e037653a7dd9e73343e81237c20a7a86b1a800828c52e37b948cdb"
+        },
+        {
+          "path": "apps/aestra-viewer/src/particle_light_images.rs",
+          "sha256": "9b53e65811644bf5cc8c5af6441d601ee8667bd5d9bc7b1651bd392a9da95dd8"
+        },
+        {
+          "path": "apps/aestra-viewer/src/gpu_bench.rs",
+          "sha256": "8e61b7d16a6283d7a3559f92ee1960bb5da0bdbdc674b0bc1374e0034f9a9487"
+        }
+      ]
+    },
+    "thresholds": {
+      "positive_pixels_min": 100,
+      "positive_channel_delta_exclusive_min": 3,
+      "positive_energy_min": 1000,
+      "required": "One active sample per workload/bloom; no significant restored pixels; prebirth/postcleanup exact equality."
+    },
+    "scope": "Paused forward native playback, off/on/off adapter-cap triplets; identical representative pulses in baseline; default-layer diffuse receiver; not paced registration or art."
+  },
+  "ordinary_costs": {
+    "accepted": true,
+    "native_processes": 18,
+    "repetitions": 3,
+    "allocator_instrumented": false,
+    "binary_sha256": "d45e5e9f8c32c6afb8511a0b77f51608f2f4912cfd9be0a6559be7da619e5fbc",
+    "fixture_profile": "f7f2_low_output24_global24",
+    "cells": [
+      {
+        "probe": "hero",
+        "tier": "low",
+        "gpu_render_p95_ms": [
+          1.1008,
+          1.09568,
+          1.804288
+        ],
+        "control_render_p95_ms": [
+          1.094656,
+          1.088512,
+          1.970176
+        ],
+        "gpu_clustering_p95_ms": [
+          0.067584,
+          0.067584,
+          0.128
+        ],
+        "gpu_inject_p95_ms": [
+          0.008192,
+          0.008192,
+          0.016384
+        ],
+        "render_run_mean_differences_ms": [
+          0.004423063545150208,
+          0.01815288294314399,
+          -0.03071828762541684
+        ],
+        "work_signature_matched": true,
+        "retirement": [
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "probe": "volley",
+        "tier": "low",
+        "gpu_render_p95_ms": [
+          1.369088,
+          1.176576,
+          1.762304
+        ],
+        "control_render_p95_ms": [
+          1.345536,
+          1.051648,
+          1.486848
+        ],
+        "gpu_clustering_p95_ms": [
+          0.090112,
+          0.075776,
+          0.128
+        ],
+        "gpu_inject_p95_ms": [
+          0.011264,
+          0.009216,
+          0.016384
+        ],
+        "render_run_mean_differences_ms": [
+          0.037472587646076194,
+          -0.01760708141216427,
+          0.10900678423905807
+        ],
+        "work_signature_matched": true,
+        "retirement": [
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "probe": "show",
+        "tier": "low",
+        "gpu_render_p95_ms": [
+          5.26336,
+          8.031232,
+          8.02304
+        ],
+        "control_render_p95_ms": [
+          5.172224,
+          5.354496,
+          7.606272
+        ],
+        "gpu_clustering_p95_ms": [
+          0.101376,
+          0.141312,
+          0.144384
+        ],
+        "gpu_inject_p95_ms": [
+          0.014336,
+          0.02048,
+          0.019456
+        ],
+        "render_run_mean_differences_ms": [
+          0.061400685479723105,
+          1.1237524213064711,
+          -0.08254724477408049
+        ],
+        "work_signature_matched": true,
+        "retirement": [
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          },
+          {
+            "samples": 60,
+            "gpu_native_async_index_demand": 1,
+            "control_native_async_index_demand": 1,
+            "scope": "Fixed cleanup acknowledgment window; not same-frame demand or total native memory retirement."
+          }
+        ]
+      }
+    ],
+    "scope": "Independent unpaced fixed-60-Hz run distributions. Material variability; no paired-frame subtraction, causal/performance improvement, whole-game or provisional 4-ms/finale proof."
+  },
+  "separate_allocations": {
+    "accepted": true,
+    "native_processes": 18,
+    "binary_sha256": "d45e5e9f8c32c6afb8511a0b77f51608f2f4912cfd9be0a6559be7da619e5fbc",
+    "allocator_instrumented": true,
+    "timing_evidence": false,
+    "all_profiles_checked": true,
+    "grid": [
+      17,
+      9,
+      24
+    ],
+    "view_count": 1,
+    "staging_count_min": 2,
+    "staging_count_max": 4,
+    "staging_slots_ceiling": 8,
+    "rows": [
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 9,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "53196ca6df08dc6d93d08db4e95504e18aec32db82da662b38a0ae9dd994eea7",
+        "log_sha256": "338b51ab1a908585c8ef238b4b561eac38b3c34a6c0f3d6825b2edacd3a4eae5"
+      },
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "bd5854232da7ee0aa0618cb420cf4b7b33cf4cf61808c9c36140e3973018d130",
+        "log_sha256": "d908f20dfb0e615dbe314691c367d06c2b0eaa0c93cbe1fa4038e21741b27321"
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "9498d6371554fc07a9ff8156ac0bc549a82e572f5749ef45306650d869c8a307",
+        "log_sha256": "0cf6a1136a57cf5999c8f77bb0b7c82739d42f155541ef03076ca311fcd5d4df"
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "d3e10bd9f0c0a35618ca32dafbf866a797a387fe65d7e5aefcb8124bb6893535",
+        "log_sha256": "ae0a2fd0c83fcc3eb725e43efac9579e8e90bf6c9bcad938deb7199c900ca45c"
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 4,
+        "report_sha256": "5b50df658c214a1dbd4a09400edbf7101fbedd27f16c55644105dc07f376b4cc",
+        "log_sha256": "d4bd2e966ff1a424f0bae2b87b4e336f8efb96f6a609b6c597544157821a4a1a"
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "tier": "low",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "6952df9bac1524496948139db6de9b513d0e498140dbd3303898466a0cca284b",
+        "log_sha256": "eeb1db9a5d00132a1b94b4f318f54248ffe032199aed97c9d3d590142603d048"
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "602d5c2dd80ab3609a3a3a4308d76c551e21a77c58fcedc8763d60df2a82c421",
+        "log_sha256": "23637c6f4baae14c3e674cee96e22ea78a9f4977e600fdcfdb6c1b4162879fb8"
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "3f7032716669ed924e732b0a4851d0bdc14dd4a91bae6d9ade4b55741ac76fea",
+        "log_sha256": "a73f98b69a07afa1e1f8725564319c33f2dc16cdd2e516063a21d7c4453f13e4"
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "766d6acd19560784ac1c813aceb4c327205ab349e5028c3e24788bb5540b009d",
+        "log_sha256": "9a0d471edda983bdb280af2027fdf9410589959addfba2c189a98985a0a23e56"
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "35bf0dd597aeda6e16526c8f6d59549e56d37d744e12e2ed30880c95696e45ce",
+        "log_sha256": "a0d97d21f8188823e09971756c57d41621f3a88a355177d28f4b2919031b440a"
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "tier": "low",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "16d4e348561db5e193a8dd42dd4116fe800722ccf1c03f25f6432d9a26789ddb",
+        "log_sha256": "bd311202671cfd5a55e8bc6f13571e46afa37eccab84f5073e3458418b6218ec"
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "c879452e31ad8de04b3fccab8dae4b7d0ec5aaa5b228debf68d200c9729f9881",
+        "log_sha256": "40ac61e7f7247fab3caa7eb25cd38b35a0e8260ab402caf71843fffeb4dce3b2"
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "d4432ae7fb58d8861100c3abf672ec45a576e12397356c406673ea6b01cc020a",
+        "log_sha256": "28edae3e6cac0373f3f515aa5435e730ac492c9240550be35762acf57dc47725"
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "cc8db20961a43a3938eddc638ac88e409253235de1fd5599c76ce71863013137",
+        "log_sha256": "3acf939bb3d692be6e76a1debbc8afee116c4eac0944cff786dd7d141127da78"
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "control",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 2,
+        "report_sha256": "e4941adf979cdc8cafb1b6f4e8fca9af2f40ea6d85a1d9367002b3dffbf79213",
+        "log_sha256": "5f622ba2318adad72a9ac6004913eeb65b797027d900bfc25c0d0fb92cb567b2"
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 10,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 3,
+        "staging_count_max": 3,
+        "report_sha256": "d1f71b1565680fd576396ed983d0533d4d775376bf7851237201d49ba9a0b76f",
+        "log_sha256": "269ba161d517de68fd32fa97c82c151174740a3d93af0cb0856f6437934cbca3"
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "tier": "low",
+        "mode": "gpu",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 4,
+        "report_sha256": "9a909d7d84dfd750d92ed0d61ace8c38aff6c030297b8cdee9e3884e97258eaa",
+        "log_sha256": "9836cd870b4655e3774f0b5a4f053a0bdf4d407c5cb754c0070d420fc1421d7f"
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "tier": "low",
+        "mode": "control",
+        "samples": 28,
+        "z_slice_count": 1,
+        "z_slice_bytes": 12288,
+        "scratchpad_count": 1,
+        "scratchpad_bytes": 117504,
+        "metadata_count": 1,
+        "metadata_bytes": 48,
+        "staging_count_min": 2,
+        "staging_count_max": 3,
+        "report_sha256": "00ff5c05e526abfe28ffceeccb7715271c0d4a3f22a8ac280477f76ecb59b5d0",
+        "log_sha256": "d1f0f89db88a5d4e86b73ed6c07cff989fa4dfdee56bc8cf1488f103e18da425"
+      }
+    ],
+    "scope": "Measured named private live allocations in the single-view tiered hero/volley/show matrix at preset preallocations. Existing workload/retirement/hash/public no-churn gates unchanged. Snapshot counts/bytes are not exact allocation generation IDs, full driver free history, total VRAM, hard limits on arbitrary overload or timing evidence."
+  },
+  "raw_provenance": {
+    "trees": [
+      {
+        "path": "target/fireworks-f7/low-output24-costs-2026-10-05",
+        "files": 38,
+        "pngs": 0,
+        "tree_sha256": "df38be68fc19bfefb0f3d1f9428e24880c8feac8d3c9bbb8ce5e32f824a7c88f",
+        "protocol": "SHA256 of UTF8 relative_path:sha256 lines in PowerShell Sort-Object FullName order, LF separators, no final LF",
+        "verified_matrix_report_log_hashes": 36,
+        "metadata": [
+          {
+            "path": "manifest.json",
+            "sha256": "6f91cb470e0682e5ff10efc93561240eb7b4b16e3994e9d2cd9a17b4755c0823"
+          }
+        ]
+      },
+      {
+        "path": "target/fireworks-f7/low-output24-allocations-2026-10-05",
+        "files": 38,
+        "pngs": 0,
+        "tree_sha256": "24b0be9e76219d16bf80bf2636b1a6e0d02e155f61eff59d4725a67045b2355c",
+        "protocol": "SHA256 of UTF8 relative_path:sha256 lines in PowerShell Sort-Object FullName order, LF separators, no final LF",
+        "verified_matrix_report_log_hashes": 36,
+        "metadata": [
+          {
+            "path": "manifest.json",
+            "sha256": "0e619bec157ecf50caef47d6bec53ad6ac8fa440c26477c8b8bf9d68e40cfd34"
+          }
+        ]
+      },
+      {
+        "path": "target/fireworks-f7/low-output24-images-2026-10-05",
+        "files": 142,
+        "pngs": 138,
+        "tree_sha256": "44891ad5e9c4e580cb5b6573e85f3b7500c5beb31525d27c36974a609a4cd215",
+        "protocol": "SHA256 of UTF8 relative_path:sha256 lines in PowerShell Sort-Object FullName order, LF separators, no final LF",
+        "verified_matrix_report_log_hashes": 0,
+        "metadata": [
+          {
+            "path": "input-manifest.json",
+            "sha256": "4839a905c837eebde54b733f4fc0479bc222453aad4ae638a185accd69776e91"
+          },
+          {
+            "path": "low/report.json",
+            "sha256": "d1992bdec38584a839082cc1bc2d5e4d4fca34e42779f484fafcdacd43ed550a"
+          },
+          {
+            "path": "native-images.log",
+            "sha256": "96ef6c2c8f7ce5a996ffce4e5b7741388692436cf0d0c59ca8c9558f11872801"
+          },
+          {
+            "path": "retained-integrity.log",
+            "sha256": "24cdd929c58d921badd61a8eba6728cebf825357da3a10daa5b149965a665a6a"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+        "sha256": "3d5a044d70e037653a7dd9e73343e81237c20a7a86b1a800828c52e37b948cdb"
+      },
+      {
+        "path": "apps/aestra-viewer/src/particle_light_images.rs",
+        "sha256": "9b53e65811644bf5cc8c5af6441d601ee8667bd5d9bc7b1651bd392a9da95dd8"
+      },
+      {
+        "path": "apps/aestra-viewer/src/gpu_bench.rs",
+        "sha256": "8e61b7d16a6283d7a3559f92ee1960bb5da0bdbdc674b0bc1374e0034f9a9487"
+      },
+      {
+        "path": "benchmarks/fireworks/validate-lighting-quality.ps1",
+        "sha256": "2f2af67922ff1de8cb61e50aaa66b0faa78ddb9c8aec82beb62dab44ad067d42"
+      },
+      {
+        "path": "benchmarks/fireworks/run-particle-light-costs.ps1",
+        "sha256": "58203ae6de212d82e2e11ddb2efcd7b34ae8ee47a787b7598ecbc0a71b8a345c"
+      },
+      {
+        "path": "benchmarks/fireworks/validate-cluster-private-allocations.ps1",
+        "sha256": "5e0d6ea9854fcc8e829f52aa817f22cf40285df602ab9d589c8e0ed407738ca1"
+      },
+      {
+        "path": "Cargo.toml",
+        "sha256": "0b4b47d5b24111d2cd017b1c73a94dc0ec748379519042513840c2301d1d4f1a"
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "bfc8ef5e09b5d4a9d8c98c721883b2c0bc5ed854a30455adbf2c1c03f55b2ca2"
+      }
+    ],
+    "production_binary_sha256": "d45e5e9f8c32c6afb8511a0b77f51608f2f4912cfd9be0a6559be7da619e5fbc"
+  },
+  "validation": {
+    "unit": {
+      "passed": 95,
+      "ignored": 17
+    },
+    "scoped_clippy": "passed all-targets -D warnings",
+    "workspace_check": "passed all-targets",
+    "formatting": "passed",
+    "policy_validator_self_test": "passed; includes missing/wrong fixture profile negative controls",
+    "private_validator_self_test": "passed",
+    "native_receiver_generation": "passed",
+    "retained_png_recomputation": "passed",
+    "ordinary_policy_profile_work_cleanup_public_no_churn": "passed",
+    "separate_allocation_work_cleanup_public_private_counts": "passed",
+    "raw_hashes_verified": 72
+  },
+  "open": [
+    "General views/layers and additional hardware/cadences",
+    "Natural-star tracking and AAA art",
+    "Manual editor-light controls and viewport lighting",
+    "Exact per-slot liveness/private generation traces in this workload, driver free history/total VRAM/arbitrary-load hard bounds",
+    "Production finale and provisional VFX frame budget"
+  ],
+  "next": "F8.3 lighting interaction with smoke; representative burst flashes first, bounded selected-light contribution optional, shadows off."
+}

@@ -98,9 +98,11 @@ state on GPU/CPU switching. Native private-generation/completed-submission check
 deliberately oversized recovery pass; all eighteen authored private-count gates pass and 107
 paced images remain identical. This is not exact driver free history, arbitrary-overload hard
 limits or total VRAM. F7F1 now implements explicit host lighting quality; all 36 medium/low
-cost/control runs and live host switching pass. Medium receiver images pass, but the low
-show fails the unchanged visibility gate, including an expanded first-break sample set.
-Next is F7F2 low-tier authored lighting qualification, then F8.3 lit smoke—not more unmeasured
+cost/control runs and live host switching pass. Medium receiver images pass; the original low
+output-eight show fails the unchanged visibility gate, with all three attempts retained.
+F7F2 now explicitly authors low outputs up to the unchanged global 24-light ceiling;
+all six receiver gates, 18 fresh ordinary cost/control runs and 18 separate allocation runs pass.
+Next is F8.3 lit smoke—not more unmeasured
 F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4398,10 +4400,10 @@ This passes the public-list reuse slice, not full private/in-flight/finale quali
   free instants/full create-free traces, total VRAM, a hard arbitrary-overload budget, ordinary
   performance improvement, general Aestra multi-view/layer support or production-finale approval.
 
-**Next: F7F2 low-tier authored lighting qualification, then F8.3 lit smoke.** F7F1's host
-policy, repeated medium/low costs, medium receiver images and live policy switching pass;
-low hero/volley images pass, but low full-show receiver visibility fails. Preserve both
-failed attempts and the unchanged thresholds, not a blanket F7F completion claim.
+**Next: F8.3 lit smoke.** F7F1's host policy, medium receiver images and live switching pass.
+F7F2's explicit output24/global24 low fixture passes all six receiver gates, eighteen fresh
+ordinary cost/control runs and eighteen separate allocation runs. Preserve all three rejected
+output-eight attempts and unchanged thresholds; this is not a blanket general-adapter/art/finale claim.
 Preserve F7E4A's isolated registration and B2B's distinction between synthetic
 calibration and natural authored-star acceptance.
 Keep default-layer restrictions explicit; general per-view layers and multi-view acceptance remain
@@ -4494,12 +4496,47 @@ set should be eligible and it must be independently budgeted/profilable.
   observed alive/trail profiles unchanged. All nonzero budgets contribute visibly, disabling
   returns to baseline and re-enabling restores high. No selected-position readback or portable
   proxy work. This proves independent host switching, not low-density show art acceptance.
-- Next **F7F2**: explicitly choose a low-tier authored lighting profile (representative-only
+- Planned follow-up (qualified below), **F7F2**: explicitly choose a low-tier authored lighting profile (representative-only
   or useful selected-star contribution within a stated budget) and repeat fresh matched gates
   for any change. Do not silently raise authored budgets or lower visibility thresholds. Then
   F8.3 lit smoke; optional shadows remain off and are not a prerequisite.
   [Method/results/failures/reproduction](../../benchmarks/fireworks/lighting-quality-2026-10-05.md)
   and [source/raw provenance](../../benchmarks/fireworks/lighting-quality-2026-10-05.json).
+
+**F7F2 current authored low-tier qualification (2026-10-05):**
+
+- Explicitly choose bounded selected-star contribution, not representative-only low lighting.
+  The opt-in fixture's authored per-output low ceiling changes **8→24**, under the unchanged
+  **global 24-light cap**. High/medium per-output ceilings stay 32/16; representative caps stay
+  8/4/2. Multiple low outputs still share the global 24-slot budget. This is reviewed fixture
+  authoring, not a host bypass of authored limits or an automatic rewrite of users' effects.
+- Per-light 1500→600→0 lm, 12m range and shadows-off stay unchanged, as do particle density,
+  materials, trajectories, seeds, events, clips and renderer/history/safety budgets. Unit assertions
+  lock this table and preserve normal authored fields. Reports identify the fixture profile;
+  the read-only gate can reject wrong/missing profiles without rejecting legacy historical evidence.
+- **All six low-tier receiver gates pass** at unchanged sampling, geometry and thresholds,
+  with 46 off/on/off samples / 138 PNGs. Show frame 85 contributes 431 pixels / 2917 energy
+  without bloom and 372 / 1983 with bloom. Every restored control has zero significant changes;
+  prebirth/postcleanup match exactly. Independent PNG/report recomputation passes. The three
+  prior output-eight failures remain rejected. Admission can change among competing outputs;
+  this is useful bounded response, not uniformly stronger lighting at every show frame.
+- **18 fresh ordinary native cost/control runs** pass unchanged workload/admission/budget/log/
+  native-demand/cleanup and profile/public-identity gates. Each final 60-frame show window
+  matches control at one acknowledged index. Show render-graph p95 is 5.263–8.031ms on versus
+  5.172–7.606ms control across three repetitions. Material run variation prevents a causal
+  speedup claim; this is not paired-frame, whole-game, production-finale or ≤4ms VFX proof.
+- **18 separate allocator-instrumented runs** pass work/cleanup/public reuse and private
+  size/count gates. One fixed 17×9×24 view; Z 12288B, scratch 117504B, metadata 48B, 2–4
+  48-byte staging buffers under the eight-slot ceiling. Not timing evidence, exact private
+  generation/driver frees, total VRAM or arbitrary-overload hard memory bounds.
+- RTX 4070 SUPER/Vulkan, 960×540 audience HDR/exposure0/Tony, default layers, playback-only.
+  Viewer 95 unit tests / 17 ignored, scoped all-target Clippy, workspace all-target checks,
+  formatting and policy/private positive/negative controls pass. Source/binary/raw hashes are
+  retained; all 72 new matrix report/log hashes match. High/medium native evidence remains
+  scoped to earlier unchanged-cap executions. **Next: F8.3 smoke lighting**; general views/layers,
+  extra hardware/cadences, natural-star art, editor lighting and finale qualification remain open.
+  [Method/results/reproduction](../../benchmarks/fireworks/low-tier-lighting-2026-10-05.md)
+  and [machine-readable provenance](../../benchmarks/fireworks/low-tier-lighting-2026-10-05.json).
 
 ### F7 deliverable
 
@@ -4597,7 +4634,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. Next F7F2's explicit low-tier authored lighting qualification, then F8.3 lit smoke, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. F7F2 now explicitly authors per-output low caps of 24 under the unchanged global 24 ceiling, passing all six receiver gates, eighteen fresh ordinary cost/control runs and eighteen separate allocation runs; the old output-eight failures stay rejected. Next F8.3 lit smoke, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -5011,18 +5048,19 @@ This architecture also generalizes to embers, fireflies, magic/projectile VFX an
 ## Immediate next work
 
 ```text
-1. F7F2 low-tier authored lighting qualification;
+1. F8.3 make smoke actually consume scene lighting;
    F7F1 host policy, all 36 medium/low ordinary costs, public reuse and cleanup pass
-   medium receiver images and low hero/volley pass; low show visibility fails in all three retained attempts
+   medium receiver images pass; three old low output-eight attempts remain rejected
+   F7F2 output24/global24 low receiver gates, 18 fresh costs and 18 separate allocation runs pass
    live 0/96/48/24/0/96/0 host switching on one compiled high-density hero passes
    B3B2A failed no-churn in all 18 cells; B3B2B native container reuse passes all 18 unchanged gates
    B3B2C bounded private-generation/completion checkpoints and oversized recovery now pass
    all 18 authored private-count gates and 107 paced images pass; total VRAM/driver traces remain open
    B3B1 idle work retirement passes; B3A repeated high-tier costs/public buffers/demand pass
-   exact per-slot liveness and low-show visibility remain open
+   exact per-slot liveness, natural-star art and finale lighting remain open
    B2B synthetic paced registration under high-tier authored overlap passes; B2A images pass
 2. Keep shadows off by default; optional shadow support is not required before F8
-3. F8.3  make smoke actually consume scene lighting
+3. Preserve default-layer restrictions; general per-view acceptance remains separate
 ```
 
 F7B2 editor controls are implemented; complete their manual UI/visual acceptance alongside source
@@ -5044,8 +5082,9 @@ switches; native private-generation/completed-submission checkpoints, oversized 
 all eighteen authored private-count gates pass, with 107 paced images unchanged. Exact driver
 create/free history, arbitrary-overload hard memory bounds and exact per-slot liveness remain open.
 F7F1's host quality API, repeated medium/low ordinary costs, medium receiver images, low hero/volley
-images and independent live host switching pass. Low full-show visibility fails; F7F2 owns the
-explicit low-tier authored lighting choice before F8.3. Low-show visibility, natural-star
+images and independent live host switching pass. The old low output-eight fixture fails visibility;
+F7F2's explicit output24/global24 fixture passes fresh receiver/cost/allocation gates. Next is F8.3.
+Natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.
 
 The generic model, bounded selection and portable receiver contribution are now proven. F7E2's

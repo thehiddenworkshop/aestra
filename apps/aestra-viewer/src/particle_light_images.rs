@@ -748,6 +748,7 @@ fn run_authored_image_gate(tier: &str, directory: &Path) {
     let report = serde_json::json!({
         "schema_version": 1, "milestone": if tier == "high" { "F7E4B2A" } else { "F7F" }, "accepted": accepted,
         "sampling_protocol": if tier == "high" { "original_sparse" } else { "original_plus_first_break" },
+        "fixture_profile": "f7f2_low_output24_global24",
         "receiver_response_gates": responses,
         "scope": "Paused forward playback image gate, not paced registration, art/finale acceptance or a cost benchmark. Same-frame default-layer native adapter; only its cap changes per off/on/off triplet. Fixed nonemissive diffuse wall is host validation geometry; normal authored materials/events/trails/transforms and representative pulses remain intact. Profile values are asynchronous observations, capacity is an upper bound, not a light count.",
         "adapter": capabilities.adapter_name, "backend": capabilities.backend,
@@ -792,6 +793,22 @@ fn retained_quality_receiver_images_match_the_reported_gates() {
         !validate_authored_image_gate("low", &directory().join("low")),
         "low-show visibility is deliberately not certified by the retained attempt"
     );
+}
+
+#[test]
+#[ignore = "native low-tier output24/global24 receiver qualification; run alone"]
+fn low_tier_full_budget_illuminates_receivers_and_restores_controls() {
+    run_authored_image_gate("low", &directory().join("low"));
+}
+
+#[test]
+#[ignore = "read-only validation of the F7F2 low-tier accepted receiver images"]
+fn retained_low_tier_full_budget_receiver_images_pass_the_gate() {
+    let path = directory().join("low");
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(path.join("report.json")).unwrap()).unwrap();
+    assert_eq!(report["fixture_profile"], "f7f2_low_output24_global24");
+    assert!(validate_authored_image_gate("low", &path));
 }
 
 fn validate_authored_image_gate(tier: &str, directory: &Path) -> bool {

@@ -169,3 +169,7 @@ global budget. Do not mask failure by loosening image thresholds or silently inc
 range/lumens/counts. Any profile change needs fresh work-matched costs and receiver controls.
 Then F8.3: make smoke consume scene lighting. Optional shadows remain off and are not a
 prerequisite. F7F1 implements the host API; **F7F as a whole is not marked complete**.
+
+Follow-up: [F7F2's explicit output24/global24 low fixture](low-tier-lighting-2026-10-05.md)
+passes fresh receiver/cost/allocation gates. This does not change any of the failed
+output-eight results above or retroactively approve their images. Next is F8.3.

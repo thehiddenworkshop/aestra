@@ -2,6 +2,7 @@
 # Read-only F7F policy/public reuse gate layered on unchanged matched-cost gates.
 [CmdletBinding()]
 param([Parameter(Mandatory,ParameterSetName='Reports')][string]$ReportsDirectory,
+    [Parameter(ParameterSetName='Reports')][ValidateSet('f7f2_low_output24_global24')][string]$FixtureProfile,
     [Parameter(Mandatory,ParameterSetName='SelfTest')][switch]$SelfTest)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -24,9 +25,13 @@ function StableIdentities($Report) {
             @($ids | Sort-Object -Unique).Count -ne 1) { throw 'Public list identity unavailable or changed' }
     }
 }
+function FixtureProfileGate($Report, [string]$Expected) {
+    $field = $Report.presentation.PSObject.Properties['particle_light_fixture_profile']
+    if ($null -eq $field -or $field.Value -ne $Expected) {throw 'Missing/incorrect authored fixture profile'}
+}
 if ($SelfTest) {
     function Fixture {
-        [pscustomobject]@{presentation=[pscustomobject]@{lighting_policy=[pscustomobject]@{
+        [pscustomobject]@{presentation=[pscustomobject]@{particle_light_fixture_profile='f7f2_low_output24_global24'; lighting_policy=[pscustomobject]@{
             representative_enabled=$true; representative_cap=4; particle_enabled=$true; particle_cap=48
             representative_max_lumens=1000000; particle_max_lumens=1000000
             representative_max_range=200; particle_max_range=200; shadows=$false}}
@@ -35,7 +40,8 @@ if ($SelfTest) {
     }
     Policy (Fixture) medium show
     StableIdentities (Fixture)
-    foreach ($failure in @('missing','particle-cap','representative-cap','disabled','clamp','shadow','unknown-id','replacement')) {
+    FixtureProfileGate (Fixture) 'f7f2_low_output24_global24'
+    foreach ($failure in @('missing','particle-cap','representative-cap','disabled','clamp','shadow','unknown-id','replacement','fixture-profile','missing-profile')) {
         $f = Fixture
         switch ($failure) {
             missing {$f.presentation.lighting_policy=$null}
@@ -44,6 +50,8 @@ if ($SelfTest) {
             disabled {$f.presentation.lighting_policy.particle_enabled=$false}
             clamp {$f.presentation.lighting_policy.particle_max_range=400}
             shadow {$f.presentation.lighting_policy.shadows=$true}
+            fixture-profile {$f.presentation.particle_light_fixture_profile='old_low_output8'}
+            missing-profile {$f.presentation.PSObject.Properties.Remove('particle_light_fixture_profile')}
             unknown-id {$f.cluster_buffers[0].views[0].index_buffer_fingerprint=$null}
             replacement {
                 $second=(Fixture).cluster_buffers[0]
@@ -52,7 +60,7 @@ if ($SelfTest) {
             }
         }
         $rejected=$false
-        try {Policy $f medium show; StableIdentities $f} catch {$rejected=$true}
+        try {Policy $f medium show; StableIdentities $f; FixtureProfileGate $f 'f7f2_low_output24_global24'} catch {$rejected=$true}
         if (!$rejected) {throw "Negative control accepted: $failure"}
     }
     'Quality policy/identity positive and negative controls passed'
@@ -67,9 +75,10 @@ foreach ($run in $manifest.runs) {
     $r=Get-Content -LiteralPath "$directory/$($run.pair)/$($run.stem).json" -Raw | ConvertFrom-Json
     Policy $r $run.tier $run.probe
     StableIdentities $r
+    if ($FixtureProfile) {FixtureProfileGate $r $FixtureProfile}
     $rows += [ordered]@{pair=$run.pair; probe=$run.probe; tier=$run.tier; mode=$run.mode
         public_index_and_offsets_replacements=0; report_sha256=$run.report_sha256; log_sha256=$run.log_sha256}
 }
-[ordered]@{schema=1; milestone='F7F'; accepted=$true; binary_sha256=$manifest.binary_sha256
+[ordered]@{schema=1; milestone='F7F'; accepted=$true; binary_sha256=$manifest.binary_sha256; fixture_profile=$FixtureProfile
     scope='Three or more alternating run-level pairs at stated tiers; requested host policy and observed caps, matched authored work, native demand, unchanged public identities and final cleanup. Uninstrumented outer render-graph costs, not paired frames/whole-game/total VRAM/finale or image acceptance.'
     rows=$rows; costs=$costs.rows} | ConvertTo-Json -Depth 18
