@@ -5,7 +5,8 @@ param([Parameter(Mandatory)][string]$ReportsDirectory,
     [string]$ViewerBinary = 'target/debug/aestra-viewer.exe',
     [ValidateRange(3,8)][int]$Repetitions = 3,
     [ValidateSet('high','medium','low')][string[]]$Tiers = @('high'),
-    [switch]$RequireRetirement)
+    [switch]$RequireRetirement,
+    [switch]$AllocationSnapshots)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Tiers.Count -eq 0 -or @($Tiers | Sort-Object -Unique).Count -ne $Tiers.Count) { throw 'Choose nonempty unique tiers' }
@@ -21,6 +22,7 @@ function Inputs {
 }
 $inputs = Inputs
 $manifest = [ordered]@{schema=1; accepted=$false; repetitions=$Repetitions; tiers=$Tiers; runs=@(); failure=$null
+    allocator_snapshots=$AllocationSnapshots.IsPresent
     asset_inputs=$inputs; inputs_unchanged=$false
     binary_sha256=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
     scope='Alternating run-level GPU adapter on/off pairs; identical authored setup and cluster preallocation. Unpaced forward playback-only. Not frame-paired timestamps, whole-app timings or total resident cluster memory.'}
@@ -37,6 +39,7 @@ for ($repeat = 1; $repeat -le $Repetitions; $repeat++) {
             foreach ($mode in $order) {
                 $stem = "$probe-$mode-$tier"
                 $extra = @()
+                if ($AllocationSnapshots) { $extra += '--particle-light-allocations' }
                 if ($mode -eq 'control') { $extra += @('--particle-light-gpu-cap','0') }
                 if ($probe -eq 'show') { $extra += '--transient-lights' }
                 Write-Host "$pair $stem"
@@ -70,8 +73,23 @@ if ((ConvertTo-Json -InputObject $inputs -Depth 5 -Compress) -ne
 $manifest.inputs_unchanged = $true
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$directory/manifest.json" -Encoding utf8NoBOM
 # Read-only validator performs workload/resource/log/observable-growth gates first.
-$summary = & "$PSScriptRoot/validate-particle-light-costs.ps1" -ReportsDirectory $directory -RequireRetirement:$RequireRetirement
+try {
+    $summary = if ($AllocationSnapshots) {
+        & "$PSScriptRoot/validate-particle-light-allocations.ps1" -ReportsDirectory $directory -MeasureOnly
+    } else {
+        & "$PSScriptRoot/validate-particle-light-costs.ps1" -ReportsDirectory $directory -RequireRetirement:$RequireRetirement
+    }
+} catch {
+    $manifest.failure = [ordered]@{gate='report validation'; native_processes_succeeded=$true
+        summary_retained=$false; error=$_.Exception.Message}
+    $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$directory/manifest.json" -Encoding utf8NoBOM
+    throw
+}
 $summary | Set-Content -LiteralPath "$directory/summary.json" -Encoding utf8NoBOM
-$manifest.accepted = $true
+$manifest.accepted = ($summary | ConvertFrom-Json).accepted
+if (!$manifest.accepted) {
+    $manifest.failure = [ordered]@{gate='allocation qualification'; native_processes_succeeded=$true; summary_retained=$true}
+}
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$directory/manifest.json" -Encoding utf8NoBOM
+if (!$manifest.accepted) { throw "Qualification gate failed; complete measurements retained: $directory" }
 Write-Host "Retained repeated-cost evidence: $directory"

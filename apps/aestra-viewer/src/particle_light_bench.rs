@@ -170,7 +170,7 @@ struct Slot {
 #[derive(Resource, Default)]
 struct Slots(Vec<Slot>);
 
-pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
+pub fn install(app: &mut App, settings: AestraParticleLightSettings, allocations: bool) {
     let mailbox = Mailbox::default();
     let clusters = clusters::Mailbox::default();
     app.insert_resource(settings)
@@ -188,6 +188,7 @@ pub fn install(app: &mut App, settings: AestraParticleLightSettings) {
         .add_systems(Update, start.before(aestra_bevy::AestraSet::Playback));
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render
+            .insert_resource(clusters::allocations::Settings(allocations))
             .insert_resource(mailbox)
             .insert_resource(clusters)
             .init_resource::<Slots>()

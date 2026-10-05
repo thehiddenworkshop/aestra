@@ -1,0 +1,801 @@
+{
+  "schema": 1,
+  "milestone": "F7E4B3B2A",
+  "date": "2026-10-05",
+  "base_commit": "2178f7f4",
+  "measurements_valid": true,
+  "accepted": false,
+  "scope": "Opt-in backend suballocator snapshots and public hashed handle replacements. Whole-device live suballocations/reserved blocks, not total VRAM, exact in-flight retirement, complete create/free history, private unlabeled-buffer attribution or an enforced production budget. No-churn gate fails on observed index/offset replacements even with constant sizes. Instrumented timing distributions are not ordinary cost evidence.",
+  "source_inputs": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "0dbc0a24a89781d0226c5cc49c7b25d9c49fa8bba170393793087ba975efaf71"
+    },
+    {
+      "path": "apps/aestra-viewer/src/main.rs",
+      "sha256": "70b3474231276f3a5d7d5435f08fc8ccb1ccb9328d566546e4e490d044ce1eed"
+    },
+    {
+      "path": "apps/aestra-viewer/src/gpu_bench.rs",
+      "sha256": "63945138d45f21801b54f00455f9dcf0ef7976c06e244fdfb070460d39719778"
+    },
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench.rs",
+      "sha256": "c410b5b06d53aff2d87c0dec6fc3f3987825b89540a270debb05c857e2fafdb4"
+    },
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench/clusters.rs",
+      "sha256": "621cce1f9948ba2b83ec5888bc1ce56a176e5cfacfb6c4b7e0729826c0d7f3d5"
+    },
+    {
+      "path": "apps/aestra-viewer/src/particle_light_bench/clusters/allocations.rs",
+      "sha256": "d2a5025103948eec40801cc62818663525d4396bf1c2f30851fff0ea40835402"
+    },
+    {
+      "path": "benchmarks/fireworks/run-particle-light-costs.ps1",
+      "sha256": "58203ae6de212d82e2e11ddb2efcd7b34ae8ee47a787b7598ecbc0a71b8a345c"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-particle-light-allocations.ps1",
+      "sha256": "144fca638cdc6cde01242a49d1526f10738bdcad23db9944f14330e96a41a4ec"
+    },
+    {
+      "path": "benchmarks/fireworks/validate-particle-light-costs.ps1",
+      "sha256": "99d40a0dccd25342c162db9bc0c36f29af3131b896e2f4c30d5d05a2202c01ff"
+    }
+  ],
+  "locked_dependency_inputs": [
+    {
+      "path": "bevy_pbr-0.19.1/src/cluster/gpu.rs",
+      "sha256": "0db47d27ee58a25206221d318a9bb0b070471dc433a1f8d1c7fc966de9783839"
+    },
+    {
+      "path": "wgpu-29.0.4/src/api/device.rs",
+      "sha256": "e79012fa7e520c9a87a25c3779e4d279d18090c8784a57d76673830a5d81e260"
+    },
+    {
+      "path": "wgpu-29.0.4/src/api/buffer.rs",
+      "sha256": "c7d2c13d8031a9416d5562ec970a46470da331544d3a5e15bc8fb7dae2a9de32"
+    },
+    {
+      "path": "wgpu-types-29.0.4/src/counters.rs",
+      "sha256": "e85dc9fa3b52896b35a051de78b2e8d351df5bbf56923aece2d4756c8490fdd0"
+    },
+    {
+      "path": "wgpu-hal-29.0.4/src/vulkan/device.rs",
+      "sha256": "7d72923762700aed073922f80d1bd510009c6249d8861cd30d9998c794eb7e27"
+    }
+  ],
+  "platform": {
+    "os": "Windows",
+    "adapter": {
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "driver": "NVIDIA"
+    },
+    "resolution": [
+      960,
+      540
+    ],
+    "tier": "high",
+    "camera": "audience",
+    "history": "playback-only",
+    "seed": "0xf1e0000000000001",
+    "headless": true,
+    "hdr": true,
+    "exposure_stops": 0,
+    "bloom": 0.15,
+    "selection_cap": 96,
+    "adapter_caps": [
+      96,
+      0
+    ],
+    "one_view_default_layers_only": true,
+    "initial_cluster_capacities": [
+      4096,
+      524288
+    ],
+    "adaptive_index_target": 524288,
+    "allocator_sample_render_observation_period": 60,
+    "allocator_snapshot_limit": 64,
+    "named_private_sample_ceiling_each": 8
+  },
+  "native_matrix": {
+    "directory": "target/fireworks-f7/gpu-allocation-census-2026-10-05",
+    "binary_sha256": "1db7c607af278bbc73391bbad67c985656c810652e61cd5d17e9dac0adc6fcb8",
+    "raw_inputs": [
+      {
+        "path": "target/fireworks-f7/gpu-allocation-census-2026-10-05/manifest.json",
+        "sha256": "ada67a612912e466d9143ca23f3bd421f1758679a86e041c696ccbe871400705"
+      },
+      {
+        "path": "target/fireworks-f7/gpu-allocation-census-2026-10-05/summary.json",
+        "sha256": "bdae72b4bd24985c4f21e0fa32e1cd8502f6a5c49ffc7f7760409e613776ad0d"
+      }
+    ],
+    "native_processes": 18,
+    "native_exit_codes": [
+      0
+    ],
+    "asset_inputs_count": 96,
+    "asset_inputs_unchanged": true,
+    "alternating_on_off_repetitions": 3,
+    "workload_retirement_and_log_gates_passed": true,
+    "no_churn_gate_passed": false,
+    "physical_public_list_bytes": {
+      "index": 2097152,
+      "offsets_counts": 117504
+    },
+    "retirement_windows": [
+      {
+        "pair": "pair01",
+        "mode": "gpu",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      },
+      {
+        "pair": "pair01",
+        "mode": "control",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      },
+      {
+        "pair": "pair02",
+        "mode": "control",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      },
+      {
+        "pair": "pair02",
+        "mode": "gpu",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      },
+      {
+        "pair": "pair03",
+        "mode": "gpu",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      },
+      {
+        "pair": "pair03",
+        "mode": "control",
+        "samples": 60,
+        "minimum": 1,
+        "maximum": 1
+      }
+    ],
+    "show_admitted_children_each": 8413,
+    "rows": [
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 118714656,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "d833ad580055a31ed85deba7e1b15518694ea62b1b635c2796fdf54b53e18fef",
+        "log_sha256": "e47150a339a4f9d6a3b4b2dedcc52a9d3db047462774f0c58310ab309b158ab8",
+        "census_summary": {
+          "total_snapshots": 20,
+          "measured_snapshots": 10,
+          "allocated_min": 114460224,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.036199999999999996,
+          "census_cpu_ms_max": 0.0607,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair01",
+        "probe": "hero",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 118623328,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "ee8250d56c8c37ae6bb1635ce06c6bb9f0bf0d7ff41531e143c1905c1bba8259",
+        "log_sha256": "98d17430498d1ddd60e803296f805f1f19c33c1981d27663714dd608a0c7c9a2",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 114441712,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.039700000000000006,
+          "census_cpu_ms_max": 0.048,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127306592,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "e2376b70f6010f73f46cdee1e840c4d128f0baf4463cd91db4e12d1cbbc75ca1",
+        "log_sha256": "57f4bc0e0d2ad759cf5dba94154e1b6d7a334f3921dcf7f297df82ac4ade8023",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 123000080,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0343,
+          "census_cpu_ms_max": 0.047,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair01",
+        "probe": "volley",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127664112,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "afc63dbc8a2219e413de33f2250bcb0f08d85a51545cdaae339e41a03d7079c6",
+        "log_sha256": "4fa04a12ce6170b383d8860a81e0a0fe142487ee52a21f24496d61aa17ea34c0",
+        "census_summary": {
+          "total_snapshots": 18,
+          "measured_snapshots": 10,
+          "allocated_min": 123017616,
+          "metadata_count_min": 1,
+          "metadata_count_max": 2,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.036399999999999995,
+          "census_cpu_ms_max": 0.047,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 128046400,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "f960cd11c64faf8dd1418c5f6422d80634f0ccfe4aef13837e4caf35cf9ff811",
+        "log_sha256": "bcfcc22d7b66b4d6f369b8cceb1ebdff4d4037a8d19edded327a60ae43df95fb",
+        "census_summary": {
+          "total_snapshots": 37,
+          "measured_snapshots": 27,
+          "allocated_min": 116021856,
+          "metadata_count_min": 1,
+          "metadata_count_max": 2,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0268,
+          "census_cpu_ms_max": 0.1682,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair01",
+        "probe": "show",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127759904,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "7ffbe66f4bc9867c00f64ebad571717f021628c5c33c0cdf5c759e9155e6e8e8",
+        "log_sha256": "a5cf5f8c5d39eb498b39207006c15b9d98182ff1186d382facf892162e386613",
+        "census_summary": {
+          "total_snapshots": 37,
+          "measured_snapshots": 28,
+          "allocated_min": 116069520,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0246,
+          "census_cpu_ms_max": 0.1764,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 118695440,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "7c90a7f9e6d0380c9709189f937028eff82bc973c4c1bcf6aa36822af881f6b7",
+        "log_sha256": "55d8d721ca833986aec15839c10a8dc1b3194972f1061bcf37966f195c013cca",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 114441648,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.036000000000000004,
+          "census_cpu_ms_max": 0.0478,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "hero",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 114461344,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "10dae71ca64c43d814a6cc4b72e02e03310647c3b857844d3d6f993d50f1d12a",
+        "log_sha256": "78dffa6461e03934a3375789163d3526b7951eafdeef0eff09561f4e4c2a900e",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 114388480,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 2,
+          "census_cpu_ms_min": 0.0356,
+          "census_cpu_ms_max": 0.0575,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127272224,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "892c77ae498bbed522a8d55f3e21c69753b1af24bcfda217ff2aecdb7b3dc888",
+        "log_sha256": "5b46b26e384af99763b6b4c18d740c3f6ba5d32b92bfcb1b942a02f82420de0f",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 123018560,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0336,
+          "census_cpu_ms_max": 0.0461,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "volley",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127253792,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "922881be320daa9e7856df7cf996ab282b93d2537f3dbc8d8077813aca0f0657",
+        "log_sha256": "b5cc73c676c0341b2148232ea3a97c5808d18123d300a59110590b7819551858",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 122999984,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0343,
+          "census_cpu_ms_max": 0.044,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127769184,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "85999cb08fabd77f8c0a084117900ccc2dc10164973bcd68d4388df6efc8f3ab",
+        "log_sha256": "dd337747dc10f5297f343608437e1884bef2991d3d793cc287abea2c1b9edb07",
+        "census_summary": {
+          "total_snapshots": 36,
+          "measured_snapshots": 28,
+          "allocated_min": 114996240,
+          "metadata_count_min": 1,
+          "metadata_count_max": 2,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0245,
+          "census_cpu_ms_max": 0.17220000000000002,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair02",
+        "probe": "show",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127777408,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "3e5c64cdff6d91d291fb7627eae43a50b6ffd959cb49162901f2e359519b7dca",
+        "log_sha256": "4d1b86f8d8b8c52b2dd7dae1a0c2d44cb7f4ace1d2396df9a8e20307517ea63a",
+        "census_summary": {
+          "total_snapshots": 37,
+          "measured_snapshots": 28,
+          "allocated_min": 116087104,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0245,
+          "census_cpu_ms_max": 0.1724,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 118641872,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "a2263fe0982163ac43662d6bf3c6ae5051022c26cf64d89c1082d5a28d7a9c3d",
+        "log_sha256": "c0308b7523bfeda5d018d2cd157014a722d14d61e2b8ca0fba47c706aa14437e",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 114387440,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0368,
+          "census_cpu_ms_max": 0.0458,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "hero",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 118624688,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "bf551a67a8f697c1845b493c554ab707a65b1a6516a98d698b6b84f14cf222f4",
+        "log_sha256": "53cdc58cf0c42d99da2579d12273957495f66df5fc8612d9abaa298b624ea6b3",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 114369968,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0373,
+          "census_cpu_ms_max": 0.0627,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127252688,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "fa7e56847015791f9b22308a988e5a9d1a6c4eae4f118bab71494265cf92aaea",
+        "log_sha256": "20e8e02ab93cb4fe19b3586df5d423aa7bcfbdadd4674c077967dc81113310a2",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 122999040,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0337,
+          "census_cpu_ms_max": 0.0463,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "volley",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 598,
+        "index_buffer_replacements": 597,
+        "offsets_counts_buffer_replacements": 597,
+        "global_light_buffer_replacements": 0,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127087216,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "2acb34120f08db320074968021a4afbbe1c07350ae5f785a0b243537fd396131",
+        "log_sha256": "d715df5eddda470e39aede52e5e762598fedd6d8f0cf14718d22ac95706e98b2",
+        "census_summary": {
+          "total_snapshots": 19,
+          "measured_snapshots": 10,
+          "allocated_min": 122833504,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0353,
+          "census_cpu_ms_max": 0.0554,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "gpu",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 132559920,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "3d86bb96e9c08ad086152b8a637f5f3a4e9c1c726e0b3327c12d5ba18910a25d",
+        "log_sha256": "fa0f462f25c37107e5d8660b8d0dd7bf1e52640adc6111bb9877141eef3945fa",
+        "census_summary": {
+          "total_snapshots": 36,
+          "measured_snapshots": 27,
+          "allocated_min": 116087264,
+          "metadata_count_min": 1,
+          "metadata_count_max": 2,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0258,
+          "census_cpu_ms_max": 0.213,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      },
+      {
+        "pair": "pair03",
+        "probe": "show",
+        "mode": "control",
+        "tier": "high",
+        "measured_binding_observations": 1678,
+        "index_buffer_replacements": 1677,
+        "offsets_counts_buffer_replacements": 1677,
+        "global_light_buffer_replacements": 2,
+        "stable_public_lists": false,
+        "named_private_snapshot_ceiling_passed": true,
+        "private_buffer_snapshot_ceiling": 8,
+        "sampled_device_allocated_bytes_peak": 127563584,
+        "sampled_device_reserved_bytes_peak": 268435456,
+        "report_sha256": "f52f9a04ee786bf82b74a3e1f27557f8ed15dcbb20733a970204ddfc98a4b688",
+        "log_sha256": "424efb01170e35ad15d83ad346d691513d8ac8952fd72e6d82c5bbcb2225d5de",
+        "census_summary": {
+          "total_snapshots": 37,
+          "measured_snapshots": 28,
+          "allocated_min": 116068496,
+          "metadata_count_min": 1,
+          "metadata_count_max": 1,
+          "staging_count_min": 2,
+          "staging_count_max": 3,
+          "census_cpu_ms_min": 0.0252,
+          "census_cpu_ms_max": 0.2282,
+          "private_z_slice_bytes": null,
+          "private_scratchpad_bytes": null
+        }
+      }
+    ]
+  },
+  "finding": {
+    "public_list_replacements": "Both index and offsets-counts hashed buffer identities change on every adjacent measured observation in all 18 enabled/control processes, despite constant sizes. No handles are retained.",
+    "source_cause": "Locked bevy_pbr 0.19.1 prepare_clusters_for_gpu_clustering constructs new ViewClusterBindings and ViewGpuClusteringBuffers before reserving/uploading and replacing per-view components each call.",
+    "source_private_allocation_inference": "Source also constructs fresh metadata/Z-slice/scratchpad containers; allocator snapshots do not expose their complete generation or fence histories.",
+    "measured_named_private": {
+      "metadata_count_range": [
+        1,
+        2
+      ],
+      "metadata_bytes_range": [
+        48,
+        96
+      ],
+      "staging_count_range": [
+        2,
+        3
+      ],
+      "staging_bytes_range": [
+        96,
+        144
+      ],
+      "sampled_ceiling_passed": true
+    },
+    "measured_whole_device": {
+      "peak_allocated_bytes_across_runs": [
+        114461344,
+        132559920
+      ],
+      "reserved_bytes_measured_values": [
+        268435456
+      ],
+      "snapshot_cpu_ms_range": [
+        0.0245,
+        0.2282
+      ]
+    },
+    "unknowns": [
+      "Total process/driver VRAM and dedicated/external allocation coverage",
+      "Exact private unlabeled Z-slice/scratchpad bytes and generations",
+      "Complete creation/free/submission-fence retirement traces",
+      "Unobserved between-snapshot activity and fingerprint hash collisions",
+      "Enforced production allocator hard budget",
+      "Deliberately oversubscribed native overflow behavior"
+    ]
+  },
+  "retained_failures": [
+    {
+      "path": "target/fireworks-f7/gpu-allocation-pilot-output-path-failure-2026-10-05.json",
+      "sha256": "1442e1e2c4df54fb60140283ee7d8f9331aa5619df15204078de06476134fceb",
+      "accepted": false,
+      "native_exit_code": 1,
+      "reason": "Pilot report parent directory missing; no native report. Subsequent pilot uses fresh directory."
+    },
+    {
+      "stage": "post-matrix validation",
+      "native_processes_succeeded": true,
+      "accepted": false,
+      "error": "Strict-mode .Sum access for empty startup name groups",
+      "recovery": "Empty groups now sum to zero with explicit absence regression. All unchanged raw reports/logs revalidated. Compact summary/manifest regenerated via apply_patch with accepted:false; no run discarded or repeated."
+    }
+  ],
+  "successful_pilot": {
+    "path": "target/fireworks-f7/gpu-allocation-pilot-2026-10-05-run2/show-gpu-high.json",
+    "sha256": "8ebf33736146fbf5aba0a93691c8348c0f2ef1df7ca7e023aa4bd343efd2c7ff",
+    "native_exit_code": 0,
+    "qualifies_full_matrix": false
+  },
+  "verification": {
+    "viewer_unit_tests_passed": 95,
+    "viewer_unit_tests_ignored": 12,
+    "viewer_all_targets_clippy": true,
+    "workspace_all_targets_check": true,
+    "format_check": true,
+    "allocator_validator_positive_negative_and_cold_absence_controls": true,
+    "cost_validator_positive_negative_controls": true
+  },
+  "next": "F7E4B3B2B: reproducible dependency-level native per-view buffer-container reuse before allocation; rerun no-churn, then private/in-flight attribution and deliberate overflow qualification. Do not edit registry cache or swap bindings after allocation.",
+  "remaining": [
+    "Previous B3A abnormal native shutdown cause remains unproven",
+    "Medium/low repeated costs and receiver images",
+    "General layers/multiple views",
+    "Additional hardware/cadences",
+    "Natural-star art, editor lighting, lit smoke and production finale"
+  ]
+}

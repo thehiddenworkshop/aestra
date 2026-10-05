@@ -23,6 +23,12 @@ F7D2B measures [authored hero/volley/show selection with normal rendering intact
 with counter/resource gates and explicit cap-zero baselines. Visible selected-light realization and
 production-finale certification remain separate acceptance gates.
 
+F7E4B3B2A adds [opt-in native allocation snapshots and a no-churn gate](particle-light-gpu-allocations-2026-10-05.md).
+All 18 high-tier native runs pass workload/cleanup checks, but **allocation qualification fails**:
+locked Bevy recreates same-sized per-view cluster lists on every measured observation, including
+control. This is valid failed-gate evidence, not total VRAM or a cost-improvement claim.
+Next is native container reuse before allocation, followed by private/in-flight qualification.
+
 Run from the repository root on a native GPU. Use a clean output directory per run and record the Git revision, OS, GPU/driver, backend, resolution (the viewer is 960 × 540), quality tier, seed and camera in the run notes. Keep the same backend and hardware for comparisons; GPU timings across different adapters/backends are not interchangeable.
 
 ```powershell

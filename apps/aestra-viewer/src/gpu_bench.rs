@@ -113,6 +113,7 @@ pub struct BenchPresentation {
     fixed_simulation_step_seconds: Option<f64>,
     response: crate::photographic::CaptureResponse,
     particle_light_benchmark_fixture: bool,
+    particle_light_allocation_snapshots: bool,
     particle_light_realization: bool,
     particle_light_mode: Option<&'static str>,
     particle_light_gpu_cap: Option<u32>,
@@ -176,6 +177,7 @@ impl BenchPresentation {
             )
             .with_trail_sampling(config.trail_minimum_pixels),
             particle_light_benchmark_fixture: config.particle_light_bench,
+            particle_light_allocation_snapshots: config.particle_light_allocations,
             particle_light_realization: config.particle_light_realization,
             particle_light_mode: config.particle_light_realization.then_some(
                 match config.particle_light_mode.unwrap_or_default() {
@@ -285,6 +287,7 @@ impl GpuBenchPlan {
             particle_light_gpu: &self.particle_light_gpu,
             cluster_buffers: &self.cluster_buffers,
             cluster_buffers_scope: crate::particle_light_bench::clusters::SCOPE,
+            allocator_scope: crate::particle_light_bench::clusters::allocations::SCOPE,
             cluster_overwritten_results: self.cluster_overwritten_results,
             cluster_main: &self.cluster_main,
             light_skipped_busy: self.light_skipped_busy,
@@ -463,6 +466,7 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
 struct GpuBenchReport<'a> {
     cluster_buffers: &'a [crate::particle_light_bench::clusters::Observation],
     cluster_buffers_scope: &'static str,
+    allocator_scope: &'static str,
     cluster_overwritten_results: u64,
     cluster_main: &'a [crate::particle_light_bench::clusters::MainObservation],
     /// Counter copies tagged with the originating render frame. No source/selected
