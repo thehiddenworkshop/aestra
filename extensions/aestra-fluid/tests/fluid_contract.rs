@@ -743,6 +743,11 @@ fn the_volume_look_presents_the_density_and_never_touches_the_solver() {
     assert_eq!(volume.fields, [ResourceTypeId::new(RESOURCE_DENSITY)]);
     assert_eq!(volume.layouts(&stage.block).unwrap()[0].dims, [32; 3]);
     assert_eq!(volume.constants[0], 48, "march steps");
+    assert_eq!(
+        volume.constants[21], 0,
+        "scene lights opt in, not a migration of the look"
+    );
+    assert_eq!(volume.constants[22], 8);
 
     // A look edit changes only the presentation: the running simulation is untouched.
     let mut brighter = effect.clone();
@@ -755,6 +760,17 @@ fn the_volume_look_presents_the_density_and_never_touches_the_solver() {
     let brighter = compile_stage(&registry, &brighter);
     assert_eq!(brighter.block, stage.block);
     assert_ne!(brighter.presentations, stage.presentations);
+
+    for (name, value) in [
+        ("scene_light_intensity", Value::Scalar(1.0)),
+        ("scene_light_limit", Value::U32(0)),
+    ] {
+        let mut lit = effect.clone();
+        set_input(&mut lit, MODULE_VOLUME_LOOK, name, value);
+        let lit = compile_stage(&registry, &lit);
+        assert_eq!(lit.block, stage.block, "lighting must not reset the solver");
+        assert_ne!(lit.presentations, stage.presentations);
+    }
 
     // Without a look there is nothing to draw, and still the same solver.
     let mut plain = effect;
@@ -798,6 +814,9 @@ fn invalid_looks_and_presentations_fail_to_compile() {
         ("shadow_steps", Value::U32(99)),
         ("light_direction", Value::Vec3([0.0; 3])),
         ("opacity", Value::Scalar(-1.0)),
+        ("scene_light_intensity", Value::Scalar(-1.0)),
+        ("scene_light_intensity", Value::Scalar(f32::NAN)),
+        ("scene_light_limit", Value::U32(33)),
     ] {
         // Out-of-range inputs fail schema validation or lowering; either way nothing compiles.
         let mut effect = smoke_effect(&registry);
@@ -825,6 +844,30 @@ fn invalid_looks_and_presentations_fail_to_compile() {
         .fields
         .push(ResourceTypeId::new(RESOURCE_VELOCITY));
     assert_eq!(velocity_and_density.layouts(&stage.block).unwrap().len(), 2);
+}
+
+#[test]
+fn legacy_volume_looks_default_to_unlit_scene_and_scene_budgets_scale() {
+    use aestra_runtime::QualityTier;
+    let registry = fluid_registry();
+    let mut effect = smoke_effect(&registry);
+    let ModuleParameters::Custom(values) =
+        &mut module_mut(&mut effect, MODULE_VOLUME_LOOK).parameters
+    else {
+        unreachable!();
+    };
+    values.remove("scene_light_intensity");
+    values.remove("scene_light_limit");
+    for (tier, limit) in [
+        (QualityTier::high(), 8),
+        (QualityTier::medium(), 6),
+        (QualityTier::low(), 4),
+    ] {
+        let compiled = compile_tier(&registry, &effect, tier);
+        let StagePresentation::Volume(volume) = &compiled.extension_stages[0].presentations[0];
+        assert_eq!(volume.constants[21], 0);
+        assert_eq!(volume.constants[22], limit);
+    }
 }
 
 #[test]

@@ -102,7 +102,10 @@ cost/control runs and live host switching pass. Medium receiver images pass; the
 output-eight show fails the unchanged visibility gate, with all three attempts retained.
 F7F2 now explicitly authors low outputs up to the unchanged global 24-light ceiling;
 all six receiver gates, 18 fresh ordinary cost/control runs and 18 separate allocation runs pass.
-Next is F8.3 lit smoke—not more unmeasured
+F8.3A now implements opt-in clustered point-light illumination of fluid smoke, with native
+light/range/removal and hierarchy controls. F8.3B must qualify actual Aestra representative and
+same-frame selected lights on smoke, including matched costs; particle-smoke materials still need
+an explicit lighting decision. This is not complete F8 or show-smoke acceptance—not more unmeasured
 F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
 engine with duplicated links or emitters. F1/F1B's open performance/resource gates still
@@ -4400,7 +4403,9 @@ This passes the public-list reuse slice, not full private/in-flight/finale quali
   free instants/full create-free traces, total VRAM, a hard arbitrary-overload budget, ordinary
   performance improvement, general Aestra multi-view/layer support or production-finale approval.
 
-**Next: F8.3 lit smoke.** F7F1's host policy, medium receiver images and live switching pass.
+**Next: F8.3B actual light-output smoke qualification.** F8.3A's opt-in fluid point-light path is
+implemented; its native fixture is not yet an authored-show or selected-GPU smoke gate.
+F7F1's host policy, medium receiver images and live switching pass.
 F7F2's explicit output24/global24 low fixture passes all six receiver gates, eighteen fresh
 ordinary cost/control runs and eighteen separate allocation runs. Preserve all three rejected
 output-eight attempts and unchanged thresholds; this is not a blanket general-adapter/art/finale claim.
@@ -4574,6 +4579,40 @@ Ensure both relevant VFX lighting paths can affect smoke through the chosen volu
 - particle-smoke sprites need an explicitly lit material path or a documented decision to keep them unlit;
 - fluid volume lighting must not require CPU enumeration of every particle light.
 
+**F8.3A implemented (2026-10-05): opt-in fluid scene lighting.** The portable volume interface now
+has a scene-lighting callback with a neutral default; the six-field ray ABI, resource bindings and
+artifact format are unchanged. Bevy supplies clustered point-light sampling at each occupied march
+sample's actual world position/depth, through the full volume/parent transform. No source-particle
+enumeration, position readback, new per-particle light pool or CPU light upload is added.
+
+`Volume Look.scene_light_intensity` defaults to zero (old sources/artifacts preserve their authored
+ambient/directional look). `scene_light_limit` defaults to 8 and scales to 6/4 at medium/low via the
+fluid presentation tier. Zero disables scene lighting; 32 is a per-sample visited-entry safety
+ceiling, not a source-particle or global host-light limit. Lighting edits change only presentation
+constants, retaining the solver block, volume entity, field textures and material.
+
+The initial model is **unshadowed isotropic single scattering from point lights**, with native
+range falloff and a finite source-radius floor. It adds to the authored directional/ambient term;
+it does not replace fire emission, the opacity integral or authored directional self-shadowing.
+Directional/spot/area scene lights, dynamic volume/opaque shadows and anisotropic phase functions
+are not implemented. The budget visits the native cluster's first entries, including inactive
+slots; it is not strongest-light selection and mixed-host-light starvation remains an open gate.
+
+Native off/on/out-of-range/off images pass at a paused playback-only frame, without particles,
+bloom, sky or a surface receiver. Nested rigid transforms preserve the lit image within one byte;
+a rotated, nonuniformly scaled volume also responds and restores baseline. GPU-free shader,
+legacy-default, budget/invalid-input and presentation-only contracts pass. See
+[`volume-lighting-2026-10-05.md`](../../benchmarks/fireworks/volume-lighting-2026-10-05.md) for evidence,
+failed attempts, reproduction and explicit limits. This narrow smoke fixture is not a performance,
+artistic, actual-event or same-frame selected-light qualification.
+
+**Next F8.3B:** qualify representative burst pulses and native selected particle lights on smoke
+under actual authored overlap, with zero/removal/retirement controls and matched cost measurements.
+Keep the native adapter's default-layer restrictions until broader views/layers are proven.
+**F8.3C:** implement an explicitly lit particle-smoke material path or accept and document unlit
+sprites as an intentional limitation. F8.1 smoke art/persistence and F8.2 generic injection remain
+open; F8 is **in progress**, not complete.
+
 ### Deliverable
 
 Repeated shells build a persistent, moving smoke layer that later shells illuminate.
@@ -4634,7 +4673,7 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. F7F2 now explicitly authors per-output low caps of 24 under the unchanged global 24 ceiling, passing all six receiver gates, eighteen fresh ordinary cost/control runs and eighteen separate allocation runs; the old output-eight failures stay rejected. Next F8.3 lit smoke, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-05):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. F7F2 now explicitly authors per-output low caps of 24 under the unchanged global 24 ceiling, passing all six receiver gates, eighteen fresh ordinary cost/control runs and eighteen separate allocation runs; the old output-eight failures stay rejected. F8.3A now implements opt-in fluid clustered point lighting with narrow native image controls; next F8.3B qualifies actual Aestra light outputs on smoke and matched costs. Particle-smoke lighting and injection remain open, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
@@ -5083,7 +5122,9 @@ all eighteen authored private-count gates pass, with 107 paced images unchanged.
 create/free history, arbitrary-overload hard memory bounds and exact per-slot liveness remain open.
 F7F1's host quality API, repeated medium/low ordinary costs, medium receiver images, low hero/volley
 images and independent live host switching pass. The old low output-eight fixture fails visibility;
-F7F2's explicit output24/global24 fixture passes fresh receiver/cost/allocation gates. Next is F8.3.
+F7F2's explicit output24/global24 fixture passes fresh receiver/cost/allocation gates. F8.3A now
+implements opt-in fluid scene lighting with narrow native controls; next is F8.3B actual light-output
+smoke qualification and matched costs. Particle-smoke lighting and generic injection remain open.
 Natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.
 

@@ -9,6 +9,10 @@
 //!   vector fields `.xyz`;
 //! - `aestra_volume_constant(index) -> u32` and `aestra_volume_constant_f32(index) -> f32` — the
 //!   presentation's constant words;
+//! - `aestra_volume_scene_lighting(uvw, pixel, max_lights) -> vec3<f32>` — optional host illumination
+//!   at a grid sample, in linear RGB, including the scattering phase. The portable default is zero;
+//!   a supporting backend supplies the implementation. This is not a promise of shadows or a
+//!   particular light type. Plugins must explicitly opt in and pass a bounded per-sample budget.
 //! - `AestraVolumeRay` — the view ray through the pixel, in grid (`uvw`) coordinates, already clipped
 //!   to the box and to the opaque scene. `origin + direction * t` is the point at distance `t` in the
 //!   grid's own length unit (the effect's units), so `t_far - t_near` is the length to integrate over.
@@ -51,6 +55,18 @@ pub fn brick_atlas_texels(slots: u32, edge: u32) -> u32 {
 /// The interface declarations for bind group `group` — a number, or a shader-def placeholder such as
 /// `#{MATERIAL_BIND_GROUP}` for a composing preprocessor.
 pub fn volume_interface_wgsl(group: &str) -> String {
+    volume_interface_wgsl_with_scene_lighting(
+        group,
+        "fn aestra_volume_scene_lighting(uvw: vec3<f32>, pixel: vec2<f32>, max_lights: u32) -> vec3<f32> { return vec3<f32>(0.0); }",
+    )
+}
+
+/// Compose the portable interface with a backend-provided scene-lighting function.
+///
+/// `scene_lighting_wgsl` must define `aestra_volume_scene_lighting` with the signature documented
+/// above. The backend owns grid-to-world conversion and any view bindings; the ray ABI and field
+/// bindings remain unchanged. Unsupported backends should use [`volume_interface_wgsl`].
+pub fn volume_interface_wgsl_with_scene_lighting(group: &str, scene_lighting_wgsl: &str) -> String {
     let [field_0, field_1, field_2, field_3] = VOLUME_FIELD_BINDINGS;
     let constant_vectors = MAX_VOLUME_CONSTANTS / 4;
     format!(
@@ -129,6 +145,8 @@ fn aestra_volume_box(origin: vec3<f32>, direction: vec3<f32>) -> vec2<f32> {{
     let far = max(a, b);
     return vec2<f32>(max(max(near.x, near.y), near.z), min(min(far.x, far.y), far.z));
 }}
+
+{scene_lighting_wgsl}
 "#
     )
 }
@@ -254,6 +272,19 @@ mod tests {
         ));
         validate(FIELD_TO_VOLUME_WGSL);
         validate(&bricks_to_volume_wgsl());
+    }
+
+    #[test]
+    fn a_backend_can_supply_scene_lighting_without_changing_the_ray_or_bindings() {
+        let function = "fn aestra_volume_scene_lighting(uvw: vec3<f32>, pixel: vec2<f32>, max_lights: u32) -> vec3<f32> { return uvw * f32(min(max_lights, 1u)); }";
+        let source = volume_interface_wgsl_with_scene_lighting("0", function);
+        assert_eq!(
+            source.matches("fn aestra_volume_scene_lighting(").count(),
+            1
+        );
+        validate(&format!(
+            "{source}\n@fragment fn main() -> @location(0) vec4<f32> {{ return vec4<f32>(aestra_volume_scene_lighting(vec3<f32>(0.5), vec2<f32>(0.0), 1u), 1.0); }}"
+        ));
     }
 
     #[test]

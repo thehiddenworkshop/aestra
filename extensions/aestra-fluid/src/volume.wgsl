@@ -10,6 +10,7 @@
 //   16 temperature field slot (0xffffffff: no fire)   17 fire intensity   18 kelvin per unit
 //   19 open sides (bit 2·axis minimum side, 2·axis + 1 maximum side)
 //   20 fade depth in from an open side (fraction of the grid)
+//   21 optional scene light gain (0 preserves existing looks)   22 per-sample scene light budget
 
 const FLUID_NO_SLOT: u32 = 0xffffffffu;
 
@@ -101,6 +102,8 @@ fn fluid_volume(ray: AestraVolumeRay) -> vec4<f32> {
     let albedo = fluid_vec3(4u);
     let light = fluid_vec3(12u) * aestra_volume_constant_f32(7u);
     let towards_light = fluid_vec3(8u) / ray.size;
+    let scene_gain = aestra_volume_constant_f32(21u);
+    let scene_limit = aestra_volume_constant(22u);
     // Shadow rays cover half the box's largest side.
     let shadow_step = max(ray.size.x, max(ray.size.y, ray.size.z)) * 0.5 / f32(max(shadow_steps, 1u));
 
@@ -131,6 +134,9 @@ fn fluid_volume(ray: AestraVolumeRay) -> vec4<f32> {
                 lit += light * fluid_shadow(p, towards_light, shadow_step, shadow_steps, opacity);
             } else {
                 lit += light;
+            }
+            if (scene_gain > 0.0 && scene_limit > 0u) {
+                lit += scene_gain * aestra_volume_scene_lighting(p, ray.pixel, scene_limit);
             }
             color += transmittance * absorbed * albedo * lit;
             transmittance *= 1.0 - absorbed;

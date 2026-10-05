@@ -1653,6 +1653,20 @@ fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
             number(1.0, 4.0, Some(MAX_VOLUME_STEPS as f32)),
         ),
         InputMetadata::new(
+            "scene_light_intensity",
+            "Scene Light Intensity",
+            "Opt-in host scene illumination (0 preserves the authored look). Bevy supports unshadowed clustered point lights.",
+            Value::Scalar(0.0),
+            number(0.05, 0.0, None),
+        ),
+        InputMetadata::new(
+            "scene_light_limit",
+            "Scene Light Limit",
+            "Maximum point-light cluster entries visited per occupied march sample, quality-scaled; 0 disables scene lights.",
+            Value::U32(8),
+            number(1.0, 0.0, Some(MAX_VOLUME_SCENE_LIGHTS as f32)),
+        ),
+        InputMetadata::new(
             "shadow_steps",
             "Shadow Steps",
             "Samples towards the light per view sample (0 disables self-shadowing).",
@@ -1689,6 +1703,8 @@ fn volume_look_metadata(requires: CapabilityExpression) -> ModuleMetadata {
 /// Bounds of the volume look's sample counts.
 pub const MAX_VOLUME_STEPS: u32 = 256;
 pub const MAX_SHADOW_STEPS: u32 = 32;
+/// Hard per-sample scene-light cost bound; independent of the host's global light budget.
+pub const MAX_VOLUME_SCENE_LIGHTS: u32 = 32;
 
 fn scalar(payload: &PropertyBag, name: &str) -> Result<f32, String> {
     payload
@@ -2316,6 +2332,20 @@ fn pack_volume(payload: &PropertyBag, tier: &QualityTier) -> Result<Vec<u32>, St
         ));
     }
     words.extend([0, edge_fade.to_bits()]);
+    let scene_light_limit = count(payload, "scene_light_limit")?;
+    if scene_light_limit > MAX_VOLUME_SCENE_LIGHTS {
+        return Err(format!(
+            "scene light limit must be at most {MAX_VOLUME_SCENE_LIGHTS}"
+        ));
+    }
+    words.extend([
+        non_negative("scene_light_intensity")?.to_bits(),
+        if scene_light_limit == 0 {
+            0
+        } else {
+            QualityTier::scale_count(scene_light_limit, tier.presentation, 1, 1)
+        },
+    ]);
     Ok(words)
 }
 

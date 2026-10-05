@@ -1,0 +1,244 @@
+{
+  "schema": "aestra.fireworks.volume-lighting.v1",
+  "base_commit": "8fd72073",
+  "raw_directory": "target/fireworks-f8/volume-light-images-final-repeat",
+  "status": "F8.3A narrow point-light controls pass; F8 in progress",
+  "report": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "bloom": false,
+    "budget_zero_max_delta": 0,
+    "dimensions": [
+      480,
+      360
+    ],
+    "driver": "NVIDIA",
+    "gain_zero_max_delta": 0,
+    "limitations": "unshadowed point lights; no selected-GPU, representative-event, cost or particle-smoke qualification",
+    "nested_positive_red_pixels": 11684,
+    "nested_restored_max_delta": 0,
+    "particles": false,
+    "point_light_lumens": 1500,
+    "positive_red_pixels": 11684,
+    "range_metres": 6,
+    "range_off_max_delta": 0,
+    "restored_max_delta": 0,
+    "rigid_on_max_delta": 1,
+    "scaled_positive_red_pixels": 11542,
+    "scaled_restored_max_delta": 0,
+    "scene_light_gain": 1,
+    "scene_light_limit": 8,
+    "seed": "0x0000000000000000",
+    "simulation_frame": 90,
+    "slice": "F8.3A"
+  },
+  "provenance": [
+    {
+      "path": "apps/aestra-viewer/src/main.rs",
+      "sha256": "8166b3cf6c3069d64f023f62d84af072f05c5eef4dfedc1fc2e2e6e930621ea3"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images.rs",
+      "sha256": "bd9c3e41a6057c3fad4fd9cbe2df984653bc3185fe9a5b966e093b0d26790836"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/volume.rs",
+      "sha256": "3f77ce9e4f69dc20dae296003f6f8970fd55efd5bd393d533400ffd506562524"
+    },
+    {
+      "path": "bevy/aestra-bevy-render/src/gpu/volume_lighting.wgsl",
+      "sha256": "2d1d60a0a9f853d078754adaeaf3b0986f15f52e89ee7cb7b2ee2f80c7d13219"
+    },
+    {
+      "path": "crates/aestra-gpu/src/volume.rs",
+      "sha256": "7335fcb244892611733ee5dfe9d8a5dbfbf5ff49012f4c1a82f22da05c73ae57"
+    },
+    {
+      "path": "extensions/aestra-fluid/src/lib.rs",
+      "sha256": "e72a97c52ae664f8fef16dbd76985fa0b4c00e882c77c5c317e197a8fe672234"
+    },
+    {
+      "path": "extensions/aestra-fluid/src/volume.wgsl",
+      "sha256": "f96da311ccec2e6ae045b5cf6f3942716ba55b65d1c89f3d985dcb33e6425796"
+    },
+    {
+      "path": "extensions/aestra-fluid/tests/fluid_contract.rs",
+      "sha256": "44ec6cb745b2ed4af8f493671248566fe5ddd8bd8223719b79b460cd00f76c6b"
+    },
+    {
+      "path": "target/debug/deps/aestra_viewer-3a1f7617c2e8a9d5.exe",
+      "sha256": "b9f23ed7dd1f9ba63ee01d74a44397bb13ed85c60b1b81a0987974facbe135c0"
+    }
+  ],
+  "raw_files": [
+    {
+      "name": "budget-zero.png",
+      "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+    },
+    {
+      "name": "gain-zero.png",
+      "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+    },
+    {
+      "name": "nested-off.png",
+      "sha256": "33a1b26d48b2e76adbd84b9ed55d2a5ebd9b2ba7662ac5c64acc6c2e6c8e028b"
+    },
+    {
+      "name": "nested-on.png",
+      "sha256": "13286ecdb8e0207c1beb20e28a36435efe6e7d428b14826aa8a0a3e0cc90f2ab"
+    },
+    {
+      "name": "nested-restored.png",
+      "sha256": "33a1b26d48b2e76adbd84b9ed55d2a5ebd9b2ba7662ac5c64acc6c2e6c8e028b"
+    },
+    {
+      "name": "off.png",
+      "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+    },
+    {
+      "name": "on.png",
+      "sha256": "059a5e012a7ddbee8d9a2d0848638f9814fcbd5652aa3f7ce6b61d31e30dc5ac"
+    },
+    {
+      "name": "range-off.png",
+      "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+    },
+    {
+      "name": "report.json",
+      "sha256": "5185d6eefb3edde115a6d3c16e6ac1ac289ad3c1f5736885e3fa8ce4b9f6cec6"
+    },
+    {
+      "name": "restored.png",
+      "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+    },
+    {
+      "name": "scaled-off.png",
+      "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+    },
+    {
+      "name": "scaled-on.png",
+      "sha256": "c9a1ab937bcd5a13973025f157d3a49faa23c7ded134cd131f9a2ed60423c34f"
+    },
+    {
+      "name": "scaled-restored.png",
+      "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+    }
+  ],
+  "rejected_attempts": [
+    {
+      "directory": "target/fireworks-f8/volume-light-images",
+      "cause": "WGSL reserved identifier smooth; shader failed compilation; zero response; rejected"
+    },
+    {
+      "directory": "target/fireworks-f8/volume-light-images-attempt2",
+      "cause": "baseline captured before shader compilation; black off image; restoration delta 51; rejected"
+    }
+  ],
+  "limitations": [
+    "No representative-event or selected-GPU output smoke qualification",
+    "No matched costs, finale performance, visual art acceptance or additional adapter qualification",
+    "Only unshadowed clustered point lights; no scene directional/spot/area lighting",
+    "At most 32 visited point entries per occupied march sample; native cluster order, not strongest-light selection; inactive slots count",
+    "Particle-smoke sprites remain unlit; particle/event-to-fluid injection remains open",
+    "Zero-gain/zero-budget images are recompiled-look controls, not live parameter-binding proof"
+  ],
+  "accepted_previous": {
+    "raw_directory": "target/fireworks-f8/volume-light-images-final",
+    "provenance": [
+      {
+        "path": "apps/aestra-viewer/src/main.rs",
+        "sha256": "8166b3cf6c3069d64f023f62d84af072f05c5eef4dfedc1fc2e2e6e930621ea3"
+      },
+      {
+        "path": "apps/aestra-viewer/src/volume_light_images.rs",
+        "sha256": "bd9c3e41a6057c3fad4fd9cbe2df984653bc3185fe9a5b966e093b0d26790836"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/volume.rs",
+        "sha256": "e0ca3e024660ae95138fb16f8e216f7834160cbb83579b36be23c12b1b6c50ab"
+      },
+      {
+        "path": "bevy/aestra-bevy-render/src/gpu/volume_lighting.wgsl",
+        "sha256": "2d1d60a0a9f853d078754adaeaf3b0986f15f52e89ee7cb7b2ee2f80c7d13219"
+      },
+      {
+        "path": "crates/aestra-gpu/src/volume.rs",
+        "sha256": "7335fcb244892611733ee5dfe9d8a5dbfbf5ff49012f4c1a82f22da05c73ae57"
+      },
+      {
+        "path": "extensions/aestra-fluid/src/lib.rs",
+        "sha256": "e72a97c52ae664f8fef16dbd76985fa0b4c00e882c77c5c317e197a8fe672234"
+      },
+      {
+        "path": "extensions/aestra-fluid/src/volume.wgsl",
+        "sha256": "f96da311ccec2e6ae045b5cf6f3942716ba55b65d1c89f3d985dcb33e6425796"
+      },
+      {
+        "path": "extensions/aestra-fluid/tests/fluid_contract.rs",
+        "sha256": "44ec6cb745b2ed4af8f493671248566fe5ddd8bd8223719b79b460cd00f76c6b"
+      },
+      {
+        "path": "target/debug/deps/aestra_viewer-3a1f7617c2e8a9d5.exe",
+        "sha256": "011d1d41d8da2057d68d45b0b646a5fcaa129f358d9abee0c595fb99972c2b62"
+      }
+    ],
+    "raw_files": [
+      {
+        "name": "budget-zero.png",
+        "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+      },
+      {
+        "name": "gain-zero.png",
+        "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+      },
+      {
+        "name": "nested-off.png",
+        "sha256": "33a1b26d48b2e76adbd84b9ed55d2a5ebd9b2ba7662ac5c64acc6c2e6c8e028b"
+      },
+      {
+        "name": "nested-on.png",
+        "sha256": "13286ecdb8e0207c1beb20e28a36435efe6e7d428b14826aa8a0a3e0cc90f2ab"
+      },
+      {
+        "name": "nested-restored.png",
+        "sha256": "33a1b26d48b2e76adbd84b9ed55d2a5ebd9b2ba7662ac5c64acc6c2e6c8e028b"
+      },
+      {
+        "name": "off.png",
+        "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+      },
+      {
+        "name": "on.png",
+        "sha256": "059a5e012a7ddbee8d9a2d0848638f9814fcbd5652aa3f7ce6b61d31e30dc5ac"
+      },
+      {
+        "name": "range-off.png",
+        "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+      },
+      {
+        "name": "report.json",
+        "sha256": "5185d6eefb3edde115a6d3c16e6ac1ac289ad3c1f5736885e3fa8ce4b9f6cec6"
+      },
+      {
+        "name": "restored.png",
+        "sha256": "869bef5f6ebb5bb20918edba0a5424d4ec75780768d761df73c203ee96aa0b8c"
+      },
+      {
+        "name": "scaled-off.png",
+        "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+      },
+      {
+        "name": "scaled-on.png",
+        "sha256": "c9a1ab937bcd5a13973025f157d3a49faa23c7ded134cd131f9a2ed60423c34f"
+      },
+      {
+        "name": "scaled-restored.png",
+        "sha256": "8de8a3362711570d6f0d2eb7daca9d5abef869378b6fd969a8a883752ce36a13"
+      }
+    ]
+  },
+  "repeat": {
+    "all_12_pngs_and_report_byte_identical": true,
+    "notes": "Backend unit test additionally restored actual composed-interface parsing before the repeat; production shader and fixture unchanged."
+  }
+}

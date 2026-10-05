@@ -126,7 +126,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   gathered along the maps, so an open side's projection stays exact; a global energy safeguard starts
   a cycle from the midpoint velocity when the maps have distorted too much. It also has *Combustion*
   (temperature and fuel grids: fuel burns into heat and smoke) and a *Volume Look* module presented
-  as lit, self-shadowed volumetric smoke with blackbody fire. Since fluid F7 a grid can be *sparse*
+  as lit, self-shadowed volumetric smoke with blackbody fire. The authored directional/ambient look
+  remains the default. Fireworks F8.3A adds opt-in `scene_light_intensity` (default zero) and a
+  quality-scaled `scene_light_limit` (default 8, ceiling 32 visited cluster entries per occupied
+  march sample). Bevy samples unshadowed clustered point lights at each sample's world position,
+  with smooth range falloff and isotropic scattering, through the generic volume-interface scene
+  lighting hook; unsupported backends return zero. It reads the existing per-view GPU light data,
+  not CPU particle positions. This does not light unlit sprite materials or supply fluid injection.
+  Since fluid F7 a grid can be *sparse*
   (`sparse`, up to 512³): only the 8³-cell bricks holding smoke, heat or fuel, touching a source, or
   next to such a brick are stored — up to a brick budget — in pools indexed through a brick table,
   and every pass covers only them, sized on the device. The allocation runs first each tick in

@@ -22,7 +22,7 @@
 use super::*;
 use aestra_compiler::ExtensionRegistry;
 use aestra_core::{ComputeProgramId, ResourceTypeId};
-use aestra_gpu::volume::volume_interface_wgsl;
+use aestra_gpu::volume::volume_interface_wgsl_with_scene_lighting;
 use aestra_runtime::{
     CompiledEffect, FieldLayout, MAX_VOLUME_CONSTANTS, StagePresentation, VolumePresentation,
 };
@@ -148,6 +148,8 @@ pub(crate) fn compose_volume_shader(program_wgsl: &str, entry_point: &str) -> St
     format!(
         r#"#import bevy_pbr::mesh_functions
 #import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_view_bindings as volume_scene
+#import bevy_pbr::clustered_forward as volume_clusters
 #import bevy_pbr::view_transformations::{{position_world_to_clip, position_ndc_to_world, frag_coord_to_ndc}}
 #ifdef DEPTH_PREPASS
 #import bevy_pbr::prepass_utils
@@ -180,6 +182,7 @@ fn vertex(vertex: AestraVolumeVertex) -> AestraVolumeVarying {{
 @fragment
 fn fragment(in: AestraVolumeVarying) -> @location(0) vec4<f32> {{
     // The box is a unit cube centred on its origin, scaled to the grid: local + 0.5 is uvw.
+    aestra_volume_world_from_grid = mesh_functions::get_world_from_local(in.instance);
     let local_from_world = mesh_functions::get_local_from_world(in.instance);
     let camera = (local_from_world * vec4<f32>(view.world_position, 1.0)).xyz;
     let size = aestra_volume.size.xyz;
@@ -206,9 +209,18 @@ fn fragment(in: AestraVolumeVarying) -> @location(0) vec4<f32> {{
     return {entry_point}(AestraVolumeRay(origin, direction, span.x, span.y, size, in.clip.xy));
 }}
 "#,
-        interface = volume_interface_wgsl("#{MATERIAL_BIND_GROUP}"),
+        interface = volume_interface_wgsl_with_scene_lighting(
+            "#{MATERIAL_BIND_GROUP}",
+            SCENE_LIGHTING_WGSL,
+        ),
     )
 }
+
+// Invocation-private state: each ray converts uvw with its own full box transform, including
+// nested rotation/nonuniform scale. No light positions or particle selection are read back.
+// Point lights only, unshadowed isotropic single scattering. Each sample visits at most 32 cluster
+// entries (including inactive entries); this is a cost bound, not strongest-light selection.
+const SCENE_LIGHTING_WGSL: &str = include_str!("volume_lighting.wgsl");
 
 /// A field the render world copies into a volume texture each frame.
 #[derive(Clone)]
@@ -525,6 +537,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scene_light_helper_validates_with_cluster_binding_contract() {
+        // Parse the real adapter helper even in GPU-free CI. Stand-ins only replace Bevy's
+        // imported namespaces/types; native image tests additionally exercise the real bindings.
+        let helper = SCENE_LIGHTING_WGSL
+            .replace("volume_clusters::", "volume_clusters_")
+            .replace("volume_scene::", "volume_scene_");
+        let source = format!(
+            r#"
+struct View {{ view_from_world: mat4x4<f32>, clip_from_view: mat4x4<f32> }}
+struct Light {{ position_radius: vec4<f32>, color_inverse_square_range: vec4<f32>, range: f32 }}
+struct Lights {{ data: array<Light, 64> }}
+struct Indices {{ first_point_light_index_offset: u32, first_spot_light_index_offset: u32 }}
+@group(0) @binding(0) var<uniform> view: View;
+@group(0) @binding(1) var<storage, read> volume_scene_clustered_lights: Lights;
+fn volume_clusters_view_fragment_cluster_index(pixel: vec2<f32>, z: f32, ortho: bool) -> u32 {{ return 0u; }}
+fn volume_clusters_unpack_clusterable_object_index_ranges(index: u32) -> Indices {{ return Indices(0u, 1u); }}
+fn volume_clusters_get_clusterable_object_id(index: u32) -> u32 {{ return index; }}
+{helper}
+@fragment fn main(@builtin(position) pixel: vec4<f32>) -> @location(0) vec4<f32> {{
+    return vec4<f32>(aestra_volume_scene_lighting(vec3<f32>(0.5), pixel.xy, 8u), 1.0);
+}}
+"#
+        );
+        let module = naga::front::wgsl::parse_str(&source).expect("scene lighting parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .expect("scene lighting validates");
+        assert!(helper.contains("min(max_lights, 32u)"));
+        assert!(helper.contains("view.view_from_world * world"));
+    }
+
+    #[test]
     fn a_composed_volume_shader_parses_and_validates_without_the_bevy_prelude() {
         // The Bevy imports are resolved by Bevy's composer at run time; the interface, a march
         // function and the entry-point body must be valid WGSL on their own.
@@ -534,7 +581,17 @@ mod tests {
             "march",
         );
         assert!(composed.contains("return march(AestraVolumeRay("));
-        let interface_and_march = composed
+        assert!(composed.contains(SCENE_LIGHTING_WGSL));
+        assert!(composed.contains(
+            "aestra_volume_world_from_grid = mesh_functions::get_world_from_local(in.instance)"
+        ));
+        // Keep validating the actual composed interface/march, replacing only the separately
+        // validated Bevy-dependent helper with the neutral portable implementation.
+        let portable = composed.replace(
+            SCENE_LIGHTING_WGSL,
+            "fn aestra_volume_scene_lighting(uvw: vec3<f32>, pixel: vec2<f32>, max_lights: u32) -> vec3<f32> { return vec3<f32>(0.0); }",
+        );
+        let interface_and_march = portable
             .split("\nstruct AestraVolumeVertex")
             .next()
             .unwrap()
@@ -637,6 +694,32 @@ mod tests {
         assert_eq!(volume_entities(&mut app), [(volume, material.clone())]);
         assert_eq!(steps(&app), 96);
 
+        for (name, value, index, expected) in [
+            (
+                "scene_light_intensity",
+                aestra_core::Value::Scalar(1.0),
+                21,
+                1.0_f32.to_bits(),
+            ),
+            ("scene_light_limit", aestra_core::Value::U32(0), 22, 0),
+        ] {
+            *app.world_mut().get_mut::<PresentedEffect>(effect).unwrap() =
+                PresentedEffect::new(smoke(Some((name, value))));
+            app.update();
+            assert_eq!(volume_entities(&mut app), [(volume, material.clone())]);
+            assert_eq!(
+                app.world().get::<VolumeViews>(effect).unwrap().targets()[0].image,
+                targets[0].image
+            );
+            let params = &app
+                .world()
+                .resource::<Assets<VolumeMaterial>>()
+                .get(&material)
+                .unwrap()
+                .params;
+            assert_eq!(params.constants[index / 4][index % 4], expected);
+        }
+
         // Without a 3-D camera there is nothing to draw it with.
         let cameras: Vec<Entity> = app
             .world_mut()
@@ -668,5 +751,14 @@ mod tests {
         assert_eq!(params.dims, UVec4::new(16, 8, 4, 2));
         assert_eq!(params.constants[0], UVec4::new(7, 8, 9, 10));
         assert_eq!(params.constants[1], UVec4::new(11, 0, 0, 0));
+        let legacy = VolumeParams::new(&layout, 1, &[0; 21]);
+        assert_eq!(
+            legacy.constants[5].y, 0,
+            "old artifacts have zero scene gain"
+        );
+        assert_eq!(
+            legacy.constants[5].z, 0,
+            "old artifacts have zero scene budget"
+        );
     }
 }

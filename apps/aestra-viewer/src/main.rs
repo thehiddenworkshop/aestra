@@ -17,6 +17,8 @@ mod photographic;
 mod preview_report;
 mod velocity_f2;
 mod visual_regression;
+#[cfg(test)]
+mod volume_light_images;
 
 use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_materials};
 use aestra_bevy::material::MaterialProgram;
