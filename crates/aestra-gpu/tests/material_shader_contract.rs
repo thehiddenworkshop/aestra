@@ -75,6 +75,66 @@ fn assert_portable_shader_targets(wgsl: &str) {
 }
 
 #[test]
+fn scene_point_irradiance_is_opt_in_portable_and_reflected() {
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+    let legacy = MaterialProgram::additive_sprite("Unlit");
+    let unlit = compile(&legacy);
+    assert!(!unlit.requires_scene_lighting());
+    assert!(
+        !unlit
+            .shader
+            .wgsl
+            .contains("fn aestra_scene_point_irradiance")
+    );
+    assert!(
+        !unlit
+            .varying_layout
+            .slots
+            .iter()
+            .any(|s| s.varying == MaterialVarying::WorldPosition)
+    );
+    for domain in [
+        MaterialDomain::Sprite,
+        MaterialDomain::Mesh,
+        MaterialDomain::Ribbon,
+    ] {
+        let mut program = legacy.clone();
+        program.domain = domain;
+        program
+            .expressions
+            .iter_mut()
+            .find(|e| e.id == program.outputs.color)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(MaterialInput::ScenePointIrradiance);
+        let roundtrip = MaterialProgram::from_ron(&program.to_pretty_ron().unwrap()).unwrap();
+        let compiled = compile(&roundtrip);
+        assert!(compiled.requires_scene_lighting());
+        assert!(!compiled.requires_scene_depth());
+        assert_eq!(
+            compiled.reflection.required_scene_inputs,
+            vec![MaterialInput::ScenePointIrradiance]
+        );
+        assert!(
+            compiled
+                .varying_layout
+                .slots
+                .iter()
+                .any(|s| s.varying == MaterialVarying::WorldPosition)
+        );
+        assert!(
+            compiled
+                .shader
+                .wgsl
+                .contains("fn aestra_scene_point_irradiance(")
+        );
+        assert!(compiled.shader.wgsl.contains("return vec3<f32>(0.0)"));
+        assert_ne!(compiled.program_fingerprint, unlit.program_fingerprint);
+        assert_eq!(compiled.resource_layout, unlit.resource_layout);
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+    }
+}
+
+#[test]
 fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
     use aestra_core::material::{MaterialDomain, MaterialProgram};
     for input in [

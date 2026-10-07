@@ -7,10 +7,15 @@ use aestra_bevy::{
 };
 use bevy::{diagnostic::DiagnosticsStore, render::diagnostic::RenderDiagnosticsPlugin};
 
-fn project(tier: &str) -> Arc<aestra_bevy::CompiledEffectProject> {
+fn project(tier: &str, particle_smoke: bool) -> Arc<aestra_bevy::CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let effect = EffectAsset::from_ron(
-        &fs::read_to_string(root.join("effects/fireworks_smoke_lighting.aestra.ron")).unwrap(),
+        &fs::read_to_string(root.join(if particle_smoke {
+            "effects/fireworks_particle_smoke_lighting.aestra.ron"
+        } else {
+            "effects/fireworks_smoke_lighting.aestra.ron"
+        }))
+        .unwrap(),
     )
     .unwrap();
     let resolved = aestra_project::ProjectAssetIndex::scan(root)
@@ -37,7 +42,7 @@ fn policy(tier: &str) -> LightingQualityPolicy {
     policy
 }
 
-fn headless(tier: &str) -> (App, Entity, Handle<Image>) {
+fn headless(tier: &str, particle_smoke: bool) -> (App, Entity, Handle<Image>) {
     aestra_fluid::link();
     let mut app = App::new();
     app.add_plugins(
@@ -68,6 +73,13 @@ fn headless(tier: &str) -> (App, Entity, Handle<Image>) {
     .init_resource::<Captured>()
     .init_resource::<CaptureRenderReadiness>();
     policy(tier).apply(app.world_mut()).unwrap();
+    if particle_smoke && tier == "high" {
+        app.add_plugins(bevy::log::LogPlugin {
+            level: bevy::log::Level::ERROR,
+            filter: "error".into(),
+            ..default()
+        });
+    }
     app.sub_app_mut(RenderApp)
         .add_systems(ExtractSchedule, publish_capture_render_readiness);
     let started = Instant::now();
@@ -97,7 +109,7 @@ fn headless(tier: &str) -> (App, Entity, Handle<Image>) {
         bevy::camera::ShadowLodOrigin,
         Transform::from_xyz(0.0, 4.0, 16.0).looking_at(Vec3::new(0.0, 3.0, 0.0), Vec3::Y),
     ));
-    let mut player = EffectPlayer::from_project(project(tier))
+    let mut player = EffectPlayer::from_project(project(tier, particle_smoke))
         .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
     player.set_seed(0xf83b_0000_0000_0001);
     player.playing = false;
@@ -233,16 +245,30 @@ fn difference_gate_rejects_noise_and_detects_stale_light() {
 #[test]
 #[ignore = "native F8.3B authored burst + selected star smoke image/cost gate; run alone"]
 fn authored_outputs_light_smoke_and_retire_without_position_readback() {
+    authored_smoke_gate(false);
+}
+
+#[test]
+#[ignore = "native F8.3C authored burst + selected star particle-smoke gate; run alone"]
+fn authored_outputs_light_particle_smoke_without_position_readback() {
+    authored_smoke_gate(true);
+}
+
+fn authored_smoke_gate(particle_smoke: bool) {
     let directory = std::env::var_os("AESTRA_VOLUME_OUTPUT_REPORTS")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fireworks-f8/output-smoke")
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if particle_smoke {
+                "../../target/fireworks-f8/particle-smoke"
+            } else {
+                "../../target/fireworks-f8/output-smoke"
+            })
         });
     for tier in ["high", "medium", "low"] {
         let directory = directory.join(tier);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("report.json"), br#"{"accepted":false}"#).unwrap();
-        let (mut app, owner, target) = headless(tier);
+        let (mut app, owner, target) = headless(tier, particle_smoke);
         let initial = capture(&mut app, &target);
         let artifact = app
             .world()
@@ -283,6 +309,42 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
             .resource::<ParticleLightGpuStatistics>()
             .snapshot();
         let both_cost = costs(&mut app);
+        let mut extra_images = Vec::new();
+        let mut material_gain_delta = (0, 0);
+        let mut material_restore_delta = (0, 0);
+        let gain_off = if particle_smoke {
+            let mut presented = app.world_mut().get_mut::<PresentedEffect>(owner).unwrap();
+            let emitter = &artifact.emitters[0];
+            let material = emitter.renderers[0].material;
+            let mut binding = presented
+                .material_binding_for_emitter(material, emitter.source)
+                .unwrap()
+                .clone();
+            let program = binding.program().clone();
+            binding
+                .set_value(
+                    program.reflection.parameters[0].id,
+                    aestra_bevy::material::MaterialValue::Float(0.0),
+                )
+                .unwrap();
+            assert!(Arc::ptr_eq(binding.program(), &program));
+            presented.bind_material(material, binding);
+            Some(capture(&mut app, &target))
+        } else {
+            None
+        };
+        if particle_smoke {
+            app.world_mut()
+                .get_mut::<PresentedEffect>(owner)
+                .unwrap()
+                .unbind_material(artifact.emitters[0].renderers[0].material);
+            let gain_restored = capture(&mut app, &target);
+            material_restore_delta = delta(&both, &gain_restored);
+            extra_images.push(("gain-restored", gain_restored));
+        }
+        if let Some(gain_off) = &gain_off {
+            extra_images.push(("gain-off", gain_off.clone()));
+        }
         // Cap-only changes, no effect recompilation, synthetic cue, particle enumeration or new smoke.
         app.world_mut()
             .resource_mut::<ParticleLightGpuSettings>()
@@ -294,11 +356,43 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
             .enabled = false;
         let off = capture(&mut app, &target);
         let off_cost = costs(&mut app);
+        if let Some(gain_off) = &gain_off {
+            material_gain_delta = delta(&off, gain_off);
+        }
         app.world_mut()
             .resource_mut::<ParticleLightGpuSettings>()
             .max_lights = cap;
         let stars = capture(&mut app, &target);
         let star_cost = costs(&mut app);
+        let mut hierarchy_delta = (0, 0);
+        let mut hierarchy_restore_delta = (0, 0);
+        if particle_smoke {
+            // Change only presentation hierarchy, not particle positions or the artifact.
+            let camera = app
+                .world_mut()
+                .query_filtered::<Entity, With<Camera3d>>()
+                .single(app.world())
+                .unwrap();
+            let parent = app
+                .world_mut()
+                .spawn((
+                    Transform::from_xyz(17.0, 3.0, -7.0).with_rotation(Quat::from_rotation_y(0.4)),
+                    Visibility::Visible,
+                ))
+                .id();
+            app.world_mut().entity_mut(owner).insert(ChildOf(parent));
+            app.world_mut().entity_mut(camera).insert(ChildOf(parent));
+            let nested = capture(&mut app, &target);
+            hierarchy_delta = delta(&stars, &nested);
+            extra_images.push(("rigid-hierarchy", nested));
+            app.world_mut()
+                .get_mut::<Transform>(parent)
+                .unwrap()
+                .set_if_neq(Transform::IDENTITY);
+            let hierarchy_restored = capture(&mut app, &target);
+            hierarchy_restore_delta = delta(&stars, &hierarchy_restored);
+            extra_images.push(("rigid-hierarchy-restored", hierarchy_restored));
+        }
         assert_native_transport(&app);
         app.world_mut()
             .resource_mut::<ParticleLightGpuSettings>()
@@ -410,7 +504,9 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
         let retirement_active_delta = delta(&both, &retirement_active);
         app.world_mut().despawn(owner);
         let retired = capture(&mut app, &target);
-        let retirement_delta = delta(&initial, &retired);
+        // A tick-zero sprite burst is already visible in `initial`; the retired scene is empty.
+        let empty = RgbaImage::from_pixel(480, 360, Rgba([0, 0, 0, 255]));
+        let retirement_delta = delta(if particle_smoke { &empty } else { &initial }, &retired);
         assert_eq!(app.world().resource::<TransientLightStatistics>().active, 0);
         assert_eq!(
             app.world()
@@ -442,6 +538,9 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
             image.save(directory.join(format!("{name}.png"))).unwrap();
         }
         let caps = app.world().resource::<GpuCapabilities>();
+        for (name, image) in extra_images {
+            image.save(directory.join(format!("{name}.png"))).unwrap();
+        }
         let accepted = rep_delta.0 >= 100
             && star_delta.0 >= 100
             && both_delta.0 >= 100
@@ -454,14 +553,18 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
             && before_birth_delta.1 <= 1
             && restored_budget_delta.1 <= 1
             && retirement_delta.1 <= 1
-            && retirement_active_delta.1 <= 1;
-        let report = serde_json::json!({"slice":"F8.3B", "accepted":accepted, "tier":tier, "frame":frame,
+            && retirement_active_delta.1 <= 1
+            && material_gain_delta.1 <= 1
+            && material_restore_delta.1 <= 1
+            && hierarchy_delta.1 <= 1
+            && hierarchy_restore_delta.1 <= 1;
+        let mut report = serde_json::json!({"slice":if particle_smoke {"F8.3C"} else {"F8.3B"}, "accepted":accepted, "tier":tier, "frame":frame,
             "adapter":caps.adapter_name, "backend":caps.backend, "driver":caps.driver,
             "dimensions":[480,360], "history":"playback-only", "seed":"0xf83b000000000001",
             "representative_accepted":representative.accepted, "representative_active":representative.active,
             "selected_capacity_bound":gpu.written_capacity, "selected_buffer_bytes":gpu.buffer_bytes,
-            "selected_host_cap":cap, "representative_host_cap":2, "scene_light_visit_limit_high":16,
-            "selected_positions_read_back":false, "bloom":false, "particle_renderers":false,
+            "selected_host_cap":cap, "representative_host_cap":2, "scene_light_visit_limit_high":if particle_smoke {32} else {16},
+            "selected_positions_read_back":false, "bloom":false, "particle_renderers":particle_smoke,
             "representative_delta":rep_delta, "selected_delta":star_delta, "both_delta":both_delta,
             "one_slot_delta":one_delta, "restored_delta":restored_delta, "expiry_delta":expiry_delta,
             "restart_delta":restart_delta, "rebound_delta":rebound_delta,
@@ -469,9 +572,14 @@ fn authored_outputs_light_smoke_and_retire_without_position_readback() {
             "before_birth_delta":before_birth_delta, "restored_budget_delta":restored_budget_delta,
             "retirement_delta":retirement_delta, "compiled_particle_capacity":artifact.max_particles,
             "retirement_active_delta":retirement_active_delta,
-            "cost_scope":"GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+            "cost_scope":"GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/receiver/camera. Transparent pass includes smoke, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
             "costs":{"both":both_cost, "representative":rep_cost, "off":off_cost, "selected":star_cost},
-            "limitations":"bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification"});
+            "limitations":if particle_smoke { "bounded two-burst particle-smoke fixture; default layers; unshadowed isotropic point-light scattering; no full-show/smoke art/persistence/alpha-sort/finale certification" } else {"bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification"}});
+        report["particle_material_controls"] = serde_json::json!({
+            "performed":particle_smoke,
+            "gain_off_delta":material_gain_delta, "gain_restore_delta":material_restore_delta,
+            "rigid_hierarchy_delta":hierarchy_delta, "rigid_hierarchy_restore_delta":hierarchy_restore_delta,
+        });
         fs::write(
             directory.join("report.json"),
             serde_json::to_vec_pretty(&report).unwrap(),

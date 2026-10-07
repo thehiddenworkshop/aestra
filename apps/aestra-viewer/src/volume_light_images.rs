@@ -50,6 +50,11 @@ fn capture(app: &mut App, target: &Handle<Image>) -> RgbaImage {
         pump(app, 1);
         let ready = app.world().resource::<CaptureRenderReadiness>();
         assert!(
+            !ready.detail.starts_with("Composer error"),
+            "smoke shader validation failed: {}",
+            ready.detail
+        );
+        assert!(
             started.elapsed() < Duration::from_secs(60),
             "volume pipeline timeout: {}",
             ready.detail

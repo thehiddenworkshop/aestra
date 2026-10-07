@@ -136,10 +136,40 @@ but the small workload is clock/noise-sensitive and does not certify full-show o
 See [`output-smoke-lighting-2026-10-07.md`](../../benchmarks/fireworks/output-smoke-lighting-2026-10-07.md)
 for evidence and the visit-budget constraint found during qualification.
 
+## Lit particle-smoke fixture (F8.3C)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --particle-smoke-lighting --no-audio
+```
+
+This mode loads `effects/fireworks_particle_smoke_lighting.aestra.ron`: one isolated
+alpha-blended smoke puff and the same two real burst/selected-light families, without
+a fluid extension, bloom, synthetic host lights or selected-position readback. Controls
+and host light caps match the fluid lab. The two lab options are mutually exclusive.
+
+`materials/fireworks_lit_smoke.aestra.material.ron` opts into the portable
+`ScenePointIrradiance` Vec3 fragment input. Its graph combines gray albedo, low ambient
+light and scene irradiance, with an instance-editable Scene light gain. Coverage remains
+particle opacity × radial mask. The native Bevy 3D adapter evaluates unshadowed isotropic
+point-light scattering at the fragment's world position using the existing clustered
+lights. It visits at most 32 entries per fragment; it does not select the strongest lights.
+Unsupported providers and the 2D path return zero scene irradiance, not fabricated lighting.
+Existing unlit shaders/materials retain their behavior and resource layout.
+
+Repeated native high/medium/low runs pass independent light-family, live gain, budget,
+rigid parent-transform, expiry, restart/rebinding and owner-removal controls. The 51
+corresponding original captures match exactly. This is an isolated-puff material/API
+qualification, **not dense smoke or AAA art acceptance**: the initial 48-overlapping-puff
+attempt failed image repeatability, consistent with unsorted alpha draw order. That failure
+is retained; dense alpha ordering, reusable smoke art/persistence and full-show costs are
+the next gates. See
+[`particle-smoke-lighting-2026-10-07.md`](../../benchmarks/fireworks/particle-smoke-lighting-2026-10-07.md).
+
 This is the first showcase-host integration, **not final AAA acceptance**. Shared shells
 currently use particle smoke and representative burst lights. Continuous selected-star
 lighting is not authored/enabled here; F7's benchmark-fixture lights are not silently
 injected into saved show assets. The dedicated F8.3B saved fixture above now qualifies both
-light families on fluid smoke; full-show overlap/costs remain separate. Lit particle smoke,
-generic fluid injection, natural-star art, final environment/audio mix and
+light families on fluid smoke, and F8.3C qualifies the opt-in particle material on an isolated
+puff. The full show's particle smoke remains unlit; full-show overlap/costs remain separate.
+Dense lit-smoke ordering/art, generic fluid injection, natural-star art, final environment/audio mix and
 production-finale density remain separate work. Keep these gates in the fireworks roadmap.

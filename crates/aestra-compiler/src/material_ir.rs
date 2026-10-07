@@ -1619,6 +1619,7 @@ const fn material_input_key(input: MaterialInput) -> u8 {
         MaterialInput::CameraPosition => 24,
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
+        MaterialInput::ScenePointIrradiance => 30,
     }
 }
 

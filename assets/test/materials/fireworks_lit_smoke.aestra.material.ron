@@ -1,0 +1,82 @@
+(
+    id: "a3574a00-0000-4000-8000-000000f83d08",
+    schema_version: 1,
+    name: "Fireworks Lit Particle Smoke",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Alpha,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: r#None,
+        ),
+        allowed: [
+            (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: r#None,
+            ),
+        ],
+    ),
+    parameters: [(
+        id: "a3574a00-0000-4000-8000-000000f83d20",
+        name: "Scene light gain", value_type: Float, evaluation_domain: Instance,
+        default: Some(Float(0.02)),
+    )],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d09",
+            kind: Constant(Vec3((0.72, 0.74, 0.78))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d0a",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d0b",
+            kind: Input(Uv0),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d0e",
+            kind: Constant(Vec2((0.5, 0.5))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d0f",
+            kind: Constant(Float(0.45)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d10",
+            kind: Constant(Float(0.5)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d11",
+            kind: Constant(Bool(false)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d14",
+            kind: RadialMask(
+                uv: "a3574a00-0000-4000-8000-000000f83d0b",
+                center: "a3574a00-0000-4000-8000-000000f83d0e",
+                radius: "a3574a00-0000-4000-8000-000000f83d0f",
+                softness: "a3574a00-0000-4000-8000-000000f83d10",
+                invert: "a3574a00-0000-4000-8000-000000f83d11",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83d15",
+            kind: Multiply("a3574a00-0000-4000-8000-000000f83d0a", "a3574a00-0000-4000-8000-000000f83d14"),
+        ),
+        (id: "a3574a00-0000-4000-8000-000000f83d21", kind: Input(ScenePointIrradiance)),
+        (id: "a3574a00-0000-4000-8000-000000f83d22", kind: Parameter("a3574a00-0000-4000-8000-000000f83d20")),
+        (id: "a3574a00-0000-4000-8000-000000f83d23", kind: Multiply("a3574a00-0000-4000-8000-000000f83d21", "a3574a00-0000-4000-8000-000000f83d22")),
+        (id: "a3574a00-0000-4000-8000-000000f83d24", kind: Constant(Vec3((0.05, 0.05, 0.05)))),
+        (id: "a3574a00-0000-4000-8000-000000f83d25", kind: Add("a3574a00-0000-4000-8000-000000f83d23", "a3574a00-0000-4000-8000-000000f83d24")),
+        (id: "a3574a00-0000-4000-8000-000000f83d26", kind: Multiply("a3574a00-0000-4000-8000-000000f83d09", "a3574a00-0000-4000-8000-000000f83d25")),
+    ],
+    // Explicit opt-in. Ambient stays authored; scene provider is neutral if unavailable.
+    outputs: (
+        color: "a3574a00-0000-4000-8000-000000f83d26",
+        alpha: "a3574a00-0000-4000-8000-000000f83d15",
+    ),
+)

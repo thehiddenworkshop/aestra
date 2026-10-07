@@ -116,6 +116,7 @@ struct GpuSemanticPipelineKey {
     shader: Handle<Shader>,
     layout: std::sync::Arc<MaterialResourceLayout>,
     requires_scene_depth: bool,
+    requires_scene_lighting: bool,
     mesh_inputs: MeshInputs,
 }
 
@@ -209,6 +210,16 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
     type Key = GpuSpritePipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        let shader_defs = if matches!(key.view, GpuSpriteViewKey::ThreeD(_))
+            && key
+                .material
+                .as_ref()
+                .is_some_and(|material| material.requires_scene_lighting)
+        {
+            vec!["AESTRA_SCENE_POINT_LIGHTING".into()]
+        } else {
+            vec![]
+        };
         let (view_layout, target_format, depth_format, msaa_samples) = match key.view {
             GpuSpriteViewKey::TwoD(mesh) => (
                 self.mesh2d.view_layout.clone(),
@@ -298,6 +309,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             label: Some("aestra gpu sprite".into()),
             layout,
             vertex: VertexState {
+                shader_defs: shader_defs.clone(),
                 // Semantic modules contain both stages with one matching varying layout.
                 shader: fragment_shader.clone(),
                 entry_point: Some(
@@ -359,9 +371,9 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                         .into_iter()
                         .collect()
                 },
-                ..default()
             },
             fragment: Some(FragmentState {
+                shader_defs,
                 shader: fragment_shader,
                 entry_point: Some(fragment_entry.into()),
                 targets: vec![Some(ColorTargetState {
@@ -369,7 +381,6 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                     blend: Some(blend),
                     write_mask: ColorWrites::ALL,
                 })],
-                ..default()
             }),
             primitive: PrimitiveState {
                 // Billboards (sprite/ribbon/trail — no mesh layout) draw as a
@@ -1013,6 +1024,7 @@ fn semantic_pipeline_key(
         },
         layout: std::sync::Arc::new(binding.program.resource_layout.clone()),
         requires_scene_depth,
+        requires_scene_lighting: binding.program.requires_scene_lighting(),
         mesh_inputs: MeshInputs::for_program(&binding.program),
     })
 }

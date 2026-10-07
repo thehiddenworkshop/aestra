@@ -3,6 +3,7 @@
 mod bounds;
 mod extension_stages;
 mod geometry_statistics;
+mod material_lighting;
 mod mesh_inputs;
 mod output_context;
 mod paged_trails;
@@ -2201,7 +2202,7 @@ fn prepare_semantic_material(
         .entry(program.program_fingerprint)
         .or_insert_with(|| {
             let single_sampled = shaders.add(Shader::from_wgsl(
-                program.shader.wgsl.clone(),
+                material_lighting::compose(&program.shader.wgsl, program.requires_scene_lighting()),
                 format!(
                     "generated://aestra/material/{}.wgsl",
                     program.program_fingerprint
@@ -2209,7 +2210,10 @@ fn prepare_semantic_material(
             ));
             let multisampled = if program.requires_scene_depth() {
                 shaders.add(Shader::from_wgsl(
-                    program.multisampled_shader.wgsl.clone(),
+                    material_lighting::compose(
+                        &program.multisampled_shader.wgsl,
+                        program.requires_scene_lighting(),
+                    ),
                     format!(
                         "generated://aestra/material/{}_multisampled.wgsl",
                         program.program_fingerprint

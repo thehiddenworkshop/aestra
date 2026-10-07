@@ -42,6 +42,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     let width = bitcast<f32>(renderer.attribute_flags.y) * particles[slot].size * scale;
     let position = ribbon_world(slot) + side * corner.x * width * 0.5;
     output.clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
+    output.world_position = position;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
         if (renderer.attribute_flags.x & 8u) == 0u { output.color = vec4<f32>(output.color.rgb * particles[slot].color.rgb, output.color.a); }

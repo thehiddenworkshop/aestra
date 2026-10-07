@@ -159,6 +159,11 @@ impl MaterialVaryingLayout {
             // Append so the existing authored-input locations stay stable.
             varyings.push(MaterialVarying::SamplingCoverage);
         }
+        if reads(MaterialInput::ScenePointIrradiance)
+            && !varyings.contains(&MaterialVarying::WorldPosition)
+        {
+            varyings.push(MaterialVarying::WorldPosition);
+        }
         Self {
             domain: ir.domain,
             slots: varyings
@@ -228,6 +233,13 @@ impl MaterialVaryingLayout {
         }
         for slot in &self.slots {
             let (name, _, _, expression) = slot.varying.fields();
+            let expression = if slot.varying == MaterialVarying::WorldPosition
+                && self.domain != MaterialDomain::Mesh
+            {
+                "sprite.world_position"
+            } else {
+                expression
+            };
             source.push_str(&format!("    output.{name} = {expression};\n"));
         }
         source.push_str("    return output;\n}\n\n");

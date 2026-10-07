@@ -4286,6 +4286,8 @@ fn preview_input(input: MaterialInput, context: MaterialPreviewContext) -> Previ
         | MaterialInput::EmitterNormalizedTime => PreviewValue::scalar(context.uv.x),
         MaterialInput::SceneDepth => PreviewValue::scalar(1.0 + context.uv.x),
         MaterialInput::PixelDepth => PreviewValue::scalar(1.0),
+        // CPU swatches do not have a scene-light provider. Do not counterfeit illumination.
+        MaterialInput::ScenePointIrradiance => PreviewValue::Numeric([0.0, 0.0, 0.0, 1.0], 3),
         MaterialInput::ParticleRandom => PreviewValue::scalar(
             ((context.uv.x * 91.7).sin() * (context.uv.y * 43.1).cos() * 43758.547)
                 .fract()

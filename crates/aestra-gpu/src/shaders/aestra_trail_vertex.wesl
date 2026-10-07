@@ -61,6 +61,7 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     let tangent = ribbon_unit(cross(forward, side), direction);
     let position = particles[slot].position + (side * corner.x + tangent * extension) * width * sampling.x * 0.5;
     output.clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
+    output.world_position = position;
     output.color = r.tint;
     if r.particle_color != 0u { output.color *= particles[slot].color; }
     // Strip coverage needs only X. Carry age fade in the otherwise unused Y lane

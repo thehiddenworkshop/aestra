@@ -61,6 +61,7 @@ struct RenderParams {
 }
 
 struct SpriteVertexData {
+    world_position: vec3<f32>,
     clip_position: vec4<f32>,
     color: vec4<f32>,
     quad_position: vec2<f32>,
@@ -197,6 +198,7 @@ fn aestra_sprite_vertex(
 
     var output: SpriteVertexData;
     output.clip_position = view.clip_from_world * world_position;
+    output.world_position = world_position.xyz;
     output.sampling_coverage = sampling.y;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {

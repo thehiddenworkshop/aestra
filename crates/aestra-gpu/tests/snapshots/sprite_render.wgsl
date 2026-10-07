@@ -112,6 +112,7 @@ struct RenderParams {
 }
 
 struct SpriteVertexData {
+    world_position: vec3<f32>,
     clip_position: vec4<f32>,
     color: vec4<f32>,
     quad_position: vec2<f32>,
@@ -239,6 +240,7 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     let world_position = world_center + vec4<f32>((camera_right * rotated.x * effect_scale_x + camera_up * rotated.y * effect_scale_y) * sampling.x, 0.0);
     var output: SpriteVertexData;
     output.clip_position = view.clip_from_world * world_position;
+    output.world_position = world_position.xyz;
     output.sampling_coverage = sampling.y;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
@@ -318,6 +320,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     let width = bitcast<f32>(renderer.attribute_flags.y) * particles[slot].size * scale;
     let position = ribbon_world(slot) + side * corner.x * width * 0.5;
     output.clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
+    output.world_position = position;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
         if (renderer.attribute_flags.x & 8u) == 0u {
@@ -409,6 +412,7 @@ fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
     let tangent = ribbon_unit(cross(forward, side), direction);
     let position = particles[slot].position + (side * corner.x + tangent * extension) * width * sampling.x * 0.5;
     output.clip_position = view.clip_from_world * vec4<f32>(position, 1.0);
+    output.world_position = position;
     output.color = r.tint;
     if r.particle_color != 0u {
         output.color *= particles[slot].color;

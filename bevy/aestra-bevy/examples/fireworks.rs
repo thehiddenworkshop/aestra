@@ -39,7 +39,7 @@ fn main() -> AppExit {
         eprintln!("{error}\n{}", project::USAGE);
         std::process::exit(2);
     });
-    if options.smoke_lighting {
+    if options.smoke_lighting && !options.particle_smoke_lighting {
         aestra_fluid::link();
     }
     let project = options.compile().unwrap_or_else(|error| {
@@ -288,7 +288,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.smoke_lighting {
+    let title = if options.particle_smoke_lighting {
+        "AESTRA / PARTICLE SMOKE LIGHTING LAB"
+    } else if options.smoke_lighting {
         "AESTRA / SMOKE LIGHTING LAB"
     } else {
         "AESTRA / FIREWORKS"

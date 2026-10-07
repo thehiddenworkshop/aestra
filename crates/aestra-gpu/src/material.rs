@@ -246,6 +246,12 @@ pub struct CompiledMaterialProgram {
 }
 
 impl CompiledMaterialProgram {
+    pub fn requires_scene_lighting(&self) -> bool {
+        self.reflection
+            .required_scene_inputs
+            .contains(&MaterialInput::ScenePointIrradiance)
+    }
+
     pub fn requires_scene_depth(&self) -> bool {
         self.reflection
             .required_scene_inputs
@@ -568,6 +574,7 @@ fn build_reflection(
                 | MaterialInput::EffectTime
                 | MaterialInput::SceneDepth
                 | MaterialInput::PixelDepth
+                | MaterialInput::ScenePointIrradiance
         ) && !(ir.domain == MaterialDomain::Mesh
             && matches!(
                 input,
@@ -670,6 +677,14 @@ fn generate_wesl(
         source.push_str("    @builtin(sample_index) sample_index: u32,\n");
     }
     source.push_str("}\n\n");
+    if reflect_material_inputs(ir)
+        .scene
+        .contains(&MaterialInput::ScenePointIrradiance)
+    {
+        // Engine-neutral callback ABI. The backend may replace this definition, not material IR,
+        // resource layouts or particle buffers. Unavailable providers are deliberately neutral.
+        source.push_str("fn aestra_scene_point_irradiance(world: vec3<f32>, pixel: vec2<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n\n");
+    }
     let requires_scene_depth = reflect_material_inputs(ir)
         .scene
         .iter()
@@ -1320,6 +1335,9 @@ fn input_expression(
         MaterialInput::EffectTime => Some("input.effect_time"),
         MaterialInput::SceneDepth => Some("aestra_scene_depth(input)"),
         MaterialInput::PixelDepth => Some("aestra_pixel_depth(input)"),
+        MaterialInput::ScenePointIrradiance => {
+            Some("aestra_scene_point_irradiance(input.world_position, input.fragment_position.xy)")
+        }
         _ => None,
     }
 }
@@ -1905,6 +1923,7 @@ fn input_key(input: MaterialInput) -> u8 {
         MaterialInput::CameraPosition => 24,
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
+        MaterialInput::ScenePointIrradiance => 30,
     }
 }
 

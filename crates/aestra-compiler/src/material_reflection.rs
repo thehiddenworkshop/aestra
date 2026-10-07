@@ -224,6 +224,7 @@ fn input_category(input: MaterialInput) -> MaterialInputCategory {
         | MaterialInput::SceneDepth
         | MaterialInput::CameraPosition
         | MaterialInput::CameraDirection
+        | MaterialInput::ScenePointIrradiance
         | MaterialInput::PixelDepth => MaterialInputCategory::Scene,
     }
 }
@@ -302,5 +303,6 @@ fn input_rank(input: MaterialInput) -> u8 {
         MaterialInput::CameraPosition => 24,
         MaterialInput::CameraDirection => 25,
         MaterialInput::PixelDepth => 26,
+        MaterialInput::ScenePointIrradiance => 30,
     }
 }

@@ -1174,6 +1174,9 @@ pub enum MaterialInput {
     Bitangent,
     RibbonUv,
     RibbonDirection,
+    /// Unshadowed isotropic point-light irradiance at the fragment's world position.
+    /// Backends without scene lighting return zero. Opt-in: existing materials remain unlit.
+    ScenePointIrradiance,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3883,6 +3886,7 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
         | MaterialInput::ViewDirection
         | MaterialInput::CameraPosition
         | MaterialInput::CameraDirection
+        | MaterialInput::ScenePointIrradiance
         | MaterialInput::RibbonDirection => {
             (MaterialValueType::Vec3, MaterialExpressionDomain::Fragment)
         }

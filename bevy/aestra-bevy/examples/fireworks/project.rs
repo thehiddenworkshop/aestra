@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B smoke/light fixture (not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting | --particle-smoke-lighting] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B fluid fixture; --particle-smoke-lighting plays F8.3C lit sprites (neither is the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -21,6 +21,7 @@ pub struct Options {
     pub effect_path: PathBuf,
     pub audio_root: Option<PathBuf>,
     pub smoke_lighting: bool,
+    pub particle_smoke_lighting: bool,
 }
 
 impl Options {
@@ -43,6 +44,7 @@ impl Options {
         let mut options = Self {
             tier: "high".into(),
             smoke_lighting: false,
+            particle_smoke_lighting: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -54,9 +56,16 @@ impl Options {
         };
         let mut args = args.into_iter();
         let mut explicit_effect = false;
+        let mut fluid_lab = false;
         while let Some(arg) = args.next() {
             if arg == "--smoke-lighting" {
                 options.smoke_lighting = true;
+                fluid_lab = true;
+                continue;
+            }
+            if arg == "--particle-smoke-lighting" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
                 continue;
             }
             if arg == "--no-audio" {
@@ -90,7 +99,15 @@ impl Options {
             }
         }
         if options.smoke_lighting && !explicit_effect {
-            options.effect_path = "effects/fireworks_smoke_lighting.aestra.ron".into();
+            options.effect_path = if options.particle_smoke_lighting {
+                "effects/fireworks_particle_smoke_lighting.aestra.ron"
+            } else {
+                "effects/fireworks_smoke_lighting.aestra.ron"
+            }
+            .into();
+        }
+        if fluid_lab && options.particle_smoke_lighting {
+            return Err("Choose either --smoke-lighting or --particle-smoke-lighting".into());
         }
         options.project_root = options
             .project_root
@@ -117,7 +134,7 @@ impl Options {
         } else {
             ExtensionRegistry::linked()
         };
-        if self.smoke_lighting {
+        if self.smoke_lighting && !self.particle_smoke_lighting {
             registry
                 .install(&aestra_fluid::FluidExtension)
                 .map_err(|e| e.to_string())?;
@@ -176,6 +193,45 @@ mod tests {
                 assert_eq!(light.max_lights, cap);
             }
         }
+    }
+
+    #[test]
+    fn lit_particle_smoke_resolves_opt_in_material_and_real_outputs() {
+        for tier in ["high", "medium", "low"] {
+            let options = Options::parse([
+                "--particle-smoke-lighting".into(),
+                "--tier".into(),
+                tier.into(),
+            ])
+            .unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert!(
+                root.extension_stages.is_empty(),
+                "no fluid can counterfeit sprite response"
+            );
+            assert_eq!(root.emitters.len(), 3);
+            assert_eq!(root.emitters[0].renderers.len(), 1);
+            assert!(root.emitters[1..].iter().all(|e| e.renderers.is_empty()));
+            assert_eq!(root.point_lights.len(), 2);
+            assert_eq!(root.particle_outputs().count(), 2);
+            let presented = aestra_bevy::PresentedEffect::new(root.clone());
+            let binding = presented
+                .material_binding_for_emitter(
+                    root.emitters[0].renderers[0].material,
+                    root.emitters[0].source,
+                )
+                .unwrap();
+            assert!(binding.program().requires_scene_lighting());
+            assert!(!binding.program().requires_scene_depth());
+        }
+        assert!(
+            Options::parse([
+                "--smoke-lighting".into(),
+                "--particle-smoke-lighting".into()
+            ])
+            .is_err()
+        );
     }
 
     #[test]
