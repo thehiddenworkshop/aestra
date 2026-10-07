@@ -109,9 +109,37 @@ warnings; captures completed and processes exited successfully. An initial warm-
 incorrectly treated a retryable unloaded shader as fatal; the corrected retry policy has
 a regression test and all subsequent native runs passed.
 
+## Smoke lighting qualification fixture (F8.3B)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-lighting --no-audio
+```
+
+This opt-in mode plays `assets/test/effects/fireworks_smoke_lighting.aestra.ron`, not the
+full show. It has a pre-existing fluid-smoke source and two overlapping, material-free
+star bursts. Saved representative bindings receive real native particle output packets;
+saved selected-star outputs use `AestraParticleLightPlugin` with `ParticleLightMode::SameFrameGpu`.
+The host has two representative slots and only 8/4/2 selected slots for high/medium/low.
+No source-particle enumeration, selected-position readback or viewer fixture injection is used.
+Root scale/camera are lab-specific; the full show's presentation is unchanged.
+
+Space pauses, R restarts, L toggles both light families and Esc exits. Enabling flashes
+after their birth does not replay old output packets: restart for fresh flashes. Native
+capacity statistics are bounds, not active selected-light counts. There is no sprite rendering,
+bloom or host scene lighting to counterfeit smoke response; this is a diagnostic fixture,
+not finished fireworks art. Existing fluid-source smoke is **not** generic particle-to-fluid injection.
+
+Two repeated high/medium/low native runs pass before-birth, independent light-family on/off,
+one-slot host-budget restoration, expiry, restart/rebinding and root retirement controls.
+All 48 corresponding PNGs match exactly. Matched frozen-pass GPU diagnostics are recorded,
+but the small workload is clock/noise-sensitive and does not certify full-show overhead.
+See [`output-smoke-lighting-2026-10-07.md`](../../benchmarks/fireworks/output-smoke-lighting-2026-10-07.md)
+for evidence and the visit-budget constraint found during qualification.
+
 This is the first showcase-host integration, **not final AAA acceptance**. Shared shells
 currently use particle smoke and representative burst lights. Continuous selected-star
 lighting is not authored/enabled here; F7's benchmark-fixture lights are not silently
-injected into saved assets. Lit particle smoke, generic fluid injection, F8.3B matched
-costs/real-output smoke qualification, natural-star art, final environment/audio mix and
+injected into saved show assets. The dedicated F8.3B saved fixture above now qualifies both
+light families on fluid smoke; full-show overlap/costs remain separate. Lit particle smoke,
+generic fluid injection, natural-star art, final environment/audio mix and
 production-finale density remain separate work. Keep these gates in the fireworks roadmap.

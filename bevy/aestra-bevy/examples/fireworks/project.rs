@@ -1,6 +1,6 @@
 //! Host-side loading only. Shipping applications can load an offline compiled artifact instead.
 use aestra_bevy::{
-    CompiledEffectProject, EffectAsset, EffectCompiler, LightingQualityPolicy,
+    CompiledEffectProject, EffectAsset, EffectCompiler, ExtensionRegistry, LightingQualityPolicy,
     PlaybackHistoryPolicy, QualityTier,
 };
 use aestra_project::ProjectAssetIndex;
@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\nEnable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B smoke/light fixture (not the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -20,12 +20,29 @@ pub struct Options {
     pub project_root: PathBuf,
     pub effect_path: PathBuf,
     pub audio_root: Option<PathBuf>,
+    pub smoke_lighting: bool,
 }
 
 impl Options {
+    pub fn lighting_policy(&self) -> LightingQualityPolicy {
+        let mut policy = LightingQualityPolicy::preset(&self.tier).unwrap();
+        policy.particle.enabled = self.smoke_lighting;
+        if self.smoke_lighting {
+            // Two saved outputs at 4/2/1 lights each; no 96-slot reservation for an 8-light lab.
+            policy.particle.max_lights = match self.tier.as_str() {
+                "high" => 8,
+                "medium" => 4,
+                _ => 2,
+            };
+            policy.representative.max_lights = 2;
+        }
+        policy
+    }
+
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut options = Self {
             tier: "high".into(),
+            smoke_lighting: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -36,7 +53,12 @@ impl Options {
             },
         };
         let mut args = args.into_iter();
+        let mut explicit_effect = false;
         while let Some(arg) = args.next() {
+            if arg == "--smoke-lighting" {
+                options.smoke_lighting = true;
+                continue;
+            }
             if arg == "--no-audio" {
                 options.audio_root = None;
                 continue;
@@ -54,7 +76,10 @@ impl Options {
                     }
                 }
                 "--project" => options.project_root = value.into(),
-                "--effect" => options.effect_path = value.into(),
+                "--effect" => {
+                    options.effect_path = value.into();
+                    explicit_effect = true;
+                }
                 "--audio-root" if cfg!(feature = "fireworks-audio") => {
                     options.audio_root = Some(value.into())
                 }
@@ -63,6 +88,9 @@ impl Options {
                 }
                 _ => return Err(format!("Unknown option or invalid value: {arg} {value}")),
             }
+        }
+        if options.smoke_lighting && !explicit_effect {
+            options.effect_path = "effects/fireworks_smoke_lighting.aestra.ron".into();
         }
         options.project_root = options
             .project_root
@@ -84,7 +112,17 @@ impl Options {
         let resolved = ProjectAssetIndex::scan(&self.project_root)
             .resolve_effect_project(&effect)
             .map_err(|e| e.to_string())?;
-        let project = EffectCompiler::default()
+        let mut registry = if self.smoke_lighting {
+            ExtensionRegistry::builtin()
+        } else {
+            ExtensionRegistry::linked()
+        };
+        if self.smoke_lighting {
+            registry
+                .install(&aestra_fluid::FluidExtension)
+                .map_err(|e| e.to_string())?;
+        }
+        let project = EffectCompiler::with_extensions(registry)
             .with_tier(QualityTier::preset(&self.tier).expect("validated tier"))
             .compile_resolved_project(&resolved)
             .map_err(|e| e.to_string())?;
@@ -114,6 +152,29 @@ mod tests {
             vec!["--effect"],
         ] {
             assert!(Options::parse(args.into_iter().map(String::from)).is_err());
+        }
+    }
+
+    #[test]
+    fn saved_smoke_fixture_compiles_real_outputs_at_each_tier() {
+        for (tier, cap) in [("high", 4), ("medium", 2), ("low", 1)] {
+            let options =
+                Options::parse(["--smoke-lighting".into(), "--tier".into(), tier.into()]).unwrap();
+            let project = options.compile().unwrap();
+            let root = &project.root;
+            assert_eq!(options.lighting_policy().particle.max_lights, cap * 2);
+            assert_eq!(root.point_lights.len(), 2);
+            assert_eq!(root.particle_outputs().count(), 2);
+            assert_eq!(root.emitters.len(), 2);
+            for emitter in &root.emitters {
+                assert!(
+                    emitter.renderers.is_empty(),
+                    "only smoke may contribute pixels"
+                );
+                let aestra_runtime::SceneOutputPlanKind::ParticlePointLight(light) =
+                    &emitter.scene_outputs[0].kind;
+                assert_eq!(light.max_lights, cap);
+            }
         }
     }
 

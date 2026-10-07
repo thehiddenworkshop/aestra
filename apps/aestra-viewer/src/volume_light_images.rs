@@ -3,6 +3,8 @@ use crate::*;
 use aestra_bevy::{ExtensionRegistry, ModuleParameters, PlaybackHistoryPolicy, Value};
 use bevy::{app::PluginsState, camera::RenderTarget, render::render_resource::TextureFormat};
 
+mod outputs;
+
 #[derive(Resource, Default)]
 struct Captured(Vec<Image>);
 

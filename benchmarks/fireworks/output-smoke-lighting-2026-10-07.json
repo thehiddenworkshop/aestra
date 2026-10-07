@@ -1,0 +1,1425 @@
+{
+  "date": "2026-10-07",
+  "milestone": "F8.3B bounded actual-output smoke qualification",
+  "accepted": true,
+  "repeated_png_files": 48,
+  "identical_repeated_png_files": 48,
+  "public_host_capture": "target/fireworks-f8/bevy-smoke-lighting.png",
+  "limitations": "Two authored bursts in one pre-existing fluid domain, not full-show fluid lighting, lit sprite smoke, or generic event-to-fluid injection. Particles have no material renderers. Ordinary point lights are not synthesized by the host. Matched paused-pass GPU observations are not whole-frame/finale or incremental budget certification.",
+  "runs": [
+    {
+      "run": "output-smoke-final",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5762,
+          227
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.009216,
+              "p95_ms": 0.016384,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.074752,
+              "p95_ms": 0.082944,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.09728,
+              "p95_ms": 0.104448,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.084992,
+              "p95_ms": 0.095232,
+              "samples": 199
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.090112,
+              "p95_ms": 0.09728,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.101376,
+              "p95_ms": 0.11264,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.08192,
+              "p95_ms": 0.08704,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.073728,
+              "p95_ms": 0.111616,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.091136,
+              "p95_ms": 0.121856,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.059392,
+              "p95_ms": 0.080896,
+              "samples": 200
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01536,
+              "p95_ms": 0.017408,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.096256,
+              "p95_ms": 0.106496,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.12288,
+              "p95_ms": 0.137216,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.137216,
+              "p95_ms": 0.155648,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          4978,
+          212
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4018,
+          203
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 832,
+        "selected_capacity_bound": 8,
+        "selected_delta": [
+          5751,
+          226
+        ],
+        "selected_host_cap": 8,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "run": "output-smoke-final",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5907,
+          221
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.009216,
+              "p95_ms": 0.016384,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.08192,
+              "p95_ms": 0.089088,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.1024,
+              "p95_ms": 0.110592,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.075776,
+              "p95_ms": 0.083968,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.099328,
+              "p95_ms": 0.106496,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.113664,
+              "p95_ms": 0.123904,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.078848,
+              "p95_ms": 0.083968,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.08192,
+              "p95_ms": 0.110592,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.101376,
+              "p95_ms": 0.12288,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.059392,
+              "p95_ms": 0.064512,
+              "samples": 199
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01536,
+              "p95_ms": 0.018432,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.110592,
+              "p95_ms": 0.11776,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.134144,
+              "p95_ms": 0.144384,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.110592,
+              "p95_ms": 0.12288,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5286,
+          209
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4166,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 448,
+        "selected_capacity_bound": 4,
+        "selected_delta": [
+          5871,
+          221
+        ],
+        "selected_host_cap": 4,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "run": "output-smoke-final",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          6193,
+          215
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01536,
+              "p95_ms": 0.017408,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.09216,
+              "p95_ms": 0.09728,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.116736,
+              "p95_ms": 0.125952,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.068608,
+              "p95_ms": 0.074752,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.110592,
+              "p95_ms": 0.118784,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.132096,
+              "p95_ms": 0.589824,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.07168,
+              "p95_ms": 0.0768,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.09216,
+              "p95_ms": 0.13824,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.116736,
+              "p95_ms": 0.152576,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.06144,
+              "p95_ms": 0.08192,
+              "samples": 200
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.016384,
+              "p95_ms": 0.018432,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.121856,
+              "p95_ms": 0.129024,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.146432,
+              "p95_ms": 0.649216,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.091136,
+              "p95_ms": 0.099328,
+              "samples": 200
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5882,
+          215
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4427,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 256,
+        "selected_capacity_bound": 2,
+        "selected_delta": [
+          6068,
+          215
+        ],
+        "selected_host_cap": 2,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "low"
+      }
+    },
+    {
+      "run": "output-smoke-repeat",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5762,
+          227
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.007168,
+              "p95_ms": 0.007168,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.055296,
+              "p95_ms": 0.06144,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.069632,
+              "p95_ms": 0.075776,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.060416,
+              "p95_ms": 0.067584,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.078848,
+              "p95_ms": 0.084992,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.08704,
+              "p95_ms": 0.098304,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.07168,
+              "p95_ms": 0.0768,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.054272,
+              "p95_ms": 0.09728,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.06656,
+              "p95_ms": 0.10752,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.043008,
+              "p95_ms": 0.073728,
+              "samples": 199
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01536,
+              "p95_ms": 0.017408,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.090112,
+              "p95_ms": 0.100352,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.114688,
+              "p95_ms": 0.12288,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.123904,
+              "p95_ms": 0.139264,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          4978,
+          212
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4018,
+          203
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 832,
+        "selected_capacity_bound": 8,
+        "selected_delta": [
+          5751,
+          226
+        ],
+        "selected_host_cap": 8,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "run": "output-smoke-repeat",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5907,
+          221
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.011264,
+              "p95_ms": 0.017408,
+              "samples": 197
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.084992,
+              "p95_ms": 0.119808,
+              "samples": 197
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.105472,
+              "p95_ms": 0.125952,
+              "samples": 197
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.07168,
+              "p95_ms": 0.080896,
+              "samples": 197
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.100352,
+              "p95_ms": 0.106496,
+              "samples": 198
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.116736,
+              "p95_ms": 0.126976,
+              "samples": 198
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.075776,
+              "p95_ms": 0.079872,
+              "samples": 198
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.093184,
+              "p95_ms": 0.101376,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.118784,
+              "p95_ms": 0.129024,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.074752,
+              "p95_ms": 0.082944,
+              "samples": 199
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.02048,
+              "p95_ms": 0.023552,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.15872,
+              "p95_ms": 0.169984,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.16384,
+              "p95_ms": 0.248832,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.105472,
+              "p95_ms": 0.110592,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5286,
+          209
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4166,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 448,
+        "selected_capacity_bound": 4,
+        "selected_delta": [
+          5871,
+          221
+        ],
+        "selected_host_cap": 4,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "run": "output-smoke-repeat",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          6193,
+          215
+        ],
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01536,
+              "p95_ms": 0.017408,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.096256,
+              "p95_ms": 0.104448,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.120832,
+              "p95_ms": 0.131072,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.07168,
+              "p95_ms": 0.078848,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.113664,
+              "p95_ms": 0.120832,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.134144,
+              "p95_ms": 0.149504,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.072704,
+              "p95_ms": 0.077824,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.098304,
+              "p95_ms": 0.144384,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.120832,
+              "p95_ms": 0.156672,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.064512,
+              "p95_ms": 0.082944,
+              "samples": 200
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.017408,
+              "p95_ms": 0.019456,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.124928,
+              "p95_ms": 0.132096,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.151552,
+              "p95_ms": 0.16896,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.09216,
+              "p95_ms": 0.100352,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5882,
+          215
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4427,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 256,
+        "selected_capacity_bound": 2,
+        "selected_delta": [
+          6068,
+          215
+        ],
+        "selected_host_cap": 2,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "low"
+      }
+    },
+    {
+      "run": "output-smoke-active-retirement",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5762,
+          227
+        ],
+        "compiled_particle_capacity": 64,
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.007168,
+              "p95_ms": 0.008192,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.05632,
+              "p95_ms": 0.063488,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.069632,
+              "p95_ms": 0.075776,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.059392,
+              "p95_ms": 0.06656,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.078848,
+              "p95_ms": 0.086016,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.08704,
+              "p95_ms": 0.099328,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.070656,
+              "p95_ms": 0.0768,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.055296,
+              "p95_ms": 0.099328,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.068608,
+              "p95_ms": 0.113664,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.044032,
+              "p95_ms": 0.073728,
+              "samples": 199
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.016384,
+              "p95_ms": 0.017408,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.091136,
+              "p95_ms": 0.098304,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.115712,
+              "p95_ms": 0.123904,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.12288,
+              "p95_ms": 0.139264,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          4978,
+          212
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4018,
+          203
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "retirement_active_delta": [
+          0,
+          0
+        ],
+        "retirement_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 832,
+        "selected_capacity_bound": 8,
+        "selected_delta": [
+          5751,
+          226
+        ],
+        "selected_host_cap": 8,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "run": "output-smoke-active-retirement",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          5907,
+          221
+        ],
+        "compiled_particle_capacity": 64,
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01024,
+              "p95_ms": 0.017408,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.082944,
+              "p95_ms": 0.091136,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.109568,
+              "p95_ms": 0.11776,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.077824,
+              "p95_ms": 0.088064,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.101376,
+              "p95_ms": 0.10752,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.116736,
+              "p95_ms": 0.128,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.079872,
+              "p95_ms": 0.086016,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.082944,
+              "p95_ms": 0.10752,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.104448,
+              "p95_ms": 0.12288,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.062464,
+              "p95_ms": 0.068608,
+              "samples": 200
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.016384,
+              "p95_ms": 0.018432,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.110592,
+              "p95_ms": 0.118784,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.136192,
+              "p95_ms": 0.582656,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.111616,
+              "p95_ms": 0.126976,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5286,
+          209
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4166,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "retirement_active_delta": [
+          0,
+          0
+        ],
+        "retirement_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 448,
+        "selected_capacity_bound": 4,
+        "selected_delta": [
+          5871,
+          221
+        ],
+        "selected_host_cap": 4,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "run": "output-smoke-active-retirement",
+      "report": {
+        "accepted": true,
+        "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+        "backend": "Vulkan",
+        "before_birth_delta": [
+          0,
+          0
+        ],
+        "bloom": false,
+        "both_delta": [
+          6193,
+          215
+        ],
+        "compiled_particle_capacity": 64,
+        "cost_scope": "GPU diagnostic milliseconds; 40 warm-up + 200 paused updates per case; fixed frame/volume/camera. Transparent pass includes volume, not whole renderer. Asynchronous timestamps deduplicated, not paired whole-frame or full-show costs; do not sum medians.",
+        "costs": {
+          "both": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.01024,
+              "p95_ms": 0.017408,
+              "samples": 200
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.089088,
+              "p95_ms": 0.095232,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.11264,
+              "p95_ms": 0.120832,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.064512,
+              "p95_ms": 0.069632,
+              "samples": 200
+            }
+          },
+          "off": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.108544,
+              "p95_ms": 0.114688,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.126976,
+              "p95_ms": 0.13824,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.067584,
+              "p95_ms": 0.07168,
+              "samples": 200
+            }
+          },
+          "representative": {
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.090112,
+              "p95_ms": 0.13824,
+              "samples": 200
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.113664,
+              "p95_ms": 0.14848,
+              "samples": 200
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.057344,
+              "p95_ms": 0.0768,
+              "samples": 200
+            }
+          },
+          "selected": {
+            "render/aestra::gpu::particle_light_inject/elapsed_gpu": {
+              "median_ms": 0.016384,
+              "p95_ms": 0.019456,
+              "samples": 199
+            },
+            "render/aestra::gpu::particle_lights/elapsed_gpu": {
+              "median_ms": 0.118784,
+              "p95_ms": 0.125952,
+              "samples": 199
+            },
+            "render/clustering/elapsed_gpu": {
+              "median_ms": 0.142336,
+              "p95_ms": 0.631808,
+              "samples": 199
+            },
+            "render/main_transparent_pass_3d/elapsed_gpu": {
+              "median_ms": 0.088064,
+              "p95_ms": 0.094208,
+              "samples": 199
+            }
+          }
+        },
+        "dimensions": [
+          480,
+          360
+        ],
+        "driver": "NVIDIA",
+        "expiry_delta": [
+          0,
+          0
+        ],
+        "frame": 115,
+        "history": "playback-only",
+        "limitations": "bounded two-burst smoke fixture; existing fluid source, not generic injection; default layers; unshadowed isotropic point-light scattering; no lit sprites/full-show/star-art/finale certification",
+        "one_slot_delta": [
+          5882,
+          215
+        ],
+        "particle_renderers": false,
+        "rebound_delta": [
+          0,
+          0
+        ],
+        "representative_accepted": 2,
+        "representative_active": 2,
+        "representative_delta": [
+          4427,
+          204
+        ],
+        "representative_host_cap": 2,
+        "restart_delta": [
+          0,
+          0
+        ],
+        "restored_budget_delta": [
+          0,
+          0
+        ],
+        "restored_delta": [
+          0,
+          0
+        ],
+        "retirement_active_delta": [
+          0,
+          0
+        ],
+        "retirement_delta": [
+          0,
+          0
+        ],
+        "scene_light_visit_limit_high": 16,
+        "seed": "0xf83b000000000001",
+        "selected_buffer_bytes": 256,
+        "selected_capacity_bound": 2,
+        "selected_delta": [
+          6068,
+          215
+        ],
+        "selected_host_cap": 2,
+        "selected_positions_read_back": false,
+        "slice": "F8.3B",
+        "smoke_repeat_delta": [
+          0,
+          0
+        ],
+        "tier": "low"
+      }
+    }
+  ],
+  "active_owner_retirement_verified": true
+}
