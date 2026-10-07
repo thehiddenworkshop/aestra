@@ -4974,6 +4974,31 @@ Finale validation/LOD         ███░░░░░░░   needs benchmark
 
 # 28. Immediate next sprint recommendation
 
+## Public Bevy showcase integration (2026-10-05)
+
+The final public host now lives in `bevy/aestra-bevy/examples/fireworks.rs`, loading
+the existing saved `assets/test/effects/fireworks_show.aestra.ron` and its shared
+shell/material dependencies through public project/compiler/player APIs. The original
+toy chain remains `fireworks_event_chain`; the viewer remains benchmark/regression tooling.
+The host defaults to playback-only with explicit replay-enabled opt-in, compiles all
+three authored quality tiers, applies independent representative-light ceilings, and
+provides fixed HDR/bloom, audience/close/wide cameras and simple PBR scene receivers.
+Optional separately licensed local WAVs bind to native particle output cues, with spatial
+positions, latency-corrected propagation, epoch/dedup checks and bounded admission/cleanup.
+See `docs/examples/fireworks.md` for run commands, tests and editor-to-host workflow.
+Eight audio-enabled GPU-free tests and four feature-off tests pass; strict scoped Clippy
+passes. Native high/playback-only and low/replay-enabled image smokes run on RTX 4070 SUPER
+(Vulkan). Two complete high shows admit all thirteen representative flashes, with no
+invalid/stale binding packets; final audio verification observes twenty-four actual
+spatial sinks at peak and drains its cue queue. These are host integration checks, not
+new matched GPU-cost, subjective audio-quality or art gates.
+
+This is a first host integration, not a replacement for F7/F8 acceptance. Selected-star
+lighting from benchmark-only authoring is deliberately not injected into the saved show;
+persisted selected-star outputs, lit particle smoke, generic fluid injection, actual-output
+F8.3B smoke images/matched costs, final sound/environment/art and finale certification
+remain open. No new performance or AAA-quality gate is claimed by this migration.
+
 If only one focused implementation cycle is available, do this:
 
 ### 1. Reproduce and instrument the limits

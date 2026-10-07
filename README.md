@@ -75,6 +75,20 @@ aestra/
 
 The workspace groups executable products under `apps/` and the isolated Bevy game-runtime adapter under `bevy/`. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-artifact` owns the versioned compiled-effect prototype, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI and produces Naga-validated WGSL from Aestra-owned WESL. `aestra-bevy-render` registers and adapts those portable artifacts to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
 
+## Bevy fireworks showcase
+
+The public integration example loads the editor-authored reusable fireworks show:
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks
+```
+
+It demonstrates project resolution, shared shell/material assets, playback-only history,
+quality presets, HDR/bloom and authored burst lighting. Optional host-side spatial WAV
+bindings use `--features fireworks-audio`; recordings remain separately licensed assets.
+See [the showcase guide](docs/examples/fireworks.md) for controls, editor-to-host workflow,
+audio setup and remaining visual acceptance work. Viewer/bench tooling remains separate.
+
 ## Viewer and visual analysis
 
 Open the bundled example:

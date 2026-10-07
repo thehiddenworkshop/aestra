@@ -7,6 +7,10 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+# WAV decoding belongs to the opt-in showcase host, not the VFX runtime.
+fireworks-audio = ["bevy/wav"]
+
 [dependencies]
 aestra-bevy-render = { path = "../aestra-bevy-render" }
 aestra-compiler = { path = "../../crates/aestra-compiler" }
