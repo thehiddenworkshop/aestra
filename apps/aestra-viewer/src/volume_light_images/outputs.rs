@@ -150,6 +150,9 @@ fn headless_project(
 #[path = "smoke_persistence.rs"]
 mod persistence;
 
+#[path = "smoke_cohorts.rs"]
+mod cohorts;
+
 fn advance(app: &mut App, owner: Entity, target: u64) {
     app.world_mut()
         .get_mut::<EffectPlayer>(owner)

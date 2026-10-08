@@ -1,0 +1,1756 @@
+{
+  "schema_version": 1,
+  "slice": "F8.1B",
+  "date": "2026-10-08",
+  "status": "bounded shell-born cohort correctness qualified; full F8 remains in progress",
+  "environment": {
+    "adapter": "NVIDIA GeForce RTX 4070 SUPER",
+    "backend": "Vulkan",
+    "toolchain": "1.98.1-x86_64-pc-windows-msvc",
+    "native_image_dimensions": [
+      480,
+      360
+    ],
+    "native_seed": "0xf83b000000000001",
+    "host_seed": "0xf1e0000000000001",
+    "history": "PlaybackOnly",
+    "transparent_order": "DepthBackToFront",
+    "hdr_bloom": false,
+    "host_scale": 0.1
+  },
+  "workload": {
+    "launch_shells": 2,
+    "launch_seconds": [
+      0,
+      2
+    ],
+    "nominal_break_seconds": [
+      2,
+      4
+    ],
+    "children_per_link": 32,
+    "links": [
+      [
+        3,
+        0,
+        32
+      ],
+      [
+        3,
+        1,
+        32
+      ],
+      [
+        4,
+        0,
+        32
+      ],
+      [
+        4,
+        2,
+        32
+      ]
+    ],
+    "smoke_capacity": 96,
+    "authored_smoke_birth_demand_bound": 64,
+    "independent_child_emission": false,
+    "representative_routes": "parent shell OnDeath / FirstPerTick",
+    "selected_sources": "event-born child stars",
+    "smoke_lifetime_seconds": [
+      12,
+      14
+    ],
+    "drained_by_seconds": 18,
+    "selected_light_caps": {
+      "high": 8,
+      "medium": 4,
+      "low": 2
+    },
+    "representative_light_cap": 2,
+    "same_smoke_density_all_tiers": true,
+    "visible_smoke_draws": 1,
+    "launch_markers": "schema-required sprites with zero opacity"
+  },
+  "gates": {
+    "light_frames": [
+      144,
+      264
+    ],
+    "persistent_frame": 420,
+    "pre_break_frame": 110,
+    "fade_frame": 900,
+    "drain_frame": 1080,
+    "delta_pair": [
+      "RGB gain pixel count > 3/255",
+      "maximum absolute RGB channel delta"
+    ],
+    "each_cohort_and_light_family_minimum_gain_pixels": 100,
+    "cohort_difference_minimum_pixels": 100,
+    "frozen_density_restore_drain_retire_maximum_delta": 1,
+    "expected_link_admission": [
+      32,
+      32,
+      32,
+      32
+    ],
+    "expected_all_drop_counts": 0,
+    "retired_alpha_sort_pairs": 0,
+    "retired_alpha_sort_owned_buffer_bytes": 0,
+    "runtime_selected_position_readback": false,
+    "repeat_images": 84,
+    "repeat_mismatches": 0
+  },
+  "rejected_attempts": [
+    {
+      "reason": "Child-star OnSpawn output routes did not deliver representative pulses from GPU event-linked births. Existing DomainSpawnPipeline does not bind a target event buffer or append child OnSpawn records. The saved fixture now binds canonical parent-shell OnDeath break outputs; this does not fix the generic child-birth output gap. The first selected image also failed the 100-pixel threshold (92), so final light phases sample +0.4 rather than +0.25 seconds after break, within unchanged 0.6-second flash lifetime and with no lowered thresholds.",
+      "path": "target/fireworks-f8/cohorts-first/high/report.json",
+      "sha256": "f632893aa10fc1dc759443cb48d73b8148b2ec5816aef2d538c5a4470537cc64",
+      "report": {
+        "accepted": false,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          335,
+          250
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              0,
+              0
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              92,
+              152
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              0,
+              0
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              668,
+              177
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              0,
+              0
+            ],
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              572,
+              177
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; images prove linked birth/overlap/light controls, not GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "high"
+      }
+    }
+  ],
+  "reports": [
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified\\high\\report.json",
+      "sha256": "4ad2ae12a72fedb9896eed63c1471c1ea125b9e8ad91422bd87145c03fd66107",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          335,
+          250
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              735,
+              181
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              617,
+              174
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified\\medium\\report.json",
+      "sha256": "8566d02429d431f8b91326664369bb30e43a1619aef581a634eeaea0f7e8fccb",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          331,
+          247
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              727,
+              181
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              609,
+              168
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified\\low\\report.json",
+      "sha256": "493957605b2a758af944016ab3c966efe4060c928a30fb3bab3370da09cfd784",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          328,
+          246
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              716,
+              176
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              598,
+              95
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "low"
+      }
+    },
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified-repeat\\high\\report.json",
+      "sha256": "4ad2ae12a72fedb9896eed63c1471c1ea125b9e8ad91422bd87145c03fd66107",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          335,
+          250
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              735,
+              181
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              617,
+              174
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "high"
+      }
+    },
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified-repeat\\medium\\report.json",
+      "sha256": "8566d02429d431f8b91326664369bb30e43a1619aef581a634eeaea0f7e8fccb",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          331,
+          247
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              727,
+              181
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              609,
+              168
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "medium"
+      }
+    },
+    {
+      "path": "target\\fireworks-f8\\cohorts-qualified-repeat\\low\\report.json",
+      "sha256": "493957605b2a758af944016ab3c966efe4060c928a30fb3bab3370da09cfd784",
+      "report": {
+        "accepted": true,
+        "authored_birth_demand_bound": 64,
+        "before_break": [
+          0,
+          0
+        ],
+        "birth_admission": {
+          "links": [
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            },
+            {
+              "accepted": 32,
+              "captured_demand": 32,
+              "destination_rejected": 0,
+              "expansion_omitted": 0
+            }
+          ],
+          "source_overflow": 0
+        },
+        "cohort_controls": [
+          {
+            "difference_from_both_pixels": 669,
+            "name": "older-only",
+            "visibility": [
+              827,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 983,
+            "name": "younger-only",
+            "visibility": [
+              712,
+              78
+            ]
+          },
+          {
+            "difference_from_both_pixels": 1399,
+            "name": "no-smoke-links",
+            "visibility": [
+              0,
+              0
+            ]
+          }
+        ],
+        "density_off": [
+          0,
+          0
+        ],
+        "density_restored": [
+          0,
+          0
+        ],
+        "drained": [
+          0,
+          0
+        ],
+        "first_visibility": [
+          328,
+          246
+        ],
+        "lights": [
+          {
+            "phase": "first-break",
+            "representative": [
+              116,
+              181
+            ],
+            "representative_admission": {
+              "accepted": 1,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              116,
+              181
+            ]
+          },
+          {
+            "phase": "second-break",
+            "representative": [
+              607,
+              175
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              716,
+              176
+            ]
+          },
+          {
+            "phase": "older-at-second-break",
+            "representative": [
+              489,
+              28
+            ],
+            "representative_admission": {
+              "accepted": 2,
+              "active": 1,
+              "binding_invalid": 0,
+              "budget_dropped": 0,
+              "expired": 0,
+              "invalid": 0
+            },
+            "restored": [
+              0,
+              0
+            ],
+            "selected": [
+              598,
+              95
+            ]
+          }
+        ],
+        "limitations": "bounded two real ballistic shells; one shared smoke draw; async counters prove accepted link births, images prove overlap/light controls, not instantaneous GPU alive-count, cross-draw sorting, full-show cost or AAA art acceptance",
+        "repeat": [
+          0,
+          0
+        ],
+        "retired": [
+          0,
+          0
+        ],
+        "retired_sort_bytes": 0,
+        "runtime_selected_position_readback": false,
+        "slice": "F8.1B",
+        "smoke_capacity": 96,
+        "tail_visibility": [
+          1399,
+          78
+        ],
+        "tier": "low"
+      }
+    }
+  ],
+  "image_repeat_hashes": [
+    {
+      "path": "high/before-break.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/density-restored.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "high/drained.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/fading.png",
+      "sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4",
+      "repeat_sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4"
+    },
+    {
+      "path": "high/first-break-both.png",
+      "sha256": "ae9d3f1d057bda0dc1798a640e4aac3ce3f33f063c006ec0cff9fc987c4b355d",
+      "repeat_sha256": "ae9d3f1d057bda0dc1798a640e4aac3ce3f33f063c006ec0cff9fc987c4b355d"
+    },
+    {
+      "path": "high/first-break-off.png",
+      "sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3",
+      "repeat_sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3"
+    },
+    {
+      "path": "high/first-break-representative.png",
+      "sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3",
+      "repeat_sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3"
+    },
+    {
+      "path": "high/first-break-restored.png",
+      "sha256": "ae9d3f1d057bda0dc1798a640e4aac3ce3f33f063c006ec0cff9fc987c4b355d",
+      "repeat_sha256": "ae9d3f1d057bda0dc1798a640e4aac3ce3f33f063c006ec0cff9fc987c4b355d"
+    },
+    {
+      "path": "high/first-break-selected.png",
+      "sha256": "4ea52ad85f6107991fcbc3c1a8d12fa5cc301ce330058e43854644e913a12a96",
+      "repeat_sha256": "4ea52ad85f6107991fcbc3c1a8d12fa5cc301ce330058e43854644e913a12a96"
+    },
+    {
+      "path": "high/first-cohort.png",
+      "sha256": "4d402353bb8de89a2242f56a6bf3d20cb1c4e492b7d2e52cb4be750b2e8dd395",
+      "repeat_sha256": "4d402353bb8de89a2242f56a6bf3d20cb1c4e492b7d2e52cb4be750b2e8dd395"
+    },
+    {
+      "path": "high/no-smoke-links.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/older-at-second-break-both.png",
+      "sha256": "cfd8339e5228df2547e72e8f2a985851f73741c0049e171629d2a58f3a7c60c2",
+      "repeat_sha256": "cfd8339e5228df2547e72e8f2a985851f73741c0049e171629d2a58f3a7c60c2"
+    },
+    {
+      "path": "high/older-at-second-break-off.png",
+      "sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62",
+      "repeat_sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62"
+    },
+    {
+      "path": "high/older-at-second-break-representative.png",
+      "sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427",
+      "repeat_sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427"
+    },
+    {
+      "path": "high/older-at-second-break-restored.png",
+      "sha256": "cfd8339e5228df2547e72e8f2a985851f73741c0049e171629d2a58f3a7c60c2",
+      "repeat_sha256": "cfd8339e5228df2547e72e8f2a985851f73741c0049e171629d2a58f3a7c60c2"
+    },
+    {
+      "path": "high/older-at-second-break-selected.png",
+      "sha256": "9c08272a9cb35d2996fb3d8a12abdebf9f978e089a5934fd22c8328586d42c22",
+      "repeat_sha256": "9c08272a9cb35d2996fb3d8a12abdebf9f978e089a5934fd22c8328586d42c22"
+    },
+    {
+      "path": "high/older-only.png",
+      "sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c",
+      "repeat_sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c"
+    },
+    {
+      "path": "high/persistent-cohorts.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "high/retired.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "high/second-break-both.png",
+      "sha256": "244848eb99ebaf5dd6917df9cef9d597183533dfd42ec263f3e17a952c916e34",
+      "repeat_sha256": "244848eb99ebaf5dd6917df9cef9d597183533dfd42ec263f3e17a952c916e34"
+    },
+    {
+      "path": "high/second-break-off.png",
+      "sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557",
+      "repeat_sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557"
+    },
+    {
+      "path": "high/second-break-representative.png",
+      "sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a",
+      "repeat_sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a"
+    },
+    {
+      "path": "high/second-break-restored.png",
+      "sha256": "244848eb99ebaf5dd6917df9cef9d597183533dfd42ec263f3e17a952c916e34",
+      "repeat_sha256": "244848eb99ebaf5dd6917df9cef9d597183533dfd42ec263f3e17a952c916e34"
+    },
+    {
+      "path": "high/second-break-selected.png",
+      "sha256": "9858ef16eb1c0f6656ab6b24f93f83920b2de6cdd04273d8d85537fb8dc1d34a",
+      "repeat_sha256": "9858ef16eb1c0f6656ab6b24f93f83920b2de6cdd04273d8d85537fb8dc1d34a"
+    },
+    {
+      "path": "high/tail-repeat.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "high/younger-only.png",
+      "sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059",
+      "repeat_sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059"
+    },
+    {
+      "path": "low/before-break.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/density-restored.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "low/drained.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/fading.png",
+      "sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4",
+      "repeat_sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4"
+    },
+    {
+      "path": "low/first-break-both.png",
+      "sha256": "e77c9664a55c436190c8696832979aa4ea49aeab85a57a61401b8107ec5ce303",
+      "repeat_sha256": "e77c9664a55c436190c8696832979aa4ea49aeab85a57a61401b8107ec5ce303"
+    },
+    {
+      "path": "low/first-break-off.png",
+      "sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3",
+      "repeat_sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3"
+    },
+    {
+      "path": "low/first-break-representative.png",
+      "sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3",
+      "repeat_sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3"
+    },
+    {
+      "path": "low/first-break-restored.png",
+      "sha256": "e77c9664a55c436190c8696832979aa4ea49aeab85a57a61401b8107ec5ce303",
+      "repeat_sha256": "e77c9664a55c436190c8696832979aa4ea49aeab85a57a61401b8107ec5ce303"
+    },
+    {
+      "path": "low/first-break-selected.png",
+      "sha256": "1ac3003a1aa2b92230d26abc0c8da6d91ab572e359d159b90ca961994e76e9a6",
+      "repeat_sha256": "1ac3003a1aa2b92230d26abc0c8da6d91ab572e359d159b90ca961994e76e9a6"
+    },
+    {
+      "path": "low/first-cohort.png",
+      "sha256": "ccbb2de62665b954cba1f1cde174727c3c62ab0ca7cca170aa15c1b5bc6adca3",
+      "repeat_sha256": "ccbb2de62665b954cba1f1cde174727c3c62ab0ca7cca170aa15c1b5bc6adca3"
+    },
+    {
+      "path": "low/no-smoke-links.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/older-at-second-break-both.png",
+      "sha256": "50f6429c0dbdb480c2fcfd4c27a00e65ce2d98de8eb16b35be1efdab0f220f9c",
+      "repeat_sha256": "50f6429c0dbdb480c2fcfd4c27a00e65ce2d98de8eb16b35be1efdab0f220f9c"
+    },
+    {
+      "path": "low/older-at-second-break-off.png",
+      "sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62",
+      "repeat_sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62"
+    },
+    {
+      "path": "low/older-at-second-break-representative.png",
+      "sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427",
+      "repeat_sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427"
+    },
+    {
+      "path": "low/older-at-second-break-restored.png",
+      "sha256": "50f6429c0dbdb480c2fcfd4c27a00e65ce2d98de8eb16b35be1efdab0f220f9c",
+      "repeat_sha256": "50f6429c0dbdb480c2fcfd4c27a00e65ce2d98de8eb16b35be1efdab0f220f9c"
+    },
+    {
+      "path": "low/older-at-second-break-selected.png",
+      "sha256": "44630beb742a334bb07caaaee66ab52ac6cefc60ba2fb11c0f2a12f445201119",
+      "repeat_sha256": "44630beb742a334bb07caaaee66ab52ac6cefc60ba2fb11c0f2a12f445201119"
+    },
+    {
+      "path": "low/older-only.png",
+      "sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c",
+      "repeat_sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c"
+    },
+    {
+      "path": "low/persistent-cohorts.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "low/retired.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "low/second-break-both.png",
+      "sha256": "f8083b599bda6130a55c1cf2798d9fc1222b22ad74fcc9293fab9833690ab120",
+      "repeat_sha256": "f8083b599bda6130a55c1cf2798d9fc1222b22ad74fcc9293fab9833690ab120"
+    },
+    {
+      "path": "low/second-break-off.png",
+      "sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557",
+      "repeat_sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557"
+    },
+    {
+      "path": "low/second-break-representative.png",
+      "sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a",
+      "repeat_sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a"
+    },
+    {
+      "path": "low/second-break-restored.png",
+      "sha256": "f8083b599bda6130a55c1cf2798d9fc1222b22ad74fcc9293fab9833690ab120",
+      "repeat_sha256": "f8083b599bda6130a55c1cf2798d9fc1222b22ad74fcc9293fab9833690ab120"
+    },
+    {
+      "path": "low/second-break-selected.png",
+      "sha256": "d2ce2749adb62eefe2497b00956959978d27fdc1b9e0ed312eb315c21b22f38a",
+      "repeat_sha256": "d2ce2749adb62eefe2497b00956959978d27fdc1b9e0ed312eb315c21b22f38a"
+    },
+    {
+      "path": "low/tail-repeat.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "low/younger-only.png",
+      "sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059",
+      "repeat_sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059"
+    },
+    {
+      "path": "medium/before-break.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/density-off.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/density-restored.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "medium/drained.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/empty.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/fading.png",
+      "sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4",
+      "repeat_sha256": "6d3a2147d96ebc404ce912b51bb6d5ad5301f4b63b51bcc8763697266fda11a4"
+    },
+    {
+      "path": "medium/first-break-both.png",
+      "sha256": "ec2cb17ef5b6de54cd18f3f037a11cfc57f042612bad9962729a3c7d14807942",
+      "repeat_sha256": "ec2cb17ef5b6de54cd18f3f037a11cfc57f042612bad9962729a3c7d14807942"
+    },
+    {
+      "path": "medium/first-break-off.png",
+      "sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3",
+      "repeat_sha256": "47676a5ff8d3f299284e83f9cee87d3a4e4abcddf34715dee24152078e494cc3"
+    },
+    {
+      "path": "medium/first-break-representative.png",
+      "sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3",
+      "repeat_sha256": "6ff760eaefaee4bacb0df69028d1be64c34f5172472732fbf00d84a2c8dd32d3"
+    },
+    {
+      "path": "medium/first-break-restored.png",
+      "sha256": "ec2cb17ef5b6de54cd18f3f037a11cfc57f042612bad9962729a3c7d14807942",
+      "repeat_sha256": "ec2cb17ef5b6de54cd18f3f037a11cfc57f042612bad9962729a3c7d14807942"
+    },
+    {
+      "path": "medium/first-break-selected.png",
+      "sha256": "8e27f2cc38000fd4977f7057da4c0b582d89c11d743ae7d2f5f7c0edd35ade14",
+      "repeat_sha256": "8e27f2cc38000fd4977f7057da4c0b582d89c11d743ae7d2f5f7c0edd35ade14"
+    },
+    {
+      "path": "medium/first-cohort.png",
+      "sha256": "fcc01a605b786c79bca853eb1f0219d685802b097120670ff394b8d8136973d8",
+      "repeat_sha256": "fcc01a605b786c79bca853eb1f0219d685802b097120670ff394b8d8136973d8"
+    },
+    {
+      "path": "medium/no-smoke-links.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/older-at-second-break-both.png",
+      "sha256": "ddeea489a3c7b17e29196809d338a4758dbe9b067b9d0c6bae0190c5fc98d034",
+      "repeat_sha256": "ddeea489a3c7b17e29196809d338a4758dbe9b067b9d0c6bae0190c5fc98d034"
+    },
+    {
+      "path": "medium/older-at-second-break-off.png",
+      "sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62",
+      "repeat_sha256": "848a48ae262f8d249378657638de9ad8c0a097cee9bc97032ef2e0267f90ac62"
+    },
+    {
+      "path": "medium/older-at-second-break-representative.png",
+      "sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427",
+      "repeat_sha256": "daabf52b02582597d0d1e727bc90b2a8235bc23cf7f5b8e5b0785444e8c64427"
+    },
+    {
+      "path": "medium/older-at-second-break-restored.png",
+      "sha256": "ddeea489a3c7b17e29196809d338a4758dbe9b067b9d0c6bae0190c5fc98d034",
+      "repeat_sha256": "ddeea489a3c7b17e29196809d338a4758dbe9b067b9d0c6bae0190c5fc98d034"
+    },
+    {
+      "path": "medium/older-at-second-break-selected.png",
+      "sha256": "a7d12010cc33081f9a392188658d5e22d9cfa186f13a26242d6b38484655fe48",
+      "repeat_sha256": "a7d12010cc33081f9a392188658d5e22d9cfa186f13a26242d6b38484655fe48"
+    },
+    {
+      "path": "medium/older-only.png",
+      "sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c",
+      "repeat_sha256": "0c6eb8d364a02887b95a7c8b724de545907ffd38b95ec01c3e19b21acd02761c"
+    },
+    {
+      "path": "medium/persistent-cohorts.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "medium/retired.png",
+      "sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7",
+      "repeat_sha256": "5b64d170c325e9db3253a13d0c84ea84bfcade43e906b47276148941d35bf6c7"
+    },
+    {
+      "path": "medium/second-break-both.png",
+      "sha256": "1a34b12e5c25bd546e09a259cf1d82d0427d5340da100a37a032ca66a8c277fd",
+      "repeat_sha256": "1a34b12e5c25bd546e09a259cf1d82d0427d5340da100a37a032ca66a8c277fd"
+    },
+    {
+      "path": "medium/second-break-off.png",
+      "sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557",
+      "repeat_sha256": "0bcc501a72a4d56f9b57105c5302c221d5238a803f769766b886573ade4b5557"
+    },
+    {
+      "path": "medium/second-break-representative.png",
+      "sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a",
+      "repeat_sha256": "bcb0fc35a6adb94a25e90468cff4a911d9fd2092206e376d1383d1235a3e8e8a"
+    },
+    {
+      "path": "medium/second-break-restored.png",
+      "sha256": "1a34b12e5c25bd546e09a259cf1d82d0427d5340da100a37a032ca66a8c277fd",
+      "repeat_sha256": "1a34b12e5c25bd546e09a259cf1d82d0427d5340da100a37a032ca66a8c277fd"
+    },
+    {
+      "path": "medium/second-break-selected.png",
+      "sha256": "6d80c9a54e07bce3fa8059299d8db20e597fd97e59bde975530483068e62fe47",
+      "repeat_sha256": "6d80c9a54e07bce3fa8059299d8db20e597fd97e59bde975530483068e62fe47"
+    },
+    {
+      "path": "medium/tail-repeat.png",
+      "sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21",
+      "repeat_sha256": "6e40d1d8446445a4e1564520d7697fdec1605cb45eb58faea3c5d7dd3bc12c21"
+    },
+    {
+      "path": "medium/younger-only.png",
+      "sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059",
+      "repeat_sha256": "6456568ef490ecc2ecce454c73008ccd0675f3ffc6efc345f3832bc89f140059"
+    }
+  ],
+  "source_hashes": [
+    {
+      "path": "assets/test/effects/fireworks_smoke_cohorts.aestra.ron",
+      "sha256": "6c8a2e7df8a7c21da22b681842fe8b1186e0133fdaebb988531569fc9fb87e30"
+    },
+    {
+      "path": "assets/test/materials/fireworks_persistent_smoke.aestra.material.ron",
+      "sha256": "c1e37b06bb5e9de3109fc87784122a23604a902884037df5f9e752c432661cc4"
+    },
+    {
+      "path": "assets/test/materials/smoke_billow.aestra.material-function.ron",
+      "sha256": "6a8818220a54b6980b751601c22763b8318e73de8c50387816e89e3bd5456c21"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks.rs",
+      "sha256": "64ca25b8dc30eab15a83d465a81a5056f1472b96c098a49bce2c5832eaf5ae94"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/project.rs",
+      "sha256": "f1f8cf061872cde22a4c80922f2d1b0cbcc7a20fb8b36fecc351846a09a2ff91"
+    },
+    {
+      "path": "bevy/aestra-bevy/examples/fireworks/smoke_cohorts_tests.rs",
+      "sha256": "9222aabb20c2c3952c16146120afd8acb87ff51c4df1f2b95435d3e96c10c4c2"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/outputs.rs",
+      "sha256": "1ddba54a50a7190b0dc1ce7a500a9d7ed60717867306aca56d90a98be8918a44"
+    },
+    {
+      "path": "apps/aestra-viewer/src/volume_light_images/smoke_cohorts.rs",
+      "sha256": "5bbacbc1dbeec7e5d9386f74b7c6ccc50218ebe4d0e0462be059e34197c46847"
+    }
+  ],
+  "public_capture": {
+    "path": "target/fireworks-f8/cohorts-public.png",
+    "sha256": "500822b740f08bddb1fd4d40955928d05e0411fe1e690622c42bffe10475042b",
+    "dimensions": [
+      1280,
+      720
+    ],
+    "seconds": 7,
+    "matched_native_comparison": false,
+    "performance_measurement": false
+  },
+  "validation": {
+    "public_audio_enabled_example_tests": 13,
+    "viewer_passed": 96,
+    "viewer_ignored": 23,
+    "native_gate_runs": 2,
+    "native_tiers_per_run": 3,
+    "workspace_check": true,
+    "format_check": true,
+    "viewer_all_targets_clippy_warnings_denied": true,
+    "public_audio_enabled_example_clippy_warnings_denied": true
+  },
+  "commands": [
+    "cargo +1.98.1-x86_64-pc-windows-msvc run --locked -p aestra-bevy --example fireworks -- --smoke-cohorts --no-audio",
+    "AESTRA_SMOKE_COHORT_REPORTS=<absolute fresh directory> cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-viewer saved_shell_deaths_birth_overlapping_smoke_that_receives_later_break_light -- --ignored --nocapture --test-threads=1",
+    "cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-bevy --example fireworks --features fireworks-audio",
+    "cargo +1.98.1-x86_64-pc-windows-msvc test --locked -p aestra-viewer",
+    "cargo +1.98.1-x86_64-pc-windows-msvc check --workspace --locked",
+    "cargo +1.98.1-x86_64-pc-windows-msvc fmt --all -- --check",
+    "cargo +1.98.1-x86_64-pc-windows-msvc clippy --locked -p aestra-viewer --all-targets -- -D warnings",
+    "cargo +1.98.1-x86_64-pc-windows-msvc clippy --locked -p aestra-bevy --example fireworks --features fireworks-audio -- -D warnings"
+  ],
+  "limits": [
+    "No instantaneous alive census; birth counts are cumulative asynchronous admission in uninterrupted playback.",
+    "Current GPU event/domain/input-list births do not export child OnSpawn records; parent break output is the accepted representative cue.",
+    "No immediate birth-frame smoke visibility guarantee; lighting images sample +0.4 seconds.",
+    "One visible smoke draw; no cross-draw ordering or large-pool/live/full-show performance qualification.",
+    "Fixed-acceleration drift, not physical wind advection; no generic fluid injection/self-shadowing/anisotropic scattering.",
+    "Not final smoke art, density-tier speed qualification, production-finale or complete F8 acceptance."
+  ],
+  "next": "Close generic GPU child-birth output gap, then measure authored live overlap/full-show costs before smoke migration."
+}

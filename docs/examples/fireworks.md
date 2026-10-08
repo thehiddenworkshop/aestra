@@ -224,11 +224,40 @@ Use `max_lumens=0` and restore its previous value for a reversible representativ
 The prototype is not a photo-approved art reference, show migration or large-pool cost gate.
 See [`smoke-persistence-2026-10-08.md`](../../benchmarks/fireworks/smoke-persistence-2026-10-08.md).
 
-This is the first showcase-host integration, **not final AAA acceptance**. Shared shells
+## Shell-born smoke cohorts (F8.1B)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --smoke-cohorts --no-audio
+```
+
+This opt-in mode loads `effects/fireworks_smoke_cohorts.aestra.ron`. Two ballistic rockets
+break at 2/4 seconds. Real GPU `OnDeath` links spawn 32 smoke puffs and 32 light-bearing
+stars per rocket; smoke and stars have no independent emission. Both smoke cohorts share
+one 96-slot pool and the F8.1A lit billow material. Smoke persists, overlaps and drains by
+18 seconds. Only smoke contributes visible sprite pixels; the launch emitters have
+schema-required zero-opacity markers, and stars have no renderers.
+
+Representative flashes bind the **parent rocket's `OnDeath`**, while selected moving lights
+follow the child stars. This distinction matters: the current GPU event/domain spawn path
+does not append child `OnSpawn` output records. Do not bind a child-birth host cue expecting
+that path to deliver it; this remains a separate runtime-output gap, not resolved by this lab.
+The initial failed child-output attempt is retained in the evidence.
+
+All tiers preserve the same smoke density; only selected-light caps change (8/4/2).
+The native gate checks exact asynchronous link admission/drop totals, no smoke before the
+first break, independent older/younger cohorts, and illumination of older smoke by the later
+break with younger smoke removed. Density, independent light families, frozen restoration,
+drain and owner cleanup have separate controls. This is a bounded correctness qualification,
+not photo-approved smoke art, cross-draw transparency or live/full-show performance.
+See [`smoke-cohorts-2026-10-08.md`](../../benchmarks/fireworks/smoke-cohorts-2026-10-08.md).
+
+## Normal show status
+
+The normal show is the first showcase-host integration, **not final AAA acceptance**. Shared shells
 currently use particle smoke and representative burst lights. Continuous selected-star
 lighting is not authored/enabled here; F7's benchmark-fixture lights are not silently
 injected into saved show assets. The dedicated F8.3B saved fixture above now qualifies both
 light families on fluid smoke, and F8.3C qualifies the opt-in particle material on an isolated
 puff. The full show's particle smoke remains unlit; full-show overlap/costs remain separate.
-Cross-draw ordering, reusable smoke art, generic fluid injection, natural-star art, final environment/audio mix and
+Cross-draw ordering, final smoke art, generic fluid injection, natural-star art, final environment/audio mix and
 production-finale density remain separate work. Keep these gates in the fireworks roadmap.

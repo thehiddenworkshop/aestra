@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use std::{path::PathBuf, sync::Arc};
 
 pub const SHOW_SEED: u64 = 0xf1e0_0000_0000_0001;
-pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting | --particle-smoke-lighting | --smoke-persistence] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B fluid fixture; --particle-smoke-lighting plays F8.3C lit sprites; --smoke-persistence plays the bounded F8.1A accumulating billow prototype (none is the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
+pub const USAGE: &str = "cargo run --release -p aestra-bevy --example fireworks -- [--smoke-lighting | --particle-smoke-lighting | --smoke-persistence | --smoke-cohorts] [--tier high|medium|low] [--history playback-only|replay-enabled] [--project ASSET_ROOT] [--effect PATH] [--audio-root WAV_FOLDER | --no-audio]\n--smoke-lighting plays the saved F8.3B fluid fixture; --particle-smoke-lighting plays F8.3C lit sprites; --smoke-persistence plays the bounded F8.1A accumulating billow prototype; --smoke-cohorts plays F8.1B death-linked shell smoke (none is the full show). Enable local WAV sound with --features fireworks-audio. Space pauses, R restarts, 1/2/3 changes camera, L toggles lights, M mutes, Esc exits.";
 
 #[derive(Resource)]
 pub struct ShowProject(pub Arc<CompiledEffectProject>);
@@ -23,6 +23,7 @@ pub struct Options {
     pub smoke_lighting: bool,
     pub particle_smoke_lighting: bool,
     pub smoke_persistence: bool,
+    pub smoke_cohorts: bool,
 }
 
 impl Options {
@@ -47,6 +48,7 @@ impl Options {
             smoke_lighting: false,
             particle_smoke_lighting: false,
             smoke_persistence: false,
+            smoke_cohorts: false,
             history: PlaybackHistoryPolicy::PlaybackOnly,
             project_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test"),
             effect_path: "effects/fireworks_show.aestra.ron".into(),
@@ -61,6 +63,12 @@ impl Options {
         let mut fluid_lab = false;
         let mut particle_lab = false;
         while let Some(arg) = args.next() {
+            if arg == "--smoke-cohorts" {
+                options.smoke_lighting = true;
+                options.particle_smoke_lighting = true;
+                options.smoke_cohorts = true;
+                continue;
+            }
             if arg == "--smoke-persistence" {
                 options.smoke_lighting = true;
                 options.particle_smoke_lighting = true;
@@ -109,7 +117,9 @@ impl Options {
             }
         }
         if options.smoke_lighting && !explicit_effect {
-            options.effect_path = if options.smoke_persistence {
+            options.effect_path = if options.smoke_cohorts {
+                "effects/fireworks_smoke_cohorts.aestra.ron"
+            } else if options.smoke_persistence {
                 "effects/fireworks_smoke_persistence.aestra.ron"
             } else if options.particle_smoke_lighting {
                 "effects/fireworks_particle_smoke_lighting.aestra.ron"
@@ -119,10 +129,12 @@ impl Options {
             .into();
         }
         if (fluid_lab && options.particle_smoke_lighting)
-            || (particle_lab && options.smoke_persistence)
+            || (particle_lab && (options.smoke_persistence || options.smoke_cohorts))
+            || (options.smoke_persistence && options.smoke_cohorts)
         {
             return Err(
-                "Choose one smoke lab: fluid lighting, particle lighting or persistence".into(),
+                "Choose one smoke lab: fluid lighting, particle lighting, persistence or cohorts"
+                    .into(),
             );
         }
         options.project_root = options
@@ -162,6 +174,10 @@ impl Options {
         Ok(Arc::new(project))
     }
 }
+
+#[cfg(test)]
+#[path = "smoke_cohorts_tests.rs"]
+mod smoke_cohorts_tests;
 
 #[cfg(test)]
 mod tests {

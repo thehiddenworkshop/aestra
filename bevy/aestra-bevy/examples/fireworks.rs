@@ -293,7 +293,9 @@ fn status(
         return;
     };
     *frame_ms += (time.delta_secs() * 1000.0 - *frame_ms) * 0.05;
-    let title = if options.smoke_persistence {
+    let title = if options.smoke_cohorts {
+        "AESTRA / SHELL-BORN SMOKE COHORTS"
+    } else if options.smoke_persistence {
         "AESTRA / SMOKE PERSISTENCE PROTOTYPE"
     } else if options.particle_smoke_lighting {
         "AESTRA / PARTICLE SMOKE LIGHTING LAB"
