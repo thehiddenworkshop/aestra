@@ -77,7 +77,7 @@ fn main() {
     aestra_fluid::link();
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron | --fireworks-f0 [--fireworks-f0-probe event|event-hero|trail|trail-hero|event-trail|event-trail-large|event-trail-volley|event-trail-sparse]] [--camera close|audience|wide] [--semantic-materials] [--wireframe] [--diagnostics] [--view3d] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--history playback-only|replay-enabled] [--stable-transparency | --depth-transparency] [--seed number] [--tier high|medium|low] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir | --editor-viewport-smoke output-dir]");
         eprintln!("F2 distribution probes: f2-peony | f2-ring | f2-palm | f2-hemisphere-fan | f2-double-ring (with --fireworks-f0 --fireworks-f0-probe).");
         eprintln!("F3 shell prototypes: f3-peony | f3-chrysanthemum | f3-pistil | f3-willow (with --fireworks-f0 --fireworks-f0-probe; not production budget certification).");
         eprintln!("F5 shells: f5-multi-break | f5-crackle | f5-crossette | f5-strobe | f5-secondary-volley; reusable show: f6-show. --tier high|medium|low selects explicit particle budgets. --fireworks-cue-check fresh-output.json validates generic host delivery for multi-break/crackle/crossette, or nested spatial delivery for f6-show, with --backend gpu --history playback-only (no audio playback; strobe flashes are appearance, not cues).");
@@ -620,6 +620,9 @@ impl ViewerConfig {
                 "--semantic-materials" => semantic_materials = true,
                 "--wireframe" => wireframe = true,
                 "--stable-transparency" => transparent_order = TransparentOrderMode::StableCapture,
+                "--depth-transparency" => {
+                    transparent_order = TransparentOrderMode::DepthBackToFront
+                }
                 "--diagnostics" => diagnostics = true,
                 "--view3d" => view_3d = true,
                 "--transient-lights" => transient_lights = true,
@@ -2764,10 +2767,15 @@ mod tests {
     fn transparent_order_defaults_to_fast_and_can_be_opted_into_for_capture() {
         let fast = ViewerConfig::from_iter(std::iter::empty()).unwrap();
         let stable = ViewerConfig::from_iter(["--stable-transparency".to_owned()]).unwrap();
+        let depth = ViewerConfig::from_iter(["--depth-transparency".to_owned()]).unwrap();
         assert_eq!(fast.transparent_order, TransparentOrderMode::Fast);
         assert_eq!(
             stable.transparent_order,
             TransparentOrderMode::StableCapture
+        );
+        assert_eq!(
+            depth.transparent_order,
+            TransparentOrderMode::DepthBackToFront
         );
     }
 

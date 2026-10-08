@@ -63,6 +63,11 @@ fn main() -> AppExit {
         })
         .insert_resource(AestraSettings {
             presentation: PresentationMode::Gpu,
+            transparent_order: if options.particle_smoke_lighting {
+                aestra_bevy::TransparentOrderMode::DepthBackToFront
+            } else {
+                aestra_bevy::TransparentOrderMode::Fast
+            },
             ..default()
         })
         .add_plugins((

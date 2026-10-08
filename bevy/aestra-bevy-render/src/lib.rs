@@ -69,6 +69,11 @@ pub enum TransparentOrderMode {
     /// Sort up to 4,096 live particles per emitter by spawn ordinal for exact visual captures.
     /// This is intentionally opt-in because the bounded GPU sort has a substantial frame cost.
     StableCapture,
+    /// Per-view back-to-front GPU sorting for alpha sprite/flipbook draws, with spawn-identity
+    /// tie-breaks. Paged sorting and parallel merges have no 4,096-live capture limit.
+    /// Extra work/storage scales with emitter capacity and visible views. Does not interleave
+    /// separate draws, sort meshes/ribbons/trails, or change additive/2D rendering.
+    DepthBackToFront,
 }
 
 #[derive(Resource, Debug, Clone, Copy)]

@@ -161,9 +161,39 @@ rigid parent-transform, expiry, restart/rebinding and owner-removal controls. Th
 corresponding original captures match exactly. This is an isolated-puff material/API
 qualification, **not dense smoke or AAA art acceptance**: the initial 48-overlapping-puff
 attempt failed image repeatability, consistent with unsorted alpha draw order. That failure
-is retained; dense alpha ordering, reusable smoke art/persistence and full-show costs are
-the next gates. See
+is retained; the bounded per-draw ordering fix is qualified separately below. Reusable smoke
+art/persistence and full-show costs remain open. See
 [`particle-smoke-lighting-2026-10-07.md`](../../benchmarks/fireworks/particle-smoke-lighting-2026-10-07.md).
+
+## Overlapping alpha smoke (F8.3D)
+
+```powershell
+cargo run --release --locked -p aestra-bevy --example fireworks -- --particle-smoke-lighting --effect effects/fireworks_particle_smoke_overlap.aestra.ron --no-audio
+```
+
+The particle-smoke lab now opts into `TransparentOrderMode::DepthBackToFront`. Hosts can
+set `AestraSettings.transparent_order` to this mode; the viewer exposes `--depth-transparency`.
+`Fast` remains the default for normal shows and additive rendering. The old bounded,
+ordinal-only `StableCapture` mode is unchanged.
+
+The new native Camera3d path sorts each visible alpha Sprite/Flipbook draw back-to-front
+on the GPU, with birth-ordinal and slot tie-breaks. Separate view-local permutations leave
+simulation/alive buffers untouched. There is no particle/index readback or 4,096-particle
+capture ceiling. It does **not** interleave particles belonging to different draw calls,
+sort meshes/ribbons/trails, or provide a 2D transparency solution.
+
+The saved 48-puff overlap fixture passes unchanged lighting/restoration gates at all three
+tiers. GPU permutation tests cover zero/partial/full pools through 65,537 slots and opposite
+camera directions. Buffers are reused while capacity is unchanged and ownership is retired
+on mode-off/owner removal. `GpuAlphaSortStatistics::snapshot()` exposes CPU ownership/work
+metadata, not GPU particle positions or driver VRAM accounting.
+
+Work and scratch storage scale with **capacity**, per visible view/draw pair, even for a sparse
+pool: two padded key arrays plus an index array (36 bytes per power-of-two slot), with small
+per-stage/vertex parameter buffers. Binary-rank merges use O(N log² N) comparisons. The
+48-puff result is a correctness gate, not large-pool/live-show performance or AAA smoke-art
+acceptance. See
+[`alpha-smoke-ordering-2026-10-08.md`](../../benchmarks/fireworks/alpha-smoke-ordering-2026-10-08.md).
 
 This is the first showcase-host integration, **not final AAA acceptance**. Shared shells
 currently use particle smoke and representative burst lights. Continuous selected-star
@@ -171,5 +201,5 @@ lighting is not authored/enabled here; F7's benchmark-fixture lights are not sil
 injected into saved show assets. The dedicated F8.3B saved fixture above now qualifies both
 light families on fluid smoke, and F8.3C qualifies the opt-in particle material on an isolated
 puff. The full show's particle smoke remains unlit; full-show overlap/costs remain separate.
-Dense lit-smoke ordering/art, generic fluid injection, natural-star art, final environment/audio mix and
+Cross-draw ordering, reusable smoke art, generic fluid injection, natural-star art, final environment/audio mix and
 production-finale density remain separate work. Keep these gates in the fireworks roadmap.

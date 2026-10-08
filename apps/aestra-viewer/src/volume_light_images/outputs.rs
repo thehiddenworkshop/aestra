@@ -7,10 +7,16 @@ use aestra_bevy::{
 };
 use bevy::{diagnostic::DiagnosticsStore, render::diagnostic::RenderDiagnosticsPlugin};
 
-fn project(tier: &str, particle_smoke: bool) -> Arc<aestra_bevy::CompiledEffectProject> {
+fn project(
+    tier: &str,
+    particle_smoke: bool,
+    overlap: bool,
+) -> Arc<aestra_bevy::CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let effect = EffectAsset::from_ron(
-        &fs::read_to_string(root.join(if particle_smoke {
+        &fs::read_to_string(root.join(if overlap {
+            "effects/fireworks_particle_smoke_overlap.aestra.ron"
+        } else if particle_smoke {
             "effects/fireworks_particle_smoke_lighting.aestra.ron"
         } else {
             "effects/fireworks_smoke_lighting.aestra.ron"
@@ -42,7 +48,7 @@ fn policy(tier: &str) -> LightingQualityPolicy {
     policy
 }
 
-fn headless(tier: &str, particle_smoke: bool) -> (App, Entity, Handle<Image>) {
+fn headless(tier: &str, particle_smoke: bool, overlap: bool) -> (App, Entity, Handle<Image>) {
     aestra_fluid::link();
     let mut app = App::new();
     app.add_plugins(
@@ -63,6 +69,13 @@ fn headless(tier: &str, particle_smoke: bool) -> (App, Entity, Handle<Image>) {
     ))
     .insert_resource(AestraSettings {
         presentation: PresentationMode::Gpu,
+        transparent_order: if overlap
+            && std::env::var("AESTRA_SMOKE_ORDER").as_deref() != Ok("fast")
+        {
+            aestra_bevy::TransparentOrderMode::DepthBackToFront
+        } else {
+            aestra_bevy::TransparentOrderMode::Fast
+        },
         ..default()
     })
     .insert_resource(ParticleLightMode::SameFrameGpu)
@@ -109,7 +122,7 @@ fn headless(tier: &str, particle_smoke: bool) -> (App, Entity, Handle<Image>) {
         bevy::camera::ShadowLodOrigin,
         Transform::from_xyz(0.0, 4.0, 16.0).looking_at(Vec3::new(0.0, 3.0, 0.0), Vec3::Y),
     ));
-    let mut player = EffectPlayer::from_project(project(tier, particle_smoke))
+    let mut player = EffectPlayer::from_project(project(tier, particle_smoke, overlap))
         .with_history_policy(aestra_bevy::PlaybackHistoryPolicy::PlaybackOnly);
     player.set_seed(0xf83b_0000_0000_0001);
     player.playing = false;
@@ -177,6 +190,7 @@ fn costs(app: &mut App) -> serde_json::Value {
             if !path.ends_with("elapsed_gpu")
                 || !(path.contains("main_transparent_pass_3d")
                     || path.contains("cluster")
+                    || path.contains("alpha_sort")
                     || path.contains("particle_light"))
             {
                 continue;
@@ -245,20 +259,28 @@ fn difference_gate_rejects_noise_and_detects_stale_light() {
 #[test]
 #[ignore = "native F8.3B authored burst + selected star smoke image/cost gate; run alone"]
 fn authored_outputs_light_smoke_and_retire_without_position_readback() {
-    authored_smoke_gate(false);
+    authored_smoke_gate(false, false);
 }
 
 #[test]
 #[ignore = "native F8.3C authored burst + selected star particle-smoke gate; run alone"]
 fn authored_outputs_light_particle_smoke_without_position_readback() {
-    authored_smoke_gate(true);
+    authored_smoke_gate(true, false);
 }
 
-fn authored_smoke_gate(particle_smoke: bool) {
+#[test]
+#[ignore = "native F8.3D overlapping particle-smoke sorting gate; run alone"]
+fn overlapping_particle_smoke_is_repeatable_without_position_readback() {
+    authored_smoke_gate(true, true);
+}
+
+fn authored_smoke_gate(particle_smoke: bool, overlap: bool) {
     let directory = std::env::var_os("AESTRA_VOLUME_OUTPUT_REPORTS")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if particle_smoke {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if overlap {
+                "../../target/fireworks-f8/particle-smoke-overlap"
+            } else if particle_smoke {
                 "../../target/fireworks-f8/particle-smoke"
             } else {
                 "../../target/fireworks-f8/output-smoke"
@@ -268,7 +290,7 @@ fn authored_smoke_gate(particle_smoke: bool) {
         let directory = directory.join(tier);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("report.json"), br#"{"accepted":false}"#).unwrap();
-        let (mut app, owner, target) = headless(tier, particle_smoke);
+        let (mut app, owner, target) = headless(tier, particle_smoke, overlap);
         let initial = capture(&mut app, &target);
         let artifact = app
             .world()
@@ -310,6 +332,37 @@ fn authored_smoke_gate(particle_smoke: bool) {
             .snapshot();
         let both_cost = costs(&mut app);
         let mut extra_images = Vec::new();
+        let sort_stats = app
+            .world()
+            .resource::<aestra_bevy::gpu::GpuAlphaSortStatistics>()
+            .snapshot();
+        let mut sort_restore_delta = (0, 0);
+        if overlap
+            && app.world().resource::<AestraSettings>().transparent_order
+                == aestra_bevy::TransparentOrderMode::DepthBackToFront
+        {
+            assert_eq!(sort_stats.pairs, 1);
+            assert!(sort_stats.dispatched && sort_stats.owned_buffer_bytes > 0);
+            assert_eq!(
+                sort_stats.allocated_buffers_this_frame, 0,
+                "paused frames reuse sort buffers"
+            );
+            app.world_mut()
+                .resource_mut::<AestraSettings>()
+                .transparent_order = aestra_bevy::TransparentOrderMode::Fast;
+            let _ = capture(&mut app, &target);
+            let cleared = app
+                .world()
+                .resource::<aestra_bevy::gpu::GpuAlphaSortStatistics>()
+                .snapshot();
+            assert_eq!((cleared.pairs, cleared.owned_buffer_bytes), (0, 0));
+            app.world_mut()
+                .resource_mut::<AestraSettings>()
+                .transparent_order = aestra_bevy::TransparentOrderMode::DepthBackToFront;
+            let restored = capture(&mut app, &target);
+            sort_restore_delta = delta(&both, &restored);
+            extra_images.push(("sort-mode-restored", restored));
+        }
         let mut material_gain_delta = (0, 0);
         let mut material_restore_delta = (0, 0);
         let gain_off = if particle_smoke {
@@ -504,6 +557,14 @@ fn authored_smoke_gate(particle_smoke: bool) {
         let retirement_active_delta = delta(&both, &retirement_active);
         app.world_mut().despawn(owner);
         let retired = capture(&mut app, &target);
+        let retired_sort = app
+            .world()
+            .resource::<aestra_bevy::gpu::GpuAlphaSortStatistics>()
+            .snapshot();
+        assert_eq!(
+            (retired_sort.pairs, retired_sort.owned_buffer_bytes),
+            (0, 0)
+        );
         // A tick-zero sprite burst is already visible in `initial`; the retired scene is empty.
         let empty = RgbaImage::from_pixel(480, 360, Rgba([0, 0, 0, 255]));
         let retirement_delta = delta(if particle_smoke { &empty } else { &initial }, &retired);
@@ -558,7 +619,8 @@ fn authored_smoke_gate(particle_smoke: bool) {
             && material_restore_delta.1 <= 1
             && hierarchy_delta.1 <= 1
             && hierarchy_restore_delta.1 <= 1;
-        let mut report = serde_json::json!({"slice":if particle_smoke {"F8.3C"} else {"F8.3B"}, "accepted":accepted, "tier":tier, "frame":frame,
+        let accepted = accepted && sort_restore_delta.1 <= 1;
+        let mut report = serde_json::json!({"slice":if overlap {"F8.3D"} else if particle_smoke {"F8.3C"} else {"F8.3B"}, "accepted":accepted, "tier":tier, "frame":frame,
             "adapter":caps.adapter_name, "backend":caps.backend, "driver":caps.driver,
             "dimensions":[480,360], "history":"playback-only", "seed":"0xf83b000000000001",
             "representative_accepted":representative.accepted, "representative_active":representative.active,
@@ -580,6 +642,11 @@ fn authored_smoke_gate(particle_smoke: bool) {
             "gain_off_delta":material_gain_delta, "gain_restore_delta":material_restore_delta,
             "rigid_hierarchy_delta":hierarchy_delta, "rigid_hierarchy_restore_delta":hierarchy_restore_delta,
         });
+        report["transparent_order"] = serde_json::json!(format!(
+            "{:?}",
+            app.world().resource::<AestraSettings>().transparent_order
+        ));
+        report["alpha_sort"] = serde_json::json!({"pairs":sort_stats.pairs, "owned_buffer_bytes":sort_stats.owned_buffer_bytes, "allocations_at_frozen_observation":sort_stats.allocated_buffers_this_frame, "dispatched":sort_stats.dispatched, "mode_restore_delta":sort_restore_delta, "retired_pairs":retired_sort.pairs, "retired_bytes":retired_sort.owned_buffer_bytes});
         fs::write(
             directory.join("report.json"),
             serde_json::to_vec_pretty(&report).unwrap(),

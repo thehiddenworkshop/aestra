@@ -194,6 +194,7 @@ impl BenchPresentation {
             },
             transparent_order: match config.transparent_order {
                 aestra_bevy::TransparentOrderMode::Fast => "fast",
+                aestra_bevy::TransparentOrderMode::DepthBackToFront => "depth-back-to-front",
                 aestra_bevy::TransparentOrderMode::StableCapture => "stable-capture",
             },
             max_gpu_particles: config.max_gpu_particles,

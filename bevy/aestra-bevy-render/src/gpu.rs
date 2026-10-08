@@ -1,5 +1,6 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
+mod alpha_sort;
 mod bounds;
 mod extension_stages;
 mod geometry_statistics;
@@ -86,6 +87,7 @@ pub use extension_stages::{
 };
 pub use physics::{AestraPhysicsColliders, AestraPhysicsQuery, PhysicsPose};
 // AestraCatchupPacing is defined below, beside the pacer it configures.
+pub use alpha_sort::{AlphaSortSnapshot, GpuAlphaSortStatistics};
 pub use output_context::{EffectOutputContext, ParticleOutputContext};
 pub use particle_statistics::GpuParticleStatistics;
 pub use preparation_timing::GpuPreparationTiming;
@@ -501,6 +503,7 @@ impl StatefulDispatch {
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
+    sort_range: UVec2,
     renderer_kind: u32,
     owner: Entity,
     mesh: Option<Handle<Mesh>>,
@@ -677,6 +680,8 @@ struct StatefulSimulationPipeline {
 }
 
 pub(crate) fn install(app: &mut App) {
+    let alpha_statistics = GpuAlphaSortStatistics::default();
+    app.insert_resource(alpha_statistics.clone());
     install_shader_assets(app);
     particle_lights::install(app);
     extension_stages::install(app);
@@ -707,6 +712,7 @@ pub(crate) fn install(app: &mut App) {
         return;
     };
     render_app
+        .insert_resource(alpha_statistics)
         .insert_resource(preparation_mailboxes)
         .insert_resource(geometry_mailbox)
         .init_resource::<geometry_statistics::Submissions>()
@@ -747,10 +753,16 @@ pub(crate) fn install(app: &mut App) {
     render::install(render_app);
     trail_culling::install(render_app);
     trail_compaction::install(render_app);
+    alpha_sort::install(render_app);
 }
 
 fn install_shader_assets(app: &App) {
     let registry = app.world().resource::<EmbeddedAssetRegistry>();
+    registry.insert_asset(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/gpu/alpha_sort.wgsl"),
+        Path::new("aestra_bevy_render/shaders/alpha_sort.wgsl"),
+        include_str!("gpu/alpha_sort.wgsl").as_bytes(),
+    );
     let shader_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aestra-gpu/src/shaders");
     registry.insert_asset(
         shader_root.join("aestra_trail_compact.wesl"),
@@ -1162,6 +1174,7 @@ pub(crate) fn prepare_gpu_effects(
                 .map(|emitter| (emitter.slot_offset, emitter.max_particles))
                 .collect(),
         );
+        let sort_capacities: Vec<_> = artifact.emitters.iter().map(|e| e.max_particles).collect();
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let ribbon_renderers = artifact
             .renderers
@@ -1395,6 +1408,10 @@ pub(crate) fn prepare_gpu_effects(
                         let mut draw = parent.spawn((
                             HostMotionDraw,
                             GpuDrawInstance {
+                                sort_range: UVec2::new(
+                                    alive_offset,
+                                    sort_capacities[emitter_index as usize],
+                                ),
                                 renderer_kind: renderer_kinds[renderer_index as usize],
                                 owner: entity,
                                 mesh,
@@ -4265,7 +4282,7 @@ fn run_simulation(
     // emitter end-to-end; other effects take the analytic path unchanged.
     let stateful = stateful_pipeline.as_ref().and_then(|sp| {
         let order_present = match render_settings.transparent_order {
-            TransparentOrderMode::Fast => None,
+            TransparentOrderMode::Fast | TransparentOrderMode::DepthBackToFront => None,
             TransparentOrderMode::StableCapture => {
                 Some(pipeline_cache.get_compute_pipeline(sp.order_present)?)
             }
@@ -4929,6 +4946,7 @@ mod tests {
                     .spawn((
                         ChildOf(parent),
                         GpuDrawInstance {
+                            sort_range: UVec2::ZERO,
                             renderer_kind: kind,
                             owner: parent,
                             mesh: None,

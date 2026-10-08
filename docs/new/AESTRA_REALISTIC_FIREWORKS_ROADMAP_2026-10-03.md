@@ -106,8 +106,9 @@ F8.3A now implements opt-in clustered point-light illumination of fluid smoke, w
 light/range/removal and hierarchy controls. F8.3B now qualifies a saved two-burst fluid-smoke
 fixture with actual representative and same-frame selected lights at all tiers (2026-10-07),
 including matched paused-pass cost observations. F8.3C now adds an opt-in particle-smoke material
-with repeated all-tier isolated-puff native controls. Dense overlapping alpha smoke failed
-repeatability and remains a measured rendering gate; full-show costs remain open.
+with repeated all-tier isolated-puff native controls. F8.3D now fixes the bounded 48-puff
+overlap's per-draw repeatability with opt-in view-local GPU depth sorting. The initial failure
+is retained; cross-draw ordering, smoke art/persistence and full-show costs remain open.
 This is not complete F8 or show-smoke acceptance—not more unmeasured
 F1B micro-optimization. Return to scalability work when authored hero/finale
 workloads expose a measured blocker. Do not lower the hero-shell target or work around the
@@ -4406,10 +4407,11 @@ This passes the public-list reuse slice, not full private/in-flight/finale quali
   free instants/full create-free traces, total VRAM, a hard arbitrary-overload budget, ordinary
   performance improvement, general Aestra multi-view/layer support or production-finale approval.
 
-**Next: dense alpha-smoke repeatability, then F8.1 smoke art/persistence.** F8.3A's fluid
+**Next: F8.1 smoke art/persistence.** F8.3A's fluid
 point-light path, F8.3B's actual-output smoke fixture and F8.3C's opt-in particle material
-now pass bounded native controls. The 48-overlapping-puff F8.3C attempt failed repeatability;
-only isolated-puff lighting is accepted. Dense live/full-show costs and mixed-light starvation
+now pass bounded native controls. F8.3D's opt-in per-view/per-draw depth sort passes the saved
+48-puff overlap's unchanged gates; its earlier Fast-mode failure remains rejected.
+Cross-draw ordering, dense live/full-show costs and mixed-light starvation
 remain separate gates.
 F7F1's host policy, medium receiver images and live switching pass.
 F7F2's explicit output24/global24 low fixture passes all six receiver gates, eighteen fresh
@@ -4645,7 +4647,23 @@ layers only. GPU pass observations are retained, not full-show incremental cost 
 The initial 48-overlapping-puff test failed unchanged repeatability thresholds, consistent with
 unsorted alpha draw order; it is not accepted or silently replaced by a dense-smoke claim.
 See [`particle-smoke-lighting-2026-10-07.md`](../../benchmarks/fireworks/particle-smoke-lighting-2026-10-07.md).
-**Next:** qualify dense alpha-smoke ordering/repeatability, then F8.1 reusable smoke art/persistence.
+**F8.3D bounded overlap ordering implemented (2026-10-08):**
+`TransparentOrderMode::DepthBackToFront` adds view-local GPU permutations for native Camera3d
+alpha Sprite/Flipbook draws. It sorts world-space center depth back-to-front with ordinal/slot
+ties without changing simulation, compact alive lists, indirect counts or additive rendering.
+The public particle-smoke example opts in; normal shows remain Fast/unlit. Paged 256-key sorting
+and parallel binary-rank merges remove the legacy 4,096 capture ceiling, with native exact
+permutation tests covering 42 zero/partial/full and opposite-camera cases through 65,537 slots.
+The saved 48-puff fixture passes all-tier lighting/restoration controls, including live mode
+switching and sort-buffer ownership cleanup. Capacity-based scratch buffers are reused; the
+bounded fixture owns 9,456 bytes per visible view/draw pair. Per-stage bind groups are refreshed,
+so this is not a claim of zero total allocations. O(N log² N) comparisons and O(N) storage
+scale with padded capacity, not live particles. No runtime particle/index readback is added.
+This is per-draw repeatability, not inter-draw order, arbitrary-layer/multi-view acceptance,
+large-pool performance, smoke-art or full-show/finale certification. The old failed reports
+remain rejected. See
+[`alpha-smoke-ordering-2026-10-08.md`](../../benchmarks/fireworks/alpha-smoke-ordering-2026-10-08.md).
+**Next:** F8.1 reusable smoke art/persistence, with authored overlap/full-show costs before migration.
 F8.2 generic injection, mixed-light prioritization and full-show costs remain open;
 F8 is **in progress**, not complete.
 
@@ -4709,17 +4727,18 @@ F8  advanced smoke / fluid coupling
 F9  finale tier tuning and certification
 ```
 
-**Current execution priority (2026-10-07):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. F7F2 now explicitly authors per-output low caps of 24 under the unchanged global 24 ceiling, passing all six receiver gates, eighteen fresh ordinary cost/control runs and eighteen separate allocation runs; the old output-eight failures stay rejected. F8.3A now implements opt-in fluid clustered point lighting with narrow native image controls; F8.3B now qualifies real representative/selected outputs on a saved bounded two-burst smoke fixture at all tiers, with repeated exact images/cleanup and matched paused-pass cost observations. F8.3C now implements opt-in particle irradiance and passes repeated all-tier isolated-puff lighting controls; the initial 48-overlapping-puff attempt fails repeatability and remains rejected. Next is dense alpha-smoke ordering/repeatability before F8.1 smoke art/persistence. Dense live/full-show costs and generic injection remain open, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
+**Current execution priority (2026-10-08):** F7A/F7B1, F7B2 authoring controls, F7C's source/compiler/artifact/CPU contract, F7D1's measured per-output GPU prototype, F7D2A's global admission/live GPU integration and F7D2B's current authored hero/volley/show selection measurements are implemented; F7B2's manual UI/visual gate remains open. F7E1 implements portable async realization; F7E2 measures failed fast-star registration. F7E3 passes the narrow GPU proof; F7E4A adds a bounded default-layer native adapter; F7E4B1 integrates viewer profiling and measures authored-load costs/resources; F7E4B2A passes high-tier authored receiver images with/without bloom; F7E4B2B passes a synthetic paced registration tracer under high-tier authored overlap with delayed negative controls (the earlier cadence miss remains recorded). F7E4B3A passes repeated high-tier matched costs/public cluster-buffer and asynchronous-demand gates, retaining a failed grid attempt and native shutdown exit. F7E4B3B1 retires idle pool work with unchanged 8413-child admission and three cleanup windows matching control; empty possible-source selections remain pointlike. F7E4B3B2A adds allocator census/handle observability; all 18 high-tier native runs pass work/cleanup checks but fail no-churn because locked Bevy recreates same-sized per-view lists every observation, including control. F7E4B3B2B now reuses native per-view containers before allocation through a pinned Bevy PBR patch; all eighteen unchanged reuse/workload/retirement gates pass and 107 paced images match B3B1. F7E4B3B2C now retires staging ownership, bounds metadata pools and cleans unused GPU state on CPU switches; native private-generation/completed-submission checkpoints and oversized recovery pass, all eighteen authored private-count gates pass and 107 paced images remain unchanged. Exact driver free history/arbitrary-overload hard limits/total VRAM remain unqualified. F7F1 now implements explicit host lighting quality; all 36 ordinary medium/low cost/control runs, public reuse/cleanup and native live host switching pass. Medium receiver images and low hero/volley pass, but low show visibility fails all three retained sparse/expanded/reproduction attempts under unchanged thresholds. F7F2 now explicitly authors per-output low caps of 24 under the unchanged global 24 ceiling, passing all six receiver gates, eighteen fresh ordinary cost/control runs and eighteen separate allocation runs; the old output-eight failures stay rejected. F8.3A now implements opt-in fluid clustered point lighting with narrow native image controls; F8.3B now qualifies real representative/selected outputs on a saved bounded two-burst smoke fixture at all tiers, with repeated exact images/cleanup and matched paused-pass cost observations. F8.3C now implements opt-in particle irradiance and passes repeated all-tier isolated-puff lighting controls; the initial 48-overlapping-puff attempt fails repeatability and remains rejected. F8.3D now passes that bounded overlap with opt-in per-view/per-draw GPU depth ordering and 42 native permutation cases through 65,537 slots. Next is F8.1 smoke art/persistence; cross-draw order and large-pool/full-show performance are separate gates. Dense live/full-show costs and generic injection remain open, retaining explicit layer restrictions until general per-view support is proven. The current bounded-show measurements are not production-finale, natural-star art approval or full-show selected-light certification. Representative burst lights already provide a valid full-show lighting baseline, so direct particle lights are a realism/scalability enhancement rather than a reason to block show authoring.
 
 **Do not put fluids before the first full show.**
 
-**Execution update (2026-10-07):** F8.3B's saved two-burst actual-output smoke fixture now
+**Execution update (2026-10-08):** F8.3B's saved two-burst actual-output smoke fixture now
 passes repeated all-tier visual/cleanup controls and records matched paused GPU pass costs.
 The public Bevy example is its runnable host; the viewer retains regression instrumentation.
 This is not dense live/full-show cost certification or a generic mixed-light selection fix.
 F8.3C now implements an opt-in lit particle material and passes repeated all-tier isolated-puff
-controls. Its initial 48-puff overlap failed repeatability; dense alpha ordering/repeatability
-is the next measured blocker before F8.1 reusable smoke art/persistence;
+controls. F8.3D now passes the saved 48-puff overlap with opt-in GPU per-draw depth ordering,
+without weakening thresholds; the original failure stays recorded. F8.1 reusable smoke
+art/persistence is next, with cross-draw ordering and full-show costs still separate;
 F8.2 generic particle/event injection remains separate. No new F1B micro-optimization is needed
 without a measured blocker. Preserve playback-only defaults and native no-position-readback admission.
 
@@ -5199,8 +5218,9 @@ F7F2's explicit output24/global24 fixture passes fresh receiver/cost/allocation 
 implements opt-in fluid scene lighting with narrow native controls; F8.3B's saved actual-output
 smoke fixture now passes repeated all-tier images/cleanup and records matched paused pass costs.
 F8.3C's opt-in lit particle material passes repeated all-tier isolated-puff controls; the full
-show remains unchanged/unlit. Dense alpha ordering/repeatability failed the initial 48-puff test
-and is next, before F8.1 smoke art/persistence. Full-show costs and generic injection remain open.
+show remains unchanged/unlit. F8.3D now qualifies the saved 48-puff per-draw overlap under GPU
+depth sorting; the old failed Fast attempt remains recorded. Next is F8.1 smoke art/persistence.
+Cross-draw ordering, large-pool/full-show costs and generic injection remain open.
 Natural-star
 art approval, general per-view layers/hardware and production-finale certification remain open.
 

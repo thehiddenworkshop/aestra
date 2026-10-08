@@ -1,0 +1,157 @@
+(
+    format_version: 4,
+    id: "a3574a00-0000-4000-8000-000000f83e00",
+    name: "Fireworks Particle Smoke Overlap",
+    duration: 5.0,
+    playback_mode: Once,
+    material_instances: [(
+        id: "a3574a00-0000-4000-8000-000000f83e40",
+        program: Project("a3574a00-0000-4000-8000-000000f83d08"), values: {},
+        render_state: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: r#None),
+    )],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f83e41", name: "Overlapping particle smoke receiver",
+            enabled: true,
+            transform: (translation: (0.0, 24.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+            start_time: 0.0, duration: 5.0, max_particles: 48, domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (modules: [(
+                    id: "a3574a00-0000-4000-8000-000000f83e42",
+                    module_type: "aestra.emission.rate", enabled: true,
+                    parameters: Emission(spawn_rate: 0.0, burst_count: 48),
+                )]),
+                particle_spawn: (modules: [
+                    (id: "a3574a00-0000-4000-8000-000000f83e43", module_type: "aestra.spawn.shape", enabled: true, parameters: Shape(shape: Sphere(radius: 12.0))),
+                    (id: "a3574a00-0000-4000-8000-000000f83e44", module_type: "aestra.spawn.initialize", enabled: true, parameters: Initialize(lifetime: (min: 5.0, max: 5.0), speed: (min: 0.5, max: 1.0), direction: (0.0, 1.0, 0.0), spread_degrees: 10.0, angular_velocity: (min: 0.0, max: 0.0))),
+                ]),
+                particle_update: (modules: [
+                    (id: "a3574a00-0000-4000-8000-000000f83e45", module_type: "aestra.update.motion", enabled: true, parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 0.1, turbulence: 0.0)),
+                    (id: "a3574a00-0000-4000-8000-000000f83e46", module_type: "aestra.update.appearance", enabled: true, parameters: Appearance(
+                        size: (id: "a3574a00-0000-4000-8000-000000f83e47", keys: [(time: 0.0, value: 8.0), (time: 1.0, value: 12.0)]),
+                        opacity: (id: "a3574a00-0000-4000-8000-000000f83e48", keys: [(time: 0.0, value: 0.25), (time: 0.8, value: 0.25), (time: 1.0, value: 0.0)]),
+                        color: (id: "a3574a00-0000-4000-8000-000000f83e49", keys: [(time: 0.0, color: (1.0, 1.0, 1.0, 1.0))]),
+                    )),
+                ]),
+            ),
+            renderers: [(
+                id: "a3574a00-0000-4000-8000-000000f83e4a", renderer_type: "aestra.renderer.sprite",
+                enabled: true, material: "a3574a00-0000-4000-8000-000000f83e40", properties: Sprite,
+            )],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83e10",
+            name: "Red break stars", enabled: true,
+            transform: (translation: (-4.0, 22.0, 5.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+            start_time: 1.5, duration: 3.5, max_particles: 32, domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (modules: [(
+                    id: "a3574a00-0000-4000-8000-000000f83e11",
+                    module_type: "aestra.emission.rate", enabled: true,
+                    parameters: Emission(spawn_rate: 0.0, burst_count: 32),
+                )]),
+                particle_spawn: (modules: [
+                    (id: "a3574a00-0000-4000-8000-000000f83e12", module_type: "aestra.spawn.shape", enabled: true, parameters: Shape(shape: Point)),
+                    (
+                        id: "a3574a00-0000-4000-8000-000000f83e13",
+                        module_type: "aestra.spawn.initialize", enabled: true,
+                        parameters: Initialize(lifetime: (min: 2.0, max: 2.0), speed: (min: 5.0, max: 8.0), direction: (0.0, 1.0, 0.0), spread_degrees: 0.0, angular_velocity: (min: 0.0, max: 0.0), velocity_distribution: Sphere),
+                    ),
+                ]),
+                particle_update: (modules: [(
+                    id: "a3574a00-0000-4000-8000-000000f83e14", module_type: "aestra.update.motion", enabled: true,
+                    parameters: Motion(gravity: (0.0, -2.0, 0.0), drag: 0.5, turbulence: 0.0),
+                ), (
+                    id: "a3574a00-0000-4000-8000-000000f83e18", module_type: "aestra.update.appearance", enabled: true,
+                    parameters: Appearance(
+                        size: (id: "a3574a00-0000-4000-8000-000000f83e19", keys: [(time: 0.0, value: 1.0)]),
+                        opacity: (id: "a3574a00-0000-4000-8000-000000f83e1a", keys: [(time: 0.0, value: 1.0)]),
+                        color: (id: "a3574a00-0000-4000-8000-000000f83e1b", keys: [(time: 0.0, color: (1.0, 0.05, 0.01, 1.0))]),
+                    ),
+                )]),
+            ),
+            scene_outputs: [(
+                id: "a3574a00-0000-4000-8000-000000f83e15",
+                output_type: "aestra.scene_output.particle_point_light", enabled: true,
+                properties: ParticlePointLight((
+                    color_source: Constant((1.0, 0.05, 0.01)),
+                    intensity_curve: (id: "a3574a00-0000-4000-8000-000000f83e16", keys: [(time: 0.0, value: 1500.0), (time: 0.8, value: 600.0), (time: 1.0, value: 0.0)]),
+                    range_curve: (id: "a3574a00-0000-4000-8000-000000f83e17", keys: [(time: 0.0, value: 6.0)]),
+                    radius: 0.1, selection_policy: Brightest,
+                    max_lights_by_quality: {"high": 4, "medium": 2, "low": 1}, priority: 0,
+                )),
+            )],
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83e20",
+            name: "Blue break stars", enabled: true,
+            transform: (translation: (4.0, 25.0, 5.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+            start_time: 1.8, duration: 3.2, max_particles: 32, domain: "aestra.domain.particles",
+            lifecycle: (
+                emitter_update: (modules: [(
+                    id: "a3574a00-0000-4000-8000-000000f83e21",
+                    module_type: "aestra.emission.rate", enabled: true,
+                    parameters: Emission(spawn_rate: 0.0, burst_count: 32),
+                )]),
+                particle_spawn: (modules: [
+                    (id: "a3574a00-0000-4000-8000-000000f83e22", module_type: "aestra.spawn.shape", enabled: true, parameters: Shape(shape: Point)),
+                    (
+                        id: "a3574a00-0000-4000-8000-000000f83e23",
+                        module_type: "aestra.spawn.initialize", enabled: true,
+                        parameters: Initialize(lifetime: (min: 2.0, max: 2.0), speed: (min: 5.0, max: 8.0), direction: (0.0, 1.0, 0.0), spread_degrees: 0.0, angular_velocity: (min: 0.0, max: 0.0), velocity_distribution: Sphere),
+                    ),
+                ]),
+                particle_update: (modules: [(
+                    id: "a3574a00-0000-4000-8000-000000f83e24", module_type: "aestra.update.motion", enabled: true,
+                    parameters: Motion(gravity: (0.0, -2.0, 0.0), drag: 0.5, turbulence: 0.0),
+                ), (
+                    id: "a3574a00-0000-4000-8000-000000f83e28", module_type: "aestra.update.appearance", enabled: true,
+                    parameters: Appearance(
+                        size: (id: "a3574a00-0000-4000-8000-000000f83e29", keys: [(time: 0.0, value: 1.0)]),
+                        opacity: (id: "a3574a00-0000-4000-8000-000000f83e2a", keys: [(time: 0.0, value: 1.0)]),
+                        color: (id: "a3574a00-0000-4000-8000-000000f83e2b", keys: [(time: 0.0, color: (0.01, 0.15, 1.0, 1.0))]),
+                    ),
+                )]),
+            ),
+            scene_outputs: [(
+                id: "a3574a00-0000-4000-8000-000000f83e25",
+                output_type: "aestra.scene_output.particle_point_light", enabled: true,
+                properties: ParticlePointLight((
+                    color_source: Constant((0.01, 0.15, 1.0)),
+                    intensity_curve: (id: "a3574a00-0000-4000-8000-000000f83e26", keys: [(time: 0.0, value: 1500.0), (time: 0.8, value: 600.0), (time: 1.0, value: 0.0)]),
+                    range_curve: (id: "a3574a00-0000-4000-8000-000000f83e27", keys: [(time: 0.0, value: 6.0)]),
+                    radius: 0.1, selection_policy: Brightest,
+                    max_lights_by_quality: {"high": 4, "medium": 2, "low": 1}, priority: 0,
+                )),
+            )],
+        ),
+    ],
+    event_outputs: [
+        (id: "a3574a00-0000-4000-8000-000000f83e30", name: "red_break", fields: []),
+        (id: "a3574a00-0000-4000-8000-000000f83e31", name: "blue_break", fields: []),
+    ],
+    particle_outputs: [
+        (id: "a3574a00-0000-4000-8000-000000f83e32", source: "a3574a00-0000-4000-8000-000000f83e10", trigger: OnSpawn, output: "a3574a00-0000-4000-8000-000000f83e30", aggregation: FirstPerTick),
+        (id: "a3574a00-0000-4000-8000-000000f83e33", source: "a3574a00-0000-4000-8000-000000f83e20", trigger: OnSpawn, output: "a3574a00-0000-4000-8000-000000f83e31", aggregation: FirstPerTick),
+    ],
+    point_lights: [
+        (
+            id: "a3574a00-0000-4000-8000-000000f83e34", route: "a3574a00-0000-4000-8000-000000f83e32",
+            pulse: (
+                linear_color: (1.0, 0.05, 0.01), radius: 0.1, duration_seconds: 0.6,
+                intensity_lumens: (id: "a3574a00-0000-4000-8000-000000f83e35", keys: [(time: 0.0, value: 1500.0), (time: 0.2, value: 375.0), (time: 1.0, value: 0.0)]),
+                range: (id: "a3574a00-0000-4000-8000-000000f83e36", keys: [(time: 0.0, value: 6.0)]),
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000f83e37", route: "a3574a00-0000-4000-8000-000000f83e33",
+            pulse: (
+                linear_color: (0.01, 0.15, 1.0), radius: 0.1, duration_seconds: 0.6,
+                intensity_lumens: (id: "a3574a00-0000-4000-8000-000000f83e38", keys: [(time: 0.0, value: 1500.0), (time: 0.2, value: 375.0), (time: 1.0, value: 0.0)]),
+                range: (id: "a3574a00-0000-4000-8000-000000f83e39", keys: [(time: 0.0, value: 6.0)]),
+            ),
+        ),
+    ],
+    extensions: [],
+    metadata: {"notes": "F8.3D 48-overlapping-puff repeatability receiver, not full-show art/scale qualification. Material-free stars drive actual representative and selected lights; no volume, bloom, synthetic lights or particle-position readback. Host scale 0.1."},
+)

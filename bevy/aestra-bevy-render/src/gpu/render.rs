@@ -86,6 +86,7 @@ pub(super) fn install(render_app: &mut SubApp) {
             (
                 prepare_render_bind_groups
                     .in_set(RenderSystems::PrepareBindGroups)
+                    .after(super::alpha_sort::Prepare)
                     .after(super::trail_compaction::TrailCompactionSystems::Prepare),
                 prepare_scene_depth_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 queue_gpu_sprites.in_set(RenderSystems::QueueMeshes),
@@ -577,7 +578,11 @@ fn prepare_mesh_draws(
 }
 
 #[derive(Component)]
-struct GpuRenderBindGroup(BindGroup, Option<BindGroup>);
+struct GpuRenderBindGroup(
+    BindGroup,
+    Option<BindGroup>,
+    std::collections::BTreeMap<Entity, BindGroup>,
+);
 
 #[derive(Component)]
 struct GpuMaterialBindGroup(BindGroup);
@@ -635,6 +640,8 @@ fn prepare_render_bind_groups(
     images: Res<RenderAssets<GpuImage>>,
     effects: Query<(Entity, &GpuDrawInstance)>,
     compaction: Res<super::trail_compaction::TrailCompaction>,
+    alpha_sort: Res<super::alpha_sort::AlphaSort>,
+    views: Query<Entity, With<Camera3d>>,
 ) {
     for (entity, effect) in &effects {
         let Some(renderers) = buffers.get(&effect.renderers) else {
@@ -691,9 +698,34 @@ fn prepare_render_bind_groups(
                 )),
             )
         });
-        commands
-            .entity(entity)
-            .insert(GpuRenderBindGroup(bind_group, compact_group));
+        let sorted_groups = views
+            .iter()
+            .filter_map(|view| {
+                let (indices, params) = alpha_sort.buffers(view, entity)?;
+                Some((
+                    view,
+                    render_device.create_bind_group(
+                        Some("aestra sorted alpha sprite vertex"),
+                        &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
+                        &BindGroupEntries::sequential((
+                            renderers.buffer.as_entire_buffer_binding(),
+                            particles.buffer.as_entire_buffer_binding(),
+                            indices.as_entire_buffer_binding(),
+                            globals.buffer.as_entire_buffer_binding(),
+                            params.as_entire_buffer_binding(),
+                            &image.texture_view,
+                            &image.sampler,
+                            aux.buffer.as_entire_buffer_binding(),
+                        )),
+                    ),
+                ))
+            })
+            .collect();
+        commands.entity(entity).insert(GpuRenderBindGroup(
+            bind_group,
+            compact_group,
+            sorted_groups,
+        ));
         let Some(material) = &effect.semantic_material else {
             commands.entity(entity).remove::<GpuMaterialBindGroup>();
             continue;
@@ -1040,7 +1072,7 @@ const fn portable_target_format(format: TextureFormat) -> MaterialColorTargetFor
 
 const RENDERER_ORDER_DEPTH_BIAS: f32 = 0.0001;
 
-fn visible_gpu_draws(
+pub(super) fn visible_gpu_draws(
     visible_entities: &RenderVisibleEntities,
 ) -> impl Iterator<Item = (Entity, MainEntity)> + '_ {
     visible_entities
@@ -1099,20 +1131,35 @@ type DrawSemanticDepthGpuSprites3d = (
 struct SetGpuRenderBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuRenderBindGroup<I> {
-    type Param = SRes<super::trail_compaction::TrailCompaction>;
-    type ViewQuery = ();
+    type Param = (
+        SRes<super::trail_compaction::TrailCompaction>,
+        SRes<super::alpha_sort::AlphaSort>,
+    );
+    type ViewQuery = Entity;
     type ItemQuery = Read<GpuRenderBindGroup>;
 
     fn render<'w>(
-        _item: &P,
-        _view: ROQueryItem<'w, '_, Self::ViewQuery>,
+        item: &P,
+        view: ROQueryItem<'w, '_, Self::ViewQuery>,
         bind_group: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
-        compaction: SystemParamItem<'w, '_, Self::Param>,
+        resources: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(bind_group) = bind_group else {
             return RenderCommandResult::Skip;
         };
+        let (compaction, alpha_sort) = resources;
+        let alpha_sort = alpha_sort.into_inner();
+        if alpha_sort.prepared(view, item.entity()) {
+            if !alpha_sort.dispatched {
+                return RenderCommandResult::Skip;
+            }
+            let Some(group) = bind_group.2.get(&view) else {
+                return RenderCommandResult::Skip;
+            };
+            pass.set_bind_group(I, group, &[]);
+            return RenderCommandResult::Success;
+        }
         let group = if compaction.into_inner().dispatched {
             bind_group.1.as_ref().unwrap_or(&bind_group.0)
         } else {
