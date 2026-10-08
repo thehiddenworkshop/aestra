@@ -132,3 +132,24 @@ fn staged_diffusion_pass_composes_into_valid_wgsl() {
         "the staged diffusion module exposes the diffuse entry point"
     );
 }
+
+#[test]
+fn external_birth_capture_and_output_aggregation_validate_with_portable_binding_counts() {
+    for (label, wgsl, bindings) in [
+        (
+            "domain birth plan",
+            aestra_gpu::DOMAIN_SPAWN_PLAN_WGSL.to_owned(),
+            7,
+        ),
+        ("domain birth spawn", aestra_gpu::domain_spawn_wgsl(), 7),
+        (
+            "particle outputs",
+            aestra_gpu::PARTICLE_OUTPUT_WGSL.to_owned(),
+            3,
+        ),
+    ] {
+        assert_valid_wgsl(label, &wgsl);
+        assert_eq!(wgsl.matches("@binding(").count(), bindings);
+        assert!(bindings <= 8, "portable storage binding ceiling");
+    }
+}

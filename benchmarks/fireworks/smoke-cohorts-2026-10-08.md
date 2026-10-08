@@ -3,6 +3,10 @@
 Date: 2026-10-08. NVIDIA GeForce RTX 4070 SUPER / Vulkan.
 Toolchain: `1.98.1-x86_64-pc-windows-msvc`.
 
+Historical parent-cue qualification. The current fixture uses child `OnSpawn` cues;
+the original failed attempt and reports below remain historical evidence. See the
+[F8.1B2 follow-up](child-birth-outputs-2026-10-08.md) for the runtime fix and unchanged-image gate.
+
 The public `aestra-bevy` fireworks example adds `--smoke-cohorts`, resolving saved assets
 through the normal project/compiler APIs. The viewer only instruments native regression
 images. The normal show and earlier lab assets remain unchanged. This is a **bounded

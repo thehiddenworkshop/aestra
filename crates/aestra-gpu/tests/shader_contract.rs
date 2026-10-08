@@ -194,3 +194,15 @@ fn generated_shaders_translate_to_portable_backend_targets() {
         assert_translates_to_hlsl(&shader.wgsl);
     }
 }
+
+#[test]
+fn external_birth_capture_translates_to_spirv_and_hlsl() {
+    for source in [
+        aestra_gpu::DOMAIN_SPAWN_PLAN_WGSL.to_owned(),
+        aestra_gpu::domain_spawn_wgsl(),
+        aestra_gpu::PARTICLE_OUTPUT_WGSL.to_owned(),
+    ] {
+        assert_translates_to_spirv(&source);
+        assert_translates_to_hlsl(&source);
+    }
+}

@@ -195,8 +195,8 @@
         (id: "a3574a00-0000-4000-8000-000000f81431", name: "blue_break", fields: []),
     ],
     particle_outputs: [
-        (id: "a3574a00-0000-4000-8000-000000f81432", source: "a3574a00-0000-4000-8000-000000f81460", trigger: OnDeath, output: "a3574a00-0000-4000-8000-000000f81430", aggregation: FirstPerTick),
-        (id: "a3574a00-0000-4000-8000-000000f81433", source: "a3574a00-0000-4000-8000-000000f81470", trigger: OnDeath, output: "a3574a00-0000-4000-8000-000000f81431", aggregation: FirstPerTick),
+        (id: "a3574a00-0000-4000-8000-000000f81432", source: "a3574a00-0000-4000-8000-000000f81410", trigger: OnSpawn, output: "a3574a00-0000-4000-8000-000000f81430", aggregation: FirstPerTick),
+        (id: "a3574a00-0000-4000-8000-000000f81433", source: "a3574a00-0000-4000-8000-000000f81420", trigger: OnSpawn, output: "a3574a00-0000-4000-8000-000000f81431", aggregation: FirstPerTick),
     ],
     point_lights: [
         (
@@ -218,5 +218,5 @@
     ],
     parameters: [(id: "a3574a00-0000-4000-8000-000000f81450", name: "Drift acceleration", default: Vec3((0.08, 0.16, 0.0)), exposed: true)],
     extensions: [],
-    metadata: {"notes": "F8.1B bounded shell-born cohort fixture: two ballistic launch shells die at 2/4 seconds; generic OnDeath links birth stars and 32 smoke puffs each into one 96-slot pool. Representative flashes bind the parent break OnDeath; moving lights follow child stars. No independent smoke/stars emission or host injection. Lit seeded billow material shared with F8.1A; tails overlap/drift/drain by 18 seconds. Only smoke supplies visible pixels; schema-required launch sprite markers have zero opacity. No cross-draw, full-show cost, natural-smoke art or AAA/finale acceptance. Host scale 0.1."},
+    metadata: {"notes": "F8.1B bounded shell-born cohort fixture: two ballistic launch shells die at 2/4 seconds; generic OnDeath links birth stars and 32 smoke puffs each into one 96-slot pool. Representative flashes bind accepted child-star OnSpawn; moving lights follow child stars. No independent smoke/stars emission or host injection. Lit seeded billow material shared with F8.1A; tails overlap/drift/drain by 18 seconds. Only smoke supplies visible pixels; schema-required launch sprite markers have zero opacity. No cross-draw, full-show cost, natural-smoke art or AAA/finale acceptance. Host scale 0.1."},
 )

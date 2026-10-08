@@ -187,6 +187,17 @@ pooling and mixing in the host. It is not one packet per child
 spawn or one voice per spark. `EachEvent` has different packet/count semantics. GPU messages
 arrive asynchronously; ticks identify occurrence time, not arrival-frame time.
 
+Native stateful `OnSpawn` outputs also include accepted births from event links,
+domain emission lists and input bursts. Rejected destination slots do not emit cues;
+positions/ordinals come from the allocated child, not its parent. Capture appends to
+ordinary births in the existing **1,024-record per-emitter per-tick event buffer**.
+Overflow is counted, but omitted births do not have host packets and the output magnitude
+counts only captured matching records. External births are output-only: they do not
+introduce recursive same-tick `OnSpawn` event-link cascades. Input events stamped at tick
+N allocate after that interval and export at reached tick N+1, using the existing clock
+convention. Pause/seek reconstruction is silent; a new restart epoch permits new cues.
+The public `--smoke-cohorts` fixture demonstrates child-star birth flashes through this API.
+
 The route ring holds **32 simulation ticks**, with at most 16 stored positions per tick for
 `EachEvent`. Readback stalls can lose older observations; coalescing does not make this a
 lossless gameplay-authority bus. Keep consumers and host voice budgets bounded. Sound files,

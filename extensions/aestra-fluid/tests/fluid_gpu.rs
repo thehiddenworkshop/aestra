@@ -2996,6 +2996,7 @@ fn sparks_a_fire_asks_for_become_particles_where_it_asked() {
             free_count: &free_count,
             spawn_counter: &spawn_counter,
             params: &params,
+            output_births: None,
         },
         fluid.stage.buffer(aestra_fluid::RESOURCE_EMISSION).unwrap(),
         &aestra_runtime::CompiledDomainSpawn {

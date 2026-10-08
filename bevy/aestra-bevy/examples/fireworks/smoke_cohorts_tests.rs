@@ -27,9 +27,9 @@ fn cohorts_resolve_shared_lit_material_and_only_death_links_birth_children() {
         assert_eq!(root.emitters[3].start_time, 0.0);
         assert_eq!(root.emitters[4].start_time, 2.0);
         assert_eq!(root.particle_outputs().count(), 2);
-        for ((_, route), source) in root.particle_outputs().zip([3, 4]) {
+        for ((_, route), source) in root.particle_outputs().zip([1, 2]) {
             assert_eq!(route.source, source);
-            assert_eq!(route.trigger, aestra_bevy::EventTrigger::OnDeath);
+            assert_eq!(route.trigger, aestra_bevy::EventTrigger::OnSpawn);
         }
         for (index, emitter) in root.emitters.iter().enumerate() {
             assert_eq!(root.is_event_target(index), index < 3);

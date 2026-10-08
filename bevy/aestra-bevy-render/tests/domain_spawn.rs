@@ -60,7 +60,9 @@ fn storage(gpu: &Gpu, words: &[u32]) -> wgpu::Buffer {
                 .iter()
                 .flat_map(|word| word.to_le_bytes())
                 .collect::<Vec<_>>(),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         })
 }
 
@@ -105,8 +107,12 @@ struct Emitter {
 }
 
 fn emitter(gpu: &Gpu, free: u32, spawned: u32) -> Emitter {
+    emitter_capacity(gpu, CAPACITY, free, spawned)
+}
+
+fn emitter_capacity(gpu: &Gpu, capacity: u32, free: u32, spawned: u32) -> Emitter {
     let mut params = vec![0u32; aestra_gpu::STATEFUL_SIMULATION_PARAM_WORDS];
-    params[0] = CAPACITY;
+    params[0] = capacity;
     params[2] = 7; // seed
     params[4] = 2.0f32.to_bits(); // speed range
     params[5] = 2.0f32.to_bits();
@@ -114,13 +120,16 @@ fn emitter(gpu: &Gpu, free: u32, spawned: u32) -> Emitter {
     params[7] = 3.0f32.to_bits();
     params[13] = 1.0f32.to_bits(); // direction +y, no spread
     Emitter {
-        state: storage(gpu, &vec![0; CAPACITY as usize * STRIDE]),
-        free_list: storage(gpu, &(0..CAPACITY).rev().collect::<Vec<_>>()),
+        state: storage(gpu, &vec![0; capacity as usize * STRIDE]),
+        free_list: storage(gpu, &(0..capacity).rev().collect::<Vec<_>>()),
         free_count: storage(gpu, &[free]),
         spawn_counter: storage(gpu, &[spawned]),
         params: storage(gpu, &params),
     }
 }
+
+#[path = "domain_spawn/birth_outputs.rs"]
+mod birth_outputs;
 
 /// A list of `count` records: record `i` at `(i, 2i, -i)` moving `(0, 0, 10)`.
 fn emission(gpu: &Gpu, count: u32, capacity: u32) -> wgpu::Buffer {
@@ -153,6 +162,7 @@ fn spawn(
             free_count: &target.free_count,
             spawn_counter: &target.spawn_counter,
             params: &target.params,
+            output_births: None,
         },
         list,
         &CompiledDomainSpawn {
@@ -237,6 +247,7 @@ fn destination_acceptance_counter_reports_only_allocated_slots() {
             free_count: &target.free_count,
             spawn_counter: &target.spawn_counter,
             params: &target.params,
+            output_births: None,
         },
         &list,
         &CompiledDomainSpawn {

@@ -2,6 +2,21 @@
 use super::*;
 use std::path::Path;
 
+#[derive(Resource, Default)]
+struct BirthCues(Vec<aestra_bevy::AestraOutputEvent>);
+
+fn collect_birth_cues(
+    mut outputs: MessageReader<aestra_bevy::AestraOutputEvent>,
+    mut cues: ResMut<BirthCues>,
+) {
+    cues.0.extend(
+        outputs
+            .read()
+            .filter(|cue| matches!(cue.event.kind.as_str(), "red_break" | "blue_break"))
+            .cloned(),
+    );
+}
+
 fn cohort_project(tier: &str, smoke_links: u8) -> Arc<aestra_bevy::CompiledEffectProject> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/test");
     let mut effect = EffectAsset::from_ron(
@@ -93,6 +108,8 @@ fn saved_shell_deaths_birth_overlapping_smoke_that_receives_later_break_light() 
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("report.json"), br#"{"accepted":false}"#).unwrap();
         let (mut app, owner, target) = headless_project(tier, true, true, cohort_project(tier, 3));
+        app.init_resource::<BirthCues>()
+            .add_systems(Update, collect_birth_cues);
         let empty = capture(&mut app, &target);
         advance(&mut app, owner, 110);
         let before = capture(&mut app, &target);
@@ -129,6 +146,33 @@ fn saved_shell_deaths_birth_overlapping_smoke_that_receives_later_break_light() 
             .unwrap()
             .effect()
             .clone();
+        let cues = &app.world().resource::<BirthCues>().0;
+        assert_eq!(
+            cues.len(),
+            2,
+            "one FirstPerTick cue for each accepted child cohort"
+        );
+        let epoch = app
+            .world()
+            .get::<EffectPlayer>(owner)
+            .unwrap()
+            .instance()
+            .history_epoch();
+        for (cue, source) in cues.iter().zip([1, 2]) {
+            assert_eq!(cue.effect, owner);
+            assert!(cue.clip_path.is_empty());
+            assert_eq!(cue.playback_epoch, Some(epoch));
+            assert_eq!(cue.event.origin, aestra_bevy::EventOrigin::Emitter(source));
+            assert_eq!(cue.event.magnitude, 32.0);
+            let spatial = cue.particle.as_ref().expect("native child source context");
+            assert_eq!(spatial.source_effect, artifact.source);
+            assert!((spatial.root_time_seconds - cue.event.tick as f32 / 60.0).abs() < 1e-5);
+            let local: [f32; 3] = cue.event.value.as_slice().try_into().unwrap();
+            let world = spatial.world_position.expect("real child world position");
+            for axis in 0..3 {
+                assert!((world[axis] - local[axis] * 0.1).abs() < 1e-5);
+            }
+        }
         let material = artifact.emitters[0].renderers[0].material;
         {
             let mut presented = app.world_mut().get_mut::<PresentedEffect>(owner).unwrap();

@@ -3692,6 +3692,15 @@ fn run_coupled_stateful(
     mut trails: Option<&mut stateful_trails::Observer<'_>>,
 ) -> (u32, u64) {
     let bursts = routes.bursts;
+    let birth_outputs: Vec<bool> = dispatches
+        .iter()
+        .map(|dispatch| {
+            routes.outputs.iter().any(|(route, _)| {
+                route.source == dispatch.emitter_index as usize
+                    && route.trigger == aestra_core::EventTrigger::OnSpawn
+            })
+        })
+        .collect();
     let (death_integrate, spawn, present, order_present) = pipelines;
     let domains = coupling.domains;
     // Each link's events and emission list (host bindings HB9b): the dispatches at either end, and a
@@ -3829,7 +3838,11 @@ fn run_coupled_stateful(
                 warn!("coupled domain stopped: {error}");
             }
         }
-        for (dispatch, persistent) in dispatches.iter().zip(persistent_states.iter_mut()) {
+        for (index, (dispatch, persistent)) in dispatches
+            .iter()
+            .zip(persistent_states.iter_mut())
+            .enumerate()
+        {
             let (group, params) =
                 stateful_tick_group(device, layout, persistent, dispatch, render, live);
             if dispatch.event_mask != 0 {
@@ -3861,6 +3874,10 @@ fn run_coupled_stateful(
                         free_count: &persistent.free_count,
                         spawn_counter: &persistent.spawn_counter,
                         params: &params,
+                        output_births: (birth_outputs[index]
+                            && live
+                            && u64::from(next) > routes.output_suppress_through)
+                            .then_some(&persistent.events),
                     },
                     emission,
                     spawn,
@@ -3915,6 +3932,10 @@ fn run_coupled_stateful(
                     free_count: &persistent.free_count,
                     spawn_counter: &persistent.spawn_counter,
                     params: &tick_params[*target],
+                    output_births: (birth_outputs[*target]
+                        && live
+                        && u64::from(next) > routes.output_suppress_through)
+                        .then_some(&persistent.events),
                 },
                 list,
                 &crate::execution::EventGatherPipeline::spawn(link, list_capacity),
@@ -3923,31 +3944,6 @@ fn run_coupled_stateful(
                     word: counter_base.map_or(u32::MAX, |base| base + *index as u32 * 3 + 2),
                 },
             );
-        }
-        // Particle output routes (event system E3): a live tick's events of their trigger,
-        // aggregated into the tick's slot of the route's ring, which the host reads back. Replayed
-        // ticks raise nothing.
-        if live {
-            let reached = persistent_states[0].last_tick + 1;
-            for (route, ring) in routes.outputs {
-                if u64::from(reached) <= routes.output_suppress_through {
-                    continue;
-                }
-                if let Some(source) = dispatch_of(route.source) {
-                    coupling.gatherer.encode_output(
-                        device.wgpu_device(),
-                        encoder,
-                        &persistent_states[source].events,
-                        crate::execution::ParticleOutputSlot {
-                            counters: render.counters,
-                            ring: *ring,
-                            tick: reached,
-                            epoch: routes.output_epoch,
-                        },
-                        route,
-                    );
-                }
-            }
         }
         // Input routes (event system E3): after the links, the bursts the host's events of this
         // tick spawn, in route order.
@@ -3975,10 +3971,41 @@ fn run_coupled_stateful(
                     free_count: &persistent.free_count,
                     spawn_counter: &persistent.spawn_counter,
                     params: &tick_params[target],
+                    output_births: (birth_outputs[target]
+                        && live
+                        && u64::from(next) > routes.output_suppress_through)
+                        .then_some(&persistent.events),
                 },
                 &list,
                 &spawn,
             );
+        }
+        // Outputs follow ALL births, including host-input bursts. External birth records are
+        // output-only: they cannot feed back into the already processed event links.
+        // Particle output routes (event system E3): a live tick's events of their trigger,
+        // aggregated into the tick's slot of the route's ring, which the host reads back. Replayed
+        // ticks raise nothing.
+        if live {
+            let reached = persistent_states[0].last_tick + 1;
+            for (route, ring) in routes.outputs {
+                if u64::from(reached) <= routes.output_suppress_through {
+                    continue;
+                }
+                if let Some(source) = dispatch_of(route.source) {
+                    coupling.gatherer.encode_output(
+                        device.wgpu_device(),
+                        encoder,
+                        &persistent_states[source].events,
+                        crate::execution::ParticleOutputSlot {
+                            counters: render.counters,
+                            ring: *ring,
+                            tick: reached,
+                            epoch: routes.output_epoch,
+                        },
+                        route,
+                    );
+                }
+            }
         }
         // Checkpoints capture each emitter after the tick's event spawns.
         for persistent in persistent_states.iter_mut() {
@@ -6492,6 +6519,158 @@ mod coupled_tests {
         advance_event_scene(&mut late, &links, &wired, 50);
         advance_event_scene(&mut late, &links, &wired, 150);
         assert_eq!(chained_event_snapshot(&late), expected);
+    }
+
+    #[test]
+    fn external_birth_outputs_reach_the_host_tick_without_pause_or_replay_duplicates() {
+        let Some((mut scene, mut links)) = chained_event_scene() else {
+            assert!(std::env::var_os("AESTRA_REQUIRE_GPU_CONFORMANCE").is_none());
+            return;
+        };
+        scene.dispatches[0].spawn_rate = 0.0;
+        scene.dispatches[0].burst_count = 1;
+        scene.dispatches[0].burst_tick = 0;
+        scene.dispatches[0].lifetime = (0.05, 0.05);
+        for dispatch in &mut scene.dispatches[1..] {
+            dispatch.event_mask = 1;
+            dispatch.speed = (0.0, 0.0);
+            dispatch.lifetime = (10.0, 10.0);
+            dispatch.colliders.clear();
+        }
+        scene.states = scene
+            .dispatches
+            .iter()
+            .map(|dispatch| {
+                StatefulPersistentState::allocate(
+                    &scene.device,
+                    dispatch.capacity,
+                    STRIDE,
+                    dispatch.fingerprint(),
+                    true,
+                )
+            })
+            .collect();
+        let ring = aestra_gpu::PARTICLE_OUTPUT_RING_WORDS;
+        scene.render[3] = scene.device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("external birth output regression rings"),
+            contents: &vec![0; (32 + 2 * ring) as usize * 4],
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        });
+        links[0].count = 12;
+        let links = &links[..1];
+        let outputs: Vec<_> = [1, 2]
+            .into_iter()
+            .enumerate()
+            .map(|(index, source)| {
+                (
+                    aestra_runtime::CompiledParticleOutput {
+                        output: format!("birth_{source}"),
+                        source,
+                        trigger: aestra_core::EventTrigger::OnSpawn,
+                        aggregation: aestra_core::EventAggregation::EachEvent { limit: 3 },
+                    },
+                    32 + index as u32 * ring,
+                )
+            })
+            .collect();
+        let bursts: Vec<_> = [(1, 3), (6, 5)]
+            .into_iter()
+            .map(|(tick, count)| aestra_runtime::InputSpawnBurst {
+                tick,
+                route: 0,
+                target: 2,
+                count,
+                events: vec![aestra_runtime::ParticleEvent {
+                    ordinal: 0,
+                    position: [4.0, 12.0, -2.0],
+                    velocity: [0.0; 3],
+                }],
+            })
+            .collect();
+        let wiring = RouteWiring {
+            bursts: &bursts,
+            outputs: &outputs,
+            output_epoch: 7,
+            ..Default::default()
+        };
+        for tick in 1..=8 {
+            advance_event_scene(&mut scene, links, &wiring, tick);
+        }
+        let records = |scene: &Scene| {
+            read_back(&scene.device, &scene.queue, &scene.render[3])
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|word| u32::from_le_bytes(*word))
+                .collect::<Vec<_>>()
+        };
+        let initial = records(&scene);
+        let decode = |words: &[u32], base: usize| {
+            words[base..base + ring as usize]
+                .as_chunks::<{ aestra_gpu::PARTICLE_OUTPUT_SLOT_WORDS as usize }>()
+                .0
+                .iter()
+                .filter_map(|slot| aestra_gpu::read_particle_output_slot(slot))
+                .filter(|record| record.count > 0)
+                .collect::<Vec<_>>()
+        };
+        let linked = decode(&initial, 32);
+        assert_eq!(linked.len(), 1);
+        assert_eq!(
+            (linked[0].tick, linked[0].epoch, linked[0].count),
+            (4, 7, 12)
+        );
+        assert_eq!(linked[0].first.len(), 3);
+        let inputs = decode(&initial, (32 + ring) as usize);
+        assert_eq!(
+            inputs
+                .iter()
+                .map(|r| (r.tick, r.epoch, r.count))
+                .collect::<Vec<_>>(),
+            [(2, 7, 3), (7, 7, 5)]
+        );
+        assert!(
+            inputs
+                .iter()
+                .flat_map(|r| &r.first)
+                .all(|(_, position)| *position == [4.0, 12.0, -2.0])
+        );
+        let expected = chained_event_snapshot(&scene);
+        advance_event_scene(&mut scene, links, &wiring, 8);
+        assert_eq!(
+            &records(&scene)[32..],
+            &initial[32..],
+            "pause cannot export twice"
+        );
+        let replay = RouteWiring {
+            output_epoch: 8,
+            output_suppress_through: 8,
+            ..wiring
+        };
+        advance_event_scene(&mut scene, links, &replay, 2);
+        for tick in 3..=8 {
+            advance_event_scene(&mut scene, links, &replay, tick);
+        }
+        assert_eq!(chained_event_snapshot(&scene), expected);
+        assert_eq!(
+            &records(&scene)[32..],
+            &initial[32..],
+            "seek/replay cannot export old births"
+        );
+        for state in &mut scene.states {
+            state.reset_to_zero(&scene.device);
+        }
+        let restarted = RouteWiring {
+            output_epoch: 9,
+            ..wiring
+        };
+        for tick in 1..=8 {
+            advance_event_scene(&mut scene, links, &restarted, tick);
+        }
+        let fresh = records(&scene);
+        assert_eq!(decode(&fresh, 32)[0].epoch, 9);
+        assert_eq!(decode(&fresh, (32 + ring) as usize)[0].epoch, 9);
+        assert_eq!(chained_event_snapshot(&scene), expected);
     }
 
     #[test]

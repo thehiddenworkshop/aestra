@@ -3320,6 +3320,13 @@ fn advance_production_linked(
                     free_count: &target.free_count,
                     spawn_counter: &target.spawn_counter,
                     params: &params[link.target],
+                    output_births: outputs
+                        .iter()
+                        .any(|route| {
+                            route.source == link.target
+                                && route.trigger == aestra_core::EventTrigger::OnSpawn
+                        })
+                        .then_some(&target.events),
                 },
                 list,
                 &EventGatherPipeline::spawn(link, list_capacity),
@@ -3339,6 +3346,13 @@ fn advance_production_linked(
                     free_count: &target.free_count,
                     spawn_counter: &target.spawn_counter,
                     params: &params[burst.target],
+                    output_births: outputs
+                        .iter()
+                        .any(|route| {
+                            route.source == burst.target
+                                && route.trigger == aestra_core::EventTrigger::OnSpawn
+                        })
+                        .then_some(&target.events),
                 },
                 &list,
                 &spawn,
@@ -4265,11 +4279,29 @@ fn gpu_particle_outputs_raise_the_cpu_reference_stream() {
             trigger: EventTrigger::OnCollision,
             aggregation: EventAggregation::EachEvent { limit: 3 },
         },
+        CompiledParticleOutput {
+            output: "ChildrenBorn".into(),
+            source: 1,
+            trigger: EventTrigger::OnSpawn,
+            aggregation: EventAggregation::EachEvent { limit: 3 },
+        },
     ];
+    let bursts = [aestra_runtime::InputSpawnBurst {
+        tick: 12,
+        route: 0,
+        target: 1,
+        count: 5,
+        events: vec![aestra_runtime::ParticleEvent {
+            ordinal: 0,
+            position: [4.0, 12.0, -2.0],
+            velocity: [0.0; 3],
+        }],
+    }];
     let seed = 0x00E3_B000_0000_0001_u64;
     let ticks = 110;
     let (gpu_particles, gpu) =
-        advance_production_linked(&harness, &configs, &links, &[], &outputs, seed, ticks).unwrap();
+        advance_production_linked(&harness, &configs, &links, &bursts, &outputs, seed, ticks)
+            .unwrap();
 
     let mut sims: Vec<StatefulSimulation> = configs
         .iter()
@@ -4287,10 +4319,14 @@ fn gpu_particle_outputs_raise_the_cpu_reference_stream() {
             let events = sims[link.source].events(link.trigger).to_vec();
             sims[link.target].spawn_from_events(&events, link.count, link.inherit);
         }
+        let reached = sims[0].tick();
+        for burst in bursts.iter().filter(|burst| burst.tick + 1 == reached) {
+            sims[burst.target].spawn_from_events(&burst.events, burst.count, 0.0);
+        }
         for route in &outputs {
             let source = &sims[route.source];
-            let events = source.events(route.trigger);
-            let first = first_particle_events(events, route.aggregation.limit());
+            let events: Vec<_> = source.output_events(route.trigger).copied().collect();
+            let first = first_particle_events(&events, route.aggregation.limit());
             cpu.extend(route.raise(events.len() as u32, &first, source.tick()));
         }
     }
@@ -4299,6 +4335,12 @@ fn gpu_particle_outputs_raise_the_cpu_reference_stream() {
     };
     assert!(kinds(&cpu, "Exploded") > 10, "{}", kinds(&cpu, "Exploded"));
     assert!(kinds(&cpu, "Bounced") > 10, "{}", kinds(&cpu, "Bounced"));
+    assert!(kinds(&cpu, "ChildrenBorn") > 10);
+    assert!(
+        cpu.iter().any(|event| event.kind == "ChildrenBorn"
+            && event.tick == 13
+            && event.magnitude == 5.0)
+    );
     assert!(
         cpu.iter()
             .any(|event| event.kind == "Bounced" && event.magnitude > 3.0),

@@ -1423,6 +1423,10 @@ pub struct SpawnState<'a> {
     pub spawn_counter: &'a wgpu::Buffer,
     /// The emitter's stateful params for the tick.
     pub params: &'a wgpu::Buffer,
+    /// Optional existing per-tick event buffer for host OnSpawn outputs. Births
+    /// use an output-only tag and cannot recursively trigger event links.
+    /// Capacity is derived from the buffer and clamped to the event ceiling.
+    pub output_births: Option<&'a wgpu::Buffer>,
 }
 
 /// Spawn From Domain for stateful particles (fluid F10, G8): turns a domain's emission list into
@@ -1432,6 +1436,7 @@ pub struct SpawnState<'a> {
 pub struct DomainSpawnPipeline {
     plan: wgpu::ComputePipeline,
     spawn: wgpu::ComputePipeline,
+    no_events: wgpu::Buffer,
 }
 
 pub struct SpawnAcceptanceCounter<'a> {
@@ -1456,6 +1461,11 @@ impl DomainSpawnPipeline {
             })
         };
         Self {
+            no_events: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("aestra disabled external birth capture"),
+                contents: &[0; 16],
+                usage: wgpu::BufferUsages::STORAGE,
+            }),
             plan: pipeline(
                 "aestra domain spawn plan",
                 aestra_gpu::DOMAIN_SPAWN_PLAN_WGSL.into(),
@@ -1507,6 +1517,11 @@ impl DomainSpawnPipeline {
     ) {
         let mut words = aestra_gpu::domain_spawn_params(spawn);
         words[2] = acceptance.word;
+        words[3] = target.output_births.map_or(0, |events| {
+            (events.size().saturating_sub(16) / 32)
+                .min(u64::from(aestra_runtime::PARTICLE_EVENT_CAPACITY)) as u32
+        });
+        let events = target.output_births.unwrap_or(&self.no_events);
         let spawn_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("aestra domain spawn params"),
             contents: &words_to_bytes(&words),
@@ -1542,6 +1557,7 @@ impl DomainSpawnPipeline {
                 &plan,
                 &spawn_params,
                 acceptance.buffer,
+                events,
             ],
         );
         let spawn_group = group(
@@ -1553,6 +1569,7 @@ impl DomainSpawnPipeline {
                 emission,
                 &plan,
                 &spawn_params,
+                events,
             ],
         );
         {

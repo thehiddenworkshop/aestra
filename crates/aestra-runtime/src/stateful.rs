@@ -333,6 +333,8 @@ pub struct StatefulSimulation {
     arrivals: u64,
     /// The spawn, death and collision events of the last tick (host bindings HB9b).
     events: [Vec<ParticleEvent>; 3],
+    /// Accepted external births for host output routes only, never same-tick links.
+    output_births: Vec<ParticleEvent>,
     /// The world `World` colliders collide with (host bindings HB10); none collides without one.
     world: Option<ParticleWorld>,
     /// The physics scene `Physics` colliders collide with (host bindings HB10).
@@ -355,6 +357,7 @@ impl StatefulSimulation {
             cutoffs: crate::EmissionCutoffs::NONE,
             arrivals: 0,
             events: Default::default(),
+            output_births: Vec::new(),
             world: None,
             physics: None,
         }
@@ -395,6 +398,23 @@ impl StatefulSimulation {
         &self.events[trigger_index(trigger)]
     }
 
+    /// Host-output events of the last tick, including accepted event/input/domain
+    /// births for OnSpawn. Unlike [`Self::events`], these extra births do not feed
+    /// back into link execution. Identity/position come from the allocated child,
+    /// not the parent's ordinal or the requested (possibly rejected) demand.
+    /// This CPU reference exposes the logical stream; GPU capture additionally
+    /// applies its bounded shared event-buffer prefix and reports overflow.
+    pub fn output_events(
+        &self,
+        trigger: aestra_core::EventTrigger,
+    ) -> impl Iterator<Item = &ParticleEvent> {
+        self.events(trigger).iter().chain(
+            self.output_births
+                .iter()
+                .filter(move |_| trigger == aestra_core::EventTrigger::OnSpawn),
+        )
+    }
+
     /// Spawns `count` particles per event (host bindings HB9b), after the tick, exactly as the GPU's
     /// event spawn does: events in ordinal order, each repeated `count` times, at most
     /// [`crate::PARTICLE_EVENT_CAPACITY`] and as many as there is room for; each becomes the next
@@ -425,6 +445,11 @@ impl StatefulSimulation {
                 velocity,
                 age: 0.0,
                 lifetime,
+            });
+            self.output_births.push(ParticleEvent {
+                ordinal,
+                position: event.position,
+                velocity,
             });
             self.spawned += 1;
         }
@@ -518,6 +543,7 @@ impl StatefulSimulation {
         for events in &mut self.events {
             events.clear();
         }
+        self.output_births.clear();
         // A host `kill` (event system E2b): from its tick every particle retires, raising nothing,
         // and nothing spawns.
         if self.cutoffs.kill_tick.is_some_and(|kill| self.tick >= kill) {
@@ -1026,6 +1052,64 @@ fn unit_signed(hash: u64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_birth_outputs_include_only_accepted_children_and_never_link_back() {
+        use aestra_core::EventTrigger;
+        let mut simulation = StatefulSimulation::new(
+            StatefulConfig {
+                spawn_per_tick: 1,
+                capacity: 4,
+                ..config()
+            },
+            7,
+        );
+        simulation.advance_tick();
+        let parents = [ParticleEvent {
+            ordinal: 99,
+            position: [4.0, 8.0, -2.0],
+            velocity: [0.0, 3.0, 0.0],
+        }];
+        simulation.spawn_from_events(&parents, 10, 0.5);
+        let checkpoint = simulation.clone();
+        let births: Vec<_> = simulation
+            .output_events(EventTrigger::OnSpawn)
+            .copied()
+            .collect();
+        assert_eq!(births.len(), 4);
+        assert_eq!(
+            births.iter().map(|birth| birth.ordinal).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert!(
+            births[1..]
+                .iter()
+                .all(|birth| birth.position == parents[0].position)
+        );
+        assert_eq!(
+            simulation.events(EventTrigger::OnSpawn).len(),
+            1,
+            "link inputs stay unchanged"
+        );
+        simulation.spawn_from_events(&parents, 10, 0.5);
+        assert_eq!(
+            simulation.output_events(EventTrigger::OnSpawn).count(),
+            4,
+            "no room, no new cue"
+        );
+        simulation.advance_tick();
+        assert_eq!(
+            simulation.output_events(EventTrigger::OnSpawn).count(),
+            0,
+            "no stale births"
+        );
+        let mut replay = checkpoint;
+        replay.advance_tick();
+        assert_eq!(
+            simulation, replay,
+            "checkpoint/replay keeps the same state and cleared outputs"
+        );
+    }
 
     fn config() -> StatefulConfig {
         StatefulConfig {

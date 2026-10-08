@@ -1380,6 +1380,12 @@ pub const PARTICLE_OUTPUT_WGSL: &str = r#"
 @group(0) @binding(1) var<storage, read_write> counters: array<u32>;
 @group(0) @binding(2) var<storage, read> route: array<u32>;
 
+// 8 is an output-only external birth. Link gathering still matches only 1/2/4,
+// so exporting accepted births cannot create new same-tick link cascades.
+fn output_matches(record: u32, kind: u32) -> bool {
+    return record == kind || (kind == 1u && record == 8u);
+}
+
 @compute @workgroup_size(1)
 fn aggregate_particle_outputs() {
     let n = min(events[0], route[4]);
@@ -1388,7 +1394,7 @@ fn aggregate_particle_outputs() {
     let slot = route[2];
     var count = 0u;
     for (var i = 0u; i < n; i = i + 1u) {
-        if (events[4u + i * 8u] == kind) { count = count + 1u; }
+        if (output_matches(events[4u + i * 8u], kind)) { count = count + 1u; }
     }
     var written = 0u;
     var after = 0u;
@@ -1399,7 +1405,7 @@ fn aggregate_particle_outputs() {
         for (var i = 0u; i < n; i = i + 1u) {
             let record = 4u + i * 8u;
             let ordinal = events[record + 1u];
-            let eligible = events[record] == kind && (r == 0u || ordinal > after);
+            let eligible = output_matches(events[record], kind) && (r == 0u || ordinal > after);
             if (eligible && (!found || ordinal < best)) {
                 found = true;
                 best = ordinal;
@@ -2089,10 +2095,11 @@ pub fn field_follow_params(
 }
 
 /// Words of the `spawn_params` both domain-spawn kernels read: `[list capacity, inherit (f32 bits),
-/// 0, 0]`.
+/// acceptance counter word, output-only birth capture capacity (0 disables)]`.
 pub const DOMAIN_SPAWN_PARAM_WORDS: usize = 4;
 /// Words of the plan [`DOMAIN_SPAWN_PLAN_WGSL`] writes: the indirect dispatch `[x, y, z]` of
-/// [`domain_spawn_wgsl`], then `[count, free slots before, first ordinal]`, then padding.
+/// [`domain_spawn_wgsl`], then `[count, free slots before, first ordinal, birth record base,
+/// captured birth count]`.
 pub const DOMAIN_SPAWN_PLAN_WORDS: usize = 8;
 
 /// The plan of Spawn From Domain (fluid F10, G8) for one emitter and tick, one thread: how many of
@@ -2108,6 +2115,7 @@ pub const DOMAIN_SPAWN_PLAN_WGSL: &str = r#"
 @group(0) @binding(3) var<storage, read_write> plan: array<u32>;
 @group(0) @binding(4) var<storage, read> spawn_params: array<u32>;
 @group(0) @binding(5) var<storage, read_write> spawn_counters: array<atomic<u32>>;
+@group(0) @binding(6) var<storage, read_write> events: array<atomic<u32>>;
 
 @compute @workgroup_size(1)
 fn domain_spawn_plan() {
@@ -2122,6 +2130,18 @@ fn domain_spawn_plan() {
     plan[3] = count;
     plan[4] = free;
     plan[5] = first;
+    plan[6] = 0u;
+    plan[7] = 0u;
+    // Reserve a deterministic prefix once, rather than racing capture slots in
+    // the parallel spawn. Rejected particles never reserve output records.
+    let capacity = spawn_params[3];
+    if (count > 0u && capacity > 0u) {
+        let base = atomicAdd(&events[0], count);
+        let captured = min(count, capacity - min(base, capacity));
+        plan[6] = base;
+        plan[7] = captured;
+        atomicAdd(&events[1], count - captured);
+    }
     let accepted_word = spawn_params[2];
     if (count > 0u && accepted_word < arrayLength(&spawn_counters)) {
         atomicAdd(&spawn_counters[accepted_word], count);
@@ -2147,6 +2167,7 @@ const DOMAIN_SPAWN_BINDINGS: &str = r#"
 @group(0) @binding(3) var<storage, read> emission: array<u32>;
 @group(0) @binding(4) var<storage, read> plan: array<u32>;
 @group(0) @binding(5) var<storage, read> spawn_params: array<u32>;
+@group(0) @binding(6) var<storage, read_write> events: array<atomic<u32>>;
 "#;
 
 const DOMAIN_SPAWN_ENTRY: &str = r#"
@@ -2173,6 +2194,15 @@ fn domain_spawn(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[base + 6u] = 0.0;
     state[base + 7u] = lifetime;
     state[base + 8u] = bitcast<f32>(ordinal);
+    if (i < plan[7]) {
+        let record = 4u + (plan[6] + i) * 8u;
+        atomicStore(&events[record], 8u); // output-only OnSpawn, not a link trigger
+        atomicStore(&events[record + 1u], ordinal);
+        for (var axis = 0u; axis < 3u; axis = axis + 1u) {
+            atomicStore(&events[record + 2u + axis], bitcast<u32>(state[base + axis]));
+            atomicStore(&events[record + 5u + axis], bitcast<u32>(state[base + 3u + axis]));
+        }
+    }
 }
 "#;
 
