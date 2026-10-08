@@ -16,6 +16,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   quality:
@@ -26,15 +29,21 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - name: Install repository Rust toolchain
+        # Rustup's proxies install the channel/profile/components in rust-toolchain.toml.
+        run: |
+          rustc --version
+          cargo --version
 
-      - name: Cache Rust build artifacts
+      - name: Set up compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Cache Cargo registry and git dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-quality-windows
+          shared-key: ci-cargo-windows
+          cache-targets: false
+          cache-bin: false
           cache-on-failure: true
 
       - name: Check formatting
@@ -49,25 +58,31 @@ jobs:
   tests:
     name: Workspace tests
     runs-on: windows-latest
-    timeout-minutes: 75
+    # Temporary cold-build allowance while the compiler cache is populated.
+    timeout-minutes: 120
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install repository Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
 
-      - name: Cache Rust build artifacts
+      - name: Set up compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Cache Cargo registry and git dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-tests-windows
+          shared-key: ci-cargo-windows
+          cache-targets: false
+          cache-bin: false
           cache-on-failure: true
 
-      - name: Run workspace tests
-        run: cargo test --workspace --locked
-
-      - name: Test GPU benchmark CLI and report helpers (no GPU execution)
-        run: cargo test -p aestra-bench --features gpu --locked
+      - name: Run workspace tests including GPU benchmark CLI and report helpers
+        # Benchmark GPU execution remains opt-in; its ordinary tests are CLI/report helpers.
+        run: cargo test --workspace --features aestra-bench/gpu --locked
 
   portability:
     name: Portable contracts and shaders
@@ -77,13 +92,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install repository Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
 
-      - name: Cache Rust build artifacts
+      - name: Set up compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Cache Cargo registry and git dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-portability-linux
+          shared-key: ci-cargo-linux
+          cache-targets: false
+          cache-bin: false
           cache-on-failure: true
 
       - name: Build engine-neutral crates without Bevy
